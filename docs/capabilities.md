@@ -371,8 +371,8 @@ token endpoints directly either: the outbound Worker refuses them
 | `twitch` | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | https://dev.twitch.tv/console/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/twitch` | POST `id.twitch.tv/oauth2/token` (form) |
 | `tumblr` | Tumblr | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` | https://www.tumblr.com/oauth/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tumblr` | POST `api.tumblr.com/v2/oauth2/token` (form) |
 | `dribbble` | Dribbble | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` | https://dribbble.com/account/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/dribbble` | POST `dribbble.com/oauth/token` (query) |
-| `google-workspace` | Google (Gmail and Calendar) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/google/callback` | POST `oauth2.googleapis.com/token` (form) |
-| `microsoft-365` | Microsoft 365 (Outlook) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `https://<app>.<APP_BASE_DOMAIN>/integrations/microsoft/callback` | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
+| `google-workspace` | Google (Gmail, Calendar, Search Console and Analytics) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/google/callback` | POST `oauth2.googleapis.com/token` (form) |
+| `microsoft-365` | Microsoft 365 (Outlook mail and calendar) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `https://<app>.<APP_BASE_DOMAIN>/integrations/microsoft/callback` | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
 
 The commands, one per network you offer (each prompts for the values):
 
@@ -397,7 +397,7 @@ pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECR
 pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET
 ```
 
-The authorize page each client sends people to, and the scopes the app asks for there (the client must be allowed them):
+The authorize page each client sends people to, and the scopes the operator allows on the client; an app lists the scope sets it uses:
 
 | Capability | Authorize URL | Scopes |
 | --- | --- | --- |
@@ -417,8 +417,21 @@ The authorize page each client sends people to, and the scopes the app asks for 
 | `twitch` | `https://id.twitch.tv/oauth2/authorize` | `user:write:chat`, `user:read:chat`, `moderator:manage:announcements` |
 | `tumblr` | `https://www.tumblr.com/oauth2/authorize` | `write`, `offline_access` |
 | `dribbble` | `https://dribbble.com/oauth/authorize` | `public`, `upload` |
-| `google-workspace` | `https://accounts.google.com/o/oauth2/v2/auth` | `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/calendar.readonly` |
-| `microsoft-365` | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | `offline_access`, `User.Read`, `Mail.Read` |
+| `google-workspace` | `https://accounts.google.com/o/oauth2/v2/auth` | `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/webmasters.readonly`, `https://www.googleapis.com/auth/analytics.readonly` |
+| `microsoft-365` | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | `offline_access`, `User.Read`, `Mail.Read`, `Calendars.Read` |
+
+Scope sets an app may list (`scopes` on its capability entry), each with the provider scopes it asks for; a client with none takes the whole client as the grant:
+
+| Capability | Scope set | Label | Access | Provider scopes |
+| --- | --- | --- | --- | --- |
+| `google-workspace` | `identity` | Google account (who you are) | read | `openid`, `email`, `profile` |
+| `google-workspace` | `gmail.read` | Gmail (read-only) | read | `https://www.googleapis.com/auth/gmail.readonly` |
+| `google-workspace` | `calendar.read` | Google Calendar (read-only) | read | `https://www.googleapis.com/auth/calendar.readonly` |
+| `google-workspace` | `search-console.read` | Search Console (read-only) | read | `https://www.googleapis.com/auth/webmasters.readonly` |
+| `google-workspace` | `analytics.read` | Google Analytics (read-only) | read | `https://www.googleapis.com/auth/analytics.readonly` |
+| `microsoft-365` | `identity` | Microsoft account (who you are) | read | `User.Read` |
+| `microsoft-365` | `mail.read` | Outlook mail (read-only) | read | `Mail.Read` |
+| `microsoft-365` | `calendar.read` | Outlook calendar (read-only) | read | `Calendars.Read` |
 
 <!-- oauth-clients:end -->
 

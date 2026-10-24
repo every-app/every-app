@@ -71,6 +71,20 @@ function generated(): string {
       capability.authorize.scopes.map((scope) => `\`${scope}\``).join(", "),
     ].join(" | "),
   );
+  const sets = clients.flatMap(([id, capability]) =>
+    Object.entries(capability.scopePolicy?.sets ?? {}).map(([name, set]) =>
+      [
+        `\`${id}\``,
+        `\`${name}\``,
+        set.label,
+        set.access,
+        [
+          ...set.scopes.map((scope) => `\`${scope}\``),
+          ...(set.userScopes ?? []).map((scope) => `\`${scope}\` (user token)`),
+        ].join(", "),
+      ].join(" | "),
+    ),
+  );
   return [
     BEGIN,
     "",
@@ -84,11 +98,17 @@ function generated(): string {
     ...commands,
     "```",
     "",
-    "The authorize page each client sends people to, and the scopes the app asks for there (the client must be allowed them):",
+    "The authorize page each client sends people to, and the scopes the operator allows on the client; an app lists the scope sets it uses:",
     "",
     "| Capability | Authorize URL | Scopes |",
     "| --- | --- | --- |",
     ...scopes.map((row) => `| ${row} |`),
+    "",
+    "Scope sets an app may list (`scopes` on its capability entry), each with the provider scopes it asks for; a client with none takes the whole client as the grant:",
+    "",
+    "| Capability | Scope set | Label | Access | Provider scopes |",
+    "| --- | --- | --- | --- | --- |",
+    ...sets.map((row) => `| ${row} |`),
     "",
     END,
   ].join("\n");

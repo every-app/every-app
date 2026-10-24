@@ -17,8 +17,10 @@ import {
   type CapabilitySecret,
   type OAuthClientCapability,
   type OAuthClientCapabilityId,
+  type OAuthScopeSetName,
   type ServiceCapabilityId,
 } from "./capabilities";
+import { requestedScopes, scopeRouteAllows } from "./oauthScopes";
 
 describe("integration proxy paths", () => {
   it("round-trips a provider URL", () => {
@@ -231,6 +233,15 @@ describe("the OAuth clients", () => {
   );
   const client = (id: OAuthClientCapabilityId): OAuthClientCapability =>
     CAPABILITIES[id];
+  /** Segments and paths that carry other requests inside, or another API: in no set's routes. */
+  const TUNNEL_SEGMENTS = ["batch", "$batch", "beta"];
+  const TUNNELS = [
+    "/batch/gmail/v1",
+    "/batch/calendar/v3",
+    "/v1.0/$batch",
+    "/beta/me/messages",
+    "/beta/me/sendMail",
+  ];
 
   it("are the 16 social networks' clients and the 2 mail and calendar clients, with 37 gateway settings", () => {
     expect(ids).toEqual([
@@ -313,6 +324,156 @@ describe("the OAuth clients", () => {
       }
     },
   );
+
+  const policyIds = ids.filter((id) => client(id).scopePolicy);
+
+  it.each(policyIds)(
+    "%s holds its scope sets to the design's invariants",
+    (id) => {
+      const capability = client(id);
+      const policy = capability.scopePolicy!;
+      // The boundary at the token endpoint exists because the app never
+      // holds the secret; with a public client it could exchange codes
+      // itself.
+      expect(capability.secrets.clientSecret).toBeDefined();
+      // The two grants the gateway completes, spelled as `tokenGrantType()`
+      // reads them: a typo here would refuse every exchange.
+      expect(policy.grantTypes).toEqual([
+        "authorization_code",
+        "refresh_token",
+      ]);
+      for (const scope of policy.alwaysRequested) {
+        expect(policy.tolerated).toContain(scope);
+      }
+      const names = Object.keys(policy.sets);
+      expect(names.length).toBeGreaterThan(0);
+      // The operator's checklist is the sets' union, nothing more or less.
+      const union = requestedScopes(policy, names);
+      expect([...capability.authorize.scopes].sort()).toEqual(
+        [...new Set([...union.scopes, ...union.userScopes])].sort(),
+      );
+      expect(new Set(capability.authorize.scopes).size).toBe(
+        capability.authorize.scopes.length,
+      );
+      // Never a tunnel, and never one of the policy's own denied segments:
+      // the route allowlist refuses those first, so the route would be dead.
+      const denied = [
+        ...TUNNEL_SEGMENTS,
+        ...policy.deniedSegments.map((segment) => segment.toLowerCase()),
+      ];
+      const tokenHosts = capability.token.map((endpoint) => endpoint.host);
+      for (const [name, set] of Object.entries(policy.sets)) {
+        expect(name).toMatch(/^(identity|[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*)$/);
+        expect(set.label).toBeTruthy();
+        expect(["read", "write"]).toContain(set.access);
+        expect(
+          set.scopes.length + (set.userScopes?.length ?? 0),
+          name,
+        ).toBeGreaterThan(0);
+        expect(set.routes.length, name).toBeGreaterThan(0);
+        for (const route of set.routes) {
+          // A bare https host the docs list as an API host, never the
+          // token host.
+          expect(new URL(`https://${route.host}`).host).toBe(route.host);
+          expect(route.host).toMatch(/^[a-z0-9.-]+$/);
+          expect(capability.api).toContain(route.host);
+          expect(tokenHosts).not.toContain(route.host);
+          for (const path of route.paths) {
+            // Plain raw paths: nothing encoded, no doubled separator.
+            expect(path, `${name} ${path}`).toMatch(/^\/[^%\\]*$/);
+            expect(path).not.toContain("//");
+            for (const segment of path.split("/")) {
+              expect(denied, `${name} ${path}`).not.toContain(
+                segment.toLowerCase(),
+              );
+            }
+            // And the allowlist agrees: the set unlocks what it declares.
+            expect(
+              scopeRouteAllows(
+                policy,
+                [name],
+                "GET",
+                new URL(`https://${route.host}${path}`),
+              ),
+              `${name} ${path}`,
+            ).toBe(name);
+          }
+          for (const pattern of route.posts ?? []) {
+            // Anchored at both ends, and stateless.
+            expect(pattern.source).toMatch(/^\^\\\/.*\$$/);
+            expect(pattern.flags).toBe("");
+            for (const tunnel of TUNNELS) {
+              expect(pattern.test(tunnel), `${pattern} ${tunnel}`).toBe(false);
+            }
+            // Each literal segment of the pattern (between escaped slashes,
+            // unescaped) is compared like a path's.
+            for (const fragment of pattern.source.slice(1, -1).split("\\/")) {
+              expect(denied, `${name} ${pattern}`).not.toContain(
+                fragment.replace(/\\(.)/g, "$1").toLowerCase(),
+              );
+            }
+          }
+        }
+      }
+    },
+  );
+
+  it("offer scope sets on the shared Google and Microsoft clients only, every set read-only", () => {
+    expect(ids.filter((id) => client(id).scopePolicy)).toEqual([
+      "google-workspace",
+      "microsoft-365",
+    ]);
+    const google = CAPABILITIES["google-workspace"].scopePolicy;
+    const microsoft = CAPABILITIES["microsoft-365"].scopePolicy;
+    expect(Object.keys(google.sets)).toEqual([
+      "identity",
+      "gmail.read",
+      "calendar.read",
+      "search-console.read",
+      "analytics.read",
+    ]);
+    expect(Object.keys(microsoft.sets)).toEqual([
+      "identity",
+      "mail.read",
+      "calendar.read",
+    ]);
+    // A deployed manifest is a grant the app declared for itself, so a
+    // write set on a shared client is a registry change to review, not a
+    // name to add here.
+    for (const policy of [google, microsoft]) {
+      for (const [name, set] of Object.entries(policy.sets)) {
+        expect(set.access, name).toBe("read");
+      }
+    }
+    // The token host is not an API host.
+    expect(client("google-workspace").api).not.toContain(
+      "oauth2.googleapis.com",
+    );
+    expectTypeOf<OAuthScopeSetName<"google-workspace">>().toEqualTypeOf<
+      | "identity"
+      | "gmail.read"
+      | "calendar.read"
+      | "search-console.read"
+      | "analytics.read"
+    >();
+    expectTypeOf<OAuthScopeSetName<"microsoft-365">>().toEqualTypeOf<
+      "identity" | "mail.read" | "calendar.read"
+    >();
+    // Over a union of ids, every name either offers, not the shared ones.
+    expectTypeOf<
+      OAuthScopeSetName<"google-workspace" | "microsoft-365">
+    >().toEqualTypeOf<
+      | "identity"
+      | "gmail.read"
+      | "calendar.read"
+      | "search-console.read"
+      | "analytics.read"
+      | "identity"
+      | "mail.read"
+      | "calendar.read"
+    >();
+    expectTypeOf<OAuthScopeSetName<"linkedin">>().toEqualTypeOf<never>();
+  });
 
   it("names the command that gives the gateway each client", () => {
     expect(oauthClientSecretSetCommand(client("linkedin"))).toBe(

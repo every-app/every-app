@@ -10,7 +10,11 @@
  *    the same way. The gateway completes the token endpoint calls only,
  *    putting the client on them; the app builds the authorize URL from the
  *    public client id (`integrationStatus()`), keeps the user tokens and
- *    calls the provider's API with them itself.
+ *    calls the provider's API with them itself. A client shared by apps
+ *    with different needs carries a `scopePolicy`: named scope sets an app
+ *    lists in its manifest entry's `scopes`, which ./oauthScopes.ts turns
+ *    into what the app may ask the provider for and what a token it is
+ *    handed may carry.
  *  - `service`: something the gateway does itself, with no upstream host
  *    an app names (sending email, listing the organization's members). An
  *    app lists it the same way and calls its routes,
@@ -91,6 +95,89 @@ export interface OAuthTokenEndpoint {
 }
 
 /**
+ * One host's allowlist a scope set unlocks. Matched against the raw
+ * pathname, case preserved, by `scopeRouteAllows()` in ./oauthScopes.ts:
+ * the proxy boundary once the gateway holds tokens, tested data until then.
+ */
+export interface OAuthScopeRoute {
+  /** A bare https host, one of the capability's `api` hosts. */
+  host: string;
+  /**
+   * Raw-path entries: exact, or a prefix when the entry ends in `/`. GET
+   * and HEAD go through when one matches.
+   */
+  paths: readonly string[];
+  /**
+   * The read-shaped POSTs a read set allows (queries, watches): anchored,
+   * flagless RegExps over the raw pathname. Every other POST is refused.
+   */
+  posts?: readonly RegExp[];
+}
+
+/**
+ * A named bundle an app lists under `scopes`: what it asks the provider for
+ * and what that unlocks.
+ */
+export interface OAuthScopeSet {
+  /** What Admin → Apps and a consent page call it: "Gmail (read-only)". */
+  label: string;
+  /**
+   * A read set unlocks GET, HEAD and its `posts` only. No write set exists
+   * on the shared clients yet; adding one is a reviewed registry change.
+   */
+  access: CapabilityAccess;
+  /** The provider's scope strings, requested verbatim (Slack: bot scopes). */
+  scopes: readonly string[];
+  /** Slack's `user_scope` strings, issued to the installing person's own token; absent elsewhere. */
+  userScopes?: readonly string[];
+  routes: readonly OAuthScopeRoute[];
+}
+
+/** How a provider spells granted scopes in its token response; each has a parser in ./oauthScopes.ts. */
+export type OAuthScopeDialect = "google" | "microsoft" | "slack";
+
+/**
+ * Everything the gateway needs to hold an app to its scope sets at the
+ * token endpoint. Present means an app's entry must list `scopes` and the
+ * gateway refuses tokens outside them. Data only: the dialect selects the
+ * parser, so the registry stays a table.
+ */
+export interface OAuthScopePolicy {
+  sets: Readonly<Record<string, OAuthScopeSet>>;
+  /**
+   * Scopes a token may carry beyond the declared sets without refusal:
+   * identity and refresh scopes, in every spelling the provider uses.
+   * Never a data scope.
+   */
+  tolerated: readonly string[];
+  /**
+   * Scopes every declaring app asks for whatever its sets, on the authorize
+   * URL and Microsoft's token leg (`offline_access`). Always tolerated.
+   */
+  alwaysRequested: readonly string[];
+  dialect: OAuthScopeDialect;
+  /**
+   * The `tokenGrantType()` values the gateway completes through this
+   * client. `null` is a code exchange that carries no `grant_type` (Slack's
+   * oauth.v2.access).
+   */
+  grantTypes: readonly (string | null)[];
+  /**
+   * What becomes of the token request's `scope` once it passes the check:
+   * `replace` it with the app's requested list (Microsoft's token-leg
+   * extension, which keeps a token to one resource), `drop` it (Google
+   * documents no `scope` on either token leg), or `keep` it (Slack).
+   */
+  requestScope: "replace" | "drop" | "keep";
+  /**
+   * Decoded path segments no set unlocks on any host, compared
+   * case-insensitively: batch tunnels that carry other requests inside, and
+   * resources that reveal secrets under a read scope.
+   */
+  deniedSegments: readonly string[];
+}
+
+/**
  * A provider's OAuth client the gateway holds. The gateway completes its
  * token endpoints only (`token`), putting the client on each request; the
  * app builds the authorize URL from the public client id and calls the
@@ -119,10 +206,17 @@ export interface OAuthClientCapability {
   /**
    * The authorize endpoint the app sends people to (a path on the
    * `hostSetting` origin when the provider has none fixed) and the scopes
-   * the client must be allowed: the operator's checklist and the docs.
+   * the client must be allowed: the operator's checklist and the docs. With
+   * a `scopePolicy`, the union of its sets' scopes and `alwaysRequested`.
    */
   authorize: { url: string; scopes: readonly string[] };
-  /** Hosts the app calls afterwards with the user's token (docs only). */
+  /**
+   * Named scope sets an app lists in its manifest entry's `scopes`, for a
+   * client several apps share with different needs. Absent: the whole
+   * client is the grant, as for Postiz's social networks.
+   */
+  scopePolicy?: OAuthScopePolicy;
+  /** Hosts the app calls afterwards with the user's token (docs only); a scope policy's routes are on them. */
   api: readonly string[];
   /**
    * The redirect paths the operator registers, on the app's host
@@ -714,14 +808,17 @@ export const CAPABILITIES = {
     api: ["api.dribbble.com"],
     redirectPaths: ["/integrations/social/dribbble"],
   },
-  // Mail and calendar clients: Open CRM reads a member's own mailbox and
-  // calendar with them. Google's is its own client, apart from YouTube's
-  // and from the planned gateway-held Google integration (Search Console,
-  // Analytics), because Gmail's read scope is restricted and needs its own
-  // verification.
+  // Clients several apps share with different needs, so each app lists the
+  // scope sets it uses: Open CRM reads a member's own mailbox and calendar
+  // (`gmail.read`, `calendar.read`; `identity`, `mail.read`), OpenSEO reads
+  // a site's Search Console and Analytics (`identity`, `search-console.read`,
+  // `analytics.read`). Every set is read-only. Google's is one Cloud project
+  // apart from YouTube's; Gmail's read scope is restricted and needs
+  // Google's verification, and whether Search Console and Analytics share
+  // that consent screen with it is the operator's choice when verifying.
   "google-workspace": {
     mode: "oauth_client",
-    label: "Google (Gmail and Calendar)",
+    label: "Google (Gmail, Calendar, Search Console and Analytics)",
     secrets: {
       clientId: "GOOGLE_WORKSPACE_CLIENT_ID",
       clientSecret: "GOOGLE_WORKSPACE_CLIENT_SECRET",
@@ -739,20 +836,151 @@ export const CAPABILITIES = {
     authorize: {
       url: "https://accounts.google.com/o/oauth2/v2/auth",
       scopes: [
+        "openid",
+        "email",
+        "profile",
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/webmasters.readonly",
+        "https://www.googleapis.com/auth/analytics.readonly",
       ],
+    },
+    scopePolicy: {
+      dialect: "google",
+      // Google documents no scope on either token leg: the response's
+      // `scope` is where the gateway learns what a token holds.
+      grantTypes: ["authorization_code", "refresh_token"],
+      requestScope: "drop",
+      alwaysRequested: [],
+      // Both spellings: Google documents `email`/`profile` and the userinfo
+      // URLs as the same grants, and echoes the URLs.
+      tolerated: [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+      ],
+      // Gmail's and Calendar's `/batch/<api>/<version>` carry whole requests
+      // inside; Analytics' measurement protocol secrets are readable under
+      // the read-only scope.
+      deniedSegments: ["batch", "measurementProtocolSecrets"],
+      sets: {
+        identity: {
+          label: "Google account (who you are)",
+          access: "read",
+          scopes: ["openid", "email", "profile"],
+          routes: [
+            { host: "openidconnect.googleapis.com", paths: ["/v1/userinfo"] },
+            {
+              host: "www.googleapis.com",
+              paths: [
+                "/oauth2/v2/userinfo",
+                "/oauth2/v3/userinfo",
+                "/userinfo/v2/me",
+              ],
+            },
+          ],
+        },
+        "gmail.read": {
+          label: "Gmail (read-only)",
+          access: "read",
+          scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+          routes: [
+            {
+              host: "gmail.googleapis.com",
+              paths: ["/gmail/v1/users/"],
+              // Push notifications start and stop; `messages/send`, drafts
+              // and `modify` are the other POSTs under the same prefix.
+              posts: [/^\/gmail\/v1\/users\/[^/]+\/(watch|stop)$/],
+            },
+          ],
+        },
+        "calendar.read": {
+          label: "Google Calendar (read-only)",
+          access: "read",
+          scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
+          routes: [
+            {
+              host: "www.googleapis.com",
+              paths: ["/calendar/v3/"],
+              posts: [
+                /^\/calendar\/v3\/freeBusy$/,
+                /^\/calendar\/v3\/calendars\/[^/]+\/events\/watch$/,
+                /^\/calendar\/v3\/users\/me\/calendarList\/watch$/,
+                /^\/calendar\/v3\/channels\/stop$/,
+              ],
+            },
+          ],
+        },
+        "search-console.read": {
+          label: "Search Console (read-only)",
+          access: "read",
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+          // The v3 paths answer on both hosts; URL inspection is v1 only.
+          // A site is one segment, `https%3A%2F%2Fexample.com%2F` or
+          // `sc-domain%3Aexample.com`, which is why routes match the raw path.
+          routes: [
+            {
+              host: "www.googleapis.com",
+              paths: ["/webmasters/v3/"],
+              posts: [
+                /^\/webmasters\/v3\/sites\/[^/]+\/searchAnalytics\/query$/,
+              ],
+            },
+            {
+              host: "searchconsole.googleapis.com",
+              paths: ["/webmasters/v3/"],
+              posts: [
+                /^\/webmasters\/v3\/sites\/[^/]+\/searchAnalytics\/query$/,
+                /^\/v1\/urlInspection\/index:inspect$/,
+              ],
+            },
+          ],
+        },
+        "analytics.read": {
+          label: "Google Analytics (read-only)",
+          access: "read",
+          scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+          routes: [
+            {
+              // Reports are POSTed queries.
+              host: "analyticsdata.googleapis.com",
+              paths: ["/v1beta/properties/"],
+              posts: [
+                /^\/v1beta\/properties\/[^/]+:(runReport|batchRunReports|runPivotReport|batchRunPivotReports|runRealtimeReport|checkCompatibility)$/,
+              ],
+            },
+            {
+              // Reads only: accounts, properties and what hangs off them
+              // (data streams, key events, enhanced measurement settings).
+              host: "analyticsadmin.googleapis.com",
+              paths: [
+                "/v1beta/accountSummaries",
+                "/v1beta/accounts",
+                "/v1beta/accounts/",
+                "/v1beta/properties",
+                "/v1beta/properties/",
+                "/v1alpha/properties/",
+              ],
+            },
+          ],
+        },
+      },
     },
     api: [
       "gmail.googleapis.com",
       "www.googleapis.com",
-      "oauth2.googleapis.com",
+      "searchconsole.googleapis.com",
+      "analyticsdata.googleapis.com",
+      "analyticsadmin.googleapis.com",
+      "openidconnect.googleapis.com",
     ],
     redirectPaths: ["/integrations/google/callback"],
   },
   "microsoft-365": {
     mode: "oauth_client",
-    label: "Microsoft 365 (Outlook)",
+    label: "Microsoft 365 (Outlook mail and calendar)",
     secrets: {
       clientId: "MICROSOFT_365_CLIENT_ID",
       clientSecret: "MICROSOFT_365_CLIENT_SECRET",
@@ -773,7 +1001,74 @@ export const CAPABILITIES = {
       "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
     authorize: {
       url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-      scopes: ["offline_access", "User.Read", "Mail.Read"],
+      scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],
+    },
+    scopePolicy: {
+      dialect: "microsoft",
+      grantTypes: ["authorization_code", "refresh_token"],
+      // The token leg's `scope` is Microsoft's extension for naming the
+      // resource; the gateway sets it to the app's list so a token covers
+      // Graph alone.
+      requestScope: "replace",
+      // Refresh tokens; Entra never echoes it in a response's `scope`.
+      alwaysRequested: ["offline_access"],
+      // Compared case-insensitively, as Microsoft spells them both ways.
+      tolerated: ["openid", "profile", "email", "offline_access", "User.Read"],
+      // `$batch` carries whole requests inside; `beta` is another API.
+      deniedSegments: ["$batch", "beta"],
+      // `/v1.0/me/…` only: `/v1.0/users/<id>/…` reaches shared mailboxes
+      // and calendars under the same permissions.
+      sets: {
+        identity: {
+          label: "Microsoft account (who you are)",
+          access: "read",
+          scopes: ["User.Read"],
+          routes: [
+            {
+              host: "graph.microsoft.com",
+              paths: ["/v1.0/me", "/oidc/userinfo"],
+            },
+          ],
+        },
+        "mail.read": {
+          label: "Outlook mail (read-only)",
+          access: "read",
+          scopes: ["Mail.Read"],
+          routes: [
+            {
+              host: "graph.microsoft.com",
+              paths: [
+                "/v1.0/me/messages",
+                "/v1.0/me/messages/",
+                "/v1.0/me/mailFolders",
+                "/v1.0/me/mailFolders/",
+              ],
+            },
+          ],
+        },
+        "calendar.read": {
+          label: "Outlook calendar (read-only)",
+          access: "read",
+          scopes: ["Calendars.Read"],
+          routes: [
+            {
+              host: "graph.microsoft.com",
+              paths: [
+                "/v1.0/me/calendar",
+                "/v1.0/me/calendar/",
+                "/v1.0/me/calendars",
+                "/v1.0/me/calendars/",
+                "/v1.0/me/events",
+                "/v1.0/me/events/",
+                "/v1.0/me/calendarView",
+                "/v1.0/me/calendarView/",
+              ],
+              // Free/busy is a POSTed query.
+              posts: [/^\/v1\.0\/me\/calendar\/getSchedule$/],
+            },
+          ],
+        },
+      },
     },
     api: ["graph.microsoft.com"],
     redirectPaths: ["/integrations/microsoft/callback"],
@@ -796,6 +1091,18 @@ export type ServiceCapabilityId = CapabilityIdOf<"service">;
 
 /** OAuth clients whose token endpoints apps reach with `integrationFetch()`. */
 export type OAuthClientCapabilityId = CapabilityIdOf<"oauth_client">;
+
+/**
+ * The scope set names an OAuth client offers; `never` for a client without
+ * a scope policy. Distributes over a union of ids, so a generic over two
+ * clients gets every name either offers rather than the names they share.
+ */
+export type OAuthScopeSetName<Id extends OAuthClientCapabilityId> =
+  Id extends unknown
+    ? (typeof CAPABILITIES)[Id] extends { scopePolicy: { sets: infer S } }
+      ? keyof S & string
+      : never
+    : never;
 
 type SettingsOf<C> = C extends { secret: infer S extends string }
   ? S
