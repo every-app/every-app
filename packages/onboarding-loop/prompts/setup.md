@@ -11,6 +11,14 @@ and setup.md there; the everyapp skill in the repo says the same).
 3. When it is done, create and deploy one app:
    `pnpm everyapp create hello --json`, then from apps/hello
    `pnpm everyapp deploy --json`. Tell me its URL.
+4. Then install the four Every App apps unless I say which to skip. Ask me
+   once: "I'll install OpenSEO, OpenCRM, OpenAnalytics and Agentic Inbox.
+   Any you don't want?" For each one I keep, run
+   `pnpm everyapp install https://github.com/every-app/<repo> --json` with
+   open-seo, open-crm, open-analytics or agentic-inbox as <repo>. If an
+   install answers NO_RELEASE, say which app and continue; do not try to
+   build it from source. An app that needs keys shows Needs setup on the
+   Gateway: tell me which keys it wants and stop there.
 
 The --json output is one event per line. "type":"action_required" means I
 have to do something: show me its message, data.url and data.code, then wait

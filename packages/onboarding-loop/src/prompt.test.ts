@@ -23,7 +23,7 @@ describe("the setup prompt", () => {
     expect(prompt).not.toMatch(/\bnpx everyapp\b/);
     expect(prompt).toContain("Always `pnpm everyapp`, never npx.");
   });
-  it("keys only on setup, create, deploy and the --json protocol", () => {
+  it("keys only on setup, create, deploy, install and the --json protocol", () => {
     expect(prompt).toContain(
       "`pnpm everyapp setup --domain apps.<my domain> --json`",
     );
@@ -33,8 +33,19 @@ describe("the setup prompt", () => {
     expect(prompt).toContain("data.needsTerminal");
     expect(prompt).toContain("print DONE and the Gateway URL");
     expect(prompt).toContain("BLOCKED: <why>");
-    expect(prompt).not.toMatch(
-      /gateway deploy|everyapp update|everyapp install/,
+    expect(prompt).not.toMatch(/gateway deploy|everyapp update/);
+  });
+
+  it("installs the four apps by default and asks once which to skip", () => {
+    expect(prompt).toContain("unless I say which to skip");
+    expect(prompt).toContain(
+      "`pnpm everyapp install https://github.com/every-app/<repo> --json`",
+    );
+    expect(prompt).toContain(
+      "open-seo, open-crm, open-analytics or agentic-inbox",
+    );
+    expect(prompt).toContain(
+      "answers NO_RELEASE, say which app and continue; do not try to",
     );
   });
   it("starts with the one entry point and the clone step", () => {
