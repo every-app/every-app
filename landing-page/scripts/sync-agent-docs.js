@@ -107,7 +107,7 @@ const DOCUMENTS = [
   },
   {
     from: "adr/ADR-0001-hosted-vs-self-hosted-topology.md",
-    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model, and docs/hosted-vision.md once it lands).",
+    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model and /docs/agent/repo/hosted-vision).",
     to: "adr/0001-hosted-vs-self-hosted-topology",
     description:
       "Architecture decision: one codebase for the hosted and the self-hosted Gateway, and how the two differ.",

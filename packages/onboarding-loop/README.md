@@ -40,8 +40,7 @@ minutes before it is used again (Cloudflare's negative DNS TTL).
 
 Useful flags: `--ref <commit>` (the commit under test, bundled into the
 container; default HEAD), `--tools-ref <commit>` (the commit the sibling
-containers run `everyapp teardown` from; default HEAD, because the teardown
-command is on this branch and not on main yet), `--no-event-log` (the
+containers run `everyapp teardown` from; default HEAD), `--no-event-log` (the
 D1-side claim as the control mode), `--claim-after turn-end` (measures
 whether the agent relays the link), `--prompt-variant public` (the verbatim
 prompt, once the public repository exists), `--with-access` (then `access on`
@@ -59,8 +58,9 @@ intervention by a person).
 
 ## Status: what is verified, and how
 
-No run against a real account has happened: the test accounts do not exist
-yet. Everything below is proven by running it, on fakes where it has to be.
+The first live runs happened on 2026-10-24; what they found went into #497
+and #500. Everything below is proven by running it, on fakes where it has to
+be.
 
 - **A whole run, on fakes** (`src/run.test.ts`): a real git repository is
   bundled, a fake Docker with a scripted `FakeSandbox` plays the container
@@ -130,7 +130,7 @@ v0.22.5`); exit 0.
   kills the whole process group, `tail -F` of a file that does not exist
   yet, `docker diff`, `docker cp`, `docker rm`.
 
-## Not verified until the accounts exist (the first live run's checklist)
+## Still to confirm on a live run
 
 Run `pnpm loop run --harness script --account loop-1` first, read its log and
 `run.json`, and check each of these before any model harness runs:
@@ -157,13 +157,11 @@ first-run`; whether `setup` really stops on `register_workers_subdomain`
    `confirm-<accountId>`, how Cloudflare lists a certificate pack
    mid-deletion (the loop re-polls for 3 minutes), and that the DNS check
    finds nothing at or under `apps.<zone>` afterwards.
-5. **The event-log claim end to end**: the seam (`EVERYAPP_EVENT_LOG`, PR
-   #446) is on `origin/main` but **not on this branch's HEAD**; a run with
-   the default `--ref HEAD` therefore claims D1-side and records `d1_claim`.
-   To exercise the event-log claim, pass `--ref origin/main` (or any commit
-   with the seam) and keep `--tools-ref HEAD` for the teardown. The D1 path
-   itself (poll `owner_setup_tokens`, replace the hash, POST) is unverified
-   against a live gateway.
+5. **The event-log claim end to end**: the seam (`EVERYAPP_EVENT_LOG`, #446)
+   is on main, so the default `--ref HEAD` claims from the event log;
+   `--no-event-log` is the D1-side control. The D1 path itself (poll
+   `owner_setup_tokens`, replace the hash, POST) is unverified against a
+   live gateway.
 6. **The verifier's fingerprints** against the real gateway and app host:
    `403 ORIGIN_NOT_ALLOWED`, `404 unknown_app_host`, the `302` to
    `/sign-in?return_to=`, the `401 unauthenticated`, Better Auth's

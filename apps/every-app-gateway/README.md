@@ -15,7 +15,7 @@ pnpm everyapp status                            # what is live, what to fix
 ## Development
 
 ```sh
-pnpm dev                    # cf dev on http://localhost:8787
+pnpm dev                    # cf dev on http://localhost:3000
 pnpm db:migrate:local       # apply drizzle/ to the local D1
 pnpm setup-link             # mint a one-time owner link for the local gateway
 node scripts/seed-local.mjs # fill the local D1 with every UI state (header says how)

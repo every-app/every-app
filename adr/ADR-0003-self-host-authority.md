@@ -36,6 +36,11 @@ is not built, and its deploy API is disabled by `GATEWAY_DEPLOYMENT_MODE`.
    It activates an app on the first request that reaches a service binding
    to that app's Worker, and it syncs tool catalogs on first use, on drift
    and when the app's version changes.
+
+   Since #371 the Gateway also installs a published release from the
+   browser (`POST /api/admin/apps/install`, with the account token
+   `CF_DEPLOY_TOKEN`; `docs/runbooks/browser-app-install.md`). Whether that
+   second deploy authority stays is open in TODO.md.
 4. Every deploy records its actor on the app row (`deployed_by_actor`): the
    Cloudflare login's email, or `api-token:<account id>` in CI.
 5. The hosted tier gets its own HTTP control plane and credentials (a
@@ -91,8 +96,5 @@ Negative, accepted for self-host:
 
 ## Follow-ups
 
-- `docs/security-model.md`: replace the deploy-token sections with this
-  model; drop `/api/setup/deploy-token` and `/api/deploy/*` from the
-  Cloudflare Access bypass list.
 - The hosted control plane design in `docs/architecture-v2-*.md` (deleted 2026-10-24; git history at 5ef30882) names the
   perimeter registry rules as its write path.

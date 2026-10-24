@@ -3,7 +3,8 @@
 Publishing is paused while we work from the repository: nothing goes to npm,
 and nothing is synced to the public repository. `everyapp` and
 `@every-app/sdk` are private packages. The apps take them from the workspace.
-How to work this way is in the README, under "Work from This Checkout".
+How to work this way is in AGENTS.md: `pnpm everyapp` from the checkout,
+never `npx everyapp`.
 
 ## Gateway releases
 
@@ -18,9 +19,9 @@ A checkout behind the live Gateway is told to `git pull`. The release's
 to update.
 
 History: until 2026-10-24 the CLI also took a published release
-(`everyapp setup --release <url|file>`, and without a checkout the latest
+(`everyapp setup --release <url|file>`, removed in #441, and without a checkout the latest
 release of `GATEWAY_RELEASE_REPO`), published by a Gateway Release workflow
-(`.github/workflows/release.yml`) on `gateway-v*` tags. Nothing used them
+(`.github/workflows/release.yml`, removed) on `gateway-v*` tags. Nothing used them
 while the CLI runs only from a checkout, so they went with the simplify pass
 (docs/simplify-2026-10-24.md, decision 7); commit `5ef30882` is the last
 main that has them.
@@ -35,7 +36,7 @@ Pausing removed what only a published CLI needs. Bring back:
   type-checked, built, and ran `scripts/bundle-gateway.js` (the gateway
   release tarball, which stays out of the package now: see Gateway releases)
   and `scripts/bundle-templates.js` (the starter, now `starter/`, into
-  `packages/cli/templates/`, its `.gitignore` shipped as `gitignore`).
+  `packages/cli/templates/`, removed; its `.gitignore` shipped as `gitignore`).
 - **A Gateway for a CLI with no checkout:** published Gateway releases
   (the `setup --release` flag, the latest-release fallback and the Gateway
   Release workflow, all at `5ef30882`), or a tarball inside the CLI package
@@ -51,7 +52,7 @@ Pausing removed what only a published CLI needs. Bring back:
   `pnpm-workspace.yaml` with `allowBuilds` for standalone installs, and
   `npx -y everyapp@latest` in their scripts.
 - **Words:** `npx everyapp …` in the CLI's and the gateway's hints, the npm
-  update check (`packages/cli/src/lib/version-check.ts`), and the README's
+  update check (`packages/cli/src/lib/version-check.ts`, removed), and the README's
   install steps (`npx everyapp setup`, `gitpick` for the examples).
 
 All of it is in the git history of the change that paused publishing (#276).

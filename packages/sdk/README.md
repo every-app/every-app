@@ -2,11 +2,11 @@
 
 The embedded SDK for building apps on the Every App platform.
 
-This SDK handles authentication and session management for apps running within the Every App Gateway. It provides integrations for TanStack Start and Cloudflare Workers.
+It verifies the identity the Gateway injects, defines the app's Worker and its agent tools, and reaches the Gateway's AI, email and integrations. There is no client-side export.
 
 ## Documentation
 
-For full API reference and usage guides, see [How It Works](https://everyapp.com/docs/how-it-works).
+The complete references are the agent docs at https://everyapp.com/llms.txt (`identity.md`, `manifest.md`, `mcp.md`, `email.md`, `secrets.md`).
 
 ## Entry points
 
@@ -24,7 +24,7 @@ For full API reference and usage guides, see [How It Works](https://everyapp.com
   }));
   ```
 
-  Production builds are tenant-neutral: the same Build Output whoever builds the app, with placeholders (`sentinelDeployTarget()`, `BUILD_SENTINEL` in `@every-app/sdk/cloudflare/sentinel`) wherever an install's Worker name, organization, gateway URL, identity keys and resource names or ids go. `everyapp deploy` builds with `EVERYAPP_BUILD=1` and then installs the output (rewrites every placeholder, refusing one that survives); without that variable a production build throws, so deploy with `everyapp deploy` rather than `cf deploy`. Installing a shared app also swaps `EVERY_APP_ORG_ID` for `EVERYAPP_SHARED`, and a deploy that deletes Durable Object classes adds their tombstones.
+  Production builds are tenant-neutral: the same Build Output whoever builds the app, with placeholders (`sentinelDeployTarget()`, `BUILD_SENTINEL` in `@every-app/sdk/cloudflare/sentinel`) wherever an install's Worker name, organization, gateway URL, identity keys and resource names or ids go. `everyapp deploy` builds with `EVERYAPP_BUILD=1` and then installs the output (rewrites every placeholder, refusing one that survives); without that variable a production build throws, so deploy with `everyapp deploy` rather than `cf deploy`. A deploy that deletes Durable Object classes adds their tombstones.
 
   `localD1Path(root, id)` is the sqlite file `cf dev` keeps the local D1 database `id` in (`env.DB.id` of a development `everyAppWorker()`, or `localD1Id(workerName, binding)`), for drizzle-kit studio.
 
@@ -69,7 +69,14 @@ export default defineConfig((ctx) => ({
   in `.dev.vars`: `everyAppWorker()` declares it only when it is set there,
   since the Vite plugin passes a `.dev.vars` value through only for a
   declared secret. Type it as optional in `src/env.d.ts`
-  (`GITHUB_TOKEN?: string` in `Cloudflare.Env`).
+  (`GITHUB_TOKEN?: string` in `Cloudflare.Env`). An entry can carry its
+  need: `{ name: "GITHUB_TOKEN", why, docs, optional: true }`, or
+  `anyOf: "<group>"` when one of a group must be set, and
+  `setup: "setup/<name>.md"` names its guide in the everyapp skill;
+  `providers` and `capabilities` entries take `why`, `docs`, `optional` and
+  `anyOf` too. Until every required setting is set the app shows "Needs
+  setup" and its tools stay out of `/mcp`; `pnpm everyapp secret list` says
+  what is missing (`docs/manifest-settings.md`).
 
 ## Compatibility flags
 
@@ -194,9 +201,7 @@ that name that connects to the same database, runs `drizzle-kit migrate`
 (your config reads `process.env.POSTGRES_DATABASE_URL`) before it uploads, and
 `everyapp delete --purge` deletes the config, never the database. In
 development, set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`
-in `.dev.vars` to a local Postgres; without it the binding is absent. Apps on
-the dispatch tier (customer code in a Workers for Platforms namespace) can't
-use Hyperdrive.
+in `.dev.vars` to a local Postgres; without it the binding is absent.
 
 The configs `everyapp deploy` creates cache no queries: Hyperdrive never
 invalidates a cached read when the app writes, and app code reads its own
@@ -240,8 +245,7 @@ yet: `cf deploy` should create a bound bucket that doesn't exist (not yet
 confirmed on a live account), and the dashboard can create one before the
 first deploy. A bucket bound by hand in
 `cloudflare.config.ts`, `bindings.r2({ name: worker.name })`, keeps working
-while the manifest declares none. Apps on the dispatch tier can't have
-buckets yet.
+while the manifest declares none.
 
 ## Node frameworks (Express, NestJS)
 
@@ -422,8 +426,6 @@ billed to that account) for `createGatewayFetch`: `everyAppWorker()` declares
 the settings of each capability and provider the manifest lists when they
 are set there, so the dev server passes them through.
 
-<!-- TODO(integration): PR 7 (port/ports-todo-and-docs) adds Workers AI's dev settings, as PR 1's report asked; this README is PR 2's file. -->
-
 ### Email
 
 The gateway sends mail for apps (`docs/capabilities.md`, "Gateway services:
@@ -550,11 +552,12 @@ anything else throws a `TypeError` before it is sent. Call the network's API
 with the user's token directly. Mastodon's status also gives the instance as
 `origin`.
 
-For a client with scope sets (`google-workspace`, `microsoft-365`), the
-status carries the sets the manifest declares as `scopeSets` and the
+For a client with scope sets (`google-workspace`, `microsoft-365`, `slack`),
+the status carries the sets the manifest declares as `scopeSets` and the
 provider's scope strings they ask for as `scopes`, which `authorizeUrl()`
 puts on the URL (with Google's `access_type=offline`, Microsoft's
-`response_mode=query`, and never `include_granted_scopes`); the gateway
+`response_mode=query`, Slack's comma-joined `scope` and `user_scope`, and
+never `include_granted_scopes`); the gateway
 refuses an exchange or refresh whose granted scopes exceed the sets
 (`integration_scope_exceeded`), so a person's wider consent on another app
 never reaches this one. A manifest entry without usable `scopes` is not
@@ -575,23 +578,7 @@ decides the organization the call is attributed to:
   is forwarded, so the call is that person's, in their organization.
 - `for: { background: true, organizationId }`, for work no request started
   (a cron, a Workflow step, a queue): sent as `x-everyapp-org` with no
-  identity. A shared app (one Worker for every organization, on the hosted
-  gateway) must name the organization; the gateway checks it is active and
-  has a live member, and refuses it if the call also forwards an identity
-  of another organization.
+  identity.
 - Omitted: allowed only in an organization's own app, whose background
   calls are the app's, in its own organization (the same as
   `{ background: true }`). Naming another organization is refused.
-
-In a shared app's Worker (`EVERYAPP_SHARED=1`, which `everyapp deploy` sets
-when it installs a shared app) a call that names neither throws `AttributionError`
-when the fetch is created:
-
-```ts
-// In a Workflow step of a shared app:
-const dataforseo = integrationFetch({
-  env,
-  provider: "dataforseo",
-  for: { background: true, organizationId: event.payload.organizationId },
-});
-```
