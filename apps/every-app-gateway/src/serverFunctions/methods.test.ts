@@ -59,6 +59,8 @@ const READS = [
   "getUsage",
   "hasOwner",
   "listMembers",
+  "listToolCallApps",
+  "listToolCalls",
   "listUserTokens",
 ];
 

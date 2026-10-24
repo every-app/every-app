@@ -24,6 +24,7 @@ import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
+import { Route as AppAdminActivityRouteImport } from './routes/_app/admin/activity'
 import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
@@ -111,6 +112,11 @@ const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminActivityRoute = AppAdminActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminAppsRoute = AppAdminAppsRouteImport.update({
   id: '/apps',
   path: '/apps',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AppAdminRouteWithChildren
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
+  '/admin/activity': typeof AppAdminActivityRoute
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/': typeof AppIndexRoute
+  '/admin/activity': typeof AppAdminActivityRoute
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/_app/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/admin/activity': typeof AppAdminActivityRoute
   '/_app/admin/apps': typeof AppAdminAppsRoute
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/organizations'
     | '/oauth/consent'
+    | '/admin/activity'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/usage'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/organizations'
     | '/oauth/consent'
     | '/'
+    | '/admin/activity'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/usage'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/_app/organizations'
     | '/oauth/consent'
     | '/_app/'
+    | '/_app/admin/activity'
     | '/_app/admin/apps'
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
@@ -472,6 +484,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminIndexRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/activity': {
+      id: '/_app/admin/activity'
+      path: '/activity'
+      fullPath: '/admin/activity'
+      preLoaderRoute: typeof AppAdminActivityRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/apps': {
       id: '/_app/admin/apps'
       path: '/apps'
@@ -560,6 +579,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppAdminRouteChildren {
+  AppAdminActivityRoute: typeof AppAdminActivityRoute
   AppAdminAppsRoute: typeof AppAdminAppsRoute
   AppAdminTokensRoute: typeof AppAdminTokensRoute
   AppAdminUsageRoute: typeof AppAdminUsageRoute
@@ -568,6 +588,7 @@ interface AppAdminRouteChildren {
 }
 
 const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminActivityRoute: AppAdminActivityRoute,
   AppAdminAppsRoute: AppAdminAppsRoute,
   AppAdminTokensRoute: AppAdminTokensRoute,
   AppAdminUsageRoute: AppAdminUsageRoute,

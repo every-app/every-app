@@ -6,9 +6,10 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import {
-  Activity,
+  Activity as ActivityIcon,
   AppWindow,
   KeyRound,
+  ScrollText,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -35,6 +36,7 @@ enum AdminTab {
   Apps = "apps",
   Tokens = "tokens",
   Usage = "usage",
+  Activity = "activity",
 }
 
 const adminTabs = [
@@ -50,7 +52,13 @@ const adminTabs = [
     value: AdminTab.Usage,
     label: "Usage",
     to: "/admin/usage",
-    icon: Activity,
+    icon: ActivityIcon,
+  },
+  {
+    value: AdminTab.Activity,
+    label: "Activity",
+    to: "/admin/activity",
+    icon: ScrollText,
   },
 ] as const;
 
@@ -77,7 +85,7 @@ function AdminLayout() {
           variant="card"
           icon={ShieldAlert}
           title="You don't have access to this page"
-          description="Only owners and admins of this organization can manage users, apps, tokens and usage."
+          description="Only owners and admins of this organization can manage users, apps, tokens and usage, and follow what AI apps call."
           action={
             <Button nativeButton={false} render={<Link to="/" />}>
               Go home
@@ -96,7 +104,7 @@ function AdminLayout() {
       <div className="mx-auto max-w-7xl space-y-7">
         <PageHeader
           title="Manage workspace"
-          description="Manage your organization's users, apps, access tokens and usage."
+          description="Manage your organization's users, apps, access tokens and usage, and follow what AI apps call."
         />
         <Tabs
           value={activeTab}

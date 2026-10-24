@@ -1,13 +1,18 @@
 // The date cell every table uses: a day, with the full timestamp on hover.
 // Give its column `cellClassName: "text-xs text-muted-foreground"`.
 
-/** A day, or `fallback` for a missing date such as "never used". */
+/**
+ * A day, or `fallback` for a missing date such as "never used". `withTime`
+ * adds the time of day, for a log where many rows share a day.
+ */
 export function DateCell({
   value,
   fallback = "Never",
+  withTime = false,
 }: {
   value: Date | string | number | null | undefined;
   fallback?: string;
+  withTime?: boolean;
 }) {
   if (value === null || value === undefined || value === "") {
     return <>{fallback}</>;
@@ -15,7 +20,12 @@ export function DateCell({
   const date = new Date(value);
   return (
     <time dateTime={date.toISOString()} title={date.toLocaleString()}>
-      {date.toLocaleDateString()}
+      {withTime
+        ? date.toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })
+        : date.toLocaleDateString()}
     </time>
   );
 }
