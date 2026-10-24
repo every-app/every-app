@@ -15,6 +15,7 @@ import {
   type UsageEvent,
   type UsageRecorder,
 } from "@/server/usage-event";
+import type { UsageSummary, UsageTotals } from "@/types/usage";
 
 /** Daily rows are kept this many months, monthly rows this many. */
 const DAILY_RETENTION_MONTHS = 13;
@@ -111,35 +112,6 @@ async function record(event: UsageEvent): Promise<void> {
 
 function whole(value: number | undefined): number {
   return Number.isFinite(value) ? Math.max(0, Math.round(value!)) : 0;
-}
-
-/** The provider totals every summary row carries. */
-interface UsageTotals {
-  calls: number;
-  failures: number;
-  inputTokens: number;
-  outputTokens: number;
-  costMicros: number;
-}
-
-interface UsageSummary {
-  month: string;
-  byApp: (UsageTotals & {
-    appRowId: string;
-    /** Null once the app's row is gone. */
-    name: string | null;
-    appSlug: string | null;
-    /** Allowed MCP tool calls on the app in the month (`mcp_tool_calls`). */
-    toolCalls: number;
-  })[];
-  byMember: (UsageTotals & {
-    /** '' for the app's own calls (background work). */
-    userId: string;
-    name: string | null;
-    email: string | null;
-    toolCalls: number;
-  })[];
-  byTarget: (UsageTotals & { kind: string; target: string })[];
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
