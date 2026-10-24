@@ -9,7 +9,7 @@ what is still open.
 
 ## Decide
 
-- [ ] **The license holder.** `LICENSE` is MIT, copyright "Every App contributors".
+- [x] **The license holder.** Ben (2026-10-24): "Every App, Inc." Applied. `LICENSE` is MIT, copyright "Every App contributors".
 - [ ] **Password accounts and Cloudflare Access.** A password account connects
       Access by signing in once through it; after that Access signs it in.
 - [ ] **MCP defaults.** OAuth on, dynamic client registration on with limits

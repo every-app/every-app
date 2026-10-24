@@ -787,7 +787,7 @@ The public repository gets the launch tree as one fresh commit (launch doc A1, B
 
 **Needs Ben**
 
-- [ ] **The license holder.** LICENSE says "Copyright (c) 2026 Every App contributors". Recommendation: keep it (MIT needs no legal entity, and the line can change when there is one); or put a name or a company there now.
+- [x] **The license holder.** Ben (2026-10-24): "Every App, Inc." Applied. LICENSE says "Copyright (c) 2026 Every App contributors". Recommendation: keep it (MIT needs no legal entity, and the line can change when there is one); or put a name or a company there now.
 - [ ] **Does TODO.md travel?** Default: yes, scrubbed (private repository names become "the maintainers' private repository" or the app's name, personal addresses "an e-mail address", a teammate's name "a teammate"; the script prints every rewrite). `pnpm public-copy --todo replace` ships `scripts/public-copy/TODO.public.md` instead, a one-page public TODO. Recommendation: scrubbed; B9 said candid is fine. Know that it still describes everyapp.team's internals and the committed-token incident (#488, #496).
 - [ ] **Do docs/design and docs/threat-model travel?** Default: the five designs do, the research synthesis (`docs/design/2026-10-mcp-provider-apps-research.md`) does not (`--design designs`); the threat model, its invariants and the security model do. Recommendation: yes to the threat model (the README and SECURITY.md point at it), no to research. `--design all` or `--design none` change it; `none` breaks the docs drift test in the copy, since public documents cite the designs.
 - [ ] **The launch and simplify logs** (`docs/launch-2026-10-27.md`, `docs/simplify-2026-10-24.md`) stay home by default (`--logs drop`): the hygiene sweep found they publish the maintainers' account's Access team name and two-factor posture, the old Workers still answering on the account's workers.dev, and the Sunday checklist against everyapp.team. A citation of either in another document becomes plain text in the copy, so the drift test there still passes. `--logs keep` ships them, scrubbed, if "moving fast is fine to show" (B9) should cover them too.
@@ -1198,3 +1198,12 @@ From "Hosted build":
 - [x] **`THIRD_PARTY_DOMAIN` is checked against `APP_BASE_DOMAIN` only.** Superseded by #314 (49ecb5b2): `app-hosts.ts` checks it against both `GATEWAY_URL`'s host and `APP_BASE_DOMAIN`. Hosted-only.
 - [x] **The CLI's hosted-deploy success line** (bearer tokens only). Superseded: #316 (31a85593) dropped the wording; `deployToGateway.ts` now says what version was deployed and where the app is. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 - [x] **OpenSEO's first deploy is the Alchemy stage, registered with `everyapp register`.** Superseded by what runs: the live OpenSEO on everyapp.team came through `everyapp deploy` from its manifest (the item's stated target), and `register` refuses a gateway that isn't hosted. The Alchemy-stage path remains for a hosted gateway. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
+
+## Ben's briefing answers (2026-10-24, afternoon)
+
+- [ ] **Turn on GitHub private vulnerability reporting** when the repo flips public (Ben's choice for Q11a; SECURITY.md already points there). Yours, Ben.
+- [ ] **Make the four app repos public tomorrow (2026-10-25) and fix the README links** (Q20: "it's fine that these repos 404, we'll make all this stuff public tomorrow and clean up the links"; the OpenSEO port is not merged back yet). Yours, Ben; the Launch copy thread leaves the links as they are.
+- [ ] **Old npm packages: leave them** (Q11e). No deprecation this week.
+- [ ] **Carter's #377 closed** (Ben: "merge it if helpful, otherwise close; probably out of date"): it edits deleted apps and the removed hosted CLI. docs/runbooks/managed-domains.md on that branch is the salvage when the hosted tier resumes.
+- [ ] **Apps shipping skills** is the direction (Ben, Q20b aside): "maybe just normal top-level skills like OpenSEO, and agents clone them". Out of scope for launch.
+- [ ] **Dynamic MCPs via worker loaders (the Executor pattern)**: forward-looking, "too much for this weekend". Sketch lives with the MCP-apps reframe thread's design note.
