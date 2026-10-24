@@ -29,7 +29,8 @@ import {
 } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import {
-  APP_COLUMNS,
+  appColumns,
+  hasSecretNamesColumn,
   ensureInstallOrganization,
   installOrganization,
   memberQueries,
@@ -79,7 +80,7 @@ async function providerRow(
 ): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
     {
-      sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+      sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
       params: [organizationId, id],
     },
   ]);
@@ -87,7 +88,11 @@ async function providerRow(
 }
 
 /** What turning a provider app on writes, in one batch. */
-function onWrites(plan: ProviderAppPlan, now: number): D1Statement[] {
+function onWrites(
+  plan: ProviderAppPlan,
+  now: number,
+  columns: { secretNames: boolean },
+): D1Statement[] {
   const { app } = plan;
   if (plan.kind === "existing") {
     return [
@@ -144,7 +149,7 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
         app.id,
       ],
     },
-    ...withoutAppData(app, now),
+    ...withoutAppData(app, now, columns),
     ...grants,
   ];
 }
@@ -169,7 +174,7 @@ export function turnProviderAppOn(
     );
     const [existing = [], members = [], actors = []] = await db.run([
       {
-        sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
+        sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, id],
       },
       ...memberQueries(organization.id, input.deployer.email),
@@ -185,7 +190,7 @@ export function turnProviderAppOn(
       actor: input.deployer.actor,
       now,
     });
-    await db.run(onWrites(plan, now));
+    await db.run(onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }));
     const actorGranted =
       actorUserId !== null &&
       (plan.grants.some((grant) => grant.userId === actorUserId) ||
@@ -226,7 +231,7 @@ export function turnProviderAppOff(
           sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
           params: [update.status, update.isDefault ? 1 : 0, now, app.id],
         },
-        ...withoutAppData(app, now),
+        ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
       ]);
     }
     return { id: providerId, wasOn: update !== null, organization: found.organization };

@@ -310,7 +310,7 @@ The STATUS column, on every surface the CLI renders settings:
 | `! not set` (yellow)         | required and unset, or every member of an any-of group is unset: the app is closed      |
 | `not set (optional)` (dim)   | optional and unset: the app is open, the feature says so                                |
 | `not set (one of: AI model)` | a group member that is unset while another member is set                                |
-| `! not recorded` (yellow)    | an app secret whose Worker's names were never recorded: run `pnpm everyapp status` once |
+| `! not recorded` (yellow)    | an app secret whose Worker's names were never recorded: run `pnpm everyapp status` once (on a Gateway from before migration 0004 the column itself is missing until `pnpm everyapp update`; status and secret list read the names as not recorded meanwhile) |
 
 ### `everyapp secret list [<app>]`
 

@@ -28,6 +28,9 @@ import {
   writeAppSecretNames,
   type Deployer,
   type RegisterInput,
+  hasSecretNamesColumn,
+  readAppById,
+  withoutAppData,
 } from "./registry";
 
 const DB_ID = "0123456789abcdef0123456789abcdef";
@@ -757,5 +760,37 @@ describe("the live wait", () => {
 
     await expect(wait(id, { fetch: live.fetch })).resolves.toMatchObject({ outcome: "live" });
     expect(live.requests).toEqual([]);
+  });
+});
+
+describe("a Gateway from before apps.secret_names (migration 0004)", () => {
+  // The live Gateway's D1 until `update` runs its migrations.
+  beforeEach(() => {
+    sqlite.sqlite.exec("ALTER TABLE apps DROP COLUMN secret_names");
+  });
+
+  it("reads every app's names as never recorded and leaves them unwritten, instead of failing on the missing column", async () => {
+    const { plan } = await registerApp("todo", { manifest: { id: "todo", secrets: ["STRIPE_KEY"] } });
+    expect(await hasSecretNamesColumn(db())).toBe(false);
+    expect(await readAppById(db(), plan.app.id)).toMatchObject({ appSlug: "todo", secretNames: null });
+
+    // Recording and deploying skip the column; the rest of the row is written.
+    await writeAppSecretNames(db(), plan.app.id, ["STRIPE_KEY"]);
+    const status = await markDeployed(db(), plan.app.id, {
+      versionId: "v1",
+      manifest: { id: "todo", secrets: ["STRIPE_KEY"] },
+      actor: "dev@example.com",
+      secretNames: ["STRIPE_KEY"],
+    });
+    expect(typeof status).toBe("string");
+    expect(sqlite.all("SELECT version_id, deployed_by_actor FROM apps WHERE app_slug = ?", "todo")).toEqual([
+      { version_id: "v1", deployed_by_actor: "dev@example.com" },
+    ]);
+    expect(await listApps(db())).toEqual([expect.objectContaining({ appSlug: "todo", secretNames: null })]);
+
+    // Deleting clears what the row has, and not the column it lacks.
+    const statements = withoutAppData(plan.app, 0, { secretNames: false });
+    expect(statements[0]!.sql).not.toContain("secret_names");
+    await db().run(statements);
   });
 });

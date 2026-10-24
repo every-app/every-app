@@ -58,6 +58,7 @@ import {
   gatewayMissing,
   gatewayNamesRead,
   gatewayNeeds,
+  describeUnmetSettings,
   helperRows,
   listAppSecretNames,
   listGatewaySecretNames,
@@ -397,6 +398,9 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     rows.length > 0
       ? [
           ...renderSettingsTable(rows, { app: false }),
+          // What each unmet setting is and where to get it, as status says
+          // it, with the setup guide once per guide.
+          ...(setup.unmet.length > 0 ? ["", ...describeUnmetSettings(setup.unmet)] : []),
           ...(!workerName && declared.length > 0
             ? ["", chalk.dim(`${manifest.id} isn't deployed yet; its own secrets can be set after that.`)]
             : []),
