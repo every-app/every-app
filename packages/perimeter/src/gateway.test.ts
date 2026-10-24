@@ -273,6 +273,118 @@ describe("handleGatewayRequest", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("never proxies authorization-server or OpenID discovery documents, public /.well-known/* or /mcp/** or not", async () => {
+    // An MCP client that finds no protected-resource metadata falls back to
+    // these at the MCP server's origin, so an app serving one could send a
+    // person connecting its /mcp to an attacker's authorization endpoint.
+    // The MCP SDK tries the path-appended OpenID form last, so a public
+    // /mcp/** route (which leaves /mcp itself to the ToolBus) must not reach
+    // it either.
+    const fetcher = vi.fn();
+    const paths = [
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server/mcp",
+      "/.well-known/openid-configuration",
+      "/.well-known/openid-configuration/mcp",
+      "/.well-known/OpenID-Configuration",
+      "/.well-known/oauth-authorization-server%2fmcp",
+      "/%2ewell-known/openid-configuration",
+      "/x/../.well-known/oauth-authorization-server",
+      "/mcp/.well-known/openid-configuration",
+      "/mcp/.well-known/openid-configuration/x",
+      "/mcp/.well-known/oauth-authorization-server",
+      "/mcp/%2ewell-known/openid-configuration",
+      "/MCP/.well-known/openid-configuration",
+    ];
+    const manifests = [
+      validateManifest({ id: "todo" }),
+      validateManifest({
+        id: "todo",
+        public: [{ path: "/.well-known/*", methods: ["GET", "POST"] }],
+      }),
+      validateManifest({
+        id: "todo",
+        public: [{ path: "/.well-known/**", methods: ["GET", "POST"] }],
+      }),
+      validateManifest({
+        id: "todo",
+        public: [{ path: "/mcp/**", methods: ["GET", "POST"] }],
+      }),
+    ];
+    for (const manifest of manifests) {
+      for (const path of paths) {
+        for (const method of ["GET", "POST"]) {
+          const res = await handleGatewayRequest(
+            req(path, { method, headers: { "sec-fetch-site": "same-origin" } }),
+            deps({
+              resolveApp: async () => ({ ...TODO, manifest }),
+              fetcherFor: () => ({ fetch: fetcher }),
+            }),
+          );
+          expect(res.status, `${method} ${path}`).toBe(404);
+          expectSecurityHeaders(res);
+        }
+      }
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("still proxies the other public /.well-known/ documents an app declares", async () => {
+    const fetcher = vi.fn(async () => new Response("{}"));
+    for (const path of [
+      "/.well-known/apple-app-site-association",
+      "/.well-known/webfinger",
+      "/.well-known/oauth-authorization-server-notes",
+    ]) {
+      const res = await handleGatewayRequest(
+        req(path),
+        deps({
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => null,
+            hasAppAccess: async () => false,
+          },
+          resolveApp: async () => ({
+            ...TODO,
+            manifest: validateManifest({
+              id: "todo",
+              public: [{ path: "/.well-known/*" }],
+            }),
+          }),
+          fetcherFor: () => ({ fetch: fetcher }),
+        }),
+      );
+      expect(res.status, path).toBe(200);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("still proxies the rest of a public /mcp/** route", async () => {
+    const fetcher = vi.fn(async () => new Response("{}"));
+    for (const path of ["/mcp/docs", "/mcp/.well-known/webfinger"]) {
+      const res = await handleGatewayRequest(
+        req(path),
+        deps({
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => null,
+            hasAppAccess: async () => false,
+          },
+          resolveApp: async () => ({
+            ...TODO,
+            manifest: validateManifest({
+              id: "todo",
+              public: [{ path: "/mcp/**" }],
+            }),
+          }),
+          fetcherFor: () => ({ fetch: fetcher }),
+        }),
+      );
+      expect(res.status, path).toBe(200);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("a consumed OAuth credential without app access fails closed on a public route", async () => {
     const fetcher = vi.fn();
     const res = await handleGatewayRequest(
@@ -1385,11 +1497,16 @@ describe("no OAuth on app hosts", () => {
     hasAppAccess: async () => false,
   };
 
-  it("404s protected-resource metadata and never proxies it", async () => {
+  it("404s OAuth discovery metadata and never proxies it", async () => {
     const fetcher = vi.fn();
     for (const path of [
       "/.well-known/oauth-protected-resource",
       "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server/mcp",
+      "/.well-known/openid-configuration",
+      "/.well-known/openid-configuration/mcp",
+      "/mcp/.well-known/openid-configuration",
     ]) {
       const res = await handleGatewayRequest(
         req(path),

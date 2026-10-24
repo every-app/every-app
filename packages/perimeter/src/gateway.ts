@@ -29,7 +29,11 @@ import {
   type AuthenticatedSession,
   type SessionAuthenticator,
 } from "./session";
-import { isReservedToolsPath, matchPublicRoute } from "./publicRoutes";
+import {
+  isReservedToolsPath,
+  isReservedWellKnownPath,
+  matchPublicRoute,
+} from "./publicRoutes";
 import {
   evaluateCsrf,
   evaluateWebSocketOrigin,
@@ -297,14 +301,13 @@ export async function handleGatewayRequest(
   if (isReservedToolsPath(url.pathname)) {
     return json(404, { error: "not_found" });
   }
-  // RFC 9728 metadata paths stay reserved on app hosts and answer 404: an
-  // app host is no OAuth resource (the gateway's own /mcp is the only one),
-  // and an app must not be able to publish metadata pointing elsewhere.
-  const metadataBase = "/.well-known/oauth-protected-resource";
-  if (
-    url.pathname === metadataBase ||
-    url.pathname.startsWith(`${metadataBase}/`)
-  ) {
+  // OAuth discovery documents stay reserved on app hosts and answer 404,
+  // before any public route is consulted: an app host is no OAuth resource
+  // (the gateway's own /mcp is the only one), and an app must not be able to
+  // publish protected-resource, authorization-server or OpenID metadata that
+  // sends a person connecting its /mcp to an authorization server of its
+  // choosing (see isReservedWellKnownPath for the fallback that reads them).
+  if (isReservedWellKnownPath(url.pathname)) {
     return json(404, { error: "not_found" });
   }
   // Server functions only answer same-origin fetch() calls from TanStack's

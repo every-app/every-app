@@ -185,8 +185,27 @@ export function stripSetCookieDomains(headers: Headers): void {
 
   headers.delete("set-cookie");
   for (const cookie of setCookies) {
-    headers.append("set-cookie", cookie.replace(/;\s*domain=[^;]*/gi, ""));
+    headers.append("set-cookie", stripDomainAttribute(cookie));
   }
+}
+
+/**
+ * Drop every `Domain` attribute from one Set-Cookie value, matched the way a
+ * browser matches it (RFC 6265 section 5.2: the attribute name is compared
+ * case-insensitively after trimming the whitespace around it and around the
+ * value), so `Domain =x`, `domain= x` and a bare `Domain` all go. The first
+ * `name=value` pair is the cookie itself and is never an attribute, so a
+ * cookie named `Domain`, or a value containing `Domain=`, is left alone.
+ * Every other attribute is kept byte for byte.
+ */
+function stripDomainAttribute(cookie: string): string {
+  const [pair, ...attributes] = cookie.split(";");
+  const kept = attributes.filter((attribute) => {
+    const equals = attribute.indexOf("=");
+    const name = equals === -1 ? attribute : attribute.slice(0, equals);
+    return name.trim().toLowerCase() !== "domain";
+  });
+  return [pair, ...kept].join(";");
 }
 
 // Two years, every subdomain, preload-eligible: right for an app host, whose

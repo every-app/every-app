@@ -3,6 +3,7 @@ import {
   normalizePath,
   isInternalPath,
   isReservedToolsPath,
+  isReservedWellKnownPath,
   matchPublicRoute,
 } from "./publicRoutes";
 import type { PublicRoute } from "./manifest/manifest";
@@ -115,6 +116,70 @@ describe("isReservedToolsPath", () => {
       "/x/__everyapp/tools/../../call",
     ]) {
       expect(isReservedToolsPath(raw), raw).toBe(false);
+    }
+  });
+});
+
+describe("isReservedWellKnownPath", () => {
+  it("finds the three OAuth discovery documents under any spelling", () => {
+    for (const raw of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server/",
+      "/.well-known/oauth-authorization-server/mcp",
+      "/.well-known/openid-configuration",
+      "/.well-known/openid-configuration/mcp",
+      "/.WELL-KNOWN/OAuth-Authorization-Server",
+      "/.well-known//openid-configuration",
+      "/x/../.well-known/oauth-authorization-server",
+      "/x/%2e%2e/.well-known/openid-configuration",
+      "/%2ewell-known/oauth-authorization-server",
+      "/.well-known%2foauth-authorization-server",
+      "/.well-known%252fopenid-configuration",
+      "/.well-known\\oauth-authorization-server",
+      "/.well-known/openid-configuration/%zz",
+    ]) {
+      expect(isReservedWellKnownPath(raw), raw).toBe(true);
+    }
+  });
+
+  it("finds the path-appended form the MCP SDK tries last, /mcp/.well-known/<document>", () => {
+    for (const raw of [
+      "/mcp/.well-known/openid-configuration",
+      "/mcp/.well-known/openid-configuration/",
+      "/mcp/.well-known/openid-configuration/x",
+      "/mcp/.well-known/oauth-authorization-server",
+      "/mcp/.well-known/oauth-protected-resource",
+      "/MCP/.Well-Known/OpenID-Configuration",
+      "/mcp//.well-known/openid-configuration",
+      "/mcp/x/../.well-known/openid-configuration",
+      "/mcp/%2ewell-known/openid-configuration",
+      "/mcp%2f.well-known%2fopenid-configuration",
+      "/mcp\\.well-known\\openid-configuration",
+      "/x/../mcp/.well-known/openid-configuration",
+    ]) {
+      expect(isReservedWellKnownPath(raw), raw).toBe(true);
+    }
+  });
+
+  it("leaves the rest of /.well-known/ and look-alikes alone", () => {
+    for (const raw of [
+      "/.well-known",
+      "/.well-known/apple-app-site-association",
+      "/.well-known/webfinger",
+      "/.well-known/oauth-authorization-server-notes",
+      "/.well-known/openid-configuration.json",
+      "/.well-known/oauth-protected-resource2",
+      "/api/.well-known/openid-configuration",
+      "/x/.well-known/oauth-authorization-server/../../x",
+      "/mcp",
+      "/mcp/.well-known",
+      "/mcp/.well-known/webfinger",
+      "/mcp2/.well-known/openid-configuration",
+      "/api/mcp/.well-known/openid-configuration",
+    ]) {
+      expect(isReservedWellKnownPath(raw), raw).toBe(false);
     }
   });
 });

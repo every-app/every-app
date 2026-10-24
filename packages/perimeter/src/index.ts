@@ -59,6 +59,7 @@ export {
 export {
   isInternalPath,
   isReservedToolsPath,
+  isReservedWellKnownPath,
   matchPublicRoute,
   normalizePath,
   type NormalizedPath,

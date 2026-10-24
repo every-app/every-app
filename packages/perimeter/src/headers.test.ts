@@ -260,6 +260,45 @@ describe("withSecurityHeaders", () => {
       "host=only; Path=/app",
     ]);
   });
+
+  it("drops the Domain attribute under every spelling a browser accepts", () => {
+    // RFC 6265 trims whitespace around an attribute's name and value and
+    // compares the name case-insensitively, so each of these plants a
+    // parent-domain cookie in a browser.
+    const headers = new Headers({ "content-type": "text/plain" });
+    headers.append("set-cookie", "a=b; Domain =example.com");
+    headers.append("set-cookie", "a=b; domain= example.com");
+    headers.append("set-cookie", "a=b; DOMAIN=example.com");
+    headers.append("set-cookie", "a=b;Domain=example.com");
+    headers.append("set-cookie", "a=b; Path=/; Domain\t=\texample.com; Secure");
+    headers.append("set-cookie", "a=b; Secure; Domain");
+
+    const res = withSecurityHeaders(new Response("ok", { headers }));
+
+    expect(res.headers.getSetCookie()).toEqual([
+      "a=b",
+      "a=b",
+      "a=b",
+      "a=b",
+      "a=b; Path=/; Secure",
+      "a=b; Secure",
+    ]);
+  });
+
+  it("leaves a cookie whose value or other attributes mention Domain alone", () => {
+    const headers = new Headers({ "content-type": "text/plain" });
+    headers.append("set-cookie", "a=Domain=x; Path=/");
+    headers.append("set-cookie", "Domain=x; Path=/");
+    headers.append("set-cookie", "a=b; Path=/Domain=x; DomainName=y");
+
+    const res = withSecurityHeaders(new Response("ok", { headers }));
+
+    expect(res.headers.getSetCookie()).toEqual([
+      "a=Domain=x; Path=/",
+      "Domain=x; Path=/",
+      "a=b; Path=/Domain=x; DomainName=y",
+    ]);
+  });
 });
 
 describe("withSecurityHeaders options (control plane)", () => {

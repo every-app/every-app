@@ -544,7 +544,11 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   is checked before anything is read for the person.
 - An app host's `/mcp` needs a personal access token or the user's browser
   session; it takes no OAuth token and advertises no authorization server
-  (its protected-resource metadata paths answer 404).
+  (its `/.well-known/oauth-protected-resource`,
+  `/.well-known/oauth-authorization-server` and
+  `/.well-known/openid-configuration` paths, the same three under
+  `/mcp/.well-known/`, and anything under them, answer 404 and are never
+  proxied, even under a public `/.well-known/*` or `/mcp/**` route).
   Token scopes set access: `*` or `mcp:write` is read & write, `mcp:read` is
   read only, anything else is refused with `403 token_scope`. A browser
   session is read & write. Destructive tools are hidden and refused for
