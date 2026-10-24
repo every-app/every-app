@@ -68,14 +68,13 @@ const DOCUMENTS = [
   },
   {
     from: "docs/runbooks/cloudflare-access.md",
-    note: "Where this runbook says a changed CLOUDFLARE_ACCESS_* setting redeploys the gateway, read: `everyapp secret set` changes it live, with no deploy (#348); `everyapp access on|off|show` sets the outer-ring settings for you (/docs/agent/access).",
+    note: "`pnpm everyapp access on|off|show` sets the outer-ring settings this runbook describes for you ([/docs/agent/access](/docs/agent/access)).",
     to: "runbooks/cloudflare-access",
     description:
       "Operator runbook: Cloudflare Access as the sign-in (OIDC) or as an outer ring in front of the Gateway and its apps; every setting, the bypassed paths, recovery.",
   },
   {
     from: "docs/runbooks/mcp-oauth.md",
-    note: "Where this runbook says a changed MCP_* setting redeploys the gateway, read: `everyapp secret set` changes it live, in one new Worker version, with no deploy (#348).",
     to: "runbooks/mcp-oauth",
     description:
       "Operator runbook: the Gateway's MCP connector and OAuth server, client registration (CIMD and DCR), personal access tokens, switches, limits and audit.",
@@ -90,7 +89,7 @@ const DOCUMENTS = [
     from: "docs/runbooks/key-rotation.md",
     to: "runbooks/key-rotation",
     description:
-      "Operator runbook: rotate the Gateway's identity signing keys and secrets without downtime.",
+      "Operator runbook: rotate the Gateway's identity signing key pair in a maintenance window; apps answer 401 until they are redeployed with the new public key.",
   },
   {
     from: "docs/runbooks/browser-app-install.md",
@@ -100,10 +99,10 @@ const DOCUMENTS = [
   },
   {
     from: "docs/runbooks/hosted-install.md",
-    note: "Written for the 2026-10-16 hosted build. Since then `everyapp secret set` routes by name (there is no `--for gateway`) and changes a secret live, without a redeploy; the hosted tier is not open to third-party deploys at launch.",
+    note: "Written for the 2026-10-16 hosted build. The hosted tier is not open to third-party deploys at launch, and the CLI surface this runbook drives was removed on 2026-10-24 (its first paragraph says what).",
     to: "runbooks/hosted-install",
     description:
-      "Operator runbook: the hosted Gateway (app.everyapp.com): install, shared first-party apps, third-party deploys with deploy keys, launch checks.",
+      "Operator runbook (hosted tier, post-launch): the hosted Gateway (app.everyapp.com): install, shared first-party apps, the gated third-party deploy API and its deploy keys, launch checks.",
   },
   {
     from: "adr/ADR-0001-hosted-vs-self-hosted-topology.md",
@@ -120,9 +119,15 @@ const DOCUMENTS = [
   },
 ];
 
+/** `<` opening what reads as a tag becomes text; an autolink `<https://…>` stays a link. */
+const escapeProse = (text) =>
+  text.replace(/<(?!https?:\/\/)(?=[A-Za-z/?])/g, "\\<");
+
 function escapeTags(markdown) {
   const out = [];
   let fence = null;
+  // The backtick run of a code span that continues from the previous line.
+  let openSpan = null;
   for (const line of markdown.split("\n")) {
     const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
     if (fence) {
@@ -141,17 +146,35 @@ function escapeTags(markdown) {
       continue;
     }
     // Outside code spans, a `<` that opens what reads as a tag becomes text
-    // (HTML comments stay comments; a `<https://…>` autolink stays a link).
-    out.push(
-      line
-        .split(/(`+[^`]*?`+)/)
-        .map((part, index) =>
-          index % 2 === 1
-            ? part
-            : part.replace(/<(?!https?:\/\/)(?=[A-Za-z/?])/g, "\\<"),
-        )
-        .join(""),
+    // (HTML comments stay comments). A code span may run on from the previous
+    // line, or open on this one and close on the next.
+    let rest = line;
+    let head = "";
+    if (openSpan) {
+      const close = rest.indexOf(openSpan);
+      if (close === -1) {
+        out.push(line);
+        continue;
+      }
+      head = rest.slice(0, close + openSpan.length);
+      rest = rest.slice(close + openSpan.length);
+      openSpan = null;
+    }
+    const parts = rest.split(/(`+[^`]*?`+)/);
+    const tail = parts.pop() ?? "";
+    const mapped = parts.map((part, index) =>
+      index % 2 === 1 ? part : escapeProse(part),
     );
+    const opens = tail.match(/`+/);
+    if (opens) {
+      openSpan = opens[0];
+      mapped.push(
+        escapeProse(tail.slice(0, opens.index)) + tail.slice(opens.index),
+      );
+    } else {
+      mapped.push(escapeProse(tail));
+    }
+    out.push(head + mapped.join(""));
   }
   return out.join("\n");
 }
@@ -201,9 +224,9 @@ for (const doc of present) {
 }
 
 const pages = (prefix) =>
-  DOCUMENTS.filter((d) => d.to.startsWith(prefix)).map((d) =>
-    d.to.slice(prefix.length),
-  );
+  present
+    .filter((d) => d.to.startsWith(prefix))
+    .map((d) => d.to.slice(prefix.length));
 writeFileSync(
   join(outDir, "meta.json"),
   `${JSON.stringify(
@@ -224,5 +247,5 @@ writeFileSync(
   )}\n`,
 );
 console.log(
-  `Mirrored ${DOCUMENTS.length} repository documents into ${relative(process.cwd(), outDir)}`,
+  `Mirrored ${present.length} repository documents into ${relative(process.cwd(), outDir)}`,
 );

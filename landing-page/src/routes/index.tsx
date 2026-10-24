@@ -276,6 +276,12 @@ function Home() {
                   {formatStars(stars)}
                 </span>
               </a>
+              <Link
+                to="/privacy"
+                className="text-sm text-stone-500 transition-colors hover:text-stone-300"
+              >
+                Privacy
+              </Link>
             </div>
           </div>
         </div>
