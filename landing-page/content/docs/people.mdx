@@ -13,7 +13,7 @@ Your Gateway is invite-only: nobody can sign up unless you invite them. Everythi
    - **Admin** can also invite people and manage apps.
 3. Select **Invite**.
 
-If your Gateway can't send email, you get a **Copy invite link** button instead. Send them the link yourself. It expires after 72 hours. [Set up email](#send-email)
+If your Gateway can't send email, it shows an **Invite link** instead. Copy it and send it to them yourself. It expires after 72 hours. [Set up email](#send-email)
 
 Behind [Cloudflare Access](/docs/access), run `pnpm everyapp access on` again after inviting someone, so Access lets them in.
 
@@ -23,16 +23,17 @@ A new app is private to owners and admins. To share it, open the **Apps** tab an
 
 - **Manage access** picks people one by one.
 - **Edit app**, then **Available to everyone**, opens it to every member, including people you invite later.
+- The **Groups** tab gives a set of people the same apps at once.
 
 ## When someone forgets their password
 
 If your Gateway sends email, they can select **Forgot password?** on the sign-in page.
 
-If not, open the **⋯** menu next to them in **Users**, select **Generate password reset link** and send it to them. It expires after an hour.
+If not, open the **⋯** menu next to them in **Users**, select **Password reset link** and send it to them. It expires after an hour.
 
 ## Remove someone
 
-Open the **⋯** menu next to them in **Users** and select **Deactivate**. They're signed out everywhere and can't sign back in. **Reactivate** undoes it. The owner can also **Delete user**.
+Open the **⋯** menu next to them in **Users** and select **Deactivate user**. They're signed out everywhere and can't sign back in. **Reactivate user** undoes it. The owner can also **Delete user**.
 
 ## Send email
 

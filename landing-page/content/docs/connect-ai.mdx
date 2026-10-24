@@ -11,6 +11,8 @@ https://apps.yourcompany.com/mcp
 
 Connect it once. The assistant signs in to your Gateway as you, asks which apps it may use, and from then on it can read and change things in those apps the way you can. An app only offers what its builder made available, and nothing that deletes data.
 
+Your Gateway can also offer a data provider it holds a key for, like DataForSEO, to assistants as an app: `pnpm everyapp provider on dataforseo`.
+
 ## Claude and ChatGPT
 
 In Claude (claude.ai or the desktop app) or ChatGPT, add a custom connector and paste the address above. Your Gateway's sign-in page opens: sign in, choose the apps and whether the assistant may change things or only read, and allow it.
@@ -27,7 +29,7 @@ Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. Allow
 
 ## Cursor and other tools
 
-Add an MCP server with the address above. Tools that can't sign in on their own take a personal access token instead: in your Gateway, open **Admin**, then **Tokens**, select **Create access token**, and give the token to the tool as the `Authorization: Bearer` header.
+Add an MCP server with the address above. Tools that can't sign in on their own take a personal access token instead: in your Gateway, open **Manage workspace**, then **Tokens**, select **Create access token**, and give the token to the tool as the `Authorization: Bearer` header.
 
 ## Disconnect
 

@@ -58,7 +58,7 @@ When it's done, you'll see:
 
 ```text
 Live    https://my-app.apps.yourcompany.com
-Access  Private to owners and admins · change it at https://apps.yourcompany.com/admin/apps
+Access  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
 ```
 
 Open your Gateway and the app is in **All apps**.
@@ -78,6 +78,8 @@ pnpm everyapp install https://github.com/owner/repo
 
 Run it again later to update.
 
+To publish yours, run `pnpm everyapp release` in its folder and attach the file to a GitHub release of its repository.
+
 ## Apps that use AI
 
 Add your AI key to the Gateway once, and every app that uses AI can use it:
@@ -88,7 +90,7 @@ pnpm everyapp secret set OPENAI_API_KEY
 
 Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`. For Workers AI, use `WORKERS_AI_API_TOKEN`.
 
-In an app's folder, `pnpm everyapp secret list` shows which keys it needs and which are set.
+In an app's folder, `pnpm everyapp secret list` shows which keys it needs and which are set. Until every key it requires is set, the app shows **Needs setup** on your Gateway and won't open.
 
 ## Keys only one app uses
 
@@ -97,6 +99,8 @@ Some apps need a key of their own, like a `GITHUB_TOKEN`. List it in the app's `
 ```ts
 secrets: ["GITHUB_TOKEN"],
 ```
+
+That makes it required: the app shows **Needs setup** until it's set. If the app works without it, write `{ name: "GITHUB_TOKEN", optional: true }` instead.
 
 Deploy the app, then run this in its folder:
 
