@@ -295,14 +295,8 @@ checks the client secret, the redirect URI and PKCE):
     users, an unclaimed gateway, auto-join, linking an existing account only
     when its email is verified or while signed in, a different email
     refused, the outer ring's person only, posted ID tokens refused.
-  - Login CSRF: Better Auth Expo's authorization proxy closed, so an
-    attacker's sign-in can't be finished in a victim's browser (the Access
-    endpoint, mobile-state and linking variants included).
-  - The mobile app's handoff: the session goes to the app for a one-time
-    code and its secret, never to the browser; a code without its secret,
-    spent or expired is refused; refusals reach the app; a link the app
-    didn't open asks first (and only the gateway's own form goes on); a link
-    opens once.
+  - Login CSRF: an attacker's sign-in can't be finished in a victim's
+    browser (the callback and linking variants).
   - An untrusted provider that can't take over an existing account;
     password sign-in turned off (only once an owner can sign in with
     Access, the setup claim still working, reset links refused); the

@@ -4,8 +4,7 @@
  * Access (src/test/mock-access.ts): the outer ring's session exchange, OIDC
  * sign-in through Better Auth's own state and PKCE, who gets in (members,
  * invitations, auto-join, strangers, deactivated users, an unclaimed
- * gateway), account linking, the mobile shell's flow and turning password
- * sign-in off.
+ * gateway), account linking and turning password sign-in off.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -51,7 +50,6 @@ import {
   sessions,
   userAppAccess,
   users,
-  verifications,
 } from "@/db/schema";
 import { UserRepository } from "@/server/repositories/UserRepository";
 import { AdminService } from "@/server/services/AdminService";
@@ -1340,76 +1338,26 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
 
   describe("login CSRF: a sign-in someone else started can't be finished in your browser", () => {
     /** An attacker's own sign-in, logged in at Access, its callback unused. */
-    async function attackersCallback(
-      body: Record<string, unknown> = {},
-      headers: Record<string, string> = {},
-    ) {
-      const attackerUrl = await start(new Browser(), body, headers);
+    async function attackersCallback() {
+      const attackerUrl = await start(new Browser());
       return access.authorize(attackerUrl, { email: "mallory@acme.com" });
     }
 
-    it("closes Better Auth Expo's authorization proxy, which planted any state it was handed", async () => {
+    it("refuses the attacker's callback in a fresh browser", async () => {
       const owner = await claimGateway();
       await seedVerifiedMember(owner.organizationId, "mallory@acme.com");
-      await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-
-      // Alice is signed in in her browser.
-      const victim = new Browser();
-      await finish(victim, await start(victim), { email: "alice@acme.com" });
-
-      // The attacker's state, through the proxy, to an https page of theirs
-      // or to Access's own endpoint (with a bogus client_id, so Access stops
-      // on an error page and the state stays unused).
       const callback = await attackersCallback();
-      const state = callback.searchParams.get("state")!;
-      for (const target of [
-        `https://evil.example/hop?state=${state}`,
-        `https://acme.cloudflareaccess.com/cdn-cgi/access/sso/oidc/${OIDC_CLIENT_ID}/authorization?client_id=bogus&state=${state}`,
-      ]) {
-        const proxy = await navigate(
-          `${GATEWAY_URL}/api/auth/expo-authorization-proxy?authorizationURL=${encodeURIComponent(target)}`,
-          victim,
-        );
-        expect(proxy.status).toBe(404);
-        expect(proxy.headers.get("location")).toBeNull();
-        expect(proxy.headers.getSetCookie()).toEqual([]);
-      }
-
-      // The attacker's callback, opened in Alice's browser, fails: its state
-      // isn't bound to her browser. She is still herself.
+      const victim = new Browser();
       const finished = await navigate(callback.toString(), victim);
       expect(errorOf(finished)).toBe("state_mismatch");
-      await expect(
-        (await navigate(`${GATEWAY_URL}/api/auth/get-session`, victim)).json(),
-      ).resolves.toMatchObject({ user: { email: "alice@acme.com" } });
-    });
-
-    it("refuses the attacker's callback in a fresh browser, whatever the sign-in was for", async () => {
-      const owner = await claimGateway();
-      await seedVerifiedMember(owner.organizationId, "mallory@acme.com");
-      for (const callback of [
-        await attackersCallback(),
-        // A sign-in the attacker started as the mobile app.
-        await attackersCallback(
-          {
-            callbackURL: "everyapp:///",
-            errorCallbackURL: "everyapp:///sign-in",
-          },
-          { origin: "everyapp://" },
-        ),
-      ]) {
-        const victim = new Browser();
-        const finished = await navigate(callback.toString(), victim);
-        expect(errorOf(finished)).toBe("state_mismatch");
-        // Back to wherever the sign-in said errors go, with no session.
-        expect(
-          new URL(
-            finished.headers.get("location")!,
-            GATEWAY_URL,
-          ).searchParams.has("cookie"),
-        ).toBe(false);
-        expect(victim.has("better-auth.session_token")).toBe(false);
-      }
+      // Back to wherever the sign-in said errors go, with no session.
+      expect(
+        new URL(
+          finished.headers.get("location")!,
+          GATEWAY_URL,
+        ).searchParams.has("cookie"),
+      ).toBe(false);
+      expect(victim.has("better-auth.session_token")).toBe(false);
     });
 
     it("can't link the victim's Access identity to the attacker's account", async () => {
@@ -1434,329 +1382,6 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
       expect(await accessAccountsOf(OWNER.email)).toEqual([]);
       expect(await accessAccountsOf("alice@acme.com")).toEqual([]);
     });
-  });
-});
-
-describe("the mobile app's sign-in: from the system browser to the app (SQLite)", () => {
-  beforeEach(() => {
-    useAccessEnv(MOCK_ACCESS_ENV.oidc);
-  });
-
-  const APP = { origin: "everyapp://", "cf-connecting-ip": "198.51.100.7" };
-
-  /** The app asks to start: a link for the system browser and a secret. */
-  async function startInApp(
-    app: Browser,
-    body: Record<string, unknown> = {},
-    headers: Record<string, string> = APP,
-  ) {
-    const response = await api("/mobile-sign-in/start", {
-      method: "POST",
-      browser: app,
-      body: {
-        provider: "cloudflare-access",
-        redirectURL: "everyapp:///sign-in",
-        ...body,
-      },
-      headers,
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    return (await response.json()) as { url: string; secret: string };
-  }
-
-  /** The app opens the link in the system browser, which goes to Access. */
-  async function openLink(browser: Browser, url: string) {
-    const response = await navigate(url, browser, {
-      "cf-connecting-ip": APP["cf-connecting-ip"],
-      "sec-fetch-site": "none",
-    });
-    expect(response.status).toBe(302);
-    return response.headers.get("location")!;
-  }
-
-  /** Log in at Access, and follow the callback back: the app's deep link. */
-  async function callBack(
-    browser: Browser,
-    authorizationUrl: string,
-    identity: MockIdentity,
-  ): Promise<URL> {
-    const response = await navigate(
-      access.authorize(authorizationUrl, identity).toString(),
-      browser,
-    );
-    expect(response.status).toBe(302);
-    return new URL(response.headers.get("location")!);
-  }
-
-  function finishInApp(app: Browser, code: string, secret: string) {
-    return api("/mobile-sign-in/finish", {
-      method: "POST",
-      browser: app,
-      body: { code, secret },
-      headers: APP,
-    });
-  }
-
-  it("hands the session to the app for a one-time code and its secret, never to the browser", async () => {
-    const owner = await claimGateway();
-    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-
-    const app = new Browser();
-    const { url, secret } = await startInApp(app);
-    expect(url).toMatch(
-      new RegExp(
-        `^${GATEWAY_URL}/api/auth/mobile-sign-in/continue\\?id=[A-Za-z0-9_-]{32}$`,
-      ),
-    );
-    expect(url).not.toContain(secret);
-
-    // In the system browser: Better Auth's own state (bound to this
-    // browser) and PKCE, then Access.
-    const browser = new Browser();
-    const authorizationUrl = await openLink(browser, url);
-    expect(
-      Object.fromEntries(new URL(authorizationUrl).searchParams),
-    ).toMatchObject({
-      client_id: OIDC_CLIENT_ID,
-      redirect_uri: `${GATEWAY_URL}/api/auth/callback/cloudflare-access`,
-      code_challenge_method: "S256",
-    });
-    expect(browser.has("better-auth.state")).toBe(true);
-
-    // Back to the app with a code; the browser keeps no session, and the
-    // link carries no cookie.
-    const deepLink = await callBack(browser, authorizationUrl, {
-      email: "alice@acme.com",
-    });
-    expect(deepLink.toString()).toMatch(
-      /^everyapp:\/\/\/sign-in\?code=[A-Za-z0-9_-]{32}$/,
-    );
-    expect(browser.has("better-auth.session_token")).toBe(false);
-    await expect(
-      (await navigate(`${GATEWAY_URL}/api/auth/get-session`, browser)).json(),
-    ).resolves.toBeNull();
-
-    // The app trades the code and its secret for the session.
-    const code = deepLink.searchParams.get("code")!;
-    const finished = await finishInApp(app, code, secret);
-    expect(finished.status).toBe(200);
-    await expect(finished.json()).resolves.toMatchObject({
-      user: { email: "alice@acme.com" },
-    });
-    expect(app.has("better-auth.session_token")).toBe(true);
-    await expect(
-      (await api("/get-session", { browser: app })).json(),
-    ).resolves.toMatchObject({
-      user: { email: "alice@acme.com" },
-      session: { activeOrganizationId: owner.organizationId },
-    });
-
-    // Once only.
-    const again = await finishInApp(new Browser(), code, secret);
-    expect(again.status).toBe(400);
-    await expect(again.json()).resolves.toMatchObject({
-      code: "INVALID_MOBILE_SIGN_IN_CODE",
-    });
-  });
-
-  it("won't trade a code without the secret of the sign-in it came from", async () => {
-    const owner = await claimGateway();
-    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-    const app = new Browser();
-    const { url, secret } = await startInApp(app);
-    const browser = new Browser();
-    const deepLink = await callBack(browser, await openLink(browser, url), {
-      email: "alice@acme.com",
-    });
-    const code = deepLink.searchParams.get("code")!;
-
-    // Whoever got hold of the code (another app on the device, say) has
-    // only the secret of a sign-in of their own: refused, and the code is
-    // spent.
-    const { secret: otherSecret } = await startInApp(new Browser());
-    const intercepted = new Browser();
-    expect((await finishInApp(intercepted, code, otherSecret)).status).toBe(
-      400,
-    );
-    expect(intercepted.has("better-auth.session_token")).toBe(false);
-    expect((await finishInApp(app, code, secret)).status).toBe(400);
-    expect(app.has("better-auth.session_token")).toBe(false);
-  });
-
-  it("sends the app the reason a sign-in was refused, and nothing to trade", async () => {
-    await claimGateway();
-    const app = new Browser();
-    const { url } = await startInApp(app);
-    const browser = new Browser();
-    const deepLink = await callBack(browser, await openLink(browser, url), {
-      email: "mallory@evil.example",
-    });
-    expect(deepLink.toString()).toBe(
-      "everyapp:///sign-in?error=ACCESS_NOT_INVITED",
-    );
-    expect(browser.has("better-auth.session_token")).toBe(false);
-    expect(await userByEmail("mallory@evil.example")).toBeUndefined();
-  });
-
-  it("asks first when it wasn't the app that opened the link", async () => {
-    const owner = await claimGateway();
-    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-    // An attacker starts a sign-in of their own (they hold its secret) and
-    // gets Alice to open the link, from a page of theirs or on her own
-    // network, hoping her browser signs her in and the code reaches them.
-    const { url } = await startInApp(
-      new Browser(),
-      {},
-      {
-        origin: "everyapp://",
-        "cf-connecting-ip": "203.0.113.66",
-      },
-    );
-    for (const headers of [
-      { "sec-fetch-site": "cross-site", "cf-connecting-ip": "203.0.113.66" },
-      { "sec-fetch-site": "none", "cf-connecting-ip": "198.51.100.7" },
-    ]) {
-      const victim = new Browser();
-      const response = await navigate(url, victim, headers);
-      expect(response.status).toBe(200);
-      expect(response.headers.get("content-type")).toMatch(/^text\/html/);
-      const html = await response.text();
-      expect(html).toContain("Sign in to the Every App app?");
-      expect(html).toContain('method="post"');
-      // Nothing started: no state in her browser, the link still unused.
-      expect(victim.has("better-auth.state")).toBe(false);
-    }
-
-    // The page's own form (same origin) goes on; a form posted from
-    // another site doesn't.
-    const id = new URL(url).searchParams.get("id")!;
-    const postForm = async (
-      browser: Browser,
-      headers: Record<string, string>,
-    ) => {
-      const response = await createAuth().handler(
-        new Request(`${GATEWAY_URL}/api/auth/mobile-sign-in/continue`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded",
-            ...headers,
-          },
-          body: new URLSearchParams({ id }).toString(),
-        }),
-      );
-      browser.store(response);
-      return response;
-    };
-    const forgeries: Record<string, string>[] = [
-      { origin: "https://evil.example" },
-      { origin: "null", "sec-fetch-site": "cross-site" },
-    ];
-    for (const headers of forgeries) {
-      const forged = await postForm(new Browser(), headers);
-      expect(forged.status).toBe(403);
-    }
-    // The page sends no Referer, so browsers post its form with
-    // `Origin: null`; Fetch Metadata says it's the page's own.
-    const confirmed = new Browser();
-    const goOn = await postForm(confirmed, {
-      origin: "null",
-      "sec-fetch-site": "same-origin",
-    });
-    expect(goOn.status).toBe(302);
-    expect(goOn.headers.get("location")).toMatch(
-      /^https:\/\/acme\.cloudflareaccess\.com\//,
-    );
-    expect(confirmed.has("better-auth.state")).toBe(true);
-  });
-
-  it("opens a link in one browser only, and not after it expires", async () => {
-    const owner = await claimGateway();
-    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-    const { url } = await startInApp(new Browser());
-    await openLink(new Browser(), url);
-    const second = await navigate(url, new Browser(), {
-      "cf-connecting-ip": APP["cf-connecting-ip"],
-    });
-    expect(second.status).toBe(400);
-    expect(await second.text()).toContain("This sign-in link has expired");
-
-    const { url: stale } = await startInApp(new Browser());
-    await db.update(verifications).set({ expiresAt: new Date(Date.now() - 1) });
-    const expired = await navigate(stale, new Browser(), {
-      "cf-connecting-ip": APP["cf-connecting-ip"],
-    });
-    expect(expired.status).toBe(400);
-  });
-
-  it("won't trade a code once it has expired", async () => {
-    const owner = await claimGateway();
-    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
-    const app = new Browser();
-    const { url, secret } = await startInApp(app);
-    const browser = new Browser();
-    const deepLink = await callBack(browser, await openLink(browser, url), {
-      email: "alice@acme.com",
-    });
-    await db.update(verifications).set({ expiresAt: new Date(Date.now() - 1) });
-    const finished = await finishInApp(
-      app,
-      deepLink.searchParams.get("code")!,
-      secret,
-    );
-    expect(finished.status).toBe(400);
-    expect(app.has("better-auth.session_token")).toBe(false);
-  });
-
-  it("limits the handoff's endpoints like a sign-in", () => {
-    const plugin = createAuth().options.plugins.find(
-      (candidate) => candidate.id === "cloudflare-access",
-    ) as { rateLimit?: { pathMatcher(path: string): boolean; max: number }[] };
-    const [rule] = plugin.rateLimit ?? [];
-    for (const path of [
-      "/mobile-sign-in/start",
-      "/mobile-sign-in/continue",
-      "/mobile-sign-in/finish",
-    ]) {
-      expect(rule?.pathMatcher(path)).toBe(true);
-    }
-    expect(rule?.pathMatcher("/get-session")).toBe(false);
-    expect(rule?.max).toBe(3);
-  });
-
-  it("only sends codes to the app's own scheme, for the Access provider", async () => {
-    await claimGateway();
-    for (const redirectURL of [
-      "https://evil.example/callback",
-      "exp://192.168.1.10:8081/--/sign-in",
-      "everyapp://user:pass@host/x",
-      "not a url",
-    ]) {
-      const response = await api("/mobile-sign-in/start", {
-        method: "POST",
-        body: { provider: "cloudflare-access", redirectURL },
-        headers: APP,
-      });
-      expect(response.status).toBe(400);
-    }
-    const otherProvider = await api("/mobile-sign-in/start", {
-      method: "POST",
-      body: { provider: "github", redirectURL: "everyapp:///sign-in" },
-      headers: APP,
-    });
-    expect(otherProvider.status).toBe(404);
-
-    // Without OIDC sign-in configured there is nothing to start.
-    useAccessEnv(MOCK_ACCESS_ENV.outerRing);
-    const off = await api("/mobile-sign-in/start", {
-      method: "POST",
-      body: {
-        provider: "cloudflare-access",
-        redirectURL: "everyapp:///sign-in",
-      },
-      headers: APP,
-    });
-    expect(off.status).toBe(404);
   });
 });
 

@@ -537,20 +537,7 @@ describe("gateway host (control plane)", () => {
     expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
   });
 
-  it("lets the native app's auth calls and token-authenticated routes through", async () => {
-    const nativeSignIn = await server.fetch(
-      gatewayRequest("/api/auth/sign-in/email", {
-        method: "POST",
-        headers: {
-          cookie: "session=abc",
-          "expo-origin": "everyapp://",
-          "content-type": "application/json",
-        },
-        body: "{}",
-      }),
-    );
-    expect(nativeSignIn.status).toBe(200);
-
+  it("lets token-authenticated routes and cookieless POSTs through", async () => {
     const oauthToken = await server.fetch(
       gatewayRequest("/oauth/token", {
         method: "POST",
@@ -591,7 +578,7 @@ describe("gateway host (control plane)", () => {
     expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
   });
 
-  it("keeps the native-app exemption to exact, metadata-free auth calls", async () => {
+  it("exempts no cookie POST from the Origin / Sec-Fetch-Site check, Better Auth's routes included", async () => {
     const post = (path: string, headers: Record<string, string>) =>
       server.fetch(
         gatewayRequest(path, {
@@ -606,31 +593,20 @@ describe("gateway host (control plane)", () => {
       );
 
     const denied: [string, Record<string, string>][] = [
-      // A browser always sends Fetch Metadata: same-site is a sibling app.
-      [
-        "/api/auth/sign-out",
-        { "expo-origin": "everyapp://", "sec-fetch-site": "same-site" },
-      ],
-      [
-        "/api/auth/sign-out",
-        { origin: "everyapp://", "sec-fetch-site": "same-site" },
-      ],
-      // A real Origin wins over expo-origin.
-      [
-        "/api/auth/sign-out",
-        { origin: "https://todo.example.com", "expo-origin": "everyapp://" },
-      ],
-      // The exemption covers Better Auth's routes only.
-      [
-        "/_serverFn/abc",
-        { "expo-origin": "everyapp://", "x-tsr-serverfn": "true" },
-      ],
-      ["/api/setup/claim", { "expo-origin": "everyapp://" }],
-      ["/api/setup/claim", { origin: "everyapp://" }],
-      // A cookie POST with neither Origin nor Sec-Fetch-Site.
+      // A cookie POST with neither Origin nor Sec-Fetch-Site: no native
+      // client is exempt any more.
+      ["/api/auth/sign-in/email", {}],
       ["/api/auth/sign-out", {}],
       ["/api/setup/claim", {}],
       ["/_serverFn/abc", { "x-tsr-serverfn": "true" }],
+      // A custom-scheme Origin is never the gateway's host.
+      ["/api/auth/sign-in/email", { origin: "app://shell" }],
+      ["/api/auth/sign-out", { origin: "app://shell" }],
+      // A browser always sends Fetch Metadata: same-site is a sibling app.
+      [
+        "/api/auth/sign-out",
+        { origin: "https://todo.example.com", "sec-fetch-site": "same-site" },
+      ],
     ];
     for (const [path, headers] of denied) {
       const response = await post(path, headers);

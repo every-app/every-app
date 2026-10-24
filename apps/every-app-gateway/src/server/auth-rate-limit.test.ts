@@ -250,18 +250,16 @@ describe("rateLimitCredentialRequest", () => {
     }
   });
 
-  it("counts single sign-on starts and the mobile app's handoff", async () => {
-    for (const path of [
-      "/api/auth/sign-in/social",
-      "/api/auth/mobile-sign-in/start",
-      "/api/auth/mobile-sign-in/finish",
-    ]) {
-      const env = { AUTH_RATE_LIMIT_IP: limiter(0) };
-      expect(
-        (await rateLimitCredentialRequest(post(path, {}), env))?.status,
-        path,
-      ).toBe(429);
-    }
+  it("counts single sign-on starts", async () => {
+    const env = { AUTH_RATE_LIMIT_IP: limiter(0) };
+    expect(
+      (
+        await rateLimitCredentialRequest(
+          post("/api/auth/sign-in/social", {}),
+          env,
+        )
+      )?.status,
+    ).toBe(429);
   });
 
   it("never reads an OAuth request's body, which its route caps", async () => {

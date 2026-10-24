@@ -223,8 +223,7 @@ async function grantDefaultAppsForMembership(
 
 /**
  * Better Auth endpoints the gateway never serves over HTTP: most
- * organization endpoints, the admin plugin's, and Expo's authorization
- * proxy (below).
+ * organization endpoints and the admin plugin's.
  *
  * Organizations are created only by the setup claim, and membership changes
  * (invites, accepting them, roles, removal) go through gateway server
@@ -276,13 +275,6 @@ const DISABLED_AUTH_PATHS = [
   "/admin/stop-impersonating",
   "/admin/unban-user",
   "/admin/update-user",
-  // Better Auth Expo's bridge into the system browser: it sets the OAuth
-  // state cookie to whatever state the link carries and redirects to any
-  // https URL, so any site could plant its own sign-in's state in a
-  // visitor's browser and finish it there (a login CSRF), and use it as an
-  // open redirect. The mobile app signs in with the gateway's own handoff
-  // instead (cloudflare-access/mobile-sign-in.ts).
-  "/expo-authorization-proxy",
 ];
 
 /**
@@ -322,14 +314,10 @@ function resolveCookieDomain(): string | null {
 }
 
 export function createAuth() {
-  // Keep trusted origins intentionally minimal:
-  // - gateway URL for normal web traffic
-  // - everyapp:// for the native mobile shell (no exp:// dev origins; the
-  //   shell needs a dev-client build, and those use the everyapp:// scheme)
-  const trustedOrigins = [
-    ...(env.GATEWAY_URL ? [env.GATEWAY_URL] : []),
-    "everyapp://",
-  ];
+  // The only trusted origin is the gateway's own URL: Better Auth matches
+  // non-HTTP origins by prefix, so a custom scheme here would trust every
+  // authority under it.
+  const trustedOrigins = env.GATEWAY_URL ? [env.GATEWAY_URL] : [];
 
   const cookieDomain = resolveCookieDomain();
 
@@ -457,7 +445,6 @@ export function createAuth() {
     trustedOrigins,
     disabledPaths: DISABLED_AUTH_PATHS,
     plugins: [
-      ...sharedAuthOptions.plugins,
       admin(),
       organization({
         // Only the gateway creates organizations: the setup claim (a

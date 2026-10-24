@@ -166,8 +166,8 @@ first upload; ADR-0001) decides what the gateway does, once, in
   (the platform `suspended` it) opens nothing for anyone acting under it:
   its members' browser sessions and personal access tokens get 403 on every
   app host, its own apps and shared ones; its org-scoped control-plane
-  server functions refuse with `ORGANIZATION_SUSPENDED` and `/api/me/apps`
-  with 403; its AI connections and personal tokens are refused on the
+  server functions refuse with `ORGANIZATION_SUSPENDED`; its AI
+  connections and personal tokens are refused on the
   gateway's `/mcp` (403, `organization_suspended`) and it is offered no
   new connection. The status is cached per isolate for up to 30 seconds,
   like memberships.
@@ -350,9 +350,9 @@ in the gateway's Cloudflare account **is** operator authority.
 
 - The gateway's own host applies the same server-function rule and requires a
   same-origin `Origin`/`Sec-Fetch-Site` on every cookie-carrying
-  state-changing request (the native shell's exact `everyapp://` origin and
-  the token-authenticated `/mcp` and OAuth token and registration endpoints
-  are left to their own checks; none of them reads the session cookie). Every response gets HSTS for the gateway host alone
+  state-changing request (the token-authenticated `/mcp` and OAuth token
+  and registration endpoints are left to their own checks; none of them
+  reads the session cookie). Every response gets HSTS for the gateway host alone
   (no `includeSubDomains`: the gateway often runs on the customer's apex
   domain), `nosniff`, frame denial, `Referrer-Policy: no-referrer`, and
   `Cache-Control: no-store` on admin, OAuth, setup and reset pages. A
@@ -485,15 +485,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   application's JWKS, issuer, audience = client id, expiry); posted ID tokens
   are not accepted as a sign-in; only the ID token is stored.
 - Nothing plants OAuth state in a browser but a sign-in that browser
-  started: Better Auth Expo's `/expo-authorization-proxy` (which set the
-  state cookie to any state it was handed, a login CSRF, and redirected
-  anywhere) is in `disabledPaths`. The mobile app signs in through a
-  handoff instead: the gateway starts the sign-in in the system browser
-  from a one-time link, and the callback sends that browser back to
-  `everyapp://` with a one-time code (two minutes) instead of a session;
-  the app trades the code plus a secret it got on its own request (never in
-  the browser) for the session. A link another site led to, or opened on
-  another network than the app's request, asks before starting.
+  started: the gateway registers no plugin that sets the state cookie from
+  a link (Better Auth's Expo plugin did, through its authorization proxy;
+  it went with the mobile app), and its only trusted origin is its own
+  URL, so no custom-scheme client is exempt from the origin checks.
 - Both identify people by the verified email. Linking to an existing account
   follows Better Auth 1.7's rules: the provider is trusted and its email
   verified, and the existing account's own email must be verified (or the

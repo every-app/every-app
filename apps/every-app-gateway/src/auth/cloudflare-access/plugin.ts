@@ -22,8 +22,6 @@
  *    whatever gateway session their browser still holds. Personal access
  *    tokens and OAuth tokens don't pass through here: deactivation ends
  *    those.
- *  - The mobile app's OIDC sign-in, handed from the system browser to the
- *    app with a one-time code (mobile-sign-in.ts).
  *
  * Both modes go through Better Auth's `handleOAuthUserInfo`, so linking an
  * Access identity to an existing account follows Better Auth 1.7's rules for
@@ -48,10 +46,6 @@ import {
   type AccessOuterRingConfig,
 } from "./config";
 import type { AccessIdentity } from "./jwt";
-import {
-  mobileSignInCallbackHook,
-  mobileSignInEndpoints,
-} from "./mobile-sign-in";
 import { createAccessOidcProvider } from "./oidc-provider";
 import { verifyOuterRingAssertion } from "./outer-ring";
 
@@ -325,19 +319,8 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
             });
           }),
         },
-        mobileSignInCallbackHook,
       ],
     },
-    // The mobile handoff is a sign-in: Better Auth's own limit for those,
-    // per address and endpoint (in production builds).
-    rateLimit: [
-      {
-        pathMatcher: (path) => path.startsWith("/mobile-sign-in/"),
-        window: 10,
-        max: 3,
-      },
-    ],
-    endpoints: mobileSignInEndpoints(oidcProvider),
   } satisfies BetterAuthPlugin;
 }
 

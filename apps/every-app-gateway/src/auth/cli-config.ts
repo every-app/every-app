@@ -19,7 +19,6 @@ import { signInMethods } from "./sign-in-methods";
 export const auth = betterAuth({
   ...sharedAuthOptions,
   plugins: [
-    ...sharedAuthOptions.plugins,
     admin(),
     organization({ schema: organizationSchema }),
     gatewaySchema(),

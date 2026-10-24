@@ -29,24 +29,11 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // gateway page.
 const TOKEN_AUTHENTICATED_PATHS = ["/mcp", "/oauth/token", "/oauth/register"];
 
-// The native shell's auth client sends this exact app origin (as Origin or
-// expo-origin) and no Fetch Metadata. A browser can do neither, and Better
-// Auth checks it against trustedOrigins behind this guard.
-const NATIVE_APP_ORIGIN = "everyapp://";
-
 // Pages that show secrets, consent or setup state: never cached.
 const NO_STORE_PATHS = ["/admin", "/oauth", "/setup", "/reset-password"];
 
 function isTokenAuthenticatedPath(pathname: string): boolean {
   return TOKEN_AUTHENTICATED_PATHS.includes(pathname);
-}
-
-function isNativeAppAuthRequest(request: Request, pathname: string): boolean {
-  if (!pathname.startsWith("/api/auth/")) return false;
-  if (request.headers.has("sec-fetch-site")) return false;
-  const origin =
-    request.headers.get("origin") ?? request.headers.get("expo-origin");
-  return origin?.toLowerCase() === NATIVE_APP_ORIGIN;
 }
 
 function forbidden(error: string, reason: string): Response {
@@ -76,8 +63,7 @@ export function guardControlPlaneRequest(
   if (
     SAFE_METHODS.has(request.method.toUpperCase()) ||
     !request.headers.has("cookie") ||
-    isTokenAuthenticatedPath(pathname) ||
-    isNativeAppAuthRequest(request, pathname)
+    isTokenAuthenticatedPath(pathname)
   ) {
     return null;
   }

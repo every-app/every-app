@@ -236,7 +236,6 @@ describe("createAuth email configuration", () => {
         "https://evil.example.net/reset-password?redirect=%2F",
         "https://todo.gateway.example.com/reset-password",
         "https://gateway.example.com/sign-in?redirect=%2F",
-        "everyapp://reset-password",
         "",
       ]) {
         expect(await resetLinkFor(callbackURL)).toBe(

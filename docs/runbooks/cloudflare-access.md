@@ -29,7 +29,6 @@ stolen admin session can't add a way in or change who it lets in.
 | What people see      | "Continue with Company SSO" on the sign-in page | Access's login before they reach the gateway at all, then no second login       |
 | What Access protects | The sign-in                                     | Every request to the gateway's and apps' hostnames, except the paths you bypass |
 | Access app type      | Access for SaaS (OIDC)                          | Self-hosted, hostname-based                                                     |
-| Mobile app           | Works (sign-in runs in the system browser)      | Not supported: the app's requests carry no Access session                       |
 | MCP clients, the CLI | Unaffected                                      | Through Access too with Managed OAuth (below), or the bypass paths below        |
 | Passwords            | Can stay on, or be turned off                   | Can stay on, or be turned off                                                   |
 | Set up with          | The cf commands below                           | `pnpm everyapp access on` (or the cf commands below)                            |
@@ -37,7 +36,7 @@ stolen admin session can't add a way in or change who it lets in.
 Use **OIDC sign-in** unless a security team requires Access in front of
 everything. The **outer ring** suits installs where nothing may be reachable
 without passing Access first (deny-by-default zones, device posture on every
-request). Both can be on at once, though the mobile app then can't sign in.
+request). Both can be on at once.
 
 ## Who gets in
 
@@ -222,15 +221,7 @@ everyapp secret set CLOUDFLARE_ACCESS_OIDC_LABEL
 # Company SSO
 ```
 
-The sign-in page now shows **Continue with Company SSO**, and so does the
-mobile app. Secrets survive every deploy of the gateway (`everyapp setup`, and the rebinds of `everyapp deploy`).
-
-The mobile app runs the sign-in in the system browser and gets its session
-from the gateway in exchange for a one-time code and a secret only the app
-holds (`/api/auth/mobile-sign-in/*`); the browser never keeps it. Nothing to
-configure. (Better Auth Expo's own `/api/auth/expo-authorization-proxy` is
-closed: it let any site plant a sign-in it had started in someone else's
-browser.)
+The sign-in page now shows **Continue with Company SSO**. Secrets survive every deploy of the gateway (`everyapp setup`, and the rebinds of `everyapp deploy`).
 
 The issuer must be on your team domain and end in the client id; anything
 else turns OIDC sign-in off and logs `access.config_problem`.
@@ -523,9 +514,6 @@ A request that carries a person's own Access token instead (say through
 `cloudflared access curl`) acts as that person, with every app they can
 use: the personal token alongside is ignored, its app and scope with it.
 
-**The mobile app** is still unsupported behind the outer ring; Managed OAuth
-changes nothing there.
-
 **The binding cookie** hasn't been tried with Managed OAuth, and Cloudflare
 documents it as unsuited to non-browser clients. Keep it on for the apps'
 application, as in section 1. On the gateway's application the body above
@@ -765,5 +753,3 @@ The automated tests cover the same ground without a browser:
 - **Connected AI apps shows nothing for an AI app connected through
   Access.** Expected: the grant is Access's, not the gateway's. Revoke it at
   Access, or take the person out of the policy.
-- **The mobile app can't sign in behind the outer ring.** Expected; use OIDC
-  sign-in for teams that use the app.

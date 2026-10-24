@@ -35,11 +35,8 @@ const CREDENTIAL_PATHS = new Set([
   "/api/auth/reset-password",
   "/api/setup/claim",
   // Starting a single sign-on (Cloudflare Access) writes a verification
-  // row, and so does the mobile app's handoff; Better Auth's own limiter
-  // counts them per isolate only.
+  // row; Better Auth's own limiter counts them per isolate only.
   "/api/auth/sign-in/social",
-  "/api/auth/mobile-sign-in/start",
-  "/api/auth/mobile-sign-in/finish",
 ]);
 
 // Only while the OAuth server is on; otherwise these paths answer 404.

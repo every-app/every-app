@@ -1,6 +1,6 @@
 /**
- * `GET /api/auth/sign-in-methods`: what the sign-in pages (web and the
- * mobile shell) offer, in every mode. Passwords (unless turned off),
+ * `GET /api/auth/sign-in-methods`: what the sign-in pages offer, in every
+ * mode. Passwords (unless turned off),
  * "Continue with <label>" for Cloudflare Access and who Access says this
  * browser belongs to come from the Access settings, which are empty where
  * the platform policy has no Access sign-in; sign-up comes from the policy.

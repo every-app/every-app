@@ -428,7 +428,7 @@ The threat model is [docs/threat-model.md](docs/threat-model.md) (the register o
 - [ ] **With `GATEWAY_URL` unset, the outer ring stops vouching as well as signing in** while the config reports it on (B6; one-line separation in the plugin).
 - [ ] **A held `subscriptions/listen` stream on an app host's `/mcp` outlives its token** for up to ten minutes; the gateway's own `/mcp` re-checks every poll (B5).
 - [ ] **Any member reads the member directory** through Better Auth's open `list-members` and `get-organization` (B2): fine for four people; a decision for teams.
-- [ ] **`everyapp://` is a wildcard-authority trusted origin and verify-email appends the session cookie to custom-scheme redirects** (B2, hosted only; the simplify swath is deciding the Expo pieces' future; pin the native origin exactly if they stay).
+- [x] **`everyapp://` is a wildcard-authority trusted origin and verify-email appends the session cookie to custom-scheme redirects** (B2, hosted only). Closed 2026-10-24: the simplify swath removed the gateway's mobile-only auth (held PR); the gateway's only trusted origin is its own URL.
 - [ ] **A first-party WebSocket 101 handshake passes through with `Set-Cookie` `Domain` intact** (B1; rebuild it as the third-party path does).
 - [ ] **`ai.models` doesn't check OpenRouter's `models` fallback list**; `AI_PROXY_EXTRA_ROUTES` opens every method and sub-path to every opted-in app (B4).
 - [ ] **Proxy-forwarding headers reach apps as sent** (`X-Forwarded-For` and friends; B1): strip or document `cf-connecting-ip` as the only address an app may trust.

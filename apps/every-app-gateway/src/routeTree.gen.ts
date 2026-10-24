@@ -32,7 +32,6 @@ import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
-import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
 import { Route as ApiAdminAppsInstallRouteImport } from './routes/api/admin/apps/install'
 import { Route as ApiAdminDeploysIdRouteImport } from './routes/api/admin/deploys/$id'
@@ -152,11 +151,6 @@ const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
   path: '/api/dev/identity',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMeAppsRoute = ApiMeAppsRouteImport.update({
-  id: '/api/me/apps',
-  path: '/api/me/apps',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
   id: '/api/setup/claim',
   path: '/api/setup/claim',
@@ -201,7 +195,6 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
-  '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin/': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -229,7 +222,6 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
-  '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -260,7 +252,6 @@ export interface FileRoutesById {
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
-  '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -291,7 +282,6 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
-    | '/api/me/apps'
     | '/api/setup/claim'
     | '/admin/'
     | '/api/admin/apps/install'
@@ -319,7 +309,6 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
-    | '/api/me/apps'
     | '/api/setup/claim'
     | '/admin'
     | '/api/admin/apps/install'
@@ -349,7 +338,6 @@ export interface FileRouteTypes {
     | '/_app/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
-    | '/api/me/apps'
     | '/api/setup/claim'
     | '/_app/admin/'
     | '/api/admin/apps/install'
@@ -371,7 +359,6 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
-  ApiMeAppsRoute: typeof ApiMeAppsRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
   ApiAdminAppsInstallRoute: typeof ApiAdminAppsInstallRouteWithChildren
   ApiAdminDeploysIdRoute: typeof ApiAdminDeploysIdRoute
@@ -540,13 +527,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevIdentityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/me/apps': {
-      id: '/api/me/apps'
-      path: '/api/me/apps'
-      fullPath: '/api/me/apps'
-      preLoaderRoute: typeof ApiMeAppsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/setup/claim': {
       id: '/api/setup/claim'
       path: '/api/setup/claim'
@@ -641,7 +621,6 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,
-  ApiMeAppsRoute: ApiMeAppsRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
   ApiAdminAppsInstallRoute: ApiAdminAppsInstallRouteWithChildren,
   ApiAdminDeploysIdRoute: ApiAdminDeploysIdRoute,
