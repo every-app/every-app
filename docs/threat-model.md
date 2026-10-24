@@ -1167,7 +1167,7 @@ register under the boundary named.
 | Identity JWT (`x-everyapp-identity`) | 120 seconds, minted per request | By the SDK at the app, by the AppGateway when forwarded | Expiry only | Revocation: a removed or suspended person's in-flight identity works at the app for up to 120 s |
 | Public marker / system token | 120 s (reused 60 s) / 60 s, catalog only | By the SDK | Expiry | |
 | Personal access token (`epat_…`) | 90 days by default, 30 for a deploy key, 1 day to 1 year | Live on every request: owner's membership, ban, organization status, scopes | The holder's revoke, member removal (that organization's tokens), deactivation (all), app deletion (tokens bound to it) | An admin acting on another member's token (none can; B5) |
-| OAuth access / refresh token (connected AI apps) | 1 hour / 30 days idle and absolute | Every `/mcp` request and every refresh re-reads the connection row, role, ban, organization status, app access | The holder (Connected AI apps), member removal, deactivation, re-consent (replaces), the hourly cron after 31 idle days | A replayed refresh token (no reuse detection; B5); a held app-host `subscriptions/listen` stream for up to 10 minutes (B5) |
+| OAuth access / refresh token (connected AI apps) | 1 hour / 30 days idle and absolute | Every `/mcp` request and every refresh re-reads the connection row, role, ban, organization status, app access | The holder (Connected AI apps), member removal, deactivation, re-consent (replaces), the hourly cron after 31 idle days | A replayed refresh token (no reuse detection; B5); a held app-host `subscriptions/listen` stream for up to 10 minutes (B5; the gateway's own ends at the token's expiry and rechecks the connection every poll) |
 | Consent transaction | 10 minutes, single use, bound to the browser | At the decision | Use, expiry | |
 | Setup link (`est_…`) | 24 hours, single use | At the claim (constant-time hash compare) | Use, expiry, a newer link minted by `setup` | The CLI giving up waiting after 15 minutes: the link stays valid (B2, listed) |
 | Invitation link (`einv_…`) | 72 hours, single use, bound to the invited email | At sign-up and accept | Use, expiry, an owner or admin cancelling it | The inviter's deactivation or removal (listed) |
@@ -1317,7 +1317,11 @@ means it is on main (every boundary fix from this pass merged on
     separation of the two uses in the plugin.
 24. **A held `subscriptions/listen` stream on an app host's `/mcp`
     outlives the token or session that opened it** for up to ten minutes
-    (B5, low); the gateway's own `/mcp` re-checks on every poll.
+    (B5, low); the gateway's own `/mcp` re-checks on every poll, ends the
+    stream at the access token's or Access assertion's expiry, and since
+    2026-10-24 holds it for 30 minutes (Claude Code parks re-listening
+    after five reopens an hour), keeping the stream open through up to
+    three polls whose D1 read fails, during which it pushes nothing.
 25. **Any member can read the whole member directory** through Better
     Auth's open `/organization/list-members` and `get-organization` (B2,
     low): emails and roles of the organization. Fine for a four-person

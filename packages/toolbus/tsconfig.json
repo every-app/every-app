@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*.ts", "conformance/**/*.ts"],
+  "include": ["src/**/*.ts", "conformance/**/*.ts", "claude-code/**/*.ts"],
   "compilerOptions": {
     "esModuleInterop": true,
     "lib": ["DOM", "DOM.Iterable", "ES2022"],

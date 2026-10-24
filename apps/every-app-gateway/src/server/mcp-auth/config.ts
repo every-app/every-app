@@ -183,7 +183,11 @@ function build(
     validateToken: (requestEnv) =>
       mcpBearerValidator(authorizationServer, requestEnv),
     handler: {
-      fetch: (request, _env, ctx) => serveGatewayMcp(request, ctx.props),
+      // The token's expiry bounds a held subscriptions/listen stream.
+      fetch: (request, _env, ctx) =>
+        serveGatewayMcp(request, ctx.props, {
+          credentialExpiresAt: ctx.auth.expiresAt,
+        }),
     },
   });
 

@@ -1,6 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { listBuiltinTools } from "./builtins";
-import { createToolBusHttp, MAX_REQUEST_BODY_BYTES } from "./http";
+import {
+  APP_LISTEN_MAX_MS,
+  createToolBusHttp,
+  GATEWAY_LISTEN_MAX_MS,
+  listenMaxMsFor,
+  MAX_REQUEST_BODY_BYTES,
+} from "./http";
 import {
   ISSUER,
   PRINCIPAL,
@@ -12,7 +18,12 @@ import {
   testKeys,
   todoApp,
 } from "./test-fixtures";
-import type { ToolBusDeps, ToolBusView, ToolCallAuditEvent } from "./types";
+import {
+  ViewRefusedError,
+  type ToolBusDeps,
+  type ToolBusView,
+  type ToolCallAuditEvent,
+} from "./types";
 
 let keys: Awaited<ReturnType<typeof testKeys>>;
 beforeAll(async () => {
@@ -253,12 +264,12 @@ describe("2026-07-28 (modern) era", () => {
     expect(refused.error.code).toBe(-32603);
   });
 
-  it("ends a listen stream gracefully when the view can't be re-read, or wasn't asked for", async () => {
+  it("ends a listen stream gracefully at once when the caller is refused, or when it wasn't asked for", async () => {
     const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 5_000 });
     const gone: ToolBusView = {
       ...appView(),
       refresh: async () => {
-        throw new Error("no catalog to serve");
+        throw new ViewRefusedError("the caller no longer stands");
       },
     };
     const { request, id } = await listenRequest();
@@ -274,6 +285,8 @@ describe("2026-07-28 (modern) era", () => {
     });
     expect(messages.done).toBe(true);
     expect(messages.raw).not.toContain("list_changed");
+    // Refused at the first poll: no keep-alive was written before the end.
+    expect(messages.raw).not.toContain(": keepalive");
 
     const other = await listenRequest({ resourcesListChanged: true });
     const unwanted = await readMessages(
@@ -291,6 +304,70 @@ describe("2026-07-28 (modern) era", () => {
       result: { resultType: "complete" },
     });
     expect(unwanted.done).toBe(true);
+  });
+
+  it("keeps a listen stream through transient re-read failures, and ends it after three in a row", async () => {
+    const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 5_000 });
+    // Two failures, a success, then failures for good: the stream lives
+    // through the first two (a keep-alive each, nothing pushed), and ends
+    // at the third consecutive failure after the success.
+    const outcomes = ["fail", "fail", "ok", "fail", "fail", "fail", "ok"];
+    let reads = 0;
+    const flaky: ToolBusView = {
+      ...appView(),
+      refresh: async () => {
+        const outcome = outcomes[reads++] ?? "ok";
+        if (outcome === "fail") throw new Error("D1 is unavailable");
+        return appView();
+      },
+    };
+    const { request, id } = await listenRequest();
+    const reader = (await serve(request, flaky)).body!.getReader();
+    const messages = await readMessages(reader, 3);
+    expect(messages[1]).toMatchObject({
+      id,
+      result: { resultType: "complete" },
+    });
+    expect(messages.done).toBe(true);
+    expect(reads).toBe(6);
+    // Five polls wrote a keep-alive each (two failed, one fine, two failed);
+    // the sixth ended the stream. Nothing was ever pushed as a change.
+    expect(messages.raw.split(": keepalive\n\n")).toHaveLength(6);
+    expect(messages.raw).not.toContain("list_changed");
+  });
+
+  it("ends a listen stream when the credential behind it expires, before the hold is up", async () => {
+    const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 5_000 });
+    const expiring: ToolBusView = {
+      ...appView(),
+      refresh: async () => appView(),
+      listenUntil: Date.now() + 120,
+    };
+    const started = Date.now();
+    const { request, id } = await listenRequest();
+    const reader = (await serve(request, expiring)).body!.getReader();
+    const messages = await readMessages(reader, 3);
+    expect(messages[1]).toMatchObject({
+      id,
+      result: { resultType: "complete" },
+    });
+    expect(messages.done).toBe(true);
+    const lived = Date.now() - started;
+    expect(lived).toBeGreaterThanOrEqual(100);
+    expect(lived).toBeLessThan(2_000);
+  });
+
+  it("holds a gateway stream 30 minutes and an app-host stream 10, unless the deps say otherwise", () => {
+    const deps = {
+      signing: { privateKeyPem: "", issuer: ISSUER },
+    } as ToolBusDeps;
+    expect(GATEWAY_LISTEN_MAX_MS).toBe(30 * 60_000);
+    expect(APP_LISTEN_MAX_MS).toBe(10 * 60_000);
+    expect(listenMaxMsFor(gatewayView([todoApp()]), deps)).toBe(
+      GATEWAY_LISTEN_MAX_MS,
+    );
+    expect(listenMaxMsFor(appView(), deps)).toBe(APP_LISTEN_MAX_MS);
+    expect(listenMaxMsFor(appView(), { ...deps, listenMaxMs: 300 })).toBe(300);
   });
 
   it("stops re-reading the view once the client closes the stream, and caps the streams a credential holds", async () => {

@@ -39,11 +39,12 @@ import {
   PROVIDER_APP_TIER,
   type AppSetup,
 } from "@every-app/sdk/internal";
-import type {
-  McpPrincipal,
-  ToolBusApp,
-  ToolBusView,
-  UnavailableApp,
+import {
+  ViewRefusedError,
+  type McpPrincipal,
+  type ToolBusApp,
+  type ToolBusView,
+  type UnavailableApp,
 } from "@every-app/toolbus";
 import { appSetupFor } from "@/server/app-setup";
 import { platformPolicy } from "@/server/platform-policy";
@@ -119,9 +120,21 @@ function refusalMessage(reason: RefusedCaller["reason"]): string | null {
   }
 }
 
+interface ServeGatewayMcpOptions {
+  /**
+   * When the credential that authenticated this request expires, in
+   * seconds since the epoch (an OAuth access token's, an Access
+   * assertion's): a held `subscriptions/listen` stream ends no later than
+   * that, so it never outlives the token that opened it. A personal token
+   * needs none: each poll resolves it again, expiry included.
+   */
+  credentialExpiresAt?: number | undefined;
+}
+
 export async function serveGatewayMcp(
   request: Request,
   caller: McpCaller,
+  options: ServeGatewayMcpOptions = {},
 ): Promise<Response> {
   if (caller.kind === "refused") {
     const message = refusalMessage(caller.reason);
@@ -153,6 +166,7 @@ export async function serveGatewayMcp(
       principal,
       scope,
       recheckFor(request, caller),
+      options.credentialExpiresAt,
     );
   } catch (error) {
     logEvent(
@@ -182,14 +196,16 @@ export async function serveGatewayMcp(
  * Whether the caller still stands, for a held stream's polls: a revoked
  * connection, a removed or deactivated member, a suspended organization or
  * a revoked token takes effect on the next request, and a poll is one.
- * Throws when it doesn't, which ends the stream. A poll is no use of the
- * credential, so it leaves last-used alone.
+ * Throws `ViewRefusedError` when it doesn't, which ends the stream at that
+ * poll; any other failure (the row can't be read just now) leaves the
+ * stream open, pushing nothing, for up to three polls. A poll is no use of
+ * the credential, so it leaves last-used alone.
  */
 function recheckFor(request: Request, caller: McpCaller): () => Promise<void> {
   if (caller.kind !== "caller") return async () => undefined;
   const { principal } = caller;
   const refused = () => {
-    throw new Error("the caller no longer stands");
+    throw new ViewRefusedError("the caller no longer stands");
   };
   if (principal.credential.kind === "access") {
     // The same person, in the same organization: deactivated, removed, or
@@ -252,13 +268,15 @@ function needsSetupReason(setup: AppSetup): string {
  * `subscriptions/listen` stream re-reads it through `refresh` (after the
  * caller is rechecked), so an app that appears, goes or is redeployed
  * reaches the connected client, and a caller that lost access stops
- * hearing about them. Captures no Request: a stream lives ten minutes.
+ * hearing about them. Captures no Request: a stream lives up to half an
+ * hour, and no longer than the credential that opened it.
  */
 async function gatewayView(
   requestId: string | undefined,
   principal: McpPrincipal,
   scope: Parameters<typeof AppToolRepository.findVisibleCatalogs>[0],
   recheck: () => Promise<void>,
+  credentialExpiresAt?: number,
 ): Promise<ToolBusView> {
   const catalogs = await AppToolRepository.findVisibleCatalogs(scope);
   // Each app's setup, read together: one cached report per row, version
@@ -337,8 +355,17 @@ async function gatewayView(
     }),
     refresh: async () => {
       await recheck();
-      return gatewayView(requestId, principal, scope, recheck);
+      return gatewayView(
+        requestId,
+        principal,
+        scope,
+        recheck,
+        credentialExpiresAt,
+      );
     },
+    ...(credentialExpiresAt !== undefined
+      ? { listenUntil: credentialExpiresAt * 1000 }
+      : {}),
   };
 }
 

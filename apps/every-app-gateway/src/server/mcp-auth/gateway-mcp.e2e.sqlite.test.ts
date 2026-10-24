@@ -2637,6 +2637,53 @@ describe("every request re-checks the connection", () => {
     }
   });
 
+  it("keeps a held stream through a catalog read that fails, and ends it when the access token expires", async () => {
+    listenIntervalsForTests.pollMs = 20;
+    // Two hours: the token's one-hour life ends the stream, not the hold.
+    listenIntervalsForTests.maxMs = 2 * 60 * 60_000;
+    resetAppHostMcpForTests();
+    const reads = vi.spyOn(AppToolRepository, "findVisibleCatalogs");
+    try {
+      const { tokens } = await connected(memberId);
+      const listen = await mcp(tokens.access_token, "subscriptions/listen", {
+        notifications: { toolsListChanged: true },
+      });
+      expect(listen.headers.get("content-type")).toBe("text/event-stream");
+      const reader = listen.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      const next = async (marker: string, count = 1): Promise<void> => {
+        while (text.split(marker).length <= count) {
+          const { value, done } = await reader.read();
+          if (done) throw new Error(`stream ended before ${marker}`);
+          text += decoder.decode(value, { stream: true });
+        }
+      };
+      await next("notifications/subscriptions/acknowledged");
+      await next(": keepalive");
+
+      // D1 can't be read for one poll: the stream stays, pushes nothing.
+      reads.mockRejectedValueOnce(new Error("D1_ERROR: database is locked"));
+      await next(": keepalive", 3);
+      expect(text).not.toContain("list_changed");
+      expect(text).not.toContain('"resultType":"complete"');
+      expect(reads).toHaveBeenCalled();
+
+      // The access token expires (one hour): the next poll ends the stream,
+      // long before the two-hour hold would.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now() + 60 * 60_000 + 1_000);
+      await next('"resultType":"complete"');
+      expect((await reader.read()).done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      reads.mockRestore();
+      delete listenIntervalsForTests.pollMs;
+      delete listenIntervalsForTests.maxMs;
+      resetAppHostMcpForTests();
+    }
+  });
+
   it("drops an app whose access was taken away, or that was deleted", async () => {
     const { tokens } = await connected(memberId);
     expect(await toolNames(tokens.access_token)).toContain("todo_list_todos");

@@ -24,7 +24,9 @@ export {
   type ToolCallResolution,
 } from "./execute";
 export {
+  APP_LISTEN_MAX_MS,
   createToolBusHttp,
+  GATEWAY_LISTEN_MAX_MS,
   MAX_REQUEST_BODY_BYTES,
   type ToolBusHttpHandler,
 } from "./http";
@@ -40,6 +42,7 @@ export {
   type SessionLike,
 } from "./principal";
 export { listTools, TOOLBUS_VERSION } from "./server";
+export { ViewRefusedError } from "./types";
 export { appSurfaceView, gatewaySurfaceView } from "./view";
 export type {
   JsonObject,

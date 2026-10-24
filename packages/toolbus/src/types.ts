@@ -102,9 +102,29 @@ export interface ToolBusView {
    * Read the caller's view again, from the current catalogs. A held
    * 2026-07-28 `subscriptions/listen` stream polls it to push
    * `notifications/tools/list_changed`; without it the modern era declares
-   * `listChanged: false` and no stream is held.
+   * `listChanged: false` and no stream is held. Throw `ViewRefusedError`
+   * when the caller no longer stands: the stream ends at that poll. Any
+   * other error is taken as transient (the catalogs couldn't be read just
+   * now): the stream stays open, pushes nothing, and ends only when three
+   * polls in a row fail.
    */
   refresh?: () => Promise<ToolBusView>;
+  /**
+   * When the credential behind the request expires, in milliseconds since
+   * the epoch: a held stream ends gracefully no later than this, so it
+   * never outlives the token that opened it.
+   */
+  listenUntil?: number;
+}
+
+/**
+ * Thrown by `ToolBusView.refresh` when the caller no longer stands (a
+ * revoked connection or token, a removed or deactivated member, a suspended
+ * organization): a held stream ends at once, where any other error only
+ * counts as a failed poll.
+ */
+export class ViewRefusedError extends Error {
+  override readonly name = "ViewRefusedError";
 }
 
 export type ToolCallOutcome =

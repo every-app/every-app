@@ -198,7 +198,9 @@ async function serveMcpThroughAccess(
     );
     return null;
   }
-  return serveGatewayMcp(request, await resolveAccessCaller(identity.email));
+  return serveGatewayMcp(request, await resolveAccessCaller(identity.email), {
+    credentialExpiresAt: identity.claims.exp,
+  });
 }
 
 async function dispatch(

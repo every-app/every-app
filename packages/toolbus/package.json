@@ -20,6 +20,7 @@
     "knip": "knip",
     "test": "vitest run --silent",
     "test:conformance": "vitest run --config vitest.conformance.config.ts",
+    "test:claude-code": "vitest run --config vitest.claude.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

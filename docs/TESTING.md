@@ -122,6 +122,29 @@ subscriptions (off), and prompts/resources (not served). Any other failure
 fails the run, and so does a baseline entry that starts passing (delete it).
 It needs the network, so it isn't part of `pnpm test` or CI.
 
+### Claude Code against the held listen stream (the ToolBus)
+
+`packages/toolbus/claude-code/listen-reopen.claude.ts` drives a real
+`claude -p` (stream-json in and out, kept alive on stdin) against a
+gateway-surface ToolBus on a loopback port (`claude-code/server.ts`, the real
+HTTP layer with a re-readable view) and counts, on the server, the held
+`subscriptions/listen` streams Claude Code opens, when each ends, and whether
+a pushed `list_changed` makes it refetch `tools/list` (hearing) or not
+(deaf). Claude Code's own `--debug-file` log is read for its reopen
+decisions. Three phases, chosen with `LISTEN_PHASE`:
+
+```bash
+cd packages/toolbus
+LISTEN_PHASE=smoke pnpm test:claude-code   # a 20 s hold: one reopen, one change heard (2 min)
+LISTEN_PHASE=today pnpm test:claude-code   # the old 10-minute hold scaled to 60 s: deaf after five reopens (9 min)
+LISTEN_PHASE=fixed pnpm test:claude-code   # the 30-minute hold in real time: still hearing past 90 minutes (95 min)
+LISTEN_REPORT_DIR=/tmp/reports LISTEN_MODEL=sonnet   # where the timeline goes; the model (sonnet by default)
+```
+
+It needs the `claude` CLI logged in and spends a few cents per phase, so it
+is not part of `pnpm test` or CI; the unit tests in `src/http.test.ts` pin
+the constants and the stream's behaviour without a client.
+
 ### Hosted deploy API (third-party apps)
 
 The hosted tier (app.everyapp.com, dispatch apps, deploy keys) is not

@@ -121,7 +121,10 @@ Built-ins (Gateway connector only, read-only, no input; always loaded in Claude
          `everyapp_whoami` (user, org, access).
 Changes: 2026-07-28 clients (Claude Code) hold a `subscriptions/listen` stream
          re-read every 30 s, so a change reaches them within about half a
-         minute; 2025-era clients get `notifications/tools/list_changed` and a
+         minute; the Gateway ends it after 30 minutes (an app host after 10,
+         and never past the token's expiry) and the client opens a new one,
+         few enough an hour that Claude Code keeps listening indefinitely;
+         2025-era clients get `notifications/tools/list_changed` and a
          new `Mcp-Session-Id` on their next request (a stale session's
          `tools/list` answers 404, so the client initializes again).
          `tools/list` carries `ttlMs: 60000` (a minute's cache).

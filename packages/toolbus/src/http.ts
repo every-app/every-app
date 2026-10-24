@@ -27,12 +27,13 @@
  *    through `subscriptions/listen`. When the view can be re-read
  *    (`view.refresh`), that request is held open as an SSE stream, the view
  *    re-read every `listenPollMs`, the notification pushed when the hash
- *    differs, and the stream ended gracefully after `listenMaxMs` (the client
- *    opens a new one). Only a request the SDK's classifier accepts as a
- *    2026-07-28 request is held, at most a few per credential per isolate;
- *    anything else goes to the SDK, which answers as the spec says. Without
- *    `refresh` the modern era declares `listChanged: false`, so clients
- *    don't ask.
+ *    differs, and the stream ended gracefully after the surface's hold
+ *    (`listenMaxMs`; the client opens a new one), or sooner when the
+ *    credential behind it expires (`view.listenUntil`). Only a request the
+ *    SDK's classifier accepts as a 2026-07-28 request is held, at most a few
+ *    per credential per isolate; anything else goes to the SDK, which
+ *    answers as the spec says. Without `refresh` the modern era declares
+ *    `listChanged: false`, so clients don't ask.
  *
  * First it checks Origin (and, in local dev, Host) as the Streamable HTTP
  * spec requires: a browser may call from the endpoint's own origin, from an
@@ -64,13 +65,32 @@ import {
   toolListHash,
   TOOLBUS_VERSION,
 } from "./server";
-import type { ToolBusDeps, ToolBusView } from "./types";
+import { ViewRefusedError, type ToolBusDeps, type ToolBusView } from "./types";
 
 export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 /** A held `subscriptions/listen` stream re-reads the view this often. */
 const LISTEN_POLL_MS = 30_000;
-/** And ends gracefully after this long; the client opens a new one. */
-const LISTEN_MAX_MS = 10 * 60_000;
+/**
+ * How long a stream is held before it ends gracefully and the client opens
+ * a new one, per surface. Claude Code (2.1.309) counts its reopens in a
+ * trailing hour and parks re-listen for about six hours once five are in
+ * it, so a hold must leave fewer than five closes an hour with room for
+ * the closes nobody schedules (a deploy, an isolate gone, an expired
+ * token): the gateway surface, which rechecks its caller every poll, holds
+ * 30 minutes (two scheduled closes an hour); the app-host surface, which
+ * rechecks nothing between requests, keeps 10 (TODO.md, "MCP surface").
+ */
+export const GATEWAY_LISTEN_MAX_MS = 30 * 60_000;
+export const APP_LISTEN_MAX_MS = 10 * 60_000;
+/**
+ * Polls in a row whose re-read fails before the stream ends. A failed poll
+ * pushes nothing (no catalog was read), so holding on through a brief
+ * outage costs the client nothing, while ending it would spend one of the
+ * reopens Claude Code budgets, and three failed opens in a row stop its
+ * re-listening for good. A refused caller (`ViewRefusedError`) still ends
+ * the stream at that poll.
+ */
+const LISTEN_REFRESH_FAILURES_BEFORE_END = 3;
 /**
  * Streams one credential may hold on one isolate (Claude Code holds one);
  * more are refused in-band like the SDK refuses past its own limit.
@@ -465,11 +485,20 @@ function streamHolder(view: ToolBusView): string {
     : credential.id;
 }
 
+/** How long a held stream on this view is held, before its credential's expiry. */
+export function listenMaxMsFor(view: ToolBusView, deps: ToolBusDeps): number {
+  return (
+    deps.listenMaxMs ??
+    (view.surface === "gateway" ? GATEWAY_LISTEN_MAX_MS : APP_LISTEN_MAX_MS)
+  );
+}
+
 /**
  * A 2026-07-28 `subscriptions/listen`, held open: the acknowledgement
  * first, then every `listenPollMs` either `notifications/tools/list_changed`
  * (the re-read view lists other tools) or an SSE comment as keep-alive;
- * after `listenMaxMs`, or when the view can't be re-read within a poll, the
+ * after the hold, or at the credential's expiry, or when the caller is
+ * refused, or when three polls in a row can't re-read the view, the
  * request's completion result closes it gracefully. Only `toolsListChanged`
  * is served; a filter without it is acknowledged and closed at once.
  */
@@ -521,7 +550,7 @@ async function serveListen(
     else held.delete(caller);
   };
   const pollMs = deps.listenPollMs ?? LISTEN_POLL_MS;
-  const maxMs = deps.listenMaxMs ?? LISTEN_MAX_MS;
+  const maxMs = listenMaxMsFor(view, deps);
   const meta = { [SUBSCRIPTION_ID_KEY]: id };
   const encoder = new TextEncoder();
   let last: string;
@@ -568,21 +597,31 @@ async function serveListen(
         return;
       }
       const opened = Date.now();
+      // The hold, cut short by the credential's own expiry.
+      const until = Math.min(opened + maxMs, view.listenUntil ?? Infinity);
+      let failures = 0;
       const tick = async () => {
         if (closed) return;
-        if (Date.now() - opened >= maxMs) {
+        if (Date.now() >= until) {
           end();
           return;
         }
-        let current: string;
+        let current: string | undefined;
         try {
           current = await toolListHash(await withinPoll(refresh(), pollMs));
-        } catch {
-          end();
-          return;
+          failures = 0;
+        } catch (error) {
+          failures += 1;
+          if (
+            error instanceof ViewRefusedError ||
+            failures >= LISTEN_REFRESH_FAILURES_BEFORE_END
+          ) {
+            end();
+            return;
+          }
         }
         if (closed) return;
-        if (current === last) {
+        if (current === undefined || current === last) {
           write(": keepalive\n\n");
         } else {
           last = current;
