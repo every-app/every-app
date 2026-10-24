@@ -23,7 +23,8 @@ import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { removeApp } from "../delete";
 import { deployApp } from "../deploy/deployApp";
-import { ACCESS_SETTINGS, POLICY_NAME, showAccess, turnAccessOff, turnAccessOn } from "./index";
+import { ACCESS_SETTINGS } from "@/lib/access/settings";
+import { POLICY_NAME, showAccess, turnAccessOff, turnAccessOn } from "./index";
 
 const GATEWAY = "every-app-gateway";
 const HOST = "example.com";

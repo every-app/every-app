@@ -5,6 +5,7 @@
  * that settle by themselves show only in the rows.
  */
 import chalk from "chalk";
+import type { AccessState } from "@/lib/access/settings";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
@@ -12,11 +13,12 @@ import type { GatewayOwner } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { capitalize, plural } from "@/lib/output/text";
-import { Severity, type AppState, type CheckoutState, type Problem } from "./problems";
+import { Severity, type AppState, type CheckoutState, type Problem, type Unread } from "./problems";
 
 const GLYPHS: Readonly<Record<Exclude<Severity, Severity.Settling>, string>> = {
   [Severity.Error]: chalk.red("✗"),
   [Severity.Warning]: chalk.yellow("!"),
+  [Severity.Info]: chalk.dim("i"),
 };
 
 /** The report of a Gateway database with no install row. */
@@ -38,6 +40,7 @@ export function renderStatus({
   checkout,
   certificates,
   waitingCertificates,
+  access,
   leases,
   apps,
   missingWorkers,
@@ -54,6 +57,8 @@ export function renderStatus({
   /** Null when cf couldn't list them. */
   certificates: Array<{ host: string; ready: boolean }> | null;
   waitingCertificates: string[];
+  /** Whether Cloudflare Access is on; why cf couldn't say; null when it doesn't apply (hosted, or no Worker yet). */
+  access: AccessState | Unread | null;
   leases: LeaseHolder[];
   apps: AppState[];
   missingWorkers: Set<string>;
@@ -76,6 +81,7 @@ export function renderStatus({
         ? `${owner.email}${owner.organizationName ? chalk.dim(` · ${owner.organizationName}`) : ""}`
         : chalk.yellow("none yet"),
     },
+    ...(access ? [{ label: "Access", value: accessRow(access) }] : []),
     { label: "Release", value: release(install, servingRecorded, checkout) },
     { label: "TLS", value: tls(certificates, waitingCertificates) },
     ...leases.map((lease, index) => ({
@@ -125,9 +131,17 @@ function release(install: InstallRecord, servingRecorded: boolean, checkout: Che
   if (install.liveVersionId === null) return chalk.yellow(`${version}, never uploaded`);
   if (!servingRecorded) return flagged("changed outside everyapp");
   if (checkout.behind) return flagged("this checkout is behind");
-  if (checkout.upToDate === false) return flagged("this checkout has newer Gateway changes");
+  // An update to take or leave, not something off: dim, as the block under the report says.
+  if (checkout.upToDate === false) return `${version}${chalk.dim(" · this checkout has newer Gateway changes")}`;
   if (checkout.upToDate === true) return `${version}${chalk.dim(" · matches this checkout")}`;
   return version;
+}
+
+/** The Access row: on, off with the command that turns it on, or what cf couldn't say. */
+function accessRow(access: AccessState | Unread): string {
+  if ("error" in access) return chalk.yellow("! couldn't check");
+  if (access.on) return `${chalk.green("on")}${chalk.dim(" · everyone signs in through Cloudflare Access first")}`;
+  return `off${chalk.dim(" · ")}${chalk.bold(`${CLI} access on`)}${chalk.dim(" puts Cloudflare Access in front (recommended)")}`;
 }
 
 function tls(
@@ -212,7 +226,8 @@ function emailTable(apps: AppState[], emailProblems: EmailRouteProblem[]): strin
 /**
  * The problems as blocks, after a blank line: those one command fixes in
  * one block (the first one's words, the others' headlines under them),
- * none for those that settle by themselves.
+ * none for those that settle by themselves. What is only good to know
+ * (an update to take or leave) gets a block too, led by a dim i.
  */
 function renderProblems(problems: Problem[]): string[] {
   const groups: Problem[][] = [];
@@ -230,9 +245,12 @@ function renderProblems(problems: Problem[]): string[] {
 
 function renderBlock([first, ...rest]: Problem[]): string[] {
   const problem = first!;
-  const worst = [problem, ...rest].some((one) => one.severity === Severity.Error)
+  const severities = [problem, ...rest].map((one) => one.severity);
+  const worst = severities.includes(Severity.Error)
     ? Severity.Error
-    : Severity.Warning;
+    : severities.includes(Severity.Warning)
+      ? Severity.Warning
+      : Severity.Info;
   return [
     `${GLYPHS[worst]} ${problem.headline}`,
     ...[...problem.detail, ...rest.map((other) => `${other.headline}.`)].map((line) =>

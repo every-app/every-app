@@ -72,6 +72,7 @@ import {
   settingsNameApplications,
   writeAccessSettingsRecord,
 } from "@/lib/access/record";
+import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { emitPlanWarnings, readPublicSurfaces, scopeOf, type PlanLeftovers } from "@/lib/access/sync";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -85,13 +86,6 @@ import { formatFacts } from "@/lib/output/table";
 import { listed, plural } from "@/lib/output/text";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
-
-/** The Gateway settings the outer ring runs on. */
-export const ACCESS_SETTINGS = [
-  "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
-  "CLOUDFLARE_ACCESS_APPS_AUD",
-  "CLOUDFLARE_ACCESS_AUD",
-] as const;
 
 /** The reusable policy `on` keeps: who may use Every App. */
 export const POLICY_NAME = "Every App gateway members";

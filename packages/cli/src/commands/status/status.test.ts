@@ -6,6 +6,8 @@
 import fs from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeAccessSettingsRecord } from "@/lib/access/record";
+import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
@@ -186,9 +188,15 @@ describe("everyapp status", () => {
         leases: [],
       },
     });
-    // No owner yet: the one thing to do.
+    // No owner yet: the one thing to do (and no `note`, since none was said).
     expect(done["data"]["fixes"]).toEqual([
-      expect.objectContaining({ code: "NO_OWNER", run: "pnpm everyapp setup" }),
+      {
+        code: "NO_OWNER",
+        severity: "warning",
+        message:
+          "No owner yet, so nobody can sign in\nApps still deploy. Setup prints a one-time link that creates the owner account.",
+        run: "pnpm everyapp setup",
+      },
     ]);
     expect(done["message"]).toBe("Gateway https://example.com: 1 app live, 1 problem to fix");
     const report = await shown();
@@ -267,6 +275,7 @@ describe("everyapp status", () => {
     account.emailRoutingOf("zone-1").rules.delete(rule!.id);
     expect((await status())["data"]["fixes"]).toContainEqual({
       code: "EMAIL_ROUTE_MISSING",
+      severity: "warning",
       message: "inbox doesn't get mail at support@example.com\nIts Email Routing rule is gone.",
       run: "pnpm everyapp deploy from inbox's directory",
     });
@@ -325,6 +334,7 @@ describe("everyapp status", () => {
     );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_ROUTE_PENDING",
+      severity: "warning",
       message: "inbox doesn't get mail at support@example.com yet",
       run: "pnpm everyapp deploy from inbox's directory",
     });
@@ -336,6 +346,7 @@ describe("everyapp status", () => {
     expect(both["data"]["fixes"]).toContainEqual(
       expect.objectContaining({
         code: "EMAIL_ROUTE_PENDING",
+        severity: "warning",
         message:
           "inbox's mail routes don't match its addresses\nsupport@example.com isn't routed yet; *@example.com is still routed, though no longer listed.",
       }),
@@ -368,6 +379,7 @@ describe("everyapp status", () => {
     );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_INBOUND_UNDECLARED",
+      severity: "warning",
       message:
         "inbox has inbound addresses, but its config doesn't turn inbound mail on\ninbox was deployed without email: { inbound: true }, so nothing routes *@example.com and support@example.com.",
       run: null,
@@ -511,14 +523,26 @@ describe("everyapp status", () => {
     expect(checkoutFixes(same)).toEqual([]);
     expect(await shown()).toMatch(/\nRelease +0\.2\.0 · matches this checkout\n/);
 
-    // Committed since: the next rebind upgrades it, or setup does now.
+    // Committed since: good to know, with the command that updates it now
+    // (never setup, which is for installing); the next rebind brings it anyway.
     const newer = await at("tree-2", Date.parse("2026-10-20T00:00:00Z"));
     expect(newer["data"]["upToDate"]).toBe(false);
-    expect(newer["data"]["fixes"]).toContainEqual(
-      expect.objectContaining({ code: "GATEWAY_OUTDATED", run: "pnpm everyapp setup" }),
-    );
-    expect(await shown()).toContain(
-      "! This checkout's Gateway changed since 0.2.0 went live\n  The next deploy or delete that rebinds the Gateway upgrades it too.",
+    expect(newer["data"]["fixes"]).toContainEqual({
+      code: "GATEWAY_OUTDATED",
+      severity: "info",
+      message:
+        "Your every-app folder has a newer Gateway than the one online\nRun gateway deploy to update it now, or leave it: the next new app's deploy updates it too.",
+      run: "pnpm everyapp gateway deploy",
+      note: "updates it now",
+    });
+    const updatable = await shown();
+    expect(updatable).toMatch(/\nRelease +0\.2\.0 · this checkout has newer Gateway changes\n/);
+    expect(updatable).toContain(
+      [
+        "i Your every-app folder has a newer Gateway than the one online",
+        "  Run gateway deploy to update it now, or leave it: the next new app's deploy updates it too.",
+        "  Run: pnpm everyapp gateway deploy  updates it now",
+      ].join("\n"),
     );
 
     // Behind the live one: git pull.
@@ -544,6 +568,96 @@ describe("everyapp status", () => {
     const published = await status();
     expect(published["data"]).toMatchObject({ upToDate: null, checkout: null });
     expect(checkoutFixes(published)).toEqual([]);
+  });
+
+  it("counts an available Gateway update as nothing to fix, and keeps the note under --json", async () => {
+    // The owner claimed, so the update is the only item.
+    new GatewayWorker(account).claim(
+      (await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url,
+    );
+    account.database("every-app-gateway").sqlite.exec(
+      "UPDATE _everyapp_install SET source_tree_sha256 = 'tree-1'",
+    );
+    const source = await releaseSource(tarball);
+    checkout = async () => ({
+      ...source,
+      treeSha256: "tree-2",
+      order: { ...source.order, committedAt: Date.parse("2026-10-20T00:00:00Z") },
+    });
+
+    const done = await status();
+
+    expect(done["message"]).toBe("Gateway https://example.com: 0 apps live, nothing to fix");
+    expect(done["data"]["fixes"]).toEqual([
+      {
+        code: "GATEWAY_OUTDATED",
+        severity: "info",
+        message: expect.stringMatching(/^Your every-app folder has a newer Gateway than the one online\n/),
+        run: "pnpm everyapp gateway deploy",
+        note: "updates it now",
+      },
+    ]);
+    // A real problem still counts, and its note travels the same way.
+    account.workers.get("every-app-gateway")!.versions.push("dashboard-1");
+    const changed = await status();
+    expect(changed["message"]).toBe("Gateway https://example.com: 0 apps live, 1 problem to fix");
+    expect(changed["data"]["fixes"]).toContainEqual(
+      expect.objectContaining({ code: "GATEWAY_CHANGED", run: "pnpm everyapp setup", note: "redeploys 0.2.0, asking first" }),
+    );
+  });
+
+  it("says whether Cloudflare Access is in front, from the Gateway Worker's settings and nothing else", async () => {
+    const gatewayWorker = () => account.workers.get("every-app-gateway")!;
+
+    // Off: none of the settings on the Worker.
+    const off = await status();
+    expect(off["data"]["access"]).toEqual({ on: false, teamDomain: null });
+    expect(await shown()).toMatch(
+      /\nOwner +none yet\nAccess +off · pnpm everyapp access on puts Cloudflare Access in front \(recommended\)\nRelease /,
+    );
+
+    // Two of three: still off (the Gateway needs all three).
+    gatewayWorker().secrets["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = "acme.cloudflareaccess.com";
+    gatewayWorker().secrets["CLOUDFLARE_ACCESS_AUD"] = "a".repeat(64);
+    expect((await status())["data"]["access"]).toEqual({ on: false, teamDomain: null });
+
+    // All three, as `access on` leaves them, with its record of the team.
+    for (const name of ACCESS_SETTINGS) gatewayWorker().secrets[name] = gatewayWorker().secrets[name] ?? "b".repeat(64);
+    await writeAccessSettingsRecord(db(), {
+      teamDomain: "acme.cloudflareaccess.com",
+      gatewayAud: "a".repeat(64),
+      appsAud: "b".repeat(64),
+      writtenAt: Date.parse("2026-10-23T12:00:00Z"),
+    });
+    const on = await status();
+    expect(on["data"]["access"]).toEqual({ on: true, teamDomain: "acme.cloudflareaccess.com" });
+    expect(fixCodes(on)).not.toContain("ACCESS_UNKNOWN");
+    expect(await shown()).toMatch(/\nAccess +on · everyone signs in through Cloudflare Access first\n/);
+    expect(account.cf.calls.some((call) => call.args[0] === "zero-trust")).toBe(false);
+
+    // cf can't list the Worker's settings: the row says so, and a problem says why.
+    account.cf.override(["workers", "secrets", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+    const unknown = await status();
+    expect(unknown["data"]["access"]).toBeNull();
+    expect(fixCodes(unknown)).toContain("ACCESS_UNKNOWN");
+    const report = await shown();
+    expect(report).toMatch(/\nAccess +! couldn't check\n/);
+    expect(report).toContain("! Couldn't check whether Cloudflare Access is on\n  Cloudflare said: ");
+  });
+
+  it("has no Access row for a hosted Gateway, which ignores the settings", async () => {
+    account.database("every-app-gateway").sqlite.exec(
+      "UPDATE _everyapp_install SET deployment_mode = 'hosted'",
+    );
+
+    const done = await status();
+
+    expect(done["data"]).toMatchObject({ mode: "hosted", access: null });
+    expect(fixCodes(done)).not.toContain("ACCESS_UNKNOWN");
+    expect(await shown()).not.toMatch(/\nAccess /);
   });
 
   it("logs in through cf's device link under --json, and waits for it", async () => {

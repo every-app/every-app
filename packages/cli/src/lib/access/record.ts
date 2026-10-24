@@ -26,9 +26,13 @@ interface AccessSettingsRecord {
   writtenAt: number;
 }
 
+/** The record, or null when `access on` never wrote one. Reads only: `status` calls it too. */
 export async function readAccessSettingsRecord(db: D1Database): Promise<AccessSettingsRecord | null> {
-  const [, rows = []] = await db.run([
-    { sql: CREATE_TABLE },
+  const [tables = []] = await db.run([
+    { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_everyapp_access'" },
+  ]);
+  if (tables.length === 0) return null;
+  const [rows = []] = await db.run([
     { sql: "SELECT team_domain, gateway_aud, apps_aud, written_at FROM _everyapp_access WHERE id = 'access'" },
   ]);
   const row = rows[0];

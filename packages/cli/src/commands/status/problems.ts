@@ -31,6 +31,7 @@ enum ProblemCode {
   EmailRouteMissing = "EMAIL_ROUTE_MISSING",
   CertificatesUnknown = "CERTIFICATES_UNKNOWN",
   CertPending = "CERT_PENDING",
+  AccessUnknown = "ACCESS_UNKNOWN",
   DeployRunning = "DEPLOY_RUNNING",
 }
 
@@ -40,8 +41,15 @@ export enum Severity {
   Error = "error",
   /** Something to do, or something the report couldn't check: !. */
   Warning = "warning",
+  /** Good to know, nothing to fix (an update to take or leave): a dim i. */
+  Info = "info",
   /** It settles by itself (a certificate, a first visit, a running deploy): the rows show it. */
   Settling = "settling",
+}
+
+/** Whether a person has to do something about it: errors and warnings count as problems to fix. */
+export function needsFixing(problem: Problem): boolean {
+  return problem.severity === Severity.Error || problem.severity === Severity.Warning;
 }
 
 /** Words with commands in them: plain for scripts, the commands bold for a person. */
@@ -114,6 +122,7 @@ export interface Unread {
 
 const SETUP = `${CLI} setup`;
 const DEPLOY = `${CLI} deploy`;
+const GATEWAY_DEPLOY = `${CLI} gateway deploy`;
 
 /** The problem of a Gateway database with no install row: setup stopped before writing it. */
 export function notInstalled(): Problem {
@@ -137,6 +146,7 @@ export function problemsFor({
   inSync,
   waitingCertificates,
   certificates,
+  access,
   leases,
   checkout,
   emailProblems,
@@ -151,6 +161,8 @@ export function problemsFor({
   inSync: boolean;
   waitingCertificates: string[];
   certificates: Unread | null;
+  /** Why the Gateway Worker's settings couldn't be listed, when they couldn't. */
+  access: Unread | null;
   leases: LeaseHolder[];
   checkout: CheckoutState;
   emailProblems: EmailRouteProblem[] | Unread;
@@ -170,13 +182,15 @@ export function problemsFor({
       run: command`${"git pull"}`,
     });
   } else if (checkout.upToDate === false && install.liveVersionId !== null) {
+    // Good to know, not a problem: nothing is broken, and the next deploy
+    // that rebinds the Gateway brings the update anyway.
     problems.push({
       code: ProblemCode.GatewayOutdated,
-      severity: Severity.Warning,
-      headline: `This checkout's Gateway changed since ${live} went live`,
-      detail: ["The next deploy or delete that rebinds the Gateway upgrades it too."],
-      run: command`${SETUP}`,
-      runNote: "upgrades it now",
+      severity: Severity.Info,
+      headline: "Your every-app folder has a newer Gateway than the one online",
+      detail: ["Run gateway deploy to update it now, or leave it: the next new app's deploy updates it too."],
+      run: command`${GATEWAY_DEPLOY}`,
+      runNote: "updates it now",
     });
   }
   if (install.liveVersionId === null) {
@@ -278,6 +292,14 @@ export function problemsFor({
       detail: ["It usually comes within minutes."],
     });
   }
+  if (access) {
+    problems.push({
+      code: ProblemCode.AccessUnknown,
+      severity: Severity.Warning,
+      headline: "Couldn't check whether Cloudflare Access is on",
+      detail: [`Cloudflare said: ${access.error}.`],
+    });
+  }
   for (const lease of leases) {
     problems.push({
       code: ProblemCode.DeployRunning,
@@ -286,7 +308,11 @@ export function problemsFor({
       detail: [],
     });
   }
-  return problems;
+  // What a person has to act on first; what is only good to know last.
+  return [
+    ...problems.filter((problem) => problem.severity !== Severity.Info),
+    ...problems.filter((problem) => problem.severity === Severity.Info),
+  ];
 }
 
 /** The live Gateway binds or publishes other apps than its registry lists. */

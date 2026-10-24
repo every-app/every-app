@@ -1,5 +1,6 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { LocalContext } from "@/context";
+import { readAccessState } from "@/lib/access/settings";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
 import { getWorkerDeployment } from "@/lib/cf/workers";
@@ -22,9 +23,9 @@ import { existingGateway } from "@/lib/gateway/connect";
 import { runCommand } from "@/lib/output/run";
 import { plural } from "@/lib/output/text";
 import {
+  needsFixing,
   notInstalled,
   problemsFor,
-  Severity,
   type AppState,
   type CheckoutState,
   type Problem,
@@ -47,8 +48,9 @@ interface StatusFlags {
  * them, what each installation sends as and receives at (`everyapp email
  * set`), whether every stored address has its route and Email Routing
  * still delivers it, each published hostname's certificate (Cloudflare's certificate
- * packs), any deploy in progress, and `fixes`: what is off, and what to
- * run about it.
+ * packs), whether Cloudflare Access is in front (the Gateway Worker's
+ * settings, by name), any deploy in progress, and `fixes`: what is off, and
+ * what to run about it.
  */
 export async function status(
   this: LocalContext,
@@ -69,12 +71,18 @@ export async function status(
   });
 }
 
-/** A problem as `data.fixes` carries it for a script. */
+/**
+ * A problem as `data.fixes` carries it for a script: its severity, so an
+ * informational item isn't taken for something to fix, and the note after
+ * `run`, so what it does isn't lost.
+ */
 function fixData(problem: Problem) {
   return {
     code: problem.code,
+    severity: problem.severity,
     message: [problem.headline, ...problem.detail].join("\n"),
     run: problem.run?.text ?? null,
+    ...(problem.runNote ? { note: problem.runNote } : {}),
     ...(problem.fix ? { fix: problem.fix.text } : {}),
   };
 }
@@ -110,14 +118,20 @@ export async function reportStatus({
     });
     return;
   }
-  const [desired, registered, leases, owner, serving, emailRoutes] = await Promise.all([
+  // Access is the Gateway Worker's: a hosted Gateway ignores its settings,
+  // and before the first upload there is no Worker to read.
+  const accessApplies = install.deploymentMode !== "hosted" && install.liveVersionId !== null;
+  const [desired, registered, leases, owner, serving, emailRoutes, access] = await Promise.all([
     readDesiredState(db, workerExistence(cf)),
     listApps(db),
     readLiveLeases(db),
     readOwner(db),
     getWorkerDeployment(cf, GATEWAY_WORKER_NAME),
     readResourcesOfKind(db, "email-route"),
+    accessApplies ? readOrUnread(() => readAccessState(cf, db)) : null,
   ]);
+  const accessState = access && "value" in access ? access.value : null;
+  const accessUnread = access && "error" in access ? access : null;
   const [certificates, emailProblems] = await Promise.all([
     readOrUnread(() => certificateStatus(cf, install.zoneId, install.liveDomains)),
     readOrUnread(async () =>
@@ -177,6 +191,7 @@ export async function reportStatus({
     inSync,
     waitingCertificates: waiting,
     certificates: "error" in certificates ? certificates : null,
+    access: accessUnread,
     leases,
     checkout: source,
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
@@ -189,6 +204,7 @@ export async function reportStatus({
     checkout: source,
     certificates: readCertificates,
     waitingCertificates: waiting,
+    access: accessUnread ?? accessState,
     leases,
     apps,
     missingWorkers: new Set(desired.missing.map((row) => row.workerName)),
@@ -225,6 +241,8 @@ export async function reportStatus({
       checkout: source.checkout,
       tls: readCertificates === null ? null : !waiting.includes(install.gatewayHost),
       certificates: readCertificates,
+      // Null when it doesn't apply (a hosted Gateway, no Worker yet) or cf couldn't say.
+      access: accessState,
       leases,
       fixes: problems.map(fixData),
     },
@@ -234,7 +252,7 @@ export async function reportStatus({
 /** The report in one line, for a script: "Gateway https://…: 1 app live, nothing to fix". */
 function summary(gatewayUrl: string, apps: AppState[], problems: Problem[]): string {
   const live = apps.filter((app) => app.status === "active" && app.bound).length;
-  const toFix = problems.filter((problem) => problem.severity !== Severity.Settling).length;
+  const toFix = problems.filter(needsFixing).length;
   return `Gateway ${gatewayUrl}: ${plural(live, "app")} live, ${toFix === 0 ? "nothing to fix" : `${plural(toFix, "problem")} to fix`}`;
 }
 
