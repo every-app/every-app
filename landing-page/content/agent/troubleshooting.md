@@ -18,6 +18,8 @@ Two things fix most problems: run the same command again (setup and deploys resu
 
 ### What status reports
 
+The report line by line, the `done.data` field behind each line and the loop to run until `fixes` is empty: [`everyapp status`: the report and its fixes](/docs/agent/status).
+
 `pnpm everyapp status --json` reads the Gateway's D1, cf and the checkout, nothing over HTTPS. `data.fixes[]` is `{ code, severity, message, run, note?, fix? }` (`run` is `null` when there is nothing to run; `note` is the parenthesis after the command in the table below, e.g. `updates it now`; `packages/cli/src/commands/status/index.ts`, `fixData`); `data.apps[]` has each app's `status` (`pending`, `binding`, `active`, `disabled`), `bound` (the live Gateway binds its Worker), `deployedBy`, `email` and `setup` (`{ ready, settings, unmet, groups, command }`: what its manifest needs set and whether it is; `null` when it declares nothing, is still `pending` or its Worker is gone); also `data.inSync`, `data.upToDate`, `data.versionId` against `data.recordedVersionId`, `data.certificates[]` (`{ host, ready }`), `data.tls`, `data.leases[]`, `data.owner`, `data.mode`, `data.release.version`, `data.checkout.version`. The fix codes (`packages/cli/src/commands/status/problems.ts`; they are status codes, not error codes):
 
 | Code                       | Headline                                                                                                                         | Run                                                                                                                            |

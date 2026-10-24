@@ -1,0 +1,162 @@
+---
+title: Check your setup with everyapp status
+description: One command shows your Gateway, your apps and what is left to do, with the command to run for each thing. Every line of the report explained.
+---
+
+Run it from your `every-app` folder whenever you want to know where things stand: after setup, after a deploy, after you install one of the four apps, or when something doesn't open.
+
+```bash
+pnpm everyapp status
+```
+
+It reads your Cloudflare account and the Gateway's database, changes nothing, and takes a few seconds. Under the report, each thing left to do gets a block with the exact command that does it. Run that command, then run `pnpm everyapp status` again, until the last line says **nothing to fix**. A coding agent can do the same loop with `pnpm everyapp status --json`; [its page](/docs/agent/status) says how.
+
+## What it shows
+
+A Gateway with the four apps on it, everything set:
+
+```text
+Gateway     https://apps.yourcompany.com · self-hosted
+Cloudflare  Your Name's Account
+Owner       you@yourcompany.com · Your Company
+Access      on · everyone signs in through Cloudflare Access first
+Release     0.2.0 · matches this checkout
+TLS         ready on 5 hostnames
+
+APP            STATUS  URL                                         DEPLOYED BY          PUBLIC
+agentic-inbox  ✓ live  https://agentic-inbox.apps.yourcompany.com  you@yourcompany.com
+analytics      ✓ live  https://analytics.apps.yourcompany.com      you@yourcompany.com  16 routes
+crm            ✓ live  https://crm.apps.yourcompany.com            you@yourcompany.com  4 routes
+openseo        ✓ live  https://openseo.apps.yourcompany.com        you@yourcompany.com
+
+EMAIL          SENDS AS                    RECEIVES
+agentic-inbox  inbox@mail.yourcompany.com  nothing
+
+APP            SETTING                                                    WHERE      STATUS
+agentic-inbox  OPENROUTER_API_KEY                                         Gateway    ✓ set
+agentic-inbox  WORKERS_AI_API_TOKEN                                       Gateway    not set (optional)
+agentic-inbox  EMAIL_FROM                                                 Gateway    ✓ set
+analytics      EMAIL_FROM                                                 Gateway    ✓ set
+analytics      MAIN_SECRET                                                analytics  ✓ set
+crm            OPENROUTER_API_KEY                                         Gateway    ✓ set
+crm            CONTEXT_API_KEY                                            Gateway    ✓ set
+crm            GOOGLE_WORKSPACE_CLIENT_ID+GOOGLE_WORKSPACE_CLIENT_SECRET  Gateway    not set (optional)
+crm            MICROSOFT_365_CLIENT_ID+MICROSOFT_365_CLIENT_SECRET        Gateway    not set (optional)
+crm            SLACK_CLIENT_ID+SLACK_CLIENT_SECRET                        Gateway    not set (optional)
+crm            TOKEN_ENCRYPTION_KEY                                       crm        ✓ set
+crm            GITHUB_TOKEN                                               crm        not set (optional)
+crm            OPENROUTER_MODEL                                           crm        not set (optional)
+crm            ERASURE_SECRET                                             crm        not set (optional)
+openseo        OPENROUTER_API_KEY                                         Gateway    ✓ set
+openseo        DATAFORSEO_API_KEY                                         Gateway    ✓ set
+openseo        CONTEXT_API_KEY                                            Gateway    ✓ set
+openseo        CRAWLER_ACCESS_SECRET                                      openseo    not set (optional)
+openseo        OPENROUTER_MODEL                                           openseo    not set (optional)
+```
+
+### The first lines
+
+- **Gateway**: your Gateway's address, and how it's deployed. `self-hosted` means it runs in your own Cloudflare account.
+- **Cloudflare**: the account you're logged in to. If you have several, add `--account-id <id>`.
+- **Owner**: the owner account and its organization. **none yet** means nobody opened the owner link, so nobody can sign in yet; apps still deploy.
+- **Access**: whether [Cloudflare Access](/docs/access) is in front. **off** shows the command that turns it on; we strongly recommend it before you invite anyone.
+- **Release**: the Gateway version online, and how it compares to your `every-app` folder: **matches this checkout**; **this checkout has newer Gateway changes** (you pulled an update you haven't deployed; take it with `pnpm everyapp update`, or leave it); **this checkout is behind** (someone deployed from a newer copy; `git pull` before you deploy); **changed outside everyapp** (the Gateway Worker was edited in the Cloudflare dashboard or API; `pnpm everyapp setup` puts the right version back, asking first); **never uploaded** (setup stopped early; run it again).
+- **TLS**: the certificates for your Gateway and app addresses. **waiting for &lt;address&gt;** settles by itself within minutes; **couldn't check** means Cloudflare didn't answer, run it again.
+- **Deploys**: a line per deploy running right now (who, from where, started how long ago). Not shown when none is running.
+
+### The APP table
+
+One row per app on your Gateway.
+
+- **STATUS**: **✓ live** opens for the people you've given access to. **○ live on first visit** and **○ waiting for certificate** settle by themselves: open the address, or wait a few minutes. **! needs setup** means a key the app requires isn't set, so it doesn't open yet; the SETTING table and a block below say which. **! never deployed**: the app was registered but no deploy finished; deploy it again from its folder, or `pnpm everyapp delete <app>`. **! not bound**: the app is uploaded but the live Gateway doesn't serve it; `pnpm everyapp setup` fixes that. **✗ Worker missing** and **✗ can't be bound** mean the app's Worker was deleted or renamed outside everyapp: deploy it again, or delete it. **switched off**: an admin disabled it on the Gateway. **· deploying** is added while a deploy runs.
+- **URL**: where the app lives.
+- **DEPLOYED BY**: who ran the last deploy (an email, or **API token**).
+- **PUBLIC**: how many of the app's routes are open to the internet without a sign-in (a tracking script, a webhook). Blank when none; the deploy prints the list.
+
+### The EMAIL table
+
+Only apps that send or receive mail appear. **SENDS AS** is the address the app sends from (or **the Gateway's sender**). **RECEIVES** lists each inbound address: **! not routed yet** until the next deploy makes its rule, **! not delivered** when the rule is gone or Email Routing is off for that domain, **(inbound off)** when the app's config no longer turns inbound mail on. [Send email](/docs/people#send-email) says how an app gets its addresses.
+
+### The SETTING table
+
+Only apps that need keys appear, one row per key. **WHERE** says who holds it: **Gateway** for a key every app can use (an AI provider, DataForSEO, the email sender), or the app's own name for a key only that app has. **STATUS**: **✓ set**; **! not set** is required and blocks the app; **not set (optional)** is fine to leave; **! couldn't check** or **! not recorded** means the names couldn't be read right now, run it again.
+
+## What it looks like with things to finish
+
+The same Gateway a few minutes after setup, before the owner link was opened and with OpenCRM just installed:
+
+```text
+Gateway     https://apps.yourcompany.com · self-hosted
+Cloudflare  Your Name's Account
+Owner       none yet
+Access      off · pnpm everyapp access on puts Cloudflare Access in front (recommended)
+Release     0.2.0 · matches this checkout
+TLS         waiting for my-app.apps.yourcompany.com · usually a few minutes
+
+APP     STATUS                     URL                                  DEPLOYED BY          PUBLIC
+crm     ! needs setup              https://crm.apps.yourcompany.com     you@yourcompany.com  4 routes
+my-app  ○ waiting for certificate  https://my-app.apps.yourcompany.com  you@yourcompany.com  1 route
+
+APP  SETTING               WHERE    STATUS
+crm  OPENROUTER_API_KEY    Gateway  ! not set
+crm  CONTEXT_API_KEY       Gateway  ! not set
+crm  TOKEN_ENCRYPTION_KEY  crm      not set (optional)
+crm  GITHUB_TOKEN          crm      not set (optional)
+
+! No owner yet, so nobody can sign in
+  Apps still deploy. Setup prints a one-time link that creates the owner account.
+  Run: pnpm everyapp setup
+! crm needs setup
+  OpenRouter: The research agent's model and its web research (Perplexity's Sonar models), through the gateway's AI proxy.
+  Get it at https://openrouter.ai/settings/keys
+  Guide: .claude/skills/everyapp/setup/openrouter.md
+  Context.dev: Company brand data, LinkedIn profiles and website extraction for the research agent.
+  Get it at https://context.dev/
+  Guide: .claude/skills/everyapp/setup/context.md
+  Run: pnpm everyapp secret set OPENROUTER_API_KEY CONTEXT_API_KEY
+```
+
+Two blocks, two things to do: open the setup link that `pnpm everyapp setup` prints, and set the two keys the block names. The block tells you what each key is for, where to get it, and which setup guide in the everyapp skill walks your coding agent through it. The certificate row needs nothing from you.
+
+## What it can tell you to do
+
+Each block is one of these. The command under **Run** is the whole fix.
+
+### Finish the Gateway
+
+- **Setup stopped before it recorded the Gateway's install**, **The Gateway's install stopped before its first upload**: run `pnpm everyapp setup`. It picks up where it stopped, and asks for the address again if it never recorded one.
+- **No owner yet, so nobody can sign in**: run `pnpm everyapp setup`. It prints a fresh one-time link; open it to create the owner account. Apps deploy fine in the meantime.
+- **The Gateway Worker was changed outside everyapp**: the Worker serves a version from the dashboard or the API. `pnpm everyapp setup` puts back the version it installed, asking first.
+- **The live Gateway doesn't serve &lt;app&gt;**, **The live Gateway's apps or hostnames are out of date**: an app or an address was added or removed and the live Gateway hasn't caught up. `pnpm everyapp setup`.
+
+### Your folder and the Gateway
+
+- **This checkout is behind the live Gateway**: someone deployed from a newer copy of Every App, and deploys from this folder are refused until it catches up. `git pull`, then `pnpm install`.
+- **Your every-app folder has a newer Gateway than the one online** (a dim **i**): good to know, nothing is broken. `pnpm everyapp update` updates it now, or the next new app's deploy does. [Update your Gateway](/docs/update#update-your-gateway)
+
+### Finish an app
+
+- **&lt;app&gt; needs setup**: a key it requires isn't set. The block names each key, what it's for, where to get it, and the setup guide for it; **Run** is the one `pnpm everyapp secret set …` that opens the app. When the key is only that app's, the command ends with `--app <app>`. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
+- **&lt;app&gt; was registered, but none of its deploys finished**: `pnpm everyapp deploy` from the app's folder, or `pnpm everyapp delete <app>` if you don't want it.
+- **&lt;app&gt;'s Worker no longer exists**: its Worker was deleted in Cloudflare. Deploy it again from its folder, or delete it from the Gateway.
+- **The Gateway can't bind &lt;app&gt;**: its Worker isn't named the way the Gateway expects (it was renamed, or made by hand). `pnpm everyapp delete <app>`, then deploy it again.
+- **&lt;app&gt; goes live on its first visit to &lt;address&gt;**: nothing to do. Open it.
+
+### Email
+
+- **&lt;app&gt; doesn't get mail at &lt;address&gt; yet**: the address is stored but no deploy has made its rule. `pnpm everyapp deploy` from the app's folder.
+- **&lt;app&gt; doesn't get mail at &lt;address&gt;**: the rule is gone, switched off, or Email Routing is off for that domain. Deploy again; if it comes back, check the domain's **Email Routing** page in Cloudflare.
+- **&lt;app&gt; has an inbound address, but its config doesn't turn inbound mail on**: turn it on in the app's `everyapp.config.ts` (`email: { inbound: true }`) and deploy, or drop the address with `pnpm everyapp email unset inbound`.
+
+### Settling by itself
+
+- **No certificate yet for &lt;address&gt;**: Cloudflare is issuing it. Usually a few minutes.
+- **A deploy of &lt;app&gt; … is running**: wait for it to finish.
+
+### Cloudflare didn't answer
+
+**Couldn't list the Workers' secrets**, **Couldn't check the apps' Email Routing rules**, **Couldn't list &lt;domain&gt;'s certificates**, **Couldn't check whether Cloudflare Access is on**: the report is complete except for that part. Run it again. If it keeps happening, the line after it (**Cloudflare said: …**) says why; most often the API token you logged in with is missing a permission, or Cloudflare is having a bad moment. [Troubleshooting](/docs/troubleshooting)
+
+## No Gateway yet
+
+If you haven't set one up, `pnpm everyapp status` says **No Gateway in &lt;account&gt;'s Cloudflare account** and prints the setup command. [Set up your Gateway](/docs/gateway)

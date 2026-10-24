@@ -94,6 +94,7 @@ describe("the agent docs", () => {
       "json",
       "errors",
       "troubleshooting",
+      "status",
       "manifest",
       "identity",
       "secrets",
