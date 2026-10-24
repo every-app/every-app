@@ -144,11 +144,12 @@ Set up:  what the Gateway holds for apps, end to end (the provider's side, the
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.
-Providers: pnpm everyapp provider on dataforseo --json   offers a data provider's
+MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
          tools (dataforseo_<tool>) to members' AI clients through the Gateway's
          /mcp with the Gateway's key (DATAFORSEO_API_KEY, setup/dataforseo.md);
-         nothing to deploy. provider list shows on/off and whether the key is
-         set; provider off <id> removes it. You, owners and admins get it;
+         no page, nothing to deploy (the launcher lists it under "MCP apps").
+         mcp list shows on/off and whether the key is set; mcp off <id>
+         removes it (provider on|off|list is an alias). You, owners and admins get it;
          others are granted in Admin → Apps → Manage access. An owner or admin
          caps an app's provider calls per month in Admin → Usage (off by
          default): past it a provider tool answers a tool error naming the

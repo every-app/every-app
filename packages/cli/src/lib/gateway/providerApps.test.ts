@@ -134,7 +134,7 @@ describe("turnProviderAppOn", () => {
   it("refuses an unknown provider, naming the ones there are", async () => {
     await expect(on("ahrefs")).rejects.toMatchObject({
       code: "PROVIDER_APP_UNKNOWN",
-      message: '"ahrefs" is not a provider app. The Gateway offers: dataforseo.',
+      message: '"ahrefs" is not an MCP app. The Gateway offers: dataforseo.',
     });
     expect(row("ahrefs")).toBeUndefined();
   });
@@ -194,7 +194,7 @@ describe("turnProviderAppOff", () => {
 });
 
 describe("listProviderApps", () => {
-  it("lists every provider app the Gateway offers with whether it is on", async () => {
+  it("lists every MCP app the Gateway offers with whether it is on", async () => {
     expect(await listProviderApps(db())).toEqual([
       {
         id: "dataforseo",

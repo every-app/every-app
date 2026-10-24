@@ -293,7 +293,7 @@ in the gateway's Cloudflare account **is** operator authority.
   gateway still validates the manifest it reads from a row and treats an
   unknown status as disabled; a row whose `tier` isn't `service_binding` or
   `dispatch`, or whose `scope` isn't `org` or `shared`, is never routed (a
-  503 on its host), never read as another tier or scope. A provider app's
+  503 on its host), never read as another tier or scope. An MCP app's (tier `provider`)
   row (`everyapp provider on`: tier `provider`, no hostname, no Worker) is
   left out of that lookup altogether: the gateway serves its tools itself on
   `/mcp` (docs/threat-model.md B5, `toolbus.provider-app-in-process`). A
@@ -566,11 +566,11 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   take one it lacks (at most 20 apps within a request, for 3 s, with the
   one-minute system token that opens nothing but the catalog). Each tool
   call is one call over the app's service binding. The gateway's `/mcp` also
-  serves provider apps (`everyapp provider on dataforseo`: tier `provider`,
+  serves MCP apps (provider apps in the code; `everyapp mcp on dataforseo`: tier `provider`,
   tools `dataforseo_<tool>`) in-process with the Gateway's key, each call
   under the capability proxy's rules and the organization's monthly cap,
   counted and audited against the provider row (`docs/capabilities.md`,
-  "Provider apps").
+  "MCP apps").
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
   (see below) or a personal access token, never a cookie; a self-hosted
   gateway behind Cloudflare Access's Managed OAuth also takes a verified

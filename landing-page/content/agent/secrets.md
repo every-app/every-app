@@ -119,7 +119,7 @@ An app lists `providers: ["openai"]` and calls `/api/ai/<provider>/...` with `cr
 
 ### API-key capabilities
 
-An app lists `capabilities: { <id>: { access: "read", why } }` and calls the provider's real URLs with `integrationFetch({ env, provider: "<id>", for })`; the Gateway puts the key on the call and forwards it to the provider's hosts only. Step by step: `setup/dataforseo.md`, `setup/context.md`. The same `DATAFORSEO_API_KEY` also serves DataForSEO's tools straight to members' AI clients as a provider app, with nothing to deploy: `pnpm everyapp provider on dataforseo` ([/docs/agent/mcp](/docs/agent/mcp#provider-apps)).
+An app lists `capabilities: { <id>: { access: "read", why } }` and calls the provider's real URLs with `integrationFetch({ env, provider: "<id>", for })`; the Gateway puts the key on the call and forwards it to the provider's hosts only. Step by step: `setup/dataforseo.md`, `setup/context.md`. The same `DATAFORSEO_API_KEY` also serves DataForSEO's tools straight to members' AI clients as an MCP app, with no page and nothing to deploy: `pnpm everyapp mcp on dataforseo` ([/docs/agent/mcp](/docs/agent/mcp#mcp-apps)).
 
 | Setting              | Configures                                                                                                                | Manifest entry                 |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -218,7 +218,7 @@ Three of them the operator does not set by hand: `everyapp access on` (`packages
 
 ### Dev-only settings
 
-`DEV_ONLY_GATEWAY_SETTINGS`: `MCP_ACCESS_TOKEN_TTL` and `DATAFORSEO_SANDBOX`. Set in the Gateway's own `.dev.vars`, never deployed, honored only when `GATEWAY_URL` starts with `http://`; `secret set` refuses them (`SECRET_NOT_SETTABLE`). `MCP_ACCESS_TOKEN_TTL`: shorter OAuth access tokens in seconds (clamped to 60 through 3600, the normal lifetime; `apps/every-app-gateway/src/server/mcp-auth/config.ts`). `DATAFORSEO_SANDBOX`: `true` sends the DataForSEO provider app's tool calls ([/docs/agent/mcp](/docs/agent/mcp) "Provider apps") to `sandbox.dataforseo.com`, which answers like production with made-up data at no charge, still with the `DATAFORSEO_API_KEY` from the same file (`apps/every-app-gateway/src/server/provider-apps/dataforseo.ts`).
+`DEV_ONLY_GATEWAY_SETTINGS`: `MCP_ACCESS_TOKEN_TTL` and `DATAFORSEO_SANDBOX`. Set in the Gateway's own `.dev.vars`, never deployed, honored only when `GATEWAY_URL` starts with `http://`; `secret set` refuses them (`SECRET_NOT_SETTABLE`). `MCP_ACCESS_TOKEN_TTL`: shorter OAuth access tokens in seconds (clamped to 60 through 3600, the normal lifetime; `apps/every-app-gateway/src/server/mcp-auth/config.ts`). `DATAFORSEO_SANDBOX`: `true` sends the DataForSEO MCP app's tool calls ([/docs/agent/mcp#mcp-apps](/docs/agent/mcp#mcp-apps) "MCP apps") to `sandbox.dataforseo.com`, which answers like production with made-up data at no charge, still with the `DATAFORSEO_API_KEY` from the same file (`apps/every-app-gateway/src/server/provider-apps/dataforseo.ts`).
 
 ### Reserved names an app secret cannot take
 

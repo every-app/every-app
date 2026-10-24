@@ -12,7 +12,12 @@ import {
 } from "@/client/components/ui/tooltip";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
-import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
+import {
+  MCP_APP_KIND_LABEL,
+  appNeedsSetup,
+  appStatus,
+  mcpAppUsable,
+} from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
 /**
@@ -30,24 +35,30 @@ interface AppListItemProps {
   onTogglePin: () => void;
   /** Opens the setup dialog, for an app that needs setup. */
   onOpenSetup: () => void;
+  /** Opens the "Use it from your agent" dialog, for an MCP app that is set up. */
+  onUseMcp: () => void;
   layout: AppLibraryLayout;
 }
 
 /**
  * The app is a normal link; pinning is a separate, keyboard-accessible
  * action. An app that needs setup is no link: the card (its badge
- * included) opens the setup dialog instead.
+ * included) opens the setup dialog instead. An MCP app has no page: its
+ * card carries an "MCP" chip where the open arrow would be and opens the
+ * dialog that says how an agent uses it.
  */
 export function AppListItem({
   app,
   pinned,
   onTogglePin,
   onOpenSetup,
+  onUseMcp,
   layout,
 }: AppListItemProps) {
   const status = appStatus(app);
   const routable = status.opens;
   const needsSetup = appNeedsSetup(app);
+  const mcp = mcpAppUsable(app);
   const list = layout === AppLibraryLayout.List;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
@@ -55,6 +66,21 @@ export function AppListItem({
   // (lib/appLaunchPrefetch); an app that opens always has a hostname.
   const { hostname } = app;
   const warm = hostname ? () => preconnectTo(hostname) : undefined;
+  // What sits beside the name when there is no arrow: the kind of an MCP
+  // app, or the state of an app that doesn't open.
+  // The kind in the badge's soft tint, so it never reads as a state.
+  const chip = mcp ? (
+    <Badge variant="soft" className={cn("shrink-0", list && "md:hidden")}>
+      {MCP_APP_KIND_LABEL}
+    </Badge>
+  ) : !routable ? (
+    <Badge
+      variant={status.variant}
+      className={cn("shrink-0", list && "md:hidden")}
+    >
+      {status.label}
+    </Badge>
+  ) : null;
   const body = (
     <>
       <AppIcon
@@ -84,19 +110,13 @@ export function AppListItem({
           >
             {app.name}
           </h3>
-          {!routable ? (
-            <Badge
-              variant={status.variant}
-              className={cn("shrink-0", list && "md:hidden")}
-            >
-              {status.label}
-            </Badge>
-          ) : !list ? (
-            <ArrowUpRight
-              className="-ml-1 hidden size-3.5 shrink-0 text-muted-foreground md:block"
-              aria-hidden
-            />
-          ) : null}
+          {chip ??
+            (!list ? (
+              <ArrowUpRight
+                className="-ml-1 hidden size-3.5 shrink-0 text-muted-foreground md:block"
+                aria-hidden
+              />
+            ) : null)}
         </div>
         <p
           className={cn(
@@ -149,6 +169,10 @@ export function AppListItem({
                 aria-hidden
               />
             </span>
+          ) : mcp ? (
+            <Badge variant="soft" className="hidden md:inline-flex">
+              {MCP_APP_KIND_LABEL}
+            </Badge>
           ) : (
             <Badge variant={status.variant} className="hidden md:inline-flex">
               {status.label}
@@ -163,6 +187,8 @@ export function AppListItem({
     list &&
       "md:grid md:grid-cols-[2rem_minmax(0,1fr)_auto] md:items-center md:gap-x-3 md:px-4 md:py-2",
   );
+  const overlayClass =
+    "absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50";
 
   return (
     <li>
@@ -170,7 +196,7 @@ export function AppListItem({
         className={cn(
           "group relative gap-0 py-0 transition-colors motion-reduce:transition-none",
           cardHeightClass(list),
-          routable ? "hover:border-foreground/25" : "bg-card/60",
+          routable || mcp ? "hover:border-foreground/25" : "bg-card/60",
           needsSetup && "hover:border-foreground/25",
         )}
       >
@@ -182,7 +208,7 @@ export function AppListItem({
             onPointerEnter={warm}
             onFocus={warm}
             onTouchStart={warm}
-            className="absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+            className={overlayClass}
           />
         ) : needsSetup ? (
           <button
@@ -190,7 +216,15 @@ export function AppListItem({
             aria-label={`Set up ${app.name}`}
             aria-haspopup="dialog"
             onClick={onOpenSetup}
-            className="absolute inset-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+            className={cn(overlayClass, "cursor-pointer")}
+          />
+        ) : mcp ? (
+          <button
+            type="button"
+            aria-label={`Use ${app.name} from your agent`}
+            aria-haspopup="dialog"
+            onClick={onUseMcp}
+            className={cn(overlayClass, "cursor-pointer")}
           />
         ) : null}
       </Card>

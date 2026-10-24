@@ -498,7 +498,7 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
       code: "APP_TIER_MISMATCH",
       message:
         existingApp.tier === PROVIDER_APP_TIER
-          ? `"${input.appSlug}" is the Gateway's provider app of that name${existingApp.status === DELETED_APP_STATUS ? " (turned off)" : ""}; give this app an id of its own.`
+          ? `"${input.appSlug}" is the Gateway's MCP app of that name${existingApp.status === DELETED_APP_STATUS ? " (turned off)" : ""}; give this app an id of its own.`
           : existingApp.tier === "dispatch"
             ? `App "${input.appSlug}" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.`
             : `App "${input.appSlug}" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.`,

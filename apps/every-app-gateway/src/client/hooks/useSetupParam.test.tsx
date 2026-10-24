@@ -9,7 +9,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { UserAccessApp } from "@/types/app";
-import { useSetupParam } from "./useSetupParam";
+import { useMcpParam, useSetupParam } from "./useSetupParam";
 
 type Props = Parameters<typeof useSetupParam>[0];
 
@@ -131,4 +131,46 @@ it("takes the same id again once the param has gone, and does nothing without on
   render();
   expect(open).toHaveBeenCalledTimes(2);
   expect(strip).toHaveBeenCalledTimes(2);
+});
+
+/** `?mcp=<appId>` for the DataForSEO MCP app: the same hook, another dialog. */
+const DATAFORSEO = app({
+  id: "row-dataforseo",
+  appId: "dataforseo",
+  name: "DataForSEO",
+  hostname: null,
+  tier: "provider",
+  setup: { ready: true, settings: [], unmet: [], groups: [], command: null },
+});
+
+function McpHarness(props: Parameters<typeof useMcpParam>[0]) {
+  useMcpParam(props);
+  return null;
+}
+
+it("opens an MCP app's dialog from ?mcp=, once, and only for an MCP app that is set up", () => {
+  const renderMcp = (mcpParam: string | undefined, apps = [SEO, DATAFORSEO]) =>
+    act(() =>
+      root.render(
+        <McpHarness
+          mcpParam={mcpParam}
+          apps={apps}
+          loaded
+          open={open}
+          strip={strip}
+        />,
+      ),
+    );
+  renderMcp("dataforseo");
+  expect(open).toHaveBeenCalledExactlyOnceWith(DATAFORSEO);
+  expect(strip).toHaveBeenCalledOnce();
+  renderMcp(undefined);
+  // An app with a page, or an MCP app whose key is unset, only loses the param.
+  renderMcp("seo");
+  expect(open).toHaveBeenCalledOnce();
+  expect(strip).toHaveBeenCalledTimes(2);
+  renderMcp(undefined);
+  renderMcp("dataforseo", [SEO, { ...DATAFORSEO, setup: SEO.setup }]);
+  expect(open).toHaveBeenCalledOnce();
+  expect(strip).toHaveBeenCalledTimes(3);
 });

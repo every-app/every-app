@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 /**
  * The home card rendered for real (React in a DOM): a ready app is a link,
- * an app that needs setup is a button that opens the setup dialog, and the
- * pin button works on either. The wording of the status is tested on
+ * an app that needs setup is a button that opens the setup dialog, an MCP
+ * app is a button that opens the "Use it from your agent" dialog, and the
+ * pin button works on any. The wording of the status is tested on
  * appStatus (lib/appStatus.test.ts).
  */
 import { act } from "react";
@@ -54,10 +55,12 @@ const UNREADY: UserAccessApp["setup"] = {
 let root: Root;
 let container: HTMLElement;
 let onOpenSetup: ReturnType<typeof vi.fn>;
+let onUseMcp: ReturnType<typeof vi.fn>;
 let onTogglePin: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   onOpenSetup = vi.fn();
+  onUseMcp = vi.fn();
   onTogglePin = vi.fn();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -77,6 +80,7 @@ function render(item: UserAccessApp, layout = AppLibraryLayout.Grid) {
         pinned={false}
         onTogglePin={onTogglePin}
         onOpenSetup={onOpenSetup}
+        onUseMcp={onUseMcp}
         layout={layout}
       />,
     ),
@@ -148,4 +152,46 @@ it("neither links to an app that isn't deployed nor opens the dialog for it", ()
   expect(text()).toContain("Needs deploy");
   expect(openLink()).toBeNull();
   expect(setupButton()).toBeNull();
+});
+
+/** The DataForSEO MCP app, as `everyapp mcp on dataforseo` registers it. */
+const MCP = app({
+  id: "row-dataforseo",
+  appId: "dataforseo",
+  name: "DataForSEO",
+  description: "SEO data for your agent.",
+  hostname: null,
+  tier: "provider",
+  isDefault: false,
+});
+const useButton = () =>
+  container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Use DataForSEO from your agent"]',
+  );
+
+it("opens the agent dialog from an MCP app's card, with its kind as the chip and no link, in both layouts", () => {
+  for (const layout of [AppLibraryLayout.Grid, AppLibraryLayout.List]) {
+    render(MCP, layout);
+    expect(text()).toContain("MCP");
+    expect(text()).not.toContain("Active");
+    expect(container.querySelector("a[href]")).toBeNull();
+    expect(setupButton()).toBeNull();
+    expect(useButton()?.getAttribute("aria-haspopup")).toBe("dialog");
+    press(useButton());
+    expect(onUseMcp).toHaveBeenCalledOnce();
+    expect(onOpenSetup).not.toHaveBeenCalled();
+    onUseMcp.mockClear();
+  }
+});
+
+it("sends an MCP app whose key is unset to the setup dialog, not the agent dialog", () => {
+  render({ ...MCP, setup: UNREADY });
+  expect(text()).toContain("Needs setup");
+  expect(useButton()).toBeNull();
+  const setup = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Set up DataForSEO"]',
+  );
+  press(setup);
+  expect(onOpenSetup).toHaveBeenCalledOnce();
+  expect(onUseMcp).not.toHaveBeenCalled();
 });

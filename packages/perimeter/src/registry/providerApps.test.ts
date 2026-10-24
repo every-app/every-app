@@ -51,13 +51,12 @@ const deployedRow: AppRow = {
 };
 
 describe("providerAppId", () => {
-  it("names the provider apps there are for an unknown id", () => {
+  it("names the MCP apps there are for an unknown id", () => {
     expect(() => providerAppId("ahrefs")).toThrow(
       expect.objectContaining({
         code: "PROVIDER_APP_UNKNOWN",
         status: 400,
-        message:
-          '"ahrefs" is not a provider app. The Gateway offers: dataforseo.',
+        message: '"ahrefs" is not an MCP app. The Gateway offers: dataforseo.',
       }),
     );
   });
@@ -136,7 +135,7 @@ describe("planProviderAppOn", () => {
         code: "APP_TIER_MISMATCH",
         status: 409,
         message:
-          '"dataforseo" is an app deployed to this Gateway, not the provider app; the provider app can\'t take its id.',
+          '"dataforseo" is an app deployed to this Gateway, not the MCP app; the MCP app can\'t take its id.',
       }),
     );
     expect(() =>
@@ -155,7 +154,7 @@ describe("planProviderAppOn", () => {
 });
 
 describe("providerAppOffUpdate", () => {
-  it("tombstones a provider app that is on", () => {
+  it("tombstones an MCP app that is on", () => {
     expect(providerAppOffUpdate("dataforseo", onRow)).toEqual({
       status: "deleted",
       isDefault: false,
@@ -174,8 +173,8 @@ describe("providerAppOffUpdate", () => {
   });
 });
 
-describe("planRegistration against a provider app's row", () => {
-  it("refuses to deploy an app under the provider app's id", () => {
+describe("planRegistration against an MCP app's row", () => {
+  it("refuses to deploy an app under the MCP app's id", () => {
     expect(() =>
       planRegistration({
         organizationId: "org-1",
@@ -196,7 +195,7 @@ describe("planRegistration against a provider app's row", () => {
       expect.objectContaining({
         code: "APP_TIER_MISMATCH",
         message:
-          '"dataforseo" is the Gateway\'s provider app of that name; give this app an id of its own.',
+          '"dataforseo" is the Gateway\'s MCP app of that name; give this app an id of its own.',
       }),
     );
   });

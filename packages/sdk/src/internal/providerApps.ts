@@ -1,11 +1,13 @@
 /**
- * Provider apps: a data provider (DataForSEO today) offered to members as
- * an app of the Gateway's own, with no Worker to deploy. The operator turns
- * it on (`everyapp provider on <id>`) and sets the provider's key as a
- * Gateway setting; the Gateway then serves the provider's tools on its
- * `/mcp` under `<id>_<tool>` names, with the key never leaving the Gateway,
- * every call attributed to the member who made it, counted and audited like
- * an app's capability calls.
+ * Provider apps, "MCP apps" to the person: a data provider (DataForSEO
+ * today) offered to members as an app of the Gateway's own, with no page
+ * and no Worker to deploy. The operator turns it on (`everyapp mcp on
+ * <id>`) and sets the provider's key as a Gateway setting; the Gateway then
+ * serves the provider's tools on its `/mcp` under `<id>_<tool>` names, with
+ * the key never leaving the Gateway, every call attributed to the member
+ * who made it, counted and audited like an app's capability calls. The
+ * launcher lists it under "MCP apps" and its card opens the "Use it from
+ * your agent" dialog instead of a page (docs/design/2026-10-mcp-apps-ui.md).
  *
  * A provider app is an `apps` row of tier {@link PROVIDER_APP_TIER} with no
  * hostname and no Worker name: the perimeter never routes it, and the
@@ -35,6 +37,11 @@ export interface ProviderAppDefinition {
   capability: ApiKeyCapabilityId;
   /** Why the app lists the capability: the manifest entry's `why`. */
   why: string;
+  /**
+   * What to say to an agent to try it, after "Use <name> to": the "Use it
+   * from your agent" dialog's example sentence.
+   */
+  example: string;
 }
 
 export const PROVIDER_APPS = {
@@ -42,9 +49,10 @@ export const PROVIDER_APPS = {
     id: "dataforseo",
     name: "DataForSEO",
     description:
-      "SEO data for your AI client: keyword metrics and suggestions, live Google results, domain rankings, competitors and backlinks, through the Gateway's DataForSEO key.",
+      "SEO data for your agent: keyword metrics and suggestions, live Google results, domain rankings, competitors and backlinks, through the Gateway's DataForSEO key.",
     capability: "dataforseo",
     why: "Serves DataForSEO's keyword, search-result, domain and backlink data to members' AI clients.",
+    example: "find keyword ideas for a page about running shoes",
   },
 } as const satisfies Record<string, ProviderAppDefinition>;
 

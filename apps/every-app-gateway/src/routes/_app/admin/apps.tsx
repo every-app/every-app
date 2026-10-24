@@ -5,6 +5,7 @@ import { Download, Plus } from "lucide-react";
 import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
+import { McpAppDialog } from "@/client/components/McpAppDialog";
 import { SectionHeader } from "@/client/components/PageHeader";
 import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
@@ -37,6 +38,7 @@ function AppsPage() {
   const [setupApp, setSetupApp] = useState<AppWithAccessCount | null>(null);
   // The four apps and Build your own, once the home no longer shows them.
   const [addingApp, setAddingApp] = useState(false);
+  const [mcpApp, setMcpApp] = useState<AppWithAccessCount | null>(null);
 
   const {
     data: apps,
@@ -87,6 +89,7 @@ function AppsPage() {
           ) : undefined
         }
         onSetup={setSetupApp}
+        onUseMcp={setMcpApp}
         onManageAccess={setAccessApp}
         onEdit={setEditingApp}
         onDelete={setDeletingApp}
@@ -106,6 +109,14 @@ function AppsPage() {
           // the dialog says who does, and leaves out what else could be set.
           canRun={!setupApp.readOnly}
           onClose={() => setSetupApp(null)}
+        />
+      ) : null}
+
+      {mcpApp ? (
+        <McpAppDialog
+          name={mcpApp.name}
+          appId={mcpApp.appId}
+          onClose={() => setMcpApp(null)}
         />
       ) : null}
 

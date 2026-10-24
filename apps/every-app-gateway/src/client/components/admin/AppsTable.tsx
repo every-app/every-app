@@ -15,12 +15,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
-import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { appEmail } from "@/client/lib/appEmail";
 import {
   AppStatusLabel,
+  MCP_APP_KIND_LABEL,
   appNeedsSetup,
   appStatus,
+  isMcpApp,
 } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
@@ -33,6 +34,8 @@ const SEARCH_THRESHOLD = 3;
 type AppRowActions = {
   /** Opens the setup dialog, for an app that needs setup. */
   onSetup: (app: AppWithAccessCount) => void;
+  /** Opens the "Use it from your agent" dialog, for an MCP app. */
+  onUseMcp: (app: AppWithAccessCount) => void;
   onManageAccess: (app: AppWithAccessCount) => void;
   onEdit: (app: AppWithAccessCount) => void;
   onDelete: (app: AppWithAccessCount) => void;
@@ -48,12 +51,34 @@ interface AppsTableProps extends AppRowActions {
   error?: ReactNode;
 }
 
-function AppNameCell({ app }: { app: AppWithAccessCount }) {
+function AppNameCell({
+  app,
+  onUseMcp,
+}: {
+  app: AppWithAccessCount;
+  onUseMcp: (app: AppWithAccessCount) => void;
+}) {
   const email = appEmail(app);
+  const mcp = isMcpApp(app);
   return (
     <>
       <div className="flex min-w-0 items-center gap-1.5">
         <p className="truncate font-medium">{app.name}</p>
+        {mcp ? (
+          // The kind, beside the name (never a status): it opens the
+          // dialog that says how an agent uses the app.
+          <Badge
+            variant="soft"
+            render={<button type="button" />}
+            aria-haspopup="dialog"
+            // The visible label first, then the action it opens.
+            aria-label={`MCP. Use ${app.name} from your agent`}
+            className="cursor-pointer hover:bg-primary/20"
+            onClick={() => onUseMcp(app)}
+          >
+            {MCP_APP_KIND_LABEL}
+          </Badge>
+        ) : null}
         {app.description ? (
           <Tooltip>
             <TooltipTrigger
@@ -71,15 +96,14 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
         {app.appId}
         {app.hostname
           ? ` · ${app.hostname}`
-          : app.tier === PROVIDER_APP_TIER
-            ? ` · tools on /mcp as ${app.appId}_<tool>`
+          : mcp
+            ? ` · agents call ${app.appId}_<tool>`
             : null}
       </p>
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">
-          {/* A provider app has no deploy: the operator turned it on. */}
-          {app.tier === PROVIDER_APP_TIER ? "Turned on by" : "Deployed by"}{" "}
-          {app.deployedByActor}
+          {/* An MCP app has no deploy: the operator turned it on. */}
+          {mcp ? "Turned on by" : "Deployed by"} {app.deployedByActor}
         </p>
       ) : null}
       {email.senders.length || email.inbound.length ? (
@@ -107,6 +131,7 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
 
 function buildColumns({
   onSetup,
+  onUseMcp,
   onManageAccess,
   onEdit,
   onDelete,
@@ -117,7 +142,7 @@ function buildColumns({
       id: "app",
       accessorFn: (app) => app.name,
       header: ({ column }) => <SortableHeader column={column} label="App" />,
-      cell: ({ row }) => <AppNameCell app={row.original} />,
+      cell: ({ row }) => <AppNameCell app={row.original} onUseMcp={onUseMcp} />,
       meta: { cellClassName: "max-w-[320px]" },
     },
     {
@@ -127,8 +152,8 @@ function buildColumns({
       cell: ({ row }) => {
         const status = appStatus(row.original);
         // The usual state is plain text; only an exception is a chip (as
-        // on the Users and Tokens tabs). A provider app's "AI tools" stays
-        // a chip: the MCP apps thread's default, for the design review.
+        // on the Users and Tokens tabs). An MCP app that is set up is
+        // Active like any other; its kind is the chip beside its name.
         if (status.label === AppStatusLabel.Active) {
           return <span className="text-muted-foreground">{status.label}</span>;
         }
@@ -216,6 +241,9 @@ function buildColumns({
             }
             onEdit={() => onEdit(row.original)}
             onDelete={() => onDelete(row.original)}
+            // Deleting an MCP app's row is turning it off (`everyapp mcp
+            // off` writes the same tombstone; `mcp on` brings it back).
+            deleteLabel={isMcpApp(row.original) ? "Turn off" : undefined}
             isOwner={isOwner}
           />
         ),
@@ -228,6 +256,7 @@ export function AppsTable({
   isLoading,
   error,
   onSetup,
+  onUseMcp,
   onManageAccess,
   onEdit,
   onDelete,
@@ -254,8 +283,16 @@ export function AppsTable({
 
   // Stable columns and data keep TanStack Table from resetting every render.
   const columns = useMemo(
-    () => buildColumns({ onSetup, onManageAccess, onEdit, onDelete, isOwner }),
-    [onSetup, onManageAccess, onEdit, onDelete, isOwner],
+    () =>
+      buildColumns({
+        onSetup,
+        onUseMcp,
+        onManageAccess,
+        onEdit,
+        onDelete,
+        isOwner,
+      }),
+    [onSetup, onUseMcp, onManageAccess, onEdit, onDelete, isOwner],
   );
 
   const table = useDataTable({

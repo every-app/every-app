@@ -153,6 +153,9 @@ describe("help", () => {
       );
     }
     expect(groupHelp(["secret"])).toContain(`  $ ${CLI} secret set GITHUB_TOKEN`);
+    // An alias of a group gets the group's examples, under the name typed.
+    expect(groupHelp(["provider"])).toContain(`  $ ${CLI} mcp on dataforseo`);
+    expect(groupHelp(["provider"])).toContain(`${CLI} provider <command> [flags]`);
     expect(groupHelp(["secret", "set"])).toBeNull();
     expect(groupHelp(["create"])).toBeNull();
   });

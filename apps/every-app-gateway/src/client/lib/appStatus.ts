@@ -10,18 +10,17 @@ export enum AppStatusLabel {
   Disabled = "Disabled",
   NeedsDeploy = "Needs deploy",
   NeedsSetup = "Needs setup",
-  /** A provider app: no page to open; its tools are on the gateway's /mcp. */
-  AiTools = "AI tools",
 }
 
 /**
  * The deploy state in a word, as a chip. An app opens only once it has a
  * hostname, its Worker is bound and active, and everything its manifest
  * says it needs is set (`setup`); until then it shows "Needs setup" and
- * the setup dialog opens in its place. A provider app (tier "provider")
- * never opens: once its key is set it is its tools, served to AI clients.
- * A status this gateway doesn't know (a newer CLI's) shows as it is, and
- * doesn't open.
+ * the setup dialog opens in its place. An MCP app (tier "provider") never
+ * opens: once its key is set it is Active, and its tools are served to AI
+ * clients; the card opens the "Use it from your agent" dialog instead
+ * ({@link mcpAppUsable}). A status this gateway doesn't know (a newer
+ * CLI's) shows as it is, and doesn't open.
  */
 export function appStatus(
   app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier">,
@@ -30,7 +29,7 @@ export function appStatus(
   variant: ComponentProps<typeof Badge>["variant"];
   opens: boolean;
 } {
-  if (app.tier === PROVIDER_APP_TIER) {
+  if (isMcpApp(app)) {
     if (app.status !== "active") {
       return {
         label: AppStatusLabel.Disabled,
@@ -45,7 +44,7 @@ export function appStatus(
         opens: false,
       };
     }
-    return { label: AppStatusLabel.AiTools, variant: "info", opens: false };
+    return { label: AppStatusLabel.Active, variant: "success", opens: false };
   }
   if (!app.hostname || app.status === "pending") {
     return {
@@ -104,4 +103,22 @@ export function appNeedsSetup(
   app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier">,
 ): app is typeof app & { setup: NonNullable<UserAccessApp["setup"]> } {
   return appStatus(app).label === AppStatusLabel.NeedsSetup;
+}
+
+/** The kind the launcher calls "MCP apps": a page-less app, its tools on `/mcp`. */
+export function isMcpApp(app: Pick<UserAccessApp, "tier">): boolean {
+  return app.tier === PROVIDER_APP_TIER;
+}
+
+/** The chip beside an MCP app's name, on the card and in Admin → Apps. */
+export const MCP_APP_KIND_LABEL = "MCP";
+
+/**
+ * An MCP app that is on and set up: its tools are served, so where a page
+ * would open, the "Use it from your agent" dialog opens.
+ */
+export function mcpAppUsable(
+  app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier">,
+): boolean {
+  return isMcpApp(app) && appStatus(app).label === AppStatusLabel.Active;
 }

@@ -1,6 +1,6 @@
 # MCP provider apps
 
-Date: 2026-10-24. Status: slice 1 built (PRs in "What landed"); the rest is in TODO.md under "MCP apps (2026-10-24)". The research behind it is [2026-10-mcp-provider-apps-research.md](2026-10-mcp-provider-apps-research.md).
+Date: 2026-10-24. Status: slice 1 built (PRs in "What landed"); the rest is in TODO.md under "MCP apps (2026-10-24)". The research behind it is [2026-10-mcp-provider-apps-research.md](2026-10-mcp-provider-apps-research.md). Since the evening of 2026-10-24 the person-facing name is **MCP apps** and the CLI group `everyapp mcp` (alias `provider`): [2026-10-mcp-apps-ui.md](2026-10-mcp-apps-ui.md) has the name, the launcher section and dialog, and the curated-versus-pass-through verdict; "provider app" below is the code's name.
 
 ## 1. The ask
 

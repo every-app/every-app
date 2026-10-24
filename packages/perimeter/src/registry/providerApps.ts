@@ -69,23 +69,23 @@ function isOwnerOrAdmin(role: string | null): boolean {
     .some((item) => ["owner", "admin"].includes(item.trim()));
 }
 
-/** The id as a provider app's, or the refusal naming the ones there are. */
+/** The id as an MCP app's, or the refusal naming the ones there are. */
 export function providerAppId(id: string): ProviderAppId {
   if (isProviderAppId(id)) return id;
   throw new RegistrationError({
     status: 400,
     code: "PROVIDER_APP_UNKNOWN",
-    message: `"${id}" is not a provider app. The Gateway offers: ${PROVIDER_APP_IDS.join(", ")}.`,
+    message: `"${id}" is not an MCP app. The Gateway offers: ${PROVIDER_APP_IDS.join(", ")}.`,
   });
 }
 
-/** A row that is a deployed app's, not a provider app's. */
+/** A row that is a deployed app's, not an MCP app's. */
 function assertProviderRow(id: string, existingApp: AppRow): void {
   if (existingApp.tier === PROVIDER_APP_TIER) return;
   throw new RegistrationError({
     status: 409,
     code: "APP_TIER_MISMATCH",
-    message: `"${id}" is an app deployed to this Gateway${existingApp.status === DELETED_APP_STATUS ? " (deleted, its names still its organization's)" : ""}, not the provider app; the provider app can't take its id.`,
+    message: `"${id}" is an app deployed to this Gateway${existingApp.status === DELETED_APP_STATUS ? " (deleted, its names still its organization's)" : ""}, not the MCP app; the MCP app can't take its id.`,
   });
 }
 

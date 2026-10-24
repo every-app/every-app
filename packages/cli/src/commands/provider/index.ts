@@ -1,12 +1,12 @@
 /**
- * `everyapp provider on|off|list`: provider apps (`@every-app/sdk/internal`
- * providerApps.ts), data providers the operator offers to members' AI
- * clients as apps of the Gateway's own, with nothing to deploy. `on` and
- * `off` write the Gateway's registry under the Cloudflare login
- * (lib/gateway/providerApps.ts); `list` reads it and, like `secret list`,
- * which Gateway settings are set, so each app's key shows as set or not.
- * Nothing is built, uploaded or deployed; the Gateway reads a change
- * within 30 seconds.
+ * `everyapp mcp on|off|list` (alias `provider`): MCP apps, provider apps
+ * in the code (`@every-app/sdk/internal` providerApps.ts), data providers
+ * the operator offers to members' AI clients as apps of the Gateway's own,
+ * with no page and nothing to deploy. `on` and `off` write the Gateway's
+ * registry under the Cloudflare login (lib/gateway/providerApps.ts);
+ * `list` reads it and, like `secret list`, which Gateway settings are set,
+ * so each app's key shows as set or not. Nothing is built, uploaded or
+ * deployed; the Gateway reads a change within 30 seconds.
  */
 import { stripVTControlCharacters } from "node:util";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
@@ -152,7 +152,7 @@ export async function turnOff(options: ProviderOptions, id: string): Promise<voi
   });
 }
 
-/** A provider app's name and its key's state (`set` is what `secret list` would say). */
+/** An MCP app's name and its key's state (`set` is what `secret list` would say). */
 async function providerState(
   cf: CfRunner,
   id: ProviderAppId,
@@ -177,7 +177,7 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
     key: { name: provider.keySetting, set: names.includes(provider.keySetting) },
   }));
   const table = formatTable(
-    ["PROVIDER", "STATUS", "KEY"],
+    ["APP", "STATUS", "KEY"],
     rows.map((row) => [
       `${row.id}  ${chalk.dim(row.name)}`,
       row.on ? chalk.green("on") : chalk.dim("off"),
@@ -185,14 +185,14 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
     ]),
   );
   const next = rows.flatMap((row) => [
-    ...(row.on ? [] : [{ command: `${CLI} provider on ${row.id}`, note: `offer ${row.name}` }]),
+    ...(row.on ? [] : [{ command: `${CLI} mcp on ${row.id}`, note: `offer ${row.name}` }]),
     ...(row.key.set ? [] : [{ command: `${CLI} secret set ${row.key.name}`, note: `${row.name}'s key` }]),
   ]);
-  const summary = `${rows.filter((row) => row.on).length} of ${rows.length} provider ${rows.length === 1 ? "app" : "apps"} on`;
+  const summary = `${rows.filter((row) => row.on).length} of ${rows.length} MCP ${rows.length === 1 ? "app" : "apps"} on`;
   out.emit({
     type: "done",
     message: summary,
-    display: [...table, "", chalk.dim(`Tools are on ${gateway.gatewayUrl}/mcp as <provider>_<tool>.`)].join("\n"),
+    display: [...table, "", chalk.dim(`Tools are on ${gateway.gatewayUrl}/mcp as <id>_<tool>.`)].join("\n"),
     data: {
       providers: rows.map((row) => ({
         id: row.id,

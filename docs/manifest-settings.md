@@ -258,11 +258,11 @@ Every app list the gateway serves (`getMyApps`, Admin → Apps' `getApps`)
 carries `setup: AppSetup | null` per app (§5): null when the manifest
 declares nothing to set, or the app is on the dispatch tier, whose
 providers and capabilities ride the platform's settings, which the
-platform checks at deploy rather than at run time. A provider app
-(`pnpm everyapp provider on dataforseo`: an `apps` row of tier `provider`
+platform checks at deploy rather than at run time. An MCP app (a provider app in the code)
+(`pnpm everyapp mcp on dataforseo`: an `apps` row of tier `provider`
 with no Worker) lists its capability in its generated manifest, so it reads
 "Needs setup" until `DATAFORSEO_API_KEY` is set
-([docs/capabilities.md](capabilities.md#provider-apps)). An app whose
+([docs/capabilities.md](capabilities.md#mcp-apps)). An app whose
 `setup.ready` is false shows a "Needs setup" badge (a warning, placed
 after the active check, so an active, bound app that isn't ready shows it)
 and does not open. The card and the Admin → Apps badge open a dialog: each

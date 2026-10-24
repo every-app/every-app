@@ -127,7 +127,7 @@ its first deploy).
 | `context`    | `CONTEXT_API_KEY`    | `api.context.dev`                              | `read` |
 
 DataForSEO can also go to members' AI clients directly, with nothing
-deployed: `pnpm everyapp provider on dataforseo` ([Provider apps](#provider-apps)).
+deployed: `pnpm everyapp mcp on dataforseo` ([MCP apps](#mcp-apps)).
 
 ### AI providers
 
@@ -745,11 +745,12 @@ In local dev (`everyapp dev`, no binding) there is no directory:
 `listMembers()` answers the request's signed-in user alone, and no one for
 background work.
 
-## Provider apps
+## MCP apps
 
-A provider app offers an `api_key` provider's data to members' AI clients
-directly, as an app of the gateway's own with nothing to deploy: the
-operator turns it on (`pnpm everyapp provider on dataforseo`) and sets the
+An MCP app (a provider app in the code) offers an `api_key` provider's data
+to members' AI clients directly, as an app of the gateway's own with no
+page and nothing to deploy: the operator turns it on (`pnpm everyapp mcp on
+dataforseo`; `provider on` is an alias through launch week) and sets the
 key as for any capability; the gateway serves a curated set of the
 provider's tools on its `/mcp` under `<id>_<tool>` names. The registry is
 `PROVIDER_APPS` in `packages/sdk/src/internal/providerApps.ts`; the row is
@@ -759,7 +760,8 @@ wherever an app's settings do. Each tool call goes through the same checks
 as an app's capability call (the provider's hosts, the account-wide paths,
 the key, the cost tap) and is counted and audited against the provider row.
 The agent docs page is
-[/docs/agent/mcp](https://everyapp.com/docs/agent/mcp) ("Provider apps").
+[/docs/agent/mcp](https://everyapp.com/docs/agent/mcp#mcp-apps) ("MCP apps");
+how the launcher shows one is [docs/design/2026-10-mcp-apps-ui.md](design/2026-10-mcp-apps-ui.md).
 
 ## Limits today
 

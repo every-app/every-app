@@ -480,7 +480,7 @@ async function main() {
     id: "dataforseo",
     name: "DataForSEO",
     description:
-      "SEO data for your AI client: keyword metrics and suggestions, live Google results, domain rankings, competitors and backlinks, through the Gateway's DataForSEO key.",
+      "SEO data for your agent: keyword metrics and suggestions, live Google results, domain rankings, competitors and backlinks, through the Gateway's DataForSEO key.",
     capabilities: {
       dataforseo: {
         access: "read",

@@ -1,5 +1,5 @@
 /**
- * `everyapp provider on|off|list` end to end, in a fake Cloudflare account
+ * `everyapp mcp on|off|list` end to end, in a fake Cloudflare account
  * with a deployed gateway (as secret/index.test.ts): the row, the access,
  * the key's state as a warning and in the list, and the way back.
  */
@@ -92,7 +92,7 @@ const rows = async () =>
     ])
   )[0] ?? [];
 
-describe("provider on", () => {
+describe("mcp on", () => {
   it("writes the row, says who can use it and where its tools are, and warns about the unset key", async () => {
     await turnOn({ flags, out: out(), createCf }, "dataforseo");
 
@@ -137,13 +137,13 @@ describe("provider on", () => {
   it("refuses an unknown provider before writing anything", async () => {
     await expect(turnOn({ flags, out: out(), createCf }, "ahrefs")).rejects.toMatchObject({
       code: "PROVIDER_APP_UNKNOWN",
-      message: '"ahrefs" is not a provider app. The Gateway offers: dataforseo.',
+      message: '"ahrefs" is not an MCP app. The Gateway offers: dataforseo.',
     });
     expect(await rows()).toEqual([]);
   });
 });
 
-describe("provider off", () => {
+describe("mcp off", () => {
   it("tombstones the row, and says when it was off already", async () => {
     await turnOn({ flags, out: out(), createCf }, "dataforseo");
     events = [];
@@ -165,18 +165,18 @@ describe("provider off", () => {
   });
 });
 
-describe("provider list", () => {
-  it("lists each provider app with its state and key, and what to run next", async () => {
+describe("mcp list", () => {
+  it("lists each MCP app with its state and key, and what to run next", async () => {
     await listProviders({ flags, out: out(), createCf });
     expect(done()).toMatchObject({
-      message: "0 of 1 provider app on",
+      message: "0 of 1 MCP app on",
       data: {
         providers: [
           { id: "dataforseo", name: "DataForSEO", on: false, key: { name: "DATAFORSEO_API_KEY", set: false } },
         ],
         mcp: "https://example.com/mcp",
         next: [
-          { command: "pnpm everyapp provider on dataforseo", note: "offer DataForSEO" },
+          { command: "pnpm everyapp mcp on dataforseo", note: "offer DataForSEO" },
           { command: "pnpm everyapp secret set DATAFORSEO_API_KEY", note: "DataForSEO's key" },
         ],
       },
@@ -187,7 +187,7 @@ describe("provider list", () => {
     events = [];
     await listProviders({ flags, out: out(), createCf });
     expect(done()).toMatchObject({
-      message: "1 of 1 provider app on",
+      message: "1 of 1 MCP app on",
       data: { providers: [{ id: "dataforseo", on: true, key: { set: true } }] },
     });
     expect(done()!["data"]["next"]).toBeUndefined();

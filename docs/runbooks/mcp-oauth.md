@@ -7,7 +7,7 @@ use a personal access token (`epat_…`) instead. Tools are named
 `<app>_<tool>`, plus two built-ins, `everyapp_whoami` and
 `everyapp_list_apps`.
 
-A provider app turned on with `pnpm everyapp provider on dataforseo` is
+An MCP app turned on with `pnpm everyapp mcp on dataforseo` is
 served by the gateway itself and appears the same way (`dataforseo_<tool>`).
 An app that still needs setup (a required setting unset:
 `pnpm everyapp secret list <app>`) has no tools here; `everyapp_list_apps`

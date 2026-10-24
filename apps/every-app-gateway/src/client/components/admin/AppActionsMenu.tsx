@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Users, Wrench } from "lucide-react";
+import { Pencil, Power, Trash2, Users, Wrench } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import {
   DropdownMenuItem,
@@ -13,6 +13,8 @@ interface AppActionsMenuProps {
   onManageAccess?: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** "Turn off" for an MCP app, which `onDelete` turns off rather than deletes. */
+  deleteLabel?: string;
   isOwner: boolean;
 }
 
@@ -23,6 +25,7 @@ export function AppActionsMenu({
   onManageAccess,
   onEdit,
   onDelete,
+  deleteLabel = "Delete app",
   isOwner,
 }: AppActionsMenuProps) {
   return (
@@ -47,8 +50,8 @@ export function AppActionsMenu({
         <>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={onDelete}>
-            <Trash2 />
-            Delete app
+            {deleteLabel === "Delete app" ? <Trash2 /> : <Power />}
+            {deleteLabel}
           </DropdownMenuItem>
         </>
       ) : null}
