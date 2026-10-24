@@ -1191,6 +1191,10 @@ class RunState {
         takePersonAnswer: () => this.takePersonAnswer(),
         onTurnEnd: async () => {
           if (!claimGateOpen) await openClaimGate();
+          // turn-end mode: closed again for the next turn, so a link that appears during it
+          // waits for that turn's end. Run 12 opened the gate at the domain question's turn
+          // end and claimed the later link at once, which is the immediate mode by another name.
+          claimGateOpen = this.options.claimAfter === "immediate";
         },
         onWaitPoll: () => this.checkSetupAlive(),
         deadlineAt,

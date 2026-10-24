@@ -1538,6 +1538,140 @@ describe("runLoop", () => {
     expect(record.verdict.value, text).toBe("pass");
   });
 
+  it("--claim-after turn-end: a link that appears in a later turn waits for that turn's end, not the first turn's (run 12 claimed it at once)", async () => {
+    const repo = await makeRepo();
+    const t = (s: number) =>
+      `2026-10-25T14:${String(10 + s).padStart(2, "0")}:00.000Z`;
+    const inv = (pid: number, ts: string, argv: string[], cwd: string) =>
+      JSON.stringify({
+        type: "invocation",
+        pid,
+        ts,
+        argv: ["node", "cli.js", ...argv],
+        cwd,
+        json: true,
+        isatty: { stdin: false, stdout: false, stderr: false },
+        ci: false,
+      });
+    const exit = (pid: number, ts: string) =>
+      JSON.stringify({ type: "exit", pid, ts, code: 0, ms: 1000 });
+    const push = (sandbox: FakeSandbox, lines: string[]) => {
+      for (const line of lines)
+        sandbox.pushTail("/loop/everyapp-events.ndjson", line);
+    };
+    let resumes = 0;
+    // When turn 2 ended, in real time: the claim must come after it. The fake exec keeps the
+    // turn running for 40 ms after the link appears; with the gate open the claim lands within
+    // a millisecond of the link, before this marker.
+    let turn2EndedAt = 0;
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      exec: (call, sandbox) => {
+        const argv = call.argv.join(" ");
+        // Turn 1: the domain question, nothing in the event log yet.
+        if (argv === "fake --turn 1")
+          return {
+            stdout: ["TEXT Which domain should I use?", "RESULT"],
+            code: 0,
+          };
+        if (argv.startsWith("fake --resume s1")) {
+          resumes += 1;
+          if (resumes === 1) {
+            // Turn 2: setup runs, the link appears mid-turn, the turn ends asking the person.
+            push(sandbox, [
+              inv(
+                11,
+                t(1),
+                ["setup", "--domain", `apps.${ZONE}`, "--json"],
+                "/work/every-app",
+              ),
+              cliEvent({
+                pid: 11,
+                ts: t(6),
+                type: "action_required",
+                action: "claim_owner",
+                message: "Open this link",
+                data: { url: `${ORIGIN}/setup#token=${EST}`, waiting: true },
+              }),
+              cliEvent({
+                pid: 11,
+                ts: t(7),
+                type: "step",
+                step: "setup.owner",
+                status: "ok",
+              }),
+              cliEvent({
+                pid: 11,
+                ts: t(8),
+                type: "done",
+                data: { gatewayUrl: ORIGIN },
+              }),
+              exit(11, t(8)),
+            ]);
+            setTimeout(() => {
+              turn2EndedAt = Date.now();
+            }, 25);
+            return {
+              stdout: [
+                "TEXT Open the setup link I printed and tell me when you have.",
+                "RESULT",
+              ],
+              code: 0,
+              delayMs: 40,
+            };
+          }
+          // Turn 3: create and deploy.
+          push(sandbox, [
+            inv(12, t(9), ["create", "hello", "--json"], "/work/every-app"),
+            cliEvent({
+              pid: 12,
+              ts: t(10),
+              type: "done",
+              data: { appId: "hello" },
+            }),
+            exit(12, t(10)),
+            inv(13, t(11), ["deploy", "--json"], "/work/every-app/apps/hello"),
+            cliEvent({
+              pid: 13,
+              ts: t(13),
+              type: "done",
+              data: { url: `https://${APP_HOST}` },
+            }),
+            exit(13, t(13)),
+          ]);
+          return { stdout: [`TEXT DONE ${ORIGIN}`, "RESULT"], code: 0 };
+        }
+        return undefined;
+      },
+    });
+    const outcome = await runLoop(
+      options({ harness: "claude", claimAfter: "turn-end" }),
+      { ...world.deps, createHarness: () => fakeTurnsAdapter() },
+    );
+    const text = world.logs.join("\n");
+    const timeline = world.timeline;
+    const execs = timeline
+      .map((e, i) => (e.startsWith("exec fake --") ? i : -1))
+      .filter((i) => i >= 0);
+    const claim = timeline.findIndex(
+      (e) => e === `gateway POST ${ORIGIN}/api/setup/claim`,
+    );
+    expect(execs.length, timeline.join("\n")).toBe(3);
+    // Claimed after turn 2 started (the link's turn) and before turn 3, never between turns 1 and 2.
+    expect(claim, timeline.join("\n")).toBeGreaterThan(execs[1]!);
+    expect(claim).toBeLessThan(execs[2]!);
+    expect(turn2EndedAt).toBeGreaterThan(0);
+    expect(
+      Date.parse(outcome.record!.steps.claim.claimedAt!),
+    ).toBeGreaterThanOrEqual(turn2EndedAt);
+    expect(outcome.record!.steps.claim.how).toBe("event-log");
+    expect(outcome.record!.verdict.value, text).toBe("pass");
+    expect(
+      outcome.record!.scriptedUserTurns.map((turn) => turn.trigger),
+    ).toEqual(["domain_question", "create_app"]);
+  });
+
   it("register_workers_subdomain in the event log is answered by the REST PUT and a queued reply; the control cannot be resumed", async () => {
     const repo = await makeRepo();
     const t = "2026-10-25T14:10:00.000Z";
