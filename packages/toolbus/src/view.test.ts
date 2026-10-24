@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PRINCIPAL, todoApp } from "./test-fixtures";
-import { gatewaySurfaceView } from "./view";
+import {
+  CLAUDE_CODE_INSTRUCTIONS_READ,
+  gatewayInstructionsHead,
+  gatewaySurfaceView,
+} from "./view";
 
 describe("gatewaySurfaceView", () => {
   it("names the organization and lists the apps in its instructions", () => {
@@ -39,6 +43,11 @@ describe("gatewaySurfaceView", () => {
     const { instructions } = gatewaySurfaceView(PRINCIPAL, apps);
 
     expect(instructions!.length).toBeLessThanOrEqual(8 * 1024);
+    // The cap drops per-app blocks, never the head: the whole app list is
+    // there even when most of the guidance is not.
+    expect(
+      instructions!.startsWith(gatewayInstructionsHead(PRINCIPAL, apps, [])),
+    ).toBe(true);
     expect(instructions).toContain("app-00: " + "x".repeat(1023) + "…");
     expect(instructions).toContain("Apps: app-00 (Todos), app-01 (Todos)");
   });
@@ -87,5 +96,49 @@ describe("gatewaySurfaceView", () => {
     expect(
       gatewaySurfaceView(PRINCIPAL, [], { unavailable: [] }),
     ).not.toHaveProperty("unavailable");
+  });
+
+  it("keeps the header, app list and not-available lines inside Claude Code's read for the launch apps", () => {
+    // The launch set, each with the most guidance the catalog keeps (2048),
+    // and the organization's real name.
+    const principal = { ...PRINCIPAL, organizationName: "Every App Team" };
+    const launch = [
+      { appId: "agentic-inbox", name: "agentic-inbox" },
+      { appId: "analytics", name: "OpenAnalytics" },
+      { appId: "crm", name: "Open CRM" },
+      { appId: "openseo", name: "OpenSEO" },
+      { appId: "dataforseo", name: "DataForSEO" },
+    ];
+    const apps = launch.map((app) =>
+      todoApp({ ...app, instructions: "x".repeat(2048) }),
+    );
+
+    const { instructions } = gatewaySurfaceView(principal, apps);
+    const head = gatewayInstructionsHead(principal, apps, []);
+    expect(instructions!.startsWith(head)).toBe(true);
+    expect(head.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
+    // The first app's guidance begins right after the head, so a client that
+    // reads 4,096 characters holds the whole app list before any guidance.
+    expect(instructions!.slice(head.length)).toMatch(
+      /^\n\nagentic-inbox: x{1023}…\n\nanalytics: /,
+    );
+
+    // The worst case: every launch app needs setup, each with the longest
+    // reason the gateway writes (needsSetupReason in gateway-mcp.ts: the
+    // command, every name, --app, and an any-of note). The gateway puts an
+    // app in the list or among the unavailable, never both, so a head with
+    // all five in both is longer than any it produces.
+    const unavailable = launch.map((app) => ({
+      ...app,
+      reason: `needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY MAIN_SECRET --app ${app.appId} (WORKERS_AI_API_TOKEN instead of OPENROUTER_API_KEY is fine too: one AI model is enough)`,
+    }));
+    for (const app of unavailable) {
+      expect(app.reason.length).toBeGreaterThanOrEqual(150);
+    }
+    const worst = gatewayInstructionsHead(principal, apps, unavailable);
+    expect(
+      gatewaySurfaceView(principal, apps, { unavailable }).instructions,
+    ).toContain(worst);
+    expect(worst.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
   });
 });

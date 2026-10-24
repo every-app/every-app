@@ -37,11 +37,16 @@ export function writePage(slug: string, content: string): void {
   writeFileSync(pagePath(slug), content);
 }
 
-/** The text inside backticks, anywhere in the page, each once (a quoted value counts without its quotes too). */
+/**
+ * The text inside backticks, anywhere in the page, each once (a quoted value
+ * counts without its quotes too). A span opened by a run of backticks closes
+ * at the next run of the same length, as in CommonMark, so ``a `b` c`` is one
+ * span and the spans after it on the line are still read as written.
+ */
 export function backticked(page: string): Set<string> {
   const found = new Set<string>();
-  for (const match of page.matchAll(/`([^`\n]+)`/g)) {
-    const text = match[1]!;
+  for (const match of page.matchAll(/(`+)([^\n]+?)\1(?!`)/g)) {
+    const text = match[2]!;
     found.add(text);
     const quoted = text.match(/^(["'])(.+)\1$/);
     if (quoted) found.add(quoted[2]!);

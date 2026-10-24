@@ -330,11 +330,23 @@ describe("the command pages", () => {
     expectDocumented("setup", "the credentials", ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "EVERYAPP_GATEWAY_URL"]);
   });
   it("mcp.md documents the MCP settings and the SDK's tool API", () => {
-    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "everyapp_whoami", "everyapp_list_apps", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register"]);
+    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "everyapp_whoami", "everyapp_list_apps", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ"]);
   });
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));
     expectDocumented("access", "the password switch", ["EMAIL_PASSWORD_SIGN_IN"]);
+  });
+});
+
+describe("backticked", () => {
+  it("reads a double-backtick span as one span, so the names after it on the line still count", () => {
+    const found = backticked(
+      "instructions beginning ``Tools for <org>. Each tool is named `<app>_<tool>`; call everyapp_list_apps.`` then `Apps: <id>`, and `CLAUDE_CODE_INSTRUCTIONS_READ` near the end.",
+    );
+    expect(found.has("Tools for <org>. Each tool is named `<app>_<tool>`; call everyapp_list_apps.")).toBe(true);
+    expect(found.has("Apps: <id>")).toBe(true);
+    expect(found.has("CLAUDE_CODE_INSTRUCTIONS_READ")).toBe(true);
+    expect(found.has(" then ")).toBe(false);
   });
 });
 
