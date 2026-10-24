@@ -422,6 +422,30 @@ describe("without email (SQLite)", () => {
     expect((await reset()).status).toBe(400);
   });
 
+  it("ends every session the account had once its password is reset", async () => {
+    const invitee = await join("invitee@example.com");
+    const stolen = await signIn("invitee@example.com");
+    const link = await MembershipService.createPasswordResetLink(
+      ownerCtx,
+      invitee.userId,
+    );
+    const token = new URL(link.url).searchParams.get("token")!;
+
+    const reset = await createAuth().handler(
+      authRequest("/reset-password", {
+        token,
+        newPassword: "brand-new-password-2",
+      }),
+    );
+    expect(reset.status).toBe(200);
+
+    // The reset is the remedy for a session someone else holds, so that
+    // session is dead too, not only the old password.
+    const session = await createAuth().handler(authGet("/get-session", stolen));
+    expect(await session.json()).toBeNull();
+    await signIn("invitee@example.com", "brand-new-password-2");
+  });
+
   it("never hands out a reset link for someone who also belongs to another organization", async () => {
     const invitee = await join("invitee@example.com");
     const otherOrg = await seedOrganization(db, "elsewhere");

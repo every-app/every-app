@@ -400,6 +400,9 @@ export function createAuth() {
       // Where the policy asks for it (hosted), an account signs in only once
       // its email is verified; self-hosted accounts never need to.
       requireEmailVerification: policy.requireEmailVerification,
+      // Resetting the password is what a person does about a stolen session:
+      // every session the account had ends with it, not only the password.
+      revokeSessionsOnPasswordReset: true,
       // The link goes to the gateway's reset page with the token in the query
       // string, not to Better Auth's /reset-password/<token> path, so it never
       // sits in a URL path where log redaction can't reach it.
