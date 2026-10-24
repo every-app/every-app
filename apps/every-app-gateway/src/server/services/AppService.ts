@@ -5,6 +5,7 @@ import { OrganizationMembersRepository } from "../repositories/OrganizationMembe
 import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
+import { appCapabilities } from "./appCapabilities";
 
 // Types for service operations.
 // Apps are registered by `everyapp deploy` writing the gateway's D1, never by
@@ -20,7 +21,9 @@ type UpdateAppInput = {
  * Get all apps with user access counts: the organization's own, and on the
  * hosted gateway the shared apps another organization (the platform's)
  * owns, read-only (`readOnly`): only the platform organization's owners and
- * admins edit or delete a shared app, and nobody manages its access.
+ * admins edit or delete a shared app, and nobody manages its access. Each
+ * app carries its manifest's capabilities read against the registry, which
+ * lives here and not on the client.
  */
 async function getAllWithAccessCounts(ctx: OrgContext) {
   const [own, shared] = await Promise.all([
@@ -31,7 +34,11 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
   ]);
   return {
     apps: [
-      ...own.map((app) => ({ ...app, readOnly: false })),
+      ...own.map((app) => ({
+        ...app,
+        capabilities: appCapabilities(app.manifest),
+        readOnly: false,
+      })),
       ...shared.map((app) => ({
         id: app.id,
         organizationId: app.organizationId,
@@ -51,6 +58,7 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
         createdAt: app.createdAt,
         updatedAt: app.updatedAt,
         accessCount: 0,
+        capabilities: appCapabilities(app.manifest),
         readOnly: true,
       })),
     ],

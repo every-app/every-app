@@ -19,6 +19,7 @@ import { appEmail } from "@/client/lib/appEmail";
 import { appStatus } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
+import { integrationLabel } from "./integrationLabel";
 
 // The search box only shows once the catalog is long enough to need it.
 const SEARCH_THRESHOLD = 3;
@@ -77,6 +78,11 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
           ]
             .filter(Boolean)
             .join(" · ")}
+        </p>
+      ) : null}
+      {app.capabilities.length ? (
+        <p className="truncate text-xs text-muted-foreground">
+          Integrations: {app.capabilities.map(integrationLabel).join(" · ")}
         </p>
       ) : null}
     </>

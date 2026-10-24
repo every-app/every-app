@@ -14,12 +14,32 @@ type App = Omit<AppRow, "appSlug" | "versionId" | "deployedAt"> & {
 };
 
 /**
+ * One capability the app's manifest lists, read against the registry for
+ * Admin → Apps. `scopeSets` are the sets a scoped OAuth client's entry
+ * names, labelled; `scopesStatus` says whether that grant holds: `ok`,
+ * `undeclared` (a scoped client listed without usable sets, so the gateway
+ * refuses its tokens), `unknown` (a set this gateway doesn't offer) or
+ * `none` (a capability that takes no sets).
+ */
+export type AppCapabilitySummary = {
+  id: string;
+  label: string;
+  access: "read" | "write";
+  why?: string;
+  /** `access` is absent on a set this gateway doesn't offer. */
+  scopeSets: { name: string; label: string; access?: "read" | "write" }[];
+  scopesStatus: "ok" | "undeclared" | "unknown" | "none";
+};
+
+/**
  * App with access count for admin views. `readOnly`: a shared app another
- * organization (the platform's) owns, listed for what it is.
+ * organization (the platform's) owns, listed for what it is. `capabilities`
+ * is computed from the stored manifest on the server, where the registry is.
  */
 export type AppWithAccessCount = App & {
   accessCount: number;
   readOnly: boolean;
+  capabilities: AppCapabilitySummary[];
 };
 
 /**

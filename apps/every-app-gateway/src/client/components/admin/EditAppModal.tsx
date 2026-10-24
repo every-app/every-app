@@ -18,6 +18,7 @@ import { getServerErrorMessage } from "@/client/errors";
 import { appEmail } from "@/client/lib/appEmail";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
 import type { AppWithAccessCount } from "@/types/app";
+import { CapabilitySentence } from "./CapabilitySentence";
 
 interface EditAppModalProps {
   app: AppWithAccessCount;
@@ -131,6 +132,20 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                     app's directory
                   </>
                 )}
+              </p>
+            ) : null}
+            {app.capabilities.length ? (
+              <p className="text-sm text-muted-foreground">
+                Integrations:{" "}
+                {app.capabilities.map((capability, index) => (
+                  <span key={capability.id}>
+                    {index ? " " : null}
+                    <CapabilitySentence capability={capability} />
+                  </span>
+                ))}
+                {" — "}listed under{" "}
+                <span className="font-mono">capabilities</span> in
+                everyapp.config.ts; deploy again to change
               </p>
             ) : null}
             {app.scope === "shared" ? (
