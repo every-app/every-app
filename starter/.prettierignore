@@ -1,9 +1,8 @@
-**/build
-**/public
+# The everyapp skill is the CLI's, copied in by `everyapp create`
+.agents/
+.claude/
+public/
 pnpm-lock.yaml
 routeTree.gen.ts
-
-dist/
 drizzle/
-planning/
 .cloudflare/
