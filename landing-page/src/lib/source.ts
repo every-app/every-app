@@ -1,7 +1,5 @@
 import { createGetUrl, llms, loader } from "fumadocs-core/source";
-import { pageSchema } from "fumadocs-core/source/schema";
-import { defineCollections, defineDocs } from "fumadocs-mdx/macro";
-import { z } from "zod";
+import { defineDocs } from "fumadocs-mdx/macro";
 
 /** Where the docs are served from, for the absolute URLs llms.txt gives agents. */
 export const SITE_URL = "https://everyapp.com";
@@ -30,16 +28,6 @@ export const agent = defineDocs({
   },
 });
 
-export const blog = defineCollections({
-  type: "doc",
-  dir: "content/blog",
-  async: true,
-  schema: pageSchema.extend({
-    author: z.string(),
-    date: z.string(),
-  }),
-});
-
 export const source = loader({
   source: docs.toFumadocsSource(),
   baseUrl: "/docs",
@@ -48,11 +36,6 @@ export const source = loader({
 export const agentSource = loader({
   source: agent.toFumadocsSource(),
   baseUrl: "/docs/agent",
-});
-
-export const blogSource = loader({
-  source: blog.toFumadocsSource(),
-  baseUrl: "/blogs",
 });
 
 /** A page as llms-full.txt and the `.md` routes serve it: its title, URL and processed Markdown. */

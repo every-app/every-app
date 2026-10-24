@@ -13,10 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as SupportRouteImport } from './routes/support'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
-import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
-import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
 import { Route as DocsAgentSplatRouteImport } from './routes/docs/agent/$'
@@ -42,24 +39,9 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SupportRoute = SupportRouteImport.update({
-  id: '/support',
-  path: '/support',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiSearchRoute = ApiSearchRouteImport.update({
   id: '/api/search',
   path: '/api/search',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BlogsIndexRoute = BlogsIndexRouteImport.update({
-  id: '/blogs/',
-  path: '/blogs/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BlogsSplatRoute = BlogsSplatRouteImport.update({
-  id: '/blogs/$',
-  path: '/blogs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
@@ -89,12 +71,9 @@ export interface FileRoutesByFullPath {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
-  '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
-  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
-  '/blogs/': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -103,12 +82,9 @@ export interface FileRoutesByTo {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
-  '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
-  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
-  '/blogs': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -118,12 +94,9 @@ export interface FileRoutesById {
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
-  '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
-  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
-  '/blogs/': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -134,12 +107,9 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
-    | '/support'
     | '/api/search'
-    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
-    | '/blogs/'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   fileRoutesByTo: FileRoutesByTo
@@ -148,12 +118,9 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
-    | '/support'
     | '/api/search'
-    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
-    | '/blogs'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   id:
@@ -162,12 +129,9 @@ export interface FileRouteTypes {
     | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
-    | '/support'
     | '/api/search'
-    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
-    | '/blogs/'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   fileRoutesById: FileRoutesById
@@ -177,12 +141,9 @@ export interface RootRouteChildren {
   LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   PrivacyRoute: typeof PrivacyRoute
-  SupportRoute: typeof SupportRoute
   ApiSearchRoute: typeof ApiSearchRoute
-  BlogsSplatRoute: typeof BlogsSplatRoute
   DocsSplatRoute: typeof DocsSplatRoute
   DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
-  BlogsIndexRoute: typeof BlogsIndexRoute
   DocsAgentSplatRoute: typeof DocsAgentSplatRoute
   DocsAgentChar123Char125DotmdRoute: typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -217,32 +178,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/support': {
-      id: '/support'
-      path: '/support'
-      fullPath: '/support'
-      preLoaderRoute: typeof SupportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/search': {
       id: '/api/search'
       path: '/api/search'
       fullPath: '/api/search'
       preLoaderRoute: typeof ApiSearchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/blogs/': {
-      id: '/blogs/'
-      path: '/blogs'
-      fullPath: '/blogs/'
-      preLoaderRoute: typeof BlogsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/blogs/$': {
-      id: '/blogs/$'
-      path: '/blogs/$'
-      fullPath: '/blogs/$'
-      preLoaderRoute: typeof BlogsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/$': {
@@ -281,12 +221,9 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   PrivacyRoute: PrivacyRoute,
-  SupportRoute: SupportRoute,
   ApiSearchRoute: ApiSearchRoute,
-  BlogsSplatRoute: BlogsSplatRoute,
   DocsSplatRoute: DocsSplatRoute,
   DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
-  BlogsIndexRoute: BlogsIndexRoute,
   DocsAgentSplatRoute: DocsAgentSplatRoute,
   DocsAgentChar123Char125DotmdRoute: DocsAgentChar123Char125DotmdRoute,
 }

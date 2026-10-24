@@ -32,7 +32,7 @@ const movedPages: Record<string, string> = {
   "how-it-works/sdk": "how-it-works",
   "reference/cli": "commands",
   "reference/manage-your-gateway": "people",
-  "reference/cloudflare-access": "people",
+  "reference/cloudflare-access": "access",
   "architecture/cli-deployment": "how-it-works",
   "architecture/gateway-files": "how-it-works",
   "architecture/security-boundary": "how-it-works",

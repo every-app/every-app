@@ -6,22 +6,16 @@
   "scripts": {
     "dev": "node scripts/sync-agent-docs.js && vite dev",
     "sync:agent-docs": "node scripts/sync-agent-docs.js",
-    "build": "node scripts/sync-agent-docs.js && vite build && node scripts/generate-sitemap.js",
-    "build:app": "node scripts/sync-agent-docs.js && vite build",
+    "build": "node scripts/sync-agent-docs.js && wrangler types && vite build && node scripts/generate-sitemap.js",
     "sitemap": "node scripts/generate-sitemap.js",
-    "verify:seo": "node scripts/verify-seo.js",
-    "start": "wrangler dev",
-    "preview": "vite preview",
-    "types:check": "tsc --noEmit",
+    "types:check": "wrangler types && tsc --noEmit",
     "cf-typegen": "wrangler types",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
-    "deploy:prod": "npm run build && npm run db:migrate:remote && wrangler deploy",
-    "deploy:redirect": "wrangler deploy -c redirect/wrangler.jsonc",
-    "deploy:preview": "npm run build && wrangler d1 migrations apply DB --remote --env preview && wrangler deploy --env preview"
+    "deploy:redirect": "wrangler deploy -c redirect/wrangler.jsonc"
   },
   "dependencies": {
     "@tanstack/react-router": "^1.170.41",
