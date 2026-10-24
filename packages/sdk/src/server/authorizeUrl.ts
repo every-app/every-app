@@ -58,20 +58,20 @@ function scopedClientIds(): string[] {
 
 /**
  * The provider's authorize URL to send a person to, for a client with
- * scope sets (`google-workspace`, `microsoft-365`), built from the
+ * scope sets (`google-workspace`, `microsoft-365`, `slack`), built from the
  * capability's status: the registry's authorize endpoint (or the instance
  * the status names), `client_id`, `response_type=code`, `redirect_uri`,
  * `state`, and the scopes the status allows this app, which are exactly
  * what the gateway will let the token carry. Each provider's own needs
  * are added: Google's `access_type=offline` (a refresh token), Microsoft's
  * `response_mode=query`, Slack's comma-joined `scope` and its `user_scope`
- * (for when its sets ship). With `codeChallenge`, PKCE as S256. The app
- * keeps its `state` and verifier for the callback.
+ * (the status's `userScopes`, when the app's sets include a user set). With
+ * `codeChallenge`, PKCE as S256. The app keeps its `state` and verifier
+ * for the callback.
  *
  * A client without scope sets (LinkedIn, Mastodon, ...) is refused: the
  * registry's checklist for one isn't what the gateway holds a token to,
- * and Slack's mixes bot and user scopes, so an app builds that URL
- * itself from the status's `clientId`.
+ * so an app builds that URL itself from the status's `clientId`.
  *
  * Throws a `TypeError` naming the fix when the client has no scope sets,
  * when the status isn't ready or has no `clientId`, when the status lacks
