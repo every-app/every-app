@@ -89,6 +89,47 @@ describe("bundleProblems", () => {
     );
   });
 
+  it("refuses an OAuth client with scope sets listed without them, or with ones this gateway doesn't offer", () => {
+    const listing = (entry: { access: "write"; scopes?: string[] }) =>
+      bundleProblems(
+        WORKER,
+        { ...MANIFEST, capabilities: { "google-workspace": entry } },
+        LIMITS,
+        false,
+      );
+    expect(listing({ access: "write", scopes: ["gmail.read"] })).toEqual([]);
+    const withoutSets =
+      "it lists Google (Gmail, Calendar, Search Console and Analytics) without the scope sets it may use (one or more of: identity, gmail.read, calendar.read, search-console.read, analytics.read)";
+    expect(listing({ access: "write" })).toEqual([withoutSets]);
+    expect(listing({ access: "write", scopes: [] })).toEqual([withoutSets]);
+    expect(
+      listing({
+        access: "write",
+        scopes: ["gmail.read", "gmail.send", "gmail.read", "constructor"],
+      }),
+    ).toEqual([
+      "it lists a Google (Gmail, Calendar, Search Console and Analytics) scope set this gateway doesn't offer (gmail.send)",
+      "it lists the Google (Gmail, Calendar, Search Console and Analytics) scope set gmail.read twice",
+      "it lists a Google (Gmail, Calendar, Search Console and Analytics) scope set this gateway doesn't offer (constructor)",
+    ]);
+    // Clients without a policy, and capabilities this gateway doesn't know,
+    // are the token endpoint's and the strict validator's to judge.
+    expect(
+      bundleProblems(
+        WORKER,
+        {
+          ...MANIFEST,
+          capabilities: {
+            linkedin: { access: "write" },
+            "new-provider": { access: "read", scopes: ["x"] },
+          },
+        },
+        LIMITS,
+        false,
+      ),
+    ).toEqual([]);
+  });
+
   it("refuses a Worker not built with the sentinel inputs, or that sets more", () => {
     expect(
       bundleProblems(

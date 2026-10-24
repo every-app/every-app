@@ -294,12 +294,21 @@ the user's token secret, which the gateway never holds): an app keeps
 `X_API_KEY`/`X_API_SECRET` as its own secrets.
 
 **For an app.** List each network for writing (obtaining and refreshing
-tokens with the operator's client writes):
+tokens with the operator's client writes). A client with scope sets
+(`google-workspace`, `microsoft-365`; the table at the end of this section)
+requires `scopes`, one or more set names, each once: the validator refuses
+the entry without them, or with a name the client doesn't offer, naming the
+sets it does, and refuses `scopes` on a client without any.
 
 ```ts
 capabilities: {
   linkedin: { access: "write", why: "Connects LinkedIn profiles and pages." },
   mastodon: { access: "write" },
+  "google-workspace": {
+    access: "write",
+    scopes: ["gmail.read", "calendar.read"],
+    why: "Reads each member's own mailbox and calendar.",
+  },
 },
 ```
 

@@ -34,6 +34,7 @@ import {
   type Manifest,
 } from "@every-app/perimeter/manifest";
 import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
+import { CAPABILITIES, isCapabilityId } from "@every-app/sdk/internal";
 import type {
   WorkerAssetsConfig,
   WorkerBinding,
@@ -161,6 +162,35 @@ export function manifestProblems(
     problems.push(
       "it declares inbound mail (email.inbound), which third-party apps can't receive",
     );
+  }
+  // The hosted API runs only the lenient validator, so the scope sets the
+  // strict one demands of an OAuth client with a scope policy are checked
+  // here: a hand-crafted bundle never gets a row whose grant the token
+  // endpoint would void.
+  for (const [id, entry] of Object.entries(manifest.capabilities ?? {})) {
+    if (!isCapabilityId(id)) continue;
+    const capability = CAPABILITIES[id];
+    if (!("scopePolicy" in capability)) continue;
+    const { sets } = capability.scopePolicy;
+    if (!entry.scopes?.length) {
+      problems.push(
+        `it lists ${capability.label} without the scope sets it may use (one or more of: ${Object.keys(sets).join(", ")})`,
+      );
+      continue;
+    }
+    const seen = new Set<string>();
+    for (const name of entry.scopes) {
+      if (!Object.hasOwn(sets, name)) {
+        problems.push(
+          `it lists a ${capability.label} scope set this gateway doesn't offer (${name})`,
+        );
+      } else if (seen.has(name)) {
+        problems.push(
+          `it lists the ${capability.label} scope set ${name} twice`,
+        );
+      }
+      seen.add(name);
+    }
   }
   const classes = durableObjects(manifest);
   if (classes.some((durableObject) => durableObject.worker)) {

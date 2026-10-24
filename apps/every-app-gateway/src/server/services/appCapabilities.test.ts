@@ -103,11 +103,9 @@ describe("appCapabilities", () => {
       { access: "write", scopes: ["gmail.read", "gmail.read"] },
       [GMAIL],
     ],
-    [
-      "a non-string entry",
-      { access: "write", scopes: ["gmail.read", 7] },
-      [GMAIL],
-    ],
+    // The lenient manifest schema reads a list with a non-string entry as no
+    // `scopes` at all, so no name survives to be labelled.
+    ["a non-string entry", { access: "write", scopes: ["gmail.read", 7] }, []],
   ])(
     "reads a scoped client with %s as undeclared",
     (_case, entry, scopeSets) => {

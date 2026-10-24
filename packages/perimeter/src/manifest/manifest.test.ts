@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import {
   validateManifest,
   validateManifestStrict,
@@ -13,6 +13,7 @@ import {
   isReservedAppId,
   manifestTierProblems,
   DISPATCH_INBOUND_PROBLEM,
+  type CapabilityRequest,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -524,14 +525,96 @@ describe("capabilities manifest field", () => {
       /capabilities\.linkedin\.access: LinkedIn offers write access/,
     ],
     [
-      "a field an OAuth client doesn't take",
+      "scope sets on an OAuth client without a scope policy",
       { mastodon: { access: "write", scopes: ["write:statuses"] } },
-      /capabilities\.mastodon: Unrecognized key\(s\) in object: 'scopes'/,
+      /capabilities\.mastodon\.scopes: Mastodon takes no scopes; list it as \{ access: \.\.\., why \}/,
+    ],
+    [
+      "scope sets on a second client without a scope policy",
+      { linkedin: { access: "write", scopes: ["identity"] } },
+      /capabilities\.linkedin\.scopes: LinkedIn takes no scopes/,
+    ],
+    [
+      "scope sets on an API-key provider",
+      { dataforseo: { access: "read", scopes: ["identity"] } },
+      /capabilities\.dataforseo\.scopes: DataForSEO takes no scopes/,
+    ],
+    [
+      "scope sets on a gateway service",
+      { email: { access: "write", scopes: ["identity"] } },
+      /capabilities\.email\.scopes: Email takes no scopes/,
+    ],
+    [
+      "a client with scope sets listed without them",
+      { "google-workspace": { access: "write", why: "Reads mail." } },
+      /capabilities\.google-workspace\.scopes: Google \(Gmail, Calendar, Search Console and Analytics\) needs scopes: one or more of identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read/,
+    ],
+    [
+      "a client with scope sets listed with none",
+      { "google-workspace": { access: "write", scopes: [] } },
+      /capabilities\.google-workspace\.scopes: Google \(Gmail, Calendar, Search Console and Analytics\) needs scopes: one or more of identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read/,
+    ],
+    [
+      "scope sets that aren't a list",
+      { "microsoft-365": { access: "write", scopes: "mail.read" } },
+      /capabilities\.microsoft-365\.scopes: Microsoft 365 \(Outlook mail and calendar\) needs scopes: one or more of identity, mail\.read, calendar\.read/,
+    ],
+    [
+      "a scope set the client doesn't offer, at its index",
+      {
+        "google-workspace": {
+          access: "write",
+          scopes: ["gmail.read", "gmail.send"],
+        },
+      },
+      /capabilities\.google-workspace\.scopes\.1: unknown scope set \(Google \(Gmail, Calendar, Search Console and Analytics\) offers: identity, gmail\.read, calendar\.read, search-console\.read, analytics\.read\)/,
+    ],
+    [
+      "a provider scope where a set name goes",
+      {
+        "microsoft-365": {
+          access: "write",
+          scopes: ["https://graph.microsoft.com/Mail.Read"],
+        },
+      },
+      /capabilities\.microsoft-365\.scopes\.0: unknown scope set \(Microsoft 365 \(Outlook mail and calendar\) offers: identity, mail\.read, calendar\.read\)/,
+    ],
+    [
+      "a prototype property as a scope set",
+      { "google-workspace": { access: "write", scopes: ["constructor"] } },
+      /capabilities\.google-workspace\.scopes\.0: unknown scope set/,
+    ],
+    [
+      "a scope set listed twice",
+      {
+        "google-workspace": {
+          access: "write",
+          scopes: ["gmail.read", "calendar.read", "gmail.read"],
+        },
+      },
+      /capabilities\.google-workspace\.scopes: a scope set is listed twice/,
     ],
   ])("refuses %s", (_case, capabilities, problem) => {
     expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
       problem,
     );
+  });
+
+  it("accepts the OAuth clients with scope policies, with their scope sets", () => {
+    const capabilities = {
+      "google-workspace": {
+        access: "write",
+        scopes: ["gmail.read", "calendar.read"],
+        why: "Reads each member's own mailbox and calendar.",
+      },
+      "microsoft-365": { access: "write", scopes: ["identity", "mail.read"] },
+    };
+    expect(
+      validateManifestStrict({ id: "crm", capabilities }).capabilities,
+    ).toEqual(capabilities);
+    expectTypeOf<CapabilityRequest["scopes"]>().toEqualTypeOf<
+      string[] | undefined
+    >();
   });
 
   it("accepts the OAuth clients for writing, with why", () => {
@@ -589,6 +672,20 @@ describe("capabilities manifest field", () => {
         capabilities: { "new-provider": { access: "read", scopes: ["x"] } },
       }).capabilities,
     ).toEqual({ "new-provider": { access: "read", scopes: ["x"] } });
+    // A set name this gateway doesn't know is kept for the token endpoint
+    // to refuse; a value that isn't a list of names reads as undeclared.
+    expect(
+      validateManifest({
+        id: "crm",
+        capabilities: {
+          "google-workspace": { access: "write", scopes: ["not-a-set"] },
+          "microsoft-365": { access: "write", scopes: "mail.read" },
+        },
+      }).capabilities,
+    ).toEqual({
+      "google-workspace": { access: "write", scopes: ["not-a-set"] },
+      "microsoft-365": { access: "write", scopes: undefined },
+    });
     // And the gateway keeps an entry's fields as sent, senders included.
     expect(
       validateManifest({

@@ -683,6 +683,59 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await row())?.status).toBe("pending");
   });
 
+  it("refuses a manifest listing an OAuth client without its scope sets, before anything is registered", async () => {
+    // The hosted API runs the lenient validator; the scope sets the strict
+    // one demands are checked before a row holds a grant the token
+    // endpoint would void.
+    const withoutSets = {
+      ...TODO,
+      capabilities: { "google-workspace": { access: "write" } },
+    };
+    const unknownSet = {
+      ...TODO,
+      capabilities: {
+        "google-workspace": { access: "write", scopes: ["gmail.send"] },
+      },
+    };
+    // A value that isn't a list of names reads as undeclared.
+    const notAList = {
+      ...TODO,
+      capabilities: {
+        "google-workspace": { access: "write", scopes: "gmail.read" },
+      },
+    };
+    for (const [manifest, sentence] of [
+      [withoutSets, "without the scope sets it may use (one or more of:"],
+      [notAList, "without the scope sets it may use (one or more of:"],
+      [unknownSet, "scope set this gateway doesn't offer (gmail.send)"],
+    ] as const) {
+      const registered = await api(`/api/v1/orgs/${acme}/apps`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ appId: "todo", manifest }),
+      });
+      expect(registered.status).toBe(422);
+      const body = (await registered.json()) as {
+        error: string;
+        message: string;
+      };
+      expect(body.error).toBe("BUNDLE_REFUSED");
+      expect(body.message).toContain(sentence);
+    }
+    expect(await row()).toBeUndefined();
+    expect(await db.select().from(deployJobs)).toEqual([]);
+
+    expect((await register()).status).toBe(201);
+    for (const manifest of [withoutSets, unknownSet]) {
+      const upload_ = await deploy(upload(builtWorker(), manifest));
+      expect(upload_.status).toBe(422);
+      expect(await upload_.json()).toMatchObject({ error: "BUNDLE_REFUSED" });
+    }
+    expect(script()).toBeUndefined();
+    expect(await db.select().from(deployJobs)).toEqual([]);
+    expect((await row())?.status).toBe("pending");
+  });
+
   it("deletes the Worker and fails the job when the bindings read back differ", async () => {
     await register();
     tamper = async (url, response) => {

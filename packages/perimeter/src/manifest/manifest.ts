@@ -283,6 +283,15 @@ const SecretNameSchema = z
  * signed-in person whose identity it forwards, or to the app.
  */
 const CapabilityEntryBaseSchema = z.object({
+  /**
+   * The scope sets an OAuth client with a scope policy lets the app use, by
+   * name (docs/capabilities.md "OAuth clients"). The names are checked when
+   * the manifest is authored and again at the token endpoint; a malformed
+   * stored value reads as undeclared (the `email.inbound` precedent) so a
+   * newer CLI's manifest never bricks a row, and the token call is refused
+   * instead.
+   */
+  scopes: z.array(z.string()).optional().catch(undefined),
   /** What the app does with it; each capability says which levels it offers. */
   access: z.enum(["read", "write"]),
   ...SettingNeedFieldsSchema,
@@ -297,6 +306,9 @@ export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
  * anything else is unknown here; an installation's email senders aren't
  * the manifest's (`everyapp email set`), and `CapabilitiesSchemaStrict`
  * names the command for a manifest that still lists them.
+ *
+ * An OAuth client with a scope policy also takes `scopes`, one or more of
+ * its set names, each once; every other capability refuses the field.
  */
 export function capabilityEntrySchema(id: CapabilityId) {
   const capability = CAPABILITIES[id];
@@ -306,7 +318,32 @@ export function capabilityEntrySchema(id: CapabilityId) {
       (level) => (capability.access as readonly string[]).includes(level),
       `${capability.label} offers ${capability.access.join(" or ")} access`,
     );
-  return CapabilityEntryBaseSchema.extend({ access }).strict();
+  const policy =
+    "scopePolicy" in capability ? capability.scopePolicy : undefined;
+  if (!policy) {
+    // A capability with one purpose takes no scope sets: listing it is
+    // the whole grant.
+    const scopes = z.undefined({
+      message: `${capability.label} takes no scopes; list it as { access: ..., why }`,
+    });
+    return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
+  }
+  // Own keys only: `constructor` is not a set.
+  const names = Object.keys(policy.sets) as [string, ...string[]];
+  const needsScopes = `${capability.label} needs scopes: one or more of ${names.join(", ")}`;
+  const scopes = z
+    .array(
+      z.enum(names, {
+        message: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
+      }),
+      { message: needsScopes },
+    )
+    .min(1, needsScopes)
+    .refine(
+      (list) => new Set(list).size === list.length,
+      "a scope set is listed twice",
+    );
+  return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
 }
 
 /** One authored capability entry, whichever capability it is for. */
