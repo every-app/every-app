@@ -625,3 +625,426 @@ describe("OAuth clients", () => {
     ).resolves.toEqual({ requested: true, configured: false, ready: false });
   });
 });
+
+describe("OAuth clients with scope sets", () => {
+  const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
+  const MS_TOKEN = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+  const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
+  const CALENDAR = "https://www.googleapis.com/auth/calendar.readonly";
+  const CAPABILITIES_VAR = JSON.stringify({
+    "google-workspace": { access: "write", scopes: ["identity", "gmail.read"] },
+    "microsoft-365": { access: "write", scopes: ["identity", "mail.read"] },
+    linkedin: { access: "write" },
+  });
+  const DEV = {
+    EVERYAPP_DEV: "1",
+    GOOGLE_WORKSPACE_CLIENT_ID: "dev-google-id",
+    GOOGLE_WORKSPACE_CLIENT_SECRET: "dev-google-secret",
+    MICROSOFT_365_CLIENT_ID: "dev-ms-id",
+    MICROSOFT_365_CLIENT_SECRET: "dev-ms-secret",
+    LINKEDIN_CLIENT_ID: "dev-linkedin-id",
+    LINKEDIN_CLIENT_SECRET: "dev-linkedin-secret",
+    EVERYAPP_DEV_CAPABILITIES: CAPABILITIES_VAR,
+  };
+  const FORM = { "content-type": "application/x-www-form-urlencoded" };
+
+  /** The provider's answer, as `fetch` would hand it back. */
+  function providerAnswers(body: unknown, init?: ResponseInit) {
+    const sent = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      typeof body === "string"
+        ? new Response(body, init)
+        : Response.json(body, init),
+    );
+    vi.stubGlobal("fetch", sent);
+    return sent;
+  }
+
+  const exchange = (
+    env: Record<string, string>,
+    provider: "google-workspace" | "microsoft-365" | "linkedin",
+    body: string,
+    url = provider === "microsoft-365" ? MS_TOKEN : GOOGLE_TOKEN,
+  ) =>
+    integrationFetch({ env, provider })(url, {
+      method: "POST",
+      headers: FORM,
+      body,
+    });
+
+  it("passes the gateway's status through, scope sets and scopes included", async () => {
+    const answered = {
+      capability: "google-workspace",
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "gateway-google-id",
+      scopeSets: ["identity", "search-console.read"],
+      scopes: [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/webmasters.readonly",
+      ],
+    };
+    const status = await integrationStatus({
+      env: {
+        EVERY_APP_GATEWAY: { fetch: async () => Response.json(answered) },
+      },
+      provider: "google-workspace",
+    });
+    expect(status).toEqual(answered);
+    expectTypeOf(status.scopeSets).toEqualTypeOf<
+      readonly string[] | undefined
+    >();
+    expectTypeOf(status.scopes).toEqualTypeOf<readonly string[] | undefined>();
+    expectTypeOf(status.userScopes).toEqualTypeOf<
+      readonly string[] | undefined
+    >();
+  });
+
+  it("in local dev, answers the sets the manifest declares and the provider strings they ask for", async () => {
+    await expect(
+      integrationStatus({ env: DEV, provider: "google-workspace" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-google-id",
+      scopeSets: ["identity", "gmail.read"],
+      scopes: ["openid", "email", "profile", GMAIL],
+    });
+    // Microsoft's end with offline_access, which every declaring app asks for.
+    await expect(
+      integrationStatus({ env: DEV, provider: "microsoft-365" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-ms-id",
+      scopeSets: ["identity", "mail.read"],
+      scopes: ["User.Read", "Mail.Read", "offline_access"],
+    });
+    // A client without scope sets answers as before.
+    await expect(
+      integrationStatus({ env: DEV, provider: "linkedin" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-linkedin-id",
+    });
+  });
+
+  it("in local dev, a void grant is not ready and hides the client id, as on the gateway", async () => {
+    const voided = {
+      requested: true,
+      configured: true,
+      ready: false,
+      scopeSets: [],
+    };
+    const { EVERYAPP_DEV_CAPABILITIES: _, ...noManifest } = DEV;
+    for (const capabilities of [
+      undefined,
+      "not json",
+      JSON.stringify({ "google-workspace": { access: "write" } }),
+      JSON.stringify({ "google-workspace": { access: "write", scopes: [] } }),
+      JSON.stringify({
+        "google-workspace": { access: "write", scopes: ["gmail.write"] },
+      }),
+    ]) {
+      await expect(
+        integrationStatus({
+          env: capabilities
+            ? { ...DEV, EVERYAPP_DEV_CAPABILITIES: capabilities }
+            : noManifest,
+          provider: "google-workspace",
+        }),
+        capabilities,
+      ).resolves.toEqual(voided);
+    }
+    // Without the client as well: not configured either.
+    await expect(
+      integrationStatus({
+        env: { EVERYAPP_DEV: "1" },
+        provider: "google-workspace",
+      }),
+    ).resolves.toEqual({ ...voided, configured: false });
+    // LinkedIn has no sets to void.
+    await expect(
+      integrationStatus({ env: noManifest, provider: "linkedin" }),
+    ).resolves.toMatchObject({ ready: true, clientId: "dev-linkedin-id" });
+  });
+
+  it("in local dev, tells an app that doesn't list the client nothing, its id included, as on the gateway", async () => {
+    for (const capabilities of [
+      "{}",
+      JSON.stringify({ linkedin: { access: "write" } }),
+      JSON.stringify({
+        "google-workspace": { access: "read", scopes: ["identity"] },
+      }),
+    ]) {
+      await expect(
+        integrationStatus({
+          env: { ...DEV, EVERYAPP_DEV_CAPABILITIES: capabilities },
+          provider: "google-workspace",
+        }),
+        capabilities,
+      ).resolves.toEqual({ requested: false, configured: false, ready: false });
+    }
+  });
+
+  it("in local dev, forwards an answer within the grant, dropping Google's scope from the request", async () => {
+    const sent = providerAnswers(
+      {
+        access_token: "ya29.token",
+        refresh_token: "1//refresh",
+        scope: `openid ${GMAIL} https://www.googleapis.com/auth/userinfo.email`,
+        token_type: "Bearer",
+      },
+      { headers: { "set-cookie": "NID=1", "x-provider": "google" } },
+    );
+    const response = await exchange(
+      DEV,
+      "google-workspace",
+      `grant_type=authorization_code&code=c&redirect_uri=r&scope=${encodeURIComponent(GMAIL)}`,
+    );
+    expect(await sent.mock.calls[0]![0].text()).toBe(
+      "grant_type=authorization_code&code=c&redirect_uri=r&client_id=dev-google-id&client_secret=dev-google-secret",
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-everyapp-error")).toBeNull();
+    expect(response.headers.get("x-provider")).toBe("google");
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await response.json()).toMatchObject({ access_token: "ya29.token" });
+  });
+
+  it("in local dev, replaces Microsoft's request scope with the status's and reads its answer's spelling", async () => {
+    const sent = providerAnswers({
+      access_token: "eyJ.ms",
+      scope: "https%3A%2F%2Fgraph.microsoft.com%2Fmail.read User.Read openid",
+    });
+    const response = await exchange(
+      DEV,
+      "microsoft-365",
+      "grant_type=refresh_token&refresh_token=r&scope=Mail.Read",
+    );
+    expect(await sent.mock.calls[0]![0].text()).toBe(
+      "grant_type=refresh_token&refresh_token=r&client_id=dev-ms-id&client_secret=dev-ms-secret&scope=User.Read+Mail.Read+offline_access",
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ access_token: "eyJ.ms" });
+  });
+
+  it.each([
+    [
+      "a client the manifest doesn't list",
+      DEV,
+      JSON.stringify({ linkedin: { access: "write" } }),
+      "grant_type=authorization_code&code=c",
+      GOOGLE_TOKEN,
+      [
+        403,
+        "capability_not_requested",
+        /doesn't list Google .* in its capabilities\. Add capabilities: \{ "google-workspace": \{ access: "write" \} \}/,
+      ],
+    ],
+    [
+      "a client listed for reading, before its sets are looked at",
+      DEV,
+      JSON.stringify({
+        "google-workspace": { access: "read", scopes: ["identity"] },
+      }),
+      "grant_type=authorization_code&code=c",
+      GOOGLE_TOKEN,
+      [403, "capability_not_requested", /doesn't list Google/],
+    ],
+    [
+      "an undeclared grant",
+      DEV,
+      JSON.stringify({ "google-workspace": { access: "write" } }),
+      "grant_type=authorization_code&code=c",
+      GOOGLE_TOKEN,
+      [
+        403,
+        "integration_scopes_undeclared",
+        /one or more of: identity, gmail\.read/,
+      ],
+    ],
+    [
+      "a set this SDK doesn't offer",
+      DEV,
+      JSON.stringify({
+        "google-workspace": {
+          access: "write",
+          scopes: ["identity", "gmail.write"],
+        },
+      }),
+      "grant_type=authorization_code&code=c",
+      GOOGLE_TOKEN,
+      [403, "integration_scopes_undeclared", /doesn't offer: gmail\.write/],
+    ],
+    [
+      "no manifest at all",
+      (({ EVERYAPP_DEV_CAPABILITIES: _, ...rest }) => rest)(DEV),
+      undefined,
+      "grant_type=authorization_code&code=c",
+      GOOGLE_TOKEN,
+      [403, "integration_scopes_undeclared", /EVERYAPP_DEV_CAPABILITIES/],
+    ],
+    [
+      "the client-credentials grant",
+      DEV,
+      CAPABILITIES_VAR,
+      "grant_type=client_credentials",
+      GOOGLE_TOKEN,
+      [
+        403,
+        "integration_grant_not_allowed",
+        /authorization_code and refresh_token grants only; client_credentials isn't/,
+      ],
+    ],
+    [
+      "a request without grant_type",
+      DEV,
+      CAPABILITIES_VAR,
+      "code=c",
+      GOOGLE_TOKEN,
+      [403, "integration_grant_not_allowed", /a request without grant_type/],
+    ],
+    [
+      "grant_type in the query string",
+      DEV,
+      CAPABILITIES_VAR,
+      "code=c",
+      `${GOOGLE_TOKEN}?grant_type=authorization_code`,
+      [400, "integration_body_invalid", /not its query string/],
+    ],
+    [
+      "a request scope outside the sets",
+      DEV,
+      CAPABILITIES_VAR,
+      "grant_type=authorization_code&code=c&scope=Mail.Read%20Mail.Send",
+      MS_TOKEN,
+      [
+        403,
+        "integration_scope_not_allowed",
+        /may ask .* for identity, mail\.read \(User\.Read, Mail\.Read, offline_access\); the request also asks mail\.send/,
+      ],
+    ],
+  ] as const)(
+    "in local dev, refuses %s before the provider is called",
+    async (_, env, capabilities, body, url, [status, code, message]) => {
+      const sent = providerAnswers({ access_token: "never" });
+      const response = await exchange(
+        capabilities
+          ? { ...env, EVERYAPP_DEV_CAPABILITIES: capabilities }
+          : env,
+        url === MS_TOKEN ? "microsoft-365" : "google-workspace",
+        body,
+        url,
+      );
+      expect(sent).not.toHaveBeenCalled();
+      expect(response.status).toBe(status);
+      expect(response.headers.get("x-everyapp-error")).toBe(code);
+      await expect(gatewayRefusal(response.clone())).resolves.toEqual({
+        status,
+        code,
+        message: expect.stringMatching(message),
+      });
+      expect(await response.json()).toMatchObject({ code });
+    },
+  );
+
+  it.each([
+    [
+      "an answer granting scopes outside the sets",
+      { access_token: "ya29.wide", scope: `${GMAIL} ${CALENDAR}` },
+      {},
+      [
+        403,
+        "integration_scope_exceeded",
+        /doesn't declare: .*calendar\.readonly.* It declares identity, gmail\.read/,
+      ],
+    ],
+    [
+      "a token without a scope field",
+      { access_token: "ya29.unknown", id_token: "eyJ.id" },
+      {},
+      [502, "integration_scope_unverified", /without saying which scopes/],
+    ],
+    [
+      "an answer that isn't a JSON object",
+      "<html>token</html>",
+      { headers: { "content-type": "text/html" } },
+      [502, "integration_response_invalid", /isn't a token response/],
+    ],
+    [
+      "an answer over the 64 KiB cap",
+      JSON.stringify({ access_token: "x".repeat(64 * 1024), scope: GMAIL }),
+      { headers: { "content-type": "application/json" } },
+      [502, "integration_response_invalid", /isn't a token response/],
+    ],
+  ] as const)(
+    "in local dev, drops %s instead of handing it to the app",
+    async (_, answer, init, [status, code, message]) => {
+      providerAnswers(answer, init);
+      const response = await exchange(
+        DEV,
+        "google-workspace",
+        "grant_type=authorization_code&code=c",
+      );
+      expect(response.status).toBe(status);
+      expect(response.headers.get("x-everyapp-error")).toBe(code);
+      const body = await response.text();
+      expect(body).not.toContain("ya29.");
+      expect(body).not.toContain("eyJ.");
+      expect(JSON.parse(body).message).toMatch(message);
+    },
+  );
+
+  it("in local dev, streams the provider's own errors, and an answer without a token, through untouched", async () => {
+    providerAnswers(
+      { error: "invalid_grant", error_description: "Bad Request" },
+      { status: 400 },
+    );
+    const refused = await exchange(
+      DEV,
+      "google-workspace",
+      "grant_type=authorization_code&code=stale",
+    );
+    expect(refused.status).toBe(400);
+    expect(refused.headers.get("x-everyapp-error")).toBeNull();
+    await expect(refused.json()).resolves.toEqual({
+      error: "invalid_grant",
+      error_description: "Bad Request",
+    });
+
+    providerAnswers({ ok: false, error: "invalid_code" });
+    const noToken = await exchange(
+      DEV,
+      "google-workspace",
+      "grant_type=authorization_code&code=c",
+    );
+    expect(noToken.status).toBe(200);
+    expect(noToken.headers.get("x-everyapp-error")).toBeNull();
+    await expect(noToken.json()).resolves.toEqual({
+      ok: false,
+      error: "invalid_code",
+    });
+  });
+
+  it("in local dev, leaves a client without scope sets as it was: any grant, any answer", async () => {
+    const sent = providerAnswers({ access_token: "linkedin-token" });
+    const response = await exchange(
+      DEV,
+      "linkedin",
+      "grant_type=client_credentials",
+      "https://www.linkedin.com/oauth/v2/accessToken?grant_type=client_credentials",
+    );
+    expect(sent).toHaveBeenCalledOnce();
+    expect(response.headers.get("x-everyapp-error")).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      access_token: "linkedin-token",
+    });
+  });
+});

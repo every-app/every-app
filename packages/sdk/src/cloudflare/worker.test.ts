@@ -349,6 +349,7 @@ describe("everyAppWorker in production", () => {
   it("never enables dev identities", () => {
     const env = worker().env;
     expect(env).not.toHaveProperty("EVERYAPP_DEV");
+    expect(env).not.toHaveProperty("EVERYAPP_DEV_CAPABILITIES");
     expect(JSON.stringify(env)).not.toContain(DEV_ISSUER);
     expect(JSON.stringify(env)).not.toContain(
       JSON.stringify(DEV_PUBLIC_KEY_PEM).slice(1, -1),
@@ -551,6 +552,46 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     // Deployed, the gateway holds them.
     expect(env("production")["OPENROUTER_API_KEY"]).toBeUndefined();
     expect(env("production")["DATAFORSEO_API_KEY"]).toBeUndefined();
+  });
+
+  it("passes the manifest's capabilities to the SDK's dev twin of the gateway, in dev only", () => {
+    const scoped = {
+      ...manifest,
+      capabilities: {
+        "google-workspace": {
+          access: "write",
+          scopes: ["identity", "gmail.read"],
+        },
+      },
+    } as const;
+    const env = (mode: "development" | "production") =>
+      everyAppWorker({ manifest: scoped, entrypoint, ctx: { mode }, root })
+        .env as Record<string, unknown>;
+
+    // As JSON text: the manifest's exact entries, scope sets included, so
+    // integrationFetch() holds a token call to them as the gateway would.
+    expect(env("development")["EVERYAPP_DEV_CAPABILITIES"]).toEqual({
+      type: "text",
+      value: JSON.stringify(scoped.capabilities),
+    });
+    expectTypeOf<EveryAppDevEnv<typeof scoped>>().toHaveProperty(
+      "EVERYAPP_DEV_CAPABILITIES",
+    );
+    // A manifest without capabilities declares none, not nothing: the twin
+    // tells "no sets" from "no manifest".
+    expect(
+      (
+        everyAppWorker({
+          manifest,
+          entrypoint,
+          ctx: { mode: "development" },
+          root,
+        }).env as Record<string, unknown>
+      )["EVERYAPP_DEV_CAPABILITIES"],
+    ).toEqual({ type: "text", value: "{}" });
+
+    // Deployed, the gateway reads the deployed manifest itself.
+    expect(env("production")["EVERYAPP_DEV_CAPABILITIES"]).toBeUndefined();
   });
 
   it("knows every setting of every provider and capability the SDK reaches in dev", () => {
@@ -878,6 +919,7 @@ describe("helper Workers", () => {
     expect(audit.env).toEqual({
       EVERYAPP_APP_ID: { type: "text", value: "seo" },
       EVERYAPP_DEV: { type: "text", value: "1" },
+      EVERYAPP_DEV_CAPABILITIES: { type: "text", value: "{}" },
       DB: { type: "d1", name: "every-seo", id: localD1Id("every-seo", "DB") },
       SCRATCHPAD: {
         type: "durable-object",
@@ -917,6 +959,23 @@ describe("helper Workers", () => {
     });
     expect(audit.env["KV"]).toEqual({ type: "kv", id: "KV-every-seo" });
     expect(audit.env["KV"]).toEqual(app.env["KV"]);
+  });
+
+  it("gives a helper in dev the manifest's capabilities, as the app's Worker gets them", () => {
+    const capabilities = {
+      "microsoft-365": { access: "write", scopes: ["mail.read"] },
+    } as const;
+    const audit = everyAppAuxiliaryWorker({
+      manifest: { ...seo, capabilities },
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(audit.env["EVERYAPP_DEV_CAPABILITIES"]).toEqual({
+      type: "text",
+      value: JSON.stringify(capabilities),
+    });
   });
 
   it("gives a helper in dev the developer's keys for the app's capabilities", () => {
@@ -971,6 +1030,7 @@ describe("helper Workers", () => {
       EVERY_APP_ORG_ID: { type: "secret" },
     });
     expect(audit.env).not.toHaveProperty("EVERYAPP_DEV");
+    expect(audit.env).not.toHaveProperty("EVERYAPP_DEV_CAPABILITIES");
     // Whether the app is shared is the installer's to say.
     expect(audit.env).not.toHaveProperty("EVERYAPP_SHARED");
   });

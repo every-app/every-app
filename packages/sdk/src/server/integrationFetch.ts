@@ -4,13 +4,22 @@ import {
   GATEWAY_ERROR_HEADER,
   INTEGRATION_PROXY_PREFIX,
   OAUTH_TOKEN_BODY_LIMIT,
+  allowedScopes,
   capabilitySettings,
+  carriesToken,
+  declaredScopeSets,
   describeTokenEndpoints,
+  grantedScopes,
   injectClientCredentials,
   integrationProxyPath,
   oauthClientCredentials,
   oauthClientOrigin,
+  requestedScopes,
+  requestedTokenScopes,
+  rewriteTokenRequestScope,
+  scopeExcess,
   tokenEndpointFor,
+  tokenGrantType,
   type ApiKeyCapability,
   type ApiKeyCapabilityId,
   type Capability,
@@ -19,6 +28,7 @@ import {
   type OAuthClientCapability,
   type OAuthClientCapabilityId,
   type OAuthClientCredentials,
+  type OAuthScopePolicy,
   EMAIL_SENDERS_ENV,
   chooseEmailProvider,
   parseEmailList,
@@ -70,8 +80,9 @@ export interface IntegrationFetchOptions {
  * For an OAuth client (`linkedin`, `mastodon`, ...) it reaches the
  * provider's token endpoints only, and the gateway puts its client on the
  * request: send the code (or refresh token) without `client_id` or
- * `client_secret`. Build the authorize URL from {@link integrationStatus}'s
- * `clientId`, and call the provider's API with the user's token directly.
+ * `client_secret`. Build the authorize URL with {@link authorizeUrl} from
+ * {@link integrationStatus}, and call the provider's API with the user's
+ * token directly.
  *
  * In local dev only, with no binding, the developer's own key or client
  * from `.dev.vars` reaches the provider directly, under the gateway's names.
@@ -213,6 +224,16 @@ async function oauthClientCall({
   }
 
   applyAttribution(headers, undefined);
+  // The gateway's scope checks, in its order, answering its refusals: an
+  // app sees in `everyapp dev` what the gateway will say.
+  const policy = capability.scopePolicy;
+  const grant = policy
+    ? devScopeSets(policy, provider, capability.label, values)
+    : null;
+  if (grant && "problem" in grant) {
+    return devRefusal(403, grant.code, grant.problem);
+  }
+  const sets = grant?.sets;
   const body = method === "GET" ? null : await outbound.text();
   if (
     body !== null &&
@@ -222,13 +243,33 @@ async function oauthClientCall({
       `A token request's body is at most ${OAUTH_TOKEN_BODY_LIMIT / 1024} KiB.`,
     );
   }
-  const injected = injectClientCredentials(
+  if (
+    policy &&
+    ["grant_type", "scope", "user_scope"].some((name) =>
+      upstream.searchParams.has(name),
+    )
+  ) {
+    return devRefusal(
+      400,
+      "integration_body_invalid",
+      "Put grant_type, scope and user_scope in the token request's body, not its query string; the gateway decides on the body.",
+    );
+  }
+  let injected = injectClientCredentials(
     { url: upstream, headers, body },
     endpoint,
     client as OAuthClientCredentials,
   );
   if (!injected.ok) throw new TypeError(injected.problem);
-  return fetch(
+  if (policy && sets) {
+    const refused = refuseTokenRequest(policy, capability, sets, injected);
+    if (refused) return refused;
+    injected = {
+      ok: true,
+      ...rewriteTokenRequestScope(policy, sets, injected),
+    };
+  }
+  const response = await fetch(
     new Request(injected.url, {
       method,
       headers: injected.headers,
@@ -238,6 +279,214 @@ async function oauthClientCall({
       redirect: "manual",
     }),
   );
+  if (!policy || !sets || !response.ok) return response;
+  return checkTokenResponse(policy, capability, sets, response);
+}
+
+/**
+ * The gateway's refusal shape (`{ error, code, message }`, the code in
+ * `x-everyapp-error`) from the local-dev twin, so {@link gatewayRefusal}
+ * reads it the same way.
+ */
+function devRefusal(status: number, code: string, message: string): Response {
+  const labels: Record<number, string> = {
+    400: "Bad Request",
+    403: "Forbidden",
+    502: "Bad Gateway",
+  };
+  return Response.json(
+    { error: labels[status] ?? "Error", code, message },
+    { status, headers: { [GATEWAY_ERROR_HEADER]: code } },
+  );
+}
+
+/** The twin's refusal of a scoped client's grant: the gateway's code and sentence. */
+interface DevGrantRefusal {
+  code: "capability_not_requested" | "integration_scopes_undeclared";
+  problem: string;
+}
+
+/**
+ * The scope sets the manifest declares for `id`, read from
+ * EVERYAPP_DEV_CAPABILITIES (the manifest's `capabilities` as JSON, which
+ * `everyAppWorker()` writes in dev), or the gateway's refusal, in its
+ * order: the client not listed for writing (`capability_not_requested`),
+ * then a void grant (`integration_scopes_undeclared`: the variable
+ * missing, the entry without usable `scopes`, or a set this registry
+ * doesn't offer). Fails closed like the gateway: a hand-rolled dev harness
+ * that passes no capabilities gets nothing.
+ */
+function devScopeSets(
+  policy: OAuthScopePolicy,
+  id: OAuthClientCapabilityId,
+  label: string,
+  values: Record<string, unknown>,
+): { sets: string[] } | DevGrantRefusal {
+  const offered = Object.keys(policy.sets).join(", ");
+  const raw = values["EVERYAPP_DEV_CAPABILITIES"];
+  let capabilities: Record<string, unknown> | undefined;
+  try {
+    capabilities =
+      typeof raw === "string" ? jsonRecord(JSON.parse(raw)) : undefined;
+  } catch {
+    capabilities = undefined;
+  }
+  if (!capabilities) {
+    return {
+      code: "integration_scopes_undeclared",
+      problem: `${label}'s scope sets aren't known here: everyapp dev passes the manifest's capabilities to the Worker as EVERYAPP_DEV_CAPABILITIES when everyapp.config.ts builds it with everyAppWorker() from @every-app/sdk/cloudflare.`,
+    };
+  }
+  const entry = Object.hasOwn(capabilities, id)
+    ? jsonRecord(capabilities[id])
+    : undefined;
+  // The gateway's check 2: listing the client for writing is the grant.
+  if (entry?.["access"] !== "write") {
+    return {
+      code: "capability_not_requested",
+      problem: `This app doesn't list ${label} in its capabilities. Add capabilities: { ${JSON.stringify(id)}: { access: "write" } } to everyapp.config.ts and start everyapp dev again.`,
+    };
+  }
+  const sets = declaredScopeSets(policy, entry);
+  if (sets) return { sets };
+  const listed = entry["scopes"];
+  const unknown = Array.isArray(listed)
+    ? listed.filter(
+        (name) => typeof name === "string" && !Object.hasOwn(policy.sets, name),
+      )
+    : [];
+  if (unknown.length > 0) {
+    return {
+      code: "integration_scopes_undeclared",
+      problem: `This app's ${label} entry names scope sets this SDK doesn't offer: ${unknown.join(", ")}. It offers: ${offered}. Fix everyapp.config.ts and start everyapp dev again, or update @every-app/sdk if it is older than the set.`,
+    };
+  }
+  return {
+    code: "integration_scopes_undeclared",
+    problem: `This app lists ${label} without the scope sets it uses. Add scopes: [...] (one or more of: ${offered}) to its ${JSON.stringify(id)} entry in everyapp.config.ts and start everyapp dev again.`,
+  };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The gateway's checks on a token request before it goes out: the grant
+ * type must be one the policy completes, and a `scope` the body names must
+ * stay within the sets. Null when the request may go.
+ */
+function refuseTokenRequest(
+  policy: OAuthScopePolicy,
+  capability: OAuthClientCapability,
+  sets: readonly string[],
+  request: { url: URL; headers: Headers; body: string | null },
+): Response | null {
+  const grantType = tokenGrantType(request);
+  if (!policy.grantTypes.includes(grantType)) {
+    const completes = policy.grantTypes.map((type) =>
+      type === null ? "a code exchange without grant_type" : type,
+    );
+    const asked =
+      grantType === null
+        ? "a request without grant_type"
+        : grantType === "other"
+          ? "this request's grant_type"
+          : grantType;
+    return devRefusal(
+      403,
+      "integration_grant_not_allowed",
+      `Through the gateway, ${capability.label} completes ${completes.join(" and ")} grants only; ${asked} isn't one of them. An app never gets app-level tokens with the operator's client.`,
+    );
+  }
+  const asked = requestedTokenScopes(policy, request);
+  const excess = asked ? scopeExcess(asked, allowedScopes(policy, sets)) : [];
+  if (excess.length > 0) {
+    return devRefusal(
+      403,
+      "integration_scope_not_allowed",
+      `This app may ask ${capability.label} for ${sets.join(", ")} (${requestedScopes(policy, sets).scopes.join(", ")}); the request also asks ${excess.join(", ")}. Build the authorize URL and the token request from integrationStatus().scopes.`,
+    );
+  }
+  return null;
+}
+
+/**
+ * The gateway's check on a provider's 2xx answer: a token it carries must
+ * name scopes, and those must stay within the sets; on a refusal the
+ * answer is dropped, never forwarded, so no app holds a token outside its
+ * grant. An answer without a token (Slack's `ok: false`) is the app's to
+ * read. A non-2xx answer never reaches here.
+ */
+async function checkTokenResponse(
+  policy: OAuthScopePolicy,
+  capability: OAuthClientCapability,
+  sets: readonly string[],
+  response: Response,
+): Promise<Response> {
+  const invalid = () =>
+    devRefusal(
+      502,
+      "integration_response_invalid",
+      `${capability.label} answered with something that isn't a token response (over ${OAUTH_TOKEN_BODY_LIMIT / 1024} KiB or not a JSON object); nothing was passed on.`,
+    );
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > OAUTH_TOKEN_BODY_LIMIT) return invalid();
+  const text = new TextDecoder().decode(bytes);
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return invalid();
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) {
+    return invalid();
+  }
+  // The body was decoded on read: its length and encoding headers no
+  // longer describe it.
+  const headers = new Headers(response.headers);
+  for (const name of [
+    "set-cookie",
+    "content-length",
+    "content-encoding",
+    "transfer-encoding",
+  ]) {
+    headers.delete(name);
+  }
+  const forward = () =>
+    new Response(text, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  if (!carriesToken(json)) return forward();
+  const granted = grantedScopes(policy, json);
+  if (!granted) {
+    return devRefusal(
+      502,
+      "integration_scope_unverified",
+      `${capability.label} issued a token without saying which scopes it carries, so the gateway can't hold it to this app's scope sets; nothing was passed on. Ask the person to connect again.`,
+    );
+  }
+  const excess = scopeExcess(granted, allowedScopes(policy, sets));
+  if (excess.length > 0) {
+    const remedy = {
+      google:
+        "Ask for only the scopes integrationStatus() returns, without include_granted_scopes, and connect again; if the app needs more, add the scope set to everyapp.config.ts and deploy.",
+      microsoft:
+        "On a shared Microsoft client a token carries everything the person consented to this client: have them remove this app's consent at https://myapplications.microsoft.com and connect again, or add the scope set to everyapp.config.ts and deploy.",
+      slack:
+        "Slack scopes add up per workspace installation: reinstall the app in the workspace with only the status's scopes, or add the scope set to everyapp.config.ts and deploy.",
+    }[policy.dialect];
+    return devRefusal(
+      403,
+      "integration_scope_exceeded",
+      `${capability.label} granted scopes this app doesn't declare: ${excess.join(", ")}. It declares ${sets.join(", ")} (${requestedScopes(policy, sets).scopes.join(", ")}). Nothing was passed on. ${remedy}`,
+    );
+  }
+  return forward();
 }
 
 /** The capability `provider` names, from plain JavaScript or a stale type too. */
@@ -296,6 +545,22 @@ export interface OAuthClientIntegrationStatus extends IntegrationStatus {
    * `MASTODON_URL`): the authorize page, token endpoint and API are on it.
    */
   origin?: string;
+  /**
+   * For a client with scope sets (`google-workspace`, `microsoft-365`): the
+   * set names the app's manifest entry declares, `[]` when the entry voids
+   * its grant (no `scopes`, or a set this gateway doesn't offer), in which
+   * case `ready` is false and no token call can complete.
+   */
+  scopeSets?: readonly string[];
+  /**
+   * The provider's scope strings those sets ask for, in the provider's
+   * spelling and the registry's order, for the authorize URL
+   * ({@link authorizeUrl} puts them on). The gateway refuses a token that
+   * carries more.
+   */
+  scopes?: readonly string[];
+  /** Slack's `user_scope` strings, when the sets name any. */
+  userScopes?: readonly string[];
 }
 
 /** The status of a capability: email's carries its senders, an OAuth client's its id. */
@@ -358,7 +623,11 @@ export async function integrationStatus<P extends CapabilityId>({
     } as IntegrationStatusOf<P>;
   }
   if (integration.mode === "oauth_client") {
-    return devOAuthClientStatus(integration, values) as IntegrationStatusOf<P>;
+    return devOAuthClientStatus(
+      provider as OAuthClientCapabilityId,
+      integration,
+      values,
+    ) as IntegrationStatusOf<P>;
   }
   const configured = Boolean(
     values["EVERYAPP_DEV"] && stringValue(values[integration.secret]),
@@ -370,8 +639,15 @@ export async function integrationStatus<P extends CapabilityId>({
   } as IntegrationStatusOf<P>;
 }
 
-/** An OAuth client in local dev, with no gateway: the developer's own, from `.dev.vars`. */
+/**
+ * An OAuth client in local dev, with no gateway: the developer's own, from
+ * `.dev.vars`, and for a client with scope sets the manifest's, from
+ * EVERYAPP_DEV_CAPABILITIES, shaped as the gateway's status is: an app
+ * that doesn't list the client is told nothing, and a void grant is not
+ * ready and hides the client id.
+ */
 function devOAuthClientStatus(
+  id: OAuthClientCapabilityId,
   capability: OAuthClientCapability,
   values: Record<string, unknown>,
 ): OAuthClientIntegrationStatus {
@@ -379,12 +655,37 @@ function devOAuthClientStatus(
     ? oauthClientCredentials(capability, values)
     : null;
   const origin = oauthClientOrigin(capability, values);
+  const policy = capability.scopePolicy;
+  const grant = policy
+    ? devScopeSets(policy, id, capability.label, values)
+    : null;
+  if (grant && "problem" in grant) {
+    if (grant.code === "capability_not_requested") {
+      return { requested: false, configured: false, ready: false };
+    }
+    return {
+      requested: true,
+      configured: Boolean(client),
+      ready: false,
+      scopeSets: [],
+    };
+  }
+  const asked = policy && grant ? requestedScopes(policy, grant.sets) : null;
   return {
     requested: true,
     configured: Boolean(client),
     ready: Boolean(client),
     ...(client ? { clientId: client.clientId } : {}),
     ...(client && origin ? { origin } : {}),
+    ...(client && grant && asked
+      ? {
+          scopeSets: grant.sets,
+          scopes: asked.scopes,
+          ...(asked.userScopes.length > 0
+            ? { userScopes: asked.userScopes }
+            : {}),
+        }
+      : {}),
   };
 }
 

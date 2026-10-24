@@ -491,29 +491,55 @@ The gateway holds a client for each social network its operator set up
 `instagram`, `threads`, `youtube`, `tiktok`, `tiktok-business`, `reddit`,
 `pinterest`, `discord`, `slack`, `mastodon`, `kick`, `twitch`, `tumblr`,
 `dribbble`; and for mail and calendar, `google-workspace` and
-`microsoft-365`). List one for writing (`capabilities: { linkedin: { access:
-"write" } }`), build the authorize URL from its public id, and exchange or
-refresh tokens through the gateway without any client:
+`microsoft-365`). List one for writing, send people to the provider's
+authorize URL (for a client with scope sets, the one `authorizeUrl()`
+builds from its status; for the others, one you build from the status's
+`clientId` and the network's documented scopes), and exchange or refresh
+tokens through the gateway without any client:
 
 ```ts
-import { integrationFetch, integrationStatus } from "@every-app/sdk/server";
+// everyapp.config.ts
+capabilities: {
+  linkedin: { access: "write" },
+  // A client several apps share lists the scope sets it uses.
+  "google-workspace": {
+    access: "write",
+    scopes: ["identity", "search-console.read"],
+    why: "Reads Search Console for the sites you connect",
+  },
+}
+```
 
-const { ready, clientId } = await integrationStatus({
-  env,
-  provider: "linkedin",
+```ts
+import {
+  authorizeUrl,
+  integrationFetch,
+  integrationStatus,
+} from "@every-app/sdk/server";
+
+const status = await integrationStatus({ env, provider: "google-workspace" });
+if (!status.ready) return notAvailable(); // the operator hasn't set it up
+// ...redirect to
+const url = authorizeUrl({
+  provider: "google-workspace",
+  status,
+  redirectUri: `${origin}/integrations/google/callback`,
+  state,
+  codeChallenge, // optional PKCE (S256)
 });
-// ...redirect to https://www.linkedin.com/oauth/v2/authorization?client_id=${clientId}&...
+// ...and on the callback, exchange the code:
 const tokens = await integrationFetch({
   env,
-  provider: "linkedin",
+  provider: "google-workspace",
   for: request,
-})("https://www.linkedin.com/oauth/v2/accessToken", {
+})("https://oauth2.googleapis.com/token", {
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri,
+    code_verifier,
   }),
 });
 ```
@@ -522,9 +548,23 @@ The gateway completes the network's token endpoints only, putting its client
 where each one takes it (form body, HTTP Basic, query string or JSON body);
 anything else throws a `TypeError` before it is sent. Call the network's API
 with the user's token directly. Mastodon's status also gives the instance as
-`origin`. In local dev, with no binding, `.dev.vars` holds your own client
-under the gateway's names (`LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`,
-`MASTODON_URL`, ...) and the same rule puts it on the call.
+`origin`.
+
+For a client with scope sets (`google-workspace`, `microsoft-365`), the
+status carries the sets the manifest declares as `scopeSets` and the
+provider's scope strings they ask for as `scopes`, which `authorizeUrl()`
+puts on the URL (with Google's `access_type=offline`, Microsoft's
+`response_mode=query`, and never `include_granted_scopes`); the gateway
+refuses an exchange or refresh whose granted scopes exceed the sets
+(`integration_scope_exceeded`), so a person's wider consent on another app
+never reaches this one. A manifest entry without usable `scopes` is not
+`ready`. The manifest's `scopes` field needs a gateway and CLI from the
+same release as this SDK: an older `everyapp dev` refuses a manifest that
+has it at startup. In local dev, with no binding, `.dev.vars` holds your
+own client under the gateway's names (`LINKEDIN_CLIENT_ID`,
+`LINKEDIN_CLIENT_SECRET`, `MASTODON_URL`, ...), the same rule puts it on
+the call, and the same scope checks apply, from the manifest `everyapp dev`
+passes the Worker.
 
 ### Whom a call is for
 

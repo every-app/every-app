@@ -17,6 +17,7 @@ export {
   type IdentityResult,
 } from "./everyApp.js";
 export { AttributionError, type GatewayCallFor } from "./attribution.js";
+export { authorizeUrl, type AuthorizeUrlOptions } from "./authorizeUrl.js";
 export {
   createGatewayFetch,
   type CreateGatewayFetchOptions,

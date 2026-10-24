@@ -413,6 +413,7 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
   DatabaseEnv<M> &
   DevEmailEnv<M> & {
     EVERYAPP_DEV: TextBinding;
+    EVERYAPP_DEV_CAPABILITIES: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
   } & { [K in DevGatewayKeys<M>]: SecretBinding };
@@ -527,6 +528,15 @@ const RESERVED_SECRET_NAME =
   /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
 const GATEWAY_WORKER_NAME = "every-app-gateway";
 const GATEWAY_ENTRYPOINT = "AppGateway";
+
+/**
+ * The manifest's `capabilities` as the SDK's local-dev twin of the gateway
+ * reads them: with no gateway to hold an OAuth client's calls to the scope
+ * sets the app declares, `integrationFetch()` holds them to these.
+ */
+function devCapabilities(manifest: EveryAppWorkerManifest): TextBinding {
+  return { type: "text", value: JSON.stringify(manifest.capabilities ?? {}) };
+}
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
@@ -584,6 +594,7 @@ export function everyAppWorker<
     env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
+    env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
     env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = {
       type: "text",
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
@@ -722,6 +733,7 @@ export function everyAppAuxiliaryWorker<
     env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
+    env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
   }
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
