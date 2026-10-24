@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { db } from "@/db";
@@ -11,11 +10,7 @@ import { OrganizationMembersRepository } from "../repositories/OrganizationMembe
 import { McpConnectionService } from "./McpConnectionService";
 import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
-import { requirePasswordSignIn } from "@/server/password-sign-in";
-import {
-  mayDeleteMemberAccounts,
-  requireTenantAdminUserActions,
-} from "@/server/tenant-user-actions";
+import { mayDeleteMemberAccounts } from "@/server/tenant-user-actions";
 import {
   forgetOrgContext,
   type OrgContext,
@@ -179,47 +174,10 @@ async function cancelInvitation(
   return { success: true };
 }
 
-async function sendPasswordResetEmail(ctx: OrgContext, userId: string) {
-  requireTenantAdminUserActions();
-  await requirePasswordSignIn();
-  const membership = await db.query.members.findFirst({
-    columns: { id: true },
-    where: and(
-      eq(members.userId, userId),
-      eq(members.organizationId, ctx.orgId),
-    ),
-  });
-
-  if (!membership) {
-    throw new Error("User not found");
-  }
-
-  const user = await UserRepository.findById(userId);
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  if (user.status !== "active") {
-    throw new Error("Can only send password reset emails for active users");
-  }
-
-  const auth = createAuth();
-  await auth.api.requestPasswordReset({
-    body: {
-      email: user.email,
-      redirectTo: `${env.GATEWAY_URL}/reset-password`,
-    },
-  });
-
-  return { success: true };
-}
-
 // TODO: Split this service once the org migration settles and review overhead drops.
 export const AdminService = {
   hasOwner,
   listMembers,
   deleteUser,
   cancelInvitation,
-  sendPasswordResetEmail,
 } as const;

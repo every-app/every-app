@@ -10,6 +10,8 @@ const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
 const SECRET = "test-secret-0123456789abcdefghijklmnopqrstuv";
 
 const background = vi.hoisted(() => [] as Promise<unknown>[]);
+type Mail = { to: string; subject: string; text?: string };
+const mailbox = vi.hoisted(() => ({ sent: [] as Mail[] }));
 vi.mock("cloudflare:workers", () => ({
   env: {
     GATEWAY_DEPLOYMENT_MODE: "self_hosted",
@@ -375,6 +377,97 @@ describe("user management (SQLite)", () => {
     });
   });
 
+  describe("password reset email", () => {
+    // Mail goes out through the EMAIL binding; the fake keeps what was sent.
+    beforeEach(() => {
+      mailbox.sent = [];
+      Object.assign(workerEnv, {
+        EMAIL_FROM: "Every App <noreply@example.com>",
+        EMAIL: {
+          send: async (mail: Mail) => {
+            mailbox.sent.push(mail);
+            return { messageId: `m-${mailbox.sent.length}` };
+          },
+        },
+      });
+    });
+    afterEach(() => {
+      Object.assign(workerEnv, { EMAIL_FROM: undefined, EMAIL: undefined });
+    });
+
+    it("mails a plain member of this organization a genuine reset link", async () => {
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), member),
+      ).resolves.toEqual({ success: true });
+
+      expect(mailbox.sent).toEqual([
+        expect.objectContaining({
+          to: `${member}@example.com`,
+          subject: "Reset your Every App password",
+        }),
+      ]);
+      expect(mailbox.sent[0]?.text).toMatch(
+        /https:\/\/gateway\.example\.com\/reset-password\?token=[A-Za-z0-9_-]+/,
+      );
+    });
+
+    it("refuses to mail the owner, another admin or yourself", async () => {
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), owner),
+      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
+      const otherAdmin = await seedMember(db, {
+        organizationId: org,
+        role: "admin",
+      });
+      await expect(
+        MembershipService.sendPasswordResetEmail(
+          ctx(admin, "admin"),
+          otherAdmin,
+        ),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), admin),
+      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_SELF" });
+      expect(mailbox.sent).toEqual([]);
+    });
+
+    it("lets the owner mail an admin", async () => {
+      // The one step above "member" the role rule allows; without this a
+      // tightening that refused admins outright would pass the file.
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(owner, "owner"), admin),
+      ).resolves.toEqual({ success: true });
+      expect(mailbox.sent).toEqual([
+        expect.objectContaining({ to: `${admin}@example.com` }),
+      ]);
+    });
+
+    it("refuses to mail a deactivated member", async () => {
+      await MembershipService.deactivate(ctx(owner, "owner"), member);
+
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), member),
+      ).rejects.toMatchObject({ code: "PASSWORD_RESET_REQUIRES_ACTIVE_USER" });
+      expect(mailbox.sent).toEqual([]);
+    });
+
+    it("refuses to mail someone who also belongs to another organization", async () => {
+      const other = await seedOrganization(db, "other");
+      await db.insert(members).values({
+        id: "member-elsewhere",
+        organizationId: other,
+        userId: member,
+        role: "owner",
+        createdAt: new Date(),
+      });
+
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), member),
+      ).rejects.toMatchObject({ code: "USER_IN_OTHER_ORGANIZATION" });
+      expect(mailbox.sent).toEqual([]);
+    });
+  });
+
   describe("on the hosted gateway", () => {
     beforeEach(() => {
       workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
@@ -393,7 +486,8 @@ describe("user management (SQLite)", () => {
             ctx(owner, "owner"),
             member,
           ),
-        () => AdminService.sendPasswordResetEmail(ctx(owner, "owner"), member),
+        () =>
+          MembershipService.sendPasswordResetEmail(ctx(owner, "owner"), member),
       ]) {
         await expect(action()).rejects.toMatchObject({
           code: "ACCOUNT_ACTIONS_UNAVAILABLE",

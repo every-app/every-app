@@ -22,7 +22,7 @@ Direct sign-up never works: before the claim `/sign-up` shows **Setup pending**,
 
 - **Email + password only.** No passkeys, social login, magic links, or SSO.
 - If the perimeter bounced you here from an app subdomain, `return_to` sends you back to the full app URL after sign-in (validated: gateway host + subdomains only).
-- Forgot/reset password works end-to-end, with non-enumerating responses; owners and admins can also trigger a reset email for a member, or, without email, generate a one-hour single-use reset link to hand over (never for owners, themselves, or anyone who also belongs to another organization, since a password covers every organization; only owners for admins). Reset links point at `/reset-password?token=…`, not a token in the path.
+- Forgot/reset password works end-to-end, with non-enumerating responses; owners and admins can also trigger a reset email for a member, or, without email, generate a one-hour single-use reset link to hand over; both follow the same rules (never for owners, themselves, or anyone who also belongs to another organization, since a password covers every organization; only owners for admins). Reset links point at `/reset-password?token=…`, not a token in the path.
 - Auth flows share a Cloudflare CPU-timeout recovery screen (retries up to 10× with countdown — password hashing can blow the free-plan CPU budget).
 
 ### 3. Everyday use — the launcher

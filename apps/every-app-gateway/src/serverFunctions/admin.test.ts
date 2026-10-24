@@ -50,7 +50,6 @@ vi.mock("@/server/services/AdminService", () => ({
     listMembers: vi.fn(),
     deleteUser: vi.fn(),
     cancelInvitation: (...args: unknown[]) => mocks.cancelInvitation(...args),
-    sendPasswordResetEmail: vi.fn(),
   },
 }));
 

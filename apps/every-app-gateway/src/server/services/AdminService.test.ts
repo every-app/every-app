@@ -8,13 +8,8 @@ const mockInvitationsFindMany = vi.fn();
 const mockDeleteWhere = vi.fn();
 const mockSelectWhere = vi.fn();
 
-const mockRequestPasswordReset = vi.fn();
 const mockCancelInvitation = vi.fn();
 const mockListMembersForOrganization = vi.fn();
-
-vi.mock("@/server/password-sign-in", () => ({
-  requirePasswordSignIn: async () => undefined,
-}));
 
 vi.mock("@/server/access-rejoin", () => ({
   accessWouldLetBackIn: () => false,
@@ -72,8 +67,6 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/auth", () => ({
   createAuth: () => ({
     api: {
-      requestPasswordReset: (...args: unknown[]) =>
-        mockRequestPasswordReset(...args),
       cancelInvitation: (...args: unknown[]) => mockCancelInvitation(...args),
     },
   }),
@@ -121,7 +114,6 @@ describe("AdminService", () => {
       status: "active",
     } as any);
     mockListMembersForOrganization.mockResolvedValue([]);
-    mockRequestPasswordReset.mockResolvedValue(undefined);
     mockCancelInvitation.mockResolvedValue({
       id: "invite-1",
       status: "canceled",
@@ -209,36 +201,5 @@ describe("AdminService", () => {
     await expect(
       AdminService.deleteUser(orgContext, "current-user"),
     ).rejects.toThrow("Cannot delete your own account");
-  });
-
-  it("sends password reset email for active user", async () => {
-    mockMembersFindFirst.mockResolvedValue({ id: "member-1" });
-    mockUserRepository.findById.mockResolvedValue({
-      id: "user-1",
-      email: "user@example.com",
-      status: "active",
-    } as any);
-
-    await AdminService.sendPasswordResetEmail(orgContext, "user-1");
-
-    expect(mockRequestPasswordReset).toHaveBeenCalledWith({
-      body: {
-        email: "user@example.com",
-        redirectTo: "https://gateway.example.com/reset-password",
-      },
-    });
-  });
-
-  it("rejects password reset email for non-active user", async () => {
-    mockMembersFindFirst.mockResolvedValue({ id: "member-1" });
-    mockUserRepository.findById.mockResolvedValue({
-      id: "user-2",
-      email: "pending@example.com",
-      status: "pending",
-    } as any);
-
-    await expect(
-      AdminService.sendPasswordResetEmail(orgContext, "user-2"),
-    ).rejects.toThrow("Can only send password reset emails for active users");
   });
 });

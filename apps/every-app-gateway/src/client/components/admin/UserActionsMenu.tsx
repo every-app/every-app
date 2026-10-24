@@ -128,7 +128,7 @@ function MemberActionsMenu({
   const canManage = isOwner || user.role !== "admin";
   const subject = user.name || user.email;
 
-  const showResetEmail = !user.banned && emailConfigured;
+  const showResetEmail = canManage && !user.banned && emailConfigured;
   const showResetLink = !user.banned && canManage;
   const showRoleChange = canManage && !user.banned;
   const showReactivate = canManage && !!user.banned;

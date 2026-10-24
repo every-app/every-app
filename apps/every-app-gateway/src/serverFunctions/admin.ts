@@ -179,12 +179,13 @@ const sendPasswordResetEmailSchema = z.object({
 });
 
 /**
- * Send a password reset email for an active user in the active organization.
+ * Mail a password-reset link to a member of the active organization, under
+ * the same member-management rules as the copyable link (MembershipService).
  * Only accessible by organization admins and owners.
  */
 export const sendPasswordResetEmail = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .validator((data: unknown) => sendPasswordResetEmailSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AdminService.sendPasswordResetEmail(context.org, data.userId);
+    return MembershipService.sendPasswordResetEmail(context.org, data.userId);
   });

@@ -104,8 +104,10 @@ function UsersPage() {
     onSuccess: () => {
       toast.success("Password reset email sent");
     },
-    onError: () => {
-      toast.error("Failed to send password reset email");
+    onError: (err) => {
+      toast.error(
+        getServerErrorMessage(err, "Failed to send password reset email"),
+      );
     },
   });
 

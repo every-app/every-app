@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { db } from "@/db";
@@ -132,24 +133,41 @@ async function reactivate(ctx: OrgContext, targetUserId: string) {
 }
 
 /**
- * A password-reset link for an admin to hand over directly, for gateways
- * without email. Whoever holds it can set the account's password, and the
- * password works in every organization the user belongs to, so it follows
- * the member-management rules (never yourself or an owner; admins only for
- * members) and only covers users of this organization alone. It is Better
- * Auth's own reset token: single use, one hour, consumed by the regular
- * /reset-password page.
+ * Whoever completes a password reset can set the account's password, and
+ * the password works in every organization the user belongs to, so a reset
+ * an admin starts (a link to hand over, or a mail) follows the
+ * member-management rules (never yourself or an owner; admins only for
+ * members), only covers users of this organization alone, and never
+ * targets a deactivated account. Both reset variants share this check so
+ * neither can be the weaker way in.
  */
-async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
+async function requirePasswordResettable(
+  ctx: OrgContext,
+  targetUserId: string,
+) {
   await requireAccountWideManageable(ctx, targetUserId);
   await requirePasswordSignIn();
   const user = await UserRepository.findById(targetUserId);
+  // Deactivation sets `banned`; `status` is the account's own state, which
+  // nothing writes today but which the users table can hold. Either one
+  // not being the plain active case refuses, so a future account state is
+  // not resettable by default.
   if (!user || user.status !== "active" || isUserBanned(user)) {
     throw new PublicError(
       "PASSWORD_RESET_REQUIRES_ACTIVE_USER",
       "Password reset links are only for active users",
     );
   }
+  return user;
+}
+
+/**
+ * A password-reset link for an admin to hand over directly, for gateways
+ * without email. It is Better Auth's own reset token: single use, one
+ * hour, consumed by the regular /reset-password page.
+ */
+async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
+  const user = await requirePasswordResettable(ctx, targetUserId);
 
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -175,9 +193,34 @@ async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
   return { email: user.email, url: passwordResetUrl(token), expiresAt };
 }
 
+/**
+ * Mail a password-reset link to a member, for gateways with email. Better
+ * Auth makes and sends the link (sendResetPassword in the auth config), so
+ * it is the same single-use, one-hour token the link variant hands out.
+ */
+async function sendPasswordResetEmail(ctx: OrgContext, targetUserId: string) {
+  const user = await requirePasswordResettable(ctx, targetUserId);
+
+  const auth = createAuth();
+  await auth.api.requestPasswordReset({
+    body: {
+      email: user.email,
+      redirectTo: `${env.GATEWAY_URL}/reset-password`,
+    },
+  });
+  logEvent("member.reset_email_sent", {
+    organizationId: ctx.orgId,
+    userId: user.id,
+    by: ctx.userId,
+  });
+
+  return { success: true };
+}
+
 export const MembershipService = {
   changeRole,
   deactivate,
   reactivate,
   createPasswordResetLink,
+  sendPasswordResetEmail,
 } as const;
