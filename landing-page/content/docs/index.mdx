@@ -5,7 +5,7 @@ description: Your web apps online, in your own Cloudflare account, each with an 
 
 Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in.
 
-It's for a solo founder or a team of three or four, building the tools their business runs on with a coding agent like Claude Code, Codex or Cursor. Every App is open source and free. You pay Cloudflare.
+Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor. Every App is open source and free. You pay Cloudflare.
 
 ## The two parts
 
@@ -22,7 +22,7 @@ It's for a solo founder or a team of three or four, building the tools their bus
 - **Updates keep your data.** Before a deploy changes an app's database, it saves a restore point.
 - **Safe to run again.** If setup or a deploy stops halfway, run it again. It picks up where it left off.
 
-Put your Gateway behind Cloudflare Access before you invite people. `pnpm everyapp access on` adds a second sign-in at Cloudflare's edge, with a code to your email or your company's identity provider. It's free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
+We strongly recommend Cloudflare Access before you invite anyone. `pnpm everyapp access on` adds a second sign-in at Cloudflare's edge, in front of the Gateway and your apps. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
 
 The [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md) says what the Gateway promises, to whom, where each promise is enforced, and what's still open.
 
@@ -38,14 +38,14 @@ We don't promise backwards compatibility yet. Expect rough edges.
 
 ## Apps on day one
 
-Each runs behind your Gateway.
+Each is open source and runs behind your Gateway. Run one as it is, or fork it as the starting recipe for your own.
 
-- **[OpenSEO](https://github.com/every-app/open-seo)**: SEO research, rank tracking, site audits and AI visibility for your sites. Bring your own DataForSEO key for the search data.
-- **OpenCRM**: companies, contacts and deals, kept up to date by a research agent.
-- **OpenAnalytics**: web analytics for your sites with no cookies, no stored IP addresses and a tracker of about 3 KB gzipped.
-- **Agentic Inbox**: a team inbox with an AI agent that receives, reads, drafts and sends email on your domain.
+- **[OpenSEO](https://github.com/every-app/open-seo)**: SEO research, rank tracking, site audits and AI visibility for your sites.
+- **OpenCRM**: Companies, contacts and deals, kept up to date by a research agent.
+- **OpenAnalytics**: Web analytics for your sites. No cookies, no stored IP addresses.
+- **Agentic Inbox**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
-Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. None of the four publishes a release yet. Once one does (its author runs `pnpm everyapp release` and attaches the file to a GitHub release of the repository), `pnpm everyapp install <GitHub URL>` installs it; run it again to update.
+Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. None of the four publishes a release yet. Once one does, `pnpm everyapp install <GitHub URL>` installs it; run it again to update.
 
 ## What it costs
 

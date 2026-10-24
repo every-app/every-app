@@ -1,25 +1,64 @@
 # Every App
 
-> Build the tools your business runs on. Keep them yours.
+> Make every app open source
 
-Every App puts the web apps you build online, in your own Cloudflare account. Cloudflare is the hosting company that runs them; you pay Cloudflare, not us. Each app gets a web address, a database and a sign-in. Open source, alpha, moving fast.
+Own your tools. Customize your tools.
 
-It's so fun making a tool for yourself. But it's still scary to move it off localhost: a login page, users, hosting, keys, keeping it private. Every App does that part once, for every app.
+Pay as you go.
 
-- One Gateway at `apps.yourcompany.com` is your home base: you and the people you invite sign in there and open your apps. Nobody can sign up unless you invite them. No login page in any app.
-- It gives each app only what you allow.
-- Your coding agent does most of the building.
-- A few apps for a small team fit inside Cloudflare's $5 a month Workers Paid plan.
+Build internal apps with peace of mind.
 
-## What you need
+Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in. One Gateway sits in front of them all and gives each app only what you allow. Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor.
+
+Two ways to use it:
+
+- Four open-source apps, built for your Gateway: OpenSEO, OpenCRM, OpenAnalytics and Agentic Inbox. Run one as it is, or fork it as the starting recipe for your own. [Apps off the shelf](#apps-off-the-shelf)
+- The Gateway at `apps.yourcompany.com` is the home base where you and your team build internal apps. One sign-in, invite only, no login page in any app. Your coding agent does most of the building. [The Gateway, your home base](#the-gateway-your-home-base)
+
+Free and open source, MIT. You pay Cloudflare: Workers Paid, $5 a month, then usage; a few apps for a small team fit inside it. Setting up your Gateway takes about 15 minutes. [How you start](#how-you-start)
+
+Very powerful, and alpha. Powerful: your apps run in your Cloudflare account with everything it can do. Alpha: moving fast, and trying not to break things. A deploy keeps your data and saves a restore point first. [Alpha](#alpha)
+
+We strongly recommend Cloudflare Access before you invite anyone. `pnpm everyapp access on` adds a second sign-in at Cloudflare's edge, in front of the Gateway and your apps. Free for up to 50 people. [Cloudflare Access](https://everyapp.com/docs/access)
+
+## Apps off the shelf
+
+- [OpenSEO](https://github.com/every-app/open-seo): SEO research, rank tracking, site audits and AI visibility for your sites.
+- [OpenCRM](https://github.com/every-app/open-crm): Companies, contacts and deals, kept up to date by a research agent.
+- [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics for your sites. No cookies, no stored IP addresses.
+- [Agentic Inbox](https://github.com/every-app/agentic-inbox): A team inbox with an AI agent that reads, drafts and sends email on your domain.
+
+Set up your Gateway first ([How you start](#how-you-start)). Then clone one, run `pnpm install`, and run `pnpm everyapp deploy` in its folder. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`.
+
+None of the four publishes a release yet. Once one does, `pnpm everyapp install <GitHub URL>` installs it from GitHub; run it again to update. Your Gateway's home shows the four apps and a Build your own card.
+
+## The Gateway, your home base
+
+You and the people you invite sign in at `apps.yourcompany.com` and open your apps there. The Gateway gives each app only what you allow:
+
+- Your credential stops at the Gateway. An app never sees a cookie or a token, only a short-lived signed note of who you are, made for that app alone.
+- Your AI keys stay on the Gateway. An app declares what it needs and never holds a key.
+- Apps have no public address of their own: every visit passes the Gateway. The only routes open without a sign-in are the ones an app declares public (a webhook, a tracking script), and the deploy prints them.
+- Each app has its own database.
+- One MCP address, `https://apps.yourcompany.com/mcp`, connects claude.ai, ChatGPT, Claude Code and Cursor to your apps. Tools that delete data stay hidden from agents.
+
+[docs/threat-model.md](docs/threat-model.md) says what is promised, to whom, where each promise is enforced and tested, and what is still open.
+
+Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust, and turn on two-factor for that account.
+
+We strongly recommend Cloudflare Access before you invite anyone. The Gateway is alpha; Access is a second, independent sign-in from a company that does nothing else. A visitor never reaches the Gateway's sign-in pages, and a stolen session cookie is not enough on its own. It asks for a one-time code by email, or your company's identity provider. MCP and an app's public routes stay reachable, so AI clients keep working. [Cloudflare Access](https://everyapp.com/docs/access)
+
+## How you start
+
+### What you need
 
 - Node.js 22.18 or newer, pnpm and git. Your coding agent can install them for you; by hand, see [Install the tools](https://everyapp.com/docs/gateway#install-the-tools).
 - A Cloudflare account on Workers Paid: $5 a month, then usage. The $5 includes 10 million requests and 25 billion database reads a month, and an app adds no fixed cost; past that, Cloudflare bills by use ([its pricing page](https://developers.cloudflare.com/workers/platform/pricing/) has the rates).
 - A domain on Cloudflare: buy one there (a `.com` is about $10 a year, a `.dev` or `.app` $1 the first year) or bring one you already own. [Get a domain](https://everyapp.com/docs/domain)
 
-Every App is free and open source. The docs are at https://everyapp.com/docs.
+The docs are at https://everyapp.com/docs.
 
-## Your first app
+### Your first app
 
 ```bash
 git clone https://github.com/every-app/every-app.git
@@ -38,48 +77,9 @@ Who can open  Private to you, owners and admins · change it at https://apps.you
 Public        Open to the internet without sign-in: GET /health
 ```
 
-Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. The skill in `.agents/skills/everyapp` tells your agent the CLI, the manifest and the rules, so it never writes a login page. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.
+Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. The `everyapp` skill in every app tells your coding agent the CLI, the manifest and the rules, so it never writes a login page. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.
 
-- One AI key on the Gateway serves every app that declares that provider: `pnpm everyapp secret set OPENROUTER_API_KEY` covers OpenSEO, OpenCRM and Agentic Inbox (OpenAI and Workers AI work too).
-- One MCP address, `https://apps.yourcompany.com/mcp`, connects claude.ai, ChatGPT, Claude Code and Cursor to your apps. Tools that delete data stay hidden from agents.
-
-## Four apps on day one
-
-Each is open source and runs behind your Gateway.
-
-- [OpenSEO](https://github.com/every-app/open-seo) — SEO research, rank tracking, site audits and AI visibility for your sites. Bring your own DataForSEO key for the search data.
-- [OpenCRM](https://github.com/every-app/open-crm) — companies, contacts and deals, kept up to date by a research agent.
-- [OpenAnalytics](https://github.com/every-app/open-analytics) — web analytics for your sites: no cookies, no stored IP addresses, a tracker of about 3 KB gzipped.
-- [Agentic Inbox](https://github.com/every-app/agentic-inbox) — a team inbox with an AI agent: receive, read, draft and send email on your own domain.
-
-Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. None of the four publishes a release yet. Once one does (its author runs `pnpm everyapp release` and attaches the file to a GitHub release of the repository), `pnpm everyapp install <GitHub URL>` installs it straight from GitHub; run it again to update.
-
-Fork one and vibe code your own.
-
-## Security
-
-The Gateway only gives apps what you allow. [docs/threat-model.md](docs/threat-model.md) says what is promised, to whom, where each promise is enforced and tested, and what is still open.
-
-- Your credential stops at the Gateway. An app never sees a cookie or a token, only a short-lived signed note of who you are, made for that app alone.
-- Your AI keys stay on the Gateway. An app declares what it needs and never holds a key.
-- Apps have no public address of their own: every visit passes the Gateway. The only routes open without a sign-in are the ones an app declares public (a webhook, a tracking script), and the deploy prints them.
-- Each app has its own database.
-
-Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust, and turn on two-factor for that account.
-
-We strongly recommend Cloudflare Access before you invite anyone. The Gateway is alpha software; Access is a second, independent sign-in from a company that does nothing else, so a visitor never reaches the Gateway's sign-in pages, and a stolen session cookie is not enough on its own. `pnpm everyapp access on` puts it at Cloudflare's edge in front of the Gateway and your apps: a one-time code by email, or your company's identity provider. MCP and an app's public routes stay reachable, so AI clients keep working. Free for up to 50 people. See [Cloudflare Access](https://everyapp.com/docs/access).
-
-## Alpha
-
-Every App is alpha. It is very powerful, moving fast, and trying not to break things:
-
-- A deploy keeps your data and saves a restore point before it changes an app's database on D1.
-- Updating is `git pull`, `pnpm install`, then `pnpm everyapp update`.
-- When something must change, the release notes say so.
-
-No backwards-compatibility promise yet.
-
-## Let your agent set it up
+### Or let your agent set it up
 
 Paste this into Claude Code, Codex or Cursor:
 
@@ -115,6 +115,16 @@ BLOCKED: <why> and stop.
 ```
 
 Never `npx everyapp`: publishing to npm is paused, and the old version there cannot deploy this Gateway.
+
+## Alpha
+
+Every App is alpha. It is very powerful, moving fast, and trying not to break things:
+
+- A deploy keeps your data and saves a restore point before it changes an app's database on D1.
+- Updating is `git pull`, `pnpm install`, then `pnpm everyapp update`.
+- When something must change, the release notes say so.
+
+No backwards-compatibility promise yet.
 
 ## Help
 
