@@ -432,7 +432,7 @@ The authorize page each client sends people to, and the scopes the operator allo
 | `reddit` | `https://www.reddit.com/api/v1/authorize` | `read`, `identity`, `submit`, `flair` |
 | `pinterest` | `https://www.pinterest.com/oauth/` | `boards:read`, `boards:write`, `pins:read`, `pins:write`, `user_accounts:read` |
 | `discord` | `https://discord.com/oauth2/authorize` | `bot`, `identify`, `guilds` |
-| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `chat:write`, `users:read`, `groups:read`, `channels:join`, `chat:write.customize`, `users:read.email`, `channels:history`, `groups:history`, `chat:write.public`, `im:write`, `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `conversations.connect:write`, `links:write`, `channels:write` |
+| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `groups:read`, `users:read`, `users:read.email`, `chat:write`, `chat:write.public`, `chat:write.customize`, `channels:join`, `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `im:write`, `files:write`, `channels:write` |
 | `mastodon` | `<MASTODON_URL>/oauth/authorize` | `write:statuses`, `profile`, `write:media` |
 | `kick` | `https://id.kick.com/oauth/authorize` | `chat:write`, `user:read`, `channel:read` |
 | `twitch` | `https://id.twitch.tv/oauth2/authorize` | `user:write:chat`, `user:read:chat`, `moderator:manage:announcements` |
@@ -445,6 +445,14 @@ Scope sets an app may list (`scopes` on its capability entry), each with the pro
 
 | Capability | Scope set | Label | Access | Provider scopes |
 | --- | --- | --- | --- | --- |
+| `slack` | `channels.read` | Channels (read-only) | read | `channels:read`, `groups:read` |
+| `slack` | `users.read` | Members (read-only) | read | `users:read` |
+| `slack` | `users.email` | Members' email addresses (read-only) | read | `users:read.email` |
+| `slack` | `messages.write` | Messages (post as the app) | write | `chat:write`, `chat:write.public`, `chat:write.customize` |
+| `slack` | `channels.join` | Channels (join public ones) | write | `channels:join` |
+| `slack` | `channels.manage` | Channels (create, manage and invite to; open DMs) | write | `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `im:write` |
+| `slack` | `files.write` | Files (upload) | write | `files:write` |
+| `slack` | `user-channels.manage` | Channels (as the installing person: read, manage, invite to) | write | `channels:read` (user token), `channels:write` (user token), `groups:read` (user token), `groups:write` (user token) |
 | `google-workspace` | `identity` | Google account (who you are) | read | `openid`, `email`, `profile` |
 | `google-workspace` | `gmail.read` | Gmail (read-only) | read | `https://www.googleapis.com/auth/gmail.readonly` |
 | `google-workspace` | `calendar.read` | Google Calendar (read-only) | read | `https://www.googleapis.com/auth/calendar.readonly` |

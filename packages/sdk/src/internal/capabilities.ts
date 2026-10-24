@@ -679,30 +679,193 @@ export const CAPABILITIES = {
     setup: "setup/slack.md",
     authorize: {
       url: "https://slack.com/oauth/v2/authorize",
-      // Postiz's bot scopes, then Open CRM's: its team agents post to
-      // approved channels, manage the channels they post to and match
-      // members to Slack users by email (bot scopes), and invite the bot to
-      // private channels (user scopes `channels:write`, `groups:write`).
+      // The sets' union: the bot scopes in set order, then the one user
+      // scope no bot set carries. Postiz lists `channels.read`,
+      // `users.read`, `messages.write`, `channels.join` and `files.write`
+      // (it posts to channels it joins and uploads images); Open CRM adds
+      // `users.email`, `channels.manage` and `user-channels.manage` (its
+      // team agents match members to Slack users by email, create and
+      // manage the channels they post to, open DMs, and the installing
+      // person invites the bot to private channels).
       scopes: [
         "channels:read",
-        "chat:write",
-        "users:read",
         "groups:read",
-        "channels:join",
-        "chat:write.customize",
+        "users:read",
         "users:read.email",
-        "channels:history",
-        "groups:history",
+        "chat:write",
         "chat:write.public",
-        "im:write",
+        "chat:write.customize",
+        "channels:join",
         "channels:manage",
         "groups:write",
         "channels:write.invites",
         "groups:write.invites",
-        "conversations.connect:write",
-        "links:write",
+        "im:write",
+        "files:write",
         "channels:write",
       ],
+    },
+    scopePolicy: {
+      dialect: "slack",
+      // `oauth.v2.access` takes `code` with no `grant_type`; an app that
+      // opts into token rotation refreshes with `refresh_token`.
+      grantTypes: [null, "refresh_token"],
+      // Slack reads no `scope` on the token leg (the installation's scopes
+      // were fixed on the authorize URL), so the request goes as sent.
+      requestScope: "keep",
+      alwaysRequested: [],
+      tolerated: [],
+      deniedSegments: [],
+      // Slack authorizes by method name, not verb, and every method is one
+      // exact `/api/<method>` path on the host that also serves the token
+      // endpoint (which no set lists). A read set names its methods in
+      // `paths` (GET) and `posts` (POST) alike; a write set in `posts`
+      // only, with the one listing among them in `paths` too.
+      sets: {
+        "channels.read": {
+          label: "Channels (read-only)",
+          access: "read",
+          scopes: ["channels:read", "groups:read"],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [
+                "/api/conversations.list",
+                "/api/conversations.info",
+                "/api/conversations.members",
+                "/api/users.conversations",
+              ],
+              posts: [
+                /^\/api\/conversations\.(list|info|members)$/,
+                /^\/api\/users\.conversations$/,
+              ],
+            },
+          ],
+        },
+        "users.read": {
+          label: "Members (read-only)",
+          access: "read",
+          scopes: ["users:read"],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [
+                "/api/users.list",
+                "/api/users.info",
+                "/api/users.getPresence",
+                "/api/bots.info",
+              ],
+              posts: [
+                /^\/api\/users\.(list|info|getPresence)$/,
+                /^\/api\/bots\.info$/,
+              ],
+            },
+          ],
+        },
+        "users.email": {
+          // Slack grants it only beside `users:read`: declare both sets.
+          label: "Members' email addresses (read-only)",
+          access: "read",
+          scopes: ["users:read.email"],
+          routes: [
+            {
+              host: "slack.com",
+              paths: ["/api/users.lookupByEmail"],
+              posts: [/^\/api\/users\.lookupByEmail$/],
+            },
+          ],
+        },
+        "messages.write": {
+          label: "Messages (post as the app)",
+          access: "write",
+          scopes: ["chat:write", "chat:write.public", "chat:write.customize"],
+          routes: [
+            {
+              host: "slack.com",
+              // The scheduled-messages listing is the one read among them.
+              paths: ["/api/chat.scheduledMessages.list"],
+              posts: [
+                /^\/api\/chat\.(postMessage|postEphemeral|update|delete|scheduleMessage|deleteScheduledMessage|scheduledMessages\.list)$/,
+              ],
+            },
+          ],
+        },
+        "channels.join": {
+          label: "Channels (join public ones)",
+          access: "write",
+          scopes: ["channels:join"],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [],
+              posts: [/^\/api\/conversations\.join$/],
+            },
+          ],
+        },
+        "channels.manage": {
+          label: "Channels (create, manage and invite to; open DMs)",
+          access: "write",
+          scopes: [
+            "channels:manage",
+            "groups:write",
+            "channels:write.invites",
+            "groups:write.invites",
+            "im:write",
+          ],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [],
+              posts: [
+                /^\/api\/conversations\.(create|rename|archive|unarchive|invite|open|kick|leave|setTopic|setPurpose|mark)$/,
+              ],
+            },
+          ],
+        },
+        "files.write": {
+          label: "Files (upload)",
+          access: "write",
+          scopes: ["files:write"],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [],
+              // The external upload flow; the retired `files.upload` stays off.
+              posts: [
+                /^\/api\/files\.(getUploadURLExternal|completeUploadExternal)$/,
+              ],
+            },
+          ],
+        },
+        "user-channels.manage": {
+          label: "Channels (as the installing person: read, manage, invite to)",
+          access: "write",
+          scopes: [],
+          // Slack's `user_scope`: issued to the person's own token, which
+          // Open CRM uses to invite the bot to private channels.
+          userScopes: [
+            "channels:read",
+            "channels:write",
+            "groups:read",
+            "groups:write",
+          ],
+          routes: [
+            {
+              host: "slack.com",
+              paths: [
+                "/api/conversations.list",
+                "/api/conversations.info",
+                "/api/conversations.members",
+                "/api/users.conversations",
+              ],
+              posts: [
+                /^\/api\/conversations\.(list|info|members|create|rename|archive|unarchive|invite|kick|leave|setTopic|setPurpose|mark)$/,
+                /^\/api\/users\.conversations$/,
+              ],
+            },
+          ],
+        },
+      },
     },
     api: ["slack.com"],
     redirectPaths: [

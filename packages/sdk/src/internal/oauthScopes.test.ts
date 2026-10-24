@@ -2,9 +2,9 @@
  * The scope-set helpers the gateway's token-endpoint check and the proxy
  * boundary are built from: what a manifest declares, what that lets an app
  * ask for, how each provider spells what it granted, and which routes a set
- * unlocks. Google's and Microsoft's policies come from the registry; Slack's
- * is a fixture here until its registry entry carries one, so the parser and
- * the method-name routes are proven before then.
+ * unlocks. All three policies come from the registry: Google's and
+ * Microsoft's, and Slack's with its bot and user tokens, a code exchange
+ * without grant_type, and methods by name.
  */
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, type OAuthScopePolicy } from "./capabilities";
@@ -32,50 +32,30 @@ const WEBMASTERS = "https://www.googleapis.com/auth/webmasters.readonly";
 const EMAIL = "https://www.googleapis.com/auth/userinfo.email";
 const PROFILE = "https://www.googleapis.com/auth/userinfo.profile";
 
-/** Enough of Slack's policy to prove its parser: bot and user tokens, a code exchange without grant_type, methods by name. */
-const SLACK: OAuthScopePolicy = {
-  dialect: "slack",
-  grantTypes: [null, "refresh_token"],
-  requestScope: "keep",
-  alwaysRequested: [],
-  tolerated: [],
-  deniedSegments: [],
-  sets: {
-    "channels.read": {
-      label: "Channels (read-only)",
-      access: "read",
-      scopes: ["channels:read", "groups:read"],
-      routes: [
-        {
-          host: "slack.com",
-          paths: ["/api/conversations.list", "/api/conversations.info"],
-          posts: [/^\/api\/conversations\.(list|info)$/],
-        },
-      ],
-    },
-    "messages.write": {
-      label: "Post messages",
-      access: "write",
-      scopes: ["chat:write"],
-      routes: [
-        { host: "slack.com", paths: [], posts: [/^\/api\/chat\.postMessage$/] },
-      ],
-    },
-    "user-channels.manage": {
-      label: "Manage channels as the installing person",
-      access: "write",
-      scopes: [],
-      userScopes: ["channels:write", "groups:write"],
-      routes: [
-        {
-          host: "slack.com",
-          paths: [],
-          posts: [/^\/api\/conversations\.create$/],
-        },
-      ],
-    },
-  },
-};
+const SLACK = CAPABILITIES.slack.scopePolicy;
+/** What Postiz's and Open CRM's manifests list for `slack` once they redeploy with `scopes`. */
+const POSTIZ_SLACK = [
+  "channels.read",
+  "users.read",
+  "messages.write",
+  "channels.join",
+  "files.write",
+];
+const OPEN_CRM_SLACK = [
+  "channels.read",
+  "users.read",
+  "users.email",
+  "messages.write",
+  "channels.join",
+  "channels.manage",
+  "user-channels.manage",
+];
+const OPEN_CRM_USER_SCOPES = [
+  "channels:read",
+  "channels:write",
+  "groups:read",
+  "groups:write",
+];
 
 const FORM = "application/x-www-form-urlencoded";
 const JSON_TYPE = "application/json";
@@ -143,12 +123,12 @@ describe("requestedScopes", () => {
     expect(requestedScopes(GOOGLE, ["gmail.read"]).scopes).toEqual([GMAIL]);
   });
 
-  it("keeps Slack's user scopes apart from the bot's", () => {
+  it("keeps Slack's user scopes apart from the bot's, the same name on both sides included", () => {
     expect(
       requestedScopes(SLACK, ["channels.read", "user-channels.manage"]),
     ).toEqual({
       scopes: ["channels:read", "groups:read"],
-      userScopes: ["channels:write", "groups:write"],
+      userScopes: OPEN_CRM_USER_SCOPES,
     });
   });
 });
@@ -359,6 +339,119 @@ describe("scopeExcess", () => {
         allowedScopes(SLACK, ["user-channels.manage"]),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("slack: the registry's policy against its consumers' token answers", () => {
+  /** `oauth.v2.access` as Slack answers an install: the bot token, and the installer's when `user_scope` was asked. */
+  const install = (scope: string, userScope?: string) => ({
+    ok: true,
+    access_token: "xoxb-1",
+    token_type: "bot",
+    scope,
+    bot_user_id: "B1",
+    team: { id: "T1", name: "Acme" },
+    authed_user:
+      userScope === undefined
+        ? { id: "U1" }
+        : {
+            id: "U1",
+            access_token: "xoxp-1",
+            token_type: "user",
+            scope: userScope,
+          },
+  });
+  const excess = (json: unknown, sets: string[]) => {
+    const granted = grantedScopes(SLACK, json);
+    expect(granted).not.toBeNull();
+    return scopeExcess(granted!, allowedScopes(SLACK, sets));
+  };
+
+  it("passes a bot token within the declared sets", () => {
+    const postiz = install(
+      "channels:read,chat:write,users:read,groups:read,channels:join,chat:write.customize,files:write",
+    );
+    expect(excess(postiz, POSTIZ_SLACK)).toEqual([]);
+    // Postiz's sets, minus the one that unlocks uploads.
+    expect(excess(postiz, POSTIZ_SLACK.slice(0, -1))).toEqual(["files:write"]);
+    // Nothing is tolerated on Slack: a history scope is excess however common.
+    expect(
+      excess(
+        install("channels:read,groups:read,channels:history"),
+        POSTIZ_SLACK,
+      ),
+    ).toEqual(["channels:history"]);
+  });
+
+  it("reports the installer's scopes outside user-channels.manage as user:, while the bot token passes", () => {
+    const openCrm = install(
+      "users:read,users:read.email,channels:read,groups:read,chat:write,chat:write.public,im:write,channels:join,channels:manage,groups:write,channels:write.invites,groups:write.invites",
+      "channels:read,channels:write,groups:read,groups:write",
+    );
+    expect(excess(openCrm, OPEN_CRM_SLACK)).toEqual([]);
+    const wider = install(
+      "users:read,channels:read,groups:read,chat:write",
+      "channels:read,channels:write,groups:read,groups:write,chat:write",
+    );
+    expect(excess(wider, OPEN_CRM_SLACK)).toEqual(["user:chat:write"]);
+    // Without the user set declared, every installer scope is excess, and
+    // the bot's `channels:read` doesn't cover the person's.
+    expect(
+      excess(
+        wider,
+        OPEN_CRM_SLACK.filter((name) => name !== "user-channels.manage"),
+      ),
+    ).toEqual([
+      "user:channels:read",
+      "user:channels:write",
+      "user:groups:read",
+      "user:groups:write",
+      "user:chat:write",
+    ]);
+  });
+
+  it("checks a user-only answer on authed_user alone", () => {
+    const userOnly = {
+      ok: true,
+      team: { id: "T1" },
+      authed_user: {
+        id: "U1",
+        access_token: "xoxp-1",
+        scope: "channels:read,channels:write,groups:read,groups:write",
+      },
+    };
+    expect(grantedScopes(SLACK, userOnly)).toEqual({
+      userScopes: OPEN_CRM_USER_SCOPES,
+    });
+    expect(excess(userOnly, ["user-channels.manage"])).toEqual([]);
+    expect(excess(userOnly, ["channels.read"])).toEqual(
+      OPEN_CRM_USER_SCOPES.map((scope) => `user:${scope}`),
+    );
+  });
+
+  it("holds a rotation refresh to the scopes of the token's kind", () => {
+    const user = {
+      ok: true,
+      access_token: "xoxe.xoxp-1",
+      token_type: "user",
+      scope: "channels:read,channels:write,groups:read,groups:write",
+      refresh_token: "xoxe-1-user",
+      expires_in: 43200,
+    };
+    expect(grantedScopes(SLACK, user)).toEqual({
+      userScopes: OPEN_CRM_USER_SCOPES,
+    });
+    expect(excess(user, ["user-channels.manage"])).toEqual([]);
+    expect(excess(user, ["channels.read", "channels.manage"])).toEqual(
+      OPEN_CRM_USER_SCOPES.map((scope) => `user:${scope}`),
+    );
+    const bot = { ...user, access_token: "xoxe.xoxb-1", token_type: "bot" };
+    expect(excess(bot, ["channels.read", "channels.manage"])).toEqual([
+      "channels:write",
+    ]);
+    // A refresh answer that doesn't say which kind it is can't be held to either.
+    const { token_type: _kind, ...unsaid } = user;
+    expect(grantedScopes(SLACK, unsaid)).toBeNull();
   });
 });
 
