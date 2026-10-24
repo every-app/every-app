@@ -15,12 +15,12 @@ export function PWAQRCode({ size = 140 }: PWAQRCodeProps) {
   );
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col items-center gap-3">
       {/* Always white: a QR code needs a light background to scan. */}
       <div className="w-fit rounded-lg border border-border bg-white p-3">
         <QRCodeSVG value={pwaUrl} size={size} level="M" />
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-center text-xs text-muted-foreground">
         Or visit{" "}
         <code className="rounded bg-muted px-1.5 py-0.5 font-mono break-all text-foreground">
           {pwaUrl}

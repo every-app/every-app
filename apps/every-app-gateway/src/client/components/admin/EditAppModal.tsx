@@ -91,8 +91,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
             </form.AppField>
             {app.hostname ? (
               <p className="text-sm text-muted-foreground">
-                Served at <span className="font-mono">{app.hostname}</span> —
-                set by <span className="font-mono">everyapp deploy</span>
+                Served at <span className="font-mono">{app.hostname}</span>
               </p>
             ) : null}
             {email.sends || email.receives ? (
@@ -110,7 +109,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                     "sends as the gateway's sender only"
                   )
                 ) : null}
-                {email.sends && email.receives ? "; " : null}
+                {email.sends && email.receives ? " · " : null}
                 {email.receives ? (
                   email.inbound.length ? (
                     <>
@@ -123,15 +122,6 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                     "receives no addresses yet"
                   )
                 ) : null}
-                {app.tier === "dispatch" ? (
-                  " — third-party apps send from the gateway's sender and receive no mail"
-                ) : (
-                  <>
-                    {" — "}set with{" "}
-                    <span className="font-mono">everyapp email set</span> in the
-                    app's directory
-                  </>
-                )}
               </p>
             ) : null}
             {app.capabilities.length ? (
@@ -143,9 +133,6 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                     <CapabilitySentence capability={capability} />
                   </span>
                 ))}
-                {" — "}listed under{" "}
-                <span className="font-mono">capabilities</span> in
-                everyapp.config.ts; deploy again to change
               </p>
             ) : null}
             {app.scope === "shared" ? (
@@ -159,7 +146,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                   {(field) => (
                     <field.SwitchField
                       label="Available to everyone"
-                      description="Every current and future member can open this app. Turning this off keeps existing access; use Manage access to remove people."
+                      description="Turning this off keeps the people who already have access."
                     />
                   )}
                 </form.AppField>

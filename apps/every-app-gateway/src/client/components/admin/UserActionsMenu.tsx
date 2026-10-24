@@ -72,7 +72,7 @@ function InvitationActionsMenu({
           onClick={() => onCopyInvitationLink(invitationId)}
         >
           <LinkIcon />
-          Copy invite link
+          Invite link
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -126,6 +126,7 @@ function MemberActionsMenu({
     return null;
   }
   const canManage = isOwner || user.role !== "admin";
+  const subject = user.name || user.email;
 
   const showResetEmail = !user.banned && emailConfigured;
   const showResetLink = !user.banned && canManage;
@@ -160,7 +161,7 @@ function MemberActionsMenu({
             onClick={() => onCreatePasswordResetLink(user.id)}
           >
             <LinkIcon />
-            Generate password reset link
+            Password reset link
           </DropdownMenuItem>
         ) : null}
         {showRoleChange ? (
@@ -188,7 +189,7 @@ function MemberActionsMenu({
             onClick={() => onReactivate(user.id)}
           >
             <UserCheck />
-            Reactivate
+            Reactivate user
           </DropdownMenuItem>
         ) : null}
         {hasSafeItems && hasDestructiveItems ? <DropdownMenuSeparator /> : null}
@@ -199,7 +200,7 @@ function MemberActionsMenu({
             onClick={() => setConfirming("deactivate")}
           >
             <UserX />
-            Deactivate
+            Deactivate user
           </DropdownMenuItem>
         ) : null}
         {showDelete ? (
@@ -215,7 +216,7 @@ function MemberActionsMenu({
 
       {confirming === "deactivate" ? (
         <ConfirmDialog
-          title={`Deactivate ${user.email}?`}
+          title={`Deactivate ${subject}?`}
           confirmLabel="Deactivate"
           destructive
           onClose={() => setConfirming(null)}
@@ -224,8 +225,7 @@ function MemberActionsMenu({
             onDeactivate(user.id);
           }}
         >
-          They are signed out everywhere, can no longer sign in, and their
-          personal access tokens are revoked.
+          Signs them out everywhere, blocks sign-in and revokes their tokens.
         </ConfirmDialog>
       ) : null}
 

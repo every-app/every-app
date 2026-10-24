@@ -49,7 +49,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{children}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>
+          <AlertDialogCancel variant="ghost" disabled={pending}>
             {cancelLabel}
           </AlertDialogCancel>
           <Button

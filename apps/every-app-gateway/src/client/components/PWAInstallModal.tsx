@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/client/components/ui/dialog";
@@ -224,11 +223,12 @@ function DesktopInstructions() {
       <DialogHeader>
         <DialogTitle>Install on mobile</DialogTitle>
         <DialogDescription>
-          Scan the QR code with your phone to install Every App as a mobile app.
+          Scan with your phone to install Every App.
         </DialogDescription>
       </DialogHeader>
-      <PWAQRCode />
-      <DialogFooter showCloseButton />
+      <div className="flex justify-center">
+        <PWAQRCode />
+      </div>
     </>
   );
 }

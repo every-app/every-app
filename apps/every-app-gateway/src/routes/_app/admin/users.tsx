@@ -65,6 +65,7 @@ function UsersPage() {
         description: `Send this link to ${result.email}. They sign up or sign in with that email to join.`,
         url: result.inviteUrl,
         expiresAt: result.expiresAt,
+        restriction: `Only ${result.email} can use it.`,
       });
     },
     onError: (err) => {
@@ -81,6 +82,8 @@ function UsersPage() {
         description: `Send this link to ${result.email}. It lets them choose a new password.`,
         url: result.url,
         expiresAt: result.expiresAt,
+        restriction:
+          "Anyone with it can set the password, so share it privately.",
       });
     },
     onError: (err) => {

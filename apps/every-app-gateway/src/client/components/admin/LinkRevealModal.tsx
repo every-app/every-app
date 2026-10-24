@@ -15,6 +15,8 @@ export interface RevealedLink {
   description: string;
   url: string;
   expiresAt: Date | string;
+  /** Who can use the link, or how to share it; follows "Works once, until…". */
+  restriction?: string;
 }
 
 interface LinkRevealModalProps {
@@ -31,27 +33,31 @@ export function LinkRevealContent({
   title,
   description,
   url,
-  notice,
-  footnote,
+  expiresAt,
+  restriction,
   onDone,
 }: {
   title: string;
   description: ReactNode;
   url: string;
-  /** An Alert above the link, for example why it was not emailed. */
-  notice?: ReactNode;
-  footnote: ReactNode;
+  expiresAt: Date | string;
+  restriction?: string;
   onDone: () => void;
 }) {
+  const when = new Date(expiresAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
   return (
     <>
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
-      {notice}
       <CodeBlock code={url} successMessage="Link copied" />
-      <p className="text-xs text-muted-foreground">{footnote}</p>
+      <p className="text-xs text-muted-foreground">
+        Works once, until {when}.{restriction ? ` ${restriction}` : null}
+      </p>
       <DialogFooter>
         <Button onClick={onDone}>Done</Button>
       </DialogFooter>
@@ -78,12 +84,8 @@ export function LinkRevealModal({ link, onClose }: LinkRevealModalProps) {
           title={link.title}
           description={link.description}
           url={link.url}
-          footnote={
-            <>
-              Works once, until {new Date(link.expiresAt).toLocaleString()}.
-              Share it privately: anyone with this link can use it.
-            </>
-          }
+          expiresAt={link.expiresAt}
+          restriction={link.restriction}
           onDone={onClose}
         />
       </DialogContent>

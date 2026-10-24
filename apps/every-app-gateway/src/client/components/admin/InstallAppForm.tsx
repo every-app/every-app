@@ -155,13 +155,13 @@ export function InstallAppForm({
                 placeholder={
                   releaseOnly
                     ? "Paste your oss.new release URL"
-                    : "GitHub repository or oss.new release URL"
+                    : "Repository or release URL"
                 }
                 autoComplete="off"
                 required
                 autoFocus
                 className={authInputClassName}
-                disabled={busy}
+                disabled={busy || (!checking && !available)}
               />
             )}
           </form.AppField>
@@ -182,8 +182,8 @@ export function InstallAppForm({
               </p>
             ) : !available ? (
               <p className="text-sm text-muted-foreground">
-                Browser installation is not enabled. Ask your Gateway owner to
-                configure the browser deployer.
+                Browser installation is off on this gateway. Deploy with the
+                everyapp CLI instead.
               </p>
             ) : workspaces.length === 0 ? (
               <p role="alert" className="text-sm text-destructive">
@@ -201,31 +201,36 @@ export function InstallAppForm({
           {job ? (
             <Button onClick={onBack}>Back to apps</Button>
           ) : (
-            <form.Subscribe
-              selector={(state) =>
-                [state.isSubmitting, state.values.organizationId] as const
-              }
-            >
-              {([isSubmitting, organizationId]) => (
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={
-                    isSubmitting ||
-                    busy ||
-                    checking ||
-                    !available ||
-                    !workspaces.some(
-                      (workspace) => workspace.id === organizationId,
-                    ) ||
-                    Boolean(availabilityError)
-                  }
-                  aria-busy={isSubmitting}
-                >
-                  Install
-                </Button>
-              )}
-            </form.Subscribe>
+            <>
+              <form.Subscribe
+                selector={(state) =>
+                  [state.isSubmitting, state.values.organizationId] as const
+                }
+              >
+                {([isSubmitting, organizationId]) => (
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={
+                      isSubmitting ||
+                      busy ||
+                      checking ||
+                      !available ||
+                      !workspaces.some(
+                        (workspace) => workspace.id === organizationId,
+                      ) ||
+                      Boolean(availabilityError)
+                    }
+                    aria-busy={isSubmitting}
+                  >
+                    Install
+                  </Button>
+                )}
+              </form.Subscribe>
+              <Button variant="ghost" className="w-full" onClick={onBack}>
+                Back to apps
+              </Button>
+            </>
           )}
         </form.Form>
       </form.AppForm>

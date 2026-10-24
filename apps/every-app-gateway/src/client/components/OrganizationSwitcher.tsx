@@ -9,9 +9,7 @@ import { Skeleton } from "@/client/components/ui/skeleton";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/client/components/ui/dropdown-menu";
@@ -74,26 +72,18 @@ export function OrganizationSwitcher({
       <DropdownMenuContent className="w-(--anchor-width)">
         {organizations && organizations.length > 0 ? (
           <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-              {organizations.map((organization) => (
-                <DropdownMenuItem
-                  key={organization.id}
-                  disabled={isSwitching}
-                  onClick={() => void handleSelect(organization.id)}
-                >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{organization.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {organization.slug}
-                    </span>
-                  </span>
-                  {organization.id === activeOrganization?.id ? (
-                    <Check className="ml-auto" />
-                  ) : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
+            {organizations.map((organization) => (
+              <DropdownMenuItem
+                key={organization.id}
+                disabled={isSwitching}
+                onClick={() => void handleSelect(organization.id)}
+              >
+                <span className="truncate">{organization.name}</span>
+                {organization.id === activeOrganization?.id ? (
+                  <Check className="ml-auto" />
+                ) : null}
+              </DropdownMenuItem>
+            ))}
             <DropdownMenuSeparator />
           </>
         ) : null}

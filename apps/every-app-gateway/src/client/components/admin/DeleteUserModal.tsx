@@ -22,13 +22,8 @@ export function DeleteUserModal({
       onClose={onClose}
       onConfirm={onConfirm}
     >
-      Their personal access tokens for this organization stop working. This
-      action cannot be undone.
-      <span className="mt-2 block">
-        If Cloudflare Access would let them straight back in (their email domain
-        joins automatically), they are deactivated instead, which keeps them
-        out.
-      </span>
+      Removes them from this organization and revokes their tokens. This can't
+      be undone.
     </ConfirmDialog>
   );
 }

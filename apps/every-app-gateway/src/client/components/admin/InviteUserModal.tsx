@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { revalidateLogic } from "@tanstack/react-form";
-import { CircleAlert, TriangleAlert } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { z } from "zod";
 import { inviteMember } from "@/serverFunctions/admin";
 import { getServerErrorMessage } from "@/client/errors";
@@ -11,7 +11,6 @@ import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -30,11 +29,6 @@ const ROLE_ITEMS: { value: Role; label: string }[] = [
   { value: "member", label: "Member" },
   { value: "admin", label: "Admin" },
 ];
-
-const ROLE_HINTS: Record<Role, string> = {
-  member: "Opens the apps they are given.",
-  admin: "Also manages users and apps.",
-};
 
 interface InviteUserModalProps {
   onClose: () => void;
@@ -98,26 +92,11 @@ export function InviteUserModal({
       >
         {unsent ? (
           <LinkRevealContent
-            title="Copy invite link"
-            description={`The invitation for ${unsent.email} was created but not emailed.`}
-            notice={
-              <Alert variant="warning">
-                <TriangleAlert />
-                <AlertDescription className="text-foreground">
-                  {unsent.emailConfigured
-                    ? "Sending the invitation email failed."
-                    : "Email is not configured on this gateway."}{" "}
-                  Send this link to {unsent.email} yourself.
-                </AlertDescription>
-              </Alert>
-            }
+            title="Invite link"
+            description={`Send this link to ${unsent.email}. They sign up or sign in with that email to join.`}
             url={unsent.inviteUrl}
-            footnote={
-              <>
-                Works once, until {new Date(unsent.expiresAt).toLocaleString()},
-                and only for an account with this email address.
-              </>
-            }
+            expiresAt={unsent.expiresAt}
+            restriction={`Only ${unsent.email} can use it.`}
             onDone={onClose}
           />
         ) : (
@@ -125,10 +104,6 @@ export function InviteUserModal({
             <form.Form className="flex flex-col gap-4">
               <DialogHeader>
                 <DialogTitle>Invite user</DialogTitle>
-                <DialogDescription>
-                  They join this organization when they sign up or sign in with
-                  this email address.
-                </DialogDescription>
               </DialogHeader>
               <form.AppField name="email">
                 {(field) => (
@@ -144,11 +119,7 @@ export function InviteUserModal({
               </form.AppField>
               <form.AppField name="role">
                 {(field) => (
-                  <field.SelectField
-                    label="Role"
-                    items={ROLE_ITEMS}
-                    description={ROLE_HINTS[field.state.value]}
-                  />
+                  <field.SelectField label="Role" items={ROLE_ITEMS} />
                 )}
               </form.AppField>
               {error ? (
