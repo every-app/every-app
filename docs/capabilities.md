@@ -33,15 +33,18 @@ re-aligned on 2026-10-16 with the hosted-platform research
 apps get one Worker per organization on Workers for Platforms, and the gateway
 learns the organization per call. Both documents were written when the
 manifest key was `integrations` with `as` and `background` on each entry; read
-them with this document's `capabilities` and `{ access, why }`.
+them with this document's `capabilities` and
+`{ access, why, docs, optional, anyOf }`.
 
 ## The three kinds
 
 One registry (`packages/sdk/src/internal/capabilities.ts`) defines every
 capability; its `mode` is the kind. All three take the same manifest entry,
-`capabilities: { <id>: { access, why } }`, travel the app's private binding
-to the gateway under `/api/integrations/<id>/...`, and answer
-`GET /api/integrations/<id>` (`integrationStatus`) without calling out.
+`capabilities: { <id>: { access, why, docs, optional, anyOf } }` (`access`,
+and the need fields of [docs/manifest-settings.md](manifest-settings.md)),
+travel the app's private binding to the gateway under
+`/api/integrations/<id>/...`, and answer `GET /api/integrations/<id>`
+(`integrationStatus`) without calling out.
 
 | Kind           | Capabilities                                          | What the gateway does                                                             | The app calls                                                                            | Access  | Status adds                     |
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
@@ -72,10 +75,21 @@ pnpm everyapp secret set DATAFORSEO_API_KEY
 Each value comes from a hidden prompt, or from an environment variable with
 `--from-env VAR` (one name). The command changes the live gateway Worker in
 one new version and never deploys; every app that lists the capability can
-use it from then on. `pnpm everyapp secret list` in an app's directory shows
-which of the gateway settings its manifest needs are set. A capability you skip is simply not offered: its
-status answers `configured: false`, and calls `integration_not_configured`
-(AI: `ai_provider_not_configured`), naming the command.
+use it from then on. `pnpm everyapp secret list [<app>]` shows which of the
+settings an app's manifest needs are set, the gateway's and the app's own. A
+capability you skip is simply not offered: its status answers
+`configured: false`, and calls `integration_not_configured` (AI:
+`ai_provider_not_configured`), naming the command.
+
+Whether an app has what it needs is read from these names, never from a
+value. Each provider, capability and secret in a manifest carries a need:
+required (the default), optional, or one of a named group. The gateway
+shows an app with a required setting unset as "Needs setup" and doesn't
+open it; `pnpm everyapp status` lists every app's settings with the one
+command to run per app; an optional setting degrades inside the app, where
+the feature says what is missing. The model, the manifest fields, every
+surface and the rollout are in
+[docs/manifest-settings.md](manifest-settings.md).
 
 A coding agent sets each of these up end to end, the provider's side
 included, from the everyapp skill's setup files:
@@ -92,7 +106,7 @@ Everything the gateway holds for apps, in one table:
 | the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
-| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | agentic-inbox, OpenAnalytics, and the gateway's own mail (Postiz: ported, not launching) |
+| `email`                     | `service`           | `EMAIL_FROM` with a display name, from `EMAIL_FROM_NAME` or `EMAIL_FROM="Name <address>"`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | agentic-inbox, OpenAnalytics, and the gateway's own mail (Postiz: ported, not launching) |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Open CRM (`slack`); the other 15 were added for Postiz (ported, not launching) |
 | `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture) |
@@ -170,6 +184,13 @@ capabilities: {
 `everyapp deploy` refuses a capability the gateway doesn't offer and an
 access level it doesn't offer (`write`, for both providers today; `read`,
 for email and the OAuth clients).
+
+An entry may also say its need: `optional: true` when only one feature uses
+it (the app opens without it, and that feature says what is missing),
+`anyOf: "<group>"` when any one of several is enough, `why` for whoever
+sets it, and `docs` to replace the registry's default page. Without them
+the capability is required, and the app doesn't open until it is set
+([docs/manifest-settings.md](manifest-settings.md)).
 
 Call the provider's real URLs with the SDK's fetch:
 
@@ -496,7 +517,7 @@ refuses one); they call `sendEmail()`.
 
 | Capability | Gateway settings                                                                   | Route                               | Access  |
 | ---------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ------- |
-| `email`    | `EMAIL_FROM`, `EMAIL_FROM_NAME`; Cloudflare: the `EMAIL` binding, or `EMAIL_REST_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID`; Resend: `RESEND_API_KEY`; `EMAIL_PROVIDER` (`cloudflare` or `resend`) when both are set | `POST /api/integrations/email/send` | `write` |
+| `email`    | `EMAIL_FROM` with a display name (`EMAIL_FROM_NAME`, or `EMAIL_FROM` as `Name <address>`); Cloudflare: the `EMAIL` binding, or `EMAIL_REST_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID`; Resend: `RESEND_API_KEY`; `EMAIL_PROVIDER` (`cloudflare` or `resend`) when both are set | `POST /api/integrations/email/send` | `write` |
 
 Without `EMAIL_PROVIDER` the gateway picks Cloudflare when its REST pair is
 set, else Resend when `RESEND_API_KEY` is, else Cloudflare's `EMAIL`
@@ -567,7 +588,10 @@ transport will retry some recipients). In local dev the SDK answers
 `logged` (below).
 
 **The sender rule.** Without `from`, the message goes out as `EMAIL_FROM`
-(with `EMAIL_FROM_NAME`). With one, the address must match one of the
+with its display name, `EMAIL_FROM_NAME` or the name in
+`EMAIL_FROM="Name <address>"`; a bare address with no name is not a
+configured sender, and the gateway sends nothing. With one, the address
+must match one of the
 installation's senders, set with `everyapp email set --sender` and stored
 on the app's registry row (never in the manifest, so a release carries
 none): `*@<domain>` takes any address on exactly that domain (not its
