@@ -45,7 +45,7 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 - **OpenAnalytics**: Web analytics for your sites. No cookies, no stored IP addresses.
 - **Agentic Inbox**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
-Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. None of the four publishes a release yet. Once one does, `pnpm everyapp install <GitHub URL>` installs it; run it again to update.
+`pnpm everyapp install https://github.com/every-app/<repo>` from your Every App folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and Agentic Inbox use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
 
 ## What it costs
 

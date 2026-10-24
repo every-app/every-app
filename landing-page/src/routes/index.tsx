@@ -336,10 +336,13 @@ function Home() {
             ))}
           </ul>
           <p className="max-w-xl text-base text-stone-400">
-            Clone one, run <Code>pnpm install</Code>, then{" "}
-            <Code>pnpm everyapp deploy</Code> in its folder. OpenSEO needs a
-            DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of
-            its own. The three that use AI share one key on the Gateway.
+            <Code>
+              pnpm everyapp install https://github.com/every-app/&lt;repo&gt;
+            </Code>{" "}
+            from your Every App folder installs one; run it again to update.
+            OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key,
+            OpenAnalytics a secret of its own. The three that use AI share one
+            key on the Gateway.
           </p>
         </Section>
 

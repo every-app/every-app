@@ -17,8 +17,10 @@ and setup.md there; the everyapp skill in the repo says the same).
    `pnpm everyapp install https://github.com/every-app/<repo> --json` with
    open-seo, open-crm, open-analytics or agentic-inbox as <repo>. If an
    install answers NO_RELEASE, say which app and continue; do not try to
-   build it from source. An app that needs keys shows Needs setup on the
-   Gateway: tell me which keys it wants and stop there.
+   build it from source. If it answers R2_NOT_ENABLED, ask me to enable
+   R2 in the Cloudflare dashboard (once), wait, then run it again. An app
+   that needs keys shows Needs setup on the Gateway: tell me which keys it
+   wants and stop there.
 
 The --json output is one event per line. "type":"action_required" means I
 have to do something: show me its message, data.url and data.code, then wait
@@ -31,6 +33,7 @@ without --json. Exit 1 is an error: show me its code and fix.
 Only I can approve the Cloudflare login, pick the Cloudflare account if I
 have several, create the owner account from the setup link, pick a
 workers.dev name (my apps never use it), pay for Workers Paid, buy a domain,
-or confirm in a terminal a Worker changed outside everyapp. Keep it short.
+enable R2 in the dashboard once, or confirm in a terminal a Worker changed
+outside everyapp. Keep it short.
 When everything is done print DONE and the Gateway URL; if stuck print
 BLOCKED: <why> and stop.
