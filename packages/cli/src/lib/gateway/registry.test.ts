@@ -304,11 +304,17 @@ describe("deployerFor", () => {
 });
 
 describe("deleteApp", () => {
-  /** An owner, a member with access and a token, its tools and an AI connection. */
+  /**
+   * An owner, a member with access (directly and through a group) and a
+   * token, its tools and an AI connection.
+   */
   function withAppData(appRowId: string, organizationId: string): void {
     addUser("member", { organization: organizationId });
     sqlite.sqlite.exec(`
       INSERT INTO user_app_access (id, user_id, app_row_id, organization_id) VALUES ('access-member', 'member', '${appRowId}', '${organizationId}');
+      INSERT OR IGNORE INTO groups (id, organization_id, name) VALUES ('grp_writers', '${organizationId}', 'Writers');
+      INSERT OR IGNORE INTO group_members (group_id, user_id, organization_id) VALUES ('grp_writers', 'member', '${organizationId}');
+      INSERT INTO group_app_access (group_id, app_row_id, organization_id) VALUES ('grp_writers', '${appRowId}', '${organizationId}');
       INSERT INTO user_access_tokens (id, user_id, organization_id, app_row_id, name, token_hash, token_prefix, expires_at)
         VALUES ('token-1', 'member', '${organizationId}', '${appRowId}', 'cli', 'hash', 'epat_', 9999999999999);
       INSERT INTO app_tool_catalogs (app_row_id, organization_id, status, fetched_at) VALUES ('${appRowId}', '${organizationId}', 'ok', 0);
@@ -321,12 +327,20 @@ describe("deleteApp", () => {
   }
   const appData = () => ({
     access: sqlite.all("SELECT id FROM user_app_access"),
+    groupAccess: sqlite.all("SELECT group_id FROM group_app_access"),
     liveTokens: sqlite.all("SELECT id FROM user_access_tokens WHERE revoked_at IS NULL"),
     catalogs: sqlite.all("SELECT app_row_id FROM app_tool_catalogs"),
     tools: sqlite.all("SELECT name FROM app_tools"),
     connections: sqlite.all("SELECT connection_id FROM mcp_connection_apps"),
   });
-  const nothing = { access: [], liveTokens: [], catalogs: [], tools: [], connections: [] };
+  const nothing = {
+    access: [],
+    groupAccess: [],
+    liveTokens: [],
+    catalogs: [],
+    tools: [],
+    connections: [],
+  };
 
   it("leaves a tombstone, with nothing of the app's access, tokens, tools, connections or email configuration", async () => {
     const { plan, organization } = await registerApp("todo");
@@ -348,6 +362,8 @@ describe("deleteApp", () => {
       email_inbound: null,
     });
     expect(appData()).toEqual(nothing);
+    // The group itself stays, with its members: only its grant to the app goes.
+    expect(sqlite.all("SELECT user_id FROM group_members")).toEqual([{ user_id: "member" }]);
     expect(sqlite.all("SELECT revoked_at FROM user_access_tokens")[0]!["revoked_at"]).not.toBeNull();
     // Gone from the commands that act on an app, and from the list.
     await expect(readApp(db(), "todo")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });

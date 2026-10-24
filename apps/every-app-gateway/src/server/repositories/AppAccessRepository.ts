@@ -1,7 +1,9 @@
 import { db } from "@/db";
-import { userAppAccess, apps, users, members } from "@/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { userAppAccess, apps, users, members, groups } from "@/db/schema";
+import { eq, and, asc, inArray, ne, sql } from "drizzle-orm";
+import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import { manifestIcon } from "./AppRepository";
+import { accessToApp, effectiveAccess } from "./effective-access";
 
 // Types for repository operations
 type CreateAccess = {
@@ -13,16 +15,18 @@ type CreateAccess = {
 };
 
 /**
- * Find all app access records for a user, including app details.
+ * The apps a user opens in an organization (the launcher), with how:
+ * `via` names the group for a grant that comes through one, null for a
+ * direct grant. A user granted an app both ways gets it once, as direct.
  */
 async function findAllByUserId(userId: string, organizationId: string) {
-  return db
+  const access = effectiveAccess(organizationId);
+  const rows = await db
     .select({
-      id: userAppAccess.id,
-      userId: userAppAccess.userId,
-      appRowId: userAppAccess.appRowId,
-      grantedAt: userAppAccess.grantedAt,
-      grantedBy: userAppAccess.grantedBy,
+      appRowId: access.appRowId,
+      grantedAt: access.grantedAt,
+      groupId: access.groupId,
+      groupName: groups.name,
       app: {
         id: apps.id,
         organizationId: apps.organizationId,
@@ -38,33 +42,55 @@ async function findAllByUserId(userId: string, organizationId: string) {
         updatedAt: apps.updatedAt,
       },
     })
-    .from(userAppAccess)
+    .from(access)
     .innerJoin(
       apps,
       and(
-        eq(userAppAccess.appRowId, apps.id),
-        eq(userAppAccess.organizationId, apps.organizationId),
+        eq(access.appRowId, apps.id),
+        eq(apps.organizationId, organizationId),
       ),
     )
-    .where(
-      and(
-        eq(userAppAccess.userId, userId),
-        eq(userAppAccess.organizationId, organizationId),
-      ),
+    .leftJoin(groups, eq(groups.id, access.groupId))
+    .where(and(eq(access.userId, userId), ne(apps.status, DELETED_APP_STATUS)))
+    // Direct grants first, then the oldest group grant.
+    .orderBy(
+      asc(apps.name),
+      sql`${access.groupId} IS NOT NULL`,
+      asc(access.grantedAt),
     );
+
+  const seen = new Set<string>();
+  return rows.flatMap((row) => {
+    if (seen.has(row.appRowId)) return [];
+    seen.add(row.appRowId);
+    return [
+      {
+        appRowId: row.appRowId,
+        grantedAt: row.grantedAt,
+        via:
+          row.groupId && row.groupName
+            ? { groupId: row.groupId, name: row.groupName }
+            : null,
+        app: row.app,
+      },
+    ];
+  });
 }
 
 /**
- * Find all users with access to a specific app.
+ * Everyone who opens an app (the admin modal): one row per member with
+ * any grant, saying whether they hold a direct one (`direct`, what the
+ * modal's checkbox edits) and the names of the groups that grant it
+ * (`viaGroups`).
  */
 async function findAllByAppRowId(appRowId: string, organizationId: string) {
-  return db
+  const access = effectiveAccess(organizationId);
+  const rows = await db
     .select({
-      id: userAppAccess.id,
-      userId: userAppAccess.userId,
-      appRowId: userAppAccess.appRowId,
-      grantedAt: userAppAccess.grantedAt,
-      grantedBy: userAppAccess.grantedBy,
+      userId: access.userId,
+      grantedAt: access.grantedAt,
+      groupId: access.groupId,
+      groupName: groups.name,
       user: {
         id: users.id,
         name: users.name,
@@ -73,25 +99,54 @@ async function findAllByAppRowId(appRowId: string, organizationId: string) {
         status: users.status,
       },
     })
-    .from(userAppAccess)
-    .innerJoin(users, eq(userAppAccess.userId, users.id))
+    .from(access)
+    .innerJoin(users, eq(access.userId, users.id))
     .innerJoin(
       members,
       and(
         eq(members.userId, users.id),
-        eq(members.organizationId, userAppAccess.organizationId),
+        eq(members.organizationId, organizationId),
       ),
     )
-    .where(
-      and(
-        eq(userAppAccess.appRowId, appRowId),
-        eq(userAppAccess.organizationId, organizationId),
-      ),
-    );
+    .leftJoin(groups, eq(groups.id, access.groupId))
+    .where(eq(access.appRowId, appRowId))
+    .orderBy(asc(access.userId), asc(groups.name));
+
+  const byUser = new Map<
+    string,
+    {
+      userId: string;
+      appRowId: string;
+      grantedAt: Date;
+      direct: boolean;
+      viaGroups: string[];
+      user: (typeof rows)[number]["user"];
+    }
+  >();
+  for (const row of rows) {
+    const entry = byUser.get(row.userId) ?? {
+      userId: row.userId,
+      appRowId,
+      grantedAt: row.grantedAt,
+      direct: false,
+      viaGroups: [],
+      user: row.user,
+    };
+    if (row.groupId) {
+      if (row.groupName) entry.viaGroups.push(row.groupName);
+    } else {
+      entry.direct = true;
+      entry.grantedAt = row.grantedAt;
+    }
+    byUser.set(row.userId, entry);
+  }
+  return [...byUser.values()];
 }
 
 /**
- * Check if a user has access to an app by its routing slug.
+ * Whether a user opens an app of the organization, by its routing slug:
+ * the perimeter's check. Never a deleted app's tombstone, whatever grants
+ * are left on it.
  */
 async function hasAccessByUserAndAppSlug(
   userId: string,
@@ -99,15 +154,14 @@ async function hasAccessByUserAndAppSlug(
   organizationId: string,
 ): Promise<boolean> {
   const result = await db
-    .select({ id: userAppAccess.id })
-    .from(userAppAccess)
-    .innerJoin(apps, eq(userAppAccess.appRowId, apps.id))
+    .select({ id: apps.id })
+    .from(apps)
     .where(
       and(
-        eq(userAppAccess.userId, userId),
         eq(apps.appSlug, appSlug),
-        eq(userAppAccess.organizationId, organizationId),
         eq(apps.organizationId, organizationId),
+        ne(apps.status, DELETED_APP_STATUS),
+        accessToApp(userId, organizationId),
       ),
     )
     .limit(1);

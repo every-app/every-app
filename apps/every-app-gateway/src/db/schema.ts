@@ -10,3 +10,4 @@ export * from "./mcp.schema";
 export * from "./rate-limit.schema";
 export * from "./deploy-jobs.schema";
 export * from "./usage.schema";
+export * from "./groups.schema";

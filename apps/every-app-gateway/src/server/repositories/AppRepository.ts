@@ -3,6 +3,7 @@ import {
   apps,
   appToolCatalogs,
   appTools,
+  groupAppAccess,
   mcpConnectionApps,
   userAccessTokens,
   userAppAccess,
@@ -14,14 +15,15 @@ import {
 } from "@every-app/perimeter/registry";
 import {
   and,
-  count,
+  countDistinct,
   eq,
   inArray,
   isNull,
   ne,
-  notExists,
+  not,
   sql,
 } from "drizzle-orm";
+import { anyAccessToApp, effectiveAccess } from "./effective-access";
 
 const notDeleted = ne(apps.status, DELETED_APP_STATUS);
 
@@ -51,9 +53,11 @@ async function findAll(organizationId: string) {
 }
 
 /**
- * Find all apps with access counts in a single query.
+ * Find all apps with access counts in a single query: how many distinct
+ * members open each, directly or through a group.
  */
 async function findAllWithAccessCounts(organizationId: string) {
+  const access = effectiveAccess(organizationId);
   const results = await db
     .select({
       id: apps.id,
@@ -74,16 +78,10 @@ async function findAllWithAccessCounts(organizationId: string) {
       isDefault: apps.isDefault,
       createdAt: apps.createdAt,
       updatedAt: apps.updatedAt,
-      accessCount: count(userAppAccess.id),
+      accessCount: countDistinct(access.userId),
     })
     .from(apps)
-    .leftJoin(
-      userAppAccess,
-      and(
-        eq(apps.id, userAppAccess.appRowId),
-        eq(apps.organizationId, userAppAccess.organizationId),
-      ),
-    )
+    .leftJoin(access, eq(apps.id, access.appRowId))
     .where(and(eq(apps.organizationId, organizationId), notDeleted))
     .groupBy(apps.id)
     .orderBy(apps.name);
@@ -151,9 +149,9 @@ async function findAllDefault(organizationId: string) {
 }
 
 /**
- * The organization's apps nobody has access to: registered while it had no
- * members, before the gateway had an owner. Shared apps are nobody's to
- * grant.
+ * The organization's apps nobody has access to, directly or through a
+ * group: registered while it had no members, before the gateway had an
+ * owner. Shared apps are nobody's to grant.
  */
 async function findAllWithoutAccess(organizationId: string) {
   return db
@@ -164,17 +162,7 @@ async function findAllWithoutAccess(organizationId: string) {
         eq(apps.organizationId, organizationId),
         notDeleted,
         ne(apps.scope, "shared"),
-        notExists(
-          db
-            .select({ id: userAppAccess.id })
-            .from(userAppAccess)
-            .where(
-              and(
-                eq(userAppAccess.appRowId, apps.id),
-                eq(userAppAccess.organizationId, apps.organizationId),
-              ),
-            ),
-        ),
+        not(anyAccessToApp(organizationId)),
       ),
     );
 }
@@ -218,9 +206,10 @@ async function activate(id: string, organizationId: string) {
  * binding, and its slug, hostname and worker name stay reserved to this
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
- * Everyone's access, any personal access tokens bound to it, its agent
- * tools snapshot and its place in AI connections go with it: the same
- * writes the CLI's `delete` makes (`deleteUpdate` in the perimeter).
+ * Everyone's access (direct and through groups), any personal access
+ * tokens bound to it, its agent tools snapshot and its place in AI
+ * connections go with it: the writes the CLI's `delete` makes
+ * (`deleteUpdate` in the perimeter), plus the group grants.
  */
 async function tombstone(
   app: Pick<AppRow, "id" | "organizationId" | "status">,
@@ -240,6 +229,14 @@ async function tombstone(
         and(
           eq(userAppAccess.appRowId, id),
           eq(userAppAccess.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(groupAppAccess)
+      .where(
+        and(
+          eq(groupAppAccess.appRowId, id),
+          eq(groupAppAccess.organizationId, organizationId),
         ),
       ),
     db

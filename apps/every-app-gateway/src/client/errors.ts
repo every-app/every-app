@@ -65,6 +65,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "Every member of every organization can open a shared app, so its access can't be changed.",
   DEPLOY_KEYS_UNAVAILABLE:
     "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
+  GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
+  GROUP_NAME_TAKEN: "A group with this name already exists.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

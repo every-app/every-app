@@ -107,6 +107,7 @@ import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppService } from "@/server/services/AppService";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
+import { GroupService } from "@/server/services/GroupService";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
@@ -1680,6 +1681,56 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(approved.status).toBe(302);
   });
 
+  it("offers an app a group grants the member, and accepts it selected", async () => {
+    stubClaudeMetadata();
+    const owner = { orgId, userId: ownerId, role: "owner" as const };
+    const { id: group } = await GroupService.createGroup(owner, {
+      name: "Writers",
+    });
+    await GroupService.setGroupMembers(owner, group, [memberId]);
+    await GroupService.setGroupApps(owner, group, [notesRowId]);
+
+    // The consent page lists Notes beside Todos (the same rule as
+    // tools/list), and a decision selecting it goes through.
+    const { tokens, context } = await connect({
+      clientId: CLAUDE_CIMD,
+      redirectUri: CLAUDE_REDIRECT,
+      userId: memberId,
+      choices: { app_mode: "selected", app_ids: [notesRowId], access: "read" },
+    });
+    expect(context.organizations[0]!.apps.map((app) => app.slug)).toEqual([
+      "notes",
+      "todo",
+    ]);
+    expect(await toolNames(tokens.access_token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "notes_list_notes",
+    ]);
+
+    // Without the group, the page stops offering it and refuses it
+    // selected, and the connection stops serving it.
+    await GroupService.deleteGroup(owner, group);
+    const browser = new Browser(memberId);
+    const { context: again } = await openConsent(
+      browser,
+      CLAUDE_CIMD,
+      CLAUDE_REDIRECT,
+    );
+    expect(again.organizations[0]!.apps.map((app) => app.slug)).toEqual([
+      "todo",
+    ]);
+    const refused = await browser.postForm(
+      "/oauth/consent/decision",
+      approvalForm(again, { app_mode: "selected", app_ids: [notesRowId] }),
+    );
+    expect(refused.status).toBe(400);
+    expect(await toolNames(tokens.access_token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+    ]);
+  });
+
   it("never fetches a metadata document from the gateway's own domain", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -2690,6 +2741,48 @@ describe("personal access tokens on the gateway's /mcp", () => {
       error: "forbidden",
       reason: "token_scope",
     });
+  });
+
+  it("serves a member the apps a group grants them, until the group is gone", async () => {
+    const { plaintext: token } = await UserPatService.create({
+      userId: memberId,
+      organizationId: orgId,
+      name: "member's agent",
+    });
+    // Todos is theirs directly; Notes is the owner's alone.
+    expect(await toolNames(token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "todo_create_todo",
+      "todo_list_todos",
+    ]);
+
+    const owner = { orgId, userId: ownerId, role: "owner" as const };
+    const { id: group } = await GroupService.createGroup(owner, {
+      name: "Writers",
+    });
+    await GroupService.setGroupMembers(owner, group, [memberId]);
+    await GroupService.setGroupApps(owner, group, [notesRowId]);
+    expect(await toolNames(token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "notes_add_note",
+      "notes_list_notes",
+      "todo_create_todo",
+      "todo_list_todos",
+    ]);
+    const called = await callTool(token, "notes_add_note");
+    expect(called.body.result?.content[0]?.text).toBe("added");
+
+    await GroupService.deleteGroup(owner, group);
+    expect(await toolNames(token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "todo_create_todo",
+      "todo_list_todos",
+    ]);
+    const gone = await callTool(token, "notes_add_note");
+    expect(gone.body.error?.message).toMatch(/unknown tool|not found/i);
   });
 });
 

@@ -36,6 +36,13 @@
       "when": 1792814121473,
       "tag": "0004_app_secret_names",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792823772943,
+      "tag": "0005_groups",
+      "breakpoints": true
     }
   ]
 }

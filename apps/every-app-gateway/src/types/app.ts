@@ -61,12 +61,16 @@ export type UserAccessApp = Pick<
   | "updatedAt"
 > & {
   grantedAt: Date | number;
+  /** The group the grant comes through, or null for a direct grant (and a shared app). */
+  via: { groupId: string; name: string } | null;
   /** The path of the launcher icon the app's manifest names (`icon`), or null. */
   icon: string | null;
 };
 
 /**
- * User with access status for managing app access.
+ * User with access status for managing app access: `hasAccess` is a direct
+ * grant, the one the modal edits; `viaGroups` names the groups that grant
+ * the app too (empty for none).
  */
 export type UserAccessState = {
   id: string;
@@ -75,4 +79,5 @@ export type UserAccessState = {
   role: string | null;
   status: string | null;
   hasAccess: boolean;
+  viaGroups: string[];
 };

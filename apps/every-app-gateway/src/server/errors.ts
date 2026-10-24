@@ -45,6 +45,8 @@ const PUBLIC_ERROR_CODES = [
   "EMAIL_NOT_VERIFIED",
   "SHARED_APP_ACCESS",
   "DEPLOY_KEYS_UNAVAILABLE",
+  "GROUP_NOT_FOUND",
+  "GROUP_NAME_TAKEN",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

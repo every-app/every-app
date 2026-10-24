@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   apps,
+  groupMembers,
   members,
   organizations,
   userAccessTokens,
@@ -17,6 +18,7 @@ import {
   or,
   type SQL,
 } from "drizzle-orm";
+import { accessToApp } from "./effective-access";
 import type { OrganizationMember } from "@every-app/sdk/internal";
 import {
   resolvePrimaryOrganizationRole,
@@ -39,8 +41,9 @@ export function liveUser(now = new Date()): SQL {
  * The members of an active organization who can open one of its apps now,
  * by the rule the perimeter applies when they visit it
  * (betterAuthAuthenticator.ts hasAppAccess): not deactivated, and granted
- * an organization's own app (`user_app_access`); a shared app opens for
- * every member. The members capability lists them for the app.
+ * an organization's own app, directly or through a group
+ * (effective-access.ts); a shared app opens for every member. The members
+ * capability lists them for the app.
  */
 async function listAppMembers({
   organizationId,
@@ -53,15 +56,13 @@ async function listAppMembers({
 }): Promise<OrganizationMember[]> {
   const granted = exists(
     db
-      .select({ id: userAppAccess.id })
-      .from(userAppAccess)
-      .innerJoin(apps, eq(userAppAccess.appRowId, apps.id))
+      .select({ id: apps.id })
+      .from(apps)
       .where(
         and(
-          eq(userAppAccess.userId, users.id),
-          eq(userAppAccess.organizationId, organizationId),
           eq(apps.organizationId, organizationId),
           eq(apps.appSlug, appSlug),
+          accessToApp(users.id, organizationId),
         ),
       ),
   );
@@ -163,8 +164,9 @@ async function updateRole(
 
 /**
  * Take a user out of an organization in one D1 transaction: the membership,
- * their app access there, and the personal access tokens they hold for it.
- * Tokens act for the user, so they go too.
+ * their app access there (direct, and their place in its groups), and the
+ * personal access tokens they hold for it. Tokens act for the user, so
+ * they go too.
  * (The AI apps they connected are revoked after it, by
  * McpConnectionService.revokeForRemovedMember.)
  */
@@ -188,6 +190,14 @@ async function removeMember(
         and(
           eq(userAppAccess.userId, userId),
           eq(userAppAccess.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(groupMembers)
+      .where(
+        and(
+          eq(groupMembers.userId, userId),
+          eq(groupMembers.organizationId, organizationId),
         ),
       ),
     db

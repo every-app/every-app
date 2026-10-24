@@ -18,9 +18,9 @@ import {
   mcpConnections,
   members,
   organizations,
-  userAppAccess,
   users,
 } from "@/db/schema";
+import { accessToAppInItsOrganization } from "./effective-access";
 
 type McpConnectionAccess = "read" | "write";
 type McpConnectionAppScope = "all" | "selected";
@@ -197,7 +197,8 @@ async function findActiveWithMembership(id: string) {
 /**
  * What a user may connect an AI app to: their memberships (with the
  * organization's name and status), in each the active apps they have
- * access to, and the active shared apps, which any organization's members
+ * access to (directly or through a group, the one rule every access site
+ * reads), and the active shared apps, which any organization's members
  * may use on the hosted gateway; each with whether the app has tools to
  * serve.
  */
@@ -228,16 +229,8 @@ async function listChoicesForUser(userId: string) {
         catalogStatus: appToolCatalogs.status,
       })
       .from(apps)
-      .innerJoin(
-        userAppAccess,
-        and(
-          eq(userAppAccess.appRowId, apps.id),
-          eq(userAppAccess.userId, userId),
-          eq(userAppAccess.organizationId, apps.organizationId),
-        ),
-      )
       .leftJoin(appToolCatalogs, eq(appToolCatalogs.appRowId, apps.id))
-      .where(usable)
+      .where(and(usable, accessToAppInItsOrganization(userId)))
       .orderBy(asc(apps.name)),
     db
       .select({

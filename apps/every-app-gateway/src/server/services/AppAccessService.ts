@@ -8,8 +8,9 @@ import { platformPolicy } from "@/server/platform-policy";
 
 /**
  * Get all apps a user has access to: the organization's own they have
- * installed, and on the hosted gateway the shared apps, which every
- * member of every organization may open.
+ * installed (directly or through a group, `via`), and on the hosted
+ * gateway the shared apps, which every member of every organization may
+ * open.
  */
 async function getAppsForUser(ctx: OrgContext) {
   const [accessRecords, shared] = await Promise.all([
@@ -19,6 +20,7 @@ async function getAppsForUser(ctx: OrgContext) {
   const own = accessRecords.map((record) => ({
     ...record.app,
     grantedAt: record.grantedAt,
+    via: record.via,
   }));
   const ownIds = new Set(own.map((app) => app.id));
   return {
@@ -41,6 +43,7 @@ async function getAppsForUser(ctx: OrgContext) {
           updatedAt: app.updatedAt,
           // Nobody is granted a shared app: it is everyone's from the start.
           grantedAt: app.createdAt,
+          via: null,
         })),
     ],
   };
@@ -57,8 +60,9 @@ function assertNotShared(app: { scope: string }): void {
 }
 
 /**
- * Get access state for all users for a specific app.
- * Returns all users with a flag indicating if they have access.
+ * Get access state for all users for a specific app: every member, whether
+ * they hold a direct grant (`hasAccess`, what the modal edits) and the
+ * groups that grant it to them (`viaGroups`).
  */
 async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
   const app = await AppRepository.findById(appRowId, ctx.orgId);
@@ -68,7 +72,7 @@ async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
     AppAccessRepository.findAllByAppRowId(appRowId, ctx.orgId),
   ]);
 
-  const accessUserIds = new Set(accessRecords.map((r) => r.userId));
+  const access = new Map(accessRecords.map((r) => [r.userId, r]));
 
   return {
     users: allUsers.map((user) => ({
@@ -77,14 +81,16 @@ async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
       email: user.email,
       role: user.role,
       status: user.status,
-      hasAccess: accessUserIds.has(user.id),
+      hasAccess: access.get(user.id)?.direct ?? false,
+      viaGroups: access.get(user.id)?.viaGroups ?? [],
     })),
   };
 }
 
 /**
- * Update access for multiple users for an app.
- * Takes the full list of user IDs who should have access.
+ * Update direct access for multiple users for an app.
+ * Takes the full list of user IDs who should hold a direct grant; what a
+ * group grants is never touched here (Admin -> Groups manages that).
  * Prevents owners from revoking their own access.
  */
 async function updateAccessForApp(
@@ -105,12 +111,14 @@ async function updateAccessForApp(
     allowedUserIds.has(userId),
   );
 
-  // Get current access state
+  // The direct grants as they are now; group grants stay as they are.
   const currentAccess = await AppAccessRepository.findAllByAppRowId(
     appRowId,
     ctx.orgId,
   );
-  const currentUserIds = new Set(currentAccess.map((r) => r.userId));
+  const currentUserIds = new Set(
+    currentAccess.filter((r) => r.direct).map((r) => r.userId),
+  );
   const newUserIds = new Set(validUserIdsWithAccess);
 
   // Find users to grant (in new list but not in current)

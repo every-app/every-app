@@ -18,9 +18,9 @@ import {
   appToolCatalogs,
   appTools,
   mcpConnectionApps,
-  userAppAccess,
 } from "@/db/schema";
 import type { ToolBusTool } from "@every-app/toolbus";
+import { accessToApp } from "./effective-access";
 
 export type CatalogStatus = "ok" | "empty" | "unsupported" | "error";
 
@@ -192,13 +192,13 @@ type VisibilityScope = {
 
 /**
  * The active apps a caller reaches: their organization's they have access
- * to (user_app_access, left-joined by {@link accessFor}) and the shared
+ * to (directly or through a group, {@link accessToApp}) and the shared
  * apps, narrowed to the scope's choice.
  */
 function reachableApps(scope: VisibilityScope): SQL[] {
   const own = and(
     eq(apps.organizationId, scope.organizationId),
-    isNotNull(userAppAccess.id),
+    accessToApp(scope.userId, scope.organizationId),
   )!;
   return [
     scope.sharedApps ? or(own, eq(apps.scope, "shared"))! : own,
@@ -220,14 +220,6 @@ function reachableApps(scope: VisibilityScope): SQL[] {
   ];
 }
 
-function accessFor(scope: VisibilityScope) {
-  return and(
-    eq(userAppAccess.appRowId, apps.id),
-    eq(userAppAccess.userId, scope.userId),
-    eq(userAppAccess.organizationId, scope.organizationId),
-  );
-}
-
 const catalogOfApp = and(
   eq(appToolCatalogs.appRowId, apps.id),
   eq(appToolCatalogs.organizationId, apps.organizationId),
@@ -247,7 +239,6 @@ async function findVisibleCatalogs(
     ...reachableApps(scope),
     eq(appToolCatalogs.status, "ok"),
   ];
-  const access = accessFor(scope);
   const catalog = catalogOfApp;
 
   const [appRows, toolRows] = await db.batch([
@@ -266,7 +257,6 @@ async function findVisibleCatalogs(
         instructions: appToolCatalogs.instructions,
       })
       .from(apps)
-      .leftJoin(userAppAccess, access)
       .innerJoin(appToolCatalogs, catalog)
       .where(and(...visible))
       .orderBy(asc(apps.appSlug)),
@@ -284,7 +274,6 @@ async function findVisibleCatalogs(
       })
       .from(appTools)
       .innerJoin(apps, eq(apps.id, appTools.appRowId))
-      .leftJoin(userAppAccess, access)
       .innerJoin(appToolCatalogs, catalog)
       .where(and(...visible))
       .orderBy(asc(appTools.name)),
@@ -444,7 +433,6 @@ async function findVisibleUnsyncedApps(
       lastError: appToolCatalogs.lastError,
     })
     .from(apps)
-    .leftJoin(userAppAccess, accessFor(scope))
     .leftJoin(appToolCatalogs, catalogOfApp)
     .where(
       and(
