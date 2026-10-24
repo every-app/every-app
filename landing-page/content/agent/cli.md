@@ -1247,7 +1247,7 @@ Clear senders or inbound addresses, without a deploy.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
-| `<senders|inbound>...` | yes | List to clear: senders or inbound |
+| `<senders\|inbound>...` | yes | List to clear: senders or inbound |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |

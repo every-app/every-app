@@ -153,7 +153,8 @@ function positionalTable(positional: PositionalDoc[]): string[] {
     "| --- | --- | --- |",
     ...positional.map(
       (arg) =>
-        `| \`<${arg.placeholder}>${arg.list ? "..." : ""}\` | ${arg.optional ? "no" : "yes"} | ${cell(arg.brief)} |`,
+        // A `|` in a placeholder (`<senders|inbound>`) would split the table cell, code span or not.
+        `| \`<${arg.placeholder.replace(/\|/g, "\\|")}>${arg.list ? "..." : ""}\` | ${arg.optional ? "no" : "yes"} | ${cell(arg.brief)} |`,
     ),
     "",
   ];
