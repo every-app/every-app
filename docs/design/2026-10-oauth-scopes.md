@@ -498,11 +498,72 @@ dependents).
 
 | PR | What | Merge policy |
 | --- | --- | --- |
-| 1 | Scope policies in the registry for `google-workspace` and `microsoft-365`, the scope parsers and the route allowlist matcher, the generated docs table | SDK data and pure helpers, nothing reads them at runtime until PR 3: auto-merge when green |
-| 2 | The manifest entry takes `scopes`: strict at authoring, lenient on the gateway, the hosted deploy API's `manifestProblems` | Perimeter: held for Ben; must merge with or before PR 3, else `everyapp deploy` refuses the `scopes` PR 3 demands |
-| 3 | The gateway holds each app to its sets at every mint and refresh; the status's `scopeSets` and `scopes` | Gateway security boundary: held for Ben; not deployed to everyapp.team by this work; Open CRM redeploys first |
-| 4 | SDK status type, `authorizeUrl()`, the dev twin | SDK: auto-merge when green |
-| 5 | Admin → Apps shows each app's capabilities with their sets and why | Read-only admin UI: auto-merge when green |
-| 6 | This document, `docs/capabilities.md`, `docs/security-model.md`, `docs/TESTING.md`, TODO.md | Docs: auto-merge |
-| 7 | Slack's policy (if PRs 1 to 6 are in by Saturday) | Registry; held until Postiz and Open CRM redeploy with `scopes` |
-| 8 | The MCP consent page's per-app reach line | `mcp-auth`: held, lowest priority |
+| 1, #398 | Scope policies in the registry for `google-workspace` and `microsoft-365`, the scope parsers and the route allowlist matcher, the generated docs table | SDK data and pure helpers, nothing reads them at runtime until PR 3. Merged 2026-10-24 (`50f3f010`) after an adversarial review whose eight findings were fixed first |
+| 2, #414 | The manifest entry takes `scopes`: strict at authoring, lenient on the gateway, the hosted deploy API's `manifestProblems` | Perimeter: held for Ben; must merge with or before PR 3, else `everyapp deploy` refuses the `scopes` PR 3 demands |
+| 3, #411 | The gateway holds each app to its sets at every mint and refresh; the status's `scopeSets` and `scopes` | Gateway security boundary: held for Ben; carries #387 until it merges; not deployed to everyapp.team by this work; Open CRM redeploys first |
+| 4, #412 | SDK status type, `authorizeUrl()`, the dev twin | SDK: merge after #414 (the strict validator `everyapp dev` runs must accept `scopes` first) |
+| 5, #408 | Admin → Apps shows each app's capabilities with their sets and why | Read-only admin UI: auto-merge when green |
+| 6, #393 | This document and TODO.md (merged 2026-10-24); the prose in `docs/capabilities.md` and `docs/security-model.md` rides with PRs 2 and 3 | Docs: auto-merge |
+| 7 | Slack's policy (branch `t3/oauth-scopes-slack`) | Registry; held until Postiz and Open CRM redeploy with `scopes` for slack |
+| 8 | The MCP consent page's per-app reach line | Not built this week; `mcp-auth`, lowest priority |
+
+## 13. What was built, and where it differs from the design above
+
+Built 2026-10-24 by parallel agents, each PR reviewed adversarially (three
+finders per PR, two refuters per finding) before it was pushed. The
+design above stands; these are the differences a reader checking the code
+against it will meet.
+
+- **The scope-refusal log line carries the code under `reason`, not
+  `code`.** The perimeter's log redaction treats any field whose name
+  matches `code` as a secret, so `code` would always read `[redacted]`;
+  `reason` is what `egress.denied` uses. The line is
+  `integration.proxy.scope_refused` with the caller, `reason` and the
+  (capped) `excess` list.
+- **`client_credentials` is refused by #387's user-grant floor** (step
+  5c, before the client is injected) with its message; the policy's own
+  grant-type check (5d) then refuses a token exchange or an absent
+  `grant_type` for Google and Microsoft with the message in section 5.
+  Both use `integration_grant_not_allowed`.
+- **Two more request rules.** `grant_type` named twice in a form body is
+  400 `integration_body_invalid` (the first copy would decide while the
+  provider saw both). The `integration_scope_not_allowed` message and log
+  name the first ten scopes in excess, each cut to 128 characters, with
+  "and N more": the list is app-controlled and the body may be 64 KiB.
+- **A provider answer that breaks off while the gateway reads it** is
+  502 `integration_upstream_failed` (phase `answer` in the log), never a
+  500; nothing is forwarded.
+- **The status answers `scopeSets` and `scopes` for a valid grant whether
+  or not the gateway holds the client** (`configured: false`, `ready:
+  false`, no `clientId` when it doesn't): the scope vocabulary is public
+  registry data.
+- **`authorizeUrl()` builds URLs for clients with a scope policy only.**
+  For a client without one (Slack today, Postiz's networks) it throws a
+  `TypeError` naming the fix, rather than falling back to the registry's
+  checklist: Slack's checklist mixes bot and user scopes, and a
+  fallback would have put user scopes in `scope` without `user_scope`.
+  It also reserves `code_challenge`, `code_challenge_method`,
+  `access_type` and `response_mode` besides the seven in section 6.
+- **The dev twin applies the gateway's check 2 too** (a client the
+  manifest doesn't list is `capability_not_requested`, and its status
+  `requested: false`), and its refusal messages say "start `everyapp dev`
+  again" where the gateway's say "deploy again".
+- **Admin → Apps** reads "Google (Google account, Gmail read-only, Google
+  Calendar read-only)" in the table (the identity set by its noun, the
+  access qualifier unbracketed), "Google (no usable scope sets)" for a
+  void grant, and the dialog leads with "tokens for <sets>" rather than
+  the entry's `write` access, which would read "write access to Gmail
+  (read-only)". The summary lives in
+  `src/server/services/appCapabilities.ts`.
+- **The route matcher** refuses a dot segment with a path parameter
+  (`..;`, `%2e%2e;`), which Google's front end resolves as `..` and the
+  URL parser does not; it compares denied words against whole segments,
+  so a Search Console property whose own URL holds `batch` or a
+  percent-encoded byte stays matchable; and it reads `scope` fields in
+  any case, as Entra does. The matcher's comment records that the future
+  proxy must fetch with `redirect: "manual"`.
+- **Slack's policy** (PR 7) is on its own branch and held: a gateway
+  carrying it and #411 fails Postiz's and Open CRM's Slack exchanges
+  closed until both redeploy with `scopes` for slack. The MCP consent
+  page line (PR 8) was not built.
+

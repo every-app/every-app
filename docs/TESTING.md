@@ -353,6 +353,18 @@ for a live account:
     src/server/email-capability.sqlite.test.ts src/server/app-email.sqlite.test.ts \
     src/server/members-capability.sqlite.test.ts src/server/oauth-client.sqlite.test.ts \
     src/server/ai-proxy.test.ts src/optional-secrets.test.ts )
+# Per-app OAuth scope sets (docs/design/2026-10-oauth-scopes.md): the registry's
+# scope policies, the scope parsers and the route allowlist matcher; the gateway's
+# token-endpoint checks (positive, outside the sets, a background call, a removed
+# set, missing scopes, grant types, the query-string rule) once #411 merges; the
+# manifest field (#414); the admin summary (#408); the SDK helper and dev twin (#412)
+( cd packages/sdk && pnpm exec vitest run src/internal/capabilities.test.ts \
+    src/internal/oauthScopes.test.ts src/server/authorizeUrl.test.ts \
+    src/server/integrationFetch.test.ts )
+( cd packages/perimeter && pnpm exec vitest run src/manifest/manifest.test.ts )
+( cd apps/every-app-gateway && pnpm exec vitest run --silent=true src/server/capabilities \
+    src/server/oauth-client.sqlite.test.ts src/server/deploy/metadata.test.ts \
+    src/server/services/appCapabilities.test.ts )
 
 # The SDK's halves: sendEmail, listMembers, the shared email and OAuth wire rules, the
 # Workers AI normaliser, nodeServerHandler, and docs/capabilities.md's
