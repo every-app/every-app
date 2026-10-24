@@ -27,6 +27,7 @@ import { CancelledError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
+import { readPublicSurfaces, syncAppsAccessAfter } from "@/lib/access/sync";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import {
   deleteApp as deleteFromRegistry,
@@ -134,6 +135,10 @@ export async function removeApp({
     message: `Removing ${appId} from the Gateway...`,
     data: { appId },
   });
+  // Whether Access had public routes of its to take back: read before the row is tombstoned.
+  const hadPublicRoutes = (await readPublicSurfaces(registry)).some(
+    (surface) => surface.appId === appId && surface.publicPaths.length > 0,
+  );
   const deleted = await deleteFromRegistry(registry, appId, connection.deployer);
   const live = connection.install;
   const stillServed =
@@ -151,6 +156,11 @@ export async function removeApp({
       openRelease: newGateway.openRelease,
     });
   }
+  // Behind Cloudflare Access, the app's destination goes with it.
+  await syncAppsAccessAfter(
+    { cf, db: registry, install: connection.install, out },
+    { appId, publicRoutes: hadPublicRoutes, removing: true },
+  );
   out.emit({
     type: "step",
     step: "app.delete",

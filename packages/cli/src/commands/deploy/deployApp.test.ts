@@ -1183,6 +1183,7 @@ describe("deploy of an app without helper Workers", () => {
           "workers deployments list --worker every-app-gateway --per-page 10",
           "deploy --prebuilt --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile)",
           "workers deployments list --worker every-app-gateway --per-page 10",
+          "zero-trust access applications list --per-page 100 --page 1",
         ],
         "owned": [
           {

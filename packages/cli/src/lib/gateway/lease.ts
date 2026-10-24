@@ -50,6 +50,7 @@ export enum LeasePurpose {
   GatewayUpgrade = "gateway.upgrade",
   GatewayReconcile = "gateway.reconcile",
   GatewaySecrets = "gateway.secrets",
+  AccessSync = "access.sync",
   DbRestore = "db.restore",
 }
 
@@ -82,6 +83,10 @@ const PURPOSES: Readonly<
   [LeasePurpose.GatewaySecrets]: {
     noun: "Gateway settings change",
     of: () => "a change to the Gateway's settings",
+  },
+  [LeasePurpose.AccessSync]: {
+    noun: "Cloudflare Access update",
+    of: () => "an update of Cloudflare Access",
   },
   [LeasePurpose.DbRestore]: {
     noun: "database restore",
@@ -446,6 +451,9 @@ export async function acquireLease({
 
 /** The Gateway's deploy lease (and its database's restore-point target). */
 export const GATEWAY_LEASE_ID = "gateway";
+
+/** The lease the Access applications are reconciled under: `access on`, and the sync after a deploy or delete. */
+export const ACCESS_LEASE_ID = "access";
 
 /** An app's deploy lease (and its database's restore-point target). */
 export function appLeaseId(workerName: string): string {

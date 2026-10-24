@@ -659,6 +659,17 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           : { done: "Mail routes removed" },
       ];
     },
+    // After a deploy or a delete behind Cloudflare Access: shown only when
+    // the public paths Access lets through changed.
+    "app.access": (event) =>
+      event.status === "ok"
+        ? {
+            done:
+              event.data?.["removed"] === true
+                ? `Cloudflare Access no longer lets ${text(event.data?.["appId"])}'s public routes through`
+                : `Cloudflare Access lets ${text(event.data?.["appId"])}'s public routes through`,
+          }
+        : null,
     "app.bind": (event) =>
       event.status === "start"
         ? { spin: `Adding ${text(event.data?.["appId"])} to the Gateway...` }
@@ -717,7 +728,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       }
       return event.status === "ok" ? { done: "Copied the starter template" } : null;
     },
-    "secrets.gateway": saidByMessage,
+    // Inside `access on|off`, the settings are one line of that command's own summary.
+    "secrets.gateway": (event, running) =>
+      running("access.update") || running("access.off") ? null : saidByMessage(event),
     "secrets.app": saidByMessage,
     "create.skill": doneWhenOk("Added the everyapp skill for coding agents"),
     "create.install": spinThenDone("Installing dependencies...", "Installed dependencies"),

@@ -82,6 +82,7 @@ import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
 import { LiveWaitVerb, type LiveWaitSeams } from "./steps/waitForLive";
+import { syncAppsAccessAfter } from "@/lib/access/sync";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -862,6 +863,12 @@ async function deploySteps(
           },
     );
   }
+  // Behind Cloudflare Access, the app's public routes are let through as
+  // soon as it is live (nothing to do when Access isn't in front).
+  await syncAppsAccessAfter(
+    { cf, db: registry, install, out },
+    { appId: manifest.id, publicRoutes: (manifest.public ?? []).length > 0 },
+  );
   if (outsideBase) {
     out.emit({
       type: "warning",

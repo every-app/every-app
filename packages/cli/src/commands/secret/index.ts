@@ -135,6 +135,36 @@ export async function applySecretValues(options: SetSecretsOptions) {
   return { applied, gatewayHost: reached.gatewayHost };
 }
 
+/**
+ * Set or remove Gateway settings from another command (`access setup`,
+ * `access off`): the same lease, replaceable-version check, one
+ * `cf workers secrets bulk` and version record as `secret set`, for a
+ * connection that command already has. `changes` maps each name to its
+ * value, or null to remove it. Returns what changed, or null when a removal
+ * found nothing to remove.
+ */
+export async function applyGatewaySettings(
+  connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl">,
+  changes: Readonly<Record<string, string | null>>,
+  options: Pick<SecretOptions, "flags" | "out">,
+): Promise<Applied | null> {
+  const names = Object.keys(changes);
+  const removing = Object.values(changes).every((value) => value === null);
+  for (const name of names) {
+    if (!isSettableGatewaySetting(name)) throw new Error(`${name} isn't a Gateway setting`);
+  }
+  const reached: Reached = {
+    route: { gateway: names, app: null, undeclared: [] },
+    cf: connection.cf,
+    db: connection.db,
+    deployer: connection.deployer,
+    accountName: connection.accountName,
+    gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
+    app: null,
+  };
+  return apply(reached, changes, options, removing ? SecretAction.Unset : SecretAction.Set);
+}
+
 /** `secret unset`: every name routed, then, once the person agrees, removed from the Workers that hold it. */
 export async function unsetSecrets(
   options: SecretOptions & {

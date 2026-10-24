@@ -427,6 +427,22 @@ describe("createHumanSink", () => {
     ]);
   });
 
+  it("leaves the Gateway settings line to access on's own summary, and says it on its own otherwise", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "access.update", status: "start", message: "Checking Cloudflare Access..." });
+    sink.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
+    sink.emit({ type: "step", step: "secrets.gateway", status: "ok", message: "Set CLOUDFLARE_ACCESS_AUD on the Gateway" });
+    sink.emit({ type: "step", step: "access.update", status: "ok" });
+    sink.emit({ type: "done", message: "Gateway settings set.", display: "Gateway settings ✓ CLOUDFLARE_ACCESS_AUD" });
+    expect(lines()).toEqual(["Gateway settings ✓ CLOUDFLARE_ACCESS_AUD"]);
+
+    const alone = human();
+    alone.sink.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
+    alone.sink.emit({ type: "step", step: "secrets.gateway", status: "ok", message: "Set CLOUDFLARE_ACCESS_AUD on the Gateway" });
+    alone.sink.emit({ type: "done", message: "Set CLOUDFLARE_ACCESS_AUD on the Gateway.", display: "" });
+    expect(alone.lines()).toEqual(["Set CLOUDFLARE_ACCESS_AUD on the Gateway ✓"]);
+  });
+
   it("shows setup's install a step a line, with each slow step's time, then the facts, the run's time and what comes next", () => {
     let now = 0;
     const { sink, lines } = human({ now: () => now });

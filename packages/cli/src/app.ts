@@ -19,6 +19,7 @@ import {
   unknownCommand,
   type ArgumentProblem,
 } from "./argumentErrors";
+import { accessRoutes } from "./commands/access/command";
 import { createCommand } from "./commands/create/command";
 import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
@@ -56,6 +57,7 @@ const routes = buildRouteMap({
     delete: deleteCommand,
     secret: secretRoutes,
     email: emailRoutes,
+    access: accessRoutes,
     db: dbRoutes,
     workflow: workflowRoutes,
     completion: completionRoutes,
@@ -73,7 +75,7 @@ const routeMap = routes as unknown as RouteMap<CommandContext>;
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["GET STARTED", ["login", "setup", "gateway", "create"]],
   ["APPS", ["dev", "deploy", "delete", "register"]],
-  ["CONFIGURE", ["secret", "email"]],
+  ["CONFIGURE", ["secret", "email", "access"]],
   ["INSPECT", ["status", "db", "workflow"]],
 ];
 
@@ -81,6 +83,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
 const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   secret: ["secret set GITHUB_TOKEN", "secret set GITHUB_TOKEN --from-env GH_TOKEN"],
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
+  access: ["access on", "access on --email-domain example.com", "access off"],
   db: ["db migrate", "db query 'select count(*) from todos'"],
   workflow: [
     "workflow list",

@@ -32,6 +32,7 @@ stolen admin session can't add a way in or change who it lets in.
 | Mobile app           | Works (sign-in runs in the system browser)      | Not supported: the app's requests carry no Access session                       |
 | MCP clients, the CLI | Unaffected                                      | Through Access too with Managed OAuth (below), or the bypass paths below        |
 | Passwords            | Can stay on, or be turned off                   | Can stay on, or be turned off                                                   |
+| Set up with          | The cf commands below                           | `pnpm everyapp access on` (or the cf commands below)                            |
 
 Use **OIDC sign-in** unless a security team requires Access in front of
 everything. The **outer ring** suits installs where nothing may be reachable
@@ -72,7 +73,8 @@ revoke it in Cloudflare (`docs/security-model.md`, "Operator Authority").
 Taking them out of your Access policy isn't enough on its own. It stops new
 Access sign-ins, and behind the outer ring their browser loses the gateway
 once their current Access session runs out (the application's session
-duration, 24 hours unless you set another): the gateway honours a session
+duration: 720 hours from `everyapp access on`, 24 hours in the bodies below,
+unless you set another): the gateway honours a session
 only with Access's word for that person on the request. But personal access
 tokens and AI connections never pass through Access, and keep working until
 you deactivate them; the exception is an AI app connected through Access
@@ -142,8 +144,10 @@ that lets users choose their own email would let them choose someone else's.
 
 ## Set up once: a Zero Trust organization and a way to log in
 
-With the `cf` CLI (beta; these commands were checked against
-`cf@1.0.0-beta.14`). `cf auth login` asks for Access permissions by default.
+For the outer ring, `pnpm everyapp access on` does all of this (next
+section). For OIDC sign-in, or by hand, with the `cf` CLI (beta; these
+commands were checked against `cf@1.0.0-beta.14`). `cf auth login` asks for
+Access permissions by default.
 
 ```sh
 npx cf@1.0.0-beta.14 auth login
@@ -233,7 +237,45 @@ else turns OIDC sign-in off and logs `access.config_problem`.
 
 ## Outer ring
 
-### 1. Put two hostname-based Access applications in front of the gateway
+### One command
+
+```sh
+pnpm everyapp access on
+```
+
+With your Cloudflare login it does the rest of this section, and nothing it
+doesn't need to: it finds or creates the Zero Trust team (asking for its
+name, which is permanent; `--team <name>` unattended), adds the one-time PIN
+when the team has no identity provider besides "Cloudflare account members",
+keeps the reusable policy **Every App gateway members** with every member's
+and pending invitee's email (plus `--email` and `--email-domain`, never
+removing anyone), puts the two applications below in front of the gateway's
+host and `*.<app base domain>` with the bypass paths of the table and each
+app's public routes as path overrides, and sets the three gateway settings
+in one new version of the Worker. New applications get a 720-hour session
+(`--session` for another), the HttpOnly and binding cookies, and every
+identity provider except the account members one. The team's global session
+is left alone unless you pass `--team-session`; it applies to every Access
+application in the account.
+
+Run it again any time: after inviting someone (so Access lets them in), or
+after a change by hand. It changes only what differs and reports "as it
+should be" otherwise; `everyapp deploy` and `everyapp delete` keep an app's
+public routes in step on their own. An application that also covers another
+hostname keeps that destination; one with policies of its own is left
+alone, with a warning. `pnpm everyapp access show` reports the state and
+what `on` would change; `pnpm everyapp access off` removes the three
+settings first (one version: the ring stops at once), then deletes the two
+applications (`--keep-applications` leaves Access in front with passwords
+working), and leaves the team, its providers and the policy.
+
+Then each existing member signs in once with their password through Access
+(see "Existing accounts"); the command names who. After that, Access alone
+signs them in, and passwords can go ("Turning passwords off").
+
+### By hand
+
+#### 1. Put two hostname-based Access applications in front of the gateway
 
 One for the gateway's own host, one for its apps' hosts (`*.<gateway>`).
 The gateway signs people in only with the first one's tokens; the second
@@ -325,7 +367,7 @@ Already have one application covering both? Either split it as above, or
 keep it (its AUD in `CLOUDFLARE_ACCESS_AUD`) with HttpOnly on, knowing any
 app host's Access cookie is then a gateway login too.
 
-### 2. Give the gateway your team domain and the AUD tags
+#### 2. Give the gateway your team domain and the AUD tags
 
 ```sh
 everyapp secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN
@@ -338,7 +380,8 @@ everyapp secret set CLOUDFLARE_ACCESS_AUD
 
 Set `CLOUDFLARE_ACCESS_AUD` last. Each setting is a redeploy, and the outer
 ring starts with it, so the apps' tag must already be there, or app hosts
-send people back to sign in until it is.
+send people back to sign in until it is. (`everyapp access on` sets all
+three in one version, so the order doesn't arise.)
 
 Open the gateway: Access asks who you are, and you land signed in. The
 first time, an existing account signs in with its password once (see
@@ -436,7 +479,8 @@ URLs under **Allowed redirect URIs**, and a **Grant session duration** and
 **Access token lifetime**.
 
 On the apps' application, drop the `/mcp` overrides too and keep each app's
-public routes. `<app>.<gateway>/mcp` is then reachable by browsers only
+public routes (`everyapp access on`, and the sync after a deploy, do this
+once they see `oauth_configuration.enabled` on the gateway's application). `<app>.<gateway>/mcp` is then reachable by browsers only
 (the perimeter doesn't take the assertion there yet); AI apps use the
 gateway's `/mcp`, which offers every app the member can use. Don't turn
 Managed OAuth on for the apps' application.
@@ -649,8 +693,9 @@ The automated tests cover the same ground without a browser:
 
   (Deleting `CLOUDFLARE_ACCESS_AUD` turns the outer ring off at once if you
   need in first; Access still guards the hostnames, and passwords work as
-  without it. `pnpm everyapp secret unset CLOUDFLARE_ACCESS_AUD`
-  deletes it and redeploys the gateway from your checkout. Without a
+  without it. `pnpm everyapp access off --keep-applications` removes the
+  three settings in one version; `pnpm everyapp secret unset CLOUDFLARE_ACCESS_AUD`
+  deletes just that one. Without a
   checkout at hand, delete it with cf, which uploads a new version without
   the secret, then run `pnpm everyapp setup` from a terminal later: it asks
   before replacing a version it didn't upload.)
@@ -663,7 +708,13 @@ The automated tests cover the same ground without a browser:
   request didn't come through it."** The outer ring is configured, but the
   request carried no assertion Access signed for one of your AUD tags:
   Access isn't in front of that hostname, the path is bypassed, or the AUD
-  tag is wrong. Fix the Access application or the secrets.
+  tag is wrong. Fix the Access application or the secrets. An application
+  recreated in the dashboard has a new AUD tag: `pnpm everyapp access on`
+  records what it wrote (in the Gateway's D1, since a Worker's secret
+  values can't be read back) and writes the settings again when the
+  applications it finds aren't the ones recorded; `pnpm everyapp access
+  show` says when they are stale, and `--write-settings` writes them
+  regardless.
 - **"You don't have an account on this gateway yet."** Invite them, or add
   their domain to `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`.
 - **Teammates can't log in at Access at all.** The organization allows only

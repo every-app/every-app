@@ -1,0 +1,70 @@
+---
+title: Sign in through Cloudflare Access
+description: Put Cloudflare Access in front of your Gateway, so people sign in with a code emailed to them (or your company login) before they reach it.
+---
+
+Optional. Your Gateway already has its own sign-in. Cloudflare Access adds a second door in front of it, at Cloudflare's edge: nobody reaches the Gateway or its apps until Access has checked who they are, with a one-time code emailed to them or with your company's identity provider. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
+
+## Turn it on
+
+In your `every-app` folder, run:
+
+```bash
+pnpm everyapp access on
+```
+
+If your Cloudflare account has no Zero Trust team yet, the terminal asks for a team name. People will sign in at `<name>.cloudflareaccess.com`, and the name can't be changed later, so pick something like your company's name.
+
+The command then sets everything up and says what it did:
+
+```
+Zero Trust team acme.cloudflareaccess.com ✓ created · sign-in through a one-time PIN
+Access policy "Every App gateway members" ✓ lets in ben@acme.com and jo@acme.com
+Access in front of apps.acme.com ✓ created · MCP and the OAuth endpoints let through
+Access in front of *.apps.acme.com ✓ created · public routes of 1 app let through
+Gateway settings ✓ CLOUDFLARE_ACCESS_TEAM_DOMAIN, CLOUDFLARE_ACCESS_APPS_AUD, CLOUDFLARE_ACCESS_AUD · one new version
+
+Sign in  https://apps.acme.com
+         ben@acme.com and jo@acme.com sign in once with their password; Access emails them a code first.
+```
+
+Everyone who is a member, or has a pending invitation, is let in. Anything your apps make public, like a tracking script or a health check, stays reachable without a login, and so do AI apps connected to your Gateway.
+
+## The first sign-in
+
+The first time, each person opens the Gateway, gets a code by email from Access, and then signs in with their Gateway password as usual. That links the two, and from then on Access alone signs them in. People you invite later never need a password.
+
+Once everyone has done that, you can turn passwords off:
+
+```bash
+pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN
+```
+
+Enter `false`. Nothing changes until an owner has signed in through Access, so it can't lock you out.
+
+## When you invite someone
+
+Run `pnpm everyapp access on` again after inviting someone, so Access lets them in too. Nobody is ever removed from Access this way: to take someone off, [deactivate them](/docs/people#remove-someone) in the Gateway, which signs them out everywhere at once.
+
+To let everyone with an email at your company through Access, run it with your domain:
+
+```bash
+pnpm everyapp access on --email-domain acme.com
+```
+
+They still need an invitation to get an account, unless you also let people at that domain join on their first sign-in: `pnpm everyapp secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, and enter the domain.
+
+## Check it, or turn it off
+
+```bash
+pnpm everyapp access show
+pnpm everyapp access off
+```
+
+`show` lists the team, who is let in and whether everything is in step. `off` asks first, then takes Access off: passwords sign people in again at once. The team and its settings stay in your Cloudflare account.
+
+## Good to know
+
+- Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them.
+- An Access sign-in lasts 30 days by default. For a daily code, run `pnpm everyapp access on --session 24h` before anything exists, or change the two applications in the Cloudflare dashboard under **Zero Trust → Access controls → Applications**.
+- The mobile app can't sign in behind Access. If your team uses it, use Access as a sign-in button instead: see the runbook in `docs/runbooks/cloudflare-access.md` in your `every-app` folder.

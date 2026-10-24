@@ -66,6 +66,15 @@ Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --jso
          makes the Email Routing rules now. EMAIL_ROUTING_DISABLED needs the user's
          yes: rerun with --enable-email-routing only if they said so. email unset
          senders|inbound clears; email show prints both.
+Access:  pnpm everyapp access on --json   (Cloudflare Access in front of the Gateway
+         and its apps: finds or creates the Zero Trust team (--team NAME when the
+         account has none: permanent, ask the user), adds the one-time PIN, keeps the
+         allow policy with every member's and invitee's email, puts two Access
+         applications in front of the hosts with MCP, OAuth and each app's public
+         routes let through, and sets the three CLOUDFLARE_ACCESS_* Gateway settings
+         in one version. Rerunnable; run again after inviting someone. access off
+         asks (--yes); access show reports. Each existing member then signs in once
+         with their password through Access; tell the user who (done.data.signIn).
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.

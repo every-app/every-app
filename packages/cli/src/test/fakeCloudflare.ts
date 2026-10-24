@@ -103,6 +103,36 @@ interface FakeEmailRouting {
   catchAll: FakeEmailRule;
 }
 
+/** The account's Zero Trust organization, identity providers, reusable policies and Access applications. */
+interface FakeZeroTrust {
+  organization: Record<string, unknown> | null;
+  identityProviders: Map<string, Record<string, unknown>>;
+  policies: Map<string, Record<string, unknown>>;
+  applications: Map<string, Record<string, unknown>>;
+}
+
+/**
+ * What the Access API refuses in an organization PUT although GET returns
+ * it (`access.api.error.invalid_org_config`, seen live on 2026-10-23).
+ */
+const ORGANIZATION_READ_ONLY = new Set([
+  "is_ui_read_only",
+  "login_design",
+  "strict_service_token_auth",
+  "service_token_inactivity",
+  "disable_end_user_app_creation",
+  "created_at",
+  "updated_at",
+]);
+
+/** An Access API refusal, as cf 1.0.0-beta.14 prints it. */
+function accessApiError(code: number, message: string, status: string, path: string): FakeCfResponse {
+  return {
+    exitCode: 1,
+    stderr: `\n┌ APIError\n│ [${code}] ${message}\n│ ${status} · HTTP /accounts/${ACCOUNT_ID}/access/${path}\n└\n`,
+  };
+}
+
 /** The MX records Email Routing adds (and locks) on a domain it routes. */
 const EMAIL_ROUTING_MX = [
   "route1.mx.cloudflare.net",
@@ -266,6 +296,13 @@ export class FakeCloudflare {
   readonly dnsRecords: FakeDnsRecord[] = [];
   /** Email Routing, by zone id; a zone's starts off, its catch-all dropping mail. */
   readonly emailRouting = new Map<string, FakeEmailRouting>();
+  /** Zero Trust: no organization until one is created (or a test sets one). */
+  readonly zeroTrust: FakeZeroTrust = {
+    organization: null,
+    identityProviders: new Map(),
+    policies: new Map(),
+    applications: new Map(),
+  };
   /** Hostname → the Worker it is a Custom Domain of. */
   readonly customDomains = new Map<string, string>();
   readonly certificatePacks: FakeCertificatePack[] = [];
@@ -281,6 +318,13 @@ export class FakeCloudflare {
     nextId: () => (this.counter += 1),
   });
   private counter = 0;
+  /** When each Worker's live version went out (`workers deployments list`'s created_on). */
+  readonly deployedAt = new Map<string, string>();
+
+  /** A clock that only moves forward, one second per tick, from mid-October 2026. */
+  clock(): string {
+    return new Date(1_792_000_000_000 + (this.counter += 1) * 1000).toISOString();
+  }
 
   constructor() {
     const d1 = sqliteD1Script({});
@@ -399,7 +443,7 @@ export class FakeCloudflare {
             deployments: [
               {
                 id: "deployment",
-                created_on: "2026-10-12T00:00:00Z",
+                created_on: this.deployedAt.get(flag(call.args, "--worker")!) ?? "2026-10-12T00:00:00Z",
                 versions: [{ version_id: worker.versions.at(-1), percentage: 100 }],
               },
             ],
@@ -445,6 +489,7 @@ export class FakeCloudflare {
           versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
           secrets,
         });
+        this.deployedAt.set(workerName, this.clock());
         return { stdout: "{}" };
       })
       // Like the API: a new version of the live one, without the secret.
@@ -466,6 +511,7 @@ export class FakeCloudflare {
           versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
           secrets,
         });
+        this.deployedAt.set(workerName, this.clock());
         return { stdout: "{}" };
       })
       .on(["workers", "delete"], (call) => {
@@ -514,6 +560,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["email-routing"], (call) => this.emailRoutingCommand(call))
+      .on(["zero-trust"], (call) => this.zeroTrustCommand(call))
       .on(["build"], (call) => this.build(call))
       .on(["deploy"], (call) => this.deploy(call));
   }
@@ -606,6 +653,216 @@ export class FakeCloudflare {
    * records there (the apex turns the zone's routing on); a rule's Worker
    * must exist, and two rules can't take one address.
    */
+  /**
+   * Cloudflare Access as the API behaves: one organization per account (a
+   * GET without one is a 404), identity providers, reusable policies, and
+   * applications validated as Cloudflare validates them (policies and
+   * providers must exist; a destination takes at most 25 overrides, each a
+   * path with at most one `*` per segment), each with an AUD tag.
+   */
+  private zeroTrustCommand(call: RecordedCfCall): FakeCfResponse {
+    const [, group, second, third, fourth] = call.args;
+    const zt = this.zeroTrust;
+    const body = (): Record<string, any> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!);
+    };
+    const page = () => Number(flag(call.args, "--page") ?? "1");
+    const list = (items: unknown[]) => ({ stdout: JSON.stringify(page() === 1 ? items : []) });
+    const now = () => this.clock();
+
+    if (group === "organization") {
+      if (second === "get") {
+        return zt.organization
+          ? { stdout: JSON.stringify(zt.organization) }
+          : accessApiError(12130, "access.api.error.not_found", "404 Not Found", "organizations");
+      }
+      if (second === "create") {
+        if (zt.organization) {
+          return accessApiError(12001, "access.api.error.organization_exists", "409 Conflict", "organizations");
+        }
+        const given = body() ?? {
+          name: flag(call.args, "--name"),
+          auth_domain: flag(call.args, "--auth-domain"),
+          ...(flag(call.args, "--session-duration") ? { session_duration: flag(call.args, "--session-duration") } : {}),
+        };
+        if (typeof given["auth_domain"] !== "string") {
+          return accessApiError(12062, "access.api.error.invalid_org_config", "400 Bad Request", "organizations");
+        }
+        zt.organization = {
+          name: given["name"] ?? given["auth_domain"],
+          allow_authenticate_via_warp: false,
+          deny_unmatched_requests: false,
+          deny_unmatched_requests_exempted_zone_names: [],
+          warp_auth_non_browser_401: false,
+          is_ui_read_only: false,
+          login_design: {},
+          strict_service_token_auth: true,
+          created_at: now(),
+          ...given,
+          updated_at: now(),
+        };
+        return { stdout: JSON.stringify(zt.organization) };
+      }
+      if (second === "update") {
+        if (!zt.organization) {
+          return accessApiError(12130, "access.api.error.not_found", "404 Not Found", "organizations");
+        }
+        const given = body() ?? {};
+        if (Object.keys(given).some((key) => ORGANIZATION_READ_ONLY.has(key))) {
+          return accessApiError(12062, "access.api.error.invalid_org_config", "400 Bad Request", "organizations");
+        }
+        zt.organization = { ...zt.organization, ...given, updated_at: now() };
+        return { stdout: JSON.stringify(zt.organization) };
+      }
+    }
+
+    if (group === "identity-providers") {
+      if (second === "list") return list([...zt.identityProviders.values()]);
+      if (second === "create") {
+        const given = body() ?? {};
+        const id = `idp-${(this.counter += 1)}`;
+        const provider = { id, uid: id, config: {}, ...given };
+        zt.identityProviders.set(id, provider);
+        return { stdout: JSON.stringify(provider) };
+      }
+    }
+
+    if (group === "access" && second === "policies") {
+      if (third === "list") {
+        return list(
+          [...zt.policies.values()].map((policy) => ({
+            ...policy,
+            app_count: [...zt.applications.values()].filter((application) =>
+              (application["policies"] as string[]).includes(policy["id"] as string),
+            ).length,
+          })),
+        );
+      }
+      if (third === "create") {
+        const given = body() ?? {};
+        const id = `policy-${(this.counter += 1)}`;
+        const policy = { id, uid: id, exclude: [], require: [], reusable: true, created_at: now(), ...given, updated_at: now() };
+        zt.policies.set(id, policy);
+        return { stdout: JSON.stringify(policy) };
+      }
+      if (third === "update") {
+        const policy = zt.policies.get(fourth ?? "");
+        if (!policy) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `policies/${fourth}`);
+        // PUT replaces the policy: what the body leaves out is gone, as at Cloudflare.
+        const updated = {
+          id: policy["id"],
+          uid: policy["uid"],
+          created_at: policy["created_at"],
+          reusable: policy["reusable"],
+          ...(body() ?? {}),
+          updated_at: now(),
+        };
+        zt.policies.set(policy["id"] as string, updated);
+        return { stdout: JSON.stringify(updated) };
+      }
+    }
+
+    if (group === "access" && second === "applications") {
+      const expand = (application: Record<string, unknown>) => ({
+        ...application,
+        policies: (application["policies"] as string[]).map((id, index) => ({
+          ...zt.policies.get(id),
+          precedence: index + 1,
+        })),
+      });
+      const invalid = (given: Record<string, any>): FakeCfResponse | null => {
+        for (const id of (given["policies"] ?? []) as string[]) {
+          if (!zt.policies.has(id)) {
+            return accessApiError(12130, `access.api.error.policy_not_found: ${id}`, "404 Not Found", "apps");
+          }
+        }
+        for (const id of (given["allowed_idps"] ?? []) as string[]) {
+          if (!zt.identityProviders.has(id)) {
+            return accessApiError(12130, `access.api.error.idp_not_found: ${id}`, "404 Not Found", "apps");
+          }
+        }
+        for (const destination of (given["destinations"] ?? []) as Array<Record<string, any>>) {
+          const overrides = (destination["overrides"] ?? []) as Array<Record<string, string>>;
+          if (overrides.length > 25) {
+            return accessApiError(12060, "access.api.error.invalid_request: a destination takes at most 25 overrides", "400 Bad Request", "apps");
+          }
+          for (const override of overrides) {
+            const pattern = override["path_pattern"] ?? "";
+            const oneWildcardPerSegment = pattern
+              .split("/")
+              .every((segment) => (segment.match(/\*/g) ?? []).length <= 1);
+            if (!pattern.startsWith("/") || pattern.length > 512 || !oneWildcardPerSegment || override["behavior"] !== "public") {
+              return accessApiError(12060, `access.api.error.invalid_request: invalid override ${pattern}`, "400 Bad Request", "apps");
+            }
+          }
+        }
+        return null;
+      };
+      if (third === "list") return list([...zt.applications.values()].map(expand));
+      if (third === "get") {
+        const application = zt.applications.get(fourth ?? "");
+        return application
+          ? { stdout: JSON.stringify(expand(application)) }
+          : accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+      }
+      if (third === "create") {
+        const given = body() ?? {};
+        const refused = invalid(given);
+        if (refused) return refused;
+        const id = `app-${(this.counter += 1)}`;
+        const application = {
+          id,
+          uid: id,
+          aud: (this.counter += 1).toString(16).padStart(64, "a"),
+          app_launcher_visible: true,
+          allowed_idps: [],
+          auto_redirect_to_identity: false,
+          session_duration: "24h",
+          enable_binding_cookie: false,
+          http_only_cookie_attribute: true,
+          options_preflight_bypass: false,
+          eager_redirect_cookie_setting: true,
+          tags: [],
+          policies: [],
+          created_at: now(),
+          ...given,
+          updated_at: now(),
+        };
+        zt.applications.set(id, application);
+        return { stdout: JSON.stringify(expand(application)) };
+      }
+      if (third === "update") {
+        const application = zt.applications.get(fourth ?? "");
+        if (!application) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+        const given = body() ?? {};
+        const refused = invalid(given);
+        if (refused) return refused;
+        // Like the API: PUT replaces the application; its identity stays.
+        const updated = {
+          ...given,
+          id: application["id"],
+          uid: application["uid"],
+          aud: application["aud"],
+          created_at: application["created_at"],
+          updated_at: now(),
+        };
+        zt.applications.set(application["id"] as string, updated);
+        return { stdout: JSON.stringify(expand(updated)) };
+      }
+      if (third === "delete") {
+        const declined = unconfirmed(call, "This permanently deletes the Access application.");
+        if (declined) return declined;
+        if (!zt.applications.delete(fourth ?? "")) {
+          return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+        }
+        return { stdout: JSON.stringify({ id: fourth }) };
+      }
+    }
+    return cfError(`Unknown zero-trust command: ${call.args.slice(1).join(" ")}`);
+  }
+
   private emailRoutingCommand(call: RecordedCfCall): FakeCfResponse {
     const zoneId = flag(call.args, "-z");
     const zone = this.zones.find((candidate) => candidate.id === zoneId);
@@ -998,6 +1255,7 @@ export class FakeCloudflare {
       config,
       secrets: { ...existing?.secrets, ...secrets },
     });
+    this.deployedAt.set(workerName, this.clock());
     this.deploys.push({ workerName, config, secrets, args: call.args, mode: call.mode });
     // cf deploys the version first, then publishes its triggers.
     const answer = this.afterUpload?.(workerName);

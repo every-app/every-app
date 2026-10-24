@@ -831,7 +831,7 @@ not deploy the starter app (the docs change to match; the newcomer path is
 Gateway); a schema-drift preflight on `deploy` for
 `migrations.engine === "drizzle"` (~60 lines; judge by new files, not
 stderr; the transcripts' "schema in sync" is this); TODO.md's
-`gateway access enable` becomes `everyapp access enable`.
+`gateway access enable` becomes `everyapp access on` (built 2026-10-23: `access on|off|show`).
 
 ## 7. Rejected
 
