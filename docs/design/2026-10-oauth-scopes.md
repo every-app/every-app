@@ -490,9 +490,8 @@ deploy API refusing unknown sets; outbound-Worker enforcement as the first
 post-launch gateway PR; the consent page line held. Follow-ups there: Open
 CRM's redeploy (add `scopes` to three entries, drop
 `include_granted_scopes`, build the URL from `authorizeUrl()`), OpenSEO's
-move onto the gateway's client, Postiz's Slack sets with PR 7, and one live
-check per provider of the token response's spelling before any production
-deploy.
+move onto the gateway's client, and one live check per provider of the
+token response's spelling before any production deploy.
 
 ## 12. The PR stack
 
@@ -502,12 +501,12 @@ dependents).
 | PR | What | Merge policy |
 | --- | --- | --- |
 | 1, #398 | Scope policies in the registry for `google-workspace` and `microsoft-365`, the scope parsers and the route allowlist matcher, the generated docs table | SDK data and pure helpers, nothing reads them at runtime until PR 3. Merged 2026-10-24 (`50f3f010`) after an adversarial review whose eight findings were fixed first |
-| 2, #414 | The manifest entry takes `scopes`: strict at authoring, lenient on the gateway, the hosted deploy API's `manifestProblems` | Perimeter: held for Ben; must merge with or before PR 3, else `everyapp deploy` refuses the `scopes` PR 3 demands |
-| 3, #411 | The gateway holds each app to its sets at every mint and refresh; the status's `scopeSets` and `scopes` | Gateway security boundary: held for Ben; carries #387 until it merges; not deployed to everyapp.team by this work; Open CRM redeploys first |
-| 4, #412 | SDK status type, `authorizeUrl()`, the dev twin | SDK: merge after #414 (the strict validator `everyapp dev` runs must accept `scopes` first) |
-| 5, #408 | Admin → Apps shows each app's capabilities with their sets and why | Read-only admin UI: auto-merge when green |
+| 2, #414 | The manifest entry takes `scopes`: strict at authoring, lenient on the gateway, the hosted deploy API's `manifestProblems` | Perimeter. Merged 2026-10-24 (`d7258f09`) |
+| 3, #411 | The gateway holds each app to its sets at every mint and refresh; the status's `scopeSets` and `scopes` | Gateway security boundary. Merged 2026-10-24 (`bfd7299a`, after #387 `31c73a78`); not deployed to everyapp.team by this work; Open CRM redeploys with `scopes` before `everyapp update` |
+| 4, #412 | SDK status type, `authorizeUrl()`, the dev twin | SDK. Merged 2026-10-24 (`a01fac3b`, after #414) |
+| 5, #408 | Admin → Apps shows each app's capabilities with their sets and why | Read-only admin UI. Merged 2026-10-24 (`10a07c45`) |
 | 6, #393 | This document and TODO.md (merged 2026-10-24); the prose in `docs/capabilities.md` and `docs/security-model.md` rides with PRs 2 and 3 | Docs: auto-merge |
-| 7, #425 | Slack's policy: bot sets `channels.read`, `users.read`, `users.email`, `messages.write`, `channels.join`, `channels.manage`, `files.write` and the user set `user-channels.manage` | Registry; held until Postiz and Open CRM redeploy with `scopes` for slack |
+| 7, #425 | Slack's policy: bot sets `channels.read`, `users.read`, `users.email`, `messages.write`, `channels.join`, `channels.manage`, `files.write` and the user set `user-channels.manage` | Registry. Merged 2026-10-24 (`d0c3b73f`); Open CRM redeploys with `scopes` for slack before a Gateway carrying it serves its Slack exchanges |
 | 8 | The MCP consent page's per-app reach line | Not built this week; `mcp-auth`, lowest priority |
 
 ## 13. What was built, and where it differs from the design above
@@ -565,8 +564,8 @@ against it will meet.
   percent-encoded byte stays matchable; and it reads `scope` fields in
   any case, as Entra does. The matcher's comment records that the future
   proxy must fetch with `redirect: "manual"`.
-- **Slack's policy** (#425) is held: a gateway
-  carrying it and #411 fails Postiz's and Open CRM's Slack exchanges
-  closed until both redeploy with `scopes` for slack. The MCP consent
-  page line (PR 8) was not built.
+- **Slack's policy** (#425) merged 2026-10-24 (`d0c3b73f`): a gateway
+  carrying it and #411 fails Open CRM's Slack exchanges closed until it
+  redeploys with `scopes` for slack. The MCP consent page line (PR 8)
+  was not built.
 
