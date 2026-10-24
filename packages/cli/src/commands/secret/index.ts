@@ -293,12 +293,16 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
       need.set ? "set" : need.required ? notSet : chalk.dim("not set (optional)"),
     ]);
   }
-  const toSet = [...new Set([...(workers[0]?.missing ?? []), ...gatewayMissing])];
-  const next = workerName
-    ? toSet.length > 0
-      ? [`${CLI} secret set ${toSet.join(" ")}`]
-      : []
-    : [`${CLI} deploy`];
+  // What to run: the Gateway's settings can be set from any directory at any
+  // time, the app's own only once it is deployed, so an app that lists
+  // secrets and isn't deployed yet gets the deploy as its next command.
+  const toSet = [
+    ...new Set([...gatewayMissing, ...(workerName ? (workers[0]?.missing ?? []) : [])]),
+  ];
+  const next = [
+    ...(toSet.length > 0 ? [`${CLI} secret set ${toSet.join(" ")}`] : []),
+    ...(!workerName && declared.length > 0 ? [`${CLI} deploy`] : []),
+  ];
   shown(
     rows.length > 0
       ? [
@@ -307,9 +311,7 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
             ? ["", chalk.dim(`${manifest.id} isn't deployed yet; its own secrets can be set after that.`)]
             : []),
         ].join("\n")
-      : chalk.dim(
-          `${manifest.id} has no secrets yet. Add one: list it under secrets in everyapp.config.ts, then ${CLI} secret set <name>`,
-        ),
+      : chalk.dim(`${manifest.id} declares no secrets and needs no Gateway settings.`),
     {
       app: { id: manifest.id, deployed: workerName !== null, workerName, declared, workers },
       gateway: {
@@ -319,7 +321,7 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
         missing: gatewayMissing,
         settable,
       },
-      ...(rows.length > 0 && next.length > 0 ? { next } : {}),
+      ...(next.length > 0 ? { next } : {}),
     },
   );
 }

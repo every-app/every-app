@@ -733,6 +733,9 @@ async function deploySteps(
         data: { binding: workflow.binding, name: workflow.name },
       });
     }
+    // The installation's senders are its own to set, on a Gateway that takes them.
+    const sendersSettable =
+      emailDeclarations(manifest).sends && install.deploymentMode !== "hosted";
     // The rules name the Worker, so they come once it is there.
     if (emailRoutes) {
       await lease.check();
@@ -756,8 +759,7 @@ async function deploySteps(
         senders: storedEmail.senders,
         routed,
         removed,
-        sendersSettable:
-          emailDeclarations(manifest).sends && install.deploymentMode !== "hosted",
+        sendersSettable,
       };
       const unsent = mail.sendersSettable ? unsentDomains(mail.routed, mail.senders) : [];
       out.emit({
@@ -787,6 +789,13 @@ async function deploySteps(
       next.push({
         command: `${CLI} email set --inbound <address>`,
         note: `routes mail to ${manifest.id}`,
+      });
+    }
+    // Until a sender is set, the app sends as the Gateway's sender.
+    if (sendersSettable && storedEmail.senders.length === 0) {
+      next.push({
+        command: `${CLI} email set --sender '*@<domain>'`,
+        note: `lets ${manifest.id} send as your domain`,
       });
     }
     // A helper Worker the manifest dropped keeps running (with its crons)

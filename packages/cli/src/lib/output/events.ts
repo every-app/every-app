@@ -56,6 +56,8 @@ interface ActionData extends EventData {
   expiresAt?: string;
   /** The run waits for it, rather than stopping. */
   waiting?: boolean;
+  /** Only a person at a terminal can do the rerun: an agent hands it on instead of running it. */
+  needsTerminal?: boolean;
 }
 
 interface EventBase {

@@ -42,6 +42,9 @@ const SEO: EveryAppCliManifest = {
   secrets: ["GITHUB_TOKEN"],
 };
 
+/** An app with no secrets of its own and nothing that needs a Gateway setting. */
+const NOTES: EveryAppCliManifest = { id: "notes", resources: { d1: ["DB"] } };
+
 const VALUES: Record<string, string> = {
   GITHUB_TOKEN: "ghp_token",
   STRIPE_KEY: "sk_live",
@@ -554,7 +557,8 @@ describe("secret list", () => {
         ]),
         missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"],
       },
-      next: ["pnpm everyapp secret set STRIPE_KEY DATAFORSEO_API_KEY EMAIL_FROM EMAIL_FROM_NAME"],
+      // The Gateway's first, as `set` applies them.
+      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM EMAIL_FROM_NAME STRIPE_KEY"],
     });
   });
 
@@ -578,7 +582,7 @@ describe("secret list", () => {
     expect(done()!["data"]["next"]).toBeUndefined();
   });
 
-  it("in an app's directory before its first deploy, says so, with deploy next, and still reports the Gateway settings it uses", async () => {
+  it("in an app's directory before its first deploy, says so, and names the Gateway settings to set (from anywhere) before the deploy", async () => {
     await list(appDir(TODO));
     expect(done()!["message"]).toBe(
       [
@@ -596,9 +600,43 @@ describe("secret list", () => {
         "todo isn't deployed yet; its own secrets can be set after that.",
       ].join("\n"),
     );
+    // The app's own names wait for the deploy: `secret set STRIPE_KEY` would fail with APP_NOT_FOUND.
     expect(done()!["data"]).toMatchObject({
       app: { id: "todo", deployed: false, workerName: null, workers: [] },
+      next: [
+        "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM EMAIL_FROM_NAME",
+        "pnpm everyapp deploy",
+      ],
+    });
+  });
+
+  it("before the first deploy of an app that needs no Gateway settings, the deploy is the one next command", async () => {
+    await list(appDir(SEO));
+    expect(done()!["message"]).toBe(
+      [
+        "NAME          WHERE  STATUS",
+        "GITHUB_TOKEN  seo    after first deploy",
+        "",
+        "seo isn't deployed yet; its own secrets can be set after that.",
+      ].join("\n"),
+    );
+    expect(done()!["data"]).toMatchObject({
+      app: { id: "seo", deployed: false },
+      gateway: { needed: [], missing: [] },
       next: ["pnpm everyapp deploy"],
     });
+  });
+
+  it("says an app that declares no secrets and needs no Gateway settings has nothing to set, deployed or not", async () => {
+    const message = "notes declares no secrets and needs no Gateway settings.";
+    const dir = appDir(NOTES);
+    await list(dir);
+    expect(done()).toMatchObject({ message, data: { app: { id: "notes", deployed: false, declared: [] } } });
+    expect(done()!["data"]["next"]).toBeUndefined();
+
+    const workerName = await deploy(dir, NOTES);
+    await list(dir);
+    expect(done()).toMatchObject({ message, data: { app: { id: "notes", deployed: true, workerName } } });
+    expect(done()!["data"]["next"]).toBeUndefined();
   });
 });

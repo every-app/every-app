@@ -24,7 +24,8 @@
     "./dev": {
       "types": "./dist/dev/index.d.ts",
       "default": "./dist/dev/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",

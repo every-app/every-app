@@ -334,7 +334,10 @@ describe("deploy of an app that receives mail", () => {
 
   it("ends with how to route mail on a deploy of an app that declares inbound with no addresses", async () => {
     await expect(deploy()).resolves.toMatchObject({
-      next: [{ command: "pnpm everyapp email set --inbound <address>", note: "routes mail to inbox" }],
+      next: [
+        { command: "pnpm everyapp email set --inbound <address>", note: "routes mail to inbox" },
+        { command: "pnpm everyapp email set --sender '*@<domain>'", note: "lets inbox send as your domain" },
+      ],
     });
     const hints = events.filter((event) => event["step"] === "app.email");
     expect(hints).toEqual([
@@ -348,6 +351,26 @@ describe("deploy of an app that receives mail", () => {
     events = [];
     await deploy({ ...INBOX, email: {} });
     expect(events.filter((event) => event["step"] === "app.email")).toEqual([]);
+  });
+
+  it("ends with how to send as your own domain on a deploy of an app that declares sending with no senders stored", async () => {
+    const sender = {
+      command: "pnpm everyapp email set --sender '*@<domain>'",
+      note: "lets inbox send as your domain",
+    };
+    // An app that only sends: the one hint, until a sender is stored.
+    const mailer: EveryAppCliManifest = { ...INBOX, email: {} };
+    await expect(deploy(mailer)).resolves.toMatchObject({ next: [sender] });
+    await setEmail({ senders: ["*@example.com"] });
+    await expect(deploy(mailer)).resolves.toMatchObject({ next: [] });
+
+    // An app that doesn't declare sending takes no senders, so no hint names them.
+    await setEmail({});
+    await expect(deploy({ ...mailer, capabilities: {} })).resolves.toMatchObject({ next: [] });
+
+    // Nor does a hosted Gateway, which sends all app mail from its own sender.
+    await registry().run([{ sql: "UPDATE _everyapp_install SET deployment_mode = 'hosted'" }]);
+    await expect(deploy(mailer)).resolves.toMatchObject({ next: [] });
   });
 
   it("stops unattended before anything is uploaded when routing is off, and turns it on with --enable-email-routing", async () => {

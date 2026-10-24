@@ -250,9 +250,11 @@ describe("everyapp dev", () => {
       data: { fix: "copy cloudflare.config.ts from templates/simple-todo" },
     });
     await fs.rm(path.join(cwd, "everyapp.config.ts"));
+    // The same error every other command raises for a missing manifest.
     await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({
-      code: "NO_MANIFEST",
+      code: "MANIFEST_NOT_FOUND",
       message: "No everyapp.config.ts in this directory",
+      fix: "run this from the app's directory",
     });
     expect(cf.started).toEqual([]);
   });

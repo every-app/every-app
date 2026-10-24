@@ -416,6 +416,7 @@ describe("applyGateway", () => {
       action: "rerun_interactive",
       message: expect.stringContaining("was changed outside everyapp; confirm in a terminal"),
       rerunNote: "in a terminal, and confirm cf's prompt",
+      data: { needsTerminal: true },
     });
 
     // At a terminal, cf runs again attached and asks its own question.
@@ -589,6 +590,7 @@ describe("applyGateway", () => {
       await expect(deployGateway()).rejects.toMatchObject({
         action: "rerun_interactive",
         message: expect.stringMatching(/^The Gateway was changed outside everyapp; confirm in a terminal\n.*Nothing changed\.$/),
+        data: { workerName: "every-app-gateway", versionId: "wrangler-1", needsTerminal: true },
       });
       expect(migrated()).toBe(false);
       expect(gatewayDb().all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'")).toEqual([]);

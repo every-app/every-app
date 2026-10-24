@@ -502,7 +502,12 @@ describe("deploy", () => {
     fs.writeFileSync(path.join(appDir, "drizzle", "0001_more.sql"), "CREATE TABLE more (id text);");
     const migrated = () => account.database("every-acme-todo").all("SELECT name FROM d1_migrations");
 
-    await expect(deploy()).rejects.toMatchObject({ action: "rerun_interactive" });
+    // `needsTerminal` tells an agent to hand the rerun to a person, not loop on it.
+    await expect(deploy()).rejects.toMatchObject({
+      action: "rerun_interactive",
+      rerunNote: "in a terminal",
+      data: { workerName: "every-acme-todo", versionId: "dashboard-1", needsTerminal: true },
+    });
     expect(migrated()).toEqual([{ name: "0000_init.sql" }]);
     expect(worker.versions.at(-1)).toBe("dashboard-1");
 

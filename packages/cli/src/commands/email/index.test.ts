@@ -679,7 +679,13 @@ describe("email set keeps the row and the routes consistent", () => {
     await show(dir);
     expect(done()).toMatchObject({
       message: expect.stringContaining("support@mail.example.com  inbound  not routed yet"),
-      data: { routed: ["*@example.com"], next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }] },
+      data: {
+        routed: ["*@example.com"],
+        next: [
+          { command: "pnpm everyapp deploy", note: "route the list as shown" },
+          { command: "pnpm everyapp email set --sender '*@<domain>'", note: "send as your own domain" },
+        ],
+      },
     });
 
     await deploy(dir, INBOX);
@@ -958,7 +964,10 @@ describe("email show", () => {
       data: {
         inbound: INBOUND,
         routed: ["*@example.com"],
-        next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }],
+        next: [
+          { command: "pnpm everyapp deploy", note: "route the list as shown" },
+          { command: "pnpm everyapp email set --sender '*@<domain>'", note: "send as your own domain" },
+        ],
       },
     });
 
@@ -996,9 +1005,72 @@ describe("email show", () => {
         app: { id: "inbox", workerName: WORKER, status: "pending", deployed: false },
         inbound: INBOUND,
         routed: [],
-        next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }],
+        next: [
+          { command: "pnpm everyapp deploy", note: "route the list as shown" },
+          { command: "pnpm everyapp email set --sender '*@<domain>'", note: "send as your own domain" },
+        ],
       },
     });
+  });
+
+  it("offers the side the manifest declares with nothing stored for it yet, after the list's own fix", async () => {
+    const dir = appDir(INBOX);
+    await deploy(dir, INBOX);
+    await set(dir, { senders: SENDERS });
+    events = [];
+
+    await show(dir);
+
+    expect(done()).toMatchObject({
+      message: table([
+        ["*@example.com", "sender", "allowed"],
+        ["ceo@example.com", "sender", "allowed"],
+      ]),
+      data: {
+        senders: SENDERS,
+        inbound: [],
+        next: [{ command: "pnpm everyapp email set --inbound <address>", note: "receive mail" }],
+      },
+    });
+
+    // An app that only sends, with its senders set, has nothing left to set.
+    const mailer = appDir(MAILER);
+    await deploy(mailer, MAILER);
+    await set(mailer, { senders: ["*@example.com"] });
+    events = [];
+    await show(mailer);
+    expect(done()!["data"]["next"]).toBeUndefined();
+  });
+
+  it("names no sender command on a hosted Gateway, which takes none", async () => {
+    routeMail();
+    const dir = appDir(INBOX);
+    await deploy(dir, INBOX);
+    await db().run([{ sql: "UPDATE _everyapp_install SET deployment_mode = 'hosted'" }]);
+
+    // Nothing stored: only the inbound side is the installation's to set there.
+    await show(dir);
+    expect(done()).toMatchObject({
+      message: "inbox sends as the Gateway's sender and receives no mail.",
+      data: { next: [{ command: "pnpm everyapp email set --inbound <address>", note: "receive mail" }] },
+    });
+
+    // Addresses routed and no senders: nothing left that `email set` could do here.
+    await set(dir, { inbound: INBOUND });
+    events = [];
+    await show(dir);
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("inbox sends as the Gateway's sender only."),
+      data: { senders: [], inbound: INBOUND, routed: INBOUND },
+    });
+    expect(done()!["data"]["next"]).toBeUndefined();
+
+    // An app that only sends has no next step at all.
+    const mailer = appDir(MAILER);
+    await deploy(mailer, MAILER);
+    await show(mailer);
+    expect(done()).toMatchObject({ message: "mailer sends as the Gateway's sender and doesn't receive email." });
+    expect(done()!["data"]["next"]).toBeUndefined();
   });
 
   it("names the clearing command, not a deploy, for addresses stored under a dropped declaration", async () => {
@@ -1028,7 +1100,10 @@ describe("email show", () => {
         declares: { sends: true, receives: false },
         inbound: INBOUND,
         routed: [],
-        next: [{ command: "pnpm everyapp email unset inbound", note: "clear the stored address" }],
+        next: [
+          { command: "pnpm everyapp email unset inbound", note: "clear the stored address" },
+          { command: "pnpm everyapp email set --sender '*@<domain>'", note: "send as your own domain" },
+        ],
       },
     });
   });

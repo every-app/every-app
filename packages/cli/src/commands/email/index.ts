@@ -213,7 +213,10 @@ export async function showEmail(options: EmailOptions): Promise<void> {
   const manifest = await loadManifest(options);
   const { id } = manifest;
   const declares = emailDeclarations(manifest);
-  const { db } = await connect(options);
+  const { db, install } = await connect(options);
+  // A hosted Gateway takes no app senders (`set --sender` refuses there), so
+  // no next step names that command on one.
+  const sendersSettable = declares.sends && install.deploymentMode !== "hosted";
   const app = await findRegisteredApp(db, id);
   const shown = (display: string, data: Record<string, unknown>) =>
     out.emit({ type: "done", message: stripVTControlCharacters(display), display, data });
@@ -257,6 +260,9 @@ export async function showEmail(options: EmailOptions): Promise<void> {
     ]),
     ...stale.map((address) => [address, "inbound", chalk.yellow("removed, still routed")]),
   ];
+  // What a side the manifest declares takes while nothing is stored for it.
+  const senderNext = { command: `${CLI} email set --sender '*@<domain>'`, note: "send as your own domain" };
+  const inboundNext = { command: `${CLI} email set --inbound <address>`, note: "receive mail" };
   if (rows.length === 0) {
     if (!declares.sends && !declares.receives) {
       shown(
@@ -271,27 +277,29 @@ export async function showEmail(options: EmailOptions): Promise<void> {
       );
       return;
     }
+    const next = [...(sendersSettable ? [senderNext] : []), ...(declares.receives ? [inboundNext] : [])];
     shown(
       chalk.dim(
         `${id} ${declares.sends ? "sends as the Gateway's sender" : "doesn't send email"} and ${declares.receives ? "receives no mail" : "doesn't receive email"}.`,
       ),
-      {
-        ...data,
-        next: [
-          ...(declares.sends
-            ? [{ command: `${CLI} email set --sender '*@<domain>'`, note: "send as your own domain" }]
-            : []),
-          ...(declares.receives
-            ? [{ command: `${CLI} email set --inbound <address>`, note: "receive mail" }]
-            : []),
-        ],
-      },
+      { ...data, ...(next.length > 0 ? { next } : {}) },
     );
     return;
   }
 
   const unrouted = inbound.some((address) => !routed.includes(address));
   const deployNext = !undeclared && (unrouted || stale.length > 0);
+  // The list's own fix first (clear it, or deploy to route it), then the
+  // side the manifest declares with nothing stored for it yet.
+  const next = [
+    ...(undeclared
+      ? [{ command: `${CLI} email unset inbound`, note: "clear the stored address" }]
+      : deployNext
+        ? [{ command: `${CLI} deploy`, note: "route the list as shown" }]
+        : []),
+    ...(sendersSettable && senders.length === 0 ? [senderNext] : []),
+    ...(declares.receives && inbound.length === 0 ? [inboundNext] : []),
+  ];
   shown(
     [
       ...formatTable(["ADDRESS", "ROLE", "STATUS"], rows),
@@ -303,14 +311,7 @@ export async function showEmail(options: EmailOptions): Promise<void> {
           ]
         : []),
     ].join("\n"),
-    {
-      ...data,
-      ...(undeclared
-        ? { next: [{ command: `${CLI} email unset inbound`, note: "clear the stored address" }] }
-        : deployNext
-          ? { next: [{ command: `${CLI} deploy`, note: "route the list as shown" }] }
-          : {}),
-    },
+    { ...data, ...(next.length > 0 ? { next } : {}) },
   );
 }
 

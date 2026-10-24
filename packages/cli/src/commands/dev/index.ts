@@ -27,9 +27,7 @@
  * Ctrl+C stops the app's dev server and says so (exit 130), through the
  * interrupt handler (lib/interrupt.ts) that also stops a migration's cf.
  */
-import fs from "node:fs/promises";
 import http from "node:http";
-import path from "node:path";
 import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
 import type { SessionAuthenticator } from "@every-app/perimeter/dev";
@@ -53,7 +51,6 @@ import { readCloudflareConfig } from "@/lib/app/cloudflareConfig";
 import { generateWorkerTypes, hasWorkerTypes } from "@/lib/app/workerTypes";
 import { EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt, sayOnInterrupt } from "@/lib/interrupt";
-import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
 
@@ -278,16 +275,8 @@ export async function runDev(
   }
 }
 
+/** The app's manifest: MANIFEST_NOT_FOUND without one, as every command says it. */
 async function loadManifest(cwd: string): Promise<EveryAppCliManifest> {
-  try {
-    await fs.access(path.join(cwd, "everyapp.config.ts"));
-  } catch {
-    throw new EveryAppError(
-      "NO_MANIFEST",
-      "No everyapp.config.ts in this directory",
-      { data: { fix: `run ${thisCommand()} from the app's root directory` } },
-    );
-  }
   try {
     return await loadEveryAppManifest(cwd);
   } catch (error) {

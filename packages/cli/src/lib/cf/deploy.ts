@@ -218,7 +218,11 @@ export async function assertReplaceable({
       "rerun_interactive",
       `${withCapitalThe(shownAs)} was changed outside everyapp; confirm in a terminal\nIts live version wasn't deployed by everyapp, and Cloudflare won't replace it unattended. Nothing changed.`,
       undefined,
-      { rerunNote: "in a terminal", data: { workerName, versionId: serving.versionId } },
+      // `needsTerminal`: an agent hands the rerun to a person instead of looping on it.
+      {
+        rerunNote: "in a terminal",
+        data: { workerName, versionId: serving.versionId, needsTerminal: true },
+      },
     );
   }
   await confirmOrCancel(confirm, change.question, {
@@ -247,7 +251,7 @@ function explainDeployFailure(
       "rerun_interactive",
       `${workerName} was changed outside everyapp; confirm in a terminal\nIt was last changed in the Cloudflare dashboard or through the API, so cf won't overwrite it unattended.`,
       undefined,
-      { rerunNote: "in a terminal, and confirm cf's prompt" },
+      { rerunNote: "in a terminal, and confirm cf's prompt", data: { needsTerminal: true } },
     );
   }
   if (error.kind === "subdomain_missing") {
