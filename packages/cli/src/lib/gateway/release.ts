@@ -194,6 +194,98 @@ function extractTarGz(tarball: string, dir: string): Promise<void> {
   });
 }
 
+/**
+ * Refuse a release that holds anything but regular files and directories.
+ * The system `tar` creates a symbolic link with whatever target the archive
+ * names (`../../.ssh/id_ed25519`, `/etc/passwd`); a module listed in
+ * worker.config.json that is such a link would put the operator's own file
+ * into the Worker's bundle cf uploads, and a hard link would do the same
+ * for any file cf can reach. Neither is a regular file, so neither counts
+ * in the SHA-256 release.json records: the publisher's hash can't vouch
+ * for them, and the archive is refused as a whole.
+ */
+async function refuseLinksAndSpecialFiles(
+  dir: string,
+  tarball: string,
+  kindName: string,
+): Promise<void> {
+  const entries = await fsp.readdir(dir, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    const file = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(dir, file).split(path.sep).join("/");
+    if (entry.isSymbolicLink() || !(entry.isFile() || entry.isDirectory())) {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} isn't ${kindName}: ${relative} is a link or a special file, not a regular file.`,
+      );
+    }
+    if (entry.isFile() && (await fsp.lstat(file)).nlink > 1) {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} isn't ${kindName}: ${relative} is a hard link, not a regular file.`,
+      );
+    }
+  }
+}
+
+/** A path cf may read as a module: relative, inside the bundle, one plain segment at a time. */
+function isBundlePath(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !path.isAbsolute(value) &&
+    !/[\\\0-\x1f]/.test(value) &&
+    value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+  );
+}
+
+/**
+ * Refuse a release whose Worker lists a module (or main module) by a path
+ * that could leave its bundle directory: cf reads every listed module from
+ * disk when it uploads, so `../../.ssh/id_ed25519` would go up with the
+ * Worker's code.
+ */
+async function refuseModulesOutsideBundles(
+  dir: string,
+  tarball: string,
+  kindName: string,
+): Promise<void> {
+  const workers = path.join(dir, ".cloudflare", "output", "v0", "workers");
+  let names: string[];
+  try {
+    names = await fsp.readdir(workers);
+  } catch (error) {
+    if (isNotFoundError(error)) return;
+    throw error;
+  }
+  for (const name of names) {
+    let config: unknown;
+    try {
+      config = JSON.parse(
+        await fsp.readFile(path.join(workers, name, "worker.config.json"), "utf8"),
+      );
+    } catch (error) {
+      if (isNotFoundError(error)) continue;
+      throw error;
+    }
+    const manifest = (config as { manifest?: { mainModule?: unknown; modules?: unknown } } | null)
+      ?.manifest;
+    const listed = [
+      manifest?.mainModule,
+      ...Object.keys(
+        manifest?.modules && typeof manifest.modules === "object" ? manifest.modules : {},
+      ),
+    ].filter((value) => value !== undefined);
+    const outside = listed.find((value) => !isBundlePath(value));
+    if (outside !== undefined) {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} isn't ${kindName}: its ${name} Worker lists a module outside its bundle: ${String(outside)}.`,
+      );
+    }
+  }
+}
+
 const RELEASE_NAMES: Record<ReleaseKind, { a: string; the: string }> = {
   gateway: { a: "a gateway release", the: "Gateway release" },
   app: { a: "an app release", the: "App release" },
@@ -214,6 +306,8 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
   const { dir, cleanup } = await privateTempDir(`${kind}-release-`);
   try {
     await extractTarGz(tarball, dir);
+    await refuseLinksAndSpecialFiles(dir, tarball, names.a);
+    await refuseModulesOutsideBundles(dir, tarball, names.a);
     const json: unknown = JSON.parse(
       await fsp.readFile(path.join(dir, "release.json"), "utf8"),
     );

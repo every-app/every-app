@@ -118,6 +118,48 @@ describe("openRelease", () => {
     });
   });
 
+  it.each([
+    [
+      "a symbolic link",
+      (dir: string) =>
+        fs.symlinkSync(
+          "../../../../../../../../.ssh/id_ed25519",
+          path.join(dir, ".cloudflare/output/v0/workers/default/bundle/leak.txt"),
+        ),
+    ],
+    [
+      "a hard link",
+      (dir: string) =>
+        fs.linkSync(
+          path.join(dir, "drizzle/0000_init.sql"),
+          path.join(dir, ".cloudflare/output/v0/workers/default/bundle/leak.sql"),
+        ),
+    ],
+  ])("refuses a release holding %s, which cf would upload as what it points at", async (_case, plant) => {
+    // Neither is a regular file, so neither counts in the hash release.json
+    // records: the publisher's hash still matches. The archive is refused.
+    repack(plant);
+    await expect(openRelease(tarball)).rejects.toMatchObject({
+      code: "RELEASE_INVALID",
+      message: expect.stringMatching(/link/),
+    });
+  });
+
+  it("refuses a release whose Worker lists a module outside its bundle", async () => {
+    repack((dir) => {
+      const file = path.join(dir, ".cloudflare/output/v0/workers/default/worker.config.json");
+      const config = JSON.parse(fs.readFileSync(file, "utf8"));
+      config.manifest.modules = {
+        "../../../../../../../../.ssh/id_ed25519": { type: "text" },
+      };
+      fs.writeFileSync(file, JSON.stringify(config));
+    });
+    await expect(openRelease(tarball)).rejects.toMatchObject({
+      code: "RELEASE_INVALID",
+      message: expect.stringContaining("outside its bundle"),
+    });
+  });
+
   it("refuses a Build Output version this CLI doesn't deploy", async () => {
     repack((dir) => {
       const file = path.join(dir, "release.json");
