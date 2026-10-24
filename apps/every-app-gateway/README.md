@@ -18,6 +18,7 @@ pnpm everyapp status                            # what is live, what to fix
 pnpm dev                    # cf dev on http://localhost:8787
 pnpm db:migrate:local       # apply drizzle/ to the local D1
 pnpm setup-link             # mint a one-time owner link for the local gateway
+node scripts/seed-local.mjs # fill the local D1 with every UI state (header says how)
 pnpm test                   # vitest (SQLite-backed)
 pnpm auth:generate          # regenerate src/db/auth.schema.ts after an auth config change
 ```
