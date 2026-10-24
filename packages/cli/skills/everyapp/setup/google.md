@@ -14,9 +14,8 @@ an app declares those two, nothing here enables them. At the end the person
 has a Cloud project with the APIs behind the declared sets enabled (for
 Open CRM: the Gmail API and the Google Calendar API), a consent screen
 listing their scopes, a Web application client whose redirect URI is the
-app's callback, and both settings on the Gateway. The organization-held
-Google accounts of `docs/design/2026-10-google-integration.md` (§3.1 and
-§4: a token broker on the Gateway) are still not built; the scope sets
+app's callback, and both settings on the Gateway. A Gateway-held token broker for
+organization Google accounts is not built (the direction is in `docs/hosted-vision.md`); the scope sets
 below come from `docs/design/2026-10-oauth-scopes.md`.
 
 ## Settings
