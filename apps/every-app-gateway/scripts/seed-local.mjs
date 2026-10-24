@@ -2,10 +2,20 @@
  * Fill a LOCAL gateway's database with every state the UI has: an owner,
  * an admin, members (one deactivated, one with a very long name), pending
  * invitations, a second organization, apps in every deploy state (and
- * with --many, a long catalog), access grants, AI connections, personal
- * access tokens (active, expired, revoked), a month of usage and an
- * agent-activity trail. For screenshots and design review; nothing here
- * is for production.
+ * with --many, a long catalog), apps that need setup (a Gateway setting
+ * unset, an any-of group, an app-held secret the CLI recorded as unset), a
+ * provider app, groups (empty, one member, many members), access grants
+ * direct and through groups, monthly caps (unset, under, reached), AI
+ * connections, personal access tokens (active, expired, revoked), a month
+ * of usage and an agent-activity trail with and without the AI client's
+ * handshake name. For screenshots and design review; nothing here is for
+ * production.
+ *
+ * "Needs setup" depends on the gateway's own .dev.vars: with
+ * OPENROUTER_API_KEY and DATAFORSEO_API_KEY set to any value OpenSEO and
+ * the DataForSEO provider app read as ready and Research Desk needs only
+ * its own MAIN_SECRET; without them they need setup too. Agentic Inbox
+ * always needs setup (email and Slack are never configured locally).
  *
  * Run `pnpm db:migrate:local`, start the gateway, claim the owner from
  * `pnpm setup-link`, then:
@@ -64,6 +74,9 @@ function seedUuid(name) {
 }
 const appId = (key) => seedUuid(`app-${key}`);
 const tokenId = (key) => seedUuid(`pat-${key}`);
+/** A group id in the gateway's own shape, `grp_` and 16 hex characters. */
+const groupId = (key) =>
+  `grp_${createHash("sha1").update(`every-app-seed:group-${key}`).digest("hex").slice(0, 16)}`;
 const APP_KEYS = [
   "openseo",
   "inbox",
@@ -75,6 +88,8 @@ const APP_KEYS = [
   "deleted",
   "wiki",
   "removed",
+  "research",
+  "provider-dataforseo",
   ...Array.from({ length: 20 }, (_, index) => `many-${index + 1}`),
 ];
 const TOKEN_KEYS = [
@@ -84,8 +99,10 @@ const TOKEN_KEYS = [
   "revoked",
   "old",
 ];
+const GROUP_KEYS = ["sales", "engineering", "empty", "long"];
 const SEED_APP_IDS = APP_KEYS.map(appId);
 const SEED_TOKEN_IDS = TOKEN_KEYS.map(tokenId);
+const SEED_GROUP_IDS = GROUP_KEYS.map(groupId);
 const inList = (ids) => ids.map(() => "?").join(", ");
 
 const now = Date.now();
@@ -108,6 +125,18 @@ async function reset() {
     ["app_tool_catalogs", apps, SEED_APP_IDS],
     ["mcp_connection_apps", "connection_id LIKE 'seed-%'"],
     ["mcp_connections", "id LIKE 'seed-%'"],
+    [
+      "group_app_access",
+      `group_id IN (${inList(SEED_GROUP_IDS)})`,
+      SEED_GROUP_IDS,
+    ],
+    [
+      "group_members",
+      `group_id IN (${inList(SEED_GROUP_IDS)})`,
+      SEED_GROUP_IDS,
+    ],
+    ["groups", `id IN (${inList(SEED_GROUP_IDS)})`, SEED_GROUP_IDS],
+    ["org_app_settings", apps, SEED_APP_IDS],
     ["user_access_tokens", `id IN (${inList(SEED_TOKEN_IDS)})`, SEED_TOKEN_IDS],
     ["user_app_access", "id LIKE 'seed-%'"],
     ["invitations", "id LIKE 'seed-%'"],
@@ -342,6 +371,44 @@ async function main() {
       isDefault: true,
     },
     {
+      // Needs setup for a secret of its own: the CLI recorded the Worker's
+      // secret names and MAIN_SECRET isn't among them. One AI model of two
+      // is enough (an any-of group), and two settings are optional.
+      id: appId("research"),
+      slug: "research",
+      name: "Research Desk",
+      description: "Long-form research reports drafted by an agent.",
+      hostname: "research.apps.example.com",
+      status: "active",
+      isDefault: true,
+      manifest: manifest("research", {
+        providers: [
+          { id: "openrouter", anyOf: "AI model" },
+          { id: "workers-ai", anyOf: "AI model" },
+        ],
+        capabilities: {
+          context: {
+            access: "read",
+            optional: true,
+            why: "Renders JavaScript pages in audits.",
+          },
+        },
+        secrets: [
+          {
+            name: "MAIN_SECRET",
+            why: "Signs the links reports are shared by.",
+          },
+          {
+            name: "WEBHOOK_SECRET",
+            optional: true,
+            why: "Verifies inbound webhooks.",
+          },
+        ],
+      }),
+      secretNames: JSON.stringify(["WEBHOOK_SECRET_OLD"]),
+      deployedBy: "ben@example.com",
+    },
+    {
       id: appId("deleted"),
       slug: "deleted",
       name: "Deleted App",
@@ -367,7 +434,7 @@ async function main() {
   for (const [index, app] of apps.entries()) {
     const createdAt = ago((apps.length - index) * DAY);
     await run(
-      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, email_senders, email_inbound, status, version_id, deployed_at, deployed_by_actor, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'service_binding', 'org', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, email_senders, email_inbound, secret_names, status, version_id, deployed_at, deployed_by_actor, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'service_binding', 'org', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         app.id,
         orgA,
@@ -379,6 +446,7 @@ async function main() {
         app.manifest ?? manifest(app.slug),
         app.emailSenders ?? null,
         app.emailInbound ?? null,
+        app.secretNames ?? null,
         app.status,
         app.hostname ? `seed-version-${app.slug}` : null,
         app.hostname ? createdAt : null,
@@ -402,10 +470,42 @@ async function main() {
     ],
   );
 
+  // The DataForSEO provider app, as `everyapp provider on dataforseo`
+  // writes it (@every-app/sdk/internal providerApps.ts, hardcoded here):
+  // tier "provider", no hostname or Worker, active from the start, never
+  // the organization's default; owners and admins get it. It reads "AI
+  // tools" once DATAFORSEO_API_KEY is set on the gateway, "Needs setup"
+  // until then.
+  const providerManifest = {
+    id: "dataforseo",
+    name: "DataForSEO",
+    description:
+      "SEO data for your AI client: keyword metrics and suggestions, live Google results, domain rankings, competitors and backlinks, through the Gateway's DataForSEO key.",
+    capabilities: {
+      dataforseo: {
+        access: "read",
+        why: "Serves DataForSEO's keyword, search-result, domain and backlink data to members' AI clients.",
+      },
+    },
+  };
+  await run(
+    "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, created_at, updated_at) VALUES (?, ?, 'dataforseo', 'DataForSEO', ?, NULL, NULL, 'provider', 'org', ?, 'active', NULL, ?, 'ben@example.com', 0, ?, ?)",
+    [
+      appId("provider-dataforseo"),
+      orgA,
+      providerManifest.description,
+      JSON.stringify(providerManifest),
+      ago(2 * DAY),
+      ago(2 * DAY),
+      ago(2 * DAY),
+    ],
+  );
+
   // A tombstone keeps no grants (AppRepository.tombstone).
   const live = apps
     .filter((app) => app.status !== "deleted")
-    .map((app) => app.id);
+    .map((app) => app.id)
+    .concat(appId("provider-dataforseo"));
   const grants = [
     [ownerId, orgA, live],
     ["seed-user-admin", orgA, live],
@@ -428,6 +528,84 @@ async function main() {
         ],
       );
     }
+  }
+
+  // Groups: many members (one deactivated), one member, none; apps
+  // granted through them, including ones the members also hold directly.
+  const groups = [
+    {
+      id: groupId("sales"),
+      name: "Sales",
+      description: "Everyone on the sales team.",
+      members: [
+        ownerId,
+        "seed-user-admin",
+        "seed-user-member",
+        "seed-user-long",
+        "seed-user-plain",
+        "seed-user-banned",
+      ],
+      apps: [appId("crm"), appId("reports")],
+      createdAt: ago(14 * DAY),
+    },
+    {
+      id: groupId("engineering"),
+      name: "Engineering",
+      description: null,
+      members: ["seed-user-member"],
+      apps: [appId("openseo"), appId("analytics"), appId("research")],
+      createdAt: ago(7 * DAY),
+    },
+    {
+      id: groupId("empty"),
+      name: "Contractors",
+      description: "Made before anyone joined it; nothing granted yet.",
+      members: [],
+      apps: [],
+      createdAt: ago(HOUR),
+    },
+    {
+      id: groupId("long"),
+      name: "Regional partner managers, EMEA and APAC, and delegates",
+      description:
+        "This description is long on purpose so that the Group column has to truncate it instead of wrapping under the counts.",
+      members: ["seed-user-long"],
+      apps: [appId("long")],
+      createdAt: ago(3 * DAY),
+    },
+  ];
+  for (const group of groups) {
+    await run(
+      "INSERT INTO groups (id, organization_id, name, description, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+      [group.id, orgA, group.name, group.description, group.createdAt, ownerId],
+    );
+    for (const userId of group.members) {
+      await run(
+        "INSERT INTO group_members (group_id, user_id, organization_id, added_at, added_by) VALUES (?, ?, ?, ?, ?)",
+        [group.id, userId, orgA, group.createdAt + HOUR, ownerId],
+      );
+    }
+    for (const app of group.apps) {
+      await run(
+        "INSERT INTO group_app_access (group_id, app_row_id, organization_id, granted_at, granted_by) VALUES (?, ?, ?, ?, ?)",
+        [group.id, app, orgA, group.createdAt + 2 * HOUR, ownerId],
+      );
+    }
+  }
+
+  // Monthly caps (Admin → Usage): OpenSEO well under its cap, the inbox
+  // past its (the gateway refuses its calls: the cap check reads the
+  // usage_monthly rows written below), the provider app under a small one;
+  // every other app unlimited.
+  for (const [app, cap, by] of [
+    [appId("openseo"), 5_000, ownerId],
+    [appId("inbox"), 1_000, "seed-user-admin"],
+    [appId("provider-dataforseo"), 500, ownerId],
+  ]) {
+    await run(
+      "INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)",
+      [orgA, app, cap, ago(DAY), by],
+    );
   }
 
   // Tool catalogs: OpenSEO serves tools, the inbox has none yet.
@@ -634,8 +812,23 @@ async function main() {
     [appId("inbox"), ownerId, "capability", "email", 37, 0, 0, 0, 0],
     [appId("crm"), "seed-user-admin", "ai", "openai", 15, 0, 48_000, 9_200, 0],
     [appId("crm"), "seed-user-gone", "ai", "openai", 4, 4, 1_000, 0, 0],
+    [
+      appId("provider-dataforseo"),
+      ownerId,
+      "capability",
+      "dataforseo",
+      96,
+      2,
+      0,
+      0,
+      480_000,
+    ],
   ];
-  const daysBack = [0, 1, 2, 5];
+  // The month's totals are the same whatever the day: the calls spread over
+  // the days of the month so far, up to four of them.
+  const dayOfMonth = new Date(now).getUTCDate();
+  const daysBack = [0, 1, 2, 5].filter((back) => back < dayOfMonth);
+  const monthly = new Map();
   for (const [
     app,
     userId,
@@ -647,9 +840,9 @@ async function main() {
     output,
     cost,
   ] of usage) {
+    const share = (total) => Math.ceil(total / daysBack.length);
     for (const back of daysBack) {
       const at = ago(back * DAY);
-      if (day(at).slice(0, 7) !== day(now).slice(0, 7)) continue;
       await run(
         "INSERT INTO usage_daily (organization_id, app_row_id, user_id, kind, target, day, calls, failures, input_tokens, output_tokens, cost_micros, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
@@ -659,15 +852,45 @@ async function main() {
           kind,
           target,
           day(at),
-          Math.ceil(calls / 4),
-          Math.ceil(failures / 4),
-          Math.ceil(input / 4),
-          Math.ceil(output / 4),
-          Math.ceil(cost / 4),
+          share(calls),
+          share(failures),
+          share(input),
+          share(output),
+          share(cost),
           at,
         ],
       );
+      // The month's row per app, which the cap check reads (app-cap.ts).
+      const sum = monthly.get(app) ?? {
+        calls: 0,
+        failures: 0,
+        input: 0,
+        output: 0,
+        cost: 0,
+      };
+      sum.calls += share(calls);
+      sum.failures += share(failures);
+      sum.input += share(input);
+      sum.output += share(output);
+      sum.cost += share(cost);
+      monthly.set(app, sum);
     }
+  }
+  for (const [app, sum] of monthly) {
+    await run(
+      "INSERT INTO usage_monthly (organization_id, app_row_id, month, calls, failures, input_tokens, output_tokens, cost_micros, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        orgA,
+        app,
+        day(now).slice(0, 7),
+        sum.calls,
+        sum.failures,
+        sum.input,
+        sum.output,
+        sum.cost,
+        now,
+      ],
+    );
   }
 
   const calls = [
@@ -869,7 +1092,54 @@ async function main() {
       null,
       ago(20 * DAY),
     ],
+    [
+      "seed-call-12",
+      "seed-user-admin",
+      "access",
+      // An Access caller's credential id is their email.
+      "admin@example.com",
+      null,
+      "gateway",
+      appId("openseo"),
+      "openseo",
+      "research_keywords",
+      "read",
+      "allowed",
+      null,
+      "ok",
+      512,
+      9_800,
+      ago(50 * 60 * 1000),
+    ],
+    [
+      "seed-call-13",
+      ownerId,
+      "oauth",
+      "seed-mcpc-claude",
+      "Claude",
+      "gateway",
+      appId("provider-dataforseo"),
+      "dataforseo",
+      "keyword_overview",
+      "read",
+      "allowed",
+      null,
+      "ok",
+      1_240,
+      31_000,
+      ago(8 * 60 * 1000),
+    ],
   ];
+  // What the AI client called itself in the MCP handshake (never
+  // verified); null for a client that sent none, as 2025-era ones may.
+  const clientInfo = {
+    "seed-call-1": "Claude Desktop 1.4.0",
+    "seed-call-4": "claude-code 2.1.309",
+    "seed-call-6": "Cursor 1.7.2",
+    "seed-call-9": "Claude Desktop 1.4.0",
+    "seed-call-12": "Codex CLI 0.48.0",
+    "seed-call-13": "Claude Desktop 1.4.0",
+  };
   for (const [
     id,
     userId,
@@ -889,7 +1159,7 @@ async function main() {
     createdAt,
   ] of calls) {
     await run(
-      "INSERT INTO mcp_tool_calls (id, created_at, organization_id, user_id, credential_kind, credential_id, client_name, surface, app_row_id, app_slug, tool_name, risk, decision, reason, outcome, duration_ms, args_digest, result_bytes, protocol_version, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '2026-07-28', NULL)",
+      "INSERT INTO mcp_tool_calls (id, created_at, organization_id, user_id, credential_kind, credential_id, client_name, client_info, surface, app_row_id, app_slug, tool_name, risk, decision, reason, outcome, duration_ms, args_digest, result_bytes, protocol_version, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '2026-07-28', NULL)",
       [
         id,
         createdAt,
@@ -898,6 +1168,7 @@ async function main() {
         kind,
         credentialId,
         clientName,
+        clientInfo[id] ?? null,
         surface,
         app,
         slug,
@@ -913,7 +1184,7 @@ async function main() {
   }
 
   console.log(
-    `Seeded ${users.length} users, ${invitations.length} invitations, ${apps.length + 1} apps, ${connections.length} connections, ${tokens.length} tokens, ${calls.length} tool calls into ${orgA} (Acme Corp) and ${orgB} (Northwind Traders).`,
+    `Seeded ${users.length} users, ${invitations.length} invitations, ${apps.length + 2} apps (one a provider app), ${groups.length} groups, ${connections.length} connections, ${tokens.length} tokens, ${calls.length} tool calls into ${orgA} (Acme Corp) and ${orgB} (Northwind Traders).`,
   );
 }
 
