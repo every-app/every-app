@@ -79,6 +79,19 @@ Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.
 
+Security: the Gateway signs people in and passes identity to the app in a
+         header the SDK verifies (everyApp(), getEveryAppUser(),
+         requireEveryAppUser(), a tool call's identity); never read who the
+         user is from a client-supplied header, cookie or parameter. Routes
+         are private unless listed under `public` in everyapp.config.ts; a
+         public route is open to the internet and does its own checks.
+         Before opening a pull request, run /security-review in Claude Code
+         (Anthropic's open-source review of the branch's changes) and fix
+         what it finds; new apps also run it on every pull request from
+         .github/workflows/security-review.yml once ANTHROPIC_API_KEY is in
+         the repository's secrets. What the Gateway promises and what an app
+         must do itself: docs/threat-model.md in the Every App checkout.
+
 Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
