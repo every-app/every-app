@@ -42,14 +42,16 @@ an internal app installed in its own workspace.
 1. `pnpm everyapp secret list crm --json`, from any directory (the id reads
    the manifest Open CRM's last deploy stored; in its directory the id can
    be left off), before the Slack side, not at Verify. The rule: read
-   `data.app.setup.unmet` and `data.app.setup.command`. The client is one
+   `data.app.setup.settings`, `unmet` and `command`. The client is one
    setting there, `id: "slack"`, `kind: "capability"`, `holder:
    "gateway"`, `names: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]` (an
    OAuth client's id and secret are the two names of one setting, set
-   only when both are), `need.kind: "required"`, `setup: "setup/slack.md"`
-   (this file). While it is in `unmet` this file applies, and `command`
-   is the one `secret set` that opens the CRM (both names in it;
-   `--app crm` added only when a secret of the CRM's own is missing too).
+   only when both are), `need.kind` as the CRM's manifest declares it
+   (Open CRM: `optional`: it sits in `settings` with `set: false`, never
+   in `unmet`, the CRM opens without Slack and `command` doesn't name it;
+   `required` would put it in `unmet`, close the CRM and put both names
+   in `command`), `setup: "setup/slack.md"` (this file). While its `set`
+   is false this file applies.
    The same entry in `data.app.setup.settings` with `set: true`: ask
    before replacing (a new app, or a regenerated secret). Not deployed
    yet: `secret list crm` stops with `APP_NOT_FOUND`; a bare
@@ -67,8 +69,9 @@ an internal app installed in its own workspace.
    Verify 3 needs the CRM deployed.
 3. In 1's answer, `data.app.workers[].names` must hold
    `TOKEN_ENCRYPTION_KEY`, the CRM's own secret its Slack connect needs (it
-   stores the tokens encrypted under it; unset, it is in `unmet` too, with
-   `holder: "app"`). Unset: set it first, after the CRM's first deploy,
+   stores the tokens encrypted under it; optional in the manifest, so its
+   entry sits in `settings` with `holder: "app"`, never in `unmet`).
+   Unset: set it first, after the CRM's first deploy,
    from anywhere with `--app crm`, at the hidden prompt, 32 or more random
    characters, never through the chat; without it **Connect Slack** stops
    before Slack opens (the table). Not deployed yet: set it right after its
@@ -116,18 +119,21 @@ an internal app installed in its own workspace.
    and `unapproved_scope` (a published Marketplace app requesting scopes
    its review didn't cover) on the authorize URL. The manifest's lists are
    what the console's own Install button and a reinstall request. The
-   registry (`packages/sdk/src/internal/capabilities.ts`,
-   `slack.authorize.scopes`) lists more: another app's `chat:write.customize`
-   and four the CRM doesn't request (`channels:history`, `groups:history`,
-   `conversations.connect:write`, `links:write`); Slack would ask for them
-   only if the CRM did (TODO.md, "OAuth scope lists are the registry's").
-   That flat list mixes user-only (`channels:write`) and bot-only
-   (`channels:manage`) scopes, so it can't go into `scope=` as one string.
-   Per-app Slack scope sets are planned (TODO.md, "OAuth scopes
-   (2026-10-24)": they ship only if their PRs land by Saturday 2026-10-25);
-   on this checkout `slack` has no scope policy, so Open CRM's
-   `everyapp.config.ts` lists no `scopes` under `slack` and the whole
-   client is the grant (docs/capabilities.md, "OAuth clients").
+   registry (`packages/sdk/src/internal/capabilities.ts`, the `slack`
+   entry's `scopePolicy`, #425) groups them into sets an app lists in its
+   manifest entry (`everyapp deploy` refuses `slack` without `scopes`):
+   bot sets `channels.read`, `users.read`, `users.email`,
+   `messages.write`, `channels.join`, `channels.manage`, `files.write`,
+   user set `user-channels.manage` (the table in docs/capabilities.md,
+   "OAuth clients"). Open CRM lists all but `files.write`; the lists
+   above are the provider scopes behind its sets, less
+   `chat:write.customize` (in `messages.write`; the CRM doesn't ask for
+   it). The Gateway holds the CRM to its sets at `oauth.v2.access` (#411):
+   an entry without `scopes` is refused (`integration_scopes_undeclared`),
+   an installation carrying a scope outside them too
+   (`integration_scope_exceeded`: reinstall from the CRM); a CRM deployed
+   before its manifest carried `scopes` must redeploy before the Gateway
+   is updated from main (TODO.md "OAuth scopes (2026-10-24)", follow-up 0).
    Slack's limits: `name` 35 characters, `description` 140; `display_name`
    takes a-z, 0-9, `-`, `_` and `.` only. Step 3b validates the file first.
 
@@ -197,10 +203,11 @@ an internal app installed in its own workspace.
 ## Verify
 
 1. `pnpm everyapp secret list crm --json`, from anywhere: the `slack`
-   setting has `set: true` and is out of `data.app.setup.unmet`
-   (`data.app.setup.ready: true` and `command` null once nothing else is
+   setting has `set: true` (optional for Open CRM, so it was never in
+   `data.app.setup.unmet`; a manifest that requires it has it leave
+   `unmet`, with `ready: true` and `command` null once nothing else is
    missing); both names in `data.gateway.names`, `"set": true` in
-   `data.gateway.needed`, gone from `data.gateway.missing`. Then
+   `data.gateway.needed`, not in `data.gateway.missing`. Then
    `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true
    and `data.fixes` has no `APP_NEEDS_SETUP` for it (the Gateway opens the
    CRM again).
@@ -227,7 +234,8 @@ an internal app installed in its own workspace.
    Gateway the card has **Connect Slack**; without it the section reads
    **Slack is not configured** and, for an owner or admin, shows the
    redirect URL and `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
-   (Verify 1 again; the same when the deployed CRM doesn't list `slack`).
+   (Verify 1 again; the same when the deployed CRM doesn't list `slack`,
+   or lists it without `scopes`).
    **Connect Slack**: Slack's page names the app and the workspace and
    lists the permissions; **Allow**; the CRM comes back connected and shows
    the workspace. Otherwise its page says why, `?error=` naming one of
@@ -249,7 +257,10 @@ an internal app installed in its own workspace.
    `invalid_client_id`, `bad_client_secret`: the table), or a Gateway
    refusal that reached the callback (`status` 503, reason
    `Service Unavailable`: `integration_not_configured`; 403, `Forbidden`:
-   `capability_not_requested`). The Gateway's own log (`every-app-gateway`,
+   `capability_not_requested`, `integration_scopes_undeclared` (the
+   deployed CRM lists `slack` without `scopes`) or
+   `integration_scope_exceeded` (the installation carries a scope outside
+   the CRM's sets: reinstall from the CRM)). The Gateway's own log (`every-app-gateway`,
    same path) has one `integration.proxy.call` per token call:
    `capability`, host, path, method, `grantType` (the request's
    `grant_type`) and `status`; never the body, and Slack answers `200` with
@@ -264,7 +275,7 @@ an internal app installed in its own workspace.
 | `SECRET_SEVERAL_NAMES`                                                         | A pipe or `--from-env` with two names                                                    | One name per call (the fix in `data.fix`)                                                                |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                   | The name differs from a known one in case or underscores only                            | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `SECRET_NOT_DECLARED` without it                                               | A misspelt name; in Open CRM's directory its `data.fix` offers to add it to the CRM's own `secrets` | Retype the name from Settings above; never add a `SLACK_*` name to Open CRM's `secrets`            |
-| CRM: **Slack is not configured**, the `secret set` command, no **Connect Slack** | The Gateway holds no client, or one of the two names (a call would get `integration_not_configured`); or the deployed CRM doesn't list `slack` with `access: "write"` (`capability_not_requested`) | `secret set` both, then Verify 1; or its `everyapp.config.ts`, then `pnpm everyapp deploy --json` in its directory |
+| CRM: **Slack is not configured**, the `secret set` command, no **Connect Slack** | The Gateway holds no client, or one of the two names (a call would get `integration_not_configured`); or the deployed CRM doesn't list `slack` with `access: "write"` and `scopes` (`capability_not_requested`; without `scopes`, `integration_scopes_undeclared`) | `secret set` both, then Verify 1; or its `everyapp.config.ts` (`slack: { access: "write", scopes: [...], why }`), then `pnpm everyapp deploy --json` in its directory |
 | CRM: `exchange_failed`; its log `[slack] connect refused` with `status` 503 or 403 | The Gateway refused between **Connect Slack** and the callback: the client was unset, or the manifest changed, meanwhile | The row above, then connect again                                                              |
 | CRM: **Connect Slack** fails before Slack opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters                 | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways (Before you start 3); connect again |
 | Slack's page: "redirect_uri did not match any configured URIs", then `Passed URI: …` | The URI the CRM sent isn't registered on the app exactly, or under a registered URL  | Register the Passed URI, `https://<app>.<app base domain>/integrations/slack/callback` (https only, no `#`), under OAuth & Permissions → Redirect URLs; Verify 2 |
@@ -320,4 +331,4 @@ an internal app installed in its own workspace.
 - https://community.n8n.io/t/slack-oauth-redirect-uri-did-not-match-any-configured-uris-self-hosted-on-windows/271936 (the redirect error's wording, with its `Passed URI:` line)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages → Overview → the Worker → Logs → Live)
 - https://api.slack.com/apps (the console; `?new_app=1` opens the create dialog)
-- Local, 2026-10-24: `packages/sdk/src/internal/capabilities.ts` (the `slack` entry: its flat `authorize.scopes`, no scope policy), docs/capabilities.md ("OAuth clients": a client with no sets takes the whole client as the grant), TODO.md ("OAuth scope lists are the registry's"; "OAuth scopes (2026-10-24)", the Slack bullet)
+- Local, 2026-10-24: `packages/sdk/src/internal/capabilities.ts` (the `slack` entry: its `scopePolicy`, seven bot sets and one user set, #425), docs/capabilities.md ("OAuth clients": the scope sets table), TODO.md ("OAuth scopes (2026-10-24)", the Slack bullet)

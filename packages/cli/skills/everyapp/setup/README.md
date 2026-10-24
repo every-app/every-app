@@ -14,12 +14,12 @@ click when they have to do something themselves.
 | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Cloudflare account, the Gateway and its owner | [gateway.md](gateway.md)               | set by `everyapp setup` (optional: `CF_DEPLOY_TOKEN`, `BROWSER_APP_INSTALLS`)    | everything                                                              |
 | Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`, `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, `CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`) | sign-in, every app                                          |
-| Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, agentic-inbox, any app that sends |
-| DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO                                                                 |
-| Context.dev                                   | [context.md](context.md)               | `CONTEXT_API_KEY`                                                               | OpenSEO                                                                 |
-| OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, agentic-inbox                                                  |
+| Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, agentic-inbox, Open Analytics (optional), any app that sends |
+| DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO provider app (`pnpm everyapp provider on dataforseo`) |
+| Context.dev                                   | [context.md](context.md)               | `CONTEXT_API_KEY`                                                               | Open CRM; OpenSEO (optional: rendered audits)                           |
+| OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, agentic-inbox                                        |
 | OpenAI                                        | [openai.md](openai.md)                 | `OPENAI_API_KEY`, `AI_PROXY_EXTRA_ROUTES`                                       | apps listing the `openai` provider                                      |
-| Workers AI                                    | [workers-ai.md](workers-ai.md)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | agentic-inbox                                                           |
+| Workers AI                                    | [workers-ai.md](workers-ai.md)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | agentic-inbox (optional)                                                |
 | Google (Gmail, Calendar, Search Console and Analytics) | [google.md](google.md)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
@@ -87,10 +87,10 @@ https://everyapp.com/docs/agent/, each page also as Markdown at
 `errors`, `troubleshooting`, `manifest`, `identity`, `secrets`, `dev`,
 `email`, `mcp`, `deploy`, `access`; an error code's fix is at
 `errors.md#<code>`, the code lower-cased). They go live with the launch on
-2026-10-27; until then this checkout's `docs/` (the runbooks in
-`docs/runbooks/`: Access, email sending, key rotation, browser installs,
-MCP OAuth, the hosted install; `docs/threat-model.md`) and `pnpm everyapp
-<command> --help` are the reference. An error code these files don't
+2026-10-27; until then each page is in the checkout at
+`landing-page/content/agent/<page>.md`; `docs/runbooks/`,
+`docs/threat-model.md` and `pnpm everyapp <command> --help` stay the
+deeper reference. An error code these files don't
 cover carries its own `data.fix` or `data.rerun`; it is raised in the
 command's file under `packages/cli/src/commands/` or its library under
 `packages/cli/src/lib/` (the error types: `packages/cli/src/lib/errors.ts`).

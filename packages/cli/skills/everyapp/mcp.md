@@ -105,7 +105,7 @@ to deploy, same /mcp, same access rules (SKILL.md "Providers").
 Snapshot: the Gateway stores each app's catalog in D1 with the app version it
 came from, taken when the app is activated (the first deploy: the CLI waits
 for the app to go live, so the catalog exists before anyone connects), when a
-hosted deploy finishes a new version, on the first app-host request each
+deploy through the Gateway (a browser install) finishes a new version, on the first app-host request each
 isolate sees after a self-hosted redeploy, when `/mcp` or the consent page
 finds a missing or outdated snapshot (synced within the request, 3 s budget),
 and when a call reports a drifted `catalogHash` or `unknown_tool`. The CLI's
@@ -162,7 +162,8 @@ dynamic client registration (`/oauth/register`; `MCP_DCR_ENABLED` controls it).
 Consent page: the organization, **All apps I can use, including future ones**
 or **Only these apps**, read & write (default) or **Read only**, then
 **Allow**. It grants `mcp:read` and, for read & write, `mcp:write`; an app
-shown as `(tools load on first use)` has no snapshot yet.
+shown as `(no AI tools yet)` has a snapshot with no tools; one with no
+snapshot yet shows no hint (its tools load on first use).
 Scripts and anything that takes a header: a personal access token. In the
 Gateway open **Admin** (the sidebar footer's **Manage workspace**; owners and
 admins only), tab **Tokens**, heading **Personal access tokens**, button

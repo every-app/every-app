@@ -29,13 +29,13 @@ The client carries three scope sets, each one Graph delegated permission, all re
 `mail.read` (`Mail.Read`) and `calendar.read` (`Calendars.Read`); `offline_access` (the refresh token) is added to
 every app's list whatever its sets (`alwaysRequested`; `requestedScopes()` in `packages/sdk/src/internal/oauthScopes.ts`),
 so the registry's whole checklist reads `offline_access User.Read Mail.Read Calendars.Read` (docs/capabilities.md,
-"OAuth clients"). An app names its sets in its manifest entry, `"microsoft-365": { access: "write", scopes: ["identity", "mail.read"], why }`,
-and the Gateway holds it to them at every token exchange and refresh: that is the design
-(docs/design/2026-10-oauth-scopes.md §3 and §5), and on 2026-10-24 the manifest field and the check are PRs #414 and
-#411, held for Ben and not on main, so today an entry is `{ access: "write", why }` only (`everyapp deploy` refuses
-`scopes` as an unknown key) and the app chooses its own `scope`; Open CRM's three are the `identity` and `mail.read`
-sets plus `offline_access`.
-Either way the registration's delegated permissions are the union behind the sets of every app you approve
+"OAuth clients"). An app names its sets in its manifest entry, `"microsoft-365": { access: "write", scopes: ["identity", "mail.read"], why }`
+(#414; `everyapp deploy` refuses the entry without `scopes`), and the Gateway holds it to them at every token exchange
+and refresh (#411; docs/design/2026-10-oauth-scopes.md §3 and §5), replacing the request's `scope` with the sets'
+scopes plus `offline_access`: Open CRM's is `offline_access User.Read Mail.Read`. An entry deployed without `scopes` is
+refused at the token endpoint (`integration_scopes_undeclared`); such a CRM must redeploy before the Gateway is updated
+from main (TODO.md "OAuth scopes (2026-10-24)", follow-up 0).
+The registration's delegated permissions are the union behind the sets of every app you approve
 (TODO.md, "Setup skills (2026-10-24)"), not the registry's whole list: for the launch, Open CRM alone, `User.Read`,
 `Mail.Read` and `offline_access`; `Calendars.Read` joins only when an app declares `calendar.read`.
 
@@ -69,16 +69,17 @@ a `429` carries `Retry-After`, which Open CRM honors.
 
 1. `pnpm everyapp secret list crm --json`, from any directory (the id reads the manifest Open CRM's last deploy
    stored; in its directory the id can be left off), one call, before any Microsoft step. The rule: read
-   `data.app.setup.unmet` and `data.app.setup.command`. The client is one setting there, `id: "microsoft-365"`,
+   `data.app.setup.settings`, `unmet` and `command`. The client is one setting there, `id: "microsoft-365"`,
    `kind: "capability"`, `holder: "gateway"`, `names: ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"]`
-   (an OAuth client's id and secret are the two names of one setting, set only when both are), `need.kind:
-   "required"`, `setup: "setup/microsoft-365.md"` (this file). While it is in `unmet` this file applies, and
-   `command` is the one `secret set` that opens the CRM (both names in it; `--app crm` added only when a secret
-   of the CRM's own is missing too). The same entry in `data.app.setup.settings` with `set: true`: ask before
+   (an OAuth client's id and secret are the two names of one setting, set only when both are), `need.kind` as the
+   CRM's manifest declares it (Open CRM: `optional`: it sits in `settings` with `set: false`, never in `unmet`, the
+   CRM opens without Outlook and `command` doesn't name it; `required` would put it in `unmet`, close the CRM and
+   put both names in `command`), `setup: "setup/microsoft-365.md"` (this file). While its `set` is false this file
+   applies. The same entry in `data.app.setup.settings` with `set: true`: ask before
    replacing; a value can't be read back, so replacing means a new secret in Entra. The same answer says whether
-   the CRM's own `TOKEN_ENCRYPTION_KEY` is in `unmet` too (`holder: "app"`): it must be set before anyone can
-   connect (after the CRM's first deploy, from anywhere with `--app crm`, at the hidden prompt, 32 or more random
-   characters), so settle it now, not after the set.
+   the CRM's own `TOKEN_ENCRYPTION_KEY` is set (`holder: "app"`; optional, so in `settings`, never in `unmet`): it
+   must be set before anyone can connect (after the CRM's first deploy, from anywhere with `--app crm`, at the
+   hidden prompt, 32 or more random characters), so settle it now, not after the set.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true; `data.appBaseDomain` is `<app base domain>`;
    `data.apps[]` has `"id": "crm"` with `"status": "active"`, `"bound": true`, the `hostname` the redirect URI
    goes on (step 1) and, as `setup`, 1's `data.app.setup` again: what else the CRM needs. No `crm`: deploy Open
@@ -149,9 +150,10 @@ secret exists.
 
 ## Verify
 
-1. `pnpm everyapp secret list crm --json`, from anywhere: the `microsoft-365` setting has `set: true` and is out
-   of `data.app.setup.unmet` (`data.app.setup.ready: true` and `command` null once nothing else is missing); both
-   names in `data.gateway.names`, `"set": true` in `data.gateway.needed`, and gone from `data.gateway.missing`.
+1. `pnpm everyapp secret list crm --json`, from anywhere: the `microsoft-365` setting has `set: true` (optional
+   for Open CRM, so it was never in `data.app.setup.unmet`; a manifest that requires it has it leave `unmet`, with
+   `ready: true` and `command` null once nothing else is missing); both
+   names in `data.gateway.names`, `"set": true` in `data.gateway.needed`, and not in `data.gateway.missing`.
    Then `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true and `data.fixes` has no
    `APP_NEEDS_SETUP` for it (the Gateway opens the CRM again).
 2. Smoke check, only if the person still has the secret in a variable they exported in their own terminal
@@ -192,12 +194,12 @@ secret exists.
 
 | Error or symptom                                                                 | Meaning                                                                                        | What to do                                                                                                   |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `integration_not_configured` (Gateway 503), or the CRM's **Not configured** badge with no **Connect** button (owners and admins: the card with the redirect URI and the `secret set` command) | The Gateway holds neither or only one of the two settings, or a name differs | `pnpm everyapp secret list --json`; set what is missing (steps 5 and 6) |
-| `capability_not_requested` (403)                                                 | The deployed manifest doesn't list `"microsoft-365": { access: "write" }` (once PR #411 is in, an entry without its `scopes` is `integration_scopes_undeclared` instead) | Add it to `everyapp.config.ts`, deploy again |
+| `integration_not_configured` (Gateway 503), or the CRM's **Not configured** badge with no **Connect** button (owners and admins: the card with the redirect URI and the `secret set` command) | The Gateway holds neither or only one of the two settings, or a name differs; the badge alone also means the deployed manifest lists `microsoft-365` without `scopes` (add them, deploy) | `pnpm everyapp secret list --json`; set what is missing (steps 5 and 6) |
+| `capability_not_requested` (403)                                                 | The deployed manifest doesn't list `microsoft-365` (an entry without `scopes` is `integration_scopes_undeclared` instead) | Add `"microsoft-365": { access: "write", scopes: ["identity", "mail.read"], why }` to `everyapp.config.ts`, deploy again |
 | `integration_agent_not_allowed` (403)                                            | An agent (MCP) tried to connect or refresh                                                     | The person connects in the app                                                                               |
 | `integration_upstream_failed` (502), log `integration.proxy.upstream_failed`      | The Gateway couldn't reach login.microsoftonline.com (the CRM says "Microsoft returned an error. Try again.") | Try again                                                                                          |
-| `integration_path_not_allowed` (403), `integration_body_invalid` (400), `integration_body_too_large` (413) | The app's request (an endpoint other than `/common/oauth2/v2.0/token`, or a body it doesn't take), not this setup | Check the app's version                                                        |
-| `integration_scope_exceeded` (403) on a connect or a refresh, once the Gateway holds apps to their scope sets (PR #411, held on 2026-10-24) | Two apps on this one registration and one person: Microsoft can issue a token carrying every scope the person consented to either app, and the Gateway refuses the narrower app's exchange rather than narrowing it (docs/design/2026-10-oauth-scopes.md §9; its log line `integration.proxy.scope_refused` names the excess) | The member removes the app at https://myapplications.microsoft.com and connects again; for good, one registration per app, which needs its own registry entry (TODO.md "OAuth scopes (2026-10-24)") |
+| `integration_path_not_allowed` (403), `integration_body_invalid` (400), `integration_body_too_large` (413), `integration_scope_not_allowed` (403: the request's `scope` names a scope outside the CRM's sets) | The app's request (an endpoint other than `/common/oauth2/v2.0/token`, a body it doesn't take, or a scope it doesn't declare), not this setup | Check the app's version                                                        |
+| `integration_scope_exceeded` (403) on a connect or a refresh | Two apps on this one registration and one person: Microsoft can issue a token carrying every scope the person consented to either app, and the Gateway refuses the narrower app's exchange rather than narrowing it (docs/design/2026-10-oauth-scopes.md §9; its log line `integration.proxy.scope_refused` names the excess) | The member removes the app at https://myapplications.microsoft.com and connects again; for good, one registration per app, which needs its own registry entry (TODO.md "OAuth scopes (2026-10-24)") |
 | `SECRET_VALUE_REQUIRED`                                                          | Nothing was piped and there is no terminal                                                     | One of README's three ways; `data.rerun` shows the `--from-env` form                                         |
 | `SECRET_SEVERAL_NAMES`                                                           | Two names with one piped or `--from-env` value                                                 | One `secret set` per name                                                                                    |
 | `SECRET_EMPTY`                                                                   | The `--from-env` variable isn't exported in this shell                                         | The person exports it in the terminal that runs the command                                                  |
@@ -268,5 +270,5 @@ secret exists.
 - https://learn.microsoft.com/en-us/cli/azure/ad/app, https://learn.microsoft.com/en-us/cli/azure/ad/app/credential, https://learn.microsoft.com/en-us/cli/azure/ad/app/permission (Azure CLI 2.91, flags as used above)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (the dashboard's Logs and Observability pages)
 - `packages/sdk/src/internal/capabilities.ts` (`microsoft-365`: the label, the `common` token endpoint, the three scope sets, `alwaysRequested`) and `packages/sdk/src/internal/oauthScopes.ts` (`requestedScopes()`); `docs/capabilities.md`, "OAuth clients" (the generated scope tables)
-- `docs/design/2026-10-oauth-scopes.md` (§3 the manifest's `scopes`, §4 the Microsoft policy, §5 the token-endpoint check and `integration_scope_exceeded`, §9 the shared-client limit) and TODO.md, "OAuth scopes (2026-10-24)" (the decisions; Open CRM's redeploy) and "Setup skills (2026-10-24)" (the console-side union rule); the manifest field and the check are PRs #414 and #411, open on 2026-10-24
+- `docs/design/2026-10-oauth-scopes.md` (§3 the manifest's `scopes`, §4 the Microsoft policy, §5 the token-endpoint check and `integration_scope_exceeded`, §9 the shared-client limit) and TODO.md, "OAuth scopes (2026-10-24)" (the decisions; Open CRM's redeploy) and "Setup skills (2026-10-24)" (the console-side union rule); the manifest field and the check are #414 and #411, merged
 - Open CRM's `src/shared/mailbox.ts` (`REQUESTED_SCOPES.microsoft`) and `src/client/features/mailbox/connectionCopy.ts` (the myapplications.microsoft.com link)

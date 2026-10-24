@@ -28,7 +28,9 @@ trying anything else. Never guess a flag: cli has them all.
 Building an app: the Gateway signs people in, so never build a login page
 or auth; read the user with the SDK (identity page). A new app edits
 everyapp.config.ts for name, resources, secrets, public and email
-(manifest page); after a schema change run pnpm run db:generate; a value
+(manifest page); an OAuth client with scope sets (google-workspace,
+microsoft-365, slack) is listed with scopes: [...] and held to them;
+after a schema change run pnpm run db:generate; a value
 only dev needs goes in .dev.vars, never in git (dev page).
 
 Pass --json. One JSON event per line; "done" = success; exit 2 = show the
@@ -55,7 +57,9 @@ Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
 Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
          also upgrades the Gateway to this checkout when it has to rebind).
          No Gateway yet: action_required install_gateway; ask the user, run
-         its data.rerun (setup), then deploy again.
+         its data.rerun (setup), then deploy again. done.data.publicRoutes
+         lists the routes the manifest opens to the internet without
+         sign-in; tell the person which.
 Release: someone else's app, without a clone: pnpm everyapp install
          https://github.com/<owner>/<repo> --json (its latest release's
          everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
@@ -127,7 +131,11 @@ Providers: pnpm everyapp provider on dataforseo --json   offers a data provider'
          /mcp with the Gateway's key (DATAFORSEO_API_KEY, setup/dataforseo.md);
          nothing to deploy. provider list shows on/off and whether the key is
          set; provider off <id> removes it. You, owners and admins get it;
-         others are granted in Admin → Apps → Manage access.
+         others are granted in Admin → Apps → Manage access. An owner or admin
+         caps an app's provider calls per month in Admin → Usage (off by
+         default): past it a provider tool answers a tool error naming the
+         cap, and an app's brokered call gets 429 app_monthly_cap_exceeded
+         until the next UTC month.
 Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.

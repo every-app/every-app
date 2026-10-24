@@ -14,7 +14,7 @@ three Gateway settings, in one run. At the end the
 person has Access's login before the Gateway, MCP clients and each app's
 public routes still reachable without it, and optionally no passwords. This
 is the "outer ring" of `docs/runbooks/cloudflare-access.md`; the other way,
-a "Continue with Company SSO" button that also works in the mobile app, is
+a "Continue with Company SSO" button, is
 the runbook's "OIDC sign-in" and isn't covered here.
 
 What it adds, and what it doesn't (`docs/threat-model.md`, "What
@@ -26,7 +26,7 @@ of the policy ends their browser access when their Access session ends
 (720h as `access on` sets it). It does not cover personal access tokens or
 the OAuth tokens of connected AI apps (they use the bypassed paths and work
 until revoked), apps' public routes (reachable by anyone), deploy authority
-(the Cloudflare login, not a Gateway account) or the mobile app. Taking
+(the Cloudflare login, not a Gateway account). Taking
 someone off is **Deactivate** in the Gateway's **Users** page (the threat
 model's "Admin → Users"), which revokes their tokens and connections at once.
 
@@ -150,7 +150,6 @@ one-time PIN expires 10 minutes after it is sent.
 | `CONFIRMATION_REQUIRED`                                                                              | `access off` or `secret unset` under `--json` without `--yes`                      | add `--yes` only when the person said so                                                                                                                                                                                    |
 | `SETTING_VALUE_INVALID` with `data.name`                                                             | `EMAIL_PASSWORD_SIGN_IN` (takes true/false, 1/0, on/off, yes/no) or `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS` got a value the Gateway wouldn't read; nothing was written | pipe the value `data.fix` describes                                                                                                        |
 | `SECRET_VALUE_REQUIRED`                                                                              | nothing was piped to `secret set`                                                  | one of README's three ways                                                                                                                                                                                                  |
-| the mobile app can't sign in                                                                         | expected behind the outer ring                                                     | the runbook's OIDC sign-in instead                                                                                                                                                                                          |
 
 ## Rerun, rotate, remove
 

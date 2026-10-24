@@ -47,23 +47,19 @@ Search Console API and the Analytics Admin and Data APIs, only when an app
 declares those sets (OpenSEO will, after launch).
 
 An app names its sets in its manifest,
-`"google-workspace": { access: "write", scopes: ["gmail.read", "calendar.read"], why }`,
-once the manifest field (PR #414) and the Gateway's token-endpoint check
-(PR #411) merge. Both are held for Ben: on this checkout an entry is
-`{ access: "write", why }`, `everyapp deploy` refuses `scopes` as an
-unknown key, and the Gateway completes the exchange without reading
-scopes. Once #411 is deployed (the design's §5), the Gateway refuses to
-forward a token whose granted scopes exceed the app's sets
+`"google-workspace": { access: "write", scopes: ["gmail.read", "calendar.read"], why }`
+(#414; `everyapp deploy` refuses the entry without `scopes`), and the
+Gateway holds it to them at every token exchange and refresh (#411, the
+design's §5): a token whose granted scopes exceed the sets is refused
 (`integration_scope_exceeded`, 403), so apps must not send
-`include_granted_scopes=true`: Google then makes the token cover every
-scope the person has granted the Cloud project, and a person who granted
-a wider scope to another app on the same project sees the narrower app
-refused until they reconnect it without that flag. A deployed manifest
-without `scopes` is refused there too (`integration_scopes_undeclared`,
-403): Open CRM must redeploy with `scopes: ["gmail.read", "calendar.read"]`
-and without the flag before a Gateway carrying #411 serves it, and #414
-must merge first for that deploy to pass the validator (TODO.md "OAuth
-scopes (2026-10-24)", follow-up 1). Redirect URI:
+`include_granted_scopes=true` (Google then makes the token cover every
+scope the person has granted the Cloud project, and a wider grant to
+another app on the same project gets the narrower app refused until they
+reconnect without the flag); a deployed manifest without `scopes` is
+refused too (`integration_scopes_undeclared`, 403). Open CRM declares
+both sets and sends no flag; a CRM deployed before that must redeploy
+before the Gateway is updated from main (TODO.md "OAuth scopes
+(2026-10-24)", follow-up 0). Redirect URI:
 `https://<app>.<app base domain>/integrations/google/callback` for every
 app that lists the capability; for Open CRM,
 `https://crm.<app base domain>/integrations/google/callback`.
@@ -108,23 +104,26 @@ assessment.
 1. `pnpm everyapp secret list crm --json`, from any directory (the id reads
    the manifest Open CRM's last deploy stored; in its directory the id can
    be left off), one call, before any Google step. The rule: read
-   `data.app.setup.unmet` and `data.app.setup.command`. The client is one
+   `data.app.setup.settings`, `unmet` and `command`. The client is one
    setting there, `id: "google-workspace"`, `kind: "capability"`, `holder:
    "gateway"`, `names: ["GOOGLE_WORKSPACE_CLIENT_ID",
    "GOOGLE_WORKSPACE_CLIENT_SECRET"]` (an OAuth client's id and secret are
-   the two names of one setting, set only when both are), `need.kind:
-   "required"`, `setup: "setup/google.md"` (this file). While it is in
-   `unmet` this file applies, and `command` is the one `secret set` that
-   opens the CRM (both names in it; `--app crm` added only when a secret
-   of the CRM's own is missing too). The same entry in
+   the two names of one setting, set only when both are), `need.kind` as
+   the CRM's manifest declares it (Open CRM: `optional`: it sits in
+   `settings` with `set: false`, never in `unmet`, the CRM opens without
+   Gmail and Calendar and `command` doesn't name it; `required` would put
+   it in `unmet`, close the CRM and put both names in `command`), `setup:
+   "setup/google.md"` (this file). While its `set` is false this file
+   applies. The same entry in
    `data.app.setup.settings` with `set: true`: ask before replacing (a new
    secret for the same client is harmless, see Rotate; a different client
    id makes every member reconnect Gmail and Calendar).
    `TOKEN_ENCRYPTION_KEY`, the CRM's own secret that connecting needs, is
-   in `unmet` too while unset (`holder: "app"`): the CRM's admin sets it
-   after the CRM's first deploy, from anywhere with `--app crm`, at the
-   hidden prompt, 32 or more random characters (the CRM refuses shorter);
-   a missing key shows at step 9, the table's last row. `APP_NOT_FOUND`:
+   in `settings` too (`holder: "app"`; optional, so never in `unmet`): the
+   CRM's admin sets it after the CRM's first deploy, from anywhere with
+   `--app crm`, at the hidden prompt, 32 or more random characters (the
+   CRM refuses shorter); a missing key shows at step 9, the table's last
+   row. `APP_NOT_FOUND`:
    deploy Open CRM first (its callback must answer before anyone
    connects).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
@@ -257,11 +256,12 @@ before step 8.
 ## Verify
 
 1. `pnpm everyapp secret list crm --json`, from anywhere: the
-   `google-workspace` setting has `set: true` and is out of
-   `data.app.setup.unmet` (`data.app.setup.ready: true` and `command` null
-   once nothing else is missing); both names in `data.gateway.names`,
+   `google-workspace` setting has `set: true` (optional for Open CRM, so
+   it was never in `data.app.setup.unmet`; a manifest that requires it has
+   it leave `unmet`, with `ready: true` and `command` null once nothing
+   else is missing); both names in `data.gateway.names`,
    their `data.gateway.needed` entries `"set": true`, and
-   `data.gateway.missing` no longer lists them. Then
+   `data.gateway.missing` doesn't list them. Then
    `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true
    and `data.fixes` has no `APP_NEEDS_SETUP` for it (the Gateway opens the
    CRM again).
@@ -295,11 +295,11 @@ before step 8.
 | `SECRET_SEVERAL_NAMES` | A pipe or `--from-env` with two names | One `secret set` per name |
 | `SECRET_NOT_DECLARED` with `data.didYouMean` | Name typed wrong | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `has("web")` prints `false`; `jq -r .web.client_id` prints `null` | A Desktop client's file (`installed` key); `null` must never be piped | Create a Web application client; unset anything set from it |
-| App: "Not configured", "Redirect URI" and "Command" rows, no Connect | The Gateway's status for `google-workspace` answers `ready: false`: it holds no client (or one name only) | Step 8; then reload (no deploy needed) |
+| App: "Not configured", "Redirect URI" and "Command" rows, no Connect | The Gateway's status for `google-workspace` answers `ready: false`: it holds no client (or one name only), or the deployed manifest lists the client without `scopes` | Step 8 (or add `scopes` and deploy); then reload |
 | `integration_not_configured` (503) in the app's logs | A token call while the Gateway holds no client, or the name is wrong | `secret list --json`; set both names |
-| `capability_not_requested` (403) | The deployed manifest lacks `"google-workspace": { access: "write" }` | Add it to everyapp.config.ts, deploy |
-| `integration_scopes_undeclared` (403), only once PR #411 is deployed | The deployed manifest lists the client without `scopes` (Open CRM today) | Add `scopes: ["gmail.read", "calendar.read"]` to the entry (needs #414), deploy |
-| `integration_scope_exceeded` (403), only once PR #411 is deployed | Google granted more than the app's sets: the app asked for a scope outside them, or sent `include_granted_scopes=true` and the member had granted a wider scope to another app on this project | The app asks for only the status's scopes without the flag and the member connects again, or the set is added to everyapp.config.ts and deployed; the token was dropped, nothing to revoke |
+| `capability_not_requested` (403) | The deployed manifest doesn't list `google-workspace` | Add `"google-workspace": { access: "write", scopes: ["gmail.read", "calendar.read"], why }` to everyapp.config.ts, deploy |
+| `integration_scopes_undeclared` (403) | The deployed manifest lists the client without `scopes` (a deploy from before #414) | Add `scopes: ["gmail.read", "calendar.read"]` to the entry, deploy |
+| `integration_scope_exceeded` (403) | Google granted more than the app's sets: the app asked for a scope outside them, or sent `include_granted_scopes=true` and the member had granted a wider scope to another app on this project | The app asks for only the status's scopes without the flag and the member connects again, or the set is added to everyapp.config.ts and deployed; the token was dropped, nothing to revoke |
 | `integration_path_not_allowed` (403) | The app called something other than `POST /token` through the Gateway | App bug: API calls go to Google directly |
 | Google "Error 400: redirect_uri_mismatch" | The URI on the client differs from step 1 | Fix it on the client; wait up to a few hours |
 | Google "Error 401: invalid_client" | Client id or secret wrong, or secret disabled | Rotate (below) and set both again |
@@ -344,7 +344,7 @@ before step 8.
 - https://developers.google.com/identity/protocols/oauth2/web-server (`include_granted_scopes`: the token covers every scope the person granted the project; the response's `scope`; Settings)
 - https://searchconsole.googleapis.com/$discovery/rest?version=v1, https://analyticsdata.googleapis.com/$discovery/rest?version=v1beta, https://analyticsadmin.googleapis.com/$discovery/rest?version=v1beta (service names and the scopes each API takes; step 3)
 - https://developers.google.com/webmaster-tools/limits and https://developers.google.com/analytics/devguides/reporting/data/v1/quotas (quotas; Costs and plans)
-- `docs/design/2026-10-oauth-scopes.md` (the sets, §4; the token-endpoint check and its codes, §5; held PRs #414 and #411), TODO.md "OAuth scopes (2026-10-24)" (Search Console and Analytics on this client; Open CRM's and OpenSEO's follow-ups) and `docs/capabilities.md` "OAuth clients" (the generated sets table; Settings)
+- `docs/design/2026-10-oauth-scopes.md` (the sets, §4; the token-endpoint check and its codes, §5; §13 what was built), TODO.md "OAuth scopes (2026-10-24)" (Search Console and Analytics on this client; Open CRM's and OpenSEO's follow-ups) and `docs/capabilities.md` "OAuth clients" (the generated sets table; Settings)
 - https://support.google.com/accounts/answer/16668185 (Google's sign-in error codes; If it fails)
 - https://docs.cloud.google.com/iap/docs/programmatic-oauth-clients (the API that created clients, shut down 2026-03-19; step 6)
 - https://developers.google.com/health/app-verification (assessor fees; Costs and plans)

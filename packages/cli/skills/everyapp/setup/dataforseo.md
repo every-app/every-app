@@ -60,8 +60,10 @@ payment comes in only at Add Funds.
    opening `https://openseo.<app base domain>` to its setup dialog and
    answers anything else 503 `app_needs_setup`. `data.app.setup.command` is
    the one `pnpm everyapp secret set …` naming every missing Gateway
-   setting (`data.next` repeats it; the OpenRouter and Context keys are in
-   it too while they are missing: [openrouter.md](openrouter.md),
+   setting (`data.next` repeats it; the OpenRouter key is in it too while
+   it is missing: [openrouter.md](openrouter.md); Context is optional for
+   OpenSEO, so `CONTEXT_API_KEY` sits in `data.app.setup.settings` with
+   `set: false` and never in `unmet` or `command`:
    [context.md](context.md)). The same entry in `data.app.setup.settings`
    with `"set": true` means it is set already: ask before replacing; a
    value can't be read back, so "replace" means the person fetches the
@@ -148,8 +150,8 @@ value is set.
 1. `pnpm everyapp secret list openseo --json`, from anywhere: the
    `DATAFORSEO_API_KEY` entry in `data.app.setup.settings` has `"set": true`
    and has left `data.app.setup.unmet`; `data.app.setup.ready` is true once
-   nothing else of OpenSEO's is missing (its OpenRouter and Context keys
-   count too; until then `command` and `data.next` name only what is
+   nothing else of OpenSEO's is missing (its OpenRouter key counts too,
+   Context doesn't; until then `command` and `data.next` name only what is
    left). In the older fields, its `data.gateway.needed` entry has
    `"set": true` and the name left `data.gateway.missing`. Then
    `pnpm everyapp status --json`: the `openseo` entry's `setup.ready` is
@@ -181,7 +183,8 @@ value is set.
    (`https://<gateway host>/?setup=openseo`) means a required setting is
    still unset: Verify 1 says which. OpenSEO shows one message for a
    missing key and a rejected one alike: "DataForSEO isn't set up on your
-   Every App gateway, or rejected its key". Tell them apart with
+   Every App gateway yet, or rejected the key it holds. An owner or admin
+   sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." Tell them apart with
    `pnpm everyapp secret list --json`: `DATAFORSEO_API_KEY` absent from
    `data.gateway.names` means step 4 did not land (behind the Gateway's
    setup gate the app doesn't open in that state, so expect the second);
@@ -208,9 +211,8 @@ value is set.
 | `SECRET_VALUE_REQUIRED` from `secret set --json`                                   | Nothing was piped and there is no terminal to prompt in                                                                | One of the README's three ways: the person's own terminal, or `--from-env`                                                    |
 | `SECRET_SEVERAL_NAMES`                                                             | `--from-env` or a pipe with more than one name                                                                         | One name per call                                                                                                             |
 | `SECRET_EMPTY`                                                                     | The `--from-env` variable is empty or not exported in that shell                                                       | The hidden read (README's third way) in that same terminal first, then rerun                                                  |
-| A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key, or the OpenRouter or Context one) | `pnpm everyapp secret list openseo --json`: set what `data.app.setup.command` names; Verify 1                        |
-| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway, or rejected its key" (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
-| OpenSEO's message says `everyapp secret set DATAFORSEO_API_KEY --for gateway`      | The app's text predates the CLI; there is no `--for` flag (a bad-arguments exit)                                       | `pnpm everyapp secret set DATAFORSEO_API_KEY` as in step 4; the name alone routes it to the Gateway. OpenSEO's text needs fixing |
+| A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key or the OpenRouter one; Context is optional) | `pnpm everyapp secret list openseo --json`: set what `data.app.setup.command` names; Verify 1                        |
+| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway yet, or rejected the key it holds. An owner or admin sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
 | `capability_not_requested` (403)                                                   | The deployed manifest does not list `capabilities.dataforseo`                                                          | OpenSEO's does; a fork must add it to `everyapp.config.ts` and deploy again                                                   |
 | `integration_path_not_allowed` (403)                                               | The app called an account-wide path (`appendix/user_data`, `appendix/webhook_resend`, `tasks_ready`, `id_list`, `errors`) | By design: one key serves every app. Check balance and limits from the terminal (Verify 2)                                 |
 | `integration_method_not_allowed` (405)                                             | A method other than GET or POST                                                                                        | DataForSEO reads with GET and POST only                                                                                       |

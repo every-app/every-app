@@ -3,9 +3,10 @@
 Lets the Gateway send its own mail (invitations, password resets, sign-up
 verification) and every app's, through one provider for the whole Gateway:
 Cloudflare Email Sending (the default) or Resend. Apps that send: agentic-inbox
-(replies from its own addresses) and any app whose `everyapp.config.ts` lists
-`capabilities: { email: { access: "write" } }`. Email is optional: without it,
-an invite shows a **Copy invite link** button instead. At the end the person
+(replies from its own addresses; required), Open Analytics (reports and
+alerts; `optional: true`, so it opens without it) and any app whose
+`everyapp.config.ts` lists `capabilities: { email: { access: "write" } }`.
+Email is optional: without it, an invite shows its link to share instead. At the end the person
 has a sending domain set up with the provider, `EMAIL_FROM` and
 `EMAIL_FROM_NAME` on the Gateway, and an invitation that arrived by mail.
 
@@ -17,7 +18,7 @@ has a sending domain set up with the provider, `EMAIL_FROM` and
 | `EMAIL_FROM_NAME`      | required, unless `EMAIL_FROM` carries the name | the display name people see, e.g. `Acme`; set, it outranks the name inside `EMAIL_FROM`                      |
 | `RESEND_API_KEY`       | optional (Resend only)      | a Resend API key, `re_…`, with Sending access to every domain the Gateway sends as (step 6)                                |
 | `EMAIL_PROVIDER`       | optional                    | `cloudflare` or `resend` (any case): pins the provider; unset, the Gateway picks one (below)                               |
-| `EMAIL_REST_API_TOKEN` | optional, Docker only       | a Cloudflare API token with Email Sending Edit; never set it on a deployed Gateway: it outranks the `EMAIL` binding        |
+| `EMAIL_REST_API_TOKEN` | optional (a Gateway outside Workers: local dev) | a Cloudflare API token with Email Sending Edit, with `CLOUDFLARE_ACCOUNT_ID`; never set it on a deployed Gateway: it outranks the `EMAIL` binding |
 
 Set both, the default. Or `EMAIL_FROM` alone in the combined form, with
 `EMAIL_FROM_NAME` unset. Either way the Gateway sends only once it has an
@@ -68,16 +69,20 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 ## Before you start
 
-- `pnpm everyapp secret list agentic-inbox --json` (the app that lists
-  `email`; from anywhere once it is deployed, else `pnpm everyapp secret list
-  --json` in its directory): this file applies when `data.app.setup.unmet`
+- `pnpm everyapp secret list <app id> --json` (`agentic-inbox` or
+  `analytics`, the launch apps that list `email`; from anywhere once it is
+  deployed, else `pnpm everyapp secret list --json` in its directory): this
+  file applies when `data.app.setup.unmet`
   has the entry `id: "email"` (`kind: "capability"`, `holder: "gateway"`,
   `names: ["EMAIL_FROM"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
   the path `status` (under "<app> needs setup") and `secret list <app id>`
   (under the unmet setting) print as `Guide:
   .claude/skills/everyapp/setup/email.md`, and `secret list --json` carries
   per unmet setting; how an agent lands here), and `data.app.setup.command` is the one
-  `secret set` that opens the app, `EMAIL_FROM` among its names. The older
+  `secret set` that opens the app, `EMAIL_FROM` among its names. An app
+  that marks `email` `optional: true` (Open Analytics) has the entry in
+  `settings` with `set: false`, never in `unmet`: it opens without a
+  sender, and this file applies when they want its mail. The older
   `data.gateway.needed` (each `{ name, required, set }`) and
   `data.gateway.missing` still say the same of `EMAIL_FROM`; `EMAIL_FROM_NAME`,
   `RESEND_API_KEY`, `EMAIL_PROVIDER` and `EMAIL_REST_API_TOKEN` are read when
@@ -256,9 +261,10 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    operators): on `https://<gateway host>/`, **Manage workspace** (bottom of
    the sidebar) > **Users** > **Invite user** > an address they control >
    **Invite**. The invitation arrives from `EMAIL_FROM_NAME <EMAIL_FROM>` (the
-   combined form: `EMAIL_FROM` as set). A
-   **Copy invite link** button instead means it didn't; its notice says
-   which case (If it fails). Or `https://<gateway host>/forgot-password`
+   combined form: `EMAIL_FROM` as set). An
+   **Invite link** dialog instead (the link with a copy button, "Send this
+   link to <address>…") means it didn't; the Users page's banner "Email is
+   not configured." says which case (If it fails). Or `https://<gateway host>/forgot-password`
    with their address: the reset mail arrives (unless `EMAIL_PASSWORD_SIGN_IN`
    is `false`).
 3. The provider alone, Cloudflare, with the person's yes (one counted
@@ -305,8 +311,8 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                      | the name isn't a Gateway setting (a typo)                                           | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `SECRET_NOT_SETTABLE`                                                             | a name setup owns (`CLOUDFLARE_ACCOUNT_ID`, written by `everyapp setup`) or a dev-only one | nothing to set; use the names in Settings                                                         |
 | `CONFIRMATION_REQUIRED` from `secret unset --json`                                | it needs `--yes`                                                                    | ask the person, then rerun with it                                                                      |
-| **Copy invite link** with "Email is not configured on this gateway." (the Users page says so too); app gets `integration_not_configured` (503) | no sender (an `EMAIL_FROM` with no name in it and no `EMAIL_FROM_NAME` counts as none), or no provider is set up, or `EMAIL_PROVIDER` names one that isn't | set `EMAIL_FROM` and `EMAIL_FROM_NAME`, or `EMAIL_FROM` in the combined form (step 8); set that provider's setting or unset `EMAIL_PROVIDER` |
-| **Copy invite link** with "Sending the invitation email failed."                  | configured, but the provider refused the send                                       | Verify 5's `email.send.failed` line, then the provider rows below                                       |
+| the **Invite link** dialog instead of a sent mail, and the Users page's banner "Email is not configured."; app gets `integration_not_configured` (503) | no sender (an `EMAIL_FROM` with no name in it and no `EMAIL_FROM_NAME` counts as none), or no provider is set up, or `EMAIL_PROVIDER` names one that isn't | set `EMAIL_FROM` and `EMAIL_FROM_NAME`, or `EMAIL_FROM` in the combined form (step 8); set that provider's setting or unset `EMAIL_PROVIDER` |
+| the **Invite link** dialog with no banner on the Users page                      | configured, but the provider refused the send                                       | Verify 5's `email.send.failed` line, then the provider rows below                                       |
 | the app's host answers 503 `app_needs_setup`, or a browser lands on `https://<gateway host>/?setup=<app id>`; `status` has `APP_NEEDS_SETUP` naming `EMAIL_FROM`, or the Gateway's app list says "Needs setup" while `secret list` says `set: true` | the Gateway keeps an app that lists `email` closed until it can send: a sender with a name and a provider (Settings) | step 8 (both settings, or the combined form), then the provider's steps; Verify 2 |
 | log: `EMAIL_PROVIDER is "…", which isn't an email provider`                       | a value other than `cloudflare` or `resend`                                         | `echo cloudflare \| pnpm everyapp secret set EMAIL_PROVIDER --json`, or unset it                        |
 | `email_sender_not_verified` (422); `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`, `E_RECIPIENT_NOT_ALLOWED` (before onboarding, only verified destination addresses are allowed); Resend 403 naming the domain; mail reaches only verified addresses | the sender's domain isn't onboarded or Verified with the provider | steps 2 to 3 (Cloudflare) or 4 to 5 (Resend) for that domain; `dns status` or Resend's Records tab |

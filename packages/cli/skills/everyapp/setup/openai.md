@@ -2,9 +2,9 @@
 
 One `OPENAI_API_KEY` on the Gateway lets every app whose `everyapp.config.ts`
 lists `providers: ["openai"]` call OpenAI's inference endpoints through the
-Gateway, which puts the key on each call; no app holds it. The launch apps
-OpenSEO and agentic-inbox don't list it (OpenRouter and Workers AI do their
-AI); an app that lists `providers: ["openai"]` in its manifest does. Set it up when
+Gateway, which puts the key on each call; no app holds it. No launch app
+lists it (OpenSEO, Open CRM and agentic-inbox use OpenRouter; Open Analytics
+has no AI provider); an app that lists `providers: ["openai"]` in its manifest does. Set it up when
 `pnpm everyapp secret list <app id> --json` lists `OPENAI_API_KEY` in
 `data.app.setup.unmet`, or `status` says the app needs setup and names this
 file. At the end the person has an
