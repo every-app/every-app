@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
+import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
 import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
@@ -50,6 +51,10 @@ export function AppListItem({
   const list = layout === AppLibraryLayout.List;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
+  // Open the connection to the app while the pointer rests on the card
+  // (lib/appLaunchPrefetch); an app that opens always has a hostname.
+  const { hostname } = app;
+  const warm = hostname ? () => preconnectTo(hostname) : undefined;
   const body = (
     <>
       <AppIcon
@@ -174,6 +179,9 @@ export function AppListItem({
           <a
             href={`//${app.hostname}`}
             aria-label={`Open ${app.name}`}
+            onPointerEnter={warm}
+            onFocus={warm}
+            onTouchStart={warm}
             className="absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
           />
         ) : needsSetup ? (

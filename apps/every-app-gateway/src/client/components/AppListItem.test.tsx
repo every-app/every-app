@@ -123,6 +123,26 @@ it("links to an app that is ready, with no setup button", () => {
   expect(text()).not.toContain("Needs setup");
 });
 
+it("opens the connection to the app's host when the card is hovered, once", () => {
+  render(app({ hostname: "hover.apps.example.com" }));
+  const preconnects = () =>
+    document.head.querySelectorAll(
+      'link[rel="preconnect"][href="https://hover.apps.example.com"]',
+    );
+  expect(preconnects()).toHaveLength(0);
+  const link = openLink();
+  if (!link) throw new Error("nothing to hover");
+  // React derives onPointerEnter from the pointerover reaching its root.
+  const hover = () =>
+    act(() => {
+      link.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    });
+  hover();
+  expect(preconnects()).toHaveLength(1);
+  hover();
+  expect(preconnects()).toHaveLength(1);
+});
+
 it("neither links to an app that isn't deployed nor opens the dialog for it", () => {
   render(app({ hostname: null, setup: UNREADY }));
   expect(text()).toContain("Needs deploy");

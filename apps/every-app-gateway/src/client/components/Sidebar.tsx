@@ -7,6 +7,7 @@ import { authClient } from "@/client/auth-client";
 import { useSession } from "@/client/hooks/useSession";
 import { useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
+import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
 import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import {
   ACCESS_SIGN_OUT_PATH,
@@ -152,6 +153,12 @@ export function Sidebar() {
                     // An app that needs setup leads to its setup dialog on
                     // the home page, where the launcher opens it.
                     const needsSetup = appNeedsSetup(app);
+                    // Open the connection to the app on hover, focus or
+                    // touch (lib/appLaunchPrefetch).
+                    const { hostname } = app;
+                    const warm = hostname
+                      ? () => preconnectTo(hostname)
+                      : undefined;
                     return (
                       <SidebarMenuItem key={app.id}>
                         <SidebarMenuButton
@@ -162,6 +169,9 @@ export function Sidebar() {
                               <a
                                 href={`//${app.hostname}`}
                                 onClick={() => setOpenMobile(false)}
+                                onPointerEnter={warm}
+                                onFocus={warm}
+                                onTouchStart={warm}
                               />
                             ) : needsSetup ? (
                               <Link
