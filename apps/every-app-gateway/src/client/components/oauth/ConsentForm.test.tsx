@@ -183,6 +183,21 @@ describe("what the consent form posts", () => {
     });
   });
 
+  it("asks a member of one organization nothing about it, and posts it", () => {
+    render({ ...CONTEXT, organizations: [CONTEXT.organizations[0]!] });
+    expect(
+      container.querySelector('input[type="radio"][name="organization_id"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Organization");
+    armAllow();
+    press(button("Allow"));
+    expect(sent).toHaveLength(1);
+    expect(parseDecisionForm(sent[0]!)).toMatchObject({
+      decision: "approve",
+      organization_id: "org-acme",
+    });
+  });
+
   it("allows a connection to only an app whose tools aren't known yet", () => {
     render();
     armAllow();

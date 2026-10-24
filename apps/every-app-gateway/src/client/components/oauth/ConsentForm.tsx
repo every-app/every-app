@@ -306,9 +306,10 @@ export function ConsentForm({
                     Read only
                   </Choice>
                 </div>
-                <FieldDescription className="flex items-start gap-1.5">
-                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-                  Destructive actions are never allowed.
+                {/* Write tools create or change; destructive ones (delete,
+                    irreversible change) are never offered to an AI app. */}
+                <FieldDescription>
+                  Read &amp; write can add and change things, never delete them.
                 </FieldDescription>
               </FieldSet>
             </>
