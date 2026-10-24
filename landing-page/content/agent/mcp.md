@@ -7,7 +7,7 @@ description: How an app exposes tools to AI clients with defineTools(), how the 
 
 An app never speaks MCP. It describes its tools with `defineTools()` from `@every-app/sdk/server` and passes the result to `everyApp(handler, { tools })` (`packages/sdk/src/server/tools.ts`, `templates/simple-todo/src/entry.worker.ts`). The Gateway snapshots that catalog into D1 and serves MCP clients from the snapshot through its ToolBus (`@every-app/toolbus`, `packages/toolbus/src/`, built on `@modelcontextprotocol/server` 2.3.1). There is one connector per Gateway, `https://<gateway>/mcp`, serving every app the caller can reach with tools named `<app>_<tool>` (`todo_create_todo`) plus two built-ins, `everyapp_whoami` and `everyapp_list_apps`; and one per app host, `https://<app-host>/mcp`, serving that app alone under its tools' own names. `tools/list` never calls an app. `tools/call` makes exactly one request to the app's internal tools endpoint over its service binding, carrying a 120-second identity JWT (`IDENTITY_TTL_SECONDS`, `packages/sdk/src/internal/protocol.ts`) minted for that one call: the same verified user the browser gets, with `chan: "mcp"`, explicit scopes (`mcp:read`, or `mcp:read` and `mcp:write`; never `*`) and a `tc` claim `{ id, name }` naming the call and the tool. The handler receives that user; it never sees a cookie, a personal token or an OAuth token.
 
-The person's side (the one address, a custom connector in Claude and ChatGPT, `claude mcp add`, a token for tools that can't sign in, disconnecting) is the user page [/docs/connect-ai](/docs/connect-ai); `docs/todo-mcp-example.md` ([/docs/agent/repo/todo-mcp-example](/docs/agent/repo/todo-mcp-example)) walks the starter's four tools through the whole path, and `docs/runbooks/mcp-oauth.md` ([/docs/agent/repo/runbooks/mcp-oauth](/docs/agent/repo/runbooks/mcp-oauth)) is the operator's runbook for the OAuth server.
+The person's side (the one address, a custom connector in Claude and ChatGPT, `claude mcp add`, a token for tools that can't sign in, disconnecting) is the user page [/docs/connect-ai](/docs/connect-ai); the how-to every new app ships with is `packages/cli/skills/everyapp/mcp.md` (in an app `.agents/skills/everyapp/mcp.md`), which walks the starter's tools from `defineTools()` to a connected client, and `docs/runbooks/mcp-oauth.md` ([/docs/agent/repo/runbooks/mcp-oauth](/docs/agent/repo/runbooks/mcp-oauth)) is the operator's runbook for the OAuth server.
 
 ## defineTools() reference
 
@@ -349,7 +349,7 @@ From `TODO.md`:
 ## Sources
 
 - `docs/runbooks/mcp-oauth.md`
-- `docs/todo-mcp-example.md`
+- `packages/cli/skills/everyapp/mcp.md`
 - `docs/security-model.md`
 - `docs/runbooks/cloudflare-access.md`
 - `TODO.md`

@@ -115,6 +115,10 @@ Set up:  what the Gateway holds for apps, end to end (the provider's side, the
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.
+Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
+         serves them at https://<gateway>/mcp as <app>_<tool> (dev:
+         http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.
+         How to write, connect and debug them: mcp.md beside this file.
 
 Security: the Gateway signs people in and passes identity to the app in a
          header the SDK verifies (everyApp(), getEveryAppUser(),

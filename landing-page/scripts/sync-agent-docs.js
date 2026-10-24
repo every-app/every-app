@@ -55,17 +55,16 @@ const DOCUMENTS = [
       "Every capability the Gateway holds for apps (API-key providers, OAuth clients, email, members) with its settings, manifest entry, SDK call and operator setup.",
   },
   {
-    from: "docs/todo-mcp-example.md",
-    note: "The `$EVERYAPP_TOKEN` in the connection recipe is a personal access token a person creates in the Gateway under Admin \u2192 Tokens; OAuth clients such as claude.ai and Claude Code need no token (/docs/agent/mcp).",
-    to: "todo-mcp-example",
-    description:
-      "Worked example of exposing an app's actions as MCP tools with defineTools(), from the todo app.",
-  },
-  {
     from: "docs/TESTING.md",
     to: "testing",
     description:
       "How to run the repository's test suites, test locally with everyapp dev, and verify or roll back a production deploy.",
+  },
+  {
+    from: "docs/hosted-vision.md",
+    to: "hosted-vision",
+    description:
+      "The hosted tier: the end state, the rulings that stand, and the invariants every self-host change keeps.",
   },
   {
     from: "docs/runbooks/cloudflare-access.md",
@@ -108,17 +107,10 @@ const DOCUMENTS = [
   },
   {
     from: "adr/ADR-0001-hosted-vs-self-hosted-topology.md",
-    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model).",
+    note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model, and docs/hosted-vision.md once it lands).",
     to: "adr/0001-hosted-vs-self-hosted-topology",
     description:
       "Architecture decision: one codebase for the hosted and the self-hosted Gateway, and how the two differ.",
-  },
-  {
-    from: "adr/ADR-0002-cli-and-control-plane-auth.md",
-    note: "Historical (2026-03-02). Decisions 2 and 3 (deploy tokens, a control-plane deploy API for self-host) were superseded by ADR-0003: on a self-hosted Gateway the Cloudflare login is the only credential.",
-    to: "adr/0002-cli-and-control-plane-auth",
-    description:
-      "Architecture decision (partly superseded by ADR-0003): how the CLI and the control plane authenticate.",
   },
   {
     from: "adr/ADR-0003-self-host-authority.md",

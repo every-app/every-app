@@ -414,7 +414,7 @@ The full rules and budgets are in [email](/docs/agent/email) and the [capabiliti
 
 ## Agent tools
 
-`defineTools()` describes the app's tools; `everyApp(handler, { tools })` serves them to the Gateway over the internal contract, and the Gateway's ToolBus serves them to MCP clients at the app host's `/mcp` and at the Gateway's own `/mcp` (as `<app>_<tool>`), snapshotting the catalog with the one-minute system token and calling each tool with a `chan: "mcp"` identity bound to that call. The app never speaks MCP. The protocol, the catalog contract, scopes and the audit log are in [MCP](/docs/agent/mcp); a worked example is [the todo MCP example](/docs/agent/repo/todo-mcp-example); how a person connects a client is [Use your apps from Claude or ChatGPT](/docs/connect-ai).
+`defineTools()` describes the app's tools; `everyApp(handler, { tools })` serves them to the Gateway over the internal contract, and the Gateway's ToolBus serves them to MCP clients at the app host's `/mcp` and at the Gateway's own `/mcp` (as `<app>_<tool>`), snapshotting the catalog with the one-minute system token and calling each tool with a `chan: "mcp"` identity bound to that call. The app never speaks MCP. The protocol, the catalog contract, scopes and the audit log are in [MCP](/docs/agent/mcp); the how-to every new app ships with is `packages/cli/skills/everyapp/mcp.md` (in an app `.agents/skills/everyapp/mcp.md`); how a person connects a client is [Use your apps from Claude or ChatGPT](/docs/connect-ai).
 
 ## Shared and organization-scoped apps
 
@@ -493,4 +493,4 @@ Three zones (`docs/security-model.md`): the **client zone** (browsers, API clien
 - `templates/simple-todo/cloudflare.config.ts`
 - `docs/security-model.md`
 - `docs/capabilities.md`
-- `docs/todo-mcp-example.md`
+- `packages/cli/skills/everyapp/mcp.md`
