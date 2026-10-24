@@ -338,7 +338,7 @@ describe("the command pages", () => {
     expectDocumented("setup", "the credentials", ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "EVERYAPP_GATEWAY_URL"]);
   });
   it("mcp.md documents the MCP settings, the SDK's tool API and every built-in tool", () => {
-    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ"]);
+    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ", "anthropic/alwaysLoad", "client_info", "client_name", "Mcp-Session-Id", "describeClient", "clientOfSession"]);
     expectDocumented("mcp", BUILTINS_WHAT, BUILTIN_TOOLS);
   });
   it("access.md documents every Cloudflare Access setting", () => {
@@ -373,6 +373,17 @@ describe("the everyapp skill", () => {
       `packages/cli/skills/everyapp/mcp.md doesn't name ${BUILTINS_WHAT}: ${missing.join(", ")}. Add each, in backticks, to the "Built-ins" line under "What the Gateway does with them".`,
     ).toEqual([]);
   });
+
+  it("names no built-in tool the Gateway doesn't have, on the agent page or in the skill", () => {
+    // The other direction: a built-in renamed or removed in the code leaves its old name behind.
+    for (const [where, page] of [
+      ["landing-page/content/agent/mcp.md", readPage("mcp")],
+      ["packages/cli/skills/everyapp/mcp.md", readPage("../../../packages/cli/skills/everyapp/mcp")],
+    ] as const) {
+      const unknown = [...new Set(page.match(/everyapp_[A-Za-z0-9_-]+/g) ?? [])].filter((name) => !BUILTIN_TOOLS.includes(name));
+      expect(unknown, `${where} names a built-in tool the Gateway connector doesn't list: ${unknown.join(", ")}. Rename or remove it there.`).toEqual([]);
+    }
+  });
 });
 
 describe("the threat model's invariant register", () => {
@@ -384,7 +395,10 @@ describe("the threat model's invariant register", () => {
     );
     const row = register.split("\n").find((line) => line.startsWith(`| ${id} |`));
     expect(row, `docs/threat-model-invariants.md has no row ${id}`).toBeDefined();
-    const missing = BUILTIN_TOOLS.filter((name) => !row!.includes(name));
+    // The invariant text (the second cell), as whole names: a built-in whose name is a prefix of another's, or one named only in the Pinned-by cell, doesn't count.
+    const invariant = row!.split(" | ")[1] ?? "";
+    const named = new Set(invariant.split(/[^A-Za-z0-9_-]+/));
+    const missing = BUILTIN_TOOLS.filter((name) => !named.has(name));
     expect(
       missing,
       `the row ${id} in docs/threat-model-invariants.md doesn't name ${BUILTINS_WHAT}: ${missing.join(", ")}. Name each in the row's invariant text (the second column).`,

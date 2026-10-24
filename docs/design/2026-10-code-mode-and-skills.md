@@ -124,6 +124,8 @@ The format is settled (Agent Skills, `SKILL.md`), the distribution is git plus i
 
 ## 6. The minimal PRs (option A, plus the client column)
 
+Built overnight 2026-10-24/25 as #499 (the listen hold, per surface and never past the token, with a `claude -p` proof; 30 minutes rather than the 15 below, for the reason TODO.md "MCP surface (2026-10-24)" gives), #501 (item 1), #503 (item 2), #504 (item 5) and #505 (PR 2, the client column). The text below is the plan as it was written.
+
 **PR 1, option A**, held until Ben says yes in this thread:
 
 1. `packages/toolbus/src/view.ts`: the 8 KiB total and the 1,024 per-app clip stay; the order stays header, app list, the #396 "not available" lines, then per-app blocks (a later app's block is dropped whole when the total is reached, which is today's behaviour and is now stated). New: a test that the header, the app list and the "not available" lines together never pass 4,096 characters, so the app list always sits inside Claude Code's default cut; if that ever fails, the fix is to shorten those lines, not the apps' guidance.

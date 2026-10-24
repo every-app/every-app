@@ -39,6 +39,15 @@ describe("describeClient", () => {
     ).toBe("claude -code x 1 .0");
   });
 
+  it("strips format characters too, so a name can't be dressed up with a bidi override or zero-width text", () => {
+    expect(
+      describeClient({
+        name: "\u202eClaude\u202c Code\u200b",
+        version: "\ufeff2.1\u2066.0\u2069",
+      }),
+    ).toBe("Claude Code 2.1 .0");
+  });
+
   it("counts characters, not UTF-16 units, when cutting", () => {
     expect(describeClient({ name: "😀".repeat(120), version: "1" })).toBe(
       `${"😀".repeat(100)} 1`,

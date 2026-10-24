@@ -14,11 +14,12 @@ import type { ToolBusApp, ToolBusTool, ToolBusView } from "./types";
 export const BUILTIN_APP_ID = "everyapp";
 
 /**
- * Claude Code (2.1.285 and later) defers every MCP tool behind its tool
- * search unless the server sets this key in the tool's `_meta`. The
+ * Claude Code defers every MCP tool behind its tool search unless the
+ * server sets this key in the tool's `_meta` (read since 2.1.285). The
  * built-ins are how a model finds its way in (which apps exist, who it acts
  * as), so they stay loaded while app tools stay deferred. A person's
- * server-level `alwaysLoad: false` still wins; other clients ignore the key.
+ * server-level `alwaysLoad: false` still wins (2.1.287 and later); other
+ * clients ignore the key.
  */
 const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 

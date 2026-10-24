@@ -69,8 +69,9 @@ Fields:  `description` (required; the model reads it; over 2048 characters the
          validated and sent as `structuredContent`), `openWorld`. Second
          argument `{ instructions }`: guidance across the tools, at most 2048;
          on the Gateway connector it is clipped to 1024 and placed after the
-         app list, which Claude Code reads only up to 4,096 characters of in
-         total (Codex 512), so put what matters first.
+         app list, and Claude Code shows the model only the first 4,096
+         characters of the whole (Codex's docs ask that the first 512 stand
+         alone), so put what matters first.
 Risk:    "read": listed and callable for every caller (`readOnlyHint: true`).
          "write": hidden from read-only connections (`read_only_connection`).
          "destructive": hidden from every AI client until approvals exist

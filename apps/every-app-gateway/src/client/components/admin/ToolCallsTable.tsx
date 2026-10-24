@@ -120,7 +120,11 @@ function WhoCell({ call }: { call: ToolCallRow }) {
           variant="outline"
           size="sm"
           className="shrink-0"
-          title={credential.clientInfo ?? undefined}
+          title={
+            credential.clientInfo
+              ? `What the AI app called itself in the MCP handshake (not verified): ${credential.clientInfo}`
+              : undefined
+          }
         >
           {label}
         </Badge>

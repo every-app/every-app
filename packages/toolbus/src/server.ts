@@ -39,14 +39,15 @@ const MAX_CLIENT_VERSION_LENGTH = 50;
 export const MAX_CLIENT_INFO_LENGTH = 200;
 
 /**
- * One line of visible text from a value a client sent: control characters
- * removed, whitespace collapsed, cut to `max` characters. Empty for
- * anything that isn't a string.
+ * One line of visible text from a value a client sent: control and format
+ * characters removed (a bidi override or a zero-width character would let
+ * a client dress its name up on the Activity page), whitespace collapsed,
+ * cut to `max` characters. Empty for anything that isn't a string.
  */
 export function cleanClientText(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
   const visible = value
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   return Array.from(visible).slice(0, max).join("").trim();
