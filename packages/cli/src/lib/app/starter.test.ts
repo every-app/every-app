@@ -67,10 +67,9 @@ describe("the starter template", () => {
     expect(packageJson.name).toBe("my-app");
     expect(packageJson.dependencies["@every-app/sdk"]).toBe("workspace:*");
     expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).toContain(".dev.vars");
-    // Its release workflow: tag v*, and everyapp deploy <its repository> installs it.
-    const workflow = fs.readFileSync(path.join(target, ".github", "workflows", "release.yml"), "utf8");
-    expect(workflow).toContain("pnpm everyapp deploy --bundle-only --out everyapp-release.tar.gz");
-    expect(workflow).toContain('tags: ["v*"]');
+    // No release workflow until the CLI is on npm (an Actions runner can't resolve workspace:*).
+    expect(fs.existsSync(path.join(target, ".github", "workflows", "release.yml"))).toBe(false);
+    expect(fs.existsSync(path.join(target, ".github", "workflows", "security-review.yml"))).toBe(true);
     expect(fs.existsSync(path.join(target, ".cloudflare"))).toBe(false);
     expect(fs.existsSync(path.join(target, ".dev.vars"))).toBe(false);
     // The checkout's pnpm-workspace.yaml covers it.

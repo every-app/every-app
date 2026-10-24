@@ -4,8 +4,8 @@
  * Output against the app policy with the build's own placeholders
  * (`sentinelDeployTarget()`), check its migrations against its schema, and
  * pack it as an app release (lib/app/release.ts). No Gateway and no
- * Cloudflare login: the app's release workflow runs it in CI and publishes
- * the tarball on a GitHub release, which `everyapp deploy <github url>`
+ * Cloudflare login: for CI or by hand. Attach the tarball to a GitHub
+ * release of the app's repository, which `everyapp deploy <github url>`
  * installs.
  */
 import path from "node:path";

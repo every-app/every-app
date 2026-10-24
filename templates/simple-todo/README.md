@@ -64,17 +64,3 @@ holds placeholders for the Worker's name, keys and resources that only
 `everyapp deploy` installs, so `cf build` and `cf deploy` on their own refuse
 to build for production. `pnpm build` makes a
 development build to check that the app compiles.
-
-## Publish a release
-
-Not yet: the workflow runs the everyapp CLI from npm, and the CLI isn't
-published there yet. Once it is, this works without changes to the app.
-
-Push a tag like `v1.0.0` and `.github/workflows/release.yml` builds the app
-with `everyapp deploy --bundle-only` and attaches `everyapp-release.tar.gz`
-to the tag's GitHub release. Anyone with a Gateway installs it without
-cloning this repository:
-
-```sh
-pnpm everyapp deploy https://github.com/<owner>/<repo>
-```

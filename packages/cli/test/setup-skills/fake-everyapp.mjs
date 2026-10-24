@@ -109,14 +109,14 @@ async function dispatch() {
   }
   const accessEnabled = Boolean(state.accessCommand);
   const groups = {
-    secret: ["set", "unset", "list", "ls"],
+    secret: ["set", "unset", "list"],
     email: ["show", "set", "unset"],
     gateway: ["deploy"],
     db: ["migrate", "query", "restore"],
     workflow: ["list", "instances", "get", "start", "pause", "resume", "terminate"],
     ...(accessEnabled ? { access: ["on", "off", "show"] } : {}),
   };
-  const commands = ["login", "setup", "status", "create", "dev", "deploy", "register", "delete", ...Object.keys(groups)];
+  const commands = ["login", "setup", "status", "create", "dev", "deploy", "delete", ...Object.keys(groups)];
   if (!commands.includes(cmd)) return unknownCommand([], cmd, commands);
   if (cmd in groups) {
     if (!sub || help && !sub) {

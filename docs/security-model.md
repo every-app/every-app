@@ -49,6 +49,8 @@
 
 ## Deployment Mode
 
+> The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
+
 `GATEWAY_DEPLOYMENT_MODE` (`everyapp setup --mode`, a secret set with the
 first upload; ADR-0001) decides what the gateway does, once, in
 `platformPolicy(env)` (`apps/every-app-gateway/src/server/platform-policy.ts`):
@@ -156,6 +158,8 @@ first upload; ADR-0001) decides what the gateway does, once, in
   refuses it; docs/runbooks/email-sending-setup.md).
 
 ## Organizations and Shared Apps
+
+> The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
 
 - Every request acts under one organization, and the identity JWT carries
   it (`org_id`, `org_role`). An organization whose `status` isn't `active`
@@ -833,6 +837,8 @@ lookup or credential read (`routeHost`,
   install (`docs/runbooks/hosted-install.md`), never a Custom Domain per app.
 
 ## Hosted Deploy API
+
+> The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
 
 Third-party apps (customer code, forks of OpenSEO included) reach the
 hosted gateway's dispatch namespace only through its deploy pipeline

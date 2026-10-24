@@ -1,8 +1,8 @@
 /**
  * The starter app, `templates/simple-todo` in the checkout this CLI runs
- * from, and where `everyapp create` puts a copy of it: in the
- * checkout's apps/, a workspace package like the example apps, when it
- * runs inside the checkout; in the current directory anywhere else.
+ * from, and where `everyapp create` puts a copy of it: apps/<id> in the
+ * checkout, as a workspace package, when it runs inside the checkout;
+ * ./<id> in the current directory anywhere else.
  */
 import fs from "node:fs/promises";
 import path from "node:path";

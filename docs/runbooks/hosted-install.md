@@ -1,5 +1,7 @@
 # Hosted Install
 
+> The hosted tier is post-launch. The CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`.
+
 The hosted Gateway (`app.everyapp.com`) is our own install of the same
 Gateway a customer self-hosts, with the hosted policy
 (`GATEWAY_DEPLOYMENT_MODE=hosted`, see

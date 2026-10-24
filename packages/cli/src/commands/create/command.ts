@@ -16,25 +16,6 @@ export const createCommand = buildCommand({
       ],
     },
     flags: {
-      deploy: {
-        kind: "boolean",
-        brief: "Deploy the app once it's created",
-        optional: true,
-      },
-      gateway: {
-        kind: "parsed",
-        parse: String,
-        brief: "With --deploy: your Gateway's URL (default: $EVERYAPP_GATEWAY_URL)",
-        placeholder: "url",
-        optional: true,
-      },
-      "account-id": {
-        kind: "parsed",
-        parse: String,
-        brief: "With --deploy: the Cloudflare account, when your login sees several",
-        placeholder: "id",
-        optional: true,
-      },
       yes: {
         kind: "boolean",
         brief: "Don't ask anything (a name is then required)",
@@ -56,11 +37,10 @@ export const createCommand = buildCommand({
     fullDescription: [
       "Inside your Every App checkout the app goes in apps/<name>; anywhere else in ./<name>,",
       "with its own git repository. Dependencies are installed and the local database is ready,",
-      "so `pnpm dev` works straight away.",
+      "so `pnpm dev` works straight away. Then: cd into it and `pnpm run deploy`.",
       "",
-      "Examples:",
+      "Example:",
       "  pnpm everyapp create analytics",
-      "  pnpm everyapp create analytics --deploy",
     ].join("\n"),
   },
 });

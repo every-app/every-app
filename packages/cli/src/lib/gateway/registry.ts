@@ -250,9 +250,9 @@ export interface RegisterInput {
    */
   scope?: AppScope;
   /**
-   * The Worker the app must have (`everyapp register`, for a Worker
-   * deployed by other means): refused, writing nothing, when the rules name
-   * it otherwise.
+   * The Worker the app must have (a Worker deployed by other means; no
+   * CLI command passes it since 2026-10-24): refused, writing nothing, when
+   * the rules name it otherwise.
    */
   expectedWorkerName?: string;
   now?: number;
@@ -354,7 +354,8 @@ async function registerApp(
       deployerUserId,
       orgMembers,
       organization,
-      // Only `register` names the Worker it expects.
+      // An expectedWorkerName is a Register (`everyapp register` passed one
+      // until 2026-10-24; no CLI command does now), else a Deploy.
       input.expectedWorkerName === undefined ? SharedAppAction.Deploy : SharedAppAction.Register,
     );
   }

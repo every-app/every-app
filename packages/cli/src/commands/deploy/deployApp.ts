@@ -1,5 +1,5 @@
 /**
- * Deploying an app, shared by `everyapp deploy` and `create --deploy`:
+ * Deploying an app (`everyapp deploy`):
  *
  *   1. find the gateway through the Cloudflare login: its D1 database and
  *      install row, in its account (lib/gateway/connect.ts); with none in
@@ -17,7 +17,7 @@
  *      install the Build Output for this deploy (lib/app/
  *      installBuildOutput.ts: the Worker name, organization, gateway, the
  *      gateway's identity key from the install row, the resources' names
- *      and ids, a shared app's shape, deleted Durable Object classes) and
+ *      and ids, deleted Durable Object classes) and
  *      check the installed Workers against the app policy and their
  *      Workflows' names (each new or already the app's), check that its drizzle
  *      migrations still describe its schema (steps/checkSchemaDrift.ts),
@@ -54,11 +54,6 @@
  * from the release's migrations/; Postgres migrations need the app's
  * source (drizzle-kit, Prisma), so a release with them is refused.
  *
- * With `shared` (`--shared`, the hosted gateway's first-party apps) the app
- * registers as one Worker every organization's members may open, owned by
- * the platform organization; its Workers get no EVERY_APP_ORG_ID. A
- * redeploy without it keeps the app's scope.
- *
  * A new hostname is checked (DNS records that answer it, the zone's room)
  * right after registering, before anything is created or uploaded.
  * A redeploy of an app the gateway already binds and serves never touches
@@ -71,7 +66,6 @@ import { manifestTierProblems } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
 import {
-  assertSharedApps,
   awaitLive,
   bindIfNeeded,
   gatewayFor,
@@ -183,12 +177,6 @@ interface DeployAppOptions {
    */
   enableEmailRouting?: boolean;
   /**
-   * Register a shared app (`--shared`): hosted gateways only, by the
-   * platform organization's owners and admins. Unset, a registered app
-   * keeps its scope and a new one is the organization's own.
-   */
-  shared?: boolean;
-  /**
    * Wait for the app to go live, its new hostname's certificate included
    * (default true; `--no-wait`). Without the wait, it goes live on its
    * first visit.
@@ -196,7 +184,7 @@ interface DeployAppOptions {
   waitForLive?: boolean;
   /**
    * With no Gateway in any account the login sees, offer to install one
-   * (`deploy`, `create --deploy`): at a terminal setup's pipeline runs
+   * (`deploy`): at a terminal setup's pipeline runs
    * first, unattended the run stops with `install_gateway`. `yes` installs
    * at apps.<zone> without asking; `confirm` and `setup` are test seams.
    */
@@ -231,7 +219,7 @@ interface DeployAppResult {
 }
 
 /** An app in these states has never been live: its deploy is still its first. */
-export const NEVER_LIVE = new Set(["pending", "binding"]);
+const NEVER_LIVE = new Set(["pending", "binding"]);
 
 export async function deployApp(
   options: DeployAppOptions,
@@ -372,17 +360,11 @@ async function deploySteps(
     );
   }
 
-  if (options.shared) assertSharedApps(install);
-
   // 2. Register: the rules name everything.
   const { plan, organization, hasOwner, deployerGranted } = await registerFromManifest(
     registry,
     { manifest, install, deployer, accountName },
-    options.shared ? { scope: "shared" } : {},
   );
-  const shared = plan.app.scope === "shared";
-  // A redeploy that didn't ask keeps a shared app shared: still hosted only.
-  if (shared) assertSharedApps(install);
   const hostname = plan.app.hostname!;
   const workerName = plan.app.workerName!;
   const isNew = plan.kind !== "existing";
@@ -553,7 +535,6 @@ async function deploySteps(
       gatewayUrl,
       identityPublicKeys: [identityKey],
       resources,
-      shared,
       deletedDurableObjects,
       helperWorkers: helpers.map((helper) => helper.workerName),
     };
@@ -654,8 +635,7 @@ async function deploySteps(
     // name the app's own organization id, which the gateway refuses.
     const versionSecrets = {
       GATEWAY_URL: gatewayUrl,
-      // A shared app serves every organization: nothing pins it to one.
-      ...(shared ? {} : { EVERY_APP_ORG_ID: organization.id }),
+      EVERY_APP_ORG_ID: organization.id,
     };
 
     // Helper Workers first: the app's Worker binds them, so each must be

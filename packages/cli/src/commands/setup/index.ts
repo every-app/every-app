@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import type { LocalContext } from "@/context";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
-import { gatewayReleaseSource } from "@/lib/gateway/source";
+import { checkoutGateway } from "@/lib/gateway/checkoutRelease";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
@@ -30,7 +30,7 @@ export async function runGatewayCommand(
 ): Promise<void> {
   const began = Date.now();
   await runCommand(flags, async (out) => {
-    const gateway = gatewayReleaseSource({ release: flags.release, out, verbose: flags.verbose });
+    const gateway = checkoutGateway({ out, verbose: flags.verbose });
     const result = await run(
       out,
       setupDeps({

@@ -3,8 +3,8 @@
  * to npm while we work from the repository (.github/RELEASE.md), so the
  * starter template and the packages a new app links to come from the
  * checkout the running everyapp was built in, wherever it runs. The
- * Gateway is built from it too, when there is one; without, it comes from
- * a published release (lib/gateway/source.ts).
+ * Gateway is built from it too (lib/gateway/checkoutRelease.ts); there is
+ * no other source while publishing is paused.
  */
 import fs from "node:fs";
 import path from "node:path";

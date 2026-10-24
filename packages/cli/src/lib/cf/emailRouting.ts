@@ -3,8 +3,8 @@
  * zone-scoped with `-z <zone id>`): its settings, enabling it on a domain,
  * its routing rules and its catch-all. Request bodies go to cf in a file
  * (`--body @<file>`). cf prints the API's `result` unwrapped; the schemas
- * keep what callers read and follow Cloudflare's API documentation, since
- * no call here has run against a live account yet.
+ * keep only what callers read. These calls run live: agentic-inbox's
+ * inbound addresses on everyapp.team are routed through them.
  */
 import { z } from "zod";
 import { CfError, isCfError } from "./errors";

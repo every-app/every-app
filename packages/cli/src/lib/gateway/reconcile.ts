@@ -1,7 +1,7 @@
 /**
  * Make the live gateway bind exactly the apps its registry says, by
- * redeploying the Gateway this run deploys (lib/gateway/source.ts: the
- * checkout's, or the latest release) with a fresh set of APP__
+ * redeploying the Gateway this run deploys (lib/gateway/checkoutRelease.ts:
+ * the checkout's build) with a fresh set of APP__
  * bindings. `everyapp deploy` and `delete` run it when the set of apps
  * changes, never for a code-only app redeploy; `setup` runs it to repair a
  * Gateway that is up to date but binds the wrong apps. A Gateway newer than
@@ -42,7 +42,7 @@ interface ReconcileGatewayOptions {
   /** The gateway's D1 database. */
   databaseId: string;
   /**
-   * The release to deploy (lib/gateway/source.ts). Opened only when there
+   * The release to deploy (lib/gateway/checkoutRelease.ts). Opened only when there
    * is something to deploy.
    */
   openRelease: () => Promise<GatewayRelease>;

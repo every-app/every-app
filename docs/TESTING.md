@@ -135,9 +135,8 @@ claimed (made by Cloudflare or not), and deploys without a third-party
 domain (no hostname).
 `metadata.test.ts` covers the allowlist, Durable Object migrations and the
 read-back comparison (fields Cloudflare adds pass, changed or missing ones
-don't); the CLI side, `everyapp deploy --gateway` with
-EVERYAPP_DEPLOY_TOKEN, runs against a test double of the API in
-`packages/cli/src/commands/deploy/deployToGateway.test.ts`.
+don't). The CLI side of the deploy API (deploy-key deploys) was removed on
+2026-10-24 with the hosted-only CLI surface (restorable from `5ef30882`).
 
 `install-api.sqlite.test.ts` covers Admin → Apps → Install from GitHub the
 same way, calling the admin routes (`src/routes/api/admin/`) with a
@@ -193,8 +192,9 @@ then the listings: the launcher, the AI-connection consent, the gateway
 `/mcp` catalog (connections that chose the app included) and Admin → Apps
 (read-only elsewhere, no access management). The AppGateway entrypoint's
 attribution of shared apps' calls is in `app-gateway-entrypoint.test.ts`
-(and against SQLite in `background-org.sqlite.test.ts`); `deploy --shared` and `register` against
-the fake Cloudflare in `packages/cli/src/commands/register/shared.test.ts`.
+(and against SQLite in `background-org.sqlite.test.ts`); the CLI's shared-app
+commands and their tests went with the hosted-only CLI surface on 2026-10-24
+(restorable from `5ef30882`).
 
 ### The gateway's MCP connector and OAuth
 

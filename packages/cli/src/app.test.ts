@@ -44,10 +44,10 @@ describe("argument problems", () => {
   });
 
   it("says what is wrong with a value, in the words a person typed", async () => {
-    expect((await parse("create", "--deploy=maybe")).problems[0]).toEqual({
+    expect((await parse("create", "--yes=maybe")).problems[0]).toEqual({
       code: "INVALID_VALUE",
-      message: '--deploy is a switch and takes no value (got "maybe")',
-      data: { fix: "use --deploy or --no-deploy" },
+      message: '--yes is a switch and takes no value (got "maybe")',
+      data: { fix: "use --yes or --no-yes" },
     });
     expect((await parse("workflow", "instances", "RANK", "--limit", "500")).problems[0]!.message).toBe(
       "--limit must be a whole number from 1 to 100, not 500",

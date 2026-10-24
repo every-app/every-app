@@ -1,9 +1,9 @@
 /**
  * Gateway releases: the prebuilt Build Output, migrations and release.json
- * that apps/every-app-gateway/scripts/build-release.ts packs. One comes
- * from the checkout the CLI runs in (./checkoutRelease.ts), a GitHub
- * release, a URL or a file (./source.ts); either way the CLI checks its
- * SHA-256 before using it.
+ * that apps/every-app-gateway/scripts/build-release.ts packs. It comes
+ * from the checkout the CLI runs in (./checkoutRelease.ts); the CLI checks
+ * its SHA-256 before using it. The same tarball format carries app
+ * releases (lib/app/release.ts), which `everyapp deploy <url>` downloads.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -15,12 +15,6 @@ import { EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
-/**
- * Where a CLI with no checkout takes the Gateway from: the latest release
- * of this repository with a {@link RELEASE_TARBALL} asset
- * (.github/workflows/release.yml publishes them).
- */
-export const GATEWAY_RELEASE_REPO = "https://github.com/every-app/every-app";
 const SUPPORTED_BUILD_OUTPUT = "v0";
 /** What a release deploys: the Gateway, or an app (lib/app/release.ts). */
 type ReleaseKind = "gateway" | "app";

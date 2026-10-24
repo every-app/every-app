@@ -51,12 +51,6 @@ export const deployCommand = buildCommand({
           "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
         optional: true,
       },
-      shared: {
-        kind: "boolean",
-        brief:
-          "Deploy a shared app: one Worker every organization's members can open (hosted gateway; platform organization owners and admins)",
-        optional: true,
-      },
       "no-wait": {
         kind: "boolean",
         brief:
@@ -129,20 +123,11 @@ export const deployCommand = buildCommand({
       "",
       "--bundle-only [--out <file>] builds the app in this directory, checks its Build Output against the",
       "app policy and its migrations against its schema, and packs the release (default",
-      "./everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login, for CI. New apps",
-      "get .github/workflows/release.yml, which runs it on every v* tag and publishes the release.",
+      "./everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login, for CI. Attach it",
+      "to a GitHub release of the app's repository and `everyapp deploy <repository url>` installs it.",
       "",
-      "--shared (a hosted Gateway only) registers a first-party app every organization's members can",
-      "open, owned by the platform organization; its Worker gets no EVERY_APP_ORG_ID. An app keeps the",
-      "scope it was registered with: a redeploy without --shared keeps it shared.",
-      "",
-      "Hosted gateway, third-party apps: with EVERYAPP_DEPLOY_TOKEN set to a deploy key (Admin → Tokens →",
-      "Deploy key; owners and admins), it deploys through the gateway's deploy API instead, with no",
-      "Cloudflare login: --gateway <url> or EVERYAPP_GATEWAY_URL names the gateway (required). It",
-      "registers the app, builds it tenant-neutral (placeholders the gateway installs), uploads the",
-      "Build Output, manifest and migrations, and follows the deploy job (--no-wait: only starts it).",
-      "With a <source>, it uploads that release's instead of building.",
-      "In CI: EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com pnpm everyapp deploy --json",
+      "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway to deploy to when your login sees",
+      "several; it is checked against the one found in your Cloudflare account.",
     ].join("\n"),
   },
 });

@@ -79,18 +79,6 @@ function seams() {
       stdout: '[{"name":"0000_init.sql","status":"✅"}]',
     }),
     install: vi.fn(async () => undefined),
-    deploy: vi.fn(async () => ({
-      liveUrl: "https://my-app.apps.example.com",
-      gatewayUrl: "https://apps.example.com",
-      organizationId: "org_1",
-      organizationName: "Acme",
-      hostname: "my-app.apps.example.com",
-      workerName: "every-my-app",
-      versionId: "v1",
-      live: true,
-      publicRoutes: [],
-      next: [],
-    })),
   };
 }
 
@@ -98,7 +86,7 @@ describe("everyapp create", () => {
   it("scaffolds the named app for dev, without asking or contacting the Gateway", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { cf, install, deploy } = seams();
+    const { cf, install } = seams();
 
     await createApp({
       flags: { json: true },
@@ -108,7 +96,6 @@ describe("everyapp create", () => {
       root,
       cf,
       install,
-      deploy,
     });
 
     const app = path.join(cwd, "my-app");
@@ -136,7 +123,6 @@ describe("everyapp create", () => {
     // Outside the checkout it is its own repository, committed.
     expect(fs.existsSync(path.join(app, ".git"))).toBe(true);
     // Nothing for the Gateway, and no env files.
-    expect(deploy).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(app, ".env.local"))).toBe(false);
     expect(fs.existsSync(path.join(app, ".dev.vars"))).toBe(false);
     // Every long step starts, and ends with its time.
@@ -176,12 +162,12 @@ describe("everyapp create", () => {
 
   it("puts the app in apps/ inside the checkout, without a repository of its own, and says so away from its root", async () => {
     const root = fakeCheckout();
-    const { cf, install, deploy } = seams();
+    const { cf, install } = seams();
     const from = path.join(root, "packages", "cli");
     let shown = "";
     const human = createHumanSink({ write: (text) => void (shown += text), writeProblem: () => undefined });
 
-    await createApp({ flags: {}, appIdArg: "my-app", out: human, cwd: from, root, cf, install, deploy });
+    await createApp({ flags: {}, appIdArg: "my-app", out: human, cwd: from, root, cf, install });
 
     const app = path.join(root, "apps", "my-app");
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
@@ -205,89 +191,10 @@ describe("everyapp create", () => {
     );
   });
 
-  it("deploys the new app with --deploy, the create's steps closed first", async () => {
-    const root = fakeCheckout();
-    const cwd = tmp();
-    const { cf, install, deploy } = seams();
-
-    await createApp({
-      flags: { json: true, deploy: true, yes: true, gateway: "https://apps.example.com" },
-      appIdArg: "my-app",
-      out,
-      cwd,
-      root,
-      cf,
-      install,
-      deploy,
-    });
-
-    expect(deploy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cwd: path.join(cwd, "my-app"),
-        gateway: "https://apps.example.com",
-        manifest: expect.objectContaining({ id: "my-app" }),
-        out,
-        // As `deploy` does: with no Gateway yet, it offers to install one
-        // (-y: without asking, at a terminal).
-        offerInstall: { yes: true },
-      }),
-    );
-    expect(events.at(-2)).toMatchObject({
-      type: "step",
-      step: "create.done",
-      status: "ok",
-      message: "Created my-app in ./my-app",
-    });
-    expect(events.at(-1)).toMatchObject({
-      type: "done",
-      data: { url: "https://my-app.apps.example.com" },
-    });
-  });
-
-  it("says the app was created when its deploy fails, and deploys it from its directory next", async () => {
-    const root = fakeCheckout();
-    const cwd = tmp();
-    const { cf, install } = seams();
-    const argv = process.argv;
-    process.argv = [...argv.slice(0, 2), "create", "my-app", "--deploy"];
-    const run = (error: Error) =>
-      createApp({
-        flags: { json: true, deploy: true },
-        appIdArg: "my-app",
-        out,
-        cwd: tmp(),
-        root,
-        cf,
-        install,
-        deploy: async () => {
-          throw error;
-        },
-      });
-    try {
-      await expect(
-        run(new EveryAppError("GATEWAY_NOT_FOUND", "No Gateway in the Cloudflare account Acme", { rerun: "pnpm everyapp setup --domain <hostname>" })),
-      ).rejects.toMatchObject({
-        code: "GATEWAY_NOT_FOUND",
-        message: "No Gateway in the Cloudflare account Acme\nmy-app was created in ./my-app but isn't deployed.\nThen: cd my-app && pnpm everyapp deploy",
-        rerun: "pnpm everyapp setup --domain <hostname>",
-      });
-      // A rerun of this command (a retry, or a takeover's flag) runs deploy there instead.
-      await expect(
-        run(new EveryAppError("DNS_RECORD_CONFLICT", "apps.example.com already points somewhere else")),
-      ).rejects.toMatchObject({
-        rerun: "cd my-app && pnpm everyapp deploy --force-dns",
-        authorize: true,
-      });
-    } finally {
-      process.argv = argv;
-    }
-    expect(fs.readdirSync(cwd)).toEqual([]);
-  });
-
   it("still finishes when the types or the local database can't be set up", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { install, deploy } = seams();
+    const { install } = seams();
     const cf = new FakeCf().on(() => true, {
       exitCode: 1,
       stderr: "✘ [ERROR] boom\n",
@@ -301,7 +208,6 @@ describe("everyapp create", () => {
       root,
       cf,
       install,
-      deploy,
     });
 
     const warnings = events.filter((event) => event["type"] === "warning");
@@ -317,7 +223,7 @@ describe("everyapp create", () => {
   it("says the app is there when its install fails, with the end of the install's output", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { cf, deploy } = seams();
+    const { cf } = seams();
     const tail = Array.from({ length: 8 }, (_, i) => `line ${i + 1}`);
     const install = vi.fn(async () => {
       throw new EveryAppError("INSTALL_FAILED", "Installing dependencies with pnpm failed", {
@@ -326,7 +232,7 @@ describe("everyapp create", () => {
     });
 
     await expect(
-      createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install, deploy }),
+      createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install }),
     ).rejects.toMatchObject({
       code: "INSTALL_FAILED",
       message: [
@@ -347,14 +253,14 @@ describe("everyapp create", () => {
   it("finishes with a warning when git can't make the first commit", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { cf, install, deploy } = seams();
+    const { cf, install } = seams();
     const git = vi.fn(async () => {
       throw new EveryAppError("GIT_FAILED", "Initializing the app's git repository failed", {
         data: { command: "git commit -m Starter template", tail: ["Author identity unknown"], log: "/tmp/git.log" },
       });
     });
 
-    await createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install, deploy, git });
+    await createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install, git });
 
     expect(events.filter((event) => event["type"] === "warning")).toEqual([
       expect.objectContaining({
@@ -370,7 +276,7 @@ describe("everyapp create", () => {
   it("refuses a bad name, or none when it may not ask, before copying anything", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { cf, install, deploy } = seams();
+    const { cf, install } = seams();
     const run = (appIdArg?: string, yes?: boolean) =>
       createApp({
         flags: { json: true, yes },
@@ -380,7 +286,6 @@ describe("everyapp create", () => {
         root,
         cf,
         install,
-        deploy,
       });
 
     await expect(run("Analytics_App")).rejects.toMatchObject({
@@ -413,7 +318,7 @@ describe("everyapp create", () => {
   it("refuses to run inside an app, or over an existing directory", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
-    const { cf, install, deploy } = seams();
+    const { cf, install } = seams();
     const run = (from: string) =>
       createApp({
         flags: { json: true },
@@ -423,7 +328,6 @@ describe("everyapp create", () => {
         root,
         cf,
         install,
-        deploy,
       });
 
     fs.writeFileSync(path.join(cwd, "everyapp.config.ts"), "export default {}");

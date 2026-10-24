@@ -4,7 +4,7 @@
  * codes commands raise, the ones the reporter gives, cf's kinds, the
  * argument parser's, the warnings, what `status` reports as fixes, the
  * actions a person must take, and what a hosted Gateway's deploy API
- * answers (which `deploy --gateway` passes through).
+ * answers (the API stays; the CLI's deploy-key path left on 2026-10-24).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";

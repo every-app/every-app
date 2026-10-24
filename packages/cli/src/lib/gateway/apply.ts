@@ -192,8 +192,8 @@ export function olderThanInstalled(
 
 /**
  * App commands write the Gateway's registry with this CLI's rules and
- * rebind it with the Gateway this run deploys (lib/gateway/source.ts: the
- * checkout's, or the latest release), so none runs against a Gateway newer
+ * rebind it with the Gateway this run deploys (lib/gateway/checkoutRelease.ts:
+ * the checkout's build), so none runs against a Gateway newer
  * than that: they stop before anything changes.
  */
 export async function refuseOlderCheckout(

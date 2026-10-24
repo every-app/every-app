@@ -17,8 +17,8 @@
  *                (lib/gateway/discover.ts), or with none, where to install
  *                one: --account-id, CLOUDFLARE_ACCOUNT_ID, the only one, or
  *                a choice at the terminal
- *    release     what this run deploys (lib/gateway/source.ts), described
- *                before anything is asked: a --release that can't be had,
+ *    release     what this run deploys (lib/gateway/checkoutRelease.ts), described
+ *                before anything is asked: a checkout that can't be read,
  *                or one that needs a newer everyapp, stops here
  *    plan        Workers Paid: a Free plan stops the run before anything is
  *                created; one that can't be confirmed is warned about
@@ -93,17 +93,13 @@ import {
   waitForSetupLink,
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
-import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { askSecret, askText, choose, confirmAtTerminal } from "@/lib/output/prompt";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
   domain?: string;
-  /** The Gateway release to deploy: a GitHub repository, a tarball's URL, or a file. */
-  release?: string;
-  /** What a new Gateway is: self_hosted (the default) or hosted. */
-  mode?: DeploymentMode;
   "account-id"?: string;
   "force-dns"?: boolean;
   /** Put a Gateway older than the live one back on purpose (hidden). */
@@ -117,7 +113,7 @@ export interface SetupFlags {
 }
 
 /** `gateway deploy` takes setup's flags, but those only a new Gateway needs. */
-export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "mode" | "release">;
+export type GatewayDeployFlags = Omit<SetupFlags, "domain">;
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
@@ -135,7 +131,7 @@ interface SetupPrompts {
 /** Everything setup reaches outside itself; tests swap in fakes. */
 export interface SetupDeps {
   createCf: (accountId?: string) => CfRunner;
-  /** The release to deploy (lib/gateway/source.ts). */
+  /** The release to deploy (lib/gateway/checkoutRelease.ts). */
   openRelease: () => Promise<GatewayRelease>;
   /** What that release is, without building it from a checkout. */
   source: () => Promise<CandidateRelease>;
@@ -181,7 +177,7 @@ export interface SetupResult {
   gateway: GatewayOutcome;
   /** This run made the owner (with the setup link it handed out). */
   ownerCreated: boolean;
-  /** What the Gateway is: an operator's own install, or the hosted one. */
+  /** What the Gateway is, from its install row: self_hosted for a new install. */
   mode: DeploymentMode;
 }
 
@@ -321,7 +317,6 @@ export async function installGateway({
       gateway: live !== null,
     },
   });
-  assertModeUnchanged(live, flags.mode);
 
   // What this run deploys, before anything is asked or created.
   const source = await deps.source();
@@ -393,7 +388,7 @@ export async function installGateway({
 
   // Browser installs need a deploy token on a self-hosted Gateway: asked
   // for once, at a terminal; --yes answers No, and a token set stays.
-  const mode = live?.deploymentMode ?? flags.mode ?? "self_hosted";
+  const mode = live?.deploymentMode ?? "self_hosted";
   if (
     deps.interactive &&
     !flags.yes &&
@@ -561,7 +556,7 @@ function orList(items: readonly string[]): string {
 }
 
 /**
- * The Gateway this run deploys (`source`, lib/gateway/source.ts), live:
+ * The Gateway this run deploys (`source`, lib/gateway/checkoutRelease.ts), live:
  * installed, upgraded, or when it already runs these sources (told by the
  * install row's tree hash, before anything is built) or this very release,
  * repaired if its bindings or hostnames aren't the registry's. A Gateway
@@ -663,7 +658,6 @@ async function deployOrRepairGateway({
       checkedDomains,
       allowDowngrade,
       allowDowngradeFlag: true,
-      deploymentMode: flags.mode,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,
@@ -683,33 +677,6 @@ async function deployOrRepairGateway({
   } finally {
     await release.cleanup();
   }
-}
-
-/** The modes as a person reads them. */
-const MODE_NAMES: Readonly<Record<DeploymentMode, string>> = {
-  self_hosted: "self-hosted",
-  hosted: "hosted",
-};
-
-/**
- * --mode decides what a new Gateway is: its first upload sets
- * GATEWAY_DEPLOYMENT_MODE, and nothing changes it after. On a live Gateway
- * the flag may only say what its install row recorded.
- */
-function assertModeUnchanged(
-  live: InstallRecord | null,
-  mode: DeploymentMode | undefined,
-): void {
-  if (!mode || !live?.deploymentMode || live.deploymentMode === mode) return;
-  throw new EveryAppError(
-    "MODE_CHANGE_UNSUPPORTED",
-    `This Gateway is ${MODE_NAMES[live.deploymentMode]} and can't be switched to ${MODE_NAMES[mode]}`,
-    {
-      rerun: thisCommandWithout("--mode"),
-      rerunNote: "(without --mode) to update it as it is",
-      data: { installed: live.deploymentMode, requested: mode },
-    },
-  );
 }
 
 /**

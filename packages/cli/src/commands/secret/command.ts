@@ -122,7 +122,6 @@ export const secretRoutes = buildRouteMap({
     unset: unsetCommand,
     list: listCommand,
   },
-  aliases: { ls: "list" },
   docs: {
     brief: "Set, remove and list secrets and Gateway settings",
   },

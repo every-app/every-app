@@ -105,9 +105,3 @@ pnpm everyapp secret set GITHUB_TOKEN
 ```
 
 Paste the key at **Value for GITHUB_TOKEN**. It isn't shown as you type. Only that app gets the key, and later deploys keep it. To use it with `pnpm dev`, put it in the app's `.dev.vars` file as `GITHUB_TOKEN=...`.
-
-## Share your app on GitHub
-
-{/* TODO(publishing): this needs the SDK and CLI on npm. Until then the app's workspace:* dependencies don't install outside the every-app checkout, so the release workflow fails */}
-
-Not yet. The release workflow that comes with every app needs the everyapp CLI from npm, and it isn't published there yet. Once it is, this works without changes to your app, and anyone with a Gateway can [install it](#install-an-app-from-github).

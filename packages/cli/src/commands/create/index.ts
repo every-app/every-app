@@ -12,44 +12,33 @@
  *    database (both redone by `everyapp dev`: a failure is a warning).
  * 5. Outside the checkout, start a git repository for it (a failure is a
  *    warning: the app is complete without it).
- * 6. With --deploy, deploy it as `everyapp deploy` does; a failure says
- *    the app was created, and deploys from its directory next.
  *
  * Each step is a `create.*` step event with a start and a time.
  */
 import path from "node:path";
 import type { LocalContext } from "@/context";
-import { deployApp } from "@/commands/deploy/deployApp";
 import { applyLocalMigrations } from "@/lib/app/localD1";
 import { linkSkill } from "@/lib/app/skill";
 import { copyStarter, newAppDir } from "@/lib/app/starter";
 import { generateWorkerTypes } from "@/lib/app/workerTypes";
 import { checkoutRoot, isInCheckout } from "@/lib/checkout";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
-import {
-  ActionRequiredError,
-  afterMigration,
-  CancelledError,
-  errorMessage,
-  EveryAppError,
-  rollbackFor,
-} from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { directoryExists, fileExists } from "@/lib/file-operations";
-import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { initRepository } from "@/lib/git";
 import { loadEveryAppManifest } from "@/lib/manifest";
-import { CLI, thisCommand } from "@/lib/output/command";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { strings, text } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
-import type { GatewayCommandFlags } from "../flags";
 import { resolveAppId } from "./steps/appId";
 
-interface CreateCommandFlags extends GatewayCommandFlags {
-  deploy?: boolean;
+interface CreateCommandFlags {
   yes?: boolean;
+  json?: boolean;
+  verbose?: boolean;
 }
 
 export default async function create(
@@ -70,7 +59,6 @@ interface CreateAppOptions {
   cf?: CfRunner;
   /** Seams for tests. */
   install?: typeof installDependencies;
-  deploy?: typeof deployApp;
   git?: typeof initRepository;
 }
 
@@ -82,7 +70,6 @@ export async function createApp({
   root = checkoutRoot(),
   cf = createCfRunner(),
   install = installDependencies,
-  deploy = deployApp,
   git = initRepository,
 }: CreateAppOptions): Promise<void> {
   const verbose = flags.verbose ?? false;
@@ -213,41 +200,9 @@ export async function createApp({
   const next = [
     { command: `cd ${relative}` },
     { command: "pnpm dev", note: "run it locally" },
-    ...(flags.deploy ? [] : [{ command: "pnpm run deploy", note: "put it live" }]),
+    { command: "pnpm run deploy", note: "put it live" },
   ];
-  if (!flags.deploy) {
-    out.emit({ type: "done", data: { appId, dir: targetDir, next } });
-    return;
-  }
-
-  // The app is made; the deploy is a block of its own.
-  out.emit({
-    type: "step",
-    step: "create.done",
-    status: "ok",
-    message: `Created ${appId} in ${shown}`,
-    data: { appId, dir: targetDir },
-  });
-  let deployed: Awaited<ReturnType<typeof deployApp>>;
-  try {
-    deployed = await deploy({
-      cwd: targetDir,
-      manifest,
-      gateway: requestedGatewayUrl(flags.gateway),
-      accountId: flags["account-id"],
-      out,
-      json: flags.json,
-      verbose,
-      offerInstall: { yes: flags.yes },
-    });
-  } catch (error) {
-    throw createdButNotDeployed(error, { appId, shown, relative });
-  }
-  // `app.live` showed its URL.
-  out.emit({
-    type: "done",
-    data: { appId, dir: targetDir, url: deployed.liveUrl, next },
-  });
+  out.emit({ type: "done", data: { appId, dir: targetDir, next } });
 }
 
 /** A step with a start and an ok, its time (`data.ms`) on the ok. */
@@ -295,55 +250,4 @@ function installFailed(error: unknown, { shown, relative }: { shown: string; rel
     ].join("\n"),
     { rerun: `cd ${relative} && pnpm install`, data },
   );
-}
-
-/**
- * A deploy that failed after the app was created: the error says the app
- * is there, and a rerun that would create it again deploys it from its
- * directory instead.
- */
-function createdButNotDeployed(
-  error: unknown,
-  { appId, shown, relative }: { appId: string; shown: string; relative: string },
-): unknown {
-  if (error instanceof CancelledError) return error;
-  const created = `${appId} was created in ${shown} but isn't deployed.`;
-  const deployThere = `cd ${relative} && ${CLI} deploy`;
-  // `create … --deploy` again would stop at the directory: deploy it there, with any flag the rerun added.
-  const rerunThere = (rerun: string) => {
-    const ownCommand = thisCommand();
-    return rerun.startsWith(`${CLI} create`)
-      ? `${deployThere}${rerun.startsWith(ownCommand) ? rerun.slice(ownCommand.length) : ""}`
-      : null;
-  };
-  if (error instanceof ActionRequiredError) {
-    return afterMigration(
-      new ActionRequiredError(error.action, `${error.message}\n${created}`, error.url, {
-        rerun: error.rerun === null ? null : (rerunThere(error.rerun) ?? error.rerun),
-        rerunNote: error.rerunNote,
-        data: error.data,
-      }),
-      rollbackFor(error) ?? null,
-    );
-  }
-  if (error instanceof EveryAppError) {
-    const there = error.rerun ? rerunThere(error.rerun) : null;
-    const elsewhere = error.rerun && !there;
-    return afterMigration(
-      new EveryAppError(
-        error.code,
-        `${error.message}\n${created}${elsewhere ? `\nThen: ${deployThere}` : ""}`,
-        {
-          fix: error.fix,
-          rerun: there ?? error.rerun ?? deployThere,
-          rerunNote: error.rerunNote,
-          retryable: error.retryable,
-          authorize: error.authorize,
-          data: error.data,
-        },
-      ),
-      rollbackFor(error) ?? null,
-    );
-  }
-  return error;
 }

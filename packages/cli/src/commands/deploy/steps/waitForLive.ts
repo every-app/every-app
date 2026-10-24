@@ -53,12 +53,10 @@ export interface LiveWaitSeams {
 /** The command that waits, for its messages: what it leaves in place, and what to run again. */
 export enum LiveWaitVerb {
   Deploy = "deploy",
-  Register = "register",
 }
 
 const LEFT: Readonly<Record<LiveWaitVerb, string>> = {
   [LiveWaitVerb.Deploy]: "uploaded and bound",
-  [LiveWaitVerb.Register]: "registered and bound",
 };
 
 /**

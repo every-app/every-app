@@ -503,26 +503,11 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         ].join("\n"),
       };
     },
-    // `register`'s own header; for a deploy, who can open an app that has
-    // never been live, and what its manifest opens to anyone on the
-    // internet (every deploy): facts for the end.
+    // Who can open an app that has never been live, and what its manifest
+    // opens to anyone on the internet (every deploy): facts for the end.
     "app.register": (event) => {
       const data = event.data ?? {};
       if (event.status !== "ok") return null;
-      if (data["register"] === true) {
-        const appId = text(data["appId"]) ?? "The app";
-        const organization = text(data["organizationName"]);
-        const header = { line: `Registering ${appId}${organization ? ` with ${organization}` : ""}` };
-        if (data["existingApp"] !== false) return header;
-        return [
-          header,
-          {
-            done: `Registered ${appId} as a shared app`,
-            detail: "open to every organization's members",
-            notes: ["Its Worker needs the Gateway's identity keys, issuer, vars and binding props: see data.worker in --json"],
-          },
-        ];
-      }
       const routes = publicRoutesIn(data["publicRoutes"]);
       const open: Shown[] =
         routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : [];
@@ -584,29 +569,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (event.status === "start") return { spin: `Uploading ${name}...` };
       return event.status === "ok" ? { done: `Uploaded helper Worker ${name}` } : null;
     },
-    // `register` again: the Worker's newer version recorded (the first says Registered).
-    "app.record": (event) => {
-      const data = event.data ?? {};
-      if (event.status !== "ok" || data["existingApp"] !== true) return null;
-      const deployedAt = data["deployedAt"];
-      return {
-        done: "Recorded the Worker's current version",
-        ...(typeof deployedAt === "number"
-          ? { detail: `deployed ${roughly(Date.now() - deployedAt)} ago` }
-          : {}),
-      };
-    },
     "app.upload": (event) => {
       if (event.status === "start") return { spin: "Uploading..." };
-      if (event.status !== "ok") return null;
-      // A hosted deploy's upload: what it carried.
-      const data = event.data ?? {};
-      return typeof data["modules"] === "number"
-        ? {
-            done: "Uploaded",
-            detail: `${plural(data["modules"], "module")}, ${plural(Number(data["assets"]), "asset")}, ${plural(Number(data["migrations"]), "migration")}`,
-          }
-        : { done: "Uploaded" };
+      return event.status === "ok" ? { done: "Uploaded" } : null;
     },
     // `deploy --bundle-only`: the release it packed, and where.
     "app.release": (event) => {
@@ -622,21 +587,6 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       event.status === "ok"
         ? { done: `Deleted the Workflow ${text(event.data?.["binding"])}` }
         : null,
-    // A hosted Gateway deploys the uploaded app itself.
-    "app.hosted": (event) => {
-      const data = event.data ?? {};
-      const host = text(data["gatewayHost"]);
-      if (event.status === "start") {
-        return { spin: `Waiting for ${host} to deploy ${text(data["appId"])}` };
-      }
-      if (event.status === "ok") return { done: "Deployed" };
-      if (event.status !== "skip") return null;
-      return {
-        done: `Handed to ${host}`,
-        detail: `job ${text(data["jobId"])}`,
-        notes: [`It deploys ${text(data["appId"])} on its own; this run didn't wait for it.`],
-      };
-    },
     "app.lease": leaseWaited,
     "gateway.lease": leaseWaited,
     "gateway.release": (event, running) => {

@@ -34,10 +34,9 @@ const deployCommand = buildCommand({
   docs: {
     brief: "Deploy this checkout to the Gateway you already have",
     fullDescription: [
-      "Deploy the Gateway built from this checkout (without one, the latest release of",
-      "https://github.com/every-app/every-app) to the Gateway your Cloudflare login finds, where it",
-      "is, keeping its data, users and apps. It never installs a Gateway: with none, it stops and",
-      "says to run everyapp setup.",
+      "Deploy the Gateway built from this checkout (apps/every-app-gateway) to the Gateway your",
+      "Cloudflare login finds, where it is, keeping its data, users and apps. It never installs a",
+      "Gateway: with none, it stops and says to run everyapp setup.",
       "",
       "  1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in",
       "     the login's accounts (--account-id when there is one in more than one)",

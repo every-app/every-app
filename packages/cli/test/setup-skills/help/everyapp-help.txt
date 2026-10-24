@@ -14,7 +14,6 @@ APPS
   dev       Run the app locally behind a dev Gateway
   deploy    Deploy the app in this directory, or a release
   delete    Remove an app from the Gateway
-  register  Add a Worker deployed elsewhere as a shared app
 
 CONFIGURE
   secret    Set, remove and list secrets and Gateway settings
@@ -57,7 +56,7 @@ FLAGS
 
 ===== setup
 USAGE
-  everyapp setup [--domain value] [--mode self_hosted|hosted] [--account-id value] [--release value] [--force-dns] [--yes] [--json] [--verbose]
+  everyapp setup [--domain value] [--account-id value] [--force-dns] [--yes] [--json] [--verbose]
   everyapp setup --help
 
 One command from an empty Cloudflare account to a working Gateway and its owner, and the
@@ -66,15 +65,13 @@ where it stopped, and does nothing once everything is there. Your Cloudflare log
 only credential for CLI deploys: apps deploy with it, on this machine or any other, before the Gateway
 has an owner.
 
-Where the Gateway comes from: --release (a GitHub repository URL for its latest release, a
-release tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise a build
-of this checkout when everyapp runs from one; otherwise the latest release of
-https://github.com/every-app/every-app. App deploys that rebind the Gateway take it from the
-same place (without --release), so they upgrade it too when it is newer.
+The Gateway is built from this checkout (apps/every-app-gateway; the build is cached by the
+tree hash of its sources). App deploys that rebind the Gateway take it from the same place,
+so they upgrade it too when the checkout is newer.
 
   1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in
      the login's accounts; with none, picks the account to install it in
-  2. Checks the release (--release, or a newer everyapp it needs) before asking anything,
+  2. Checks the release (a newer everyapp it needs) before asking anything,
      and Workers Paid, which Every App needs: a Free plan stops before anything is created,
      one it can't confirm is a warning
   3. Picks where the Gateway lives: any hostname under one of the account's domains
@@ -90,10 +87,8 @@ same place (without --release), so they upgrade it too when it is newer.
      is no link: the run ends with a warning to run setup at a terminal (apps deploy
      without an owner)
   6. At a terminal, optionally configures browser deployment (Yes/No, default No), using
-     a hidden Cloudflare API token prompt. Skips this when a token is already configured
-
---mode hosted installs the hosted Gateway instead (docs/runbooks/hosted-install.md); the
-mode is set with the first upload and never changes after.
+     a hidden Cloudflare API token prompt. Skips this when a token is already configured,
+     or with --yes
 
 Then: everyapp create my-app, cd into it, everyapp dev, everyapp deploy.
 No domain on Cloudflare yet? Buy one in the dashboard (Domains → Buy a domain), then run it again.
@@ -104,9 +99,7 @@ With --json, each step is an NDJSON event; what a person must do is `action_requ
 
 FLAGS
      [--domain]                    Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)
-     [--mode]                      What a new Gateway is: self_hosted (your own install, the default) or hosted (open sign-up, shared first-party apps); set once, at install                                                                                                                       [self_hosted|hosted]
      [--account-id]                The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
-     [--release]                   The Gateway release to deploy: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: built from this checkout, or without one, the latest release of github.com/every-app/every-app)
      [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
   -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
      [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -214,9 +207,6 @@ USAGE
 
 In an app's directory: its secrets and the Gateway settings it uses, with what's missing.
 Elsewhere: the Gateway's, and the settings you can set on it.
-
-ALIASES
-  everyapp secret ls
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)

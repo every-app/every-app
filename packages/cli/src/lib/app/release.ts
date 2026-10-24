@@ -11,15 +11,16 @@
  *   migrations/                     the manifest's migrations directory,
  *                                   as it is (when there is one)
  *
- * The SHA-256 is lib/gateway/release.ts `hashReleaseTree`, which the
- * hosted gateway's reader (apps/every-app-gateway/src/server/deploy/
- * release.ts) computes the same way. Packing refuses local state and a
+ * The SHA-256 is lib/gateway/release.ts `hashReleaseTree` (the gateway's
+ * reader, apps/every-app-gateway/src/server/deploy/release.ts, computes
+ * it the same way). Packing refuses local state and a
  * Build Output that isn't a production build; opening checks what
  * `extractRelease` checks, then the manifest and the CLI version.
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { z } from "zod";
 import { ManifestError, validateManifestStrict } from "@every-app/perimeter/manifest";
@@ -43,7 +44,6 @@ import {
 import type { EventSink } from "@/lib/output/events";
 import { fetchReleaseTarball, githubRepository, isUrl } from "@/lib/release/fetch";
 import { isProductionBuild } from "./buildOutput";
-import { appSdkVersion } from "./hostedBundle";
 
 /** The asset an app's GitHub release carries. */
 export const APP_RELEASE_TARBALL = "everyapp-release.tar.gz";
@@ -56,6 +56,16 @@ const MIN_CLI_VERSION = "0.3.0";
 const MIN_SDK_VERSION = "0.3.0";
 /** Never staged: what macOS leaves beside files. Tar readers see them as files. */
 const OS_LITTER = /^(\.DS_Store|\._.*)$/;
+
+/** The app's own @every-app/sdk version, when it has one installed. */
+function appSdkVersion(cwd: string): string | null {
+  try {
+    const require = createRequire(path.join(cwd, "package.json"));
+    return (require("@every-app/sdk/package.json") as { version?: string }).version ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const AppReleaseSchema = BaseReleaseSchema.extend({
   kind: z.literal("app"),

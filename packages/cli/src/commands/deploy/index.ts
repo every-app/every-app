@@ -1,5 +1,4 @@
 import type { LocalContext } from "@/context";
-import { publicRoutesOf } from "@/lib/app/publicRoutes";
 import { APP_RELEASE_TARBALL, fetchAppRelease, type AppRelease } from "@/lib/app/release";
 import { EveryAppError } from "@/lib/errors";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -11,7 +10,6 @@ import { liveDone } from "../appGateway";
 import type { GatewayCommandFlags } from "../flags";
 import { bundleApp } from "./bundleApp";
 import { deployApp } from "./deployApp";
-import { deployToGateway, hostedDeployTarget } from "./deployToGateway";
 
 interface DeployCommandFlags extends GatewayCommandFlags {
   yes?: boolean;
@@ -20,7 +18,6 @@ interface DeployCommandFlags extends GatewayCommandFlags {
   "force-dns"?: boolean;
   "enable-email-routing"?: boolean;
   "no-wait"?: boolean;
-  shared?: boolean;
   "bundle-only"?: boolean;
   out?: string;
 }
@@ -28,9 +25,8 @@ interface DeployCommandFlags extends GatewayCommandFlags {
 /**
  * `everyapp deploy [<source>]`: the app in this directory, built here, or
  * the app release `source` names (a GitHub repository, a tarball's URL or
- * a file; lib/app/release.ts). With EVERYAPP_DEPLOY_TOKEN, through a
- * hosted gateway's deploy API (deployToGateway.ts); otherwise no question
- * first (unless there is no Gateway yet: then it offers to install one).
+ * a file; lib/app/release.ts). No question first (unless there is no
+ * Gateway yet: then it offers to install one).
  * The first line says what is deployed where (`Deploying todo to example.com (Acme)`),
  * and the last that it is live, at its URL. `--bundle-only` packs the app
  * in this directory as a release instead (bundleApp.ts).
@@ -61,10 +57,9 @@ export async function deploy(
       return;
     }
     const gateway = requestedGatewayUrl(flags.gateway);
-    const hosted = hostedDeployTarget({ ...flags, gateway });
     const release = source ? await fetchAppRelease(source, { out }) : undefined;
     try {
-      await deployFrom({ cwd, flags, gateway, out, hosted, release });
+      await deployFrom({ cwd, flags, gateway, out, release });
     } finally {
       await release?.cleanup();
     }
@@ -95,7 +90,6 @@ async function deployFrom({
   flags,
   gateway,
   out,
-  hosted,
   release,
 }: {
   cwd: string;
@@ -103,34 +97,9 @@ async function deployFrom({
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
   gateway: string | undefined;
   out: EventSink;
-  hosted: ReturnType<typeof hostedDeployTarget>;
   release: AppRelease | undefined;
 }): Promise<void> {
   const manifest = release?.manifest ?? (await loadEveryAppManifest(cwd));
-  if (hosted) {
-    const result = await deployToGateway({
-      cwd,
-      manifest,
-      release,
-      ...hosted,
-      out,
-      verbose: flags.verbose,
-      wait: !flags["no-wait"],
-    });
-    out.emit({
-      type: "done",
-      data: {
-        url: result.liveUrl,
-        workerName: result.workerName,
-        versionId: result.versionId,
-        jobId: result.jobId,
-        status: result.status,
-        live: result.live,
-        publicRoutes: publicRoutesOf(manifest),
-      },
-    });
-    return;
-  }
   const result = await deployApp({
     cwd,
     manifest,
@@ -144,7 +113,6 @@ async function deployFrom({
     allowDeleteWorkflows: flags["allow-delete-workflows"],
     forceDns: flags["force-dns"],
     enableEmailRouting: flags["enable-email-routing"],
-    shared: flags.shared,
     waitForLive: !flags["no-wait"],
     offerInstall: { yes: flags.yes },
   });

@@ -38,8 +38,7 @@ is set, ask before using data.rerun. waiting: true = keep reading (up to 15
 min: device login, owner link).
 
 State:   pnpm everyapp status --json   (data.fixes says what to run when something is off)
-Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
-         --mode hosted only when the user asks for the hosted Gateway)
+Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair)
 New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
          manifest is everyapp.config.ts
 Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
@@ -56,18 +55,8 @@ Release: someone else's app, without a clone: pnpm everyapp deploy
          everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
          the repository publishes none; clone it, then pnpm install && pnpm
          everyapp deploy. Never build a repository from its URL yourself.
-         To publish one: pnpm everyapp deploy --bundle-only (new apps' release
-         workflow runs it on every v* tag).
-Shared:  hosted Gateway only, platform organization owners/admins, when the
-         user asks for a first-party app every organization opens:
-         deploy --shared --json (redeploys and secret set keep it shared), or for a
-         Worker deployed by other means: pnpm everyapp register <id>
-         --worker <name> --manifest <everyapp.config.ts> --json
-         (WORKER_NAME_MISMATCH names the Worker name to deploy under).
-Hosted:  third-party apps on a hosted Gateway, only when the user has a deploy
-         key: EVERYAPP_DEPLOY_TOKEN=<key> pnpm everyapp deploy --gateway <url> --json
-         (no Cloudflare login; EVERYAPP_GATEWAY_URL works too; BUNDLE_REFUSED
-         lists what the hosted policy refuses)
+         To publish one: pnpm everyapp deploy --bundle-only, then attach the
+         tarball to a GitHub release of the app's repository.
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
          if the user said so). pnpm everyapp db restore --json undoes the last
@@ -137,7 +126,6 @@ Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
-Otherwise, only a hosted Gateway's deploy key is supplied.
 Handing off: stop, tell the person in one or two lines what to do (the
 action's url and code, what to click, what to come back with), and resume
 with data.rerun when they say it is done. Two more only a person can do:

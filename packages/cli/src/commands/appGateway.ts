@@ -1,28 +1,26 @@
 /**
  * What the app commands that change the Gateway share (`deploy`,
- * `register`, `delete`): the Gateway release their rebind deploys, the
- * rebind itself, the registration from a manifest, and the wait for the
- * app to go live.
+ * `delete`): the Gateway release their rebind deploys, the rebind itself,
+ * the registration from a manifest, and the wait for the app to go live.
  */
 import { appBindingName } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { readInstall, type InstallRecord } from "@/lib/gateway/install";
+import { checkoutGateway } from "@/lib/gateway/checkoutRelease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { register, type Deployer, type RegisterInput } from "@/lib/gateway/registry";
+import { register, type Deployer } from "@/lib/gateway/registry";
 import type { CandidateRelease, GatewayRelease } from "@/lib/gateway/release";
-import { gatewayReleaseSource } from "@/lib/gateway/source";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { version as cliVersion } from "../../package.json";
 import { LiveWaitVerb, waitForLive, type LiveWaitSeams } from "./deploy/steps/waitForLive";
 
 /**
  * The rebind's seams (tests): how long it waits for the gateway's lease,
- * how it sleeps, and the release it deploys (default: lib/gateway/source.ts,
- * the checkout's build or the latest release).
+ * how it sleeps, and the release it deploys (default: the checkout's build,
+ * lib/gateway/checkoutRelease.ts).
  */
 export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
@@ -42,26 +40,11 @@ export function gatewayFor(
   out: EventSink,
   verbose?: boolean,
 ): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
-  const gateway = gatewayReleaseSource({ out, verbose });
+  const gateway = checkoutGateway({ out, verbose });
   return {
     openRelease: seams?.openRelease ?? gateway.open,
     source: seams?.source ?? gateway.describe,
   };
-}
-
-/**
- * Shared apps are the hosted gateway's: one self-hosted (or of no recorded
- * mode) has none, and nothing registers one there.
- */
-export function assertSharedApps(
-  install: Pick<InstallRecord, "deploymentMode" | "gatewayHost">,
-): void {
-  if (install.deploymentMode === "hosted") return;
-  throw new EveryAppError(
-    "SHARED_APPS_UNAVAILABLE",
-    `Shared apps need a hosted Gateway; https://${install.gatewayHost} is ${install.deploymentMode?.replace("_", "-") ?? "of no recorded mode"}`,
-    { fix: `deploy it as your organization's own app: ${CLI} deploy, without --shared, from its directory` },
-  );
 }
 
 /** Register the app its manifest describes, one label below the Gateway's base. */
@@ -79,7 +62,6 @@ export function registerFromManifest(
     /** Names the organization created when the gateway has none yet. */
     accountName: string | null;
   },
-  options: Pick<RegisterInput, "scope" | "expectedWorkerName"> = {},
 ) {
   return register(registry, {
     appSlug: manifest.id,
@@ -89,14 +71,12 @@ export function registerFromManifest(
     appBaseDomain: install.appBaseDomain,
     deployer,
     organizationName: accountName ?? "",
-    ...options,
   });
 }
 
 /** What an app command that couldn't bind leaves in place. */
 const KEPT: Readonly<Record<LiveWaitVerb, string>> = {
   [LiveWaitVerb.Deploy]: "This app's upload is kept; deploying again binds it and makes it live.",
-  [LiveWaitVerb.Register]: "Its version is recorded; registering again binds it and makes it live.",
 };
 
 /**
@@ -224,7 +204,7 @@ export async function awaitLive({
   return true;
 }
 
-/** The `done` data of a deploy or register: where the app is, and whether it is live. */
+/** The `done` data of a deploy: where the app is, and whether it is live. */
 export function liveDone(result: {
   liveUrl: string;
   workerName: string;

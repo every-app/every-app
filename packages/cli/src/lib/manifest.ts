@@ -40,8 +40,8 @@ export async function loadEveryAppManifestIfPresent(
 }
 
 /**
- * An app's manifest from its file (`register --manifest`), validated as a
- * deploy validates the app's own.
+ * An app's manifest from its file (`delete`, and `email --manifest`),
+ * validated as a deploy validates the app's own.
  */
 export async function loadEveryAppManifestFile(
   manifestPath: string,

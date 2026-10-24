@@ -1,10 +1,9 @@
 /**
  * Which Workers plan the account is on, from `cf accounts subscriptions
- * get`. Every App needs Workers Paid, but the response's shape hasn't been
- * checked against a live account, so only an answer that names the plan
+ * get`. Every App needs Workers Paid. Only an answer that names the plan
  * counts: a live subscription naming Workers Paid, or one naming Workers
  * Free. Anything else is "can't tell", or "unreadable" when cf couldn't
- * answer at all.
+ * answer at all (setup has run live on this; a Paid account reads as Paid).
  */
 import { z } from "zod";
 import { runCfJson, type CfRunner } from "./runner";
