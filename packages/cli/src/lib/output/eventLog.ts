@@ -18,7 +18,8 @@
  * Every line is one `fs.appendFileSync` (O_APPEND, never buffered), so the
  * processes that share one file (`pnpm run deploy` runs everyapp as a child,
  * so does `npx everyapp`) interleave whole lines, each stamped with its
- * `pid`. A path that can't be written is said once on stderr and the run
+ * `pid`. The file is created mode 600 (it holds the owner link, which is a
+ * password). A path that can't be written is said once on stderr and the run
  * goes on: the log never fails a command. Without the variable, nothing
  * here runs.
  */
@@ -46,7 +47,9 @@ function open(path: string): Log {
     append(line) {
       if (broken) return;
       try {
-        fs.appendFileSync(path, `${JSON.stringify({ ...line, pid: process.pid })}\n`);
+        // Created readable by this user only: it holds the owner link (`est_…`), a password.
+        const text = `${JSON.stringify({ ...line, pid: process.pid })}\n`;
+        fs.appendFileSync(path, text, { mode: 0o600 });
       } catch (error) {
         broken = true;
         const reason = error instanceof Error ? error.message : String(error);

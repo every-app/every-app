@@ -40,6 +40,7 @@ function lines(file: string): Record<string, unknown>[] {
 describe("EVERYAPP_EVENT_LOG", () => {
   it("appends each event the NDJSON sink emits, as its --json line plus the pid", () => {
     const file = logPath();
+    expect(fs.existsSync(file)).toBe(false);
     const written: string[] = [];
     const sink = createNdjsonSink(
       (line) => written.push(line),
@@ -64,6 +65,8 @@ describe("EVERYAPP_EVENT_LOG", () => {
       pid: process.pid,
     });
     expect("display" in logged[2]!).toBe(false);
+    // Created readable by this user only: the owner link in it is a password.
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
   });
 
   it("logs a run for a person the same way: every event, whatever reached the screen", () => {
