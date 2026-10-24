@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 313 is
+  try first; the complete register of 315 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -246,7 +246,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 313 invariants
+stop, the invariants to try first (the complete register, 315 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -360,16 +360,20 @@ and anything on the gateway's own host (B2).
   organization. Documented, not a finding; stated here so nobody expects
   less.
 
-**In flight this week** (the secrets model: #383 merged the manifest
-needs, `apps.secret_names` and the evaluator
-`apps/every-app-gateway/src/server/app-setup.ts`; the gate is #396, open): a
+**Merged this week** (the secrets model: #383 the manifest needs,
+`apps.secret_names` and the evaluator
+`apps/every-app-gateway/src/server/app-setup.ts`; #396 the gate, merged
+f43859cc): a
 perimeter hook `needsSetup({ app, request, publicRoute })` runs after the
 status checks and before authentication; an app whose required settings
 are unset answers `503 app_needs_setup` naming only the app id (or, for a
 private HTML navigation, a 302 to the gateway's home with `?setup=<app>`),
-public routes included. The invariant to pin when it lands: no setting
+public routes included. The invariant, pinned
+(`perimeter.needs-setup-names-no-setting` in the register): no setting
 name or value leaves the perimeter in those responses
-(`apps/every-app-gateway/src/server/app-needs-setup.ts`). The
+(`apps/every-app-gateway/src/server/app-needs-setup.ts`;
+`app-needs-setup.test.ts :: answers a public route with a 503 that names
+no setting`, and the perimeter's `gateway.test.ts :: the setup gate`). The
 `apps.secret_names` column (#383) holds the names of an app's own secrets, never
 values, written by the CLI and shown to members who can see the app; the
 gateway's `/mcp` leaves a not-ready app's tools out and names the missing
@@ -378,13 +382,17 @@ hook runs before authentication, a visitor learns that an app exists and
 is unconfigured where they used to get the sign-in redirect; app ids are
 hostnames, so nothing new is disclosed, and Access in front hides it.
 
-**In flight this week** (the teams slice, `docs/design/2026-10-teams.md`,
-held for Ben): effective app access becomes `user_app_access` ∪
-(`group_members` ⋈ `group_app_access`), applied at every site that reads
-`user_app_access` today (this authenticator, the launcher, the members
-capability, the MCP catalogs). The invariant to pin when it lands: a group
-never holds another organization's user or app, and removing a member
-deletes their group rows.
+**Merged this week** (the teams slice, `docs/design/2026-10-teams.md`;
+#384 and #385): effective app access is `user_app_access` ∪
+(`group_members` ⋈ `group_app_access`), one union in
+`apps/every-app-gateway/src/server/repositories/effective-access.ts`
+read at every site (this authenticator, the launcher, the members
+capability, the MCP catalogs, the consent page). The invariant, pinned
+(`appaccess.groups-same-rule-everywhere` in the register): a group never
+holds another organization's user or app, nor a shared app, and removing
+a member deletes their group rows in the same batch
+(`groups.sqlite.test.ts :: keeps organizations apart: neither their apps,
+their people nor their groups cross`).
 
 ### B2. Browser → the Gateway's own host: the control plane
 
@@ -658,13 +666,17 @@ Google and Microsoft per-app scope narrowing being built this week
 
 **Gaps.**
 
-- *No per-organization limits on provider spend* (high, known, large;
-  `cap.per-organization-limits` is **not enforced**). Every AI call, every
-  DataForSEO paid call and every Context.dev render is attributed and
-  logged but never counted or refused on volume. On a self-hosted gateway
-  with one organization this is "an app can spend your OpenAI key"; on
-  hosted it is why the preview stays invite-only. The teams thread's usage
-  counters and caps are the first slice (`docs/design/2026-10-teams.md`).
+- *No default limit on provider spend* (high, known;
+  `cap.per-organization-limits` is **enforced only for an app an owner or
+  admin capped**, #416). Every AI call, every DataForSEO paid call and
+  every Context.dev render is attributed, logged and, since #381, counted
+  per organization and app; since #416 an owner or admin may cap an app's
+  calls per month (`org_app_settings.monthly_call_cap`, Admin → Usage,
+  null by default), refused at the cap with `429 app_monthly_cap_exceeded`
+  before any provider call. With no cap set nothing bounds the spend: on a
+  self-hosted gateway with one organization this is "an app can spend
+  your OpenAI key unless you cap it"; on hosted it is why the preview
+  stays invite-only (`docs/design/2026-10-teams.md`).
 - *A granted OAuth client is all-or-nothing per app* (medium; the
   OAuth-scopes slice: `docs/design/2026-10-oauth-scopes.md` for the
   design, #398 merged for the registry's `scopePolicy` on
@@ -729,13 +741,17 @@ Google and Microsoft per-app scope narrowing being built this week
 - *`Reply-To` on app mail is unrestricted* while `From` is allowlisted
   (low).
 
-**In flight this week** (the teams slice): usage counters (`usage_daily`,
-`usage_monthly`; counts only, never bodies or keys) written from the
-AppGateway entrypoint under `waitUntil`, and an opt-in per-app monthly cap
-in `org_app_settings` (null by default) refused with `429
-app_monthly_cap_exceeded` after attribution, the settings cached 30 s per
-isolate like the caller cache. The first answer to the first gap above;
-the counters may land before Sunday, the cap is held for Ben.
+**Merged this week** (the teams slice; #381 the counters, #416 the cap):
+usage counters (`usage_daily`, `usage_monthly`; counts only, never bodies
+or keys) written from the AppGateway entrypoint under `waitUntil`, and an
+opt-in per-app monthly cap in `org_app_settings` (null by default) refused
+with `429 app_monthly_cap_exceeded` and a `Retry-After` to the UTC month
+end, after attribution and before any provider call, a refused call not
+counted, the cap the attributed organization's own (a shared app's is per
+organization), the settings cached 30 s per isolate (5 s when none) like
+the caller cache, a deleted app's caps gone with it. The first answer to
+the first gap above; pinned by `app-cap.sqlite.test.ts` (see
+`cap.per-organization-limits` in the register).
 
 **Docs to fix.** `docs/capabilities.md` lists the checks in a different
 order than the code runs them (route, then capability, then account-wide
@@ -1225,11 +1241,13 @@ means it is on main (every boundary fix from this pass merged on
    self-hosted gateway only the operator deploys, so this is the operator
    misattributing their own app; it is the hosted launch gate's "props
    pinned on every upload" item.
-5. **Nothing bounds an app's spend on the operator's provider keys**
-   (B4, high, known; `cap.per-organization-limits` is not enforced). A
-   buggy loop in any app runs on the operator's OpenAI or DataForSEO
-   account until the operator notices. The teams slice's usage counters
-   and per-app caps are the first answer (`docs/design/2026-10-teams.md`).
+5. **Nothing bounds an app's spend on the operator's provider keys unless
+   a cap is set** (B4, high, known; `cap.per-organization-limits` is
+   enforced only for an app an owner or admin capped, #416). A buggy loop
+   in any app runs on the operator's OpenAI or DataForSEO account until the
+   operator notices, or until the app's monthly cap (Admin → Usage; null,
+   unlimited, by default under Ben's 2026-10-16 ruling) stops it
+   (`docs/design/2026-10-teams.md`).
 6. **A read-only MCP token could run write tools on an app that answers
    `/mcp` itself** (B3, B5, medium; mostly closed by #447, which deleted
    the SDK's `createMcpHandler`, the only in-repo way an app served `/mcp`

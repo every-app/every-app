@@ -173,7 +173,13 @@ first upload; ADR-0001) decides what the gateway does, once, in
   like memberships.
 - An organization's own app (`scope = 'org'`, every app on a self-hosted
   gateway) opens for a member of that organization with the app installed
-  for them (a `user_app_access` row). A browser session acting under
+  for them: a `user_app_access` row, or membership in a group holding a
+  `group_app_access` row (one union in
+  `apps/every-app-gateway/src/server/repositories/effective-access.ts`,
+  read by the perimeter, the launcher, the members capability, the MCP
+  catalogs and the consent page; removing a member ends both kinds of
+  grant in one batch, and a group never holds another organization's
+  user or app, nor a shared app). A browser session acting under
   another of the person's organizations is let in as their membership in
   the app's organization: the JWT carries the app's organization and their
   role there, never the session's. A personal access token only ever acts
@@ -239,12 +245,21 @@ first upload; ADR-0001) decides what the gateway does, once, in
     (send `x-everyapp-org`, no identity), and in a shared app's Worker
     (`EVERYAPP_SHARED=1`) throw `AttributionError` for a call that names
     neither. The gateway enforces the rule either way.
-- No per-organization usage limits yet, in any mode: every provider call
-  (AI proxy or capability) is attributed to an organization (from the
-  props, the forwarded identity or `x-everyapp-org`, as above) and logged
-  with it, and nothing is counted or refused on volume. Metering (the
-  wallet) is a later feature; until then nothing at the gateway bounds an
-  organization's provider spend, so the hosted preview stays invite-only
+- Per-organization usage, in any mode: every provider call (AI proxy or
+  capability) is attributed to an organization (from the props, the
+  forwarded identity or `x-everyapp-org`, as above), logged with it and
+  counted per organization, app and member (`usage_daily`,
+  `usage_monthly`; Admin → Usage). An owner or admin may cap an app's
+  calls per month (`org_app_settings.monthly_call_cap`, Admin → Usage;
+  null, unlimited, by default): the AppGateway entrypoint then refuses
+  that organization's AI and capability calls to the app at the cap with
+  `429 app_monthly_cap_exceeded` and a `Retry-After` to the UTC month
+  end, after attribution and before any provider call; a refused call is
+  not counted; a shared app's cap is per organization; a changed cap
+  binds at once in the serving isolate and within 30 s (5 s from none)
+  elsewhere; a deleted app's caps go with it. With no cap set nothing
+  bounds an organization's provider spend (metering, the wallet, is a
+  later feature), so the hosted preview stays invite-only
   (`HOSTED_OPEN_SIGNUP=false`).
 
 ## Operator Authority (Self-Host)
@@ -253,7 +268,7 @@ ADR-0003. In `self_hosted` mode, write access to the gateway's D1 database
 in the gateway's Cloudflare account **is** operator authority.
 
 - The CLI reads and writes the app registry (`apps`, `user_app_access`,
-  `organization_keys`), the install row, the deploy lease, the resource
+  `group_app_access`, `organization_keys`), the install row, the deploy lease, the resource
   ledger and the owner setup link with `cf d1 query`, under the operator's
   own Cloudflare login or API token. The gateway issues no deploy
   credential and serves no deploy API; the one deploy path on the public
