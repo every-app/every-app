@@ -54,14 +54,6 @@ export type {
   OrganizationMemberRole,
 } from "../internal/index.js";
 export {
-  // Deprecated in 0.3.0 and removed in 0.4.0: use defineTools().
-  createMcpHandler,
-  type CreateMcpHandlerOptions,
-  type McpRequestHandler,
-  type McpToolContext,
-  type McpToolDefinition,
-} from "./mcp.js";
-export {
   ToolError,
   defineTools,
   toolResult,

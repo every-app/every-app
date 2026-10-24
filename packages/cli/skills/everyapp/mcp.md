@@ -165,10 +165,8 @@ claude mcp add --transport http todos https://<app-host>/mcp --header "Authoriza
 ```
 
 Disconnecting: the sidebar footer's **AI connections** link
-(`/settings/connections`, beside **Manage workspace**; docs/runbooks/mcp-oauth.md
-still calls it Connected AI apps in the account menu, which the current UI
-does not have: that menu holds only the Access connect, Theme and Sign out)
-lists each OAuth connection; revoking one makes the client's next request
+(`/settings/connections`, beside **Manage workspace**) lists each OAuth
+connection; revoking one makes the client's next request
 fail `invalid_token`. Removing or deactivating a person ends all of theirs;
 tokens are revoked on Admin, Tokens.
 

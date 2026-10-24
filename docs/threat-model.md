@@ -1239,8 +1239,9 @@ means it waits for Ben's review because it touches a boundary.
    itself** (B3, B5, medium; fixed in #404, held). The perimeter
    admits an `mcp:read` token to `/mcp`, skips the ToolBus for a manifest
    with `mcp: "app"` (or when the app-host ToolBus declines), and the
-   SDK's deprecated `createMcpHandler` applies no read/write policy, so
-   every tool without a declared scope runs.
+   app's own MCP server applies whatever read/write policy it chooses
+   (the SDK's deprecated `createMcpHandler`, which applied none, is gone
+   since stage 2b), so every tool without a declared scope runs.
 7. **A password reset doesn't end existing sessions** (B2, medium; fixed in #405,
    held). Better Auth's `revokeSessionsOnPasswordReset` is
    unset, so the standard remedy for a stolen session does nothing to it

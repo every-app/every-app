@@ -430,7 +430,6 @@ Warnings (not errors): `CF_VERSION_DIFFERS`, `LEGACY_LOCAL_STATE`, `DEV_EXPOSED`
 - `packages/sdk/src/server/integrationFetch.ts`
 - `packages/sdk/src/server/sendEmail.ts`
 - `packages/sdk/src/server/listMembers.ts`
-- `packages/sdk/src/server/mcp.ts`
 - `packages/toolbus/src/dev/index.ts`
 - `packages/toolbus/src/dev/index.test.ts`
 - `packages/toolbus/src/http.ts`

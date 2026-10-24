@@ -555,8 +555,3 @@ const dataforseo = integrationFetch({
   for: { background: true, organizationId: event.payload.organizationId },
 });
 ```
-
-`createMcpHandler()` from 0.2 still works in 0.3 but is deprecated and goes
-away in 0.4. The gateway keeps proxying `/mcp` to an app that defines no
-tools (or sets `mcp: "app"` in its manifest), so such an app keeps serving
-its own MCP endpoint until it moves to `defineTools()`.

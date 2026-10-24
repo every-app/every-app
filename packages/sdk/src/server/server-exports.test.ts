@@ -18,10 +18,10 @@ it("keeps protocol constants out of /server", () => {
   expect(server).not.toHaveProperty("mintSystemJwt");
 });
 
-it("exposes the agent tools API, and the old MCP handler for one more minor", () => {
+it("exposes the agent tools API and not the old MCP handler", () => {
   expect(typeof server.defineTools).toBe("function");
   expect(new server.ToolError("x")).toBeInstanceOf(Error);
-  // Apps define tools and the gateway speaks MCP; createMcpHandler is
-  // deprecated in 0.3.0 and removed in 0.4.0.
-  expect(typeof server.createMcpHandler).toBe("function");
+  // Apps define tools and the gateway speaks MCP; createMcpHandler
+  // (deprecated in 0.3.0) is gone.
+  expect(server).not.toHaveProperty("createMcpHandler");
 });

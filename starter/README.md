@@ -21,25 +21,11 @@ namespaces, Durable Objects and Workflows in `everyapp.config.ts`.
 
 ## Agent tools (MCP)
 
-`src/tools.ts` defines the starter's agent tools with `defineTools()` from
-`@every-app/sdk/server`: list, create and update the user's todos, and a
-destructive delete that AI clients can't use yet. The app never speaks MCP;
-the Every App gateway serves the tools to Claude, Cursor and other MCP
-clients at `https://<app-host>/mcp`, and `pnpm dev` serves them locally at
-`http://<app-id>.localhost:8787/mcp`. To connect Claude Code to a deployed
-app with a personal access token:
+The agent tools live in `src/tools.ts` (`defineTools()`).
+`pnpm everyapp dev` serves them at `http://<app-id>.localhost:8787/mcp`.
+To connect a client, read `.agents/skills/everyapp/mcp.md`.
 
-```sh
-claude mcp add --transport http todos https://<app-host>/mcp \
-  --header "Authorization: Bearer $EVERYAPP_TOKEN"
-```
-
-`$EVERYAPP_TOKEN` is a personal access token from your Gateway: **Manage
-workspace → Tokens → Create access token**.
-
-Add a tool by adding an entry to `defineTools()` and redeploying; the deploy
-syncs the gateway's copy. The contract is described in
-[`docs/todo-mcp-example.md`](https://github.com/every-app/every-app/blob/main/docs/todo-mcp-example.md).
+## Database
 
 Generate Migration
 
