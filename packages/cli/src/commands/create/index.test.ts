@@ -111,9 +111,12 @@ describe("everyapp create", () => {
     });
 
     const app = path.join(cwd, "my-app");
-    expect(
-      fs.readFileSync(path.join(app, "everyapp.config.ts"), "utf8"),
-    ).toContain('id: "my-app"');
+    // Named after the app everywhere a person or the Gateway reads a name.
+    const manifest = fs.readFileSync(path.join(app, "everyapp.config.ts"), "utf8");
+    expect(manifest).toContain('id: "my-app"');
+    expect(manifest).toContain('name: "My App"');
+    expect(JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).name).toBe("my-app");
+    expect(fs.readFileSync(path.join(app, "README.md"), "utf8").startsWith("# My App\n")).toBe(true);
     expect(install).toHaveBeenCalledWith(expect.objectContaining({ cwd: app }));
     expect(cf.calls.map((call) => [call.args.slice(0, 3), call.cwd])).toEqual([
       [["workers", "types"], app],
@@ -163,7 +166,7 @@ describe("everyapp create", () => {
         next: [
           { command: "cd my-app" },
           { command: "pnpm dev", note: "run it locally" },
-          { command: "pnpm everyapp deploy", note: "put it live" },
+          { command: "pnpm run deploy", note: "put it live" },
         ],
       },
     });
@@ -195,7 +198,7 @@ describe("everyapp create", () => {
         "Next:",
         "  cd ../../apps/my-app",
         "  pnpm dev              run it locally",
-        "  pnpm everyapp deploy  put it live",
+        "  pnpm run deploy       put it live",
         "",
       ].join("\n"),
     );

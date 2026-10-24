@@ -7,8 +7,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  updateEveryappManifestId,
+  updateEveryappManifest,
   updatePackageJson,
+  updateReadme,
 } from "@/commands/create/steps/updateConfiguration";
 import { isInCheckout } from "@/lib/checkout";
 import { copyDirectory } from "@/lib/file-operations";
@@ -75,5 +76,6 @@ export async function copyStarter({
     await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
   }
   await updatePackageJson({ targetDir, appId, root });
-  await updateEveryappManifestId({ targetDir, appId });
+  await updateEveryappManifest({ targetDir, appId });
+  await updateReadme({ targetDir, appId });
 }

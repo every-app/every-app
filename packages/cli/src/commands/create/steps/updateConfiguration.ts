@@ -72,21 +72,44 @@ async function workspacePackages(root: string): Promise<Map<string, string>> {
   return packages;
 }
 
-export async function updateEveryappManifestId({
+/**
+ * The app's display name from its id: each dash-separated word with its
+ * first letter capitalized ("my-app" is "My App", "crm2" is "Crm2"). What
+ * the dev launcher and the Gateway's app library show until the manifest
+ * says otherwise.
+ */
+export function appNameFor(appId: string): string {
+  return appId
+    .split("-")
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
+ * Name the copied template's everyapp.config.ts after the app: its `id`,
+ * and its `name` as `appNameFor` spells it. The template's description
+ * stays: it describes the app until its author changes it.
+ */
+export async function updateEveryappManifest({
   targetDir,
   appId,
 }: UpdatePackageJsonOptions): Promise<void> {
   const manifestPath = path.join(targetDir, "everyapp.config.ts");
   try {
     const manifest = await fs.readFile(manifestPath, "utf-8");
-    const updated = manifest.replace(
-      /(\bid\s*:\s*)["'][^"']+["']/,
-      `$1"${appId}"`,
-    );
-    if (updated === manifest) {
+    const withId = manifest.replace(/(\bid\s*:\s*)["'][^"']+["']/, `$1"${appId}"`);
+    if (withId === manifest) {
       throw new Error("Could not find an id field in everyapp.config.ts");
     }
-    await fs.writeFile(manifestPath, updated, "utf-8");
+    const withName = withId.replace(
+      /(\bname\s*:\s*)["'][^"']+["']/,
+      `$1"${appNameFor(appId)}"`,
+    );
+    if (withName === withId) {
+      throw new Error("Could not find a name field in everyapp.config.ts");
+    }
+    await fs.writeFile(manifestPath, withName, "utf-8");
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       throw new Error(
@@ -95,4 +118,25 @@ export async function updateEveryappManifestId({
     }
     throw error;
   }
+}
+
+/**
+ * Title the copied template's README.md after the app: its first H1
+ * becomes the app's name. A template without a README, or with no H1 in
+ * it, is left alone; the app runs and deploys without one.
+ */
+export async function updateReadme({
+  targetDir,
+  appId,
+}: UpdatePackageJsonOptions): Promise<void> {
+  const readmePath = path.join(targetDir, "README.md");
+  let readme: string;
+  try {
+    readme = await fs.readFile(readmePath, "utf-8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
+  const titled = readme.replace(/^# .*$/m, `# ${appNameFor(appId)}`);
+  if (titled !== readme) await fs.writeFile(readmePath, titled, "utf-8");
 }

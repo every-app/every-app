@@ -4,7 +4,7 @@
  *
  * 1. Copy `templates/simple-todo` from this checkout: to apps/<name> inside
  *    the checkout, or ./<name> anywhere else (lib/app/starter.ts), named
- *    after the app in package.json and everyapp.config.ts.
+ *    after the app in package.json, everyapp.config.ts and README.md.
  * 2. Put the everyapp skill where coding agents look (lib/app/skill.ts).
  * 3. Install its dependencies; when that fails, the app is there and only
  *    the install is left, so the error says to finish it in place.
@@ -208,10 +208,12 @@ export async function createApp({
     }
   }
 
+  // The app's own scripts, as the docs and its AGENTS.md say them: `pnpm
+  // dev` and `pnpm run deploy` work in its directory wherever it was made.
   const next = [
     { command: `cd ${relative}` },
     { command: "pnpm dev", note: "run it locally" },
-    ...(flags.deploy ? [] : [{ command: `${CLI} deploy`, note: "put it live" }]),
+    ...(flags.deploy ? [] : [{ command: "pnpm run deploy", note: "put it live" }]),
   ];
   if (!flags.deploy) {
     out.emit({ type: "done", data: { appId, dir: targetDir, next } });
