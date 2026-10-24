@@ -32,6 +32,7 @@ import {
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
+import { devGatewaySettingsFor } from "../internal/devGatewaySettings";
 import { isReservedAppSecretName } from "../internal/gatewaySettings";
 import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
@@ -561,17 +562,18 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       path.join(root, ".dev.vars"),
       [...keys, "UNRELATED_SETTING"].map((key) => `${key}=set`).join("\n"),
     );
+    const everything = {
+      ...manifest,
+      providers: Object.keys(DEV_AI_PROVIDERS),
+      capabilities: Object.fromEntries(
+        Object.entries(CAPABILITIES).map(([id, { access }]) => [
+          id,
+          { access: access[0] },
+        ]),
+      ),
+    };
     const env = everyAppWorker({
-      manifest: {
-        ...manifest,
-        providers: Object.keys(DEV_AI_PROVIDERS),
-        capabilities: Object.fromEntries(
-          Object.entries(CAPABILITIES).map(([id, { access }]) => [
-            id,
-            { access: access[0] },
-          ]),
-        ),
-      },
+      manifest: everything,
       entrypoint,
       ctx: { mode: "development" },
       root,
@@ -581,6 +583,10 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       .filter(([, binding]) => (binding as { type?: string }).type === "secret")
       .map(([name]) => name);
     expect(new Set(declared)).toEqual(keys);
+    // And what `everyapp dev` checks .dev.vars for is the same list.
+    expect(
+      new Set(devGatewaySettingsFor(everything).map((need) => need.name)),
+    ).toEqual(keys);
   });
 
   it("declares the email settings in dev when .dev.vars sets them, and the stand-in senders", () => {

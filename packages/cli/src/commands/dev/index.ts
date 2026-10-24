@@ -229,6 +229,7 @@ export async function runDev(
           gatewayUrl,
           loginUrl,
           crons: cloudflareConfig?.hasCrons ?? false,
+          cwd,
         }),
         data: { appId: manifest.id },
       });

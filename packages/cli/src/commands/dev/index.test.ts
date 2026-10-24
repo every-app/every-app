@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import { getIdentityFromRequest } from "@every-app/sdk/internal";
@@ -12,7 +13,7 @@ import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { getFreePort } from "./proxy";
 import { handleInterrupt } from "@/lib/interrupt";
 import { runDev } from "./index";
-import { emailHint } from "./ready";
+import { devVarsHint, emailHint } from "./ready";
 
 const manifest = {
   id: "todo",
@@ -229,6 +230,93 @@ describe("everyapp dev", () => {
     expect(emailHint({}, 5173)).toEqual([]);
     expect(emailHint({ email: { inbound: false } }, 5173)).toEqual([]);
     expect(emailHint({ email: { inbound: true } }, 5173)[0]?.value).toContain("to=hello@example.com");
+  });
+
+  it("says what .dev.vars should hold for the app's keys when there is none yet", async () => {
+    await fs.writeFile(
+      path.join(cwd, "everyapp.config.ts"),
+      `export default ${JSON.stringify({ ...manifest, providers: ["openrouter"], secrets: ["MAIN_SECRET"] })};\n`,
+    );
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+
+    const ready = await until(() =>
+      events.find((event) => event["step"] === "dev.app" && event["status"] === "ok"),
+    );
+    expect(String(ready["message"])).toContain(
+      "no .dev.vars yet: add OPENROUTER_API_KEY, MAIN_SECRET",
+    );
+
+    cf.exitApp();
+    await running;
+  });
+
+  describe("the .dev.vars hint", () => {
+    const keyed = {
+      id: "todo",
+      secrets: ["MAIN_SECRET"],
+      providers: ["workers-ai"],
+      capabilities: { dataforseo: { access: "read" } },
+    } as const;
+    const lines = (facts: ReadonlyArray<{ label: string; value: string }>) =>
+      facts.map((fact) => `${fact.label}  ${stripVTControlCharacters(fact.value)}`);
+
+    it("names what the file leaves unset, an empty value included, and never a value", async () => {
+      await fs.writeFile(
+        path.join(cwd, ".dev.vars"),
+        "WORKERS_AI_API_TOKEN=tok-1234\nDATAFORSEO_API_KEY=\n# MAIN_SECRET=commented-out\n",
+      );
+      const facts = devVarsHint(keyed, cwd);
+      expect(lines(facts)).toEqual([
+        "Dev vars  .dev.vars is missing CLOUDFLARE_ACCOUNT_ID, DATAFORSEO_API_KEY, MAIN_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+      expect(facts[0]!.value).not.toContain("tok-1234");
+    });
+
+    it("says to add them all when there is no file", () => {
+      expect(lines(devVarsHint(keyed, cwd))).toEqual([
+        "Dev vars  no .dev.vars yet: add WORKERS_AI_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, DATAFORSEO_API_KEY, MAIN_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+    });
+
+    it("says nothing when the file sets every name, or the app needs none", async () => {
+      expect(devVarsHint({ id: "todo" }, cwd)).toEqual([]);
+      await fs.writeFile(
+        path.join(cwd, ".dev.vars"),
+        "WORKERS_AI_API_TOKEN=t\nCLOUDFLARE_ACCOUNT_ID=a\nDATAFORSEO_API_KEY=d\nMAIN_SECRET=s\n",
+      );
+      expect(devVarsHint(keyed, cwd)).toEqual([]);
+    });
+
+    it("leaves out what the app runs without: email's settings, an instance with a default", async () => {
+      // sendEmail() prints with nothing set, and listMembers() answers
+      // from the dev identity: no file, no hint.
+      const mailer = {
+        id: "inbox",
+        capabilities: { email: { access: "write" }, members: { access: "read" } },
+      } as const;
+      expect(devVarsHint(mailer, cwd)).toEqual([]);
+      // A working Cloudflare REST setup, EMAIL_FROM_NAME and Resend's unset.
+      await fs.writeFile(
+        path.join(cwd, ".dev.vars"),
+        "EMAIL_FROM=noreply@example.com\nEMAIL_REST_API_TOKEN=t\nCLOUDFLARE_ACCOUNT_ID=a\n",
+      );
+      expect(devVarsHint(mailer, cwd)).toEqual([]);
+
+      // Mastodon's client, on the default instance.
+      const poster = { id: "postiz", capabilities: { mastodon: { access: "write" } } } as const;
+      await fs.writeFile(
+        path.join(cwd, ".dev.vars"),
+        "MASTODON_CLIENT_ID=id\nMASTODON_CLIENT_SECRET=secret\n",
+      );
+      expect(devVarsHint(poster, cwd)).toEqual([]);
+      // Its secret alone is named, never the instance.
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "MASTODON_CLIENT_ID=id\n");
+      expect(lines(devVarsHint(poster, cwd))).toEqual([
+        "Dev vars  .dev.vars is missing MASTODON_CLIENT_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+    });
   });
 
   it("refuses an unknown mode before starting anything", async () => {
