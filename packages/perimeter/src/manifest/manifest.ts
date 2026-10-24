@@ -322,10 +322,14 @@ export function capabilityEntrySchema(id: CapabilityId) {
     "scopePolicy" in capability ? capability.scopePolicy : undefined;
   if (!policy) {
     // A capability with one purpose takes no scope sets: listing it is
-    // the whole grant.
-    const scopes = z.undefined({
-      message: `${capability.label} takes no scopes; list it as { access: ..., why }`,
-    });
+    // the whole grant. `.optional()` so the key may be absent under zod 4
+    // as well as zod 3: the CLI's build resolves this schema against its
+    // own zod 4, where a key whose schema is `z.undefined()` is required.
+    const scopes = z
+      .undefined({
+        message: `${capability.label} takes no scopes; list it as { access: ..., why }`,
+      })
+      .optional();
     return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
   }
   // Own keys only: `constructor` is not a set.
