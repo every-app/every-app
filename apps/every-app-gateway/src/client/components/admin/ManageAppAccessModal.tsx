@@ -10,7 +10,6 @@ import { Checkbox } from "@/client/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -236,9 +235,6 @@ export function ManageAppAccessModal({
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage access to {app.name}</DialogTitle>
-          <DialogDescription>
-            Select which users can access this app.
-          </DialogDescription>
         </DialogHeader>
 
         {/* Search and bulk actions */}
@@ -379,7 +375,7 @@ export function ManageAppAccessModal({
                               </Badge>
                             ) : null}
                           </div>
-                          {user.name ? (
+                          {user.name && user.name !== user.email ? (
                             <p className="truncate text-xs text-muted-foreground">
                               {user.email}
                             </p>
@@ -422,45 +418,47 @@ export function ManageAppAccessModal({
           </div>
         )}
 
-        {/* Summary */}
-        <div className="space-y-1 text-sm">
-          {hasChanges &&
-          (changes.granting.length > 0 ||
-            changes.revoking.length > 0 ||
-            changes.keptByGroup.length > 0) ? (
-            <div className="flex flex-wrap gap-3">
-              {changes.granting.length > 0 ? (
-                <span className="text-success">
-                  +{changes.granting.length} gaining access
-                </span>
-              ) : null}
-              {changes.revoking.length > 0 ? (
-                <span className="text-destructive">
-                  -{changes.revoking.length} losing access
-                </span>
-              ) : null}
-              {changes.keptByGroup.length > 0 ? (
-                <span className="text-muted-foreground">
-                  {changes.keptByGroup.length} kept through groups
+        {/* Summary: of a list that is in. */}
+        {isLoading || isError ? null : (
+          <div className="space-y-1 text-sm">
+            {hasChanges &&
+            (changes.granting.length > 0 ||
+              changes.revoking.length > 0 ||
+              changes.keptByGroup.length > 0) ? (
+              <div className="flex flex-wrap gap-3">
+                {changes.granting.length > 0 ? (
+                  <span className="text-success">
+                    +{changes.granting.length} gaining access
+                  </span>
+                ) : null}
+                {changes.revoking.length > 0 ? (
+                  <span className="text-destructive">
+                    -{changes.revoking.length} losing access
+                  </span>
+                ) : null}
+                {changes.keptByGroup.length > 0 ? (
+                  <span className="text-muted-foreground">
+                    {changes.keptByGroup.length} kept through groups
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3 text-muted-foreground">
+              <span>
+                {outcome.withAccess} of {users.length} user
+                {users.length !== 1 ? "s" : ""} will have access
+                {outcome.throughGroups
+                  ? ` (${outcome.throughGroups} through groups)`
+                  : null}
+              </span>
+              {searchQuery && filteredUsers.length !== users.length ? (
+                <span className="text-xs tabular-nums">
+                  Showing {filteredUsers.length} of {users.length}
                 </span>
               ) : null}
             </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-3 text-muted-foreground">
-            <span>
-              {outcome.withAccess} of {users.length} user
-              {users.length !== 1 ? "s" : ""} will have access
-              {outcome.throughGroups
-                ? ` (${outcome.throughGroups} through groups)`
-                : null}
-            </span>
-            {searchQuery && filteredUsers.length !== users.length ? (
-              <span className="text-xs tabular-nums">
-                Showing {filteredUsers.length} of {users.length}
-              </span>
-            ) : null}
           </div>
-        </div>
+        )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>

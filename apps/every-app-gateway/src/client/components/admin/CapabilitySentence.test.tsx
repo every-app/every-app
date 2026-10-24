@@ -54,6 +54,13 @@ describe("CapabilitySentence", () => {
     expect(sentence({ ...slack, why: "Posts digests" })).toBe(
       "Slack, write access, “Posts digests”.",
     );
+    // A why written as a sentence doesn't end the line with two stops.
+    expect(sentence({ ...slack, why: "Posts digests." })).toBe(
+      "Slack, write access, “Posts digests”.",
+    );
+    expect(sentence({ ...slack, why: "Posts digests.. " })).toBe(
+      "Slack, write access, “Posts digests”.",
+    );
   });
 
   // Never "write access to Gmail (read-only)": the sets are the grant.

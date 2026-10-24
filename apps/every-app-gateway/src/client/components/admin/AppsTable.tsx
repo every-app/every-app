@@ -17,7 +17,11 @@ import {
 } from "@/client/components/ui/tooltip";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { appEmail } from "@/client/lib/appEmail";
-import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
+import {
+  AppStatusLabel,
+  appNeedsSetup,
+  appStatus,
+} from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { integrationLabel } from "./integrationLabel";
@@ -70,7 +74,9 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
       </p>
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">
-          Deployed by {app.deployedByActor}
+          {/* A provider app has no deploy: the operator turned it on. */}
+          {app.tier === PROVIDER_APP_TIER ? "Turned on by" : "Deployed by"}{" "}
+          {app.deployedByActor}
         </p>
       ) : null}
       {email.senders.length || email.inbound.length ? (
@@ -117,6 +123,12 @@ function buildColumns({
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
       cell: ({ row }) => {
         const status = appStatus(row.original);
+        // The usual state is plain text; only an exception is a chip (as
+        // on the Users and Tokens tabs). A provider app's "AI tools" stays
+        // a chip: the MCP apps thread's default, for the design review.
+        if (status.label === AppStatusLabel.Active) {
+          return <span className="text-muted-foreground">{status.label}</span>;
+        }
         // "Needs setup" opens the dialog that says what, even for a shared
         // app this organization can't fix (it says who does).
         if (appNeedsSetup(row.original)) {

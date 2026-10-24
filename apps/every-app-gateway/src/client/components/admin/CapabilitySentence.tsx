@@ -12,7 +12,10 @@ export function CapabilitySentence({
 }: {
   capability: AppCapabilitySummary;
 }) {
-  const why = capability.why ? <> &ldquo;{capability.why}&rdquo;</> : null;
+  // The why sits inside the sentence, so its own full stop comes off.
+  const why = capability.why ? (
+    <> &ldquo;{capability.why.trimEnd().replace(/\.+$/, "")}&rdquo;</>
+  ) : null;
   const sets = (
     <span className="font-mono">
       {capability.scopeSets.map((set) => set.label).join(", ")}
