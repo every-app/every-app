@@ -8,8 +8,8 @@ manifest, and the app calls through the gateway. No app holds the key. Per
 installation, an app has its own secrets (`secret set NAME --app <id>`) and
 the addresses it sends as and receives at (`everyapp email set`, below).
 
-This is phase 0 of the integrations design
-([research/2026-10-integrations-hub/app-integrations.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/research/2026-10-integrations-hub/app-integrations.md)):
+This is phase 0 of the integrations design (the integrations-hub research of
+October 2026, which the repository no longer carries):
 **API-key providers whose key the gateway holds**, **OAuth clients** the
 gateway holds for social networks and for Google's and Microsoft's mail and
 calendar, whose token endpoints it completes for
@@ -23,9 +23,9 @@ AI providers stay separate: `providers: ["openai", "openrouter", "workers-ai"]`
 and the `/api/ai/<provider>` proxy, with their model and route allowlists.
 
 What comes next is designed, not built: the October 2026 redesign review
-([docs/design/2026-10-redesign-review.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/design/2026-10-redesign-review.md))
 folds AI providers into this model behind one route and one SDK fetch, and the
-Google design ([docs/design/2026-10-google-integration.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/design/2026-10-google-integration.md))
+Google design (both documents were removed from the repository in #433, on
+2026-10-24)
 adds organization-held OAuth accounts under an operator-held client. Both were
 re-aligned on 2026-10-16 with the hosted-platform research
 (`docs/research/2026-10-hosted-platform/`, PR #299; all three documents deleted from
