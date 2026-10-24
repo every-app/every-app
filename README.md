@@ -121,4 +121,4 @@ Never `npx everyapp`: that runs an old CLI that cannot deploy this Gateway.
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
