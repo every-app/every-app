@@ -23,6 +23,12 @@ const SHIPPED_MIGRATIONS: Record<string, string> = {
   // everyapp.team, release 0.2.0 (31a85593, 2026-10-16)
   "0000_lyrical_wild_child.sql":
     "80937eb7b5570112ac24ad01a178491f42c4fb2f9126411ca44ce2a38e562ecf",
+  // everyapp.team, applied by 2026-10-23 (#347, #352)
+  "0001_deploy_job_source.sql":
+    "f170fde008780207f57d19219f58f2974f5e1a665dd36b6289bf4aa317bcc109",
+  "0002_app_email_config.sql":
+    "adbeaccf4cfd4e51a129aad721e0c8811f0438281a0aa63002a32bdcf4870f45",
+  // 0004_app_secret_names.sql: add its hash once everyapp.team has applied it.
 };
 const FIRST_CHECKED_MIGRATION = 0;
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../drizzle", import.meta.url));

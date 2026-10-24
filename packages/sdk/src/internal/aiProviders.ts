@@ -8,6 +8,10 @@ export interface DevAiProviderSpec {
   origin: string;
   /** The gateway secret holding the provider key; in local dev, the `.dev.vars` name. */
   keyEnv: string;
+  /** Where an operator gets the key: the provider's API keys page. */
+  docs: string;
+  /** The everyapp skill's setup guide for it, relative to the skill (`setup/openai.md`). */
+  setup: string;
   /** Gateway settings the provider's URL needs besides the key, under the same names. */
   alsoNeeds?: readonly string[];
   /** The path every provider path is joined onto, from those settings. */
@@ -21,15 +25,25 @@ export type DevAiProvider = "openai" | "openrouter" | "workers-ai";
 export const DEV_AI_PROVIDERS: Readonly<
   Record<DevAiProvider, DevAiProviderSpec>
 > = {
-  openai: { origin: "https://api.openai.com", keyEnv: "OPENAI_API_KEY" },
+  openai: {
+    origin: "https://api.openai.com",
+    keyEnv: "OPENAI_API_KEY",
+    docs: "https://platform.openai.com/api-keys",
+    setup: "setup/openai.md",
+  },
   openrouter: {
     origin: "https://openrouter.ai",
     keyEnv: "OPENROUTER_API_KEY",
+    docs: "https://openrouter.ai/settings/keys",
+    setup: "setup/openrouter.md",
   },
   // Workers AI's OpenAI-compatible endpoints, under the account's path.
   "workers-ai": {
     origin: "https://api.cloudflare.com",
     keyEnv: "WORKERS_AI_API_TOKEN",
+    // A token from the "Workers AI" template (Read and Edit).
+    docs: "https://dash.cloudflare.com/profile/api-tokens",
+    setup: "setup/workers-ai.md",
     alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID"],
     basePath: (settings) =>
       workersAiBasePath(settings["CLOUDFLARE_ACCOUNT_ID"] ?? ""),

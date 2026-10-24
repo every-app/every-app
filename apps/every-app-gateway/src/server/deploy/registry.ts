@@ -270,6 +270,7 @@ async function register(
           manifest: app.manifest,
           emailSenders: null,
           emailInbound: null,
+          secretNames: null,
           status: app.status,
           isDefault: app.isDefault,
           updatedAt: now,

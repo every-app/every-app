@@ -29,6 +29,13 @@
       "when": 1792806939104,
       "tag": "0003_usage_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792814121473,
+      "tag": "0004_app_secret_names",
+      "breakpoints": true
     }
   ]
 }

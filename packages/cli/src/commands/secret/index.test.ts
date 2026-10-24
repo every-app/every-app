@@ -529,7 +529,7 @@ describe("secret list", () => {
         "OPENAI_API_KEY        Gateway  set",
         "DATAFORSEO_API_KEY    Gateway  not set",
         "EMAIL_FROM            Gateway  not set",
-        "EMAIL_FROM_NAME       Gateway  not set",
+        "EMAIL_FROM_NAME       Gateway  not set (optional)",
         "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
         "RESEND_API_KEY        Gateway  not set (optional)",
         "EMAIL_PROVIDER        Gateway  not set (optional)",
@@ -555,10 +555,10 @@ describe("secret list", () => {
           { name: "OPENAI_API_KEY", required: true, set: true },
           { name: "RESEND_API_KEY", required: false, set: false },
         ]),
-        missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"],
+        missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM"],
       },
-      // The Gateway's first, as `set` applies them.
-      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM EMAIL_FROM_NAME STRIPE_KEY"],
+      // The Gateway's first, as `set` applies them; the sender's name is optional.
+      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY"],
     });
   });
 
@@ -592,7 +592,7 @@ describe("secret list", () => {
         "OPENAI_API_KEY        Gateway  not set",
         "DATAFORSEO_API_KEY    Gateway  not set",
         "EMAIL_FROM            Gateway  not set",
-        "EMAIL_FROM_NAME       Gateway  not set",
+        "EMAIL_FROM_NAME       Gateway  not set (optional)",
         "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
         "RESEND_API_KEY        Gateway  not set (optional)",
         "EMAIL_PROVIDER        Gateway  not set (optional)",
@@ -604,7 +604,8 @@ describe("secret list", () => {
     expect(done()!["data"]).toMatchObject({
       app: { id: "todo", deployed: false, workerName: null, workers: [] },
       next: [
-        "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM EMAIL_FROM_NAME",
+        // The sender's display name is optional, so it isn't among the names to set.
+        "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM",
         "pnpm everyapp deploy",
       ],
     });

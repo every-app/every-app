@@ -201,8 +201,9 @@ describe("handleGatewayRequest", () => {
     const row = {
       ...TODO,
       manifest: JSON.stringify({ id: "todo" }),
-      // The column, not the list the registry parses from it.
+      // The columns, not the lists the registry parses from them.
       emailSenders: null,
+      secretNames: null,
     };
     for (const odd of [{ tier: "worker_loader" }, { scope: "everyone" }]) {
       const res = await handleGatewayRequest(

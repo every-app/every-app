@@ -37,6 +37,7 @@ import {
   isInstallOwnedGatewaySetting,
   isReservedAppSecretName,
   isSettableGatewaySetting,
+  secretNames,
   SETTABLE_GATEWAY_SETTINGS,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
@@ -242,7 +243,7 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
     return;
   }
 
-  const declared = [...(manifest.secrets ?? [])];
+  const declared = secretNames(manifest);
   const needs = gatewaySettingsFor(manifest).map((need) => ({
     ...need,
     set: gatewayNames.includes(need.name),
@@ -357,7 +358,7 @@ async function routeNames(names: string[], cwd: string, action: SecretAction): P
   if (rest.length === 0) return { gateway, app: null, undeclared: [] };
 
   const manifest = await loadEveryAppManifestIfPresent(cwd);
-  const declared = manifest?.secrets ?? [];
+  const declared = manifest ? secretNames(manifest) : [];
   const undeclared: string[] = [];
   for (const name of rest) {
     const refusal = notRoutable(name, names, manifest, action);
@@ -377,7 +378,7 @@ function notRoutable(
   manifest: EveryAppCliManifest | null,
   action: SecretAction,
 ): EveryAppError | null {
-  const declared = manifest?.secrets ?? [];
+  const declared = manifest ? secretNames(manifest) : [];
   if (manifest && declared.includes(name)) return null;
   // A Gateway setting typed differently: the command with it.
   const match = closeName(name, [...SETTABLE_GATEWAY_SETTINGS, ...declared]);

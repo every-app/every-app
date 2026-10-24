@@ -237,7 +237,7 @@ Declare a route public when something other than a signed-in member of the organ
 
 ## providers
 
-`providers`: an array of ids matching `^[a-z][a-z0-9-]*$` (`provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens`), each once (`duplicate provider`). The Gateway's AI providers (`apps/every-app-gateway/src/server/ai-proxy.ts`) are `openai` (key `OPENAI_API_KEY`), `openrouter` (`OPENROUTER_API_KEY`) and `workers-ai` (`WORKERS_AI_API_TOKEN` plus the install's `CLOUDFLARE_ACCOUNT_ID`). The app calls `/api/ai/<provider>/<path>` on the `EVERY_APP_GATEWAY` binding through the SDK's `createGatewayFetch()`; the Gateway puts the key on the upstream request, so no app holds it.
+`providers`: an array of ids matching `^[a-z][a-z0-9-]*$`, or of `{ id, why, docs, optional, anyOf }` entries (the section on needs, below); ids (`provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens`), each once (`duplicate provider`). The Gateway's AI providers (`apps/every-app-gateway/src/server/ai-proxy.ts`) are `openai` (key `OPENAI_API_KEY`), `openrouter` (`OPENROUTER_API_KEY`) and `workers-ai` (`WORKERS_AI_API_TOKEN` plus the install's `CLOUDFLARE_ACCOUNT_ID`). The app calls `/api/ai/<provider>/<path>` on the `EVERY_APP_GATEWAY` binding through the SDK's `createGatewayFetch()`; the Gateway puts the key on the upstream request, so no app holds it.
 
 | Refusal                                    | Code                                                                                                     | Status |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------ |
@@ -317,6 +317,38 @@ Rules in the strict schema (`AppSecretsSchemaStrict`). The reserved-name and Gat
 Examples: `secrets: ["openai_api_key"]` fails with ``secrets.0: openai_api_key is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead``; `secrets: ["EMAIL_FROM"]` says ``list `email` under capabilities instead``. Install-owned Gateway settings (`BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, …) are not in the settable list, so an app may have a secret of that name; the two never meet.
 
 The tolerant schema has its own limits: at most 100 names, each at most 64 characters, matching the identifier regex (`a secret's name is an identifier`). The strict schema replaces the field with the rules above and carries no count or length cap, so only registration enforces 100 and 64. The SDK repeats the reserved-name rule (`RESERVED_SECRET_NAME` in `packages/sdk/src/cloudflare/worker.ts`: `secrets: <NAME> is a name the deploy sets or a binding it builds.`). Hosted third-party apps may declare none (below).
+
+## Required, optional, or one of a group
+
+Every `providers`, `capabilities` and `secrets` entry carries a **need**, read by the settings model (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`; the maintainer reference is `docs/manifest-settings.md`). A bare string in `providers` or `secrets`, or a capability entry with neither flag, is **required**: the app does not open until the setting is set (the Gateway's home and Admin → Apps show "Needs setup", `everyapp status` and `everyapp secret list` show the SETTINGS table, and the app host answers 503 `app_needs_setup`). The author's rule: required means the app is useless without it; a setting only one feature needs is optional, and that feature says what is missing where it is used.
+
+An entry may be written as an object to say more:
+
+| Path                                                                       | Meaning                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providers[].id`                                                           | The provider, as the bare string form names it (`openai`, `openrouter`, `workers-ai`); each once (`duplicate provider`, whichever form).                                                                                                                                                                                                       |
+| `secrets[].name`                                                           | The app's own secret, as the bare string form names it; the same name rules as a bare name (identifier, each once, no reserved or Gateway name, no binding name).                                                                                                                                                                              |
+| `providers[].why`, `capabilities.<id>.why`, `secrets[].why`                | Why the app needs it, 1 to 200 characters, shown to whoever sets it.                                                                                                                                                                                                                                                                           |
+| `providers[].docs`, `capabilities.<id>.docs`, `secrets[].docs`             | Where the key or client comes from: an https URL (`must be an https URL`). Providers and capabilities get a default from the SDK registries (the provider's key page, an api_key capability's `docs`, an OAuth client's `console`); the manifest may override it.                                                                              |
+| `providers[].optional`, `capabilities.<id>.optional`, `secrets[].optional` | `true`: the app opens without it; the feature that uses it says what is missing (`integrationStatus().configured`, or the `ai_provider_not_configured` / `integration_not_configured` refusal).                                                                                                                                                |
+| `providers[].anyOf`, `capabilities.<id>.anyOf`, `secrets[].anyOf`          | The name of a group (1 to 40 characters, trimmed) of which one set member is enough; more set is fine. Only for an app that picks among the set members at run time: the Gateway refuses a call to a provider whose key is unset whichever others are set. An app that picks at build time declares that one required and the others optional. |
+| `secrets[].setup`                                                          | For an app's own secret, its setup guide in the everyapp skill, `setup/<name>.md` (`must be a guide in the everyapp skill, such as "setup/main-secret.md"`). Providers and capabilities take theirs from the registries (`setup/openai.md`, `setup/dataforseo.md`, …) and refuse the field (`Unrecognized key(s) in object: 'setup'`).         |
+
+The strict schema refuses an entry that is both `optional` and in an `anyOf` group (`<path> is both optional and in the any-of group "<group>"; a group's member is optional by itself, so drop one of them.`) and a group with one member counted across providers, capabilities and secrets (`the any-of group "<group>" has one member (<path>); an any-of group needs two or more. Drop anyOf, or mark it optional.`). The tolerant schema accepts both forms and passes an entry's unknown fields through, so a manifest from a newer CLI still registers.
+
+```ts
+providers: ["openrouter"],
+capabilities: {
+  dataforseo: { access: "read", why: "Keyword, SERP and backlink data." },
+  context: { access: "read", optional: true, why: "Renders JavaScript-heavy pages in site audits." },
+},
+secrets: [
+  { name: "MAIN_SECRET", why: "Signs visitor salts and collect tokens; 32 or more random characters, e.g. openssl rand -base64 32." },
+  { name: "GITHUB_TOKEN", optional: true, why: "Raises GitHub's rate limit.", docs: "https://github.com/settings/tokens" },
+],
+```
+
+What is set is read per holder: a provider's or capability's settings on the Gateway Worker, an app's own secrets as the CLI last recorded them on the app's registry row (`apps.secret_names`; never recorded counts as unknown and never blocks). `everyapp status --json` carries the result as `data.apps[].setup`, `everyapp secret list [<app>] --json` as `data.app.setup`, and the one command that opens an app is `pnpm everyapp secret set <names> [--app <id>]`; see [`/docs/agent/secrets`](/docs/agent/secrets) and [`/docs/agent/json`](/docs/agent/json).
 
 ## scopes
 

@@ -1,6 +1,8 @@
 export {
   InMemoryAppRegistry,
+  parseSecretNames,
   rowToRegisteredApp,
+  storedSecretNames,
   UnroutableAppError,
   type AppRegistry,
   type AppRegistryRow,

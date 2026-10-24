@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   InMemoryAppRegistry,
+  parseSecretNames,
   rowToRegisteredApp,
+  storedSecretNames,
   UnroutableAppError,
   type AppRegistryRow,
   type RegisteredApp,
@@ -118,5 +120,44 @@ describe("InMemoryAppRegistry", () => {
 
     await expect(registry.findByOrgApp("org-1", "todo")).resolves.toBe(app);
     await expect(registry.findByOrgApp("org-2", "todo")).resolves.toBeNull();
+  });
+});
+
+describe("the recorded secret names", () => {
+  it("parses the column, and reads anything else as never recorded", () => {
+    expect(parseSecretNames(null)).toBeNull();
+    expect(parseSecretNames(undefined)).toBeNull();
+    expect(parseSecretNames("")).toBeNull();
+    expect(parseSecretNames("not json")).toBeNull();
+    expect(parseSecretNames('{"MAIN_SECRET":true}')).toBeNull();
+    expect(parseSecretNames('["MAIN_SECRET", 3]')).toBeNull();
+    expect(parseSecretNames("[]")).toEqual([]);
+    expect(parseSecretNames('["MAIN_SECRET"]')).toEqual(["MAIN_SECRET"]);
+  });
+
+  it("stores names sorted, each once", () => {
+    expect(storedSecretNames(["B", "A", "B"])).toBe('["A","B"]');
+    expect(parseSecretNames(storedSecretNames([]))).toEqual([]);
+  });
+
+  it("reaches the registered app parsed, when the row carries the column", () => {
+    const row = {
+      appId: "todo",
+      hostname: "todo.example.com",
+      workerName: "every-todo",
+      tier: "service_binding",
+      scope: "org",
+      organizationId: "org-1",
+      status: "active",
+      manifest: JSON.stringify({ id: "todo" }),
+    };
+    expect(rowToRegisteredApp(row).secretNames).toBeUndefined();
+    expect(
+      rowToRegisteredApp({ ...row, secretNames: null }).secretNames,
+    ).toBeNull();
+    expect(
+      rowToRegisteredApp({ ...row, secretNames: '["MAIN_SECRET"]' })
+        .secretNames,
+    ).toEqual(["MAIN_SECRET"]);
   });
 });

@@ -61,8 +61,12 @@ export interface EveryAppWorkerManifest {
   database?: { readonly provider: "d1" | "postgres"; readonly region?: string };
   /** Cloudflare's limits for the app's own Worker. */
   limits?: WorkerLimits;
-  /** AI providers the app calls through the gateway (`createGatewayFetch()`). */
-  providers?: readonly string[];
+  /**
+   * AI providers the app calls through the gateway (`createGatewayFetch()`):
+   * each by id, or as `{ id, optional, anyOf, why, docs }` (the manifest's
+   * settings model, `@every-app/sdk/internal` appSettings).
+   */
+  providers?: ReadonlyArray<string | { readonly id: string }>;
   /** Capabilities the app calls through the gateway (`integrationFetch()`). */
   capabilities?: { readonly [id: string]: unknown };
   /**
@@ -78,8 +82,25 @@ export interface EveryAppWorkerManifest {
    * gateway in development, so each one set locally under the gateway
    * secret's name (OPENAI_API_KEY, DATAFORSEO_API_KEY, …) is declared for
    * the SDK's direct fallback.
+   *
+   * Each by name, or as `{ name, optional, anyOf, why, docs }`: whether the
+   * app opens without it, and why it is needed.
    */
-  secrets?: readonly string[];
+  secrets?: ReadonlyArray<string | { readonly name: string }>;
+}
+
+/** The names of the manifest's `secrets`, whichever form each took. */
+function manifestSecretNames(manifest: EveryAppWorkerManifest): string[] {
+  return (manifest.secrets ?? []).map((entry) =>
+    typeof entry === "string" ? entry : entry.name,
+  );
+}
+
+/** The ids of the manifest's `providers`, whichever form each took. */
+function manifestProviderIds(manifest: EveryAppWorkerManifest): string[] {
+  return (manifest.providers ?? []).map((entry) =>
+    typeof entry === "string" ? entry : entry.id,
+  );
 }
 
 /** The context cf passes to a `defineConfig((ctx) => …)` factory. */
@@ -1005,7 +1026,7 @@ function addSecrets(
   >,
   deploy: EveryAppDeployTarget | undefined,
 ): void {
-  const secrets = options.manifest.secrets ?? [];
+  const secrets = manifestSecretNames(options.manifest);
   for (const secret of secrets) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
       throw new Error(`secrets: "${secret}" isn't a valid binding name.`);
@@ -1043,7 +1064,7 @@ function devGatewayKeys(manifest: EveryAppWorkerManifest): string[] {
     id: string,
   ): readonly string[] => (Object.hasOwn(table, id) ? table[id]! : []);
   return [
-    ...(manifest.providers ?? []).flatMap((provider) =>
+    ...manifestProviderIds(manifest).flatMap((provider) =>
       keysOf(DEV_GATEWAY_KEYS.providers, provider),
     ),
     ...Object.keys(manifest.capabilities ?? {}).flatMap((id) =>

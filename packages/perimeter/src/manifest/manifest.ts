@@ -20,8 +20,12 @@ import {
   isCapabilityId,
   isReservedAppSecretName,
   isSettableGatewaySetting,
+  providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
+  secretEntries,
+  secretNames,
   type CapabilityId,
+  type SettingNeedFields,
 } from "@every-app/sdk/internal";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
@@ -212,12 +216,66 @@ export const ProviderNameSchema = z
     "provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens",
   );
 
+/**
+ * What a provider, capability or secret may say about its need (the
+ * settings model, `@every-app/sdk/internal` appSettings): why the app
+ * needs it, where it comes from, and whether the app opens without it. A
+ * declaration with none of these is required.
+ */
+const HttpsUrlSchema = z
+  .string()
+  .url()
+  .refine((url) => url.startsWith("https://"), "must be an https URL");
+
+const SettingNeedFieldsSchema = {
+  /** Why the app needs it, for whoever sets it. */
+  why: z.string().min(1).max(200).optional(),
+  /** Where the key or client comes from. */
+  docs: HttpsUrlSchema.optional(),
+  /** The app works without it; the feature using it says so where it is used. */
+  optional: z.boolean().optional(),
+  /** The group of which one set member is enough, by name ("AI model"), for an app that picks among the set members at run time. */
+  anyOf: z.string().trim().min(1).max(40).optional(),
+  // `setup` is not here: only an app's own secret names its guide (below).
+} satisfies Record<Exclude<keyof SettingNeedFields, "setup">, z.ZodTypeAny>;
+
+/** One `providers` entry: a provider id, or the id with its need. */
+const ProviderEntrySchema = z.object({ id: ProviderNameSchema }).passthrough();
+const ProviderEntrySchemaStrict = z
+  .object({ id: ProviderNameSchema, ...SettingNeedFieldsSchema })
+  .strict();
+
+const noDuplicateProviders = (
+  providers: ReadonlyArray<string | { id: string }>,
+  ctx: z.RefinementCtx,
+) => {
+  const seen = new Set<string>();
+  providers.forEach((entry, index) => {
+    const id = typeof entry === "string" ? entry : entry.id;
+    if (seen.has(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index],
+        message: "duplicate provider",
+      });
+    }
+    seen.add(id);
+  });
+};
+
 export const ProvidersSchema = z
-  .array(ProviderNameSchema)
-  .refine(
-    (providers) => new Set(providers).size === providers.length,
-    "duplicate provider",
-  );
+  .array(z.union([ProviderNameSchema, ProviderEntrySchema]))
+  .superRefine(noDuplicateProviders);
+
+const ProvidersSchemaStrict = z
+  .array(z.union([ProviderNameSchema, ProviderEntrySchemaStrict]))
+  .superRefine(noDuplicateProviders);
+
+/** A secret's name as a stored manifest may hold it (the strict rules are below). */
+const SecretNameSchema = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a secret's name is an identifier")
+  .max(64);
 
 /**
  * One capability an app asks for (docs/capabilities.md). Approval is of the
@@ -227,15 +285,15 @@ export const ProvidersSchema = z
 const CapabilityEntryBaseSchema = z.object({
   /** What the app does with it; each capability says which levels it offers. */
   access: z.enum(["read", "write"]),
-  /** Why the app needs it, for whoever approves it. */
-  why: z.string().min(1).max(200).optional(),
+  ...SettingNeedFieldsSchema,
 });
 
 export const CapabilityRequestSchema = CapabilityEntryBaseSchema.passthrough();
 export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
 
 /**
- * What one capability's manifest entry takes: `access` and `why`. Strict:
+ * What one capability's manifest entry takes: `access`, and its need
+ * (`why`, `docs`, `optional`, `anyOf`). Strict:
  * anything else is unknown here; an installation's email senders aren't
  * the manifest's (`everyapp email set`), and `CapabilitiesSchemaStrict`
  * names the command for a manifest that still lists them.
@@ -444,15 +502,16 @@ export const ManifestSchema = z
      */
     capabilities: CapabilitiesSchema.optional(),
     /**
-     * The names of the app's own secrets (an API key it calls out with),
-     * which `everyapp secret set <NAME>` sets on its Workers. Default: none.
+     * The app's own secrets (an API key it calls out with), which
+     * `everyapp secret set <NAME>` sets on its Workers: each by name, or as
+     * `{ name, why, docs, optional, anyOf }`. Default: none.
      */
     secrets: z
       .array(
-        z
-          .string()
-          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a secret's name is an identifier")
-          .max(64),
+        z.union([
+          SecretNameSchema,
+          z.object({ name: SecretNameSchema }).passthrough(),
+        ]),
       )
       .max(100)
       .optional(),
@@ -523,7 +582,8 @@ const BindingNameSchema = z
   );
 
 /**
- * The app's own secrets by name: identifiers, each once, none the deploy
+ * The app's own secrets, each by name or as an entry with its need:
+ * identifiers, each once, none the deploy
  * sets itself, and none of the Gateway's settings, which an app reaches
  * through `providers` and `capabilities` rather than holding its own copy
  * (and which `everyapp secret set` would set on the Gateway). Both rules
@@ -531,11 +591,28 @@ const BindingNameSchema = z
  * app's bindings is refused by {@link validateManifestStrict}, which sees
  * the whole manifest.
  */
+/** An app's own secret may name its setup guide in the everyapp skill (`setup/main-secret.md`). */
+const SetupGuideSchema = z
+  .string()
+  .regex(
+    /^setup\/[a-z0-9][a-z0-9-]*\.md$/,
+    'must be a guide in the everyapp skill, such as "setup/main-secret.md"',
+  );
+
+const SecretEntrySchemaStrict = z
+  .object({
+    name: BindingNameSchema,
+    ...SettingNeedFieldsSchema,
+    setup: SetupGuideSchema.optional(),
+  })
+  .strict();
+
 const AppSecretsSchemaStrict = z
-  .array(BindingNameSchema)
-  .superRefine((names, ctx) => {
+  .array(z.union([BindingNameSchema, SecretEntrySchemaStrict]))
+  .superRefine((entries, ctx) => {
     const seen = new Set<string>();
-    names.forEach((name, index) => {
+    entries.forEach((entry, index) => {
+      const name = typeof entry === "string" ? entry : entry.name;
       const issue = (message: string) =>
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
       if (seen.has(name)) issue(`duplicate secret ${name}`);
@@ -574,6 +651,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
 }).strict();
 export const ManifestSchemaStrict = ManifestSchema.extend({
   resources: ResourcesSchemaStrict.optional(),
+  providers: ProvidersSchemaStrict.optional(),
   workers: z
     .array(
       HelperWorkerSchema.extend({
@@ -654,7 +732,7 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
   // A secret named like one of the app's bindings would only fail at
   // upload, or shadow the binding.
   const bindings = bindingNamesOf(manifest);
-  const taken = (manifest.secrets ?? []).find((name) => bindings.has(name));
+  const taken = secretNames(manifest).find((name) => bindings.has(name));
   if (taken) {
     throw new ManifestError(
       `Invalid everyapp.config: secrets: ${taken} is one of the app's bindings; pick another name for the secret`,
@@ -671,7 +749,48 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
   }
   assertHelperWorkersAreDeclared(manifest);
   assertDatabaseIsConsistent(manifest);
+  assertSettingNeedsAreConsistent(manifest);
   return manifest;
+}
+
+/**
+ * Each declaration's need reads one way: not both `optional` and a
+ * `anyOf` group (a group's member is optional by itself), and every
+ * any-of group has two or more members across providers, capabilities and
+ * secrets (one member alone is either required or optional).
+ */
+function assertSettingNeedsAreConsistent(manifest: EveryAppManifest): void {
+  const declared: Array<{ path: string; need: SettingNeedFields }> = [
+    ...providerEntries(manifest).map((entry) => ({
+      path: `providers: ${entry.id}`,
+      need: entry,
+    })),
+    ...Object.entries(manifest.capabilities ?? {}).map(([id, entry]) => ({
+      path: `capabilities.${id}`,
+      need: entry,
+    })),
+    ...secretEntries(manifest).map((entry) => ({
+      path: `secrets: ${entry.name}`,
+      need: entry,
+    })),
+  ];
+  const groups = new Map<string, string[]>();
+  for (const { path, need } of declared) {
+    const group = need.anyOf?.trim();
+    if (need.optional === true && group) {
+      throw new ManifestError(
+        `Invalid everyapp.config: ${path} is both optional and in the any-of group "${group}"; a group's member is optional by itself, so drop one of them.`,
+      );
+    }
+    if (group) groups.set(group, [...(groups.get(group) ?? []), path]);
+  }
+  for (const [group, members] of groups) {
+    if (members.length < 2) {
+      throw new ManifestError(
+        `Invalid everyapp.config: the any-of group "${group}" has one member (${members[0]}); an any-of group needs two or more. Drop anyOf, or mark it optional.`,
+      );
+    }
+  }
 }
 
 /**

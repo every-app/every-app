@@ -55,6 +55,8 @@ export interface AppRow {
   scope: string;
   /** JSON of the manifest the live code was built from. */
   manifest: string | null;
+  /** JSON string[] of the app Worker's secret names as the CLI last recorded them; null: never. */
+  secretNames?: string | null;
   status: string;
   versionId: string | null;
   deployedAt: number | null;
@@ -653,7 +655,7 @@ export function markDeployedUpdate(
  * The columns that make an app a tombstone: unrouted and unlisted, its
  * names still reserved to its organization, no longer available to
  * everyone, and its email configuration (`email_senders`, `email_inbound`)
- * gone, so a revived app starts without it. Null for an app that already
+ * and recorded secret names gone, so a revived app starts without them. Null for an app that already
  * is one, so a resumed delete writes nothing. With it go, in the same
  * batch: everyone's `user_app_access` to it, the `user_access_tokens`
  * bound to it (revoked), its `app_tools` and `app_tool_catalogs` rows, and
@@ -664,6 +666,7 @@ export function deleteUpdate(app: Pick<AppRow, "status">): {
   isDefault: false;
   emailSenders: null;
   emailInbound: null;
+  secretNames: null;
 } | null {
   if (app.status === DELETED_APP_STATUS) return null;
   return {
@@ -671,5 +674,6 @@ export function deleteUpdate(app: Pick<AppRow, "status">): {
     isDefault: false,
     emailSenders: null,
     emailInbound: null,
+    secretNames: null,
   };
 }

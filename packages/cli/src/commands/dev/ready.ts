@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseEnv } from "node:util";
 import chalk from "chalk";
 import { DEV_USER } from "@every-app/perimeter/dev";
-import { devGatewaySettingsFor } from "@every-app/sdk/internal";
+import { devGatewaySettingsFor, secretNames } from "@every-app/sdk/internal";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import { formatFacts, type Fact } from "@/lib/output/table";
@@ -124,8 +124,9 @@ const DEV_VARS = ".dev.vars";
 export function devVarsHint(
   manifest: {
     readonly id: string;
-    readonly secrets?: readonly string[];
-    readonly providers?: readonly string[];
+    /** Each by name, or as an entry with its need (the settings model). */
+    readonly secrets?: ReadonlyArray<string | { readonly name: string }>;
+    readonly providers?: ReadonlyArray<string | { readonly id: string }>;
     readonly capabilities?: { readonly [id: string]: unknown };
   },
   cwd: string,
@@ -135,7 +136,7 @@ export function devVarsHint(
       ...devGatewaySettingsFor(manifest)
         .filter((need) => need.required)
         .map((need) => need.name),
-      ...(manifest.secrets ?? []),
+      ...secretNames(manifest),
     ]),
   ];
   if (names.length === 0) return [];

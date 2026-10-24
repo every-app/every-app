@@ -715,6 +715,212 @@ describe("secrets manifest field", () => {
   });
 });
 
+describe("each setting's need (optional, anyOf, why, docs)", () => {
+  it("accepts providers and secrets by id or as entries, in both schemas", () => {
+    const manifest = {
+      id: "inbox",
+      providers: [
+        { id: "workers-ai", anyOf: "AI model", why: "Runs the agent." },
+        {
+          id: "openrouter",
+          anyOf: "AI model",
+          docs: "https://openrouter.ai/settings/keys",
+        },
+        "openai",
+      ],
+      capabilities: {
+        email: { access: "write", why: "Sends from mailboxes." },
+        context: { access: "read", optional: true },
+      },
+      secrets: [
+        "MAIN_SECRET",
+        {
+          name: "GITHUB_TOKEN",
+          optional: true,
+          why: "Raises GitHub's rate limit.",
+          docs: "https://github.com/settings/tokens",
+        },
+      ],
+    };
+    expect(validateManifestStrict(manifest)).toEqual(manifest);
+    expect(validateManifest(manifest)).toEqual(manifest);
+  });
+
+  it("lets an app's own secret name its setup guide, and providers and capabilities not", () => {
+    expect(
+      validateManifestStrict({
+        id: "analytics",
+        secrets: [{ name: "MAIN_SECRET", setup: "setup/main-secret.md" }],
+      }).secrets,
+    ).toEqual([{ name: "MAIN_SECRET", setup: "setup/main-secret.md" }]);
+    expect(() =>
+      validateManifestStrict({
+        id: "analytics",
+        secrets: [{ name: "MAIN_SECRET", setup: "docs/secret.md" }],
+      }),
+    ).toThrow(/secrets\.0\.setup: must be a guide in the everyapp skill/);
+    expect(() =>
+      validateManifestStrict({
+        id: "analytics",
+        providers: [{ id: "openai", setup: "setup/openai.md" }],
+      }),
+    ).toThrow(/providers\.0: Unrecognized key/);
+    expect(() =>
+      validateManifestStrict({
+        id: "analytics",
+        capabilities: { email: { access: "write", setup: "setup/email.md" } },
+      }),
+    ).toThrow(/capabilities\.email: Unrecognized key/);
+  });
+
+  it("passes an entry's unknown fields through at registration, as a newer CLI's manifest may carry them", () => {
+    const registered = validateManifest({
+      id: "inbox",
+      providers: [{ id: "openai", later: true }],
+      secrets: [{ name: "MAIN_SECRET", later: true }],
+    });
+    expect(registered.providers).toEqual([{ id: "openai", later: true }]);
+    expect(registered.secrets).toEqual([{ name: "MAIN_SECRET", later: true }]);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [{ id: "openai", later: true }],
+      }),
+    ).toThrow(/providers\.0: Unrecognized key/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: [{ name: "MAIN_SECRET", later: true }],
+      }),
+    ).toThrow(/secrets\.0: Unrecognized key/);
+  });
+
+  it("applies the name rules to an entry's name as to a bare name", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: ["GITHUB_TOKEN", { name: "GITHUB_TOKEN", optional: true }],
+      }),
+    ).toThrow(/secrets\.1: duplicate secret GITHUB_TOKEN/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: [{ name: "OPENAI_API_KEY" }],
+      }),
+    ).toThrow(/secrets\.0: OPENAI_API_KEY is a Gateway setting/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        resources: { d1: ["DB"] },
+        secrets: [{ name: "DB", optional: true }],
+      }),
+    ).toThrow(/secrets: DB is one of the app's bindings/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: ["openai", { id: "openai", optional: true }],
+      }),
+    ).toThrow(/providers\.1: duplicate provider/);
+    expect(() =>
+      validateManifest({
+        id: "inbox",
+        providers: [{ id: "openai" }, "openai"],
+      }),
+    ).toThrow(/providers\.1: duplicate provider/);
+  });
+
+  it("refuses docs that aren't https, and a why or group that is empty or too long", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: [{ name: "GITHUB_TOKEN", docs: "http://github.com" }],
+      }),
+    ).toThrow(/secrets\.0\.docs: must be an https URL/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [{ id: "openai", docs: "settings/keys" }],
+      }),
+    ).toThrow(/providers\.0\.docs/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        capabilities: { context: { access: "read", why: "" } },
+      }),
+    ).toThrow(/capabilities\.context\.why/);
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        secrets: [
+          { name: "A", anyOf: "x".repeat(41) },
+          { name: "B", anyOf: "x".repeat(41) },
+        ],
+      }),
+    ).toThrow(/secrets\.0\.anyOf/);
+  });
+
+  it("refuses an entry that is both optional and in a any-of group", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [
+          { id: "workers-ai", anyOf: "AI model", optional: true },
+          { id: "openrouter", anyOf: "AI model" },
+        ],
+      }),
+    ).toThrow(
+      'providers: workers-ai is both optional and in the any-of group "AI model"; a group\'s member is optional by itself, so drop one of them.',
+    );
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        capabilities: {
+          email: { access: "write", anyOf: "mail", optional: true },
+          members: { access: "read", anyOf: "mail" },
+        },
+      }),
+    ).toThrow(
+      /capabilities\.email is both optional and in the any-of group "mail"/,
+    );
+  });
+
+  it("refuses a any-of group with one member, and counts members across providers, capabilities and secrets", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [{ id: "openrouter", anyOf: "AI model" }],
+      }),
+    ).toThrow(
+      'the any-of group "AI model" has one member (providers: openrouter); an any-of group needs two or more. Drop anyOf, or mark it optional.',
+    );
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        providers: [{ id: "openrouter", anyOf: "AI model" }],
+        secrets: [{ name: "ANTHROPIC_API_KEY", anyOf: "AI model" }],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateManifestStrict({
+        id: "inbox",
+        capabilities: { context: { access: "read", anyOf: "research" } },
+        secrets: [{ name: "FIRECRAWL_KEY", anyOf: " research " }],
+      }),
+    ).not.toThrow();
+  });
+
+  it("counts a secret entry for the dispatch tier like a bare name", () => {
+    expect(
+      manifestTierProblems(
+        { secrets: [{ name: "GITHUB_TOKEN", optional: true }] },
+        "dispatch",
+      ),
+    ).toEqual([
+      "secrets: third-party apps can't have secrets of their own yet",
+    ]);
+  });
+});
+
 describe("helper Workers", () => {
   const withAudit = {
     id: "seo",

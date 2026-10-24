@@ -35,7 +35,7 @@ describe("handleAuthenticatedAiProxyRequest", () => {
       code: "ai_provider_not_configured",
       error: {
         message:
-          "Provider is not configured: the gateway needs OPENAI_API_KEY for openai.",
+          "Provider is not configured: the gateway needs OPENAI_API_KEY for openai. Its operator sets it with: everyapp secret set OPENAI_API_KEY",
       },
     });
   });
@@ -554,7 +554,7 @@ describe("Workers AI", () => {
         code: "ai_provider_not_configured",
         error: {
           message:
-            "Provider is not configured: the gateway needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID for workers-ai.",
+            "Provider is not configured: the gateway needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID for workers-ai. Its operator sets them with: everyapp secret set WORKERS_AI_API_TOKEN CLOUDFLARE_ACCOUNT_ID",
           code: "ai_provider_not_configured",
           type: "gateway_refusal",
         },

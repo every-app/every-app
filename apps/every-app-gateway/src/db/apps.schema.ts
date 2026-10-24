@@ -50,6 +50,12 @@ export const apps = sqliteTable(
     // the CLI routes to its Worker with Email Routing. Null: none set.
     emailSenders: text("email_senders"),
     emailInbound: text("email_inbound"),
+    // JSON string[] of the secrets on the app's own Worker, as the CLI
+    // last recorded them (deploy, register, secret set|unset, status),
+    // everyapp's own left out. The settings model reads it to say whether
+    // a required secret of the app's own is set; null (never recorded)
+    // counts as unknown and never blocks.
+    secretNames: text("secret_names"),
     // The app's deploy state:
     //  - 'pending': registered, its Worker not uploaded yet (not bound);
     //  - 'binding': uploaded; the first request that reaches it over the

@@ -664,6 +664,7 @@ describe("deleteUpdate", () => {
       isDefault: false,
       emailSenders: null,
       emailInbound: null,
+      secretNames: null,
     });
     expect(deleteUpdate({ status: "deleted" })).toBeNull();
   });

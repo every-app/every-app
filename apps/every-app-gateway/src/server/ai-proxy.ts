@@ -220,7 +220,7 @@ export async function handleAuthenticatedAiProxyRequest({
     return aiRefusal(
       "ai_provider_not_configured",
       503,
-      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${provider}.`,
+      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${provider}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")}`,
     );
   }
 

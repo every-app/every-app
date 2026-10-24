@@ -114,6 +114,61 @@ export function isSettableGatewaySetting(
 }
 
 /**
+ * Settable Gateway settings whose value is a plain word, address, list
+ * or switch rather than a credential: a sender, a provider choice, a
+ * URL, an audience, a flag. `everyapp secret set` may show these as they
+ * are typed and check their shape; anything else is a credential and
+ * stays hidden.
+ */
+export const PLAIN_GATEWAY_SETTINGS = [
+  "EMAIL_FROM",
+  "EMAIL_FROM_NAME",
+  "EMAIL_PROVIDER",
+  "EMAIL_PASSWORD_SIGN_IN",
+  "MASTODON_URL",
+  "AI_PROXY_EXTRA_ROUTES",
+  "MCP_OAUTH_ENABLED",
+  "MCP_DCR_ENABLED",
+  "MCP_ALLOWED_ORIGINS",
+  "MCP_AUDIT_RETENTION_DAYS",
+  "CLOUDFLARE_ACCESS_OIDC_ISSUER",
+  "CLOUDFLARE_ACCESS_OIDC_CLIENT_ID",
+  "CLOUDFLARE_ACCESS_OIDC_LABEL",
+  "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
+  "CLOUDFLARE_ACCESS_AUD",
+  "CLOUDFLARE_ACCESS_APPS_AUD",
+  "CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS",
+  "CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN",
+  "HOSTED_OPEN_SIGNUP",
+  "BROWSER_APP_INSTALLS",
+  "DISPATCH_NAMESPACE",
+  "THIRD_PARTY_DOMAIN",
+] as const satisfies readonly SettableGatewaySetting[];
+
+const PLAIN: ReadonlySet<string> = new Set(PLAIN_GATEWAY_SETTINGS);
+
+/** Whether a settable Gateway setting's value is a plain value, not a credential. */
+export function isPlainGatewaySetting(name: string): boolean {
+  return PLAIN.has(name);
+}
+
+/**
+ * Settable Gateway settings only the hosted gateway reads: a self-hosted
+ * install never needs them, so `secret list` leaves them out there.
+ */
+export const HOSTED_ONLY_GATEWAY_SETTINGS = [
+  "HOSTED_OPEN_SIGNUP",
+  "DISPATCH_NAMESPACE",
+  "THIRD_PARTY_DOMAIN",
+] as const satisfies readonly SettableGatewaySetting[];
+
+const HOSTED_ONLY: ReadonlySet<string> = new Set(HOSTED_ONLY_GATEWAY_SETTINGS);
+
+export function isHostedOnlyGatewaySetting(name: string): boolean {
+  return HOSTED_ONLY.has(name);
+}
+
+/**
  * The Gateway's own settings: the install writes them once (`everyapp
  * setup`), or an operator by hand (THIRD_PARTY_DEPLOYS), and `everyapp
  * secret set` never changes them. An app's own Worker may still have a
@@ -219,13 +274,14 @@ export interface GatewaySettingNeed {
  * refuses it elsewhere.
  */
 export function gatewaySettingsFor(manifest: {
-  readonly providers?: readonly string[];
+  readonly providers?: ReadonlyArray<string | { readonly id: string }>;
   readonly capabilities?: { readonly [id: string]: unknown };
   readonly ai?: { readonly routes?: readonly string[] };
 }): GatewaySettingNeed[] {
   const needs: Array<{ name: string; required: boolean }> = [];
-  for (const provider of manifest.providers ?? []) {
-    const spec = devAiProvider(provider);
+  for (const entry of manifest.providers ?? []) {
+    // A provider is listed by id, or as an entry with its need (appSettings.ts).
+    const spec = devAiProvider(typeof entry === "string" ? entry : entry.id);
     if (!spec) continue;
     for (const name of aiProviderSettings(spec))
       needs.push({ name, required: true });

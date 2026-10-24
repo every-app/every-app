@@ -4,6 +4,10 @@ import { CAPABILITIES, capabilitySettings } from "./capabilities";
 import {
   gatewaySettingOwner,
   gatewaySettingsFor,
+  HOSTED_ONLY_GATEWAY_SETTINGS,
+  isHostedOnlyGatewaySetting,
+  isPlainGatewaySetting,
+  PLAIN_GATEWAY_SETTINGS,
   INSTALL_OWNED_GATEWAY_SETTINGS,
   isInstallOwnedGatewaySetting,
   isReservedAppSecretName,
@@ -101,6 +105,25 @@ describe("gatewaySettingOwner", () => {
   });
 });
 
+describe("plain and hosted-only settings", () => {
+  it("names only settable settings, and tells a credential from a plain value", () => {
+    for (const name of [
+      ...PLAIN_GATEWAY_SETTINGS,
+      ...HOSTED_ONLY_GATEWAY_SETTINGS,
+    ]) {
+      expect(isSettableGatewaySetting(name), name).toBe(true);
+    }
+    expect(isPlainGatewaySetting("EMAIL_FROM")).toBe(true);
+    expect(isPlainGatewaySetting("MCP_OAUTH_ENABLED")).toBe(true);
+    expect(isPlainGatewaySetting("OPENAI_API_KEY")).toBe(false);
+    expect(isPlainGatewaySetting("LINKEDIN_CLIENT_SECRET")).toBe(false);
+    expect(isPlainGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
+    expect(isHostedOnlyGatewaySetting("THIRD_PARTY_DOMAIN")).toBe(true);
+    // The browser deployer's token serves self-hosted installs too.
+    expect(isHostedOnlyGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
+  });
+});
+
 describe("gatewaySettingsFor", () => {
   it("lists what the manifest's providers and capabilities read, in order, once, required first where both say so", () => {
     expect(
@@ -118,9 +141,9 @@ describe("gatewaySettingsFor", () => {
       { name: "WORKERS_AI_API_TOKEN", required: true },
       { name: "OPENAI_API_KEY", required: true },
       { name: "EMAIL_FROM", required: true },
-      { name: "EMAIL_FROM_NAME", required: true },
-      // Another transport, and the provider choice: the Gateway sends
-      // through its EMAIL binding without them.
+      // The sender's display name, another transport, and the provider
+      // choice: the Gateway sends through its EMAIL binding without them.
+      { name: "EMAIL_FROM_NAME", required: false },
       { name: "EMAIL_REST_API_TOKEN", required: false },
       { name: "RESEND_API_KEY", required: false },
       { name: "EMAIL_PROVIDER", required: false },

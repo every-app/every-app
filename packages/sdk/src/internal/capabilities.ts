@@ -36,6 +36,10 @@ export interface ApiKeyCapability {
   label: string;
   /** The gateway secret holding the key; in local dev, the `.dev.vars` name. */
   secret: string;
+  /** Where an operator gets the key: the provider's API access page. */
+  docs: string;
+  /** The everyapp skill's setup guide for it, relative to the skill (`setup/dataforseo.md`). */
+  setup: string;
   /** The only hosts the key is ever sent to, always over https. */
   hosts: readonly string[];
   /** The access levels the provider offers; the manifest may ask for these only. */
@@ -70,6 +74,8 @@ export interface GatewayServiceCapability {
   settings: readonly string[];
   /** Settings it reads when set (another transport), ready or not. */
   optionalSettings: readonly string[];
+  /** The everyapp skill's setup guide, when there is anything to set up. */
+  setup?: string;
 }
 
 /** Where the gateway puts an OAuth client on a token request. */
@@ -203,6 +209,8 @@ export interface OAuthClientCapability {
   access: readonly ["write"];
   /** Where the operator registers the client. */
   console: string;
+  /** The everyapp skill's setup guide for the client, when one exists. */
+  setup?: string;
   /**
    * The authorize endpoint the app sends people to (a path on the
    * `hostSetting` origin when the provider has none fixed) and the scopes
@@ -236,6 +244,8 @@ export const CAPABILITIES = {
     mode: "api_key",
     label: "DataForSEO",
     secret: "DATAFORSEO_API_KEY",
+    docs: "https://app.dataforseo.com/api-access",
+    setup: "setup/dataforseo.md",
     // The sandbox answers like production, with made-up data and no charge.
     hosts: ["api.dataforseo.com", "sandbox.dataforseo.com"],
     access: ["read"],
@@ -257,6 +267,8 @@ export const CAPABILITIES = {
     mode: "api_key",
     label: "Context.dev",
     secret: "CONTEXT_API_KEY",
+    docs: "https://context.dev/",
+    setup: "setup/context.md",
     hosts: ["api.context.dev"],
     access: ["read"],
     // Scraping and rendering pages reads the web; nothing it owns changes.
@@ -272,19 +284,24 @@ export const CAPABILITIES = {
     label: "Email",
     access: ["write"],
     routes: { send: ["POST"] },
-    settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
+    // The sender is EMAIL_FROM. It needs a display name too, either
+    // EMAIL_FROM_NAME or the `Name <address>` form of EMAIL_FROM itself, so
+    // the name is "read when set" here and the gateway's own rule
+    // (isEmailConfigured: a sender that parses and a provider that is
+    // selectable) decides readiness where values can be read.
+    settings: ["EMAIL_FROM"],
     // The providers' settings (internal/email.ts chooseEmailProvider):
     // Cloudflare's REST pair, sent instead of the gateway's EMAIL binding
     // (a gateway outside Workers, local dev); Resend's key; and the choice
     // between them when both are set.
-    // TODO(integration): RESEND_API_KEY and EMAIL_PROVIDER added by the
-    // email-providers lane (this file is outside its ownership list).
     optionalSettings: [
+      "EMAIL_FROM_NAME",
       "EMAIL_REST_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
       "RESEND_API_KEY",
       "EMAIL_PROVIDER",
     ],
+    setup: "setup/email.md",
   },
   // The organization's members who can open the app
   // (apps/every-app-gateway/src/server/capabilities/members.ts): who an app
@@ -464,6 +481,7 @@ export const CAPABILITIES = {
     ],
     access: ["write"],
     console: "https://console.cloud.google.com/apis/credentials",
+    setup: "setup/google.md",
     authorize: {
       url: "https://accounts.google.com/o/oauth2/v2/auth",
       // YouTube channels, and Google Business Profiles on the same client.
@@ -656,6 +674,7 @@ export const CAPABILITIES = {
     ],
     access: ["write"],
     console: "https://api.slack.com/apps",
+    setup: "setup/slack.md",
     authorize: {
       url: "https://slack.com/oauth/v2/authorize",
       // Postiz's bot scopes, then Open CRM's: its team agents post to
@@ -833,6 +852,7 @@ export const CAPABILITIES = {
     ],
     access: ["write"],
     console: "https://console.cloud.google.com/apis/credentials",
+    setup: "setup/google.md",
     authorize: {
       url: "https://accounts.google.com/o/oauth2/v2/auth",
       scopes: [
@@ -999,6 +1019,7 @@ export const CAPABILITIES = {
     access: ["write"],
     console:
       "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    setup: "setup/microsoft-365.md",
     authorize: {
       url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
       scopes: ["offline_access", "User.Read", "Mail.Read", "Calendars.Read"],

@@ -2,6 +2,7 @@ import {
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
   ORG_HEADER,
+  providerIds,
   verifyIdentityJwt,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
@@ -262,7 +263,7 @@ export async function handleAppGatewayRequest({
     }
 
     const { provider } = route;
-    if (!app.manifest.providers?.includes(provider)) {
+    if (!providerIds(app.manifest).includes(provider)) {
       throw new AppGatewayError(
         "provider_not_allowed",
         403,

@@ -62,6 +62,14 @@ export interface RegisteredApp {
   rowId?: string;
   /** The Worker version the last deploy uploaded; null before the first. */
   versionId?: string | null;
+  /**
+   * The names of the secrets on the app's own Worker (`apps.secret_names`),
+   * as the CLI last recorded them (deploy, register, secret set|unset,
+   * status), everyapp's own left out; null when never recorded, which the
+   * settings model treats as unknown and never blocks on. Registries
+   * backed by D1 set it.
+   */
+  secretNames?: string[] | null;
 }
 
 export interface AppRegistry {
@@ -86,8 +94,34 @@ export interface AppRegistryRow {
   manifest: string;
   /** `apps.email_senders`: a JSON string[] column, or null. */
   emailSenders?: string | null;
+  /** `apps.secret_names`: a JSON string[] column, or null when never recorded. */
+  secretNames?: string | null;
   rowId?: string;
   versionId?: string | null;
+}
+
+/**
+ * The secret names a row records, or null for a row that never recorded
+ * them (the column null, or anything that isn't a JSON list of names).
+ */
+export function parseSecretNames(
+  stored: string | null | undefined,
+): string[] | null {
+  if (!stored) return null;
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) &&
+      parsed.every((name) => typeof name === "string")
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The column value for a list of secret names: sorted, each once. */
+export function storedSecretNames(names: readonly string[]): string {
+  return JSON.stringify([...new Set(names)].sort());
 }
 
 /**
@@ -130,6 +164,9 @@ export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
       : { emailSenders: parseEmailList(row.emailSenders) }),
     ...(row.rowId === undefined ? {} : { rowId: row.rowId }),
     ...(row.versionId === undefined ? {} : { versionId: row.versionId }),
+    ...(row.secretNames === undefined
+      ? {}
+      : { secretNames: parseSecretNames(row.secretNames) }),
   };
 }
 
