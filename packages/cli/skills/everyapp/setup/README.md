@@ -48,9 +48,10 @@ checkout root with no app named, `data.apps[]` has every app's `id` and
 `data.apps[].setup`, and a deployed app whose `ready` is false gets the
 `data.fixes` entry `APP_NEEDS_SETUP` (a warning, `<app> needs setup`,
 `run` the command above). Under each unmet setting that has a guide,
-`status` prints `Guide: .claude/skills/everyapp/setup/<name>.md` (once per
-guide; the same lines are in `data.fixes[].message`), and `secret list
---json` names it as the setting's `setup`: that is how an agent lands on
+`status` (under "<app> needs setup"; the same lines are in
+`data.fixes[].message`) and `secret list <app id>` (under its unmet settings)
+print `Guide: .claude/skills/everyapp/setup/<name>.md`, once per guide, and
+`secret list --json` names it as the setting's `setup`: that is how an agent lands on
 one of these files. On the Gateway's home such an app shows
 "Needs setup" and opens its setup dialog instead of the app (a browser
 visit to the app's own host lands in that dialog too; any other request

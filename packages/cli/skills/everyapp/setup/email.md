@@ -73,9 +73,10 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   --json` in its directory): this file applies when `data.app.setup.unmet`
   has the entry `id: "email"` (`kind: "capability"`, `holder: "gateway"`,
   `names: ["EMAIL_FROM"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
-  the path `status` prints as `Guide: .claude/skills/everyapp/setup/email.md`
-  under "<app> needs setup", and `secret list --json` carries per unmet
-  setting; how an agent lands here), and `data.app.setup.command` is the one
+  the path `status` (under "<app> needs setup") and `secret list <app id>`
+  (under the unmet setting) print as `Guide:
+  .claude/skills/everyapp/setup/email.md`, and `secret list --json` carries
+  per unmet setting; how an agent lands here), and `data.app.setup.command` is the one
   `secret set` that opens the app, `EMAIL_FROM` among its names. The older
   `data.gateway.needed` (each `{ name, required, set }`) and
   `data.gateway.missing` still say the same of `EMAIL_FROM`; `EMAIL_FROM_NAME`,

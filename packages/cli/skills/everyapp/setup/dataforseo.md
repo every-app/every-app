@@ -68,10 +68,10 @@ payment comes in only at Add Funds.
    credential again. The older fields still say the same:
    `data.gateway.needed` has `{ "name": "DATAFORSEO_API_KEY", "required":
    true, "set": … }` and `data.gateway.missing` names it while unset. This
-   is how an agent lands here: `status` prints `Guide:
-   .claude/skills/everyapp/setup/dataforseo.md` under "openseo needs
-   setup", and `secret list --json` carries the path as the entry's
-   `setup` (in the checkout the file is
+   is how an agent lands here: `status` (under "openseo needs setup") and
+   `secret list openseo` (under the unmet setting) print `Guide:
+   .claude/skills/everyapp/setup/dataforseo.md`, and `secret list --json`
+   carries the path as the entry's `setup` (in the checkout the file is
    `packages/cli/skills/everyapp/setup/dataforseo.md`). The error
    `APP_NOT_FOUND` ("openseo isn't deployed to this Gateway yet", exit 1):
    deploy it first. OpenSEO lives in its own repository, so ask the person

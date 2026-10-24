@@ -72,9 +72,10 @@ try both apps.
    rotate, remove). The older fields still say the same:
    `data.gateway.needed[]` has `{ "name": "OPENROUTER_API_KEY", "required":
    true, "set": false }` and `data.gateway.missing` names it while unset.
-   This is how an agent lands here: `status` prints `Guide:
-   .claude/skills/everyapp/setup/openrouter.md` under "<app> needs setup",
-   and `secret list --json` carries the path as the entry's `setup` (in the
+   This is how an agent lands here: `status` (under "<app> needs setup") and
+   `secret list <app id>` (under the unmet setting) print `Guide:
+   .claude/skills/everyapp/setup/openrouter.md`, and `secret list --json`
+   carries the path as the entry's `setup` (in the
    checkout: `packages/cli/skills/everyapp/setup/openrouter.md`).
    agentic-inbox: its manifest lists `providers: ["workers-ai",
    "openrouter"]` as plain ids, so both are `need.kind` `required` and

@@ -80,9 +80,9 @@ gives no API credit.
    `data.gateway.needed` has `{"name":"OPENAI_API_KEY","required":true,"set":false}`
    (and `AI_PROXY_EXTRA_ROUTES` when the manifest has `ai.routes`), and
    `data.gateway.missing` lists what is still to set. This is how an agent
-   lands here: `status` prints `Guide:
-   .claude/skills/everyapp/setup/openai.md` under "<app> needs setup", and
-   `secret list --json` carries the path as the entry's `setup` (in the
+   lands here: `status` (under "<app> needs setup") and `secret list <app id>`
+   (under the unmet setting) print `Guide:
+   .claude/skills/everyapp/setup/openai.md`, and `secret list --json` carries the path as the entry's `setup` (in the
    checkout: `packages/cli/skills/everyapp/setup/openai.md`).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true, `data.gatewayUrl` is `https://<gateway host>`; the app's entry in
