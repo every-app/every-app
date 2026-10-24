@@ -58,4 +58,7 @@ it("tells a member who installs it, with no command", () => {
   expect(text).not.toContain("pnpm");
   expect(text).toContain("Ask an owner or admin to install it.");
   for (const need of openseo.needs) expect(text).toContain(need);
+  expect(
+    document.body.querySelector(`a[href="${openseo.repo}"]`),
+  ).not.toBeNull();
 });

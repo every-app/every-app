@@ -20,7 +20,7 @@ const README = readFileSync(
 );
 
 describe("the featured apps", () => {
-  it("are the four, each once, in the README's order", () => {
+  it("are the four, each once, OpenSEO first", () => {
     expect(FEATURED_APPS.map((app) => app.id)).toEqual([
       "openseo",
       "crm",
