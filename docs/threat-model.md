@@ -360,15 +360,17 @@ and anything on the gateway's own host (B2).
   organization. Documented, not a finding; stated here so nobody expects
   less.
 
-**In flight this week** (the secrets model, PR #383, held for Ben): a
+**In flight this week** (the secrets model: #383 merged the manifest
+needs, `apps.secret_names` and the evaluator
+`apps/every-app-gateway/src/server/app-setup.ts`; the gate is #396, open): a
 perimeter hook `needsSetup({ app, request, publicRoute })` runs after the
 status checks and before authentication; an app whose required settings
 are unset answers `503 app_needs_setup` naming only the app id (or, for a
 private HTML navigation, a 302 to the gateway's home with `?setup=<app>`),
 public routes included. The invariant to pin when it lands: no setting
 name or value leaves the perimeter in those responses
-(`apps/every-app-gateway/src/server/app-needs-setup.ts`). A new
-`apps.secret_names` column holds the names of an app's own secrets, never
+(`apps/every-app-gateway/src/server/app-needs-setup.ts`). The
+`apps.secret_names` column (#383) holds the names of an app's own secrets, never
 values, written by the CLI and shown to members who can see the app; the
 gateway's `/mcp` leaves a not-ready app's tools out and names the missing
 setting in its instructions. One thing to know, not a gap: because the
@@ -666,12 +668,13 @@ Google and Microsoft per-app scope narrowing being built this week
 - *A granted OAuth client is all-or-nothing per app* (medium; the
   OAuth-scopes slice: `docs/design/2026-10-oauth-scopes.md` for the
   design, #398 merged for the registry's `scopePolicy` on
-  `google-workspace` and `microsoft-365`, #414 held for the manifest
-  field, #411 held for the gateway). Today the gateway completes a
-  network's token endpoints without reading scopes: the app chooses the
-  consent's scopes and keeps the tokens, so nothing stopped an app granted
-  `google-workspace` for Search Console from reading Gmail. Once #411
-  merges the invariants in the table below hold. Their honest limits,
+  `google-workspace` and `microsoft-365`, #414 merged for the manifest
+  field, #411 merged for the gateway, both 2026-10-24). Before them the
+  gateway completed a network's token endpoints without reading scopes:
+  the app chose the consent's scopes and kept the tokens, so nothing
+  stopped an app granted `google-workspace` for Search Console from
+  reading Gmail. With #411 on main the invariants in the table below
+  hold. Their honest limits,
   which stay in this model: the network's API calls still don't pass
   through the gateway (the app holds the tokens, so the per-set host and
   path allowlist in `packages/sdk/src/internal/oauthScopes.ts` enforces
@@ -686,7 +689,7 @@ Google and Microsoft per-app scope narrowing being built this week
   app; and the boundary exists only because the client is confidential
   (the registry requires a client secret for a scope policy).
 
-  | Id | Invariant (once #411 merges; lines at commit 40159f82) | Enforced by | Pinned by |
+  | Id | Invariant (#411, merged 2026-10-24; lines at its commit 40159f82) | Enforced by | Pinned by |
   |---|---|---|---|
   | `oauth.scopes-declared-or-no-token` | An app that lists `google-workspace` or `microsoft-365` without a valid `scopes` list (missing, empty, duplicated, or a name the registry doesn't define) gets no token at all: `403 integration_scopes_undeclared` before attribution and before any upstream call. | `apps/every-app-gateway/src/server/capabilities/oauthClient.ts:185` | `oauthClient.test.ts` :: refuses an app that lists the client without scope sets (the "scope sets: Google and Microsoft" cases); `oauth-client.sqlite.test.ts` |
   | `oauth.granted-scopes-within-sets` | The gateway never forwards a token whose granted scopes exceed the app's declared sets, on exchange and on refresh, for a person's call and for background calls: the provider's 2xx answer is buffered (64 KiB), its `scope` parsed per provider, and an excess answers `403 integration_scope_exceeded` with the body dropped, never stored, logged or revoked. | `oauthClient.ts:384-437` | `oauthClient.test.ts` :: refuses a token outside the app's sets, dropping it; :: refuses the union include_granted_scopes yields; :: refuses a refresh echoing a scope set the manifest dropped, in the background too; the Microsoft case |
@@ -695,7 +698,7 @@ Google and Microsoft per-app scope narrowing being built this week
   | `oauth.scope-logs-names-only` | Logs carry the declared set names and, on a refusal, the scope names in excess (capped), never a token, code, id_token, body or client value, across log, warn and error lines. | `oauthClient.ts` (the logged object) | `oauthClient.test.ts` :: logs no client, code or token across a Google exchange, a Microsoft exchange and a refused answer |
 
 - *The token endpoint signed any grant type* (high before #387; fixed
-  there, held for Ben). Facebook's client-credentials grant returns the
+  there, merged 2026-10-24). Facebook's client-credentials grant returns the
   app access token `<app id>|<app secret>`: the operator's secret itself;
   Discord's, Twitch's and Kick's mint application-level tokens. The proxy
   now completes only a user's grants (`authorization_code`,
@@ -1188,8 +1191,9 @@ Everything this pass found that isn't closed, ranked for the self-hosted
 launch: what a stranger, a member, an app or an AI client could do that the
 model says they shouldn't, then what the operator is exposed to, then the
 hosted tier. Each line names the boundary and, where one exists, the
-invariant id and the TODO entry. "Fixed" means a pull request exists; "held"
-means it waits for Ben's review because it touches a boundary.
+invariant id and the TODO entry. "Fixed" names the pull request; "merged"
+means it is on main (every boundary fix from this pass merged on
+2026-10-24); "held" means it waits for Ben's review.
 
 **Self-hosted, before Monday if possible**
 
@@ -1208,7 +1212,7 @@ means it waits for Ben's review because it touches a boundary.
    it to the install organization's owners, default it off, or move the
    token into a thin deployer Worker. It also has no self-hosted test.
 2. **The OAuth-client proxy signed any grant** (B4, high; fixed in #387,
-   held). Facebook's client-credentials grant returns the app access
+   merged). Facebook's client-credentials grant returns the app access
    token, which is `<app id>|<app secret>`: the operator's secret handed
    to the app. Discord, Twitch and Kick mint application-level tokens.
    The proxy now completes only a user's grants.
@@ -1237,13 +1241,13 @@ means it waits for Ben's review because it touches a boundary.
    wrote, so the read-only promise there rests on the app honouring the
    scopes. No in-repo app does this and the starter never did; a
    post-launch perimeter PR may remove the hatch.
-7. **A password reset doesn't end existing sessions** (B2, medium; fixed in #405,
-   held). Better Auth's `revokeSessionsOnPasswordReset` is
-   unset, so the standard remedy for a stolen session does nothing to it
+7. **A password reset didn't end existing sessions** (B2, medium; fixed in #405,
+   merged). Better Auth's `revokeSessionsOnPasswordReset` was
+   unset, so the standard remedy for a stolen session did nothing to it
    for up to 7 days.
 8. **The AI proxy forwarded encoded separators inside an opened extra
    route, and checked only the first `model` part of a multipart body**
-   (B4, medium; fixed in #403, held). With `/v1/files` opened,
+   (B4, medium; fixed in #403, merged). With `/v1/files` opened,
    `/v1/files/x/..%2F..%2Fbatches` reached OpenAI, which decodes `%2F`
    before routing, so the shared key listed the account's batches.
 9. **An app response's `Set-Cookie` could keep `Domain=` past the
@@ -1251,7 +1255,7 @@ means it waits for Ben's review because it touches a boundary.
    known; `perimeter.first-party-101-cookie-domain` is not enforced; TODO
    "Strip session-named Set-Cookie headers") and, if the attribute matcher
    is strict about whitespace and case, on any response: `Domain =example.com` slipped
-   past the matcher (B1; fixed in #406, held). A parent-domain session cookie locks
+   past the matcher (B1; fixed in #406, merged). A parent-domain session cookie locks
    every member out until they clear cookies.
 10. **A stolen admin session can take over any single-organization
     member and entrench itself** (B2, medium): reset links for members,
@@ -1286,8 +1290,8 @@ means it waits for Ben's review because it touches a boundary.
     paths through Access. Fixed in #424: the deploy summary lists them
     ("Open to the internet without sign-in: GET /t/*, …") and
     `everyapp status` shows a PUBLIC column per app.
-16. **DataForSEO's `tasks_fixed` is account-wide and served** (B4, medium;
-    fixed in #402, held).
+16. **DataForSEO's `tasks_fixed` was account-wide and served** (B4, medium;
+    fixed in #402, merged).
 17. **No owner recovery and no ownership transfer** (B2, medium, known).
     A compromised owner account can't be removed by anyone but the
     operator editing D1.
@@ -1310,7 +1314,7 @@ means it waits for Ben's review because it touches a boundary.
     access tokens"). The read-only token an AI client should get can't be
     made from the UI.
 22. **An admin could mail a reset link to the owner, another admin,
-    themselves or a deactivated member** (B2, low; fixed in #407, held).
+    themselves or a deactivated member** (B2, low; fixed in #407, merged).
 23. **With `GATEWAY_URL` missing, the outer ring stops vouching as well as
     signing in, while the config still reports it on** (B6, low). Every
     session check then honours a cookie with no assertion. A one-line
@@ -1331,7 +1335,7 @@ means it waits for Ben's review because it touches a boundary.
     exceptions left but the token endpoints.
 27. **An app could publish OAuth authorization-server metadata on its
     host** (`/.well-known/oauth-authorization-server`,
-    `openid-configuration`) that legacy MCP discovery honours (B1, low; fixed in #406, held: both paths are reserved like
+    `openid-configuration`) that legacy MCP discovery honours (B1, low; fixed in #406, merged: both paths are reserved like
     the protected-resource one).
 28. **`ai.models` checks only the JSON `model` field; OpenRouter's `models`
     fallback list is forwarded unchecked** (B4, low).
