@@ -107,11 +107,15 @@ function toMcpTool(
 
 /**
  * The tools this caller may see, in a stable order: on the gateway surface
- * the built-in `everyapp_*` tools first, then by app id, then name. Reads
+ * the built-in `everyapp_*` tools its listing mode shows first, then by app
+ * id, then name; in compact mode the built-ins alone, the apps' tools being
+ * found with `everyapp_search_tools` and run through the wrappers. Reads
  * only the snapshot; never calls an app.
  */
 export function listTools(view: ToolBusView): Tool[] {
-  const tools: Tool[] = view.surface === "gateway" ? listBuiltinTools() : [];
+  const tools: Tool[] =
+    view.surface === "gateway" ? listBuiltinTools(view) : [];
+  if (view.surface === "gateway" && view.listing === "compact") return tools;
   for (const app of [...view.apps].sort(byKey((item) => item.appId))) {
     for (const tool of [...app.tools].sort(byKey((item) => item.name))) {
       if (evaluateToolPolicy(tool, view.principal).action === "allow") {
@@ -125,7 +129,8 @@ export function listTools(view: ToolBusView): Tool[] {
 /**
  * 16 hex characters of SHA-256 over the tools this caller would be listed:
  * names, schemas, descriptions and hints. Equal lists hash equal; a changed
- * one is what `notifications/tools/list_changed` reports.
+ * one is what `notifications/tools/list_changed` reports. Computed from the
+ * listed tools, so a change of listing mode reads as a list change too.
  */
 export async function toolListHash(view: ToolBusView): Promise<string> {
   const digest = await crypto.subtle.digest(

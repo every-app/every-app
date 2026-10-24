@@ -30,7 +30,11 @@ const PRUNE_MAX_BATCHES = 20;
 /** The most rows one listed page carries; the server function's cap too. */
 export const TOOL_CALL_PAGE_MAX = 200;
 
-/** Record one tool call: who, which tool, the decision and outcome. */
+/**
+ * Record one tool call: who, which tool, the decision and outcome. A call
+ * made through a wrapper built-in is one row too: the inner tool's, with
+ * the wrapper in `via`.
+ */
 async function insert(event: ToolCallAuditEvent): Promise<void> {
   await db.insert(mcpToolCalls).values({
     id: event.callId,
@@ -45,6 +49,7 @@ async function insert(event: ToolCallAuditEvent): Promise<void> {
     appRowId: event.appRowId ?? null,
     appSlug: event.appId ?? null,
     toolName: event.tool,
+    via: event.via ?? null,
     risk: event.risk ?? null,
     decision: event.decision,
     reason: event.reason ?? null,
@@ -117,6 +122,7 @@ async function listForOrganization(
       appName: apps.name,
       appStatus: apps.status,
       toolName: mcpToolCalls.toolName,
+      via: mcpToolCalls.via,
       risk: mcpToolCalls.risk,
       decision: mcpToolCalls.decision,
       reason: mcpToolCalls.reason,
@@ -178,7 +184,7 @@ async function listForOrganization(
         name: row.appName,
         removed: isRemoved(row.appRowId, row.appStatus),
       },
-      tool: { name: row.toolName, risk: row.risk },
+      tool: { name: row.toolName, risk: row.risk, via: row.via },
       decision: row.decision === "allowed" ? "allowed" : "blocked",
       reason: row.reason,
       outcome: row.outcome,

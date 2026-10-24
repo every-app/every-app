@@ -92,10 +92,12 @@ export function gatewayView(
   apps: ToolBusApp[],
   principal: McpPrincipal = PRINCIPAL,
   allowedOrigins?: readonly string[],
+  listing?: ToolBusView["listing"],
 ): ToolBusView {
   return gatewaySurfaceView(principal, apps, {
     requestId: "ray_1",
     ...(allowedOrigins ? { allowedOrigins } : {}),
+    ...(listing ? { listing } : {}),
   });
 }
 

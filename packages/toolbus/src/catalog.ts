@@ -21,8 +21,14 @@ import { MAX_TOOL_NAME_LENGTH, namespacedToolName } from "./names";
 import type { JsonObject, ToolBusSigning, ToolBusTool } from "./types";
 import { unusableSchemaReason } from "./validation";
 
+/**
+ * What bounds a catalog. There is no count of tools per app: an app has
+ * the tools it has, and a caller whose list grows past what its client
+ * takes gets the compact listing (view.ts). What still bounds one is each
+ * tool's own limits here, the catalog response as a whole, and the
+ * gateway's one atomic write of the snapshot (AppToolRepository).
+ */
 export const CATALOG_LIMITS = {
-  toolsPerApp: 100,
   /** Serialized size of one input or output schema. */
   schemaBytes: 20 * 1024,
   descriptionChars: 2048,
@@ -30,6 +36,8 @@ export const CATALOG_LIMITS = {
   instructionsChars: 2048,
   /** One warning the app reports about a tool it left out. */
   warningChars: 500,
+  /** How many of the app's own warnings the snapshot keeps. */
+  warningsMax: 100,
   /** A whole catalog response. */
   responseBytes: 5 * 1024 * 1024,
 } as const;
@@ -81,7 +89,7 @@ export function normalizeCatalog(
   const warnings: string[] = Array.isArray(body["warnings"])
     ? body["warnings"]
         .filter((warning): warning is string => typeof warning === "string")
-        .slice(0, CATALOG_LIMITS.toolsPerApp)
+        .slice(0, CATALOG_LIMITS.warningsMax)
         .map((warning) => warning.slice(0, CATALOG_LIMITS.warningChars))
     : [];
   let instructions: string | undefined;
@@ -97,13 +105,7 @@ export function normalizeCatalog(
 
   const accepted: ToolBusTool[] = [];
   const seen = new Set<string>();
-  for (const [index, raw] of tools.entries()) {
-    if (accepted.length === CATALOG_LIMITS.toolsPerApp) {
-      warnings.push(
-        `only the first ${CATALOG_LIMITS.toolsPerApp} tools are served; ${tools.length - index} skipped`,
-      );
-      break;
-    }
+  for (const raw of tools) {
     const checked = normalizeTool(appId, raw);
     if (typeof checked === "string") {
       warnings.push(checked);

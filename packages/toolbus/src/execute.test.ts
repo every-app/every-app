@@ -5,6 +5,8 @@ import {
   IDENTITY_HEADER,
   TOOLS_CALL_PATH,
 } from "@every-app/sdk/internal";
+import { SEARCH_RESULT_MAX_BYTES } from "./builtins";
+import { createArgumentsDigester } from "./digest";
 import { executeToolCall, MAX_RESULT_BYTES } from "./execute";
 import { listTools } from "./server";
 import {
@@ -16,6 +18,7 @@ import {
   todoApp,
 } from "./test-fixtures";
 import type { ToolBusDeps, ToolBusView, ToolCallAuditEvent } from "./types";
+import { MAX_CHECKED_VALUES, measureJson } from "./validation";
 
 let keys: Awaited<ReturnType<typeof testKeys>>;
 beforeAll(async () => {
@@ -682,5 +685,749 @@ describe("executeToolCall", () => {
         structuredContent: { n: 1 },
       },
     });
+  });
+});
+
+/** An app whose tools have titles and descriptions worth searching. */
+const notesApp = () =>
+  todoApp({
+    appId: "notes",
+    rowId: "row_notes",
+    audience: "every-acme-notes",
+    name: "Notes",
+    baseUrl: "https://notes-acme.example.com",
+    instructions: undefined,
+    tools: [
+      {
+        name: "search_notes",
+        title: "Search notes",
+        description: "Find notes by words.",
+        risk: "read",
+        inputSchema: {
+          type: "object",
+          properties: { q: { type: "string" } },
+          required: ["q"],
+        },
+      },
+      {
+        name: "create_note",
+        title: "Create note",
+        description: "Add a note.",
+        risk: "write",
+        inputSchema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+        },
+      },
+      {
+        name: "list_tags",
+        description: "List the tags notes carry.",
+        risk: "read",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "purge_notes",
+        title: "Purge notes",
+        description: "Delete every note.",
+        risk: "destructive",
+        inputSchema: { type: "object", properties: {} },
+      },
+    ],
+  });
+
+const READ_ONLY = { ...PRINCIPAL, access: "read" as const };
+
+describe("everyapp_search_tools", () => {
+  const search = async (
+    args: unknown,
+    view: ToolBusView = gatewayView([todoApp(), notesApp()]),
+    deps = harness(() => ok()).deps,
+  ) => {
+    const resolution = await executeToolCall(
+      view,
+      { name: "everyapp_search_tools", arguments: args },
+      deps,
+    );
+    if (resolution.kind !== "result") throw new Error("no result");
+    return resolution.result;
+  };
+  const names = (result: { structuredContent?: Record<string, unknown> }) =>
+    (result.structuredContent!["tools"] as { name: string }[]).map(
+      (tool) => tool.name,
+    );
+
+  it("ranks by the name, then the title, then the description, and reports the total", async () => {
+    // "notes" is in every notes_ name (+5); the title of search_notes (+3)
+    // and the descriptions of search_notes and list_tags (+1) break the tie.
+    const result = await search({ query: "notes" });
+    expect(names(result)).toEqual([
+      "notes_search_notes",
+      "notes_list_tags",
+      "notes_create_note",
+    ]);
+    expect(result.structuredContent).toMatchObject({ total: 3 });
+    expect(result.structuredContent).not.toHaveProperty("truncated");
+    expect(JSON.parse(String(result.content[0]!["text"]))).toEqual(
+      result.structuredContent,
+    );
+    // The whole name, listed or local, wins outright; the words still count.
+    expect(names(await search({ query: "notes_search_notes" }))[0]).toBe(
+      "notes_search_notes",
+    );
+    expect(names(await search({ query: "search_notes" }))[0]).toBe(
+      "notes_search_notes",
+    );
+    // Case doesn't matter; the description ("Create a todo.") is the point
+    // that puts the todo tool first.
+    expect(names(await search({ query: "Create" }))).toEqual([
+      "todo_create_todo",
+      "notes_create_note",
+    ]);
+    // A token is a substring: "note" is in every notes_ name, and the
+    // title and description words rank the one it names first.
+    expect(names(await search({ query: "Create note" }))).toEqual([
+      "notes_create_note",
+      "notes_search_notes",
+      "todo_create_todo",
+      "notes_list_tags",
+    ]);
+    // Ties go by app id, then local name.
+    expect(names(await search({ query: "list" }))).toEqual([
+      "notes_list_tags",
+      "todo_list_todos",
+    ]);
+    // Each result is enough to call the tool with.
+    const [first] = result.structuredContent!["tools"] as Record<
+      string,
+      unknown
+    >[];
+    expect(first).toEqual({
+      name: "notes_search_notes",
+      app: "notes",
+      title: "Search notes",
+      description: "Find notes by words.",
+      risk: "read",
+      inputSchema: notesApp().tools[0]!.inputSchema,
+    });
+  });
+
+  it("takes an app id alone (its tools by name), a limit, and both filters together", async () => {
+    const byApp = await search({ app: "notes" });
+    expect(names(byApp)).toEqual([
+      "notes_create_note",
+      "notes_list_tags",
+      "notes_search_notes",
+    ]);
+    expect(names(await search({ app: "notes", query: "tags" }))).toEqual([
+      "notes_list_tags",
+    ]);
+    expect(names(await search({ app: "nope" }))).toEqual([]);
+    const limited = await search({ query: "notes", limit: 1 });
+    expect(names(limited)).toEqual(["notes_search_notes"]);
+    expect(limited.structuredContent).toMatchObject({ total: 3 });
+    // Nothing matches: an empty answer, not an error.
+    const none = await search({ query: "zzz" });
+    expect(none.isError).toBeUndefined();
+    expect(none.structuredContent).toEqual({ tools: [], total: 0 });
+  });
+
+  it("searches the caller's policy-filtered view: destructive never, write not for read-only", async () => {
+    const all = await search({ query: "notes" });
+    expect(names(all)).not.toContain("notes_purge_notes");
+    expect(names(await search({ query: "purge delete" }))).toEqual([]);
+    const readOnly = gatewayView([todoApp(), notesApp()], READ_ONLY);
+    expect(names(await search({ query: "notes" }, readOnly))).toEqual([
+      "notes_search_notes",
+      "notes_list_tags",
+    ]);
+    expect(names(await search({ app: "todo" }, readOnly))).toEqual([
+      "todo_list_todos",
+    ]);
+    // The built-ins are not app tools and are never found.
+    expect(names(await search({ query: "everyapp whoami apps" }))).toEqual([]);
+  });
+
+  it("refuses arguments it can't use, as a tool error audited with the digest", async () => {
+    const { deps, events } = harness(() => ok());
+    const view = gatewayView([todoApp()]);
+    const texts: string[] = [];
+    for (const args of [
+      {},
+      { limit: 0 },
+      { query: "x", limit: 26 },
+      { query: "" },
+      { query: "x", extra: 1 },
+      { query: 1 },
+      [],
+      "x",
+    ]) {
+      const result = await search(args, view, deps);
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+      texts.push(String(result.content[0]!["text"]));
+    }
+    expect(texts[0]).toBe(
+      "Invalid arguments for everyapp_search_tools: give a query, an app id, or both.",
+    );
+    for (const text of texts) {
+      expect(text).toContain("Invalid arguments for everyapp_search_tools: ");
+    }
+    expect(events).toHaveLength(8);
+    for (const event of events) {
+      expect(event).toMatchObject({
+        tool: "everyapp_search_tools",
+        appId: "everyapp",
+        risk: "read",
+        decision: "allowed",
+        outcome: "invalid_arguments",
+      });
+    }
+    // The digest is there whenever the arguments were an object to digest.
+    expect(events.slice(0, 6).every((event) => event.argsDigest)).toBe(true);
+    expect(events[6]).not.toHaveProperty("argsDigest");
+    expect(events[7]).not.toHaveProperty("argsDigest");
+  });
+
+  it("holds its bounds however many values the arguments carry", async () => {
+    // An app's schema is skipped past MAX_CHECKED_VALUES (the app checks
+    // again); a built-in's is the gateway's own and nobody checks after it,
+    // so padding the arguments past the gate buys nothing: the same call
+    // is refused with and without the padding.
+    const { deps, requests, events } = harness(() => ok());
+    const view = gatewayView([todoApp()]);
+    const pad = new Array(MAX_CHECKED_VALUES).fill(0);
+    expect(measureJson({ pad }, 64)).toMatchObject({
+      values: MAX_CHECKED_VALUES + 2,
+    });
+    const padded = await search(
+      { query: "x".repeat(201), limit: 26, extra: 1, pad },
+      view,
+      deps,
+    );
+    expect(padded.isError).toBe(true);
+    expect(String(padded.content[0]!["text"])).toContain(
+      "Invalid arguments for everyapp_search_tools: ",
+    );
+    const limitless = await search(
+      { query: "todo", limit: 1e9, pad },
+      view,
+      deps,
+    );
+    expect(limitless.isError).toBe(true);
+    // The wrappers too: a padded wrapper call with a field the schema
+    // doesn't know never reaches the inner tool.
+    const wrapped = await executeToolCall(
+      view,
+      {
+        name: "everyapp_call_read",
+        arguments: { name: "todo_list_todos", arguments: {}, pad },
+      },
+      deps,
+    );
+    expect(wrapped).toMatchObject({
+      kind: "result",
+      result: {
+        isError: true,
+        content: [
+          {
+            text: expect.stringContaining(
+              "Invalid arguments for everyapp_call_read: ",
+            ),
+          },
+        ],
+      },
+    });
+    expect(requests).toEqual([]);
+    expect(events.map((event) => [event.tool, event.outcome])).toEqual([
+      ["everyapp_search_tools", "invalid_arguments"],
+      ["everyapp_search_tools", "invalid_arguments"],
+      ["everyapp_call_read", "invalid_arguments"],
+    ]);
+  });
+
+  it("audits one row with the arguments' digest and the result's bytes, and never calls an app", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const result = await search(
+      { query: "todo", limit: 5 },
+      gatewayView([todoApp()]),
+      deps,
+    );
+    expect(requests).toEqual([]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_search_tools",
+        appId: "everyapp",
+        risk: "read",
+        decision: "allowed",
+        outcome: "ok",
+        argsDigest: "d".repeat(32),
+        resultBytes: new TextEncoder().encode(JSON.stringify(result)).length,
+      }),
+    ]);
+    expect(events[0]).not.toHaveProperty("via");
+  });
+
+  it("stops adding tools once the answer would pass 256 KiB, and says so", async () => {
+    // 25 tools whose schemas are near the catalog's 20 KiB each.
+    const heavy = todoApp({
+      appId: "heavy",
+      rowId: "row_heavy",
+      instructions: undefined,
+      tools: Array.from({ length: 25 }, (_, index) => ({
+        name: `read_${String(index).padStart(2, "0")}`,
+        description: "Read.",
+        risk: "read" as const,
+        inputSchema: {
+          type: "object",
+          properties: {},
+          description: "x".repeat(19 * 1024),
+        },
+      })),
+    });
+    const result = await search(
+      { app: "heavy", limit: 25 },
+      gatewayView([heavy]),
+    );
+    const found = result.structuredContent!["tools"] as unknown[];
+    expect(found.length).toBeGreaterThan(0);
+    expect(found.length).toBeLessThan(25);
+    expect(result.structuredContent).toMatchObject({
+      total: 25,
+      truncated: true,
+    });
+    const bytes = new TextEncoder().encode(JSON.stringify(result)).length;
+    expect(bytes).toBeLessThanOrEqual(SEARCH_RESULT_MAX_BYTES);
+    // One more tool would not have fit.
+    const more = await search(
+      { app: "heavy", limit: found.length + 1 },
+      gatewayView([heavy]),
+    );
+    expect((more.structuredContent!["tools"] as unknown[]).length).toBe(
+      found.length,
+    );
+  });
+});
+
+describe("the built-ins' arguments", () => {
+  it("are checked against their own schema and digested on every row", async () => {
+    const { deps, events } = harness(() => ok());
+    const view = gatewayView([todoApp()]);
+    const refused = await executeToolCall(
+      view,
+      { name: "everyapp_list_apps", arguments: { extra: 1 } },
+      deps,
+    );
+    expect(refused).toMatchObject({
+      kind: "result",
+      result: {
+        isError: true,
+        content: [
+          {
+            text: expect.stringContaining(
+              "Invalid arguments for everyapp_list_apps: ",
+            ),
+          },
+        ],
+      },
+    });
+    await executeToolCall(
+      view,
+      { name: "everyapp_whoami", arguments: undefined },
+      deps,
+    );
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_list_apps",
+        appId: "everyapp",
+        outcome: "invalid_arguments",
+        argsDigest: "d".repeat(32),
+      }),
+      expect.objectContaining({
+        tool: "everyapp_whoami",
+        appId: "everyapp",
+        outcome: "ok",
+        argsDigest: "d".repeat(32),
+        resultBytes: expect.any(Number),
+      }),
+    ]);
+  });
+
+  it("are refused when too deep to walk, like any tool's", async () => {
+    const { deps, events } = harness(() => ok());
+    let deep: unknown = 1;
+    for (let i = 0; i < 100_000; i += 1) deep = [deep];
+    const resolution = await executeToolCall(
+      gatewayView([todoApp()]),
+      { name: "everyapp_search_tools", arguments: { query: "x", deep } },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      result: {
+        isError: true,
+        content: [{ text: expect.stringContaining("more than 64 levels") }],
+      },
+    });
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_search_tools",
+        outcome: "invalid_arguments",
+        reason: "too_deep",
+      }),
+    ]);
+  });
+});
+
+describe("the call wrappers", () => {
+  const digestArguments = createArgumentsDigester("secret", "test");
+
+  it("delegate one app call, audited once as the inner tool via the wrapper, with the direct call's digest", async () => {
+    const { deps, requests, events } = harness(() => ok("listed"));
+    const withDigest = { ...deps, digestArguments };
+    const view = gatewayView([todoApp()]);
+
+    const wrapped = await executeToolCall(
+      view,
+      {
+        name: "everyapp_call_read",
+        arguments: { name: "todo_list_todos", arguments: {} },
+      },
+      withDigest,
+    );
+    expect(wrapped).toMatchObject({
+      kind: "result",
+      result: { content: [{ type: "text", text: "listed" }] },
+      // What the client called.
+      tool: expect.objectContaining({ name: "call_read" }),
+    });
+    expect(requests).toHaveLength(1);
+    const body = (await requests[0]!.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ name: "list_todos", arguments: {} });
+    const claims = decodeJwt(requests[0]!.headers.get(IDENTITY_HEADER)!);
+    expect(claims).toMatchObject({
+      chan: "mcp",
+      aud: "every-acme-todo",
+      scopes: ["mcp:read"],
+      tc: { id: body["callId"], name: "list_todos" },
+    });
+    // Exactly one row: the inner tool's, with the wrapper as via.
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      surface: "gateway",
+      tool: "todo_list_todos",
+      via: "everyapp_call_read",
+      appId: "todo",
+      appRowId: "row_todo",
+      risk: "read",
+      decision: "allowed",
+      outcome: "ok",
+      callId: body["callId"],
+      resultBytes: expect.any(Number),
+    });
+
+    // The same call made directly digests the same.
+    await executeToolCall(
+      view,
+      { name: "todo_list_todos", arguments: {} },
+      withDigest,
+    );
+    expect(events[1]).toMatchObject({
+      tool: "todo_list_todos",
+      argsDigest: events[0]!.argsDigest,
+    });
+    expect(events[1]).not.toHaveProperty("via");
+    // Arguments left out of the wrapper call are the empty object too.
+    await executeToolCall(
+      view,
+      { name: "everyapp_call_read", arguments: { name: "todo_list_todos" } },
+      withDigest,
+    );
+    expect(events[2]!.argsDigest).toBe(events[0]!.argsDigest);
+    expect(requests).toHaveLength(3);
+  });
+
+  it("mint read scopes only through the read wrapper, whatever the caller holds", async () => {
+    const { deps, requests } = harness(() => ok());
+    // A read & write caller: a direct call mints both, the read wrapper one.
+    await executeToolCall(
+      gatewayView([todoApp()]),
+      { name: "everyapp_call_read", arguments: { name: "todo_list_todos" } },
+      deps,
+    );
+    await executeToolCall(
+      gatewayView([todoApp()]),
+      { name: "todo_list_todos", arguments: {} },
+      deps,
+    );
+    const scopes = requests.map(
+      (request) => decodeJwt(request.headers.get(IDENTITY_HEADER)!)["scopes"],
+    );
+    expect(scopes).toEqual([["mcp:read"], ["mcp:read", "mcp:write"]]);
+  });
+
+  it("refuse a write tool through the read wrapper, saying where to call it, with one blocked row", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const resolution = await executeToolCall(
+      gatewayView([todoApp()]),
+      {
+        name: "everyapp_call_read",
+        arguments: { name: "todo_create_todo", arguments: { title: "milk" } },
+      },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      kind: "result",
+      result: {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: "`todo_create_todo` changes data; call it through everyapp_call_write.",
+          },
+        ],
+      },
+    });
+    expect(requests).toHaveLength(0);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "todo_create_todo",
+        via: "everyapp_call_read",
+        appId: "todo",
+        risk: "write",
+        decision: "blocked",
+        reason: "write_via_read_wrapper",
+        outcome: "not_run",
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("milk");
+  });
+
+  it("run write tools through the write wrapper with the caller's own scopes", async () => {
+    const { deps, requests, events } = harness(() => ok("created"));
+    const resolution = await executeToolCall(
+      gatewayView([todoApp()]),
+      {
+        name: "everyapp_call_write",
+        arguments: { name: "todo_create_todo", arguments: { title: "milk" } },
+      },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      result: { content: [{ text: "created" }] },
+    });
+    expect(requests).toHaveLength(1);
+    expect(await requests[0]!.json()).toMatchObject({
+      name: "create_todo",
+      arguments: { title: "milk" },
+    });
+    expect(
+      decodeJwt(requests[0]!.headers.get(IDENTITY_HEADER)!)["scopes"],
+    ).toEqual(["mcp:read", "mcp:write"]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "todo_create_todo",
+        via: "everyapp_call_write",
+        risk: "write",
+        decision: "allowed",
+        outcome: "ok",
+      }),
+    ]);
+  });
+
+  it("hide the write wrapper from a read-only caller: unlisted, and Unknown tool when called", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const view = gatewayView([todoApp()], READ_ONLY, undefined, "compact");
+    expect(listTools(view).map((tool) => tool.name)).not.toContain(
+      "everyapp_call_write",
+    );
+    await expect(
+      executeToolCall(
+        view,
+        {
+          name: "everyapp_call_write",
+          arguments: { name: "todo_list_todos" },
+        },
+        deps,
+      ),
+    ).resolves.toEqual({ kind: "unknown_tool" });
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_call_write",
+        appId: "everyapp",
+        risk: "write",
+        decision: "blocked",
+        reason: "read_only_connection",
+        outcome: "not_run",
+      }),
+    ]);
+    expect(events[0]).not.toHaveProperty("via");
+    // The read wrapper serves them.
+    await expect(
+      executeToolCall(
+        view,
+        { name: "everyapp_call_read", arguments: { name: "todo_list_todos" } },
+        deps,
+      ),
+    ).resolves.toMatchObject({ result: { content: [{ text: "done" }] } });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("answer unknown, hidden and built-in inner names as tool errors, one blocked row each", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const write = gatewayView([todoApp()]);
+    const read = gatewayView([todoApp()], READ_ONLY);
+    for (const [view, wrapper, name, reason] of [
+      [write, "everyapp_call_read", "nope", "unknown_tool"],
+      [write, "everyapp_call_write", "list_todos", "unknown_tool"],
+      [write, "everyapp_call_write", "chef_list_todos", "unknown_tool"],
+      [write, "everyapp_call_read", "everyapp_whoami", "unknown_tool"],
+      [write, "everyapp_call_write", "everyapp_call_read", "unknown_tool"],
+      [write, "everyapp_call_read", "everyapp_call_read", "unknown_tool"],
+      [
+        write,
+        "everyapp_call_write",
+        "todo_delete_todo",
+        "destructive_requires_approval",
+      ],
+      [read, "everyapp_call_read", "todo_create_todo", "read_only_connection"],
+    ] as const) {
+      const resolution = await executeToolCall(
+        view,
+        { name: wrapper, arguments: { name, arguments: { id: "1" } } },
+        deps,
+      );
+      expect(resolution, name).toMatchObject({
+        kind: "result",
+        result: {
+          isError: true,
+          content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        },
+        tool: expect.objectContaining({
+          name: wrapper.slice("everyapp_".length),
+        }),
+      });
+      expect(events.at(-1), name).toMatchObject({
+        tool: name,
+        via: wrapper,
+        decision: "blocked",
+        reason,
+        outcome: "not_run",
+      });
+    }
+    expect(events).toHaveLength(8);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("refuse their own arguments as the wrapper's, one row each, without via", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const view = gatewayView([todoApp()]);
+    let deep: unknown = 1;
+    for (let i = 0; i < 100_000; i += 1) deep = [deep];
+    const cases: [string, unknown, string][] = [
+      ["a string", "x", "arguments must be a JSON object."],
+      ["an array", [], "arguments must be a JSON object."],
+      ["no name", {}, 'required property "name"'],
+      ["a number name", { name: 1 }, '"name"'],
+      ["an empty name", { name: "" }, '"name"'],
+      [
+        "array arguments",
+        { name: "todo_list_todos", arguments: [] },
+        '"arguments"',
+      ],
+      [
+        "string arguments",
+        { name: "todo_list_todos", arguments: "x" },
+        '"arguments"',
+      ],
+      ["an extra field", { name: "todo_list_todos", extra: 1 }, '"extra"'],
+      [
+        "deep arguments",
+        { name: "todo_list_todos", arguments: { deep } },
+        "more than 64 levels",
+      ],
+    ];
+    for (const [label, args, problem] of cases) {
+      const resolution = await executeToolCall(
+        view,
+        { name: "everyapp_call_read", arguments: args },
+        deps,
+      );
+      if (resolution.kind !== "result") throw new Error(`${label}: no result`);
+      expect(resolution.result.isError, label).toBe(true);
+      const text = String(resolution.result.content[0]!["text"]);
+      expect(text, label).toContain(
+        "Invalid arguments for everyapp_call_read: ",
+      );
+      expect(text, label).toContain(problem);
+    }
+    expect(events).toHaveLength(cases.length);
+    for (const event of events) {
+      expect(event).toMatchObject({
+        tool: "everyapp_call_read",
+        appId: "everyapp",
+        risk: "read",
+        decision: "allowed",
+        outcome: "invalid_arguments",
+      });
+      expect(event).not.toHaveProperty("via");
+    }
+    expect(events.at(-1)).toMatchObject({ reason: "too_deep" });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("check the inner arguments against the inner tool's own schema", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const resolution = await executeToolCall(
+      gatewayView([todoApp()]),
+      {
+        name: "everyapp_call_write",
+        arguments: { name: "todo_create_todo", arguments: { title: "" } },
+      },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      result: {
+        isError: true,
+        content: [
+          {
+            text: expect.stringContaining(
+              "Invalid arguments for todo_create_todo: ",
+            ),
+          },
+        ],
+      },
+    });
+    expect(requests).toHaveLength(0);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "todo_create_todo",
+        via: "everyapp_call_write",
+        decision: "allowed",
+        outcome: "invalid_arguments",
+        argsDigest: "d".repeat(32),
+      }),
+    ]);
+  });
+
+  it("are callable in full mode too, and never on an app host", async () => {
+    const { deps, requests } = harness(() => ok());
+    const full = gatewayView([todoApp()], PRINCIPAL, undefined, "full");
+    expect(listTools(full).map((tool) => tool.name)).not.toContain(
+      "everyapp_call_read",
+    );
+    await expect(
+      executeToolCall(
+        full,
+        { name: "everyapp_call_read", arguments: { name: "todo_list_todos" } },
+        deps,
+      ),
+    ).resolves.toMatchObject({ result: { content: [{ text: "done" }] } });
+    expect(requests).toHaveLength(1);
+    await expect(
+      executeToolCall(
+        appView(),
+        { name: "everyapp_call_read", arguments: { name: "list_todos" } },
+        deps,
+      ),
+    ).resolves.toEqual({ kind: "unknown_tool" });
+    expect(requests).toHaveLength(1);
   });
 });

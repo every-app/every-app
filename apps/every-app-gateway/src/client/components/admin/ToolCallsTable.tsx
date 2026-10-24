@@ -64,9 +64,13 @@ const OUTCOMES: Record<string, { label: string; className: string }> = {
 
 /** Why a call was blocked, in plain words. */
 const REASON_LABELS: Record<string, string> = {
-  destructive_tools_hidden: "Destructive tools are never available to AI apps",
-  read_only_caller: "This connection is read-only",
+  destructive_requires_approval:
+    "Destructive tools are never available to AI apps",
+  org_blocked: "Blocked by the organization",
+  read_only_connection: "This connection is read-only",
   unknown_tool: "No such tool",
+  write_via_read_wrapper:
+    "This tool changes data; it is called through everyapp_call_write",
 };
 
 /** A reason with no label: "some_reason" reads as "Some reason". */
@@ -159,20 +163,33 @@ function AppCell({ app }: { app: ToolCallRow["app"] }) {
 
 function ToolCell({ tool }: { tool: ToolCallRow["tool"] }) {
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      <p className="truncate font-mono text-xs" title={tool.name}>
-        {tool.name}
-      </p>
-      {tool.risk ? (
-        <Badge
-          variant={RISK_VARIANTS[tool.risk] ?? "outline"}
-          size="sm"
-          className="shrink-0 capitalize"
+    <>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <p className="truncate font-mono text-xs" title={tool.name}>
+          {tool.name}
+        </p>
+        {tool.risk ? (
+          <Badge
+            variant={RISK_VARIANTS[tool.risk] ?? "outline"}
+            size="sm"
+            className="shrink-0 capitalize"
+          >
+            {tool.risk}
+          </Badge>
+        ) : null}
+      </div>
+      {tool.via ? (
+        // The call came through a wrapper built-in (a connection that
+        // lists its tools compactly): the row names the inner tool, and
+        // this says how it was reached.
+        <p
+          className="truncate text-xs text-muted-foreground"
+          title={`Called through ${tool.via}`}
         >
-          {tool.risk}
-        </Badge>
+          via <span className="font-mono">{tool.via}</span>
+        </p>
       ) : null}
-    </div>
+    </>
   );
 }
 

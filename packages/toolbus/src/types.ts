@@ -115,6 +115,17 @@ export interface ToolBusView {
    * never outlives the token that opened it.
    */
   listenUntil?: number;
+  /**
+   * Gateway surface: how `tools/list` presents the apps' tools. `"full"`
+   * lists every tool the policy allows under its own `<app>_<tool>` name;
+   * `"compact"` lists only the built-ins, and the apps' tools are found
+   * with `everyapp_search_tools` and run through `everyapp_call_read` or
+   * `everyapp_call_write`. Set by `gatewaySurfaceView`: the caller's
+   * explicit choice (the `X-EveryApp-Tools` header or `?tools=` on `/mcp`),
+   * else compact once a full listing would pass `FULL_LISTING_MAX_TOOLS`
+   * entries or `FULL_LISTING_MAX_BYTES`. The app surface is always full.
+   */
+  listing?: "full" | "compact";
 }
 
 /**
@@ -166,6 +177,12 @@ export interface ToolCallAuditEvent {
    * characters, never verified.
    */
   clientInfo?: string;
+  /**
+   * The wrapper built-in the call came through (`everyapp_call_read` or
+   * `everyapp_call_write`), when it did: `tool` is then the inner tool,
+   * and this is the row's only trace of the wrapper.
+   */
+  via?: string;
 }
 
 /** Signing material for the tokens the ToolBus mints for app calls. */

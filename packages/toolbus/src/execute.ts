@@ -8,8 +8,13 @@
  *   POST /__everyapp/tools/call over the app's binding (one invocation) →
  *   map the answer, notice catalog drift, and emit one audit event.
  *
- * The gateway's built-in `everyapp_*` tools are answered here without
- * calling any app, and audited the same way.
+ * The gateway's built-in `everyapp_*` tools go through the same shape
+ * checks and are validated against their own schemas. Three are answered
+ * here without calling any app and audited the same way. The two wrappers
+ * (`everyapp_call_read`, `everyapp_call_write`) delegate exactly one inner
+ * call down the app-tool path above, no fan-out and no recursion: the inner
+ * call mints its own identity, leaves the one audit row (naming the inner
+ * tool, with the wrapper as `via`), and the wrapper writes none of its own.
  *
  * Raw arguments and results never reach the audit event, only a keyed
  * digest and a byte count.
@@ -23,16 +28,26 @@ import {
   mintIdentityJwt,
   type ToolCallResultV1,
 } from "@every-app/sdk/internal";
-import { BUILTIN_APP_ID, findBuiltinTool, runBuiltinTool } from "./builtins";
+import {
+  BUILTIN_APP_ID,
+  WRITE_WRAPPER_NAME,
+  findBuiltinTool,
+  resultBytes,
+  runBuiltinTool,
+  type BuiltinTool,
+} from "./builtins";
 import { TimeoutError, isPlainObject, readTextCapped, withTimeout } from "./io";
 import {
   MAX_CALLED_NAME_LENGTH,
   displayedToolName,
+  namespacedToolName,
   resolveToolName,
   splitNamespacedToolName,
 } from "./names";
 import { evaluateToolPolicy } from "./policy";
 import type {
+  JsonObject,
+  McpAccess,
   McpPrincipal,
   ToolBusApp,
   ToolBusDeps,
@@ -63,6 +78,7 @@ export interface ToolCallRequest {
 }
 
 export type ToolCallResolution =
+  /** `tool` is the tool the client called: for a wrapped call, the wrapper. */
   | { kind: "result"; result: ToolCallResultV1; tool: ToolBusTool }
   /** No such tool for this caller: absent, or hidden by policy. */
   | { kind: "unknown_tool" };
@@ -96,22 +112,35 @@ function errorResult(text: string): ToolCallResultV1 {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-export async function executeToolCall(
-  view: ToolBusView,
-  call: ToolCallRequest,
-  deps: ToolBusDeps,
-): Promise<ToolCallResolution> {
-  const startedAt = Date.now();
-  const callId = crypto.randomUUID();
+/** One tools/call as it travels through the steps: one id, one clock. */
+interface CallContext {
+  view: ToolBusView;
+  deps: ToolBusDeps;
+  call: ToolCallRequest;
+  callId: string;
+  startedAt: number;
+  /**
+   * The wrapper the call came through, for its inner call: the audit rows
+   * name it as `via`, its ceiling bounds the inner tool's risk and the
+   * scopes minted, and it is the tool the client called.
+   */
+  via?: { name: string; tool: BuiltinTool; ceiling: McpAccess };
+}
+
+type Audit = (
+  tool: string,
+  event: Pick<ToolCallAuditEvent, "decision" | "outcome"> &
+    Partial<ToolCallAuditEvent>,
+) => void;
+
+function auditor(ctx: CallContext): Audit {
+  const { view, deps, call } = ctx;
   const { principal } = view;
-  const audit = (
-    event: Pick<ToolCallAuditEvent, "decision" | "outcome"> &
-      Partial<ToolCallAuditEvent>,
-  ) =>
+  return (tool, event) =>
     deps.audit?.({
       surface: view.surface,
-      tool: displayedToolName(call.name),
-      callId,
+      tool: displayedToolName(tool),
+      callId: ctx.callId,
       userId: principal.userId,
       organizationId: principal.organizationId,
       credentialKind: principal.credential.kind,
@@ -124,43 +153,128 @@ export async function executeToolCall(
         : {}),
       ...(call.clientInfo ? { clientInfo: call.clientInfo } : {}),
       ...(view.requestId ? { requestId: view.requestId } : {}),
+      ...(ctx.via ? { via: ctx.via.name } : {}),
       ...event,
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - ctx.startedAt,
     });
+}
 
-  // No catalog name is anywhere near this long.
-  if (call.name.length > MAX_CALLED_NAME_LENGTH) {
-    audit({ decision: "blocked", reason: "unknown_tool", outcome: "not_run" });
-    return { kind: "unknown_tool" };
-  }
-
+export async function executeToolCall(
+  view: ToolBusView,
+  call: ToolCallRequest,
+  deps: ToolBusDeps,
+): Promise<ToolCallResolution> {
+  const ctx: CallContext = {
+    view,
+    deps,
+    call,
+    callId: crypto.randomUUID(),
+    startedAt: Date.now(),
+  };
   const split =
-    view.surface === "gateway" ? splitNamespacedToolName(call.name) : null;
+    view.surface === "gateway" && call.name.length <= MAX_CALLED_NAME_LENGTH
+      ? splitNamespacedToolName(call.name)
+      : null;
   const builtin =
     split?.appId === BUILTIN_APP_ID ? findBuiltinTool(split.localName) : null;
-  if (builtin) {
-    const result = runBuiltinTool(builtin, view);
-    audit({
-      appId: BUILTIN_APP_ID,
-      risk: builtin.risk,
-      decision: "allowed",
-      outcome: "ok",
-      resultBytes: new TextEncoder().encode(JSON.stringify(result)).length,
-    });
-    return { kind: "result", result, tool: builtin };
-  }
+  return builtin
+    ? runBuiltin(ctx, builtin)
+    : runAppTool(ctx, call.name, call.arguments);
+}
 
-  const target = resolveToolName(view, call.name);
-  if (!target) {
-    audit({ decision: "blocked", reason: "unknown_tool", outcome: "not_run" });
-    return { kind: "unknown_tool" };
-  }
-  const { app, tool } = target;
-  const about = { appId: app.appId, appRowId: app.rowId, risk: tool.risk };
+type ArgumentsCheck =
+  | { ok: true; args: JsonObject; argsDigest?: string }
+  | { ok: false; problem: string; reason?: string; argsDigest?: string };
 
-  const policy = evaluateToolPolicy(tool, principal);
+/**
+ * The shape checks every call's arguments pass before anything walks them
+ * recursively (the digest, the validator), which a deep enough value would
+ * overflow; then the digest for the audit row and the schema check.
+ *
+ * An app's schema is checked only for arguments of at most
+ * `MAX_CHECKED_VALUES` (validation.ts says why: the app validates every
+ * call anyway). A built-in's schema is the gateway's own, small and free of
+ * regular expressions, references, `uniqueItems` and unions, so checking it
+ * costs no more than the walk `measureJson` already made, and nobody checks
+ * after the gateway: `ownSchema` runs it whatever the value count.
+ */
+async function checkArguments(
+  deps: ToolBusDeps,
+  raw: unknown,
+  validatorKey: string,
+  schema: JsonObject,
+  options: { ownSchema?: boolean } = {},
+): Promise<ArgumentsCheck> {
+  const args: unknown = raw ?? {};
+  if (!isPlainObject(args)) {
+    return { ok: false, problem: "arguments must be a JSON object." };
+  }
+  const shape = measureJson(args, MAX_ARGUMENT_DEPTH);
+  if (shape.tooDeep) {
+    return {
+      ok: false,
+      problem: `arguments are nested more than ${MAX_ARGUMENT_DEPTH} levels deep.`,
+      reason: "too_deep",
+    };
+  }
+  let argsDigest: string | undefined;
+  let invalid: string | null;
+  try {
+    argsDigest = deps.digestArguments
+      ? await deps.digestArguments(args)
+      : undefined;
+    invalid =
+      options.ownSchema || shape.values <= MAX_CHECKED_VALUES
+        ? argumentsProblem(validatorKey, schema, args)
+        : null;
+  } catch {
+    // Whatever broke the check (a schema the validator can't handle), the
+    // call is refused and still audited, without the details.
+    return {
+      ok: false,
+      problem: "they could not be checked.",
+      reason: "check_failed",
+      ...(argsDigest ? { argsDigest } : {}),
+    };
+  }
+  if (invalid) {
+    return {
+      ok: false,
+      problem: invalid,
+      ...(argsDigest ? { argsDigest } : {}),
+    };
+  }
+  return { ok: true, args, ...(argsDigest ? { argsDigest } : {}) };
+}
+
+/** The audit fields a refused check carries. */
+function refusal(
+  checked: Extract<ArgumentsCheck, { ok: false }>,
+): Pick<ToolCallAuditEvent, "outcome"> & Partial<ToolCallAuditEvent> {
+  return {
+    outcome: "invalid_arguments",
+    ...(checked.reason ? { reason: checked.reason } : {}),
+    ...(checked.argsDigest ? { argsDigest: checked.argsDigest } : {}),
+  };
+}
+
+/**
+ * A built-in: policy (the write wrapper is hidden from read-only callers
+ * like any write tool), the shape checks, its own schema, then its answer
+ * from the view or, for a wrapper, the one inner call it delegates.
+ */
+async function runBuiltin(
+  ctx: CallContext,
+  builtin: BuiltinTool,
+): Promise<ToolCallResolution> {
+  const { view, deps, call } = ctx;
+  const audit = auditor(ctx);
+  const name = namespacedToolName(BUILTIN_APP_ID, builtin.name);
+  const about = { appId: BUILTIN_APP_ID, risk: builtin.risk };
+
+  const policy = evaluateToolPolicy(builtin, view.principal);
   if (policy.action !== "allow") {
-    audit({
+    audit(name, {
       ...about,
       decision: "blocked",
       reason: policy.reason,
@@ -169,9 +283,8 @@ export async function executeToolCall(
     return { kind: "unknown_tool" };
   }
 
-  const args = call.arguments ?? {};
   const refuse = (problem: string, event: Partial<ToolCallAuditEvent>) => {
-    audit({
+    audit(name, {
       ...about,
       decision: "allowed",
       outcome: "invalid_arguments",
@@ -179,45 +292,147 @@ export async function executeToolCall(
     });
     return {
       kind: "result" as const,
-      result: errorResult(`Invalid arguments for ${call.name}: ${problem}`),
-      tool,
+      result: errorResult(`Invalid arguments for ${name}: ${problem}`),
+      tool: builtin,
     };
   };
+  // Keyed apart from every app's validators: an app's row id never starts
+  // with this. The schema is the gateway's own, so it is checked however
+  // many values the arguments hold: past the gate an app would re-validate,
+  // and nothing re-validates a built-in.
+  const checked = await checkArguments(
+    deps,
+    call.arguments,
+    `builtin\u0000${builtin.name}`,
+    builtin.inputSchema,
+    { ownSchema: true },
+  );
+  if (!checked.ok) return refuse(checked.problem, refusal(checked));
+  const digest = checked.argsDigest ? { argsDigest: checked.argsDigest } : {};
 
-  // Checked before anything walks the arguments recursively (the digest,
-  // the validator), which a deep enough value would overflow.
-  const shape = isPlainObject(args)
-    ? measureJson(args, MAX_ARGUMENT_DEPTH)
-    : null;
-  if (!shape) return refuse("arguments must be a JSON object.", {});
-  if (shape.tooDeep) {
-    return refuse(
-      `arguments are nested more than ${MAX_ARGUMENT_DEPTH} levels deep.`,
-      { reason: "too_deep" },
-    );
-  }
-
-  let argsDigest: string | undefined;
-  let invalid: string | null;
-  try {
-    argsDigest = deps.digestArguments
-      ? await deps.digestArguments(args)
-      : undefined;
-    invalid =
-      shape.values <= MAX_CHECKED_VALUES
-        ? argumentsProblem(app, tool, args)
-        : null;
-  } catch {
-    // Whatever broke the check (a schema the validator can't handle), the
-    // call is refused and still audited, without the details.
-    return refuse("they could not be checked.", {
-      reason: "check_failed",
-      ...(argsDigest ? { argsDigest } : {}),
+  if (builtin.kind === "answer") {
+    const answer = runBuiltinTool(builtin, view, checked.args);
+    if ("problem" in answer) return refuse(answer.problem, digest);
+    audit(name, {
+      ...about,
+      decision: "allowed",
+      outcome: "ok",
+      ...digest,
+      resultBytes: resultBytes(answer.result),
     });
+    return { kind: "result", result: answer.result, tool: builtin };
   }
-  const allowed = { ...about, decision: "allowed" as const, argsDigest };
-  if (invalid) return refuse(invalid, { argsDigest });
 
+  // A wrapper. Its schema just held the two fields it relies on to their
+  // types; read again here so the bound is this code's own, whatever
+  // checked the arguments before it.
+  const inner = checked.args["name"];
+  const innerArgs = checked.args["arguments"];
+  if (typeof inner !== "string") {
+    return refuse("name must be the tool's name, `<app>_<tool>`.", digest);
+  }
+  if (innerArgs !== undefined && !isPlainObject(innerArgs)) {
+    return refuse("arguments must be a JSON object.", digest);
+  }
+  // From here the inner call is the call: its row is the only one, and the
+  // wrapper is what the client called.
+  return runAppTool(
+    { ...ctx, via: { name, tool: builtin, ceiling: builtin.ceiling } },
+    inner,
+    innerArgs ?? {},
+  );
+}
+
+/**
+ * An app tool, called by name directly or through a wrapper: resolve,
+ * policy, the wrapper's ceiling, the arguments, one identity, one call.
+ */
+async function runAppTool(
+  ctx: CallContext,
+  name: string,
+  rawArgs: unknown,
+): Promise<ToolCallResolution> {
+  const { view, deps } = ctx;
+  const { principal } = view;
+  const audit = auditor(ctx);
+  // Directly, an unknown tool is the protocol's error; through a wrapper it
+  // is the wrapper's answer, a tool error, so the client's turn goes on.
+  const unknown = (event: Partial<ToolCallAuditEvent>): ToolCallResolution => {
+    audit(name, { decision: "blocked", outcome: "not_run", ...event });
+    return ctx.via
+      ? {
+          kind: "result",
+          result: errorResult(`Unknown tool: ${displayedToolName(name)}`),
+          tool: ctx.via.tool,
+        }
+      : { kind: "unknown_tool" };
+  };
+
+  // No catalog name is anywhere near this long.
+  if (name.length > MAX_CALLED_NAME_LENGTH) {
+    return unknown({ reason: "unknown_tool" });
+  }
+  // A wrapper delegates one app call, never a built-in: no recursion, and
+  // nothing a wrapper answers that a direct call to it wouldn't.
+  if (ctx.via && splitNamespacedToolName(name)?.appId === BUILTIN_APP_ID) {
+    return unknown({ reason: "unknown_tool" });
+  }
+  const target = resolveToolName(view, name);
+  if (!target) return unknown({ reason: "unknown_tool" });
+  const { app, tool } = target;
+  const about = { appId: app.appId, appRowId: app.rowId, risk: tool.risk };
+
+  const policy = evaluateToolPolicy(tool, principal);
+  if (policy.action !== "allow") {
+    return unknown({ ...about, reason: policy.reason });
+  }
+  // The read wrapper's ceiling: a write tool is a tool the caller may well
+  // use, just not through here, so the answer says where.
+  if (ctx.via?.ceiling === "read" && tool.risk !== "read") {
+    audit(name, {
+      ...about,
+      decision: "blocked",
+      reason: "write_via_read_wrapper",
+      outcome: "not_run",
+    });
+    return {
+      kind: "result",
+      result: errorResult(
+        `\`${name}\` changes data; call it through ${WRITE_WRAPPER_NAME}.`,
+      ),
+      tool: ctx.via.tool,
+    };
+  }
+  const called = ctx.via?.tool ?? tool;
+
+  // By registry row: two rows (one app id in two organizations, or a fork
+  // beside the app it forked) never share a validator, whatever hash each
+  // reports.
+  const checked = await checkArguments(
+    deps,
+    rawArgs,
+    `${app.rowId}\u0000${app.catalogHash}\u0000${tool.name}`,
+    tool.inputSchema,
+  );
+  if (!checked.ok) {
+    audit(name, { ...about, decision: "allowed", ...refusal(checked) });
+    return {
+      kind: "result",
+      result: errorResult(`Invalid arguments for ${name}: ${checked.problem}`),
+      tool: called,
+    };
+  }
+  const { args } = checked;
+  const allowed = {
+    ...about,
+    decision: "allowed" as const,
+    ...(checked.argsDigest ? { argsDigest: checked.argsDigest } : {}),
+  };
+
+  // The read wrapper narrows what the identity may do, whatever the
+  // principal's access; the write wrapper and a direct call mint the
+  // principal's own.
+  const access = ctx.via?.ceiling === "read" ? "read" : principal.access;
   const identity = await mintIdentityJwt(deps.signing.privateKeyPem, {
     subject: {
       sub: principal.userId,
@@ -230,8 +445,8 @@ export async function executeToolCall(
     keyId: deps.signing.keyId,
     channel: "mcp",
     actor: { sub: actorFor(principal) },
-    scopes: scopesForAccess(principal.access),
-    toolCall: { id: callId, name: tool.name },
+    scopes: scopesForAccess(access),
+    toolCall: { id: ctx.callId, name: tool.name },
   });
 
   const timeoutMs = deps.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -252,7 +467,7 @@ export async function executeToolCall(
             v: TOOLS_PROTOCOL_VERSION,
             name: tool.name,
             arguments: args,
-            callId,
+            callId: ctx.callId,
           }),
           signal,
         }),
@@ -261,7 +476,7 @@ export async function executeToolCall(
     });
   } catch (error) {
     const timedOut = error instanceof TimeoutError;
-    audit({ ...allowed, outcome: timedOut ? "timeout" : "unreachable" });
+    audit(name, { ...allowed, outcome: timedOut ? "timeout" : "unreachable" });
     return {
       kind: "result",
       result: errorResult(
@@ -269,33 +484,27 @@ export async function executeToolCall(
           ? `${app.name} did not answer within ${Math.round(timeoutMs / 1000)} seconds.`
           : `${app.name} could not be reached.`,
       ),
-      tool,
+      tool: called,
     };
   }
 
   if (answer.drifted) deps.onCatalogDrift?.(app);
-  audit({
+  audit(name, {
     ...allowed,
     outcome: answer.outcome,
     resultBytes: answer.bytes,
     ...(answer.reason ? { reason: answer.reason } : {}),
   });
-  return { kind: "result", result: answer.result, tool };
+  return { kind: "result", result: answer.result, tool: called };
 }
 
 /** What's wrong with the arguments, as far as the gateway checks them. */
 function argumentsProblem(
-  app: ToolBusApp,
-  tool: ToolBusTool,
+  validatorKey: string,
+  schema: JsonObject,
   args: unknown,
 ): string | null {
-  // By registry row: two rows (one app id in two organizations, or a fork
-  // beside the app it forked) never share a validator, whatever hash each
-  // reports.
-  const validate = argumentsValidator(
-    `${app.rowId}\u0000${app.catalogHash}\u0000${tool.name}`,
-    tool.inputSchema,
-  );
+  const validate = argumentsValidator(validatorKey, schema);
   // null: the app's own validation is the only check for this schema.
   const checked = validate?.(args);
   return !checked || checked.valid

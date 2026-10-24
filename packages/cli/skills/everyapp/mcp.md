@@ -107,16 +107,38 @@ deploy through the Gateway (a browser install) finishes a new version, on the fi
 isolate sees after a self-hosted redeploy, when `/mcp` or the consent page
 finds a missing or outdated snapshot (synced within the request, 3 s budget),
 and when a call reports a drifted `catalogHash` or `unknown_tool`. The CLI's
-deploy syncs nothing itself. One sync: `POST /__everyapp/tools/list` (15 s), at
-most 100 tools; status `ok`, `empty`, `unsupported` (SDK older than 0.3) or
-`error` (retried at most every 5 minutes); logged as `mcp.catalog.sync`.
+deploy syncs nothing itself. One sync: `POST /__everyapp/tools/list` (15 s, a
+5 MiB response; no count cap per app: a catalog is bounded by its per-tool
+limits, the response size and one atomic D1 write); status `ok`, `empty`,
+`unsupported` (SDK older than 0.3) or `error` (retried at most every 5
+minutes); logged as `mcp.catalog.sync`.
 Calls:   `tools/list` never calls the app. `tools/call` checks the arguments
          against the snapshot, mints a 120 s identity JWT for that one call
          (`chan: "mcp"`, explicit scopes, `tc: { id, name }`), makes one
          `POST /__everyapp/tools/call` (30 s) and audits one `mcp_tool_calls` row.
-Built-ins (Gateway connector only, read-only, no input; always loaded in Claude
-         Code): `everyapp_list_apps` (the apps this connection can use),
-         `everyapp_whoami` (user, org, access).
+Built-ins (Gateway connector only; always loaded in Claude Code):
+         `everyapp_list_apps` (the apps this connection can use),
+         `everyapp_whoami` (user, org, access), `everyapp_search_tools`
+         (`{ query?, app?, limit? }`: finds callable tools by words, by app
+         id or both, with their input schemas; read-only), and the two call
+         wrappers `everyapp_call_read` and `everyapp_call_write`
+         (`{ name, arguments? }`: run one app tool by its `<app-id>_<tool>`
+         name; the read wrapper runs read tools only with `mcp:read` alone,
+         the write wrapper is hidden from read-only connections). A wrapped
+         call is the same one call: same policy, checks and identity, and
+         one audit row naming the inner tool with `via` set to the wrapper.
+Listing: full (the built-ins, then every tool) until a connection's full list
+         would pass 256 tools or 1 MiB, then compact (the built-ins only:
+         find tools with `everyapp_search_tools`, run them through the
+         wrappers or by name); `X-EveryApp-Tools: full|compact` chooses
+         for any caller that can set a header, `?tools=` on /mcp for a
+         personal token, an Access caller or Claude Code (the header first
+         when both are given); claude.ai, Claude Desktop and ChatGPT need
+         the OAuth resource to equal the URL typed, so for them the query
+         form fails to connect and the bare /mcp gets the automatic rule.
+         Compact hides nothing: an unlisted tool is still callable; a
+         hidden one stays `Unknown tool`. A read-only connection is told
+         to use `everyapp_call_read` alone.
 Changes: 2026-07-28 clients (Claude Code) hold a `subscriptions/listen` stream
          re-read every 30 s, so a change reaches them within about half a
          minute; the Gateway ends it after 30 minutes (an app host after 10,
@@ -193,7 +215,12 @@ host's next request in each isolate); (3) hidden on purpose: destructive
 tools are never listed, write tools are hidden from a read-only connection
 (`everyapp_whoami` shows `access`), and a tool whose namespaced name passes 64
 characters, whose description passes 2048 or whose schema isn't an object is
-dropped with a warning (dev prints it as `TOOLS_CATALOG`); (4) the person
+dropped with a warning (dev prints it as `TOOLS_CATALOG`); unlisted is not
+hidden: a compact listing (the instructions' first line says the connection
+"lists its tools compactly") leaves every app tool out of tools/list on
+purpose, and each is found by `everyapp_search_tools` and callable by name or
+through `everyapp_call_read`/`everyapp_call_write`, while a hidden tool stays
+`Unknown tool` there too; (4) the person
 cannot open the app: it is absent from `everyapp_list_apps`; grant access in
 Admin (a connection made with **Only these apps** needs a reconnect to add one).
 401 vs 403 on `/mcp`: 401 means no credential or one that doesn't verify (an

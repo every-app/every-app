@@ -53,7 +53,12 @@ type ReplaceCatalogInput = {
   tools: ToolBusTool[];
 };
 
-// D1 binds at most 100 parameters per statement; app_tools has 10 columns.
+/**
+ * Rows per INSERT of the snapshot write ({@link replace}). D1 binds at most
+ * 100 parameters per statement (developers.cloudflare.com/d1/platform/limits,
+ * "Bound parameters per query", read 2026-10-24); app_tools has 10 columns,
+ * so 9 rows bind 90.
+ */
 const TOOL_ROWS_PER_INSERT = 9;
 
 /** One app the gateway /mcp serves a caller, with its snapshot. */
@@ -310,7 +315,39 @@ async function findVisibleCatalogs(
   );
 }
 
-/** Replace an app's catalog and tools in one D1 transaction. */
+/**
+ * Replace an app's catalog and tools in one D1 batch, which D1 runs as one
+ * transaction: every statement commits, or a failing one rolls the whole
+ * sequence back (developers.cloudflare.com/d1/worker-api/d1-database,
+ * `batch()`), so a reader never sees half a catalog and a refused write
+ * leaves the old snapshot serving (the sync then logs
+ * `mcp.catalog.sync_failed`).
+ *
+ * There is no cap on the tools an app may offer: the ToolBus bounds each
+ * tool (a 64-character namespaced name, a 100-character title, a
+ * 2,048-character description, 20 KiB per input or output schema) and the
+ * whole catalog response (CATALOG_LIMITS.responseBytes, 5 MiB), and one
+ * atomic batch holds the largest catalog that passes, against Cloudflare's
+ * documented D1 limits (developers.cloudflare.com/d1/platform/limits, read
+ * 2026-10-24):
+ *
+ * - 100 bound parameters per statement: 9 rows × 10 columns = 90
+ *   ({@link TOOL_ROWS_PER_INSERT}).
+ * - 100 KB of SQL per statement: the values are bound, so an INSERT's text
+ *   is the column list and 9 rows of placeholders, under 1 KB.
+ * - 2 MB per string, BLOB or row: the largest app_tools row is one tool at
+ *   every per-tool limit, about 44 KB; the catalog row's warnings (at most
+ *   100 of 500 characters) and instructions (2,048) are far under too.
+ * - 30 s for the whole batch call, and no documented cap on the statements
+ *   in a batch or on their bound bytes together (the limits page describes
+ *   a 2,000-statement batch running as one query). A 5 MiB catalog is at
+ *   most 5 MiB of bound values; of the smallest tools that pass (about 75
+ *   bytes each) that is some 70,000 tools in some 7,800 INSERTs, which
+ *   SQLite writes in one transaction in well under a second.
+ *
+ * So the catalog response size is the bound, not this write; nothing here
+ * counts rows.
+ */
 async function replace(input: ReplaceCatalogInput): Promise<void> {
   const fetchedAt = new Date();
   const catalog = {

@@ -146,13 +146,15 @@ async function listenRequest(
 }
 
 /**
- * The built-ins carry Claude Code's always-load hint through the era codec
- * and app tools carry no `_meta` at all. `tools` is a tools/list result.
+ * The built-ins the view's mode lists carry Claude Code's always-load hint
+ * through the era codec and app tools carry no `_meta` at all. `tools` is
+ * a tools/list result.
  */
 function expectAlwaysLoadOnBuiltinsOnly(
   tools: { name: string; _meta?: unknown }[],
+  view: ToolBusView,
 ) {
-  const builtins = listBuiltinTools().map((tool) => tool.name);
+  const builtins = listBuiltinTools(view).map((tool) => tool.name);
   expect(builtins.length).toBeGreaterThan(0);
   const listed = tools.filter((tool) => builtins.includes(tool.name));
   expect(listed.map((tool) => tool.name)).toEqual(builtins);
@@ -160,6 +162,10 @@ function expectAlwaysLoadOnBuiltinsOnly(
     expect(tool._meta, tool.name).toEqual({ "anthropic/alwaysLoad": true });
   }
   const appTools = tools.filter((tool) => !builtins.includes(tool.name));
+  if (view.listing === "compact") {
+    expect(appTools).toEqual([]);
+    return;
+  }
   expect(appTools.length).toBeGreaterThan(0);
   for (const tool of appTools) {
     expect(tool, tool.name).not.toHaveProperty("_meta");
@@ -622,6 +628,7 @@ describe("2026-07-28 (modern) era", () => {
     expect(result.tools.map((tool: { name: string }) => tool.name)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "chef_create_todo",
       "chef_list_todos",
       "todo_create_todo",
@@ -634,15 +641,149 @@ describe("2026-07-28 (modern) era", () => {
     });
   });
 
-  it("carries anthropic/alwaysLoad on the built-ins and on nothing else", async () => {
+  it("carries anthropic/alwaysLoad on the built-ins and on nothing else, in either mode", async () => {
     const { serve } = toolBus();
-    const { result } = await rpcBody(
+    for (const listing of ["full", "compact"] as const) {
+      const view = gatewayView(
+        [todoApp(), chef],
+        PRINCIPAL,
+        undefined,
+        listing,
+      );
+      const { result } = await rpcBody(
+        await serve(
+          modernRequest("tools/list", {}, {}, "https://home.example.com/mcp"),
+          view,
+        ),
+      );
+      expectAlwaysLoadOnBuiltinsOnly(result.tools, view);
+    }
+  });
+
+  it("lists only the built-ins in compact mode, where a wrapper runs the app's tool", async () => {
+    const events: ToolCallAuditEvent[] = [];
+    const { serve, appCalls } = toolBus({
+      audit: (event) => events.push(event),
+    });
+    const url = "https://home.example.com/mcp";
+    const view = gatewayView(
+      [todoApp(), chef],
+      PRINCIPAL,
+      undefined,
+      "compact",
+    );
+    const { result: list } = await rpcBody(
+      await serve(modernRequest("tools/list", {}, {}, url), view),
+    );
+    expect(list.tools.map((tool: { name: string }) => tool.name)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "everyapp_search_tools",
+      "everyapp_call_read",
+      "everyapp_call_write",
+    ]);
+
+    const { result: found } = await rpcBody(
       await serve(
-        modernRequest("tools/list", {}, {}, "https://home.example.com/mcp"),
-        gatewayView([todoApp(), chef]),
+        modernRequest(
+          "tools/call",
+          { name: "everyapp_search_tools", arguments: { query: "list" } },
+          {},
+          url,
+        ),
+        view,
       ),
     );
-    expectAlwaysLoadOnBuiltinsOnly(result.tools);
+    expect(
+      found.structuredContent.tools.map((tool: { name: string }) => tool.name),
+    ).toEqual(["chef_list_todos", "todo_list_todos"]);
+
+    const { result: ran } = await rpcBody(
+      await serve(
+        modernRequest(
+          "tools/call",
+          {
+            name: "everyapp_call_read",
+            arguments: { name: "todo_list_todos", arguments: {} },
+          },
+          {},
+          url,
+        ),
+        view,
+      ),
+    );
+    expect(ran).toMatchObject({
+      content: [{ type: "text", text: "ran list_todos" }],
+      resultType: "complete",
+    });
+    expect(appCalls).toEqual(["todo.list_todos"]);
+    expect(events.map((event) => [event.tool, event.via])).toEqual([
+      ["everyapp_search_tools", undefined],
+      ["todo_list_todos", "everyapp_call_read"],
+    ]);
+
+    // Unlisted is not hidden: the app's tool answers by name too.
+    const { result: direct } = await rpcBody(
+      await serve(
+        modernRequest(
+          "tools/call",
+          { name: "chef_list_todos", arguments: {} },
+          {},
+          url,
+        ),
+        view,
+      ),
+    );
+    expect(direct.content).toEqual([{ type: "text", text: "ran list_todos" }]);
+    expect(appCalls).toEqual(["todo.list_todos", "chef.list_todos"]);
+  });
+
+  it("answers the write wrapper with -32602 Unknown tool for a read-only caller, and a wrapped unknown as a tool error", async () => {
+    const { serve, appCalls } = toolBus();
+    const url = "https://home.example.com/mcp";
+    const readOnly = gatewayView(
+      [todoApp()],
+      { ...PRINCIPAL, access: "read" },
+      undefined,
+      "compact",
+    );
+    const hidden = await rpcBody(
+      await serve(
+        modernRequest(
+          "tools/call",
+          {
+            name: "everyapp_call_write",
+            arguments: { name: "todo_list_todos" },
+          },
+          {},
+          url,
+        ),
+        readOnly,
+      ),
+    );
+    expect(hidden.error).toEqual({
+      code: -32602,
+      message: "Unknown tool: everyapp_call_write",
+    });
+    const { result } = await rpcBody(
+      await serve(
+        modernRequest(
+          "tools/call",
+          {
+            name: "everyapp_call_read",
+            arguments: { name: "todo_delete_todo", arguments: { id: "1" } },
+          },
+          {},
+          url,
+        ),
+        readOnly,
+      ),
+    );
+    expect(result).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: "Unknown tool: todo_delete_todo" }],
+    });
+    expect(appCalls).toEqual([]);
   });
 
   it("answers the built-in tools on the gateway without calling an app", async () => {
@@ -883,7 +1024,81 @@ describe("2025 (legacy) eras", () => {
         view,
       ),
     );
-    expectAlwaysLoadOnBuiltinsOnly(list.result.tools);
+    expectAlwaysLoadOnBuiltinsOnly(list.result.tools, view);
+  });
+
+  it("rotates the session when the listing mode changes, like any list change", async () => {
+    const { serve } = toolBus();
+    const url = "https://home.example.com/mcp";
+    const full = gatewayView([todoApp(), chef], PRINCIPAL, undefined, "full");
+    const compact = gatewayView(
+      [todoApp(), chef],
+      PRINCIPAL,
+      undefined,
+      "compact",
+    );
+    const init = await serve(initializeRequest("2025-11-25", {}, url), full);
+    const sessionId = init.headers.get("mcp-session-id")!;
+
+    // The caller's choice changes (a header on the next request): its
+    // session named the full list, so a call streams the notification and
+    // a tools/list ends the session.
+    const call = await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "everyapp_whoami", arguments: {} },
+        { headers: { "mcp-session-id": sessionId }, url },
+      ),
+      compact,
+    );
+    expect(call.headers.get("content-type")).toBe("text/event-stream");
+    expect(sseMessages(await call.text())[0]).toEqual({
+      jsonrpc: "2.0",
+      method: "notifications/tools/list_changed",
+    });
+    const stale = await serve(
+      legacyRequest(
+        "tools/list",
+        {},
+        { headers: { "mcp-session-id": sessionId }, url },
+      ),
+      compact,
+    );
+    expect(stale.status).toBe(404);
+
+    const again = await serve(
+      initializeRequest("2025-11-25", {}, url),
+      compact,
+    );
+    const rotated = again.headers.get("mcp-session-id")!;
+    expect(rotated.split(".").at(-1)).not.toBe(sessionId.split(".").at(-1));
+    const list = await rpcBody(
+      await serve(
+        legacyRequest(
+          "tools/list",
+          {},
+          { headers: { "mcp-session-id": rotated }, url },
+        ),
+        compact,
+      ),
+    );
+    expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "everyapp_search_tools",
+      "everyapp_call_read",
+      "everyapp_call_write",
+    ]);
+    // Back to full on the same session: the same rotation the other way.
+    const back = await serve(
+      legacyRequest(
+        "tools/list",
+        {},
+        { headers: { "mcp-session-id": rotated }, url },
+      ),
+      full,
+    );
+    expect(back.status).toBe(404);
   });
 
   it("sends tools/list_changed before the result once the session's tool list changed", async () => {
@@ -1396,6 +1611,10 @@ describe("transport guards", () => {
     );
     expect(inspector.headers.get("access-control-allow-headers")).toContain(
       "mcp-protocol-version",
+    );
+    // The gateway's listing choice may come from a browser client too.
+    expect(inspector.headers.get("access-control-allow-headers")).toContain(
+      "x-everyapp-tools",
     );
     expect(
       inspector.headers.get("access-control-allow-credentials"),

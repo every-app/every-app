@@ -1,10 +1,32 @@
 import { describe, expect, it } from "vitest";
+import { listBuiltinTools } from "./builtins";
+import { listTools } from "./server";
 import { PRINCIPAL, todoApp } from "./test-fixtures";
+import type { ToolBusApp, ToolBusTool } from "./types";
 import {
   CLAUDE_CODE_INSTRUCTIONS_READ,
+  FULL_LISTING_MAX_BYTES,
+  FULL_LISTING_MAX_TOOLS,
   gatewayInstructionsHead,
   gatewaySurfaceView,
 } from "./view";
+
+const FULL_HEADER =
+  "Tools for Acme on Every App. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for. everyapp_search_tools finds a tool by words.";
+
+/** `count` read tools, `schemaBytes` of description inside each schema. */
+function manyTools(count: number, schemaBytes = 0): ToolBusTool[] {
+  return Array.from({ length: count }, (_, index) => ({
+    name: `tool_${String(index).padStart(3, "0")}`,
+    description: `Tool ${index}.`,
+    risk: "read" as const,
+    inputSchema: {
+      type: "object",
+      properties: {},
+      ...(schemaBytes ? { description: "x".repeat(schemaBytes) } : {}),
+    },
+  }));
+}
 
 describe("gatewaySurfaceView", () => {
   it("names the organization and lists the apps in its instructions", () => {
@@ -19,13 +41,14 @@ describe("gatewaySurfaceView", () => {
 
     expect(view).toMatchObject({
       surface: "gateway",
+      listing: "full",
       serverInfo: { name: "every-app", title: "Acme · Every App" },
       requestId: "ray_1",
     });
     expect(view.allowedOrigins).toBeUndefined();
     expect(view.instructions).toBe(
       [
-        "Tools for Acme on Every App. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for.",
+        FULL_HEADER,
         "Apps: chef (Chef), todo (Todos).",
         "",
         "todo: Todos first.",
@@ -86,7 +109,7 @@ describe("gatewaySurfaceView", () => {
     ]);
     expect(view.instructions).toBe(
       [
-        "Tools for Acme on Every App. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for.",
+        FULL_HEADER,
         "Apps: todo (Todos).",
         "crm (CRM) is not available: needs setup.",
         "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY.",
@@ -140,5 +163,137 @@ describe("gatewaySurfaceView", () => {
       gatewaySurfaceView(principal, apps, { unavailable }).instructions,
     ).toContain(worst);
     expect(worst.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
+
+    // The compact head is longer (it says how to find and run a tool), and
+    // the worst case of that stays inside the read too.
+    const compact = gatewayInstructionsHead(
+      principal,
+      apps,
+      unavailable,
+      "compact",
+    );
+    expect(compact.length).toBeGreaterThan(worst.length);
+    expect(compact.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
+    expect(
+      gatewaySurfaceView(principal, apps, { unavailable, listing: "compact" })
+        .instructions,
+    ).toContain(compact);
+  });
+
+  describe("the listing mode", () => {
+    const acme = { ...PRINCIPAL, organizationName: "Acme" };
+    const appOf = (tools: ToolBusTool[], appId = "big"): ToolBusApp =>
+      todoApp({ appId, rowId: `row_${appId}`, instructions: undefined, tools });
+
+    it("is full while the full listing fits 256 tools, compact past that", () => {
+      // Three built-ins are listed in full mode, so 253 app tools make a
+      // listing of exactly 256 (full) and one more passes it (compact).
+      const builtins = listBuiltinTools({ principal: acme, listing: "full" });
+      expect(builtins).toHaveLength(3);
+      const fits = gatewaySurfaceView(acme, [
+        appOf(manyTools(FULL_LISTING_MAX_TOOLS - builtins.length)),
+      ]);
+      expect(fits.listing).toBe("full");
+      expect(listTools(fits)).toHaveLength(FULL_LISTING_MAX_TOOLS);
+
+      const past = gatewaySurfaceView(acme, [
+        appOf(manyTools(FULL_LISTING_MAX_TOOLS - builtins.length + 1)),
+      ]);
+      expect(past.listing).toBe("compact");
+      expect(listTools(past).map((tool) => tool.name)).toEqual([
+        "everyapp_list_apps",
+        "everyapp_whoami",
+        "everyapp_search_tools",
+        "everyapp_call_read",
+        "everyapp_call_write",
+      ]);
+    });
+
+    it("counts the tools the caller could see: hidden ones don't push it compact", () => {
+      const tools = [
+        ...manyTools(200),
+        ...manyTools(100).map((tool, index) => ({
+          ...tool,
+          name: `write_${index}`,
+          risk: "write" as const,
+        })),
+      ];
+      // 300 tools in the catalog, 200 of them visible to a read-only caller.
+      expect(
+        gatewaySurfaceView({ ...acme, access: "read" }, [appOf(tools)]).listing,
+      ).toBe("full");
+      expect(gatewaySurfaceView(acme, [appOf(tools)]).listing).toBe("compact");
+    });
+
+    it("is compact once the full listing would serialize past 1 MiB", () => {
+      // 60 tools with 18 KiB schemas: well under 256, over a mebibyte.
+      const heavy = appOf(manyTools(60, 18 * 1024));
+      const full = listTools(
+        gatewaySurfaceView(acme, [heavy], { listing: "full" }),
+      );
+      expect(full.length).toBeLessThan(FULL_LISTING_MAX_TOOLS);
+      expect(JSON.stringify(full).length).toBeGreaterThan(
+        FULL_LISTING_MAX_BYTES,
+      );
+      expect(gatewaySurfaceView(acme, [heavy]).listing).toBe("compact");
+      // Half as many fits.
+      expect(
+        gatewaySurfaceView(acme, [appOf(manyTools(30, 18 * 1024))]).listing,
+      ).toBe("full");
+    });
+
+    it("is the caller's when they chose one, whatever the size", () => {
+      const small = gatewaySurfaceView(acme, [todoApp()], {
+        listing: "compact",
+      });
+      expect(small.listing).toBe("compact");
+      expect(listTools(small).map((tool) => tool.name)).not.toContain(
+        "todo_list_todos",
+      );
+      const large = gatewaySurfaceView(acme, [appOf(manyTools(300))], {
+        listing: "full",
+      });
+      expect(large.listing).toBe("full");
+      expect(listTools(large)).toHaveLength(303);
+    });
+
+    it("tells a compact caller how to find and run tools, with the count it could reach", () => {
+      const view = gatewaySurfaceView(
+        acme,
+        [
+          todoApp({
+            appId: "todo",
+            name: "Todos",
+            instructions: "Todos first.",
+          }),
+          todoApp({ appId: "chef", name: "Chef", instructions: undefined }),
+        ],
+        {
+          listing: "compact",
+          unavailable: [{ appId: "crm", name: "CRM", reason: "needs setup" }],
+        },
+      );
+      // Two visible tools per app (the destructive one is hidden).
+      expect(view.instructions).toBe(
+        [
+          "Tools for Acme on Every App. This connection lists its 4 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read or everyapp_call_write with a tool's name and arguments. Call everyapp_list_apps to see what each app is for.",
+          "Apps: chef (Chef), todo (Todos).",
+          "crm (CRM) is not available: needs setup.",
+          "",
+          "todo: Todos first.",
+        ].join("\n"),
+      );
+      // A read-only caller reaches one tool per app, and is sent to the
+      // read wrapper alone: the write wrapper is hidden from it.
+      const readOnly = gatewaySurfaceView(
+        { ...acme, access: "read" },
+        [todoApp()],
+        { listing: "compact" },
+      ).instructions!;
+      expect(readOnly).toContain(
+        "lists its 1 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read with a tool's name and arguments (this connection is read only). Call everyapp_list_apps",
+      );
+      expect(readOnly).not.toContain("everyapp_call_write");
+    });
   });
 });

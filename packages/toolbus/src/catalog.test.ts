@@ -117,13 +117,29 @@ describe("normalizeCatalog", () => {
     ]);
   });
 
-  it("serves at most 100 tools per app", () => {
-    const tools = Array.from({ length: 103 }, (_, i) => tool(`tool_${i}`));
+  it("serves every tool an app has: 300 is a catalog, not a warning", () => {
+    // No count per app; what bounds a catalog is each tool's own limits,
+    // the response size and the gateway's one atomic write of the snapshot.
+    expect(CATALOG_LIMITS).not.toHaveProperty("toolsPerApp");
+    const tools = Array.from({ length: 300 }, (_, i) => tool(`tool_${i}`));
     const snapshot = served(normalizeCatalog("todo", catalog(tools)));
-    expect(snapshot.tools).toHaveLength(CATALOG_LIMITS.toolsPerApp);
-    expect(snapshot.warnings).toEqual([
-      expect.stringContaining("first 100 tools are served; 3 skipped"),
-    ]);
+    expect(snapshot.status).toBe("ok");
+    expect(snapshot.tools).toHaveLength(300);
+    expect(snapshot.tools.at(-1)?.name).toBe("tool_299");
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  it("keeps at most 100 of the app's own warnings", () => {
+    const snapshot = served(
+      normalizeCatalog(
+        "todo",
+        catalog([tool("a")], {
+          warnings: Array.from({ length: 150 }, (_, i) => `warning ${i}`),
+        }),
+      ),
+    );
+    expect(snapshot.warnings).toHaveLength(CATALOG_LIMITS.warningsMax);
+    expect(snapshot.warnings.at(-1)).toBe("warning 99");
   });
 
   it("strips x-mcp-header hints, defaults the risk to write and keeps known hints", () => {

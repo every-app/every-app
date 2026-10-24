@@ -8,7 +8,12 @@
  * on its own host (`appSurfaceView`); every app the caller reaches, plus the
  * built-in `everyapp_*` tools, on the gateway (`gatewaySurfaceView`).
  */
-export { BUILTIN_APP_ID, listBuiltinTools } from "./builtins";
+export {
+  BUILTIN_APP_ID,
+  SEARCH_RESULT_MAX_BYTES,
+  listBuiltinTools,
+  type ListingMode,
+} from "./builtins";
 export {
   CATALOG_LIMITS,
   fetchAppCatalog,
@@ -43,7 +48,12 @@ export {
 } from "./principal";
 export { listTools, TOOLBUS_VERSION } from "./server";
 export { ViewRefusedError } from "./types";
-export { appSurfaceView, gatewaySurfaceView } from "./view";
+export {
+  FULL_LISTING_MAX_BYTES,
+  FULL_LISTING_MAX_TOOLS,
+  appSurfaceView,
+  gatewaySurfaceView,
+} from "./view";
 export type {
   JsonObject,
   McpAccess,

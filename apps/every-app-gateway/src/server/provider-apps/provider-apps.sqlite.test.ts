@@ -348,6 +348,7 @@ describe("a provider app on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       ...DATAFORSEO_TOOLS,
     ]);
     const [catalog] = await db
@@ -390,6 +391,7 @@ describe("a provider app on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
     ]);
     await db.insert(userAppAccess).values({
       id: "grant-member",
@@ -527,6 +529,7 @@ describe("a provider app on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
     ]);
     const listed = await callTool(token, "everyapp_list_apps", {});
     expect(listed.result?.structuredContent).toEqual({
@@ -575,6 +578,7 @@ describe("a provider app on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
     ]);
     rowId = await turnOn(ownerId);
     expect(await toolNames(token)).toContain("dataforseo_serp_google");

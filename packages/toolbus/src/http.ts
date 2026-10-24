@@ -122,6 +122,8 @@ const CORS_ALLOW_HEADERS = [
   "mcp-name",
   "mcp-protocol-version",
   "mcp-session-id",
+  // The gateway's listing choice (`X-EveryApp-Tools: full|compact`).
+  "x-everyapp-tools",
 ].join(", ");
 
 export type ToolBusHttpHandler = (

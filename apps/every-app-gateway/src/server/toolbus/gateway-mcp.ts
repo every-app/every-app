@@ -29,6 +29,16 @@
  * compares each 2025-era request's session with the list, and holds a
  * 2026-07-28 `subscriptions/listen` stream that re-reads the catalogs
  * through the view's `refresh` (see packages/toolbus/src/http.ts).
+ *
+ * How `tools/list` presents the apps' tools is the view's `listing`
+ * (packages/toolbus/src/view.ts): every tool under its own name, or
+ * compactly (the built-ins only, with `everyapp_search_tools` and the
+ * `everyapp_call_read` / `everyapp_call_write` wrappers) once a full
+ * listing would grow past what clients that load every tool take. A caller
+ * of any kind chooses for itself with `X-EveryApp-Tools: full|compact` or
+ * `?tools=full|compact` ({@link listingChoice}); the choice is read once
+ * from the request and carried by the view's `refresh`, so a held stream
+ * re-reads in the mode it was opened in.
  */
 import { env } from "cloudflare:workers";
 import { extractBearerCredential, logEvent } from "@every-app/perimeter";
@@ -102,6 +112,34 @@ export function browserOriginAllowed(request: Request): boolean {
 
 type RefusedCaller = Extract<McpCaller, { kind: "refused" }>;
 
+/** The request header that chooses how the gateway's /mcp lists tools. */
+const LISTING_HEADER = "x-everyapp-tools";
+/** The /mcp query parameter that chooses the same. */
+const LISTING_QUERY_PARAM = "tools";
+
+type Listing = NonNullable<ToolBusView["listing"]>;
+
+function parseListing(value: string | null): Listing | undefined {
+  const choice = value?.trim().toLowerCase();
+  return choice === "full" || choice === "compact" ? choice : undefined;
+}
+
+/**
+ * The caller's explicit choice of how `tools/list` presents the apps'
+ * tools, for any kind of caller: `X-EveryApp-Tools: full|compact` or
+ * `?tools=full|compact` on `/mcp`, case-insensitive, the header first when
+ * both are given. Anything else is no choice, and the view decides from
+ * the size of the full listing (`gatewaySurfaceView`). A query string
+ * leaves the protected resource what it is: the routers match the path,
+ * `/mcp`, and the OAuth resource server hands the request on as it came.
+ */
+export function listingChoice(request: Request): Listing | undefined {
+  return (
+    parseListing(request.headers.get(LISTING_HEADER)) ??
+    parseListing(new URL(request.url).searchParams.get(LISTING_QUERY_PARAM))
+  );
+}
+
 /**
  * What an AI app can show its user for a refusal it can do something about:
  * the Access path has no consent page or token to explain it, so the 403
@@ -161,13 +199,14 @@ export async function serveGatewayMcp(
 
   let view: ToolBusView;
   try {
-    view = await gatewayView(
-      request.headers.get("cf-ray") ?? undefined,
+    view = await gatewayView({
+      requestId: request.headers.get("cf-ray") ?? undefined,
       principal,
       scope,
-      recheckFor(request, caller),
-      options.credentialExpiresAt,
-    );
+      recheck: recheckFor(request, caller),
+      credentialExpiresAt: options.credentialExpiresAt,
+      listing: listingChoice(request),
+    });
   } catch (error) {
     logEvent(
       "mcp.catalog.unavailable",
@@ -263,21 +302,28 @@ function needsSetupReason(setup: AppSetup): string {
   return `needs setup: an admin runs ${command}${note ? ` (${note})` : ""}`;
 }
 
+interface GatewayViewInput {
+  requestId: string | undefined;
+  principal: McpPrincipal;
+  scope: Parameters<typeof AppToolRepository.findVisibleCatalogs>[0];
+  recheck: () => Promise<void>;
+  credentialExpiresAt: number | undefined;
+  /** The caller's explicit listing choice ({@link listingChoice}), if any. */
+  listing: Listing | undefined;
+}
+
 /**
  * The caller's view of the catalogs as they are now. A held
  * `subscriptions/listen` stream re-reads it through `refresh` (after the
  * caller is rechecked), so an app that appears, goes or is redeployed
  * reaches the connected client, and a caller that lost access stops
  * hearing about them. Captures no Request: a stream lives up to half an
- * hour, and no longer than the credential that opened it.
+ * hour, and no longer than the credential that opened it. What was read
+ * from the request (the id, the listing choice) is carried as values, so
+ * every re-read is the same caller's view in the same mode.
  */
-async function gatewayView(
-  requestId: string | undefined,
-  principal: McpPrincipal,
-  scope: Parameters<typeof AppToolRepository.findVisibleCatalogs>[0],
-  recheck: () => Promise<void>,
-  credentialExpiresAt?: number,
-): Promise<ToolBusView> {
+async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
+  const { principal, scope, requestId, listing, credentialExpiresAt } = input;
   const catalogs = await AppToolRepository.findVisibleCatalogs(scope);
   // Each app's setup, read together: one cached report per row, version
   // and recorded names (app-setup.ts), so this costs nothing per request.
@@ -352,16 +398,13 @@ async function gatewayView(
       ...(requestId ? { requestId } : {}),
       allowedOrigins: allowedOrigins(),
       unavailable,
+      // The caller's own choice; without one the view decides from the
+      // size of the full listing, on this read and on every re-read.
+      ...(listing ? { listing } : {}),
     }),
     refresh: async () => {
-      await recheck();
-      return gatewayView(
-        requestId,
-        principal,
-        scope,
-        recheck,
-        credentialExpiresAt,
-      );
+      await input.recheck();
+      return gatewayView(input);
     },
     ...(credentialExpiresAt !== undefined
       ? { listenUntil: credentialExpiresAt * 1000 }

@@ -408,6 +408,7 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
     expect(await toolNames(headers)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "todo_create_todo",
       "todo_list_todos",
     ]);
@@ -454,6 +455,7 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
     expect(await toolNames(await vouched({ email: OWNER_EMAIL }))).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_ping",
       "todo_create_todo",
       "todo_list_todos",
@@ -703,6 +705,7 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
     expect(await toolNames(headers)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "wiki_ping",
     ]);
     const whoami = await callTool(headers, "everyapp_whoami");
@@ -719,6 +722,7 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
     expect(await toolNames(headers)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_ping",
       "todo_create_todo",
       "todo_list_todos",

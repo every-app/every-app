@@ -169,8 +169,14 @@ export const mcpToolCalls = sqliteTable(
     surface: text("surface").notNull(),
     appRowId: text("app_row_id"),
     appSlug: text("app_slug"),
-    // The name the client called, cut to 128 characters.
+    // The name the client called, cut to 128 characters. For a call made
+    // through a wrapper built-in, the inner tool's name (see `via`).
     toolName: text("tool_name").notNull(),
+    // The wrapper built-in the call came through ("everyapp_call_read" or
+    // "everyapp_call_write"), when it did: `tool_name` is then the inner
+    // tool, and this is the row's only trace of the wrapper. Null for a
+    // call made by name.
+    via: text("via"),
     risk: text("risk"),
     // "allowed" | "blocked"
     decision: text("decision").notNull(),

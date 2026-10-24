@@ -55,6 +55,12 @@ export type ToolCallRow = {
     name: string;
     /** "read" | "write" | "destructive", or null when the tool was unknown. */
     risk: string | null;
+    /**
+     * The wrapper built-in the call came through (`everyapp_call_read` or
+     * `everyapp_call_write`) when it did; `name` is then the inner tool's.
+     * Null for a call made by name.
+     */
+    via: string | null;
   };
   decision: "allowed" | "blocked";
   /** Why it was blocked, or what the app reported. */

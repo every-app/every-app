@@ -762,6 +762,14 @@ endpoint anyone can call. On the other side, every app's tools, called
 over the app's binding with a per-call identity, and the provider apps'
 tools (`docs/design/2026-10-mcp-provider-apps.md`), which the gateway
 serves itself and which call the provider through B4's capability proxy.
+The gateway's own built-ins under `everyapp_` cross here too: three
+read-only ones answered from the caller's view (`everyapp_list_apps`,
+`everyapp_whoami`, `everyapp_search_tools`) and two wrappers
+(`everyapp_call_read`, `everyapp_call_write`) that each delegate exactly
+one inner tool call down the same path as a direct call, which is how a
+client served the compact listing (the built-ins alone in `tools/list`:
+automatic past 256 tools or 1 MiB, or chosen with `X-EveryApp-Tools` or
+`?tools=`) reaches the apps' tools.
 The code is
 `apps/every-app-gateway/src/server/mcp-auth/` (the OAuth 2.1 server on
 `@cloudflare/workers-oauth-provider`, consent, registration, validation),
@@ -778,6 +786,11 @@ connection, removed member or deactivated user keeping access past the
 next request. A page on another origin driving tool calls with a browser's
 cookie. A tool receiving a reusable identity, `*` scopes, or arguments the
 app's schema refuses. Arguments or results ending up in the audit table.
+A write tool reached through `everyapp_call_read`, which mints `mcp:read`
+alone; a hidden tool reached through a wrapper or found by the search
+(hidden stays `Unknown tool` on every path, where a compact listing only
+leaves tools unlisted); a wrapper minting an identity of its own, fanning
+out, or escaping the one audit row, which names the inner tool with `via`.
 
 **Invariants.** The register has 45.
 

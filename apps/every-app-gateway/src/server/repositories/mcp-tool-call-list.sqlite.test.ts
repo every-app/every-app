@@ -15,6 +15,7 @@ vi.mock("@/db", async () => {
   return { db: testDbProxy(testDb), schema };
 });
 
+import type { ToolCallAuditEvent } from "@every-app/toolbus";
 import { apps, mcpToolCalls } from "@/db/schema";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { AppRepository } from "./AppRepository";
@@ -129,7 +130,7 @@ describe("McpToolCallRepository.listForOrganization (SQLite)", () => {
           clientInfo: "claude-code 2.1.304",
         },
         app: { rowId: "app-chef", slug: "chef", name: "Chef", removed: false },
-        tool: { name: "chef_delete_recipe", risk: "destructive" },
+        tool: { name: "chef_delete_recipe", risk: "destructive", via: null },
         decision: "blocked",
         reason: "needs_approval",
         outcome: "not_run",
@@ -146,7 +147,7 @@ describe("McpToolCallRepository.listForOrganization (SQLite)", () => {
         },
         credential: { kind: "pat", clientName: null, clientInfo: null },
         app: { rowId: "app-chef", slug: "chef", name: "Chef", removed: false },
-        tool: { name: "chef_list", risk: "read" },
+        tool: { name: "chef_list", risk: "read", via: null },
         decision: "allowed",
         reason: null,
         outcome: "ok",
@@ -174,6 +175,83 @@ describe("McpToolCallRepository.listForOrganization (SQLite)", () => {
         limit: 50,
       }),
     ).toEqual({ calls: [], nextBefore: null });
+  });
+
+  it("keeps the wrapper a call came through (via), and lists it beside the tool", async () => {
+    // The ToolBus's audit event for a call on Chef: made by name, through
+    // everyapp_call_read, and refused through everyapp_call_write.
+    const event = (
+      overrides: Partial<ToolCallAuditEvent> &
+        Pick<ToolCallAuditEvent, "callId">,
+    ): ToolCallAuditEvent => ({
+      surface: "gateway",
+      tool: "chef_list",
+      appId: "chef",
+      appRowId: "app-chef",
+      risk: "read",
+      decision: "allowed",
+      outcome: "ok",
+      durationMs: 8,
+      argsDigest: "digest-1",
+      resultBytes: 120,
+      protocolVersion: "2026-07-28",
+      userId: owner,
+      organizationId: acme,
+      credentialKind: "pat",
+      credentialId: "pat_1",
+      ...overrides,
+    });
+    await McpToolCallRepository.insert(event({ callId: "direct" }));
+    await McpToolCallRepository.insert(
+      event({ callId: "wrapped", via: "everyapp_call_read" }),
+    );
+    await McpToolCallRepository.insert(
+      event({
+        callId: "refused",
+        tool: "chef_nothing",
+        risk: undefined,
+        decision: "blocked",
+        reason: "unknown_tool",
+        outcome: "not_run",
+        via: "everyapp_call_write",
+      }),
+    );
+
+    // The column round-trips as written: the wrapper's name, or null.
+    const stored = await db
+      .select({ id: mcpToolCalls.id, via: mcpToolCalls.via })
+      .from(mcpToolCalls)
+      .orderBy(mcpToolCalls.id);
+    expect(stored).toEqual([
+      { id: "direct", via: null },
+      { id: "refused", via: "everyapp_call_write" },
+      { id: "wrapped", via: "everyapp_call_read" },
+    ]);
+
+    // And Activity shows it beside the inner tool's name.
+    const page = await McpToolCallRepository.listForOrganization({
+      organizationId: acme,
+      limit: 50,
+    });
+    expect(
+      page.calls
+        .map((row) => ({ id: row.id, tool: row.tool }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual([
+      { id: "direct", tool: { name: "chef_list", risk: "read", via: null } },
+      {
+        id: "refused",
+        tool: { name: "chef_nothing", risk: null, via: "everyapp_call_write" },
+      },
+      {
+        id: "wrapped",
+        tool: { name: "chef_list", risk: "read", via: "everyapp_call_read" },
+      },
+    ]);
+    // Still never the arguments: a digest and a size, as for a direct call.
+    for (const row of page.calls) {
+      expect(row).not.toHaveProperty("argsDigest");
+    }
   });
 
   it("pages by keyset without gaps or repeats across rows with the same timestamp", async () => {
@@ -400,7 +478,7 @@ describe("McpToolCallRepository.listForOrganization (SQLite)", () => {
       expect.objectContaining({
         id: "no-app",
         app: { rowId: null, slug: null, name: null, removed: false },
-        tool: { name: "nothing_here", risk: null },
+        tool: { name: "nothing_here", risk: null, via: null },
         decision: "blocked",
         reason: "unknown_tool",
       }),

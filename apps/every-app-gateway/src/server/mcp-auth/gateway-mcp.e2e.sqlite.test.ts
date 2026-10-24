@@ -891,6 +891,7 @@ describe("a DCR client (Codex-style)", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
@@ -1185,6 +1186,7 @@ describe("a DCR client (Codex-style)", () => {
     expect(await toolNames(second.tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_list_notes",
       "todo_list_todos",
     ]);
@@ -1483,6 +1485,7 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "todo_list_todos",
     ]);
     const write = await callTool(tokens.access_token, "todo_create_todo", {
@@ -1604,6 +1607,7 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(await toolNames(second.tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_list_notes",
       "todo_list_todos",
     ]);
@@ -1721,6 +1725,7 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_list_notes",
     ]);
 
@@ -1744,6 +1749,7 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
     ]);
   });
 
@@ -2696,6 +2702,7 @@ describe("every request re-checks the connection", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
     ]);
     const call = await callTool(tokens.access_token, "todo_list_todos");
     expect(call.body.error?.code).toBe(-32602);
@@ -2708,6 +2715,7 @@ describe("every request re-checks the connection", () => {
     expect(await toolNames(owner.tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_add_note",
       "notes_list_notes",
     ]);
@@ -2770,6 +2778,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
@@ -2791,12 +2800,14 @@ describe("personal access tokens on the gateway's /mcp", () => {
     expect(await toolNames(await pat(["mcp:read"]))).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_list_notes",
       "todo_list_todos",
     ]);
     expect(await toolNames(await pat(undefined, notesRowId))).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_add_note",
       "notes_list_notes",
     ]);
@@ -2818,6 +2829,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "todo_create_todo",
       "todo_list_todos",
     ]);
@@ -2831,6 +2843,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
@@ -2843,6 +2856,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
     expect(await toolNames(token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "todo_create_todo",
       "todo_list_todos",
     ]);
@@ -2982,6 +2996,7 @@ describe("apps with no tool snapshot yet", () => {
     expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
+      "everyapp_search_tools",
       "chef_ping",
       "notes_add_note",
       "notes_list_notes",
