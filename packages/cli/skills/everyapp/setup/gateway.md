@@ -130,6 +130,7 @@ matter; the device login gives 5 minutes (cf's own limit; everyapp's
 | `GATEWAY_UNREACHABLE`, `CERT_PENDING`, `curl` answers `000` | certificate or DNS still on the way | wait up to ten minutes; the link works as soon as the host answers |
 | `OWNER_NOT_CLAIMED` (warning, exit 0; `data.needsTerminal: true`) | `CI` is set, or output is piped without `--json`: no link is shown there | run setup at a terminal, or with `--json` from an agent on the person's machine |
 | `SECRET_NOT_SETTABLE` | `secret set` on `GATEWAY_URL`, `JWT_*`, … | setup owns those; nothing to set |
+| `SETTING_VALUE_INVALID` with `data.name` | `BROWSER_APP_INSTALLS` takes exactly `on` or `off` (a plain setting; nothing was written) | pipe the value `data.fix` describes |
 | `SECRET_VALUE_REQUIRED`, `SECRET_SEVERAL_NAMES` | `secret set CF_DEPLOY_TOKEN --json` got no value, or a pipe with several names | one of README's three ways, one name per pipe |
 | `CONFIRMATION_REQUIRED` | `secret unset … --json` without `--yes`: nothing was removed | ask the person; rerun with `--yes` only when they said so |
 | `integration_not_configured`, `ai_provider_not_configured` from an app | the Gateway is fine; that integration's setting isn't set | the integration's own file in this folder |

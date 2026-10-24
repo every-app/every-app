@@ -138,6 +138,12 @@ version of its Worker, no deploy). If `secret set` fails with
 `SECRET_VALUE_REQUIRED`, nothing was piped: use one of the three ways above;
 `SECRET_EMPTY` means the `--from-env` variable is empty or unset in the
 shell that ran it: the hidden read again, in that same terminal.
+`SETTING_VALUE_INVALID` means a plain setting (`EMAIL_FROM`,
+`EMAIL_PROVIDER`, `EMAIL_PASSWORD_SIGN_IN`, a `CLOUDFLARE_ACCESS_*` or
+`MCP_*` switch) got a value the Gateway wouldn't read: the message names the
+setting and the value, `data.fix` says what it takes, and nothing was
+written; pipe the right value. A plain setting's prompt at a terminal is
+visible and says what it takes; a credential's stays hidden.
 
 **Only a person can** sign in to a provider, accept its terms, add a card
 or choose a plan, approve an OAuth consent, pick a Google Cloud project's
