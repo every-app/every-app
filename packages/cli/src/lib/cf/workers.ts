@@ -14,6 +14,20 @@ export function listWorkers(cf: CfRunner): Promise<ListedWorker[]> {
   return listAll(cf, ["workers", "list"], WorkerListOutput, PAGE);
 }
 
+/**
+ * The hostnames that are Custom Domains of `workerName` (lower-cased), from
+ * the account's Workers; none when there is no such Worker.
+ */
+export async function workerCustomDomains(
+  cf: CfRunner,
+  workerName: string,
+): Promise<string[]> {
+  const workers = await listWorkers(cf);
+  return (workers.find((worker) => worker.name === workerName)?.references?.domains ?? []).map(
+    (domain) => domain.hostname.toLowerCase(),
+  );
+}
+
 interface WorkerDeployment {
   /** The version serving the largest share of traffic. */
   versionId: string | null;

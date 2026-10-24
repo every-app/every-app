@@ -5,6 +5,17 @@ import { preflightDomains } from "./preflight";
 
 const ZONE = { id: "zone-1", name: "example.com" };
 
+/** `cf workers list`: the Gateway Worker holding `hosts` as Custom Domains. */
+const gatewayHolding = (...hosts: string[]) => ({
+  stdout: JSON.stringify([
+    { id: "w-1", name: "marketing-site", references: { domains: [{ hostname: "www.example.com", zone_id: "zone-1", zone_name: "example.com" }] } },
+    { id: "w-2", name: "every-app-gateway", references: { domains: hosts.map((hostname) => ({ hostname, zone_id: "zone-1", zone_name: "example.com" })) } },
+  ]),
+});
+
+/** The record Cloudflare keeps at a Workers Custom Domain. */
+const placeholder = (name: string) => ({ id: `r-${name}`, name, type: "AAAA", content: "100::" });
+
 function run(cf: FakeCf, options: Partial<Parameters<typeof preflightDomains>[0]> = {}) {
   const events: any[] = [];
   const result = preflightDomains({
@@ -37,11 +48,13 @@ describe("preflightDomains", () => {
 
   it("refuses records a Custom Domain would replace, and leaves mail and TXT records be", async () => {
     const records = (rows: Array<{ type: string; content: string }>) =>
-      new FakeCf().on(["dns", "records", "list"], {
-        stdout: JSON.stringify(
-          rows.map((row, i) => ({ id: `r${i}`, name: "todo.apps.example.com", ...row })),
-        ),
-      });
+      new FakeCf()
+        .on(["dns", "records", "list"], {
+          stdout: JSON.stringify(
+            rows.map((row, i) => ({ id: `r${i}`, name: "todo.apps.example.com", ...row })),
+          ),
+        })
+        .on(["workers", "list"], gatewayHolding("apps.example.com"));
     await expect(
       run(records([{ type: "MX", content: "mx.example.net" }, { type: "TXT", content: "v=spf1 -all" }])).result,
     ).resolves.toEqual(["todo.apps.example.com"]);
@@ -59,12 +72,14 @@ describe("preflightDomains", () => {
       "chef.apps.example.com": [{ type: "TXT", content: "v=spf1 -all" }],
     };
     const cf = () =>
-      new FakeCf().on(["dns", "records", "list"], (call) => {
-        const name = call.args[call.args.indexOf("--name-exact") + 1]!;
-        return {
-          stdout: JSON.stringify((records[name] ?? []).map((row, i) => ({ id: `r${i}`, name, ...row }))),
-        };
-      });
+      new FakeCf()
+        .on(["dns", "records", "list"], (call) => {
+          const name = call.args[call.args.indexOf("--name-exact") + 1]!;
+          return {
+            stdout: JSON.stringify((records[name] ?? []).map((row, i) => ({ id: `r${i}`, name, ...row }))),
+          };
+        })
+        .on(["workers", "list"], gatewayHolding("apps.example.com"));
     const domains = ["apps.example.com", "todo.apps.example.com", "notes.apps.example.com", "chef.apps.example.com"];
 
     const refused = cf();
@@ -105,6 +120,89 @@ describe("preflightDomains", () => {
     await expect(run(denied(), { forceDns: true }).result).resolves.toEqual([
       "todo.apps.example.com",
     ]);
+  });
+
+  it("takes a record at a hostname that is the Gateway's own Custom Domain as the Gateway's, not a conflict", async () => {
+    // A run that stopped after publishing the hostname (a workers.dev
+    // subdomain to register) left the Custom Domain, with Cloudflare's
+    // placeholder record at the name; the install row never recorded it.
+    const byName = (call: { args: string[] }) => {
+      const name = call.args[call.args.indexOf("--name-exact") + 1]!;
+      return { stdout: JSON.stringify(name.startsWith("*.") ? [] : [placeholder(name)]) };
+    };
+    const cf = new FakeCf()
+      .on(["dns", "records", "list"], byName)
+      .on(["workers", "list"], gatewayHolding("apps.example.com", "todo.apps.example.com"));
+
+    const { result, events } = run(cf, {
+      domains: ["apps.example.com", "todo.apps.example.com"],
+      liveDomains: [],
+      cfAsks: false,
+    });
+
+    await expect(result).resolves.toEqual(["apps.example.com", "todo.apps.example.com"]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "progress",
+        step: "test",
+        message: "apps.example.com is already this Gateway's Custom Domain (an earlier run published it, then stopped)",
+        data: { host: "apps.example.com" },
+      }),
+      expect.objectContaining({ type: "progress", data: { host: "todo.apps.example.com" } }),
+    ]);
+    // The Workers are read once, for both hostnames; nothing is said about
+    // another Worker holding them: they are this one's.
+    expect(cf.calls.filter((call) => call.args[0] === "workers")).toHaveLength(1);
+    expect(events.some((event) => event.code === "CUSTOM_DOMAIN_OWNER_UNCHECKED")).toBe(false);
+
+    // The Gateway holds one of two: the other is still warned about.
+    const partly = run(
+      new FakeCf()
+        .on(["dns", "records", "list"], (call) =>
+          call.args.includes("apps.example.com") && !call.args.includes("todo.apps.example.com")
+            ? byName(call)
+            : { stdout: "[]" },
+        )
+        .on(["workers", "list"], gatewayHolding("apps.example.com")),
+      { domains: ["apps.example.com", "todo.apps.example.com"], liveDomains: [], cfAsks: false },
+    );
+    await partly.result;
+    expect(partly.events).toContainEqual(
+      expect.objectContaining({ code: "CUSTOM_DOMAIN_OWNER_UNCHECKED", data: { hosts: ["todo.apps.example.com"] } }),
+    );
+  });
+
+  it("still refuses the record of another Worker's Custom Domain, and one it can't tell about", async () => {
+    const records = { stdout: JSON.stringify([placeholder("todo.apps.example.com")]) };
+    // Another Worker's: a record like any other.
+    const theirs = new FakeCf()
+      .on(["dns", "records", "list"], records)
+      .on(["workers", "list"], {
+        stdout: JSON.stringify([
+          { id: "w-1", name: "marketing-site", references: { domains: [{ hostname: "todo.apps.example.com" }] } },
+          { id: "w-2", name: "every-app-gateway", references: { domains: [{ hostname: "apps.example.com" }] } },
+        ]),
+      });
+    await expect(run(theirs).result).rejects.toMatchObject({
+      code: "DNS_RECORD_CONFLICT",
+      message: "todo.apps.example.com already points somewhere else\nIts DNS record: AAAA 100::. Publishing it replaces the record.",
+    });
+
+    // No Gateway Worker at all: the record is somebody's.
+    const none = new FakeCf().on(["dns", "records", "list"], records).on(["workers", "list"], { stdout: "[]" });
+    await expect(run(none).result).rejects.toMatchObject({ code: "DNS_RECORD_CONFLICT" });
+
+    // A login that can't list the Workers learns nothing: the record stands.
+    const denied = new FakeCf().on(["dns", "records", "list"], records).on(["workers", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+    await expect(run(denied).result).rejects.toMatchObject({ code: "DNS_RECORD_CONFLICT" });
+
+    // With nothing in the way, the Workers aren't read at all.
+    const clear = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
+    await expect(run(clear).result).resolves.toEqual(["todo.apps.example.com"]);
+    expect(clear.calls.some((call) => call.args[0] === "workers")).toBe(false);
   });
 
   it("warns that a hostname another Worker serves is replaced when cf can't ask", async () => {

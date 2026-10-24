@@ -12,9 +12,10 @@
  * attached to ask. Unattended runs can't answer: cf aborts, and this says
  * what to do.
  */
-import { ActionRequiredError, EveryAppError } from "@/lib/errors";
+import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt } from "@/lib/interrupt";
 import { thisCommand } from "@/lib/output/command";
+import type { EventSink } from "@/lib/output/events";
 import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
 import { CfError, isCfError } from "./errors";
 import type { CfRunner } from "./runner";
@@ -53,6 +54,13 @@ interface CfDeployOptions {
    * only the version is known to be live.
    */
   onUploaded?: (versionId: string, finished: boolean) => Promise<void>;
+  /**
+   * Where to say that an upload cf failed after couldn't be recorded
+   * (warning UPLOAD_UNRECORDED, under `step`): the failure that is thrown
+   * is cf's, and the next run finds a version the row doesn't name.
+   */
+  out?: EventSink;
+  step?: string;
 }
 
 interface CfDeployResult {
@@ -89,7 +97,18 @@ export async function cfDeploy(options: CfDeployOptions): Promise<CfDeployResult
     // or the record itself): the version that went live is recorded all
     // the same.
     if (forget && !isInterrupted()) {
-      await recordNewVersion(options, before, finished).catch(() => undefined);
+      await recordNewVersion(options, before, finished).catch((recordError: unknown) => {
+        // Said, not swallowed: a live row that still names no version after
+        // this is otherwise a mystery to the next run (which treats the
+        // Worker as its own stopped upload when it holds the row's host).
+        options.out?.emit({
+          type: "warning",
+          code: "UPLOAD_UNRECORDED",
+          step: options.step,
+          message: `The version cf uploaded of ${options.workerName} couldn't be recorded\n${errorMessage(recordError)}`,
+          data: { workerName: options.workerName, error: errorMessage(recordError) },
+        });
+      });
     }
     throw error;
   } finally {

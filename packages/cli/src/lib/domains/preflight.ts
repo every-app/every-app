@@ -12,11 +12,20 @@
  *      own, whose answer for that name publishing takes over;
  *   2. the zone must have room: Cloudflare allows 100 Custom Domains in a
  *      zone.
- * cf can't list which Worker holds a Custom Domain: attached to a terminal
- * (--verbose) cf asks before moving one, and otherwise this warns.
+ * A Custom Domain has a DNS record of its own (Cloudflare's placeholder,
+ * `AAAA 100::`, proxied), and `cf workers list` says which Worker each
+ * belongs to (`references.domains`). So a hostname whose record is the
+ * Gateway's own Custom Domain, which a run that stopped after publishing
+ * it leaves behind (a workers.dev subdomain to register, Ctrl+C), is
+ * already the Gateway's and no conflict. Another Worker's Custom Domain is
+ * a record like any other: this refuses it, and cf attached to a terminal
+ * (--verbose) asks before moving one; otherwise this warns that a hostname
+ * with no record may be moved from a Worker without asking.
  */
-import { isCfError } from "@/lib/cf/errors";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { CfError, isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
+import { workerCustomDomains } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -61,7 +70,7 @@ export async function preflightDomains(
   if (added.length === 0) return [];
   const { out, step, zone } = options;
 
-  // Other Workers' Custom Domains in the zone count too, but can't be listed.
+  // Other Workers' Custom Domains in the zone count too; this only counts the Gateway's.
   const total = new Set(options.domains).size;
   if (total > ZONE_CUSTOM_DOMAIN_LIMIT) {
     throw new EveryAppError(
@@ -83,18 +92,37 @@ export async function preflightDomains(
     });
   }
 
-  await checkDnsRecords(options, added);
+  const own = await checkDnsRecords(options, added);
 
-  if (!options.cfAsks) {
+  const unknown = added.filter((host) => !own.includes(host));
+  if (!options.cfAsks && unknown.length > 0) {
     out.emit({
       type: "warning",
       code: "CUSTOM_DOMAIN_OWNER_UNCHECKED",
       step,
-      message: `If another Worker already serves ${added.length === 1 ? added[0] : `any of ${added.join(", ")}`}, it will be replaced by this deployment.`,
-      data: { hosts: added },
+      message: `If another Worker already serves ${unknown.length === 1 ? unknown[0] : `any of ${unknown.join(", ")}`}, it will be replaced by this deployment.`,
+      data: { hosts: unknown },
     });
   }
   return added;
+}
+
+/**
+ * The hostnames that are the Gateway Worker's live Custom Domains, read
+ * from the account's Workers once, and only once a record is in the way
+ * (not the list the next upload publishes: that is `gatewayDomains` in
+ * lib/gateway/patchBuildOutput.ts). A login that can't list the Workers
+ * learns nothing: the record stands.
+ */
+function readGatewayCustomDomains(cf: CfRunner): () => Promise<Set<string>> {
+  let read: Promise<Set<string>> | undefined;
+  return () =>
+    (read ??= workerCustomDomains(cf, GATEWAY_WORKER_NAME)
+      .then((hosts) => new Set(hosts))
+      .catch((error: unknown) => {
+        if (error instanceof CfError) return new Set<string>();
+        throw error;
+      }));
 }
 
 /** The records at `host` in the zone, through the Cloudflare API. */
@@ -121,15 +149,20 @@ async function recordsAt(
 
 /**
  * Refuse new hostnames that a record answers, at the name itself or as the
- * wildcard over a name with no records of its own.
+ * wildcard over a name with no records of its own. A record at a name that
+ * is the Gateway's own Custom Domain is the domain's: that hostname is
+ * returned instead of refused.
  */
 async function checkDnsRecords(
   options: DomainPreflightOptions,
   added: string[],
-): Promise<void> {
-  const { out, step, zone, forceDns } = options;
+): Promise<string[]> {
+  const { cf, out, step, zone, forceDns } = options;
   // Each hostname a record answers, and the records that answer it.
   const conflicts: Array<{ host: string; records: string }> = [];
+  // The hostnames already published on the Gateway, by a run that stopped.
+  const own: string[] = [];
+  const ownDomains = readGatewayCustomDomains(cf);
   let viaWildcard = false;
   const answering = (records: Array<{ type: string }>) =>
     records.filter((r) => CONFLICTING_TYPES.has(r.type.toUpperCase()));
@@ -138,6 +171,16 @@ async function checkDnsRecords(
   for (const host of added) {
     const records = await recordsAt(options, host);
     const conflicting = answering(records);
+    if (conflicting.length > 0 && (await ownDomains()).has(host)) {
+      out.emit({
+        type: "progress",
+        step,
+        message: `${host} is already this Gateway's Custom Domain (an earlier run published it, then stopped)`,
+        data: { host },
+      });
+      own.push(host);
+      continue;
+    }
     if (conflicting.length > 0) {
       conflicts.push({ host, records: conflicting.map(describeRecord).join(", ") });
     }
@@ -153,7 +196,7 @@ async function checkDnsRecords(
       }
     }
   }
-  if (conflicts.length === 0) return;
+  if (conflicts.length === 0) return own;
   const one = conflicts.length === 1;
   const which = one
     ? `${conflicts[0]!.host} already points somewhere else`
@@ -174,7 +217,7 @@ async function checkDnsRecords(
         : `Replacing the DNS records of ${conflicts.length} hostnames\n${records}${wildcardStays}`,
       data: { conflicts },
     });
-    return;
+    return own;
   }
   throw new EveryAppError(
     "DNS_RECORD_CONFLICT",

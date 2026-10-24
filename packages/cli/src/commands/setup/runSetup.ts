@@ -734,6 +734,11 @@ async function repairGateway({
     });
     return { db, release, outcome: "up-to-date" };
   }
+  // The row recorded its upload but never its own hostname: the first run
+  // stopped after cf uploaded (a workers.dev subdomain to register), and
+  // this one finishes that first publication rather than repairing a
+  // Gateway that was never live.
+  const finishing = !install.liveDomains.includes(install.gatewayHost);
   // The apps the live Gateway doesn't route yet, by their names.
   const added = [
     ...new Set(
@@ -748,9 +753,11 @@ async function repairGateway({
     status: "start",
     message: inSync
       ? `Redeploying the Gateway (${name}) for --redeploy`
-      : `Repairing the Gateway (${name}): ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
+      : finishing
+        ? `Finishing the Gateway's first publication at ${install.gatewayHost} (${name})`
+        : `Repairing the Gateway (${name}): ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
     data: {
-      change: inSync ? GatewayChange.Redeploy : GatewayChange.Repair,
+      change: inSync ? GatewayChange.Redeploy : finishing ? GatewayChange.Resume : GatewayChange.Repair,
       release,
       releaseName: name,
       from: release,
@@ -786,13 +793,15 @@ async function repairGateway({
     status: "ok",
     message: inSync
       ? `The Gateway (${name}) is redeployed`
-      : `The Gateway (${name}) routes ${result.appWorkers.length} apps`,
+      : finishing
+        ? `The Gateway (${name}) is live at ${gatewayUrl}`
+        : `The Gateway (${name}) routes ${result.appWorkers.length} apps`,
     data: {
       versionId: result.versionId,
       release,
       releaseName: name,
       appWorkers: result.appWorkers,
-      ...(inSync
+      ...(inSync || finishing
         ? {}
         : {
             repaired: true,
@@ -802,7 +811,7 @@ async function repairGateway({
           }),
     },
   });
-  return { db, release, outcome: "repaired" };
+  return { db, release, outcome: finishing ? "installed" : "repaired" };
 }
 
 /**

@@ -171,8 +171,14 @@ export async function registryDrift(
   };
 }
 
-/** Whether the install already publishes exactly these app hosts. */
+/**
+ * Whether the install already publishes its own host and exactly these app
+ * hosts. A row that never recorded its own host (cf stopped after the
+ * upload, with the hostname published: the next deploy records it) isn't
+ * in sync.
+ */
 function publishesHosts(install: InstallRecord, appHosts: readonly string[]): boolean {
+  if (!install.liveDomains.includes(install.gatewayHost)) return false;
   const live = install.liveDomains.filter((host) => host !== install.gatewayHost);
   const wanted = publishedAppHosts(appHosts, install.appBaseDomain);
   return [...live].sort().join("\n") === [...wanted].sort().join("\n");

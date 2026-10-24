@@ -454,13 +454,14 @@ describe("teardown --dry-run", () => {
     expect(plan.certificates.map((pack: { packId: string }) => pack.packId).sort()).toEqual(
       account.certificatePacks.filter((pack) => pack.type !== "universal").map((pack) => pack.id).sort(),
     );
-    // The Custom Domain records at our names alone: not the TXT there, not the
-    // wildcard, not www's, and not Email Routing's MX at the apex.
+    // The Custom Domain records at our names alone (the Custom Domains' own
+    // placeholders, and the A record left at the app's): not the TXT there,
+    // not the wildcard, not www's, and not Email Routing's MX at the apex.
     expect(plan.dns.flatMap((name: { name: string; records: Array<{ type: string }> }) => name.records.map((record) => `${record.type} ${name.name}`))).toEqual(
-      [`A todo.${HOST}`],
+      [`AAAA ${HOST}`, `AAAA todo.${HOST}`, `A todo.${HOST}`],
     );
     expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which Every App never created`);
-    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, access: 3, email: 2, dns: 1 });
+    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, access: 3, email: 2, dns: 3 });
     // Nothing of what isn't ours.
     expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|www\.|\*\./);
   });
@@ -538,9 +539,11 @@ describe("teardown", () => {
         `DNS A record at todo.${HOST}`,
       ]),
     );
+    // The Custom Domains' own records went with the Workers, before the
+    // DNS step read the names again: only the stray A record was deleted.
     expect(removed.filter((item) => item.startsWith("DNS"))).toEqual([`DNS A record at todo.${HOST}`]);
     expect(removed.filter((item) => item.startsWith("certificate pack"))).toHaveLength(2);
-    expect(removed.length).toBe(result["data"]["plan"]["total"] - 1);
+    expect(removed.length).toBe(result["data"]["plan"]["total"] - 1 - 2);
     // In order: Access, mail, Workflows, Workers (the Gateway's last), certificates, the apps' D1, KV, R2, Hyperdrive, DNS, and the Gateway's D1 last of all.
     const order = (item: string) => removed.indexOf(item);
     expect(order('Access application "Every App apps"')).toBeLessThan(order(`Access policy "${POLICY_NAME}"`));

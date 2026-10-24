@@ -668,6 +668,8 @@ async function deploySteps(
         secrets: versionSecrets,
         interactive,
         attach: out.verbose,
+        out,
+        step: "app.helper",
         onUploaded: (uploadedVersion) =>
           recordUploadedVersion(registry, workerName, uploadedVersion, helper.name),
       });
@@ -696,6 +698,8 @@ async function deploySteps(
       secrets: versionSecrets,
       interactive,
       attach: out.verbose,
+      out,
+      step: "app.upload",
       // Recorded at once, before the registry hears of it: a retry must
       // find this upload was everyapp's, however this run ends.
       onUploaded: (uploadedVersion) =>

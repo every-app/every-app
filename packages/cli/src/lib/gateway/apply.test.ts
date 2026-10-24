@@ -675,7 +675,11 @@ describe("per-app Custom Domains", () => {
     expect(account.certificatePacks).toEqual([
       expect.objectContaining({ zoneId: "zone-1", hosts: ["example.com", GW, `*.${GW}`] }),
     ]);
-    expect(account.dnsRecords).toHaveLength(1);
+    // www's record, and the Custom Domain's own placeholder at the gateway's host.
+    expect(account.dnsRecords).toEqual([
+      expect.objectContaining({ name: "www.example.com", type: "CNAME" }),
+      { zoneId: "zone-1", name: GW, type: "AAAA", content: "100::" },
+    ]);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
       gatewayHost: GW,
       zoneName: "example.com",
@@ -834,6 +838,78 @@ describe("per-app Custom Domains", () => {
         message: expect.stringContaining("www.example.com"),
       }),
     );
+  });
+
+  it("replaces its own upload from a run that stopped after publishing the hostname, without asking", async () => {
+    // The account's first Worker: cf put the version and its Custom Domain
+    // live, then stopped for the workers.dev subdomain. The install row is
+    // as the live run of 2026-10-24 left it: written before the upload,
+    // never updated with the version.
+    account.workersDevSubdomain = false;
+    await expect(deployOnSubdomain()).rejects.toMatchObject({ action: "register_workers_subdomain" });
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(account.dnsRecords).toEqual([{ zoneId: "zone-1", name: GW, type: "AAAA", content: "100::" }]);
+    gatewayDb().sqlite.exec(
+      "UPDATE _everyapp_install SET live_version_id = NULL, jwt_public_key = NULL, deployment_mode = NULL",
+    );
+    const firstVersion = account.workers.get("every-app-gateway")!.versions.at(-1);
+    account.workersDevSubdomain = true;
+    events = [];
+
+    // Unattended, the same deploy goes through: the hostname's record is
+    // the Gateway's own, and so is the Worker.
+    const result = await deployOnSubdomain();
+
+    expect(result).toMatchObject({ firstDeploy: false, domains: [GW], newHosts: [GW] });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "progress",
+        step: "gateway.domains",
+        message: `${GW} is already this Gateway's Custom Domain (an earlier run published it, then stopped)`,
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "step",
+        step: "gateway.resume",
+        status: "ok",
+        message: `Replacing the Gateway an earlier run uploaded at ${GW}\nThat run stopped before it could finish; nothing uses that upload yet.`,
+        data: { gatewayHost: GW },
+      }),
+    );
+    expect(events.some((event) => event["code"] === "DNS_RECORD_CONFLICT" || event["action"] === "rerun_interactive")).toBe(false);
+    // The row's first upload: a new key pair, recorded with the version.
+    const upload = account.deploys.at(-1)!;
+    expect(upload.secrets).toHaveProperty("JWT_PUBLIC_KEY");
+    const row = (await readInstall(gatewayD1()))!;
+    expect(row.liveVersionId).toBe(account.workers.get("every-app-gateway")!.versions.at(-1));
+    expect(row.liveVersionId).not.toBe(firstVersion);
+    expect(row).toMatchObject({
+      liveDomains: [GW],
+      jwtPublicKey: upload.secrets!["JWT_PUBLIC_KEY"],
+      deploymentMode: "self_hosted",
+    });
+  });
+
+  it("still asks before replacing a Gateway Worker that doesn't hold the row's hostname", async () => {
+    // A row that never recorded an upload, and a Worker by the Gateway's
+    // name whose Custom Domain is some other hostname: not this install's.
+    account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
+    await expect(deployOnSubdomain()).rejects.toMatchObject({ action: "register_workers_subdomain" });
+    account.workers.set("every-app-gateway", {
+      versions: ["elsewhere-1"],
+      config: { name: "every-app-gateway", env: {} },
+      secrets: {},
+    });
+    account.customDomains.set("tools.example.com", "every-app-gateway");
+    const deploys = account.deploys.length;
+
+    await expect(deployOnSubdomain()).rejects.toMatchObject({
+      action: "rerun_interactive",
+      data: { workerName: "every-app-gateway", versionId: "elsewhere-1" },
+    });
+    expect(account.deploys).toHaveLength(deploys);
+    expect(events.some((event) => event["step"] === "gateway.resume")).toBe(false);
   });
 
   it("warns, unattended, that cf moves a host another Worker serves without asking", async () => {

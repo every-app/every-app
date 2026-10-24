@@ -169,10 +169,14 @@ describe("everyapp setup", () => {
       mode: "self_hosted",
     });
 
-    // The gateway, its own Custom Domain in the zone; no app yet.
+    // The gateway, its own Custom Domain in the zone (with Cloudflare's
+    // placeholder record at the name); no app yet.
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(account.gatewayBindings()).toEqual([]);
-    expect(account.dnsRecords).toHaveLength(1);
+    expect(account.dnsRecords).toEqual([
+      expect.objectContaining({ name: "www.example.com" }),
+      { zoneId: "zone-1", name: GW, type: "AAAA", content: "100::" },
+    ]);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
       gatewayHost: GW,
       appBaseDomain: GW,
@@ -225,6 +229,119 @@ describe("everyapp setup", () => {
       }),
     );
     expect(account.gatewayDomains()).toEqual([GW]);
+  });
+
+  it("resumes an install that stopped for the workers.dev subdomain after its first upload published the domain", async () => {
+    // The account's first Worker: cf put the Gateway and its Custom Domain
+    // live (Cloudflare's placeholder record at the name), then stopped
+    // for the subdomain. Seen live on a fresh account on 2026-10-24.
+    account.workersDevSubdomain = false;
+    const first = await setup({ domain: GW });
+    expect(first.exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({ action: "register_workers_subdomain" });
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(account.dnsRecords).toEqual([{ zoneId: "zone-1", name: GW, type: "AAAA", content: "100::" }]);
+    const deploys = account.deploys.length;
+
+    // The person registers it, then runs the same command: the record at
+    // the hostname is the Gateway's own, not a conflict.
+    account.workersDevSubdomain = true;
+    events = [];
+    const { exitCode, result } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    // The row recorded the upload but not its hostname: this run finishes
+    // the first publication, it doesn't "repair" a Gateway never live.
+    expect(result).toMatchObject({ gateway: "installed", ownerCreated: true });
+    expect(events.filter((event) => event.type === "error" || event.action === "rerun_interactive")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        message: `Finishing the Gateway's first publication at ${GW} (0.2.0)`,
+        data: expect.objectContaining({ change: "resume", gatewayUrl: `https://${GW}` }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "ok",
+        message: `The Gateway (0.2.0) is live at https://${GW}`,
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "progress",
+        step: "gateway.domains",
+        message: `${GW} is already this Gateway's Custom Domain (an earlier run published it, then stopped)`,
+      }),
+    );
+    expect(steps()).toContain("setup.owner ok");
+    expect(account.deploys).toHaveLength(deploys + 1);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      liveVersionId: account.workers.get("every-app-gateway")!.versions.at(-1),
+      liveDomains: [GW],
+      jwtPublicKey: expect.stringContaining("BEGIN PUBLIC KEY"),
+    });
+  });
+
+  it("resumes that same stopped upload when the row never recorded it, without a terminal", async () => {
+    // The install row as the live run left it: written before the upload
+    // (no version, no key), while the Worker holds the hostname.
+    account.workersDevSubdomain = false;
+    await setup({ domain: GW });
+    account.database("every-app-gateway").sqlite.exec(
+      "UPDATE _everyapp_install SET live_version_id = NULL, jwt_public_key = NULL, deployment_mode = NULL",
+    );
+    account.workersDevSubdomain = true;
+    events = [];
+
+    const { exitCode, result } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "installed", ownerCreated: true });
+    expect(events.filter((event) => event.type === "error" || event.type === "action_required" && event.action !== "claim_owner")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ change: "resume", gatewayUrl: `https://${GW}` }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "step",
+        step: "gateway.resume",
+        status: "ok",
+        message: expect.stringMatching(/^Replacing the Gateway an earlier run uploaded at apps\.example\.com\n/),
+      }),
+    );
+    // A new key pair went with this upload, and the row names it.
+    expect(account.deploys.at(-1)!.secrets).toHaveProperty("JWT_PUBLIC_KEY");
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      liveVersionId: account.workers.get("every-app-gateway")!.versions.at(-1),
+      liveDomains: [GW],
+      jwtPublicKey: account.deploys.at(-1)!.secrets!["JWT_PUBLIC_KEY"],
+      deploymentMode: "self_hosted",
+    });
+  });
+
+  it("still refuses the address when another Worker's Custom Domain, or any other record, is there", async () => {
+    // Another Worker's Custom Domain, with the record Cloudflare keeps at it.
+    account.workers.set("marketing-site", { versions: ["m-1"], config: { name: "marketing-site" }, secrets: {} });
+    account.customDomains.set(GW, "marketing-site");
+    account.dnsRecords.push({ zoneId: "zone-1", name: GW, type: "AAAA", content: "100::" });
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "DNS_RECORD_CONFLICT",
+      message: `${GW} already points somewhere else\nIts DNS record: AAAA 100::. Publishing it replaces the record.`,
+      data: { rerun: expect.stringContaining("--force-dns"), authorize: true },
+    });
+    expect(account.databases.size).toBe(0);
   });
 
   it("lets an install that never uploaded go to another address", async () => {

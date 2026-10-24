@@ -279,7 +279,7 @@ Source: `packages/cli/src/commands/dev/index.ts` (`waitForAppServer`), `packages
 
 ### DNS_RECORD_CONFLICT
 
-A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `update` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict.
+A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `update` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict: not the install row's, and (since 2026-10-24) not one the Gateway Worker holds as a Custom Domain without the row saying so, which a run that stopped after publishing it leaves behind (the account's first Worker stops on `register_workers_subdomain` after it) with Cloudflare's placeholder record `AAAA 100::` at the name. For a hostname with such a record in the way the check reads `cf workers list` once; when `every-app-gateway`'s `references.domains` has it, a `progress` line says `<host> is already this Gateway's Custom Domain (an earlier run published it, then stopped)` and the run goes on. The same record under another Worker's Custom Domain, or when the Workers can't be listed, is a conflict.
 
 **Fix:** `fix`: `delete the record in Cloudflare (<zone> → DNS), or use another name` (`the records` for several). Takeover: `rerun` is this same command with `--force-dns`, `data.authorize: true`; ask before using it. With `--force-dns` the run goes on and warns `DNS_RECORD_REPLACED` instead. Not retryable.
 
@@ -1751,7 +1751,7 @@ Source: `packages/cli/src/commands/dev/index.ts`
 
 ### CUSTOM_DOMAIN_OWNER_UNCHECKED
 
-`preflightDomains`, when cf isn't attached to a person's terminal (not interactive, or without `--verbose`): cf can't list which Worker holds a Custom Domain, and publishing moves a hostname another Worker serves without asking. `If another Worker already serves <host>, it will be replaced by this deployment.` (or `any of <hosts>`), `data.hosts`. Quiet without `--verbose` (`QUIET_WARNINGS`): nothing can be done about it in advance; attached with `--verbose`, cf asks before moving one.
+`preflightDomains`, when cf isn't attached to a person's terminal (not interactive, or without `--verbose`): the check reads which Worker holds a Custom Domain only for a hostname with a DNS record in the way, and publishing moves a hostname another Worker serves without asking. `If another Worker already serves <host>, it will be replaced by this deployment.` (or `any of <hosts>`), `data.hosts`: the new hostnames, less any found to be the Gateway's own Custom Domain already. Quiet without `--verbose` (`QUIET_WARNINGS`): nothing can be done about it in advance; attached with `--verbose`, cf asks before moving one.
 
 Source: `packages/cli/src/lib/domains/preflight.ts`, `packages/cli/src/lib/output/events.ts`
 
@@ -1880,6 +1880,12 @@ Source: `packages/cli/src/lib/teardown/inventory.ts`
 `dev`, step `dev.mcp`: `Agent tools: <problem>` with the app's MCP tool catalog; `data.appId`.
 
 Source: `packages/cli/src/commands/dev/devAppGateway.ts`
+
+### UPLOAD_UNRECORDED
+
+`cfDeploy`, under the upload's step (`gateway.deploy`, `app.upload`, `app.helper`): cf failed after its upload went live (publishing a Custom Domain, the workers.dev subdomain) and the version that went live couldn't be recorded either: `The version cf uploaded of <worker> couldn't be recorded` then why; `data.workerName`, `data.error`. The run still ends with cf's failure. The next run finds a Worker version the install row or registry doesn't name: the Gateway's own, when it holds the row's hostname as a Custom Domain (resumed without asking: `gateway.resume`); otherwise a confirmation at a terminal (`rerun_interactive`).
+
+Source: `packages/cli/src/lib/cf/deploy.ts`
 
 ### WORKERS_PAID_UNVERIFIED
 

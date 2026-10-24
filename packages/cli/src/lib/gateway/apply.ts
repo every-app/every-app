@@ -14,9 +14,12 @@
  *   3. unless this is a reconcile with the release that is live, check what
  *      could stop the upload: the release patches into a valid Build
  *      Output, and the Worker serves a version everyapp recorded (cf's
- *      strict mode) or a person agrees to replace it. A database migrated
- *      under old code that keeps serving is what a failed upgrade must not
- *      leave behind;
+ *      strict mode) or a person agrees to replace it. A Worker that holds
+ *      the row's own hostname as a Custom Domain while the row records no
+ *      version is this install's own upload, from a run that stopped
+ *      after it (a workers.dev subdomain to register): replaced without
+ *      asking. A database migrated under old code that keeps serving is
+ *      what a failed upgrade must not leave behind;
  *   4. (likewise) migrate the gateway's D1 — bookmark, then
  *      `cf d1 migrations apply` — so a failed migration leaves the gateway
  *      that is serving untouched;
@@ -28,7 +31,8 @@
  *      records that answer it, the zone's limit), before the database
  *      changes when it can, and always before the upload;
  *   8. `cf deploy --prebuilt`, once: with the secrets file on a first
- *      deploy, and the install row recorded as soon as the upload is known
+ *      upload (no Worker yet, or none the row recorded), and the install
+ *      row recorded as soon as the upload is known
  *      (on the way out of a Ctrl+C too), with the public half of any
  *      identity key pair the upload sets. The hostnames are recorded only
  *      once cf has published them: when it stops after the upload, only
@@ -49,7 +53,7 @@ import type { D1Database } from "@/lib/cf/d1";
 import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
 import { privateTempDir } from "@/lib/cf/privateDir";
 import type { CfRunner } from "@/lib/cf/runner";
-import { getWorkerDeployment } from "@/lib/cf/workers";
+import { getWorkerDeployment, workerCustomDomains } from "@/lib/cf/workers";
 import { publishedAppHosts } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
@@ -84,6 +88,9 @@ type ApplyReason = "deploy" | "upgrade" | "reconcile";
 
 /** The hostnames the install row says the gateway is published under. */
 type Publication = Pick<InstallRecord, "liveDomains">;
+
+/** What the install row recorded before this run: its publication, and whether an upload ever was. */
+type Recorded = Publication & Pick<InstallRecord, "liveVersionId">;
 
 export interface ApplyGatewayOptions {
   cf: CfRunner;
@@ -327,6 +334,19 @@ export async function applyGateway(
         allowDowngradeFlag: options.allowDowngradeFlag,
       });
     }
+    // A Worker holding the row's hostname while the row names no version:
+    // this install's own upload, from a run that stopped after it. Skipping
+    // assertReplaceable's question isn't a silent takeover: one edited in
+    // the dashboard since the stop is still cf's strict mode's to refuse
+    // (unattended: strict_conflict → rerun_interactive; at a terminal cf
+    // asks), after a migration that is a no-op on an install that never
+    // finished.
+    const ownUpload =
+      install !== null &&
+      install.liveVersionId === null &&
+      (await workerCustomDomains(cf, GATEWAY_WORKER_NAME)).includes(
+        install.gatewayHost.toLowerCase(),
+      );
     if (!install || install.liveVersionId === null) {
       // A new install is recorded before anything can stop it, so a run
       // that does (a DNS record in the way, no workers.dev subdomain yet)
@@ -357,21 +377,31 @@ export async function applyGateway(
         () => null,
       );
       await domainChecks.check(domainChecks.domainsFor(registered?.appHosts ?? []));
-      await assertReplaceable({
-        cf,
-        workerName: GATEWAY_WORKER_NAME,
-        shownAs: "the Gateway",
-        recordedVersionIds: [install?.liveVersionId],
-        interactive: options.interactive,
-        confirm: options.confirm,
-        change: {
-          question: `Replace it with ${release.manifest.version}?`,
-          // Even an upgrade: an upgrade to a newer release yet may have
-          // stopped before recording itself.
-          effect:
-            "If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.",
-        },
-      });
+      if (ownUpload) {
+        options.out.emit({
+          type: "step",
+          step: "gateway.resume",
+          status: "ok",
+          message: `Replacing the Gateway an earlier run uploaded at ${install.gatewayHost}\nThat run stopped before it could finish; nothing uses that upload yet.`,
+          data: { gatewayHost: install.gatewayHost },
+        });
+      } else {
+        await assertReplaceable({
+          cf,
+          workerName: GATEWAY_WORKER_NAME,
+          shownAs: "the Gateway",
+          recordedVersionIds: [install?.liveVersionId],
+          interactive: options.interactive,
+          confirm: options.confirm,
+          change: {
+            question: `Replace it with ${release.manifest.version}?`,
+            // Even an upgrade: an upgrade to a newer release yet may have
+            // stopped before recording itself.
+            effect:
+              "If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.",
+          },
+        });
+      }
       await lease.check();
       rollback = await migrate(options);
     }
@@ -380,6 +410,7 @@ export async function applyGateway(
     const deploymentMode = install?.deploymentMode ?? options.deploymentMode;
     return await deploy({ ...options, deploymentMode }, domainChecks, workerExists, {
       liveDomains: install?.liveDomains ?? [],
+      liveVersionId: install?.liveVersionId ?? null,
     }, lease);
   } catch (error) {
     throw afterMigration(error, rollback);
@@ -437,13 +468,16 @@ async function deploy(
   domainChecks: DomainChecks,
   workerExists: (workerName: string) => Promise<boolean>,
   /** What the install row records before this run. */
-  recorded: Publication,
+  recorded: Recorded,
   /** Checked before the upload. */
   lease: Lease,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, release, db, gatewayHost } = options;
   const firstDeploy =
     (await getWorkerDeployment(cf, GATEWAY_WORKER_NAME)) === null;
+  // The row's first upload: no Worker yet, or one the row never recorded
+  // (its own, from a run that stopped; or one a person agreed to replace).
+  const firstUpload = firstDeploy || recorded.liveVersionId === null;
   const desired = await readDesiredState(db, workerExists);
   for (const row of desired.skipped) {
     out.emit({
@@ -479,12 +513,12 @@ async function deploy(
     message: `Uploading Gateway ${release.manifest.version} with ${plural(desired.appWorkers.length, "app")}`,
     data: { appWorkers: desired.appWorkers, domains },
   });
-  // A Worker without a version yet gets a new identity key pair and its
-  // deployment mode, and the install row the public half and the mode with
-  // the upload, for the apps' deploys to hand their Workers and status to
-  // show.
+  // A Worker without a version the row knows gets a new identity key pair
+  // and its deployment mode, and the install row the public half and the
+  // mode with the upload, for the apps' deploys to hand their Workers and
+  // status to show.
   const deploymentMode = options.deploymentMode ?? "self_hosted";
-  const keys = firstDeploy
+  const keys = firstUpload
     ? newGatewaySecrets({
         gatewayUrl: `https://${gatewayHost}`,
         accountId: options.accountId,
@@ -547,6 +581,8 @@ function upload(
       interactive: options.interactive,
       attach: options.out.verbose,
       cliCf: true,
+      out: options.out,
+      step: "gateway.deploy",
       onUploaded: (versionId, finished) =>
         record(
           options,

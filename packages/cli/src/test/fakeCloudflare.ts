@@ -7,8 +7,12 @@
  * real everyAppWorker(), in the environment the build is given. Zones hold DNS records, a
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
- * that outlives it, listing the zone apex, the hostname and its wildcard) and creates or takes over the Workflows the Worker
- * defines. Hyperdrive configs keep their origin, password apart, as the
+ * that outlives it, listing the zone apex, the hostname and its wildcard,
+ * and its placeholder DNS record, `AAAA 100::`, which goes with the
+ * domain) and creates or takes over the Workflows the Worker
+ * defines. An account without a workers.dev subdomain (`workersDevSubdomain`)
+ * stops a deploy once the version and its Custom Domains are live, as cf
+ * did on a fresh account on 2026-10-24. Hyperdrive configs keep their origin, password apart, as the
  * API does (it never returns one). Each zone has Email Routing: its
  * settings, rules and catch-all (`emailRouting`), enabled on a domain by
  * adding Cloudflare's MX records there, with rules that may send mail only
@@ -239,6 +243,19 @@ export function customDomainsSkipped(
   };
 }
 
+/** The DNS record Cloudflare keeps at a Workers Custom Domain (listed as such, proxied). */
+const PLACEHOLDER_RECORD = { type: "AAAA", content: "100::" } as const;
+
+const isPlaceholderRecord = (record: FakeDnsRecord) =>
+  record.type === PLACEHOLDER_RECORD.type && record.content === PLACEHOLDER_RECORD.content;
+
+/** cf's refusal on an account that hasn't registered its workers.dev subdomain. */
+function workersDevSubdomainMissing(): FakeCfResponse {
+  return cfError(
+    `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`,
+  );
+}
+
 /**
  * What cf does with a destructive command it can't confirm: without
  * `--force` and a terminal it declines, says so, and exits 0.
@@ -299,8 +316,14 @@ export class FakeCloudflare {
   readonly zones: FakeZone[] = [
     { id: "zone-1", name: "example.com", status: "active" },
   ];
-  /** Records the operator made; Custom Domains' own aren't listed (unverified). */
+  /** The zones' records: the operator's, and each Custom Domain's own placeholder (`AAAA 100::`). */
   readonly dnsRecords: FakeDnsRecord[] = [];
+  /**
+   * Whether the account has registered its workers.dev subdomain. Without
+   * one, cf's deploy puts the version live and publishes its Custom
+   * Domains, then stops asking for the subdomain (seen live 2026-10-24).
+   */
+  workersDevSubdomain = true;
   /** Email Routing, by zone id; a zone's starts off, its catch-all dropping mail. */
   readonly emailRouting = new Map<string, FakeEmailRouting>();
   /** Zero Trust: no organization until one is created (or a test sets one). */
@@ -574,9 +597,9 @@ export class FakeCloudflare {
           );
         }
         this.workers.delete(name);
-        // Its Custom Domains go with it (their certificate packs stay).
+        // Its Custom Domains go with it, and their records (their certificate packs stay).
         for (const [host, worker] of [...this.customDomains]) {
-          if (worker === name) this.customDomains.delete(host);
+          if (worker === name) this.dropCustomDomain(host);
         }
         return { stdout: "{}" };
       })
@@ -1410,7 +1433,19 @@ export class FakeCloudflare {
     if (answer) return answer;
     this.publishDomains(workerName, config["domains"]);
     this.putWorkflows(workerName, config);
+    // Last, the workers.dev route: an account without a subdomain stops
+    // here, its version and Custom Domains live.
+    if (!this.workersDevSubdomain) return workersDevSubdomainMissing();
     return { stdout: `Current Version ID: ${versionId}` };
+  }
+
+  /** A Custom Domain leaves a Worker: its placeholder record goes with it. */
+  private dropCustomDomain(host: string): void {
+    this.customDomains.delete(host);
+    for (let i = this.dnsRecords.length - 1; i >= 0; i -= 1) {
+      const record = this.dnsRecords[i]!;
+      if (record.name === host && isPlaceholderRecord(record)) this.dnsRecords.splice(i, 1);
+    }
   }
 
   /**
@@ -1440,15 +1475,16 @@ export class FakeCloudflare {
   /**
    * Publish a Worker's Custom Domains as Cloudflare does: only when the
    * config declares some, as the whole list (its others are removed), one
-   * taken from another Worker when unattended, and a certificate pack per
-   * new hostname that stays when the domain goes: [apex, host, *.host], or
-   * [apex, *.apex] for the apex itself.
+   * taken from another Worker when unattended, each with its placeholder
+   * DNS record (`AAAA 100::`, proxied; it goes with the domain), and a
+   * certificate pack per new hostname that stays when the domain goes:
+   * [apex, host, *.host], or [apex, *.apex] for the apex itself.
    */
   private publishDomains(workerName: string, domains: unknown): void {
     if (!Array.isArray(domains) || domains.length === 0) return;
     for (const [host, worker] of [...this.customDomains]) {
       if (worker === workerName && !domains.includes(host)) {
-        this.customDomains.delete(host);
+        this.dropCustomDomain(host);
       }
     }
     for (const host of domains as string[]) {
@@ -1458,6 +1494,9 @@ export class FakeCloudflare {
         .sort((a, b) => b.name.length - a.name.length)
         .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
       if (!zone) continue;
+      if (!this.dnsRecords.some((record) => record.name === host && isPlaceholderRecord(record))) {
+        this.dnsRecords.push({ zoneId: zone.id, name: host, ...PLACEHOLDER_RECORD });
+      }
       const hosts =
         host === zone.name ? [host, `*.${host}`] : [zone.name, host, `*.${host}`];
       if (!this.certificatePacks.some((pack) => pack.hosts.join() === hosts.join())) {
