@@ -20,6 +20,7 @@
  * worker entry.
  */
 import { auth } from "@/auth";
+import { prewarmOuterRingAssertion } from "@/auth/cloudflare-access";
 import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -154,6 +155,12 @@ export function createProdAuthenticator(
         return null;
       }
 
+      // Behind the outer ring the session counts only with Access's word
+      // for the person on this request (auth/cloudflare-access/plugin.ts
+      // checks it after the session is read). Verifying that assertion
+      // needs the team's keys, fetched on a fresh isolate: start it now,
+      // beside the session's own reads, so neither waits for the other.
+      prewarmOuterRingAssertion(request.headers);
       const session = await auth.api.getSession({ headers: request.headers });
       if (!session?.user?.id || isUserBanned(session.user)) return null;
 
@@ -180,31 +187,40 @@ export function createProdAuthenticator(
         return isOrganizationActive(session.orgId);
       }
       if (session.orgId === app.organizationId) {
+        // A token bound to another app is refused before anything else is
+        // read (a browser session is never bound: no read). Then the two
+        // reads every request needs, asked together: both must hold and
+        // neither depends on the other, so they cost one round trip, not
+        // two in a row.
         if (await boundToAnotherApp(session, app)) return false;
-        if (!(await isOrganizationActive(app.organizationId))) return false;
-        return AppAccessRepository.hasAccessByUserAndAppSlug(
-          session.sub,
-          app.appId,
-          app.organizationId,
-        );
+        const [active, installed] = await Promise.all([
+          isOrganizationActive(app.organizationId),
+          AppAccessRepository.hasAccessByUserAndAppSlug(
+            session.sub,
+            app.appId,
+            app.organizationId,
+          ),
+        ]);
+        return active && installed;
       }
       // Another organization's app. A token acts in its own organization
       // only; a browser session, whose active organization is just the one
       // the person last chose, acts in the app's through their membership
       // there, so the JWT never carries claims for a different org.
       if (session.credential) return false;
-      const membership = await resolveOrgContext({
-        userId: session.sub,
-        activeOrganizationId: app.organizationId,
-      });
-      if (!membership) return false;
-      if (!(await isOrganizationActive(app.organizationId))) return false;
-      const installed = await AppAccessRepository.hasAccessByUserAndAppSlug(
-        session.sub,
-        app.appId,
-        app.organizationId,
-      );
-      if (!installed) return false;
+      const [membership, active, installed] = await Promise.all([
+        resolveOrgContext({
+          userId: session.sub,
+          activeOrganizationId: app.organizationId,
+        }),
+        isOrganizationActive(app.organizationId),
+        AppAccessRepository.hasAccessByUserAndAppSlug(
+          session.sub,
+          app.appId,
+          app.organizationId,
+        ),
+      ]);
+      if (!membership || !active || !installed) return false;
       return {
         ...session,
         orgId: membership.orgId,

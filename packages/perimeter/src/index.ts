@@ -87,3 +87,8 @@ export {
   type AppFetcher,
   type OutboundParameters,
 } from "./getAppFetcher";
+export {
+  cacheFingerprintedAsset,
+  IMMUTABLE_ASSET_CACHE_CONTROL,
+  isFingerprintedAssetPath,
+} from "./assetCache";

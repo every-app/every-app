@@ -65,6 +65,10 @@ vi.mock("@/auth", () => ({
   },
 }));
 
+vi.mock("@/auth/cloudflare-access", () => ({
+  prewarmOuterRingAssertion: vi.fn(),
+}));
+
 vi.mock("@/server/services/UserPatService", () => ({
   UserPatService: {
     verify: vi.fn(),
@@ -358,5 +362,39 @@ describe("createProdAuthenticator with shared apps and suspended organizations",
     expect(
       mockAppAccessRepository.hasAccessByUserAndAppSlug,
     ).not.toHaveBeenCalled();
+  });
+
+  it("asks the organization's status and the access row together, and needs both", async () => {
+    // One round trip instead of two in a row: the reads start before
+    // either has answered, and the answer is the same as asking in turn.
+    const order: string[] = [];
+    mockOrganizationFindFirst.mockImplementation(async () => {
+      order.push("status asked");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push("status answered");
+      return { status: "active" };
+    });
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockImplementation(
+      async () => {
+        order.push("access asked");
+        return true;
+      },
+    );
+    const session = await createProdAuthenticator().authenticate(request());
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, APP),
+    ).resolves.toBe(true);
+    expect(order).toEqual(["status asked", "access asked", "status answered"]);
+
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockResolvedValue(false);
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, APP),
+    ).resolves.toBe(false);
+    clearOrgContextCacheForTests();
+    mockOrganizationFindFirst.mockResolvedValue({ status: "suspended" });
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockResolvedValue(true);
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, APP),
+    ).resolves.toBe(false);
   });
 });

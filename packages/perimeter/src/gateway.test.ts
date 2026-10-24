@@ -2225,3 +2225,106 @@ describe("MCP-only tokens", () => {
     }
   });
 });
+
+describe("what a proxied response says about its cost", () => {
+  it("carries Server-Timing with the perimeter's and the app's durations", async () => {
+    const res = await handleGatewayRequest(
+      req("/tasks"),
+      deps({
+        fetcherFor: () => ({
+          fetch: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 15));
+            return new Response("ok", {
+              headers: { "content-type": "text/plain" },
+            });
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const timing = res.headers.get("server-timing") ?? "";
+    const match = /^gw;dur=(\d+), app;dur=(\d+)$/.exec(timing);
+    expect(match, timing).not.toBeNull();
+    expect(Number(match![2])).toBeGreaterThanOrEqual(10);
+    expectSecurityHeaders(res);
+  });
+
+  it("keeps the app's own Server-Timing beside its own", async () => {
+    const res = await handleGatewayRequest(
+      req("/tasks"),
+      deps({
+        fetcherFor: () => ({
+          fetch: async () =>
+            new Response("ok", {
+              headers: {
+                "content-type": "text/plain",
+                "server-timing": "db;dur=12",
+              },
+            }),
+        }),
+      }),
+    );
+    expect(res.headers.get("server-timing")).toMatch(
+      /^db;dur=12, gw;dur=\d+, app;dur=\d+$/,
+    );
+  });
+
+  it("says the same on a public route served anonymously", async () => {
+    const res = await handleGatewayRequest(
+      req("/health"),
+      deps({
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate: async () => null,
+          hasAppAccess: async () => false,
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("server-timing")).toMatch(
+      /^gw;dur=\d+, app;dur=\d+$/,
+    );
+  });
+
+  it("marks a fingerprinted asset the app left to the asset server's default immutable", async () => {
+    const serve = (path: string, cacheControl?: string) =>
+      handleGatewayRequest(
+        req(path, { headers: { "sec-fetch-dest": "script" } }),
+        deps({
+          fetcherFor: () => ({
+            fetch: async () =>
+              new Response("export {}", {
+                headers: {
+                  "content-type": "text/javascript",
+                  etag: '"v1"',
+                  ...(cacheControl ? { "cache-control": cacheControl } : {}),
+                },
+              }),
+          }),
+        }),
+      );
+
+    const chunk = await serve(
+      "/assets/index-XCAqY2Hj.js",
+      "public, max-age=0, must-revalidate",
+    );
+    expect(chunk.status).toBe(200);
+    expect(chunk.headers.get("cache-control")).toBe(
+      "private, max-age=31536000, immutable",
+    );
+    expect(chunk.headers.get("etag")).toBe('"v1"');
+    expectSecurityHeaders(chunk);
+
+    // The app's own choice stands, and a file whose name carries no hash
+    // is asked for again as before.
+    const chosen = await serve("/assets/index-XCAqY2Hj.js", "no-store");
+    expect(chosen.headers.get("cache-control")).toBe("no-store");
+    const plain = await serve(
+      "/assets/logo.svg",
+      "public, max-age=0, must-revalidate",
+    );
+    expect(plain.headers.get("cache-control")).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+  });
+});

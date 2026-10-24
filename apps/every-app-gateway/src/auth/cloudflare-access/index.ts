@@ -8,7 +8,10 @@ import {
   readAccessConfig,
   reportAccessConfigProblems,
   type AccessConfig,
+  type AccessOuterRingConfig,
 } from "./config";
+import { readAccessAssertion } from "./jwt";
+import { verifyOuterRingAssertion } from "./outer-ring";
 
 /**
  * The Access sign-in settings from this Worker's environment. Loopback URLs
@@ -39,6 +42,40 @@ export function accessConfigFromEnv(): AccessConfig {
   const config = readAccessConfig(env, options);
   reportAccessConfigProblems(config);
   return config;
+}
+
+// The outer-ring configuration the perimeter's prewarm uses, read once per
+// isolate (reading it reports its problems, which should be said once).
+let outerRingForPrewarm: AccessOuterRingConfig | null | undefined;
+
+export function resetOuterRingPrewarmForTests(): void {
+  outerRingForPrewarm = undefined;
+}
+
+/**
+ * Start verifying the request's Access assertion, if the outer ring is on
+ * and the request carries one, without waiting for it: the result is kept
+ * in outer-ring.ts, where the session check (plugin.ts) finds it a moment
+ * later instead of fetching the team's keys and checking the signature
+ * after the session's own reads. Nothing here decides anything: the
+ * session check still verifies, and still refuses, exactly as before.
+ */
+export function prewarmOuterRingAssertion(headers: Headers): void {
+  if (outerRingForPrewarm === undefined) {
+    const config = accessConfigFromEnv();
+    let gatewayHost: string | null = null;
+    try {
+      gatewayHost = env.GATEWAY_URL ? new URL(env.GATEWAY_URL).host : null;
+    } catch {
+      gatewayHost = null;
+    }
+    outerRingForPrewarm =
+      config.outerRing && gatewayHost ? config.outerRing : null;
+  }
+  if (!outerRingForPrewarm || !readAccessAssertion(headers)) return;
+  void verifyOuterRingAssertion(headers, outerRingForPrewarm).catch(
+    () => undefined,
+  );
 }
 
 export { ACCESS_PROVIDER_ID, isAccessSignInConfigured } from "./config";

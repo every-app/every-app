@@ -61,6 +61,7 @@ import {
   type AppFetcher,
 } from "./getAppFetcher";
 import { stripThirdPartyAppHeaders } from "./hostSession";
+import { cacheFingerprintedAsset } from "./assetCache";
 
 /** What {@link GatewayDeps.interceptMcp} receives. */
 export interface McpInterceptInput {
@@ -246,10 +247,17 @@ async function getPublicMarker(
   return marker;
 }
 
+/**
+ * The proxy line: `ms` is the app's time (the fetch over the binding),
+ * `gatewayMs` the perimeter's own before it (resolving the app, the
+ * session, the access check, the token), so the two can be told apart in
+ * Workers Logs. Both are waits, not CPU (see serverTiming).
+ */
 function logProxy(options: {
   app: RegisteredApp;
   method: string;
   status: number;
+  receivedAtMs: number;
   startedAtMs: number;
   mode: "public" | "user";
 }): void {
@@ -258,8 +266,26 @@ function logProxy(options: {
     method: options.method,
     status: options.status,
     ms: Date.now() - options.startedAtMs,
+    gatewayMs: options.startedAtMs - options.receivedAtMs,
     mode: options.mode,
   });
+}
+
+/**
+ * The same two durations as a `Server-Timing` header, so a browser's
+ * network panel shows how long the perimeter (`gw`) and the app (`app`)
+ * each took on every response. Appended, so an app's own entries stay.
+ * In Workers the clock advances only at I/O, so both count waits (D1, the
+ * binding, a fetch) and not the CPU spent between them: a fresh isolate's
+ * initialisation shows as a small `gw` here and as cpuTimeMs in Workers
+ * Logs.
+ */
+function serverTiming(
+  receivedAtMs: number,
+  startedAtMs: number,
+  finishedAtMs: number,
+): string {
+  return `gw;dur=${startedAtMs - receivedAtMs}, app;dur=${finishedAtMs - startedAtMs}`;
 }
 
 /** Whether `deps.activate` made a `binding` app live; never throws. */
@@ -288,6 +314,7 @@ export async function handleGatewayRequest(
   request: Request,
   deps: GatewayDeps,
 ): Promise<Response> {
+  const receivedAtMs = Date.now();
   const url = new URL(request.url);
   const parsed = parseHost(request.headers.get("host") ?? url.host);
   if (!parsed) {
@@ -556,6 +583,7 @@ export async function handleGatewayRequest(
         app,
         method: request.method,
         status: 503,
+        receivedAtMs,
         startedAtMs,
         mode,
       });
@@ -569,15 +597,18 @@ export async function handleGatewayRequest(
       app,
       method: request.method,
       status: 502,
+      receivedAtMs,
       startedAtMs,
       mode,
     });
     return json(502, { error: "app_error", app: app.appId });
   }
+  const finishedAtMs = Date.now();
   logProxy({
     app,
     method: request.method,
     status: response.status,
+    receivedAtMs,
     startedAtMs,
     mode,
   });
@@ -587,7 +618,16 @@ export async function handleGatewayRequest(
   if (response.status === 101) {
     return deps.thirdParty ? stripThirdPartyAppHeaders(response) : response;
   }
-  return withSecurityHeaders(
-    deps.thirdParty ? stripThirdPartyAppHeaders(response) : response,
+  const proxied = withSecurityHeaders(
+    cacheFingerprintedAsset(
+      request.method,
+      url.pathname,
+      deps.thirdParty ? stripThirdPartyAppHeaders(response) : response,
+    ),
   );
+  proxied.headers.append(
+    "server-timing",
+    serverTiming(receivedAtMs, startedAtMs, finishedAtMs),
+  );
+  return proxied;
 }
