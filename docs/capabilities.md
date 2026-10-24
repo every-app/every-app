@@ -346,13 +346,18 @@ token endpoint directly and puts the developer's own client from
 | `integration_not_configured`    | 503     | `MASTODON_URL` is set but isn't an https origin                                               |
 | `integration_path_not_allowed`  | 403     | the call isn't one of the network's token endpoints (host, exact path, method): API calls go to the network directly |
 | `capability_not_requested`      | 403     | the deployed manifest doesn't list the network with `access: "write"`                         |
+| `integration_scopes_undeclared` | 403     | the network has scope sets and the entry's `scopes` isn't a non-empty list of names this gateway offers (missing, empty, a duplicate or an unknown name voids the whole grant); the message names the sets on offer |
 | `caller_*`                      | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)        |
 | `integration_agent_not_allowed` | 403     | an agent's identity (`chan: "mcp"`), with or without `mcp:write`: agents can't connect accounts or mint tokens |
-| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant (`client_credentials`, say): it would mint a token for the operator's own application |
+| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant, or isn't one this client's scope policy completes (`client_credentials` and token exchanges would mint a token for the operator's own application; on Google and Microsoft a request without `grant_type` too) |
 | `integration_not_configured`    | 503     | the gateway doesn't hold the client; the message names the `secret set` command               |
 | `integration_body_too_large`    | 413     | the body passes 64 KiB, counted as it streams                                                 |
-| `integration_body_invalid`      | 400     | the body isn't form-encoded or JSON, or not the one the endpoint takes                        |
-| `integration_upstream_failed`   | 502     | the network couldn't be reached                                                               |
+| `integration_body_invalid`      | 400     | the body isn't form-encoded or JSON, or not the one the endpoint takes; with scope sets, also a `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` more than once in a form body: the gateway decides on the body, once |
+| `integration_scope_not_allowed` | 403     | with scope sets, the request's `scope` (Slack: `user_scope`) names a scope outside the app's sets |
+| `integration_upstream_failed`   | 502     | the network couldn't be reached, or (with scope sets) its 2xx answer broke off while the gateway read it; nothing was passed on |
+| `integration_response_invalid`  | 502     | with scope sets, a 2xx answer over 64 KiB or not a JSON object; nothing was passed on         |
+| `integration_scope_unverified`  | 502     | with scope sets, a 2xx answer carrying a token without saying which scopes it holds; nothing was passed on |
+| `integration_scope_exceeded`    | 403     | with scope sets, the granted scopes go beyond the app's sets (a wider earlier consent, `include_granted_scopes`, a refresh after a set was removed); the tokens are dropped, never forwarded, stored, logged or revoked, and the message says how the person reconnects |
 
 It then drops the app's `Authorization`, cookies and every `x-everyapp-*`
 header, removes any `client_id` or `client_secret` the app put in the query
@@ -360,17 +365,32 @@ string or the body (in any case, under the endpoint's own names too), puts
 the gateway's client where the endpoint takes it (`form`: the form body;
 `basic`: HTTP Basic; `query`: the query string; `json`: the JSON body),
 re-serialises the body, refuses to follow redirects, drops the network's
-`set-cookie`, and streams the answer back. Each call is logged
+`set-cookie`, and streams the answer back. For a network with scope sets it
+also sets the request's `scope` as the network takes it (Microsoft: the
+app's list, so a token covers Graph alone; Google: dropped), reads a 2xx
+answer under the same 64 KiB cap and holds what the network says it granted
+to the app's sets before passing the buffered answer on; a non-2xx answer
+streams through as it came. Each call is logged
 (`integration.proxy.call`) with the organization, app, host, path, method,
-the request's `grant_type`, status and attribution; never the query, the
-body or the answer, which carry the client, codes and tokens.
+the request's `grant_type`, status and attribution (with scope sets, the
+declared set names); never the query, the body or the answer, which carry
+the client, codes and tokens, except the declared set names and the scope
+names in excess when it refuses one (`integration.proxy.scope_refused`).
 
 `GET /api/integrations/<network>` answers
-`{ capability, requested, configured, ready, clientId?, origin? }`;
+`{ capability, requested, configured, ready, clientId?, origin?, scopeSets?, scopes?, userScopes? }`;
 `clientId` (and Mastodon's `origin`) only for an app that lists the network,
-once the gateway holds its client. A dispatched app's Worker can't reach the
-token endpoints directly either: the outbound Worker refuses them
-(`reserved_endpoint`), though not the networks' API hosts.
+once the gateway holds its client. For a network with scope sets,
+`scopeSets` (the names the app's entry lists) and `scopes` (the exact
+provider strings to put on the authorize URL, in registry order;
+Microsoft's end with `offline_access`; Slack's user scopes come under
+`userScopes`), answered for a valid grant whether or not the gateway holds
+the client (without one: `configured: false`, `ready: false`, no
+`clientId`); a void grant answers `ready: false` and `scopeSets: []` with
+no `clientId` and no `scopes`, so the app shows "not available" instead of
+starting a flow the gateway would refuse to complete. A dispatched app's
+Worker can't reach the token endpoints directly either: the outbound Worker
+refuses them (`reserved_endpoint`), though not the networks' API hosts.
 
 <!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
 
@@ -709,3 +729,11 @@ background work.
   dispatch tier declare no inbound mail (the hosted deploy API refuses it).
 - Keys and clients live in gateway Worker secrets, not encrypted in D1 with
   rotation in the UI, as the full design has it.
+- OAuth scope sets are held at the token endpoint only. API calls don't
+  pass through the gateway, so the sets' route allowlist is tested data
+  that enforces nothing yet: the boundary is which tokens an app can
+  obtain, not what it does with them. A Google token is narrow per app
+  only when the app asks for the status's scopes without
+  `include_granted_scopes`; a shared Microsoft client hands back everything
+  the person consented to, which the gateway refuses rather than narrows;
+  tokens obtained before a gateway deploy work until they need a refresh.

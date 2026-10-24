@@ -430,9 +430,23 @@ in the gateway's Cloudflare account **is** operator authority.
   `Authorization` the app sent (query, body, header, in any case) before it
   puts its own where the endpoint takes it, buffers the body (64 KiB, form
   or JSON only), follows no redirect and drops the network's `set-cookie`.
+  For a client with scope sets (Google, Microsoft) it also holds each app
+  to the sets its manifest lists at every mint and refresh: a void grant, a
+  grant type the policy doesn't complete, a request `scope` outside the
+  sets and a 2xx answer whose granted scopes exceed them are refused
+  (`integration_scopes_undeclared`, `integration_grant_not_allowed`,
+  `integration_scope_not_allowed`, `integration_scope_exceeded`; an answer
+  naming no scopes is `integration_scope_unverified`), the over-scoped
+  tokens dropped rather than forwarded, stored, logged or revoked. That
+  boundary is which tokens an app can obtain, not what it does with them:
+  API calls don't pass through the gateway, a Google token is narrow per
+  app only when the app asks for the status's scopes without
+  `include_granted_scopes`, and a shared Microsoft client's wider consent
+  is refused rather than narrowed.
   The client secret never reaches an app; the public `clientId` reaches only
   an app that lists the network. Logs name the grant type from a known
-  list, never the query, body or answer, which carry codes and tokens. The
+  list, never the query, body or answer, which carry codes and tokens (on a
+  scope refusal, the declared set names and the scope names in excess). The
   access and refresh tokens the exchange returns are the app's, stored and
   used by the app (Postiz encrypts them at rest with its own `JWT_SECRET`).
   X stays an app secret: OAuth 1.0a signs every call with the user's token

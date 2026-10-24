@@ -471,7 +471,11 @@ function mediaType(contentType: string | null): string {
   return (contentType ?? "").split(";")[0]!.trim().toLowerCase();
 }
 
-function jsonObject(text: string): Record<string, unknown> | null {
+/**
+ * `text` as a JSON object, or null for anything else (an array, a scalar,
+ * not JSON). Shared with the gateway's read of a provider's token answer.
+ */
+export function jsonObject(text: string): Record<string, unknown> | null {
   try {
     return record(JSON.parse(text));
   } catch {
