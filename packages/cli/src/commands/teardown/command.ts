@@ -14,7 +14,7 @@ export const teardownCommand = buildCommand({
         parse: String,
         placeholder: "id",
         brief:
-          "The dedicated test account to empty (required; never read from CLOUDFLARE_ACCOUNT_ID)",
+          "The dedicated test account to empty (required; 32 hex characters, from the dashboard URL dash.cloudflare.com/<id>/…; never read from CLOUDFLARE_ACCOUNT_ID)",
       },
       confirm: {
         kind: "parsed",

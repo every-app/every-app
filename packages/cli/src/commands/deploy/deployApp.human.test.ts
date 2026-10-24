@@ -120,8 +120,8 @@ describe("deploy, as a person sees it", () => {
       "Uploaded ✓",
       "Added to the Gateway ✓",
       "",
-      "Live    https://todo.example.com",
-      "Access  Private to owners and admins · change it at https://example.com/admin/apps",
+      "Live          https://todo.example.com",
+      "Who can open  Private to owners and admins · change it at https://example.com/admin/apps",
       "  The Gateway has no owner yet; its first owner gets the app (pnpm everyapp setup).",
       "",
     ]);
@@ -146,14 +146,14 @@ describe("deploy, as a person sees it", () => {
     // Uploaded and added, but not live yet.
     const notLive = await deployShown(TODO, { waitForLive: false });
     expect(notLive.stdout).toContain(
-      "\nURL     https://todo.example.com\nStatus  Goes live on its first visit, once its certificate comes (a few minutes)\n",
+      "\nURL           https://todo.example.com\nStatus        Goes live on its first visit, once its certificate comes (a few minutes)\n",
     );
 
     const retried = await deployShown();
-    expect(retried.stdout).toContain("Access  Private to owners and admins");
+    expect(retried.stdout).toContain("Who can open  Private to owners and admins");
 
     const live = await deployShown(TODO, { waitForLive: false });
-    expect(live.stdout).not.toContain("Access");
+    expect(live.stdout).not.toContain("Who can open");
     expect(live.stdout).toContain("\nLive  https://todo.example.com\n");
   });
 
@@ -165,10 +165,10 @@ describe("deploy, as a person sees it", () => {
     const first = await deployShown(hooks);
     expect(first.stdout).toContain(
       [
-        "Live    https://todo.example.com",
-        "Access  Private to owners and admins · change it at https://example.com/admin/apps",
+        "Live          https://todo.example.com",
+        "Who can open  Private to owners and admins · change it at https://example.com/admin/apps",
         "  The Gateway has no owner yet; its first owner gets the app (pnpm everyapp setup).",
-        "Public  Open to the internet without sign-in: GET /hooks/*, POST /collect",
+        "Public        Open to the internet without sign-in: GET /hooks/*, POST /collect",
         "",
       ].join("\n"),
     );

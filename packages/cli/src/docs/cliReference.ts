@@ -160,7 +160,7 @@ function positionalTable(positional: PositionalDoc[]): string[] {
   ];
 }
 
-const GROUPS = ["db", "access", "secret", "email"];
+const GROUPS = ["db", "access", "secret", "provider", "email"];
 
 /** The whole page. */
 export function cliReference(): string {

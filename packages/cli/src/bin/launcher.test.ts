@@ -135,7 +135,7 @@ describe("the launcher's rebuild", { timeout: 30_000 }, () => {
     expect([first.code, second.code]).toEqual([0, 0]);
     expect([first.stdout, second.stdout]).toEqual(["ran\n", "ran\n"]);
     expect(rebuilds(tree)).toHaveLength(1);
-    const updated = [first.stderr, second.stderr].filter((text) => text.includes("Updated everyapp CLI to"));
+    const updated = [first.stderr, second.stderr].filter((text) => text.includes("Rebuilt the everyapp CLI from this checkout"));
     expect(updated).toHaveLength(1);
     for (const { stderr } of [first, second]) {
       expect(stderr).not.toContain("ENOENT");
@@ -159,7 +159,7 @@ describe("the launcher's rebuild", { timeout: 30_000 }, () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("ran\n");
     expect(result.stderr).toContain("Waiting for another everyapp to finish rebuilding the CLI...");
-    expect(result.stderr).not.toContain("Updated everyapp CLI to");
+    expect(result.stderr).not.toContain("Rebuilt the everyapp CLI from this checkout");
     expect(rebuilds(tree)).toEqual([]);
   });
 
@@ -200,7 +200,7 @@ describe("the launcher's rebuild", { timeout: 30_000 }, () => {
     expect(result.stderr).toContain(
       `everyapp: couldn't rebuild from this checkout: \`pnpm exec tsup --silent\` in ${tree.cliDir} exited 1.`,
     );
-    expect(result.stderr).not.toContain("Updated everyapp CLI to");
+    expect(result.stderr).not.toContain("Rebuilt the everyapp CLI from this checkout");
     expect(rebuilds(tree)).toHaveLength(1);
     expect(fs.existsSync(tree.lockDir)).toBe(false);
   });

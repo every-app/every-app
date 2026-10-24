@@ -3,7 +3,7 @@ title: Error codes
 description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors), the codes the Gateway's deploy API and browser install answer, every warning, and every problem status reports, each with what it means and how to fix it.
 ---
 
-Codes are stable strings for scripts; messages are for people. With `--json` a code arrives on an `error` event (`code`, `message`, `retryable`, `data.fix`, `data.rerun`, `data.rerunNote`, `data.authorize`), a `warning` event (`code`) or in `status --json`'s `data.fixes[]` ([the protocol](/docs/agent/json)). An entry's anchor is its code, lowercased (`#dns_record_conflict`). Where a fix is a command that takes something over (`--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`), the event carries `data.authorize: true`: show it to the person and ask before running it.
+Codes are stable strings for scripts; messages are for people. With `--json` a code arrives on an `error` event (`code`, `message`, `retryable`, `data.fix`, `data.rerun`, `data.rerunNote`, `data.authorize`), a `warning` event (`code`) or in `status --json`'s `data.fixes[]` ([the protocol](/docs/agent/json)). An entry's anchor is its code, lowercased (`#dns_record_conflict`); `DEPLOY_ABANDONED` is described under [`DEPLOY_FAILED`](#deploy_failed), and the registry rules under [Codes raised with a dynamic value](#codes-raised-with-a-dynamic-value) in prose and a table; neither has an anchor of its own. Where a fix is a command that takes something over (`--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`), the event carries `data.authorize: true`: show it to the person and ask before running it.
 
 ## Error codes A–E
 
@@ -192,7 +192,7 @@ Source: `packages/cli/src/lib/gateway/release.ts` (`refuseNewerThanCli`), called
 cf's login didn't leave cf logged in. Raised anywhere a command logs in (`login`, `setup`, and every Gateway command through `lib/gateway/connect.ts`), in two situations:
 
 - After `cf auth login` at a terminal, or the device login, `cf auth whoami` still says `authenticated: false`. Headline: `Cloudflare login didn't complete`. `rerun`: `pnpm everyapp login`; not retryable.
-- The unattended device login (`cf auth login --no-browser`) failed or ran out of time. `logIn` runs it whenever nobody is at a terminal and the caller passed `onDeviceLogin`: `setup` (`runSetup.ts`) and the Gateway commands (`lib/gateway/connect.ts`) pass it only under `--json`; `login` passes it always, so `pnpm everyapp login` piped or under `CI` runs it without `--json` too (a Gateway command with no terminal and no `--json` gets the `cloudflare_login` action instead, and no login runs). cf's link and code go out first as the `cloudflare_login` action (`data.url`, `data.code`, `data.expiresAt`, `waiting: true`), then cf waits 15 minutes for the approval (`DEVICE_LOGIN_TIMEOUT_MS`). Headline: `Cloudflare login timed out after 15m`, then `Or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.`, or `Cloudflare login didn't complete` with the error under it. `retryable: true`, `rerun`: `pnpm everyapp login`.
+- The unattended device login (`cf auth login --no-browser`) failed or ran out of time. `logIn` runs it whenever nobody is at a terminal and the caller passed `onDeviceLogin`: `setup` (`runSetup.ts`) and the Gateway commands (`lib/gateway/connect.ts`) pass it only under `--json`; `login` passes it always, so `pnpm everyapp login` piped or under `CI` runs it without `--json` too (a Gateway command with no terminal and no `--json` gets the `cloudflare_login` action instead, and no login runs). cf's link and code go out first as the `cloudflare_login` action (`data.url`, `data.code`, `data.expiresAt`, `waiting: true`), then cf waits 5 minutes for the approval (`DEVICE_LOGIN_TIMEOUT_MS`, cf's own cap). Headline: `Cloudflare login timed out after 5m`, then `Or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.`, or `Cloudflare login didn't complete` with the error under it. `retryable: true`, `rerun`: `pnpm everyapp login`.
 
 **Fix:** run `pnpm everyapp login` again, or for unattended runs set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. No takeover.
 
@@ -200,7 +200,7 @@ Source: `packages/cli/src/lib/cf/account.ts` (`logIn`, `deviceLogin`), `packages
 
 ### CLOUDFLARE_TOKEN_REJECTED
 
-`CLOUDFLARE_API_TOKEN` is set, and `cf auth whoami` says cf isn't authenticated with it, so no login is attempted (cf would use the token). Headline: `Cloudflare didn't accept CLOUDFLARE_API_TOKEN`, then `It may be mistyped, expired or revoked.` and `A token needs Workers, D1, KV and Zone DNS Read access: https://dash.cloudflare.com/profile/api-tokens`. Raised by every command that logs in.
+`CLOUDFLARE_API_TOKEN` is set, and `cf auth whoami` says cf isn't authenticated with it, so no login is attempted (cf would use the token). Headline: `Cloudflare didn't accept CLOUDFLARE_API_TOKEN`, then `It may be mistyped, expired or revoked.` and `A token needs Account › Workers Scripts › Edit, Account › D1 › Edit, Account › Workers KV Storage › Edit, Zone › Zone › Read and Zone › DNS › Read: https://dash.cloudflare.com/profile/api-tokens`. Raised by every command that logs in.
 
 **Fix:** `fix`: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run pnpm everyapp login`. No rerun; not retryable.
 
@@ -448,6 +448,14 @@ Source: `packages/cli/src/lib/app/emailRoutes.ts` (`emailZone`), `packages/cli/s
 ## Error codes F–R
 
 The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` included when the run had it, built by `thisCommand()`: run it as it is); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
+
+### GATEWAY_BUILD_FAILED
+
+Building the Gateway's release from this checkout failed (step `gateway.release`; raised by `setup`, and by `deploy`, `install` and `delete` when they rebind a Gateway from the checkout). The build is two children, `pnpm --filter @every-app/sdk build` at the root, then `pnpm run build:release` in `apps/every-app-gateway`; the first to exit non-zero raises this. Headline: `Building the Gateway failed`, then `<command> exited with code <n>. Its last lines:` (or `was stopped by <signal>`), the last 20 lines indented, and `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Under `--json`, after the `gateway.release` start event (`Building the Gateway from this checkout (usually 1–2m)`) nothing more arrives until the build ends: give it the time.
+
+**Fix:** `fix`: `fix the build error above, then run this again` (a type error in the checkout, a missing dependency after `git pull` without `pnpm install`, a blocked build script). No rerun; not retryable. `--verbose` echoes the child's output as it runs. On Linux, `connect ECONNREFUSED 127.0.0.1` inside the build is on [troubleshooting](/docs/agent/troubleshooting), "Build fails with `connect ECONNREFUSED 127.0.0.1` on Linux".
+
+Source: `packages/cli/src/lib/gateway/checkoutRelease.ts` (`buildReleaseFromCheckout`), `packages/cli/src/lib/childLog.ts` (`runLogged`).
 
 ### GATEWAY_NOT_FOUND
 
@@ -1332,15 +1340,15 @@ Source: `packages/cli/src/argumentErrors.ts`
 
 ### MISSING_FLAG_VALUE
 
-Exit 252. `--<flag> needs a value`. `data.usage`.
+Exit 252. `--<flag> needs a value` when the flag was typed without one; `<command> needs --<flag> <placeholder>` when a required flag wasn't given at all. `data.usage` (required flags shown in it), `data.help`.
 
-**Fix:** give the flag a value.
+**Fix:** give the flag, with a value.
 
 Source: `packages/cli/src/argumentErrors.ts`
 
 ### TOO_MANY_ARGUMENTS
 
-Exit 252. `<command> takes no arguments|one argument|<n> arguments, but got another: "<input>"`. `data.usage`.
+Exit 252. `<command> takes no arguments (got "<input>")`, or `<command> takes one argument|<n> arguments, but got another: "<input>"`. `data.usage`.
 
 **Fix:** drop the extra argument.
 
@@ -2061,7 +2069,7 @@ Five raise sites pass a code they didn't write themselves:
 - `packages/cli/src/commands/email/index.ts`: `assertValidList` raises `EMAIL_SENDER_INVALID` or `EMAIL_INBOUND_INVALID` (above), the code chosen by which flag is being checked; `emailListProblems` in `packages/sdk/src/internal/email.ts` supplies the problems.
 - `packages/cli/src/commands/setup/runSetup.ts`: `domainFlag` re-raises `normalizeHostname`'s `INVALID_DOMAIN` (above) as `--domain <value> isn't a full hostname` with the same `fix` (`use a name like apps.example.com`).
 - `packages/cli/src/lib/gateway/registry.ts`: every registry call turns a `RegistrationError` from `packages/perimeter/src/registry/registration.ts` into an `EveryAppError` with the same code and message, `retryable` when its HTTP status is 500 or more (none is). The Gateway's deploy API answers the same codes with the same statuses (`run.ts` and `routes.ts` re-raise them as `DeployError`s). Of the `RegistrationErrorCode`s, `INVALID_APP_ID`, `APP_NOT_FOUND`, `INVALID_MANIFEST` and `WORKER_NAME_TAKEN` are documented above, `ORG_KEY_UNAVAILABLE`, `APP_NOT_REGISTERED` and `HOSTNAME_TAKEN` have headings below, and the eight others are in the table after this list.
-- `packages/cli/src/lib/childLog.ts`: `runLogged` raises `options.code ?? "COMMAND_FAILED"` when a child everyapp runs itself exits non-zero: `<what> failed` / `<command> exited with code <n>.` (or `was stopped by <signal>`) `Its last lines:`, the last 20 lines indented, `Full log: $TMPDIR/everyapp/<name>-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Every caller passes a code: `INSTALL_FAILED` (`lib/package-manager.ts`, above), `BUILD_FAILED` (`lib/app/buildApp.ts`, above), `GIT_FAILED` (`lib/git.ts`, below) and `GATEWAY_BUILD_FAILED` (`lib/gateway/checkoutRelease.ts`: the Gateway release built from this checkout, `pnpm --filter @every-app/sdk build` then `pnpm run build:release` in `apps/every-app-gateway`, exited non-zero: `Building the Gateway failed` / `<command> exited with code <n>. Its last lines:` … `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`, `fix`: `fix the build error above, then run this again`; raised by `setup`, and by `deploy`/`delete` when they rebind a Gateway from the checkout), so `COMMAND_FAILED` is the default nobody uses.
+- `packages/cli/src/lib/childLog.ts`: `runLogged` raises `options.code ?? "COMMAND_FAILED"` when a child everyapp runs itself exits non-zero: `<what> failed` / `<command> exited with code <n>.` (or `was stopped by <signal>`) `Its last lines:`, the last 20 lines indented, `Full log: $TMPDIR/everyapp/<name>-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Every caller passes a code: `INSTALL_FAILED` (`lib/package-manager.ts`, above), `BUILD_FAILED` (`lib/app/buildApp.ts`, above), `GIT_FAILED` (`lib/git.ts`, below) and `GATEWAY_BUILD_FAILED` (`lib/gateway/checkoutRelease.ts`, above), so `COMMAND_FAILED` is the default nobody uses.
 
 The registry rules without a heading of their own (`packages/perimeter/src/registry/registration.ts`; none retryable, every status below 500):
 

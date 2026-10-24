@@ -69,12 +69,24 @@ describe("argument problems", () => {
     });
     expect((await parse("deploy", "https://github.com/acme/todo")).problems[0]).toEqual({
       code: "TOO_MANY_ARGUMENTS",
-      message: 'deploy takes no arguments, but got another: "https://github.com/acme/todo"',
+      message: 'deploy takes no arguments (got "https://github.com/acme/todo")',
       data: { usage: "pnpm everyapp deploy [flags]" },
     });
     expect((await parse("secret", "set", "GITHUB_TOKEN", "--from-env")).problems[0]).toMatchObject({
       code: "MISSING_FLAG_VALUE",
       message: "--from-env needs a value",
+    });
+  });
+
+  it("tells a required flag never given from a flag typed without a value, and names it in the usage", async () => {
+    expect((await parse("teardown", "--dry-run")).problems[0]).toEqual({
+      code: "MISSING_FLAG_VALUE",
+      message: "teardown needs --account-id <id>",
+      data: { usage: "pnpm everyapp teardown --account-id <id> [flags]", help: "pnpm everyapp teardown --help" },
+    });
+    expect((await parse("teardown", "--account-id")).problems[0]).toMatchObject({
+      code: "MISSING_FLAG_VALUE",
+      message: "--account-id needs a value",
     });
   });
 

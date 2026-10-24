@@ -135,6 +135,27 @@ EXAMPLES
 Run pnpm everyapp secret <command> --help for its flags.
 ```
 
+### `everyapp provider`
+
+```text
+Offer a data provider (DataForSEO) to members' AI clients as an app, with the Gateway's key.
+
+USAGE
+  pnpm everyapp provider <command> [flags]
+
+COMMANDS
+  on    Turn a provider app on: its tools reach members' AI clients through the Gateway's /mcp
+  off   Turn a provider app off: it leaves /mcp and the app library, and everyone's access to it goes
+  list  List the provider apps the Gateway offers: which are on, and whether each one's key is set
+
+EXAMPLES
+  $ pnpm everyapp provider list
+  $ pnpm everyapp provider on dataforseo
+  $ pnpm everyapp provider off dataforseo
+
+Run pnpm everyapp provider <command> --help for its flags.
+```
+
 ### `everyapp email`
 
 ```text
@@ -401,7 +422,7 @@ Run SQL against the production database (or --local).
 | `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--yes` | switch | no |  | Run SQL that changes the production database without asking |
-| `--json` | switch | no |  | Print rows as NDJSON instead of a table |
+| `--json` | switch | no |  | Print one NDJSON done event, its rows in data.results, instead of a table |
 | `--verbose` | switch | no |  | Show every step |
 
 ```text
@@ -412,7 +433,8 @@ USAGE
 Run SQL against the app's D1 database
 
 Runs against the production database unless --local is set; SQL that changes it is
-confirmed first (--yes skips that). Rows print as a table; use --json for machine output.
+confirmed first (--yes skips that). Rows print as a table; with --json they are in the
+done event's data.results.
 
 EXAMPLES
   $ pnpm everyapp db query "select * from todos limit 5"
@@ -426,7 +448,7 @@ FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
      [--yes/--no-yes]          Run SQL that changes the production database without asking
-     [--json/--no-json]        Print rows as NDJSON instead of a table
+     [--json/--no-json]        Print one NDJSON done event, its rows in data.results, instead of a table
      [--verbose/--no-verbose]  Show every step
   -h  --help                   Print help information and exit
       --                       All subsequent inputs should be interpreted as arguments
@@ -483,7 +505,7 @@ Delete everything Every App created in a dedicated test Cloudflare account.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `--account-id` | `<id>` | yes |  | The dedicated test account to empty (required; never read from CLOUDFLARE_ACCOUNT_ID) |
+| `--account-id` | `<id>` | yes |  | The dedicated test account to empty (required; 32 hex characters, from the dashboard URL dash.cloudflare.com/<id>/…; never read from CLOUDFLARE_ACCOUNT_ID) |
 | `--confirm` | `<id>` | no |  | The same account id again, for a run without a terminal (--json, a script); at a terminal it is typed instead |
 | `--dry-run` | switch | no |  | List what would be deleted and stop; nothing is written |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -518,7 +540,7 @@ Examples:
   EVERYAPP_TEST_ACCOUNTS=<id> everyapp teardown --account-id <id> --confirm <id> --json
 
 FLAGS
-      --account-id             The dedicated test account to empty (required; never read from CLOUDFLARE_ACCOUNT_ID)
+      --account-id             The dedicated test account to empty (required; 32 hex characters, from the dashboard URL dash.cloudflare.com/<id>/…; never read from CLOUDFLARE_ACCOUNT_ID)
      [--confirm]               The same account id again, for a run without a terminal (--json, a script); at a terminal it is typed instead
      [--dry-run/--no-dry-run]  List what would be deleted and stop; nothing is written
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -684,7 +706,9 @@ would from the app's directory, with nothing to build: <source> is a GitHub repo
 (the everyapp-release.tar.gz on its latest release; …/releases/tag/<tag> for that one), a
 tarball's HTTPS URL, or a downloaded everyapp-release.tar.gz. The release holds the app's
 tenant-neutral Build Output, migrations and manifest, checked against its SHA-256. Run it
-again later to update the app. Its secrets come from .everyapp/secrets.env in this directory.
+again later to update the app. Its secrets are set with pnpm everyapp secret set <NAME> --app <id>;
+.everyapp/secrets.env in this directory is the deploy's own file, read only for a Hyperdrive
+app's database URL.
 
 A repository without a release is never built from its URL: clone it, then run
 pnpm install && pnpm everyapp deploy in it. Postgres migrations need the app's source, so their
@@ -765,8 +789,9 @@ USAGE
   pnpm everyapp delete [--gateway value] [--account-id value] [--purge] [--yes] [--json] [--verbose] [<id>]
   pnpm everyapp delete --help
 
-Deletes the app in the Gateway's D1 database (its name stays reserved to your organization) and
-removes its Gateway binding and hostname, with a redeploy of the Gateway from this checkout.
+Deletes the app in the Gateway's D1 database (its name stays reserved; deploy it again to
+bring it back) and removes its Gateway binding and hostname, with a redeploy of the Gateway
+from this checkout.
 The app's Worker and data are kept unless --purge, which deletes them for good.
 Asks first at a terminal; elsewhere it needs --yes.
 

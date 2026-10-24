@@ -60,7 +60,14 @@ export function commandPath(
   return { path, target };
 }
 
-/** `everyapp create [<id>] [flags]`: the positional arguments in place, the flags summed up. */
+/** The flag's name as typed (`--account-id` for `accountId`). */
+const kebab = (flag: string) => flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
+/**
+ * `everyapp create [<id>] [flags]`, `everyapp teardown --account-id <id>
+ * [flags]`: the positional arguments in place, the required flags named,
+ * the rest summed up.
+ */
 function usageOf(path: readonly string[], command: Command<CommandContext>): string {
   const positional = command.parameters.positional;
   const args =
@@ -70,7 +77,12 @@ function usageOf(path: readonly string[], command: Command<CommandContext>): str
           const name = `<${parameter.placeholder ?? `arg${index + 1}`}>`;
           return parameter.optional ? `[${name}]` : name;
         });
-  return [CLI, ...path, ...args, "[flags]"].join(" ");
+  const required = Object.entries(command.parameters.flags ?? {}).flatMap(([key, flag]) =>
+    flag.kind === "parsed" && !flag.optional && flag.default === undefined
+      ? [`--${kebab(key)} <${flag.placeholder ?? "value"}>`]
+      : [],
+  );
+  return [CLI, ...path, ...args, ...required, "[flags]"].join(" ");
 }
 
 /** Within two edits of `input`: a typo worth suggesting, not an unrelated word. */
@@ -139,7 +151,6 @@ export function argumentProblem(
   const help = { help: [CLI, ...path, "--help"].join(" ") };
   const usage = command ? { usage: usageOf(path, command) } : {};
   const flags = command?.parameters.flags ?? {};
-  const kebab = (flag: string) => flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 
   if (exc instanceof FlagNotFoundError || exc instanceof AliasNotFoundError) {
     const shown = `${exc instanceof AliasNotFoundError ? "-" : "--"}${exc.input}`;
@@ -210,22 +221,27 @@ export function argumentProblem(
     return { code: ArgumentErrorCode.MissingArgument, message: `Missing the ${what}`, data: usage };
   }
   if (exc instanceof UnsatisfiedFlagError) {
+    // stricli throws this both for a required flag never given and for a
+    // flag typed without a value; what was typed tells them apart.
+    const flag = exc.externalFlagName;
+    const typed = args.some((arg) => arg === `--${flag}` || arg.startsWith(`--${flag}=`));
+    const key = Object.keys(flags).find((candidate) => kebab(candidate) === flag);
+    const declared = key ? flags[key] : undefined;
+    const placeholder = (declared?.kind === "parsed" && declared.placeholder) || "value";
     return {
       code: ArgumentErrorCode.MissingFlagValue,
-      message: `--${exc.externalFlagName} needs a value`,
-      data: usage,
+      message: typed ? `--${flag} needs a value` : `${name || "everyapp"} needs --${flag} <${placeholder}>`,
+      data: { ...usage, ...help },
     };
   }
   if (exc instanceof UnexpectedPositionalError) {
-    const takes =
-      exc.expectedCount === 0
-        ? "no arguments"
-        : exc.expectedCount === 1
-          ? "one argument"
-          : `${exc.expectedCount} arguments`;
+    const takes = exc.expectedCount === 1 ? "one argument" : `${exc.expectedCount} arguments`;
     return {
       code: ArgumentErrorCode.TooManyArguments,
-      message: `${name || "everyapp"} takes ${takes}, but got another: "${exc.input}"`,
+      message:
+        exc.expectedCount === 0
+          ? `${name || "everyapp"} takes no arguments (got "${exc.input}")`
+          : `${name || "everyapp"} takes ${takes}, but got another: "${exc.input}"`,
       data: usage,
     };
   }

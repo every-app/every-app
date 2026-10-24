@@ -53,7 +53,7 @@ function collect(
 }
 
 interface CodeInventory {
-  /** `new EveryAppError("CODE"`, and the literal fallbacks (`?? "CODE"`). */
+  /** `new EveryAppError("CODE"`, the literal fallbacks (`?? "CODE"`) and codes passed as an option (`code: "CODE"`). */
   errors: Map<string, Set<string>>;
   /** The `warning` events' codes. */
   warnings: Map<string, Set<string>>;
@@ -77,6 +77,10 @@ export function codeInventory(): CodeInventory {
   const errors = new Map<string, Set<string>>();
   collect(files, /new EveryAppError\(\s*"([A-Z][A-Z_0-9]+)"/g, errors, SRC);
   collect(files, /\?\? "([A-Z]+_[A-Z_0-9]+)"/g, errors, SRC);
+  // A code passed as an option to the helper that raises it (`runLogged(…,
+  // { code: "GATEWAY_BUILD_FAILED" })` in lib/gateway/checkoutRelease.ts). The
+  // underscore keeps a Node code compared in passing (`code: "ENOTFOUND"`) out.
+  collect(files, /\bcode: "([A-Z]+_[A-Z_0-9]+)"/g, errors, SRC);
   // A code chosen before the raise: `const code = kind === "x" ? "A_B" : "C_D";`.
   for (const file of files) {
     const text = readFileSync(file, "utf8");

@@ -221,11 +221,14 @@ if (fs.existsSync(path.join(cliDir, "src")) && fs.existsSync(path.join(sdkDir, "
       if (stale.sdk && !rebuild("pnpm", ["run", "build"], sdkDir)) return false;
       // tsup alone, no type check: `pnpm -C packages/cli build` type-checks.
       if (!rebuild("pnpm", ["exec", "tsup", "--silent"], cliDir)) return false;
-      const commit = spawnSync("git", ["describe", "--always", "--dirty", "--exclude=*"], {
+      // The checkout's short commit. Not --dirty: that answers for every tracked
+      // file in the repository (after `create` inside the checkout, the lockfile),
+      // not for the sources this rebuild came from, and reads as a fault.
+      const commit = spawnSync("git", ["describe", "--always", "--exclude=*"], {
         cwd: cliDir,
         encoding: "utf8",
       }).stdout.trim();
-      console.error(dim(`Updated everyapp CLI to ${commit}`));
+      console.error(dim(`Rebuilt the everyapp CLI from this checkout (${commit})`));
       return true;
     },
   );

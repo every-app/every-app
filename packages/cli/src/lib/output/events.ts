@@ -540,7 +540,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         data["hasOwner"] === false
           ? `\n  ${chalk.dim(`The Gateway has no owner yet; its first owner gets the app (${CLI} setup).`)}`
           : "";
-      return [{ fact: { label: "Access", value: `${access}${noOwner}` } }, ...open];
+      return [{ fact: { label: "Who can open", value: `${access}${noOwner}` } }, ...open];
     },
     "app.hyperdrive": (event) =>
       event.status === "ok"
@@ -594,7 +594,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       return [
         { done: `Packed ${text(data["appId"])} ${text(data["version"])}` },
         { fact: { label: "Release", value: text(data["shown"]) ?? "" } },
-        { fact: { label: "SHA-256", value: (text(data["sha256"]) ?? "").slice(0, 12) } },
+        { fact: { label: "SHA-256", value: text(data["sha256"]) ?? "" } },
       ];
     },
     "app.workflows": (event) =>

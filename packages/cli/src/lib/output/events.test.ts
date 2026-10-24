@@ -317,8 +317,8 @@ describe("createHumanSink", () => {
       "Uploaded ✓",
       "Added to the Gateway ✓",
       "",
-      "Live    https://todo.apps.example.com",
-      "Access  Private to you, owners and admins · change it at https://apps.example.com/admin/apps",
+      "Live          https://todo.apps.example.com",
+      "Who can open  Private to you, owners and admins · change it at https://apps.example.com/admin/apps",
     ]);
     expect(problems()).toEqual([]);
     expect(sink.exitCode).toBe(0);
@@ -345,7 +345,7 @@ describe("createHumanSink", () => {
     sink.emit({ type: "done" });
     expect(lines()).toEqual([
       "",
-      "Access  Private to owners and admins · change it at https://apps.example.com/admin/apps",
+      "Who can open  Private to owners and admins · change it at https://apps.example.com/admin/apps",
       "  The Gateway has no owner yet; its first owner gets the app (pnpm everyapp setup).",
     ]);
   });
@@ -682,16 +682,25 @@ describe("createHumanSink", () => {
     });
     sink.emit({
       type: "done",
-      data: { next: [{ command: "pnpm everyapp install ./everyapp-release.tar.gz", note: "installs it" }] },
+      data: {
+        next: [
+          { command: "pnpm everyapp install ./everyapp-release.tar.gz", note: "installs it on your Gateway" },
+          {
+            command: "pnpm everyapp install <repository url>",
+            note: "installs it on any Gateway, once the tarball is attached to a GitHub release of the app's repository",
+          },
+        ],
+      },
     });
     expect(lines()).toEqual([
       "Packed analytics 1.4.2 ✓",
       "",
       "Release  ./everyapp-release.tar.gz",
-      "SHA-256  9f3c1a2e4b5d",
+      "SHA-256  9f3c1a2e4b5d6e7f",
       "",
       "Next:",
-      "  pnpm everyapp install ./everyapp-release.tar.gz  installs it",
+      "  pnpm everyapp install ./everyapp-release.tar.gz  installs it on your Gateway",
+      "  pnpm everyapp install <repository url>           installs it on any Gateway, once the tarball is attached to a GitHub release of the app's repository",
     ]);
   });
 

@@ -42,8 +42,12 @@ export function loggedInAs(): string | null {
   return loginEmail;
 }
 
-/** How long a person has to approve cf's device login. */
-const DEVICE_LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
+/**
+ * How long a person has to approve cf's device login: cf's device code
+ * lives 5 minutes (the pinned cf 1.0.0-beta.14 caps it at 300 s,
+ * `Math.min(expires_in, 300)`), so this run stops waiting then too.
+ */
+const DEVICE_LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface DeviceLogin {
   url: string;
@@ -106,7 +110,7 @@ export async function logIn({
   if (process.env["CLOUDFLARE_API_TOKEN"]) {
     throw new EveryAppError(
       "CLOUDFLARE_TOKEN_REJECTED",
-      "Cloudflare didn't accept CLOUDFLARE_API_TOKEN\nIt may be mistyped, expired or revoked.\nA token needs Workers, D1, KV and Zone DNS Read access: https://dash.cloudflare.com/profile/api-tokens",
+      "Cloudflare didn't accept CLOUDFLARE_API_TOKEN\nIt may be mistyped, expired or revoked.\nA token needs Account › Workers Scripts › Edit, Account › D1 › Edit, Account › Workers KV Storage › Edit, Zone › Zone › Read and Zone › DNS › Read: https://dash.cloudflare.com/profile/api-tokens",
       { fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login` },
     );
   }
