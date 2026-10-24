@@ -50,6 +50,28 @@ Responses the Gateway sends without calling the app are JSON with an `error` fie
 | 503    | `{ "error": "app_unreachable", "app" }`                                                                                                                                             | no service binding, no dispatcher, or the Worker is not in the namespace                                    |
 | 502    | `{ "error": "app_error", "app" }`                                                                                                                                                   | the app threw                                                                                               |
 
+## What a request costs
+
+Measured on everyapp.team on 2026-10-24 from Workers Logs and the perimeter's own proxy lines (the gateway Worker, its apps, one person in SJC, D1 in WNAM). Cloudflare Access costs nothing per navigation: the browser's `CF_Authorization` cookie for an app host lives as long as the Access application's session (720 hours there), and the edge check is 3 to 22 ms. The gateway Worker adds 35 to 70 ms to a request when its isolate is warm (the session and the user read in turn, the `user_app_access` row, the identity token) and 170 to 370 ms, with 60 to 140 ms of CPU, on a fresh isolate (its lazy initialisation, the three cache-miss reads, the Access JWKS fetch). An app's own cold start is the largest single number: 400 to 1200 ms for a large app Worker on a trivial request, a few milliseconds warm. A page is a document, several script chunks and the app's own fetches, each one of these requests.
+
+| Hop, one request to an app host | Measured                                                         |
+| ------------------------------- | ---------------------------------------------------------------- |
+| TLS to a new app host           | 25 to 45 ms                                                      |
+| Cloudflare Access, outer ring   | 3 to 22 ms at the edge; a login once per host per Access session |
+| Gateway Worker, warm isolate    | 35 to 70 ms on top of the app                                    |
+| Gateway Worker, fresh isolate   | 170 to 370 ms on top of the app                                  |
+| App Worker, warm                | a few ms to ~80 ms for a page or a fetch                         |
+| App Worker, cold                | 400 to 1200 ms (CRM), before its own work                        |
+
+What the Gateway does about it, since 2026-10-24:
+
+- Every proxied response carries `Server-Timing: gw;dur=<ms>, app;dur=<ms>`: the perimeter's own time and the app's (the fetch over the binding), readable in a browser's network panel. The proxy log line in Workers Logs carries the same two as `gatewayMs` and `ms`.
+- A fingerprinted asset (`/assets/<name>-<8 character hash>.<ext>`, as Vite names every built file) that the app left to the Workers asset server's default `Cache-Control: public, max-age=0, must-revalidate` is answered with `private, max-age=31536000, immutable` (`packages/perimeter/src/assetCache.ts`): the browser keeps it for a year instead of asking, authenticated, for a 304 on every page load. An app that sets its own `Cache-Control` on an asset keeps it.
+- The two reads an app-access check needs (the organization's status and the `user_app_access` row) are asked together; a verified Access assertion is kept per isolate for a minute at most and never past its `exp`, and its verification starts beside the session's reads rather than after them. The decisions are unchanged; the request waits on D1 three times when the isolate's caches are warm and five when they have expired (`apps/every-app-gateway/src/perimeter/appHostCost.sqlite.test.ts` pins both).
+- The launcher warms an app while the pointer rests on its card: Chrome prefetches the app's document (speculation rules, `eagerness: "moderate"`, a credentialed same-site GET of `/`, the one the click makes) and every browser opens the connection (`preconnect`). The app sees `Sec-Purpose: prefetch` on such a request.
+
+What an app owns: its Worker's cold start (module-scope imports), how many requests its first paint needs, and what each of them does. A client-only shell that then runs two server functions in a row pays the gateway three times before any content.
+
 ## Headers
 
 | Header                | Who sets it                                                                                                                                                                                                                                                                                                                     | What it holds                                                                                                                                                                         | How the SDK treats it                                                                                                                                                                                                                                                                                                                                                                                                                |
