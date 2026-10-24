@@ -31,10 +31,60 @@ describe("tapUsage", () => {
     ).body!;
 
     const text = await new Response(
-      tapUsage(body, (usage) => reported.push(usage)),
+      tapUsage(body, (usage, ended) => reported.push([usage, ended])),
     ).text();
 
     expect(text).toContain('data: {"x":1}');
-    expect(reported).toEqual([{ input: 2, output: 3, total: 5 }]);
+    expect(reported).toEqual([[{ input: 2, output: 3, total: 5 }, "done"]]);
+  });
+
+  /** A stream that sends `chunks` and then never closes, like an abandoned SSE. */
+  function openEnded(...chunks: string[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      },
+    });
+  }
+
+  // In-isolate only: workerd runs no cancel() for a browser or app Worker
+  // that disconnects on the other side of the boundary (response-tap.ts).
+  it("reports once, with what the tail held, when a reader in this isolate gives up before the end", async () => {
+    const reported: unknown[] = [];
+    const tapped = tapUsage(
+      openEnded('data: {"usage":{"input_tokens":7,"output_tokens":1}}\n\n'),
+      (usage, ended) => reported.push([usage, ended]),
+    );
+
+    const reader = tapped.getReader();
+    await reader.read();
+    await reader.cancel("the person closed the tab");
+    await expect(reader.read()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+
+    expect(reported).toEqual([
+      [{ input: 7, output: 1, total: 8 }, "cancelled"],
+    ]);
+  });
+
+  it("reports once, with null, when the provider fails mid-body", async () => {
+    const reported: unknown[] = [];
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"x":1}\n\n'));
+        controller.error(new Error("connection reset"));
+      },
+    });
+
+    await expect(
+      new Response(
+        tapUsage(failing, (usage, ended) => reported.push([usage, ended])),
+      ).text(),
+    ).rejects.toThrow("connection reset");
+
+    expect(reported).toEqual([[null, "failed"]]);
   });
 });

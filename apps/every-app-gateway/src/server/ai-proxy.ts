@@ -8,7 +8,8 @@ import {
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { AiPolicy } from "@every-app/perimeter/manifest";
-import { tapUsage } from "./ai-usage";
+import { tapUsage, type AiUsage } from "./ai-usage";
+import type { BodyEnd } from "./response-tap";
 
 const STRIPPED_PROXY_HEADERS = [
   "x-every-app-token",
@@ -152,6 +153,32 @@ interface HandleAuthenticatedAiProxyRequestOptions {
   /** Who is calling, for the usage log line. */
   caller?: { organizationId: string; appId: string };
   fetchUpstream?: (request: Request) => Promise<Response>;
+  /**
+   * Called once the moment the provider answered (its headers arrived),
+   * before its body is forwarded: the call to count, whatever becomes of
+   * the body. A browser or app that stops reading afterwards is not heard
+   * in workerd (response-tap.ts), so this is the only report every call
+   * gets. Never on a refusal.
+   */
+  onAnswer?: (report: AiAnswerReport) => void;
+  /**
+   * Called once with what `ai.proxy.usage` logs when the reading of the
+   * body ends: the tokens its tail reported (null when it reported none).
+   * Reaches the gateway when the body was read to the end, or when a
+   * reader in this isolate cancelled it or the provider failed mid-body.
+   */
+  onUsage?: (report: AiUsageReport) => void;
+}
+
+interface AiAnswerReport {
+  route: string;
+  model: string | null;
+  status: number;
+}
+
+interface AiUsageReport extends AiAnswerReport {
+  usage: AiUsage | null;
+  ended: BodyEnd;
 }
 
 type PreparedBody =
@@ -169,6 +196,8 @@ export async function handleAuthenticatedAiProxyRequest({
   policy,
   caller,
   fetchUpstream = fetch,
+  onAnswer,
+  onUsage,
 }: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
   const aiProvider = Object.hasOwn(AI_PROVIDERS, provider)
     ? AI_PROVIDERS[provider]
@@ -278,16 +307,29 @@ export async function handleAuthenticatedAiProxyRequest({
   }
   response = aiProvider.normalizeResponse?.(upstreamPath, response) ?? response;
 
-  const logUsage = (usage: unknown) =>
+  // The provider answered, and bills from here: the call is counted now,
+  // before the body goes out, so a stream nobody reads to the end (a
+  // closed tab, an app that gave up) still counts.
+  const answer = {
+    route: upstreamPath,
+    model: prepared.model,
+    status: response.status,
+  };
+  onAnswer?.(answer);
+  // When the reading ends, the tokens the tail reported. `ended` says when
+  // the body was not read to the end (only a reader in this isolate or a
+  // provider failure can say so; a disconnected browser is never heard).
+  const logUsage = (usage: AiUsageReport["usage"], ended: BodyEnd = "done") => {
     logEvent("ai.proxy.usage", {
       provider,
       ...caller,
-      route: upstreamPath,
-      model: prepared.model,
-      status: response.status,
+      ...answer,
       requestId: response.headers.get("x-request-id"),
       usage,
+      ...(ended === "done" ? {} : { ended }),
     });
+    onUsage?.({ ...answer, usage, ended });
+  };
   if (!response.body) {
     logUsage(null);
     return response;

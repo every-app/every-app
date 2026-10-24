@@ -78,6 +78,7 @@ import {
 import { isOauthPath } from "./server/oauth-flag";
 import { platformPolicy } from "./server/platform-policy";
 import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
+import { UsageRepository } from "./server/repositories/UsageRepository";
 import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
@@ -236,6 +237,8 @@ export class AppGateway extends WorkerEntrypoint<
       env: this.env,
       registry: new DrizzleAppRegistry(this.env.DB),
       organizations: OrganizationRepository,
+      usage: UsageRepository,
+      waitUntil: (task) => this.ctx.waitUntil(task),
     });
   }
 }

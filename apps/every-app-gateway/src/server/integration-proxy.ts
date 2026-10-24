@@ -40,6 +40,7 @@ import {
 } from "./capabilities/oauthClient";
 import { capabilityRefusal as refusal } from "./capabilities/refusal";
 import { platformPolicy } from "./platform-policy";
+import { watchBody } from "./response-tap";
 
 export type IntegrationProxyEnv = Partial<Record<CapabilitySecret, string>> & {
   GATEWAY_DEPLOYMENT_MODE?: string;
@@ -83,6 +84,30 @@ interface HandleIntegrationProxyRequestOptions {
   mail?: () => Promise<GatewayMail>;
   /** The calling app's members, for the `members` capability. */
   listMembers: ListAppMembers;
+  /**
+   * Called once the moment a provider answered (its headers arrived),
+   * before its body is forwarded: the call to count, whatever becomes of
+   * the body (an app that stops reading is not heard in workerd, see
+   * response-tap.ts). Never on a refusal, and not for the gateway's own
+   * services (email, members).
+   */
+  onCall?: (report: IntegrationCallReport) => void;
+  /**
+   * Called once when a provider's body reported a cost (DataForSEO's
+   * `cost`), to add to the call already reported through `onCall`. Reaches
+   * the gateway when the head of the body was read, or the body to its end.
+   */
+  onCost?: (report: IntegrationCostReport) => void;
+}
+
+interface IntegrationCallReport {
+  capability: CapabilityId;
+  status: number;
+}
+
+interface IntegrationCostReport extends IntegrationCallReport {
+  /** In US dollars, as the provider reported it. */
+  cost: number;
 }
 
 export async function handleIntegrationProxyRequest({
@@ -94,6 +119,8 @@ export async function handleIntegrationProxyRequest({
   fetchUpstream = fetch,
   mail = loadGatewayMail,
   listMembers,
+  onCall,
+  onCost,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
   const hosted = platformPolicy(env).hosted;
@@ -134,6 +161,7 @@ export async function handleIntegrationProxyRequest({
       env,
       admit,
       fetchUpstream,
+      ...(onCall ? { onCall } : {}),
     });
   }
   const route = parseIntegrationProxyPath(url.pathname, url.search);
@@ -240,12 +268,18 @@ export async function handleIntegrationProxyRequest({
 
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("set-cookie");
-  const logCall = (cost: number | null) =>
+  // The provider answered, and charges from here: the call is counted now,
+  // before the body goes out. Its cost, read off the body, is added after.
+  const call = { capability: route.id, status: response.status };
+  onCall?.(call);
+  const logCall = (cost: number | null) => {
     logEvent("integration.proxy.call", {
       ...logged,
       status: response.status,
       ...(cost === null ? {} : { cost }),
     });
+    if (cost !== null) onCost?.({ ...call, cost });
+  };
   if (!response.body) {
     logCall(null);
     return new Response(null, {
@@ -261,8 +295,12 @@ export async function handleIntegrationProxyRequest({
 }
 
 /**
- * Pass `body` through unchanged and report the top-level `"cost"` found in
- * its first few KB (DataForSEO's envelope starts with it), or null.
+ * Pass `body` through unchanged and report once the top-level `"cost"`
+ * found in its first few KB (DataForSEO's envelope starts with it), or
+ * null: when the head is in, or else when the reading ends. A body the
+ * app dropped on the other side of the service binding is never heard
+ * (response-tap.ts): the call was counted when the provider answered, and
+ * only its cost goes unrecorded.
  */
 function tapCost(
   body: ReadableStream<Uint8Array>,
@@ -277,20 +315,16 @@ function tapCost(
     const match = /"cost"\s*:\s*(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)/.exec(head);
     onDone(match ? Number(match[1]) : null);
   };
-  return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        if (!reported && head.length < COST_HEAD_BYTES) {
-          head += decoder.decode(chunk, { stream: true });
-          if (head.length >= COST_HEAD_BYTES) report();
-        }
-        controller.enqueue(chunk);
-      },
-      flush() {
-        report();
-      },
-    }),
-  );
+  return watchBody(body, {
+    chunk(chunk) {
+      if (reported || head.length >= COST_HEAD_BYTES) return;
+      head += decoder.decode(chunk, { stream: true });
+      if (head.length >= COST_HEAD_BYTES) report();
+    },
+    end() {
+      report();
+    },
+  });
 }
 
 /** The capability a status request (`GET /api/integrations/<id>`) names. */

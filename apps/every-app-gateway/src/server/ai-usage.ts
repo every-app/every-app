@@ -6,7 +6,9 @@
  * `stream_options.include_usage`). Prompts and outputs are never logged.
  */
 
-type AiUsage = { input: number; output: number; total: number };
+import { watchBody, type BodyEnd } from "./response-tap";
+
+export type AiUsage = { input: number; output: number; total: number };
 
 const TAIL_BYTES = 16 * 1024;
 
@@ -34,26 +36,28 @@ export function extractUsage(text: string): AiUsage | null {
 }
 
 /**
- * Pass `body` through unchanged and call `onDone` with the usage found in
- * its tail once it has been fully read.
+ * Pass `body` through unchanged and call `onDone` once with the usage found
+ * in its tail, when the body has been read to the end, or with what the
+ * tail held when a reader in this isolate gave up or the provider failed
+ * mid-body. A browser or app Worker that stops reading on the other side
+ * of the boundary is not heard at all (see response-tap.ts), which is why
+ * the call is counted when the provider answers, and the tap only adds the
+ * tokens.
  */
 export function tapUsage(
   body: ReadableStream<Uint8Array>,
-  onDone: (usage: AiUsage | null) => void,
+  onDone: (usage: AiUsage | null, ended: BodyEnd) => void,
 ): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder();
   let tail = "";
-  return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        controller.enqueue(chunk);
-        tail = (tail + decoder.decode(chunk, { stream: true })).slice(
-          -TAIL_BYTES,
-        );
-      },
-      flush() {
-        onDone(extractUsage(tail + decoder.decode()));
-      },
-    }),
-  );
+  return watchBody(body, {
+    chunk(chunk) {
+      tail = (tail + decoder.decode(chunk, { stream: true })).slice(
+        -TAIL_BYTES,
+      );
+    },
+    end(how) {
+      onDone(extractUsage(tail + decoder.decode()), how);
+    },
+  });
 }

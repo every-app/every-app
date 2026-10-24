@@ -76,6 +76,7 @@ export async function handleOAuthClientCall({
   env,
   admit,
   fetchUpstream,
+  onCall,
 }: {
   request: Request;
   id: OAuthClientCapabilityId;
@@ -84,6 +85,11 @@ export async function handleOAuthClientCall({
   env: CapabilitySettings;
   admit: () => Promise<IntegrationCallAdmission>;
   fetchUpstream: (request: Request) => Promise<Response>;
+  /** Told of each call the provider answered (integration-proxy.ts). */
+  onCall?: (report: {
+    capability: OAuthClientCapabilityId;
+    status: number;
+  }) => void;
 }): Promise<Response> {
   const capability: OAuthClientCapability = CAPABILITIES[id];
   const notConfigured = () =>
@@ -196,6 +202,7 @@ export async function handleOAuthClientCall({
     );
   }
   logEvent("integration.proxy.call", { ...logged, status: response.status });
+  onCall?.({ capability: id, status: response.status });
 
   const headers = new Headers(response.headers);
   headers.delete("set-cookie");

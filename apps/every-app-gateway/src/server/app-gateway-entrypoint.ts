@@ -13,6 +13,11 @@ import {
   type IntegrationProxyEnv,
 } from "./integration-proxy";
 import { platformPolicy } from "./platform-policy";
+import {
+  dollarsToMicros,
+  type UsageEvent,
+  type UsageRecorder,
+} from "./usage-event";
 
 const CALLER_CACHE_MAX_ENTRIES = 500;
 const CALLER_CACHE_HIT_TTL_MS = 30_000;
@@ -56,6 +61,13 @@ interface HandleAppGatewayRequestOptions {
   fetchUpstream?: (request: Request) => Promise<Response>;
   /** The gateway's mail for the `email` capability; its own module by default. */
   mail?: () => Promise<GatewayMail>;
+  /**
+   * Where answered calls are counted (UsageRepository in the Worker). Only
+   * an app with a registry row (`rowId`) is counted; nothing is without one.
+   */
+  usage?: UsageRecorder;
+  /** Runs the count after the response is sent (`ctx.waitUntil`). */
+  waitUntil?: (task: Promise<unknown>) => void;
 }
 
 type AppGatewayErrorCode =
@@ -106,6 +118,8 @@ export async function handleAppGatewayRequest({
   organizations,
   fetchUpstream,
   mail,
+  usage,
+  waitUntil,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
@@ -158,6 +172,32 @@ export async function handleAppGatewayRequest({
         "Shared apps are off on this gateway.",
       );
     }
+    // Whom an answered call is counted against: set by `admit` (or the AI
+    // route's attribution below), so a refused call is never counted. The
+    // call is counted (`calls` 1) the moment the provider answers, under
+    // waitUntil, since a browser or app that stops reading the body is not
+    // heard in workerd; what the body reported is added (`calls` 0) when it
+    // was read to the end.
+    let attributed: Attribution | null = null;
+    const count = (event: Omit<UsageEvent, "organizationId" | "userId">) => {
+      if (!usage || !attributed) return;
+      const task = usage
+        .record({
+          ...event,
+          organizationId: attributed.organizationId,
+          userId: attributed.user?.id ?? "",
+        })
+        .catch((error: unknown) => {
+          console.error("App gateway usage count failed", {
+            event: "usage.record.failed",
+            appId: props.appId,
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        });
+      if (waitUntil) waitUntil(task);
+    };
+    const appRowId = app.rowId;
+
     if (route.kind === "integration") {
       // Awaited so a refusal `admit` throws is answered below.
       return await handleIntegrationProxyRequest({
@@ -173,6 +213,7 @@ export async function handleAppGatewayRequest({
             env,
             organizations,
           );
+          attributed = { organizationId, orgSource, user };
           return {
             caller: {
               organizationId,
@@ -196,6 +237,27 @@ export async function handleAppGatewayRequest({
             shared: app.scope === "shared",
           });
         },
+        ...(appRowId
+          ? {
+              onCall: (report) =>
+                count({
+                  appRowId,
+                  kind: "capability",
+                  target: report.capability,
+                  status: report.status,
+                  calls: 1,
+                }),
+              onCost: (report) =>
+                count({
+                  appRowId,
+                  kind: "capability",
+                  target: report.capability,
+                  status: report.status,
+                  calls: 0,
+                  costMicros: dollarsToMicros(report.cost),
+                }),
+            }
+          : {}),
       });
     }
 
@@ -215,6 +277,7 @@ export async function handleAppGatewayRequest({
       env,
       organizations,
     );
+    attributed = { organizationId, orgSource, user };
     console.info("AI gateway request", {
       event: "ai.proxy.request",
       organizationId,
@@ -233,6 +296,28 @@ export async function handleAppGatewayRequest({
       policy: app.manifest.ai,
       caller: { organizationId, appId: props.appId },
       fetchUpstream,
+      ...(appRowId
+        ? {
+            onAnswer: (report) =>
+              count({
+                appRowId,
+                kind: "ai",
+                target: provider,
+                status: report.status,
+                calls: 1,
+              }),
+            onUsage: (report) =>
+              count({
+                appRowId,
+                kind: "ai",
+                target: provider,
+                status: report.status,
+                calls: 0,
+                inputTokens: report.usage?.input ?? 0,
+                outputTokens: report.usage?.output ?? 0,
+              }),
+          }
+        : {}),
     });
   } catch (error) {
     if (error instanceof AppGatewayError) {

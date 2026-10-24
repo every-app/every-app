@@ -443,6 +443,41 @@ describe("AppGateway capabilities", () => {
     });
     expect(JSON.stringify(log.mock.calls)).not.toContain("secret");
   });
+
+  // In-isolate only: an app Worker that drops the body across the service
+  // binding is never heard (response-tap.ts); the call is still counted at
+  // the entrypoint when the provider answers (usage-counting.sqlite.test.ts).
+  it("logs a call a reader in this isolate stopped reading, with the cost seen so far", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    // The provider's envelope arrives, then the body stays open.
+    const response = await call({
+      manifest: LISTS_DATAFORSEO,
+      fetchUpstream: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  '{"status_code":20000,"cost":0.0125,"tasks":[',
+                ),
+              );
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    });
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel("the app gave up");
+
+    expect(loggedCalls(log)).toEqual([
+      expect.objectContaining({
+        capability: "dataforseo",
+        status: 200,
+        cost: 0.0125,
+      }),
+    ]);
+  });
 });
 
 describe("AppGateway refusals", () => {

@@ -7,6 +7,9 @@
  *    so the list of connections stays honest;
  *  - delete rate limit counters whose window ended (the client registration
  *    budget's);
+ *  - delete usage counters past their retention (daily rows after 13
+ *    months, monthly after 25), up to 10,000 rows of each a run
+ *    (repositories/UsageRepository.ts);
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
  *    the library's purgeExpiredData, resuming from a cursor kept in KV.
  *
@@ -16,6 +19,7 @@ import { logEvent } from "@every-app/perimeter";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
+import { UsageRepository } from "@/server/repositories/UsageRepository";
 import { getMcpAuth } from "./config";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -139,10 +143,13 @@ export async function runMcpMaintenance(
   const countersDeleted = await step("rate_limits", () =>
     RateLimitCounterRepository.deleteExpired(now),
   );
+  const usage = await step("usage", () => UsageRepository.deleteOlderThan(now));
   const purge = await step("oauth_purge", () => purgeOauthStorage(env));
   // Rows left past the retention after a full run: more calls an hour than
-  // a run deletes, which needs a look.
+  // a run deletes, which needs a look. Usage rows age out a month at a
+  // time, so being behind for a few runs after a month boundary is normal.
   const auditBehind = audit !== "failed" && !audit.done;
+  const usageBehind = usage !== "failed" && !usage.done;
   logEvent(
     "mcp.maintenance",
     {
@@ -151,6 +158,9 @@ export async function runMcpMaintenance(
       ...(auditBehind ? { audit_behind: true } : {}),
       connections_expired: connectionsExpired,
       rate_limit_counters_deleted: countersDeleted,
+      usage_daily_deleted: usage === "failed" ? usage : usage.daily,
+      usage_monthly_deleted: usage === "failed" ? usage : usage.monthly,
+      ...(usageBehind ? { usage_behind: true } : {}),
       oauth_purge: purge,
     },
     auditBehind ? "warn" : "log",
