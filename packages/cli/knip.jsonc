@@ -4,6 +4,9 @@
     "src/bin/*.ts",
     "src/commands/**/index.ts",
     "src/commands/*/command.ts",
+    // The setup-skill harness: run by hand with node (test/setup-skills/README.md), never imported.
+    "test/setup-skills/*.mjs",
+    "test/setup-skills/stubs/*.mjs",
   ],
   "ignoreDependencies": [
     // Workspace source imports are followed by Knip but not credited as package usage.

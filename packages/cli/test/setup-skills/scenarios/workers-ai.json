@@ -1,0 +1,107 @@
+{
+  "prompt": "Set up Workers AI for agentic-inbox on my gateway.",
+  "maxRounds": 12,
+  "state": {
+    "gatewayNames": [
+      "OPENROUTER_API_KEY",
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME"
+    ],
+    "apps": [
+      {
+        "id": "agentic-inbox",
+        "name": "Agentic Inbox",
+        "manifest": {
+          "providers": [
+            "workers-ai",
+            "openrouter"
+          ],
+          "capabilities": {
+            "email": {
+              "access": "write"
+            }
+          },
+          "email": {
+            "inbound": true
+          }
+        },
+        "email": {
+          "senders": [
+            "inbox@mail.example.com"
+          ],
+          "inbound": [
+            "inbox@mail.example.com"
+          ]
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "questions",
+      "skipWhenDone": true,
+      "when": "AI_PROVIDER[^\\n]{0,200}\\?|(?:already|existing)[^\\n?]{0,80}\\btoken\\b[^\\n]{0,160}\\?|\\btoken\\b[^\\n?]{0,80}\\balready\\b[^\\n]{0,120}\\?",
+      "reply": "Two answers. I deployed the inbox with AI_PROVIDER=workers-ai (I set it when I deployed, so its Worker uses Workers AI; the agent panel currently shows a Gateway refusal). And no, I don't have any Cloudflare API token yet; I've only ever used the dashboard. I'm the only operator, a solo founder."
+    },
+    {
+      "name": "token-created",
+      "once": true,
+      "skipWhenDone": true,
+      "when": "dash\\.cloudflare\\.com/\\?to=/:account/ai/workers-ai|dash\\.cloudflare\\.com/profile/api-tokens|Create (?:a )?Workers AI API Token|Create API Token|Copy API Token|Account API tokens",
+      "reply": "Done. I'm on the Gateway's account in the dashboard and made the token the way you described. The screen shows the token once, with a copy button and a curl line to /user/tokens/verify under it. I've copied it; the tab is still open."
+    },
+    {
+      "use": "ran-secret-set",
+      "reply": "Done. In my own terminal, in the every-app folder, I ran the read line, pasted the token, exported it, then ran the secret set command. The last line it printed was \"type\": \"done\". The variable is still exported in that terminal."
+    },
+    {
+      "name": "curl-both",
+      "when": "tokens/verify[\\s\\S]*ai/v1/chat/completions|ai/v1/chat/completions[\\s\\S]*tokens/verify",
+      "reply": "Ran both curl lines in the terminal that still has the variable. The verify one printed \"success\":true with \"status\":\"active\". The chat completion printed a JSON body whose choices[0].message.content says \"ok\". Then I ran unset WORKERS_AI_API_TOKEN."
+    },
+    {
+      "name": "curl-verify",
+      "when": "tokens/verify",
+      "reply": "Ran that curl line in the terminal that still has the variable. It printed \"success\":true with \"status\":\"active\"."
+    },
+    {
+      "name": "curl-chat",
+      "when": "ai/v1/chat/completions",
+      "reply": "Ran that curl line in the terminal that still has the variable. It printed a JSON body whose choices[0].message.content says \"ok\". Then I ran unset WORKERS_AI_API_TOKEN."
+    },
+    {
+      "name": "app-check",
+      "when": "Show agent panel|Ask your email agent|agentic-inbox\\.apps\\.example\\.com",
+      "reply": "Opened https://agentic-inbox.apps.example.com/, opened a mailbox, clicked Show agent panel, typed a question in the agent box and sent it. A reply streamed in; no refusal this time."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "WORKERS_AI_API_TOKEN"
+    ],
+    "mustMention": [
+      "dash.cloudflare.com",
+      "0123456789abcdef0123456789abcdef",
+      "tokens/verify"
+    ],
+    "commands": [
+      "^status --json",
+      {
+        "pattern": "^secret list",
+        "cwd": "apps/agentic-inbox"
+      }
+    ]
+  }
+}

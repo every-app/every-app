@@ -1,0 +1,113 @@
+{
+  "prompt": "Connect Outlook for Open CRM: set up the Microsoft 365 OAuth client on my gateway.",
+  "maxRounds": 14,
+  "state": {
+    "gatewayNames": [],
+    "apps": [
+      {
+        "id": "crm",
+        "name": "Open CRM",
+        "manifest": {
+          "secrets": [
+            "TOKEN_ENCRYPTION_KEY"
+          ],
+          "capabilities": {
+            "google-workspace": {
+              "access": "write"
+            },
+            "microsoft-365": {
+              "access": "write"
+            },
+            "slack": {
+              "access": "write"
+            }
+          }
+        },
+        "secretsSet": [
+          "TOKEN_ENCRYPTION_KEY"
+        ]
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "use": "ran-secret-set"
+    },
+    {
+      "name": "client-id",
+      "when": "(?:application \\(client\\) id|client id)\\b[^\\n]{0,200}?(?:\\?|paste (?:it|that|the id)|share (?:it|that)|send (?:it|that)|tell me|let me know)|(?:paste|share|tell me|send me|give me|what(?:'s| is)|reply with|i need|i'll need)[^\\n]{0,120}?\\b(?:application \\(client\\) id|client id)",
+      "reply": "Registered. The Overview page shows Application (client) ID 11111111-2222-3333-4444-555555555555 and Directory (tenant) ID 99999999-8888-7777-6666-555555555555.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "tenant-id",
+      "when": "(?:directory \\(tenant\\) id|tenant id|tenant's id)\\b[^\\n]{0,160}?(?:\\?|paste|tell me|let me know|send)|(?:paste|tell me|send me|give me|what(?:'s| is)|i need)[^\\n]{0,100}?\\b(?:directory \\(tenant\\) id|tenant id)",
+      "reply": "The Directory (tenant) ID is 99999999-8888-7777-6666-555555555555; the tenant's verified domain is example.com.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "permissions",
+      "once": true,
+      "when": "(?:Mail\\.Read|API permissions|Configured permissions|Add permissions)[^\\n]{0,300}?(?:tell me|let me know|say so|confirm|three rows|when you|once you|\\?)|(?:tell me|let me know|confirm|reply)[^\\n]{0,200}?(?:Mail\\.Read|three permissions|three rows|Configured permissions)",
+      "reply": "Done: User.Read, Mail.Read and offline_access are listed under Configured permissions, each with Admin consent required: No.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "signed-in",
+      "once": true,
+      "when": "(?:see|shows?|lands? on|land on|once you(?:'re| are) (?:in|signed in|there)|when you(?:'re| are) (?:in|signed in|there)|signed in|sign in)[^\\n]{0,160}?(?:App registrations|entra\\.microsoft\\.com)|(?:App registrations|entra\\.microsoft\\.com)[^\\n]{0,200}?(?:tell me|let me know|say so|reply|confirm|you see)",
+      "reply": "Signed in to the Entra admin center as the tenant's Global Administrator; I see the App registrations list. There is only one tenant and nothing named Open CRM is registered yet.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "preconditions",
+      "when": "(?:already|existing|exist|reuse|have you|do you (?:have|use|already|know)|which|several|more than one|is there|are you)[^\\n]{0,160}?(?:registration|registered|tenant|azure|entra|microsoft 365|azure cli|\\baz\\b)[^\\n]{0,200}?\\?",
+      "reply": "Nothing exists yet: no app registration named Open CRM. We have one Microsoft 365 tenant (example.com); I'm its Global Administrator and everyone who will connect has a mailbox in it. The Azure CLI isn't installed here; let's use the browser.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "no-export",
+      "when": "(?:export(?:ed)?|environment variable|\\$?MS_CLIENT_SECRET|still have the (?:secret|value))[^\\n]{0,200}?\\?",
+      "reply": "No, I didn't export it anywhere. I pasted the Value straight from the browser into the hidden prompt and left that page, so skip the curl check."
+    },
+    {
+      "name": "connected",
+      "once": true,
+      "when": "click(?:s|ing)? (?:on )?\\**Connect\\**\\b",
+      "reply": "A member opened Open CRM → Settings → Connections → Microsoft 365 and clicked Connect. Microsoft signed them in, showed the consent screen for Open CRM (publisher Unverified) and they accepted. The page says the mailbox is connected and started syncing."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url",
+      "skipWhenDone": true
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "MICROSOFT_365_CLIENT_ID",
+      "MICROSOFT_365_CLIENT_SECRET"
+    ],
+    "mustMention": [
+      "entra.microsoft.com",
+      "https://crm.apps.example.com/integrations/microsoft/callback",
+      "New registration",
+      "personal Microsoft accounts",
+      "Mail.Read"
+    ],
+    "commands": [
+      "^status",
+      {
+        "pattern": "^secret list",
+        "cwd": "apps/crm"
+      }
+    ]
+  }
+}

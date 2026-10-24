@@ -1,0 +1,82 @@
+{
+  "prompt": "Set up OpenAI for my app writer on the gateway; its everyapp.config.ts lists the openai provider.",
+  "maxRounds": 12,
+  "state": {
+    "gatewayNames": [],
+    "apps": [
+      {
+        "id": "writer",
+        "name": "Writer",
+        "manifest": {
+          "providers": [
+            "openai"
+          ]
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "no-account-yet",
+      "when": "(?:already|existing)[^\\n?]{0,80}(?:openai|account|api key|project key)[^\\n]{0,120}\\?|do you (?:already )?have (?:an? )?(?:openai|existing)[^\\n]{0,120}\\?",
+      "reply": "No, I don't have an OpenAI API account yet, and no key. Walk me through it."
+    },
+    {
+      "use": "ran-secret-set"
+    },
+    {
+      "name": "ran-curl",
+      "when": "curl[^\\n]*api\\.openai\\.com/v1/models",
+      "reply": "I exported the key in my own terminal and ran the curl. It printed {\"object\":\"list\",\"data\":[{\"id\":\"gpt-4.1\",\"object\":\"model\",... and no error. Then I ran unset OPENAI_API_KEY."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "name": "created-key",
+      "when": "create new secret key",
+      "reply": "Copied. I clicked Create secret key, copied it, and closed the dialog. It asked for my phone number first; the SMS code went through."
+    },
+    {
+      "name": "credits-bought",
+      "when": "add payment details",
+      "reply": "Credits bought. The billing overview shows a $10 credit balance, and I turned auto-reload off."
+    },
+    {
+      "name": "signed-in",
+      "when": "platform\\.openai\\.com/signup|\\bsign up\\b",
+      "reply": "Signed in. The dashboard at platform.openai.com is open and shows the Default project."
+    },
+    {
+      "name": "default-project",
+      "when": "create project",
+      "reply": "The Default project is fine; I don't need a separate one."
+    },
+    {
+      "name": "used-the-app",
+      "when": "writer\\.apps\\.example\\.com",
+      "reply": "Opened the app and used the feature that calls OpenAI. It answered normally; no error, no x-everyapp-error header."
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "OPENAI_API_KEY"
+    ],
+    "mustMention": [
+      "platform.openai.com/api-keys"
+    ],
+    "commands": [
+      "^status --json$",
+      "^secret list --json$"
+    ]
+  }
+}

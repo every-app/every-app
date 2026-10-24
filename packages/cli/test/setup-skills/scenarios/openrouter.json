@@ -1,0 +1,98 @@
+{
+  "prompt": "Set up OpenRouter so OpenSEO can use AI models through my gateway.",
+  "maxRounds": 12,
+  "state": {
+    "gatewayNames": [
+      "DATAFORSEO_API_KEY",
+      "CONTEXT_API_KEY"
+    ],
+    "apps": [
+      {
+        "id": "openseo",
+        "name": "OpenSEO",
+        "manifest": {
+          "providers": [
+            "openrouter"
+          ],
+          "capabilities": {
+            "dataforseo": {
+              "access": "read"
+            },
+            "context": {
+              "access": "read"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "use": "ran-secret-set",
+      "reply": "Done, I ran it in a second terminal. It said OPENROUTER_API_KEY is set on the Gateway."
+    },
+    {
+      "name": "no-account-yet",
+      "when": "(?:already have|existing (?:openrouter )?(?:account|key)|do you (?:already )?have)[^\\n?]{0,120}\\?",
+      "once": true,
+      "skipWhenDone": true,
+      "reply": "No, I don't have an OpenRouter account or key yet."
+    },
+    {
+      "name": "signed-in",
+      "when": "openrouter\\.ai/sign-in",
+      "once": true,
+      "skipWhenDone": true,
+      "reply": "Signed in with Google. The top-right menu shows my account."
+    },
+    {
+      "name": "credits",
+      "when": "openrouter\\.ai/settings/credits",
+      "once": true,
+      "skipWhenDone": true,
+      "reply": "Added $10 by card. The page shows a balance of $10."
+    },
+    {
+      "name": "privacy",
+      "when": "openrouter\\.ai/settings/privacy",
+      "once": true,
+      "skipWhenDone": true,
+      "reply": "Left the privacy settings as they are."
+    },
+    {
+      "name": "key-created",
+      "when": "openrouter\\.ai/settings/keys",
+      "once": true,
+      "skipWhenDone": true,
+      "reply": "Created the key with a $20 monthly limit and no expiration, and copied it. The tab is still open."
+    },
+    {
+      "name": "sam",
+      "when": "openseo\\.apps\\.example\\.com|/sam\\b|SAM page",
+      "once": true,
+      "reply": "Opened OpenSEO, a project, and its SAM page, and asked it a question. The answer streamed in."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "OPENROUTER_API_KEY"
+    ],
+    "mustMention": [
+      "openrouter.ai/sign-in",
+      "openrouter.ai/settings/credits",
+      "openrouter.ai/settings/keys"
+    ]
+  }
+}

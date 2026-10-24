@@ -1,0 +1,84 @@
+{
+  "prompt": "Set up my Gateway at apps.example.com. I'm already logged in to Cloudflare, the account is on Workers Paid, and example.com is on Cloudflare. I also want to be able to install apps from the browser.",
+  "state": {
+    "installed": false,
+    "claimed": false,
+    "gatewayDomain": null,
+    "gatewayUrl": null,
+    "appBaseDomain": null,
+    "owner": null,
+    "zone": "example.com",
+    "gatewayNames": [],
+    "apps": [],
+    "accessCommand": true,
+    "access": {
+      "on": false,
+      "team": null
+    }
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "setup-link",
+      "once": true,
+      "when": "https://apps\\.example\\.com/setup#token=",
+      "then": {
+        "claimed": true,
+        "owner": {
+          "email": "pat@example.com",
+          "organizationName": "Example Co",
+          "slug": "example"
+        }
+      },
+      "reply": "Opened it. The page said Set up your gateway; I entered my name, pat@example.com and a password and selected Create owner account. I'm signed in to the Gateway now."
+    },
+    {
+      "use": "ran-secret-set"
+    },
+    {
+      "name": "browser-installs",
+      "once": true,
+      "when": "browser (?:app )?installs?[^\\n]{0,120}\\?",
+      "reply": "Yes, I want browser installs. Tell me exactly what to do."
+    },
+    {
+      "name": "not-access-today",
+      "when": "(?:cloudflare access|zero trust|access on\\b|\\b(?:set(?:ting)? up|turn(?:ing)? on|enable|configure|put) [^\\n]{0,30}\\baccess\\b|\\baccess\\b[^\\n]{0,80}\\b(?:in front|team|turn(?:ed)? on|set (?:it )?up|next|now))[^\\n]{0,160}\\?",
+      "reply": "Not today. Leave Cloudflare Access for another day; I only want the Gateway and browser installs now."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "CF_DEPLOY_TOKEN"
+    ],
+    "verificationPattern": "status|owner|up to date|verif|confirm|checked|live|working|is set up|ready|secret list",
+    "commands": [
+      "^setup\\b.*--domain apps\\.example\\.com\\b.*--json",
+      "^status\\b.*--json",
+      "^secret list\\b.*--json"
+    ],
+    "notCommands": [
+      "^access on\\b"
+    ],
+    "stateAfter": {
+      "installed": true,
+      "claimed": true
+    },
+    "mustMention": [
+      "https://apps.example.com",
+      "https://apps.example.com/admin",
+      "dash.cloudflare.com/profile/api-tokens"
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "prompt": "Set up the Slack OAuth client for Open CRM on my gateway.",
+  "maxRounds": 12,
+  "state": {
+    "gatewayNames": [],
+    "apps": [
+      {
+        "id": "crm",
+        "name": "Open CRM",
+        "manifest": {
+          "secrets": [
+            "TOKEN_ENCRYPTION_KEY"
+          ],
+          "capabilities": {
+            "google-workspace": {
+              "access": "write"
+            },
+            "microsoft-365": {
+              "access": "write"
+            },
+            "slack": {
+              "access": "write"
+            }
+          }
+        },
+        "secretsSet": [
+          "TOKEN_ENCRYPTION_KEY"
+        ]
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "preconditions",
+      "once": true,
+      "skipWhenDone": true,
+      "when": "(?:which|what)[^\\n]{0,80}\\bworkspace\\b[^\\n]{0,120}\\?|slack app\\b[^\\n]{0,120}(?:already|exist)|(?:already|existing|reuse)[^\\n]{0,80}slack app|\\bjq\\b[^\\n]{0,160}\\?|\\bcurl\\b[^\\n]{0,160}\\?|path (?:A|B)\\b[^\\n]{0,200}\\?|(?:browser|manifest)[^\\n]{0,80}\\bor\\b[^\\n]{0,80}(?:token|api|command line)[^\\n]{0,120}\\?",
+      "reply": "The workspace is Example Co (example-co.slack.com) and I'm a Workspace Owner there, so nothing needs an approval. No Slack app exists for this yet. I have curl but not jq, so let's create the app in the browser."
+    },
+    {
+      "name": "created-app",
+      "once": true,
+      "skipWhenDone": true,
+      "when": "From an app manifest|From a manifest|Create New App|new_app=1|paste[^\\n]{0,80}(?:manifest|JSON tab)",
+      "reply": "Done. I signed in at api.slack.com/apps, clicked Create New App, then From an app manifest, picked the Example Co workspace, pasted the JSON on the JSON tab, clicked Next and Create. I'm on Basic Information now; App Credentials shows the Client ID and a hidden Client Secret with a Show button."
+    },
+    {
+      "use": "ran-secret-set",
+      "reply": "Done. In a second terminal in the every-app folder I ran it: pasted the Client ID at the first prompt, clicked Show next to Client Secret and pasted it at the second. Nothing was echoed and it said both are set on the Gateway."
+    },
+    {
+      "name": "client-id",
+      "when": "(?:what|which|paste|share|tell me|send me)[^\\n]{0,60}\\bclient id\\b[^\\n]{0,120}\\?",
+      "reply": "The Client ID is 1234567890.0987654321"
+    },
+    {
+      "name": "oauth-permissions",
+      "once": true,
+      "onlyWhenDone": true,
+      "when": "OAuth (?:&|and|&amp;) Permissions",
+      "reply": "Checked OAuth & Permissions: Redirect URLs lists https://crm.apps.example.com/integrations/slack/callback, and Bot Token Scopes and User Token Scopes match the manifest."
+    },
+    {
+      "name": "connected",
+      "once": true,
+      "onlyWhenDone": true,
+      "when": "Connect Slack[^\\n]{0,400}\\bAllow\\b|(?:click|press|hit)[^\\n]{0,40}Connect Slack|Settings\\s*(?:→|->|>)\\s*Connections",
+      "reply": "Opened Settings → Connections → Slack in Open CRM as an owner: the card shows Connect Slack. I clicked it; Slack's page named the app and the Example Co workspace and listed the permissions; I clicked Allow. The CRM came back connected and shows the Example Co workspace."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "SLACK_CLIENT_ID",
+      "SLACK_CLIENT_SECRET"
+    ],
+    "verificationPattern": "verif|confirm|checked|secret list|is (?:now )?set|both .{0,30}\\bset\\b|\\bset\\b.{0,40}(?:gateway|live)|holds (?:both|the) .{0,40}(?:settings?|client)|\\bconnected\\b|all set|working",
+    "mustMention": [
+      "api.slack.com/apps",
+      "https://crm.apps.example.com/integrations/slack/callback",
+      "Basic Information"
+    ],
+    "commands": [
+      "^status\\b",
+      {
+        "pattern": "^secret list\\b",
+        "cwd": "apps/crm",
+        "phase": "after"
+      }
+    ]
+  }
+}

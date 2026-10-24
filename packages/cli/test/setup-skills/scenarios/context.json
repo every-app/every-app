@@ -1,0 +1,87 @@
+{
+  "prompt": "Set up Context.dev for OpenSEO on my gateway.",
+  "maxRounds": 10,
+  "state": {
+    "gatewayNames": [
+      "OPENROUTER_API_KEY",
+      "DATAFORSEO_API_KEY"
+    ],
+    "apps": [
+      {
+        "id": "openseo",
+        "name": "OpenSEO",
+        "manifest": {
+          "providers": [
+            "openrouter"
+          ],
+          "capabilities": {
+            "dataforseo": {
+              "access": "read"
+            },
+            "context": {
+              "access": "read"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "no-account",
+      "when": "^(?=[\\s\\S]*\\?)[\\s\\S]*(?:(?:do|did|have) you (?:already |by any chance |perhaps )?(?:have|got|hold|own)\\b[^.?\\n]{0,50}\\b(?:account|password manager|in your shell|exported)|already (?:have|got|own) (?:a |an |the )?(?:context(?:\\.dev)? )?(?:account|api key|key)|existing (?:context(?:\\.dev)? )?(?:account|api key|key)|how many pages|pages (?:a|per|each) month|pages/month|expect to render|render (?:a|per|each) month)",
+      "reply": "No, I don't have a Context.dev account or a key yet, and nothing in my shell. I'd rather sign up in the browser and create the key in the dashboard myself. I expect to render a few hundred pages a month, so the Free plan is fine.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "decline-agent-flow",
+      "when": "^(?=[\\s\\S]*\\?)[\\s\\S]*(?:agent flow|agent/identity|service_auth|auth\\.md|register(?:s|ing)? (?:a|the) key)",
+      "reply": "No, don't run the agent flow. I'll sign up in the browser and create the key in the dashboard myself.",
+      "skipWhenDone": true
+    },
+    {
+      "use": "ran-secret-set"
+    },
+    {
+      "name": "key-copied",
+      "when": "context\\.dev/dashboard/api-keys",
+      "reply": "I have it copied. The key is listed on that page as Every App Gateway.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "signed-in",
+      "when": "context\\.dev/(?:signup|login)",
+      "reply": "I'm in. I signed up with my email, verified it, and the dashboard is open.",
+      "skipWhenDone": true
+    },
+    {
+      "name": "app-check",
+      "when": "(?:was|is|did|does|do you see|can you see|confirm)[^?\\n]{0,60}render javascript[^?\\n]{0,120}\\?",
+      "reply": "Yes. The Render JavaScript toggle is enabled, with no note about a key, and a small audit listed the pages with their content."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "CONTEXT_API_KEY"
+    ],
+    "commands": [
+      "^status\\b"
+    ],
+    "mustMention": [
+      "context.dev/signup",
+      "context.dev/dashboard/api-keys"
+    ]
+  }
+}

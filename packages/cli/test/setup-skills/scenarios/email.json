@@ -1,0 +1,86 @@
+{
+  "prompt": "Set up email so my Gateway can send invitations and password resets. I already have a Resend account, and my domain is example.com.",
+  "state": {
+    "gatewayNames": [],
+    "apps": []
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "invite-arrived",
+      "when": "(?:invite user|invite an address|invitation|forgot-password|reset (?:mail|email|link))[\\s\\S]{0,300}?(?:arriv|inbox|receiv|land|came through|got it|should (?:come|show up))|(?:arriv|inbox|receiv)[^\\n]{0,160}(?:invite|invitation|reset)",
+      "onlyWhenDone": true,
+      "once": true,
+      "reply": "I opened https://apps.example.com/, went to Manage workspace > Users > Invite user and invited another address I own. The invitation arrived, from the Example Co sender you set; no Copy invite link button appeared."
+    },
+    {
+      "name": "dns-records",
+      "when": "(?:dkim|spf|\\bmx\\b|records tab|domain connect|sign in to cloudflare)[^\\n]{0,240}\\?",
+      "once": true,
+      "reply": "I used Resend's Sign in to Cloudflare button, so the records went into the zone by themselves; the domain's page shows Verified now."
+    },
+    {
+      "name": "domain-and-key",
+      "when": "(?=[\\s\\S]*resend\\.com/domains)[\\s\\S]*everyapp secret set RESEND_API_KEY",
+      "then": {
+        "setFromText": true
+      },
+      "reply": "Added example.com at resend.com/domains with the Sign in to Cloudflare button; it shows Verified. Then I created the key at resend.com/api-keys (Sending access), opened a second terminal in the every-app folder, ran `pnpm everyapp secret set RESEND_API_KEY` and pasted the key at the hidden prompt. Send from hello@example.com and show the name Example Co."
+    },
+    {
+      "name": "resend-domain",
+      "when": "resend\\.com/domains",
+      "once": true,
+      "reply": "Added example.com at resend.com/domains (region US East) and clicked Sign in to Cloudflare; the records are in the zone and the domain shows Verified."
+    },
+    {
+      "use": "ran-secret-set"
+    },
+    {
+      "name": "domain-choice",
+      "when": "(?:subdomain|mail\\.example\\.com|apex|root domain)[^\\n]{0,200}\\?",
+      "reply": "Use example.com itself, not a subdomain. Send from hello@example.com and show the name Example Co."
+    },
+    {
+      "name": "zone-check",
+      "when": "(?:cloudflare dns|\\bzone\\b|nameservers|on cloudflare)[^\\n]{0,200}\\?",
+      "reply": "Yes, example.com is on Cloudflare DNS in the same Cloudflare account as the Gateway, and the zone is active."
+    },
+    {
+      "name": "provider-choice",
+      "when": "\\bcloudflare(?: email sending)?\\b[^\\n]{0,120}\\bor\\b[^\\n]{0,120}\\bresend\\b[^\\n]{0,160}\\?|\\bresend\\b[^\\n]{0,120}\\bor\\b[^\\n]{0,120}\\bcloudflare\\b[^\\n]{0,160}\\?",
+      "reply": "Resend, please. I already have the account."
+    },
+    {
+      "name": "from-address",
+      "when": "(?:from|sender|which|what|display)[^\\n]{0,80}\\b(?:address|email|name)\\b[^\\n]{0,120}\\?",
+      "reply": "Send from hello@example.com, and show the name Example Co."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "RESEND_API_KEY",
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME"
+    ],
+    "commands": [
+      "^status --json$"
+    ],
+    "mustMention": [
+      "resend.com/domains",
+      "resend.com/api-keys",
+      "apps.example.com"
+    ]
+  }
+}

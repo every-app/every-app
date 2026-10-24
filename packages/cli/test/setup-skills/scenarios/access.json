@@ -1,0 +1,140 @@
+{
+  "prompt": "Put my Gateway behind Cloudflare Access so only my team can open it. We're on apps.example.com.",
+  "maxRounds": 10,
+  "state": {
+    "accessCommand": true,
+    "access": {
+      "on": false,
+      "team": null
+    },
+    "cf": {
+      "zeroTrust": false
+    },
+    "members": [
+      "sam@example.com"
+    ],
+    "gatewayNames": [
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME"
+    ],
+    "apps": [
+      {
+        "id": "openseo",
+        "name": "OpenSEO",
+        "manifest": {
+          "providers": [
+            "openrouter"
+          ],
+          "capabilities": {
+            "dataforseo": {
+              "access": "read"
+            },
+            "context": {
+              "access": "read"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "onboarding",
+      "whenState": {
+        "access.team": null
+      },
+      "when": "one\\.dash\\.cloudflare\\.com|zero trust[^\\n]{0,80}\\b(?:onboarding|free plan|payment details)\\b|dash\\.cloudflare\\.com[^\\n]{0,60}\\bzero trust\\b",
+      "then": {
+        "access.team": "acme"
+      },
+      "reply": "Done. Cloudflare's Zero Trust onboarding asked for a team name, I entered acme, picked the Free plan and entered a card. It says the team exists now.",
+      "once": true
+    },
+    {
+      "name": "team-name",
+      "whenState": {
+        "access.team": null
+      },
+      "when": "(?:name|call)[^\\n]{0,60}\\bteam\\b|\\bteam\\b[^\\n]{0,60}\\b(?:name|called?)\\b[^\\n]{0,120}\\?|zero trust team[^\\n]{0,160}\\?",
+      "reply": "Call the team acme. Just the two of us for now, pat@example.com and sam@example.com: no email domain, nobody else, the default session length is fine, and keep passwords on."
+    },
+    {
+      "name": "signed-in",
+      "whenState": {
+        "access.on": true
+      },
+      "when": "send login code|login code|one-time (?:pin|code)|\\bcode\\b[^\\n]{0,80}\\b(?:email|inbox)|\\b(?:email|inbox|emails)\\b[^\\n]{0,80}\\bcode\\b|signs? in once|gateway password|\\.cloudflareaccess\\.com[^\\n]{0,200}\\b(?:code|sign in)\\b",
+      "then": {
+        "access.linkPending": []
+      },
+      "reply": "Both of us did it. I opened https://apps.example.com, Access asked for my email, I got the code, entered it, then signed in with my Gateway password and landed in the Gateway. Sam did the same. We're in.",
+      "once": true
+    },
+    {
+      "name": "app-opened",
+      "whenState": {
+        "access.on": true
+      },
+      "when": "openseo\\.apps\\.example\\.com[^\\n]{0,200}\\b(?:second (?:login|sign-in|sign in|prompt)|without (?:a |another )?(?:login|sign-in|second)|no second|straight in)\\b",
+      "reply": "OpenSEO opened straight in: no second login, I was already signed in.",
+      "once": true
+    },
+    {
+      "name": "declines",
+      "when": "(?:password|auto-?join|join (?:without|automatically|on (?:their|the) first)|email[- ]domain|everyone at|anyone else|who else|session)[^\\n?]{0,160}\\?",
+      "reply": "No. Keep passwords on, no email domain, invitations only, and the default session length is fine. Just pat@example.com and sam@example.com for now."
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
+      "CLOUDFLARE_ACCESS_AUD",
+      "CLOUDFLARE_ACCESS_APPS_AUD"
+    ],
+    "secretList": false,
+    "commands": [
+      "^access (?:--help|-h|show\\b)",
+      "^status\\b",
+      "^access show\\b",
+      "^access on\\b",
+      {
+        "pattern": "^status\\b",
+        "phase": "after"
+      },
+      {
+        "pattern": "^access show\\b",
+        "phase": "after"
+      }
+    ],
+    "notCommands": [
+      "^secret set\\b",
+      "^access off\\b"
+    ],
+    "stateAfter": {
+      "access.on": true,
+      "access.team": "acme",
+      "access.linkPending": []
+    },
+    "mustMention": [
+      "pat@example.com",
+      "sam@example.com",
+      "one.dash.cloudflare.com",
+      "acme.cloudflareaccess.com",
+      "https://apps.example.com",
+      "Send login code"
+    ],
+    "verificationPattern": "access show|verif|confirm|linkpending|link(?:ed)?\\b|is on|checked|behind|in sync|insync|302|cloudflareaccess"
+  }
+}

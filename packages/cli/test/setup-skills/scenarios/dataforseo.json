@@ -1,0 +1,101 @@
+{
+  "prompt": "Set up DataForSEO for my gateway so OpenSEO works.",
+  "maxRounds": 12,
+  "state": {
+    "gatewayNames": [
+      "OPENROUTER_API_KEY",
+      "CONTEXT_API_KEY"
+    ],
+    "apps": [
+      {
+        "id": "openseo",
+        "name": "OpenSEO",
+        "manifest": {
+          "providers": [
+            "openrouter"
+          ],
+          "capabilities": {
+            "dataforseo": {
+              "access": "read"
+            },
+            "context": {
+              "access": "read"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "use": "chat-secret"
+    },
+    {
+      "name": "no-account-yet",
+      "when": "(?:dataforseo|openseo)[^\\n?]{0,100}\\b(?:already|existing|before|elsewhere|somewhere else|outside)\\b[^\\n?]{0,80}\\?|\\b(?:already|existing)\\b[^\\n?]{0,60}(?:dataforseo|openseo)[^\\n?]{0,80}\\?",
+      "reply": "No, I don't have a DataForSEO account yet, and I've never run OpenSEO anywhere else.",
+      "once": true
+    },
+    {
+      "name": "registered",
+      "when": "app\\.dataforseo\\.com/register|\\bregister\\b[^\\n]{0,80}\\bdataforseo\\b|\\bcreate (?:the|a|your) (?:dataforseo )?account\\b",
+      "reply": "I'm in. I registered, confirmed the email, and the dashboard at app.dataforseo.com shows a $1 balance.",
+      "once": true
+    },
+    {
+      "name": "api-access-open",
+      "when": "app\\.dataforseo\\.com/api-access|\\bAPI Access\\b",
+      "reply": "I can see them. The API Access page shows the API login, the API password and a Base64 string, and the IP Access list is empty. I've left the page open.",
+      "once": true
+    },
+    {
+      "use": "ran-secret-set",
+      "reply": "Done. I ran it in a second terminal in the every-app folder and pasted my API login, a colon and the API password at the hidden prompt. It said DATAFORSEO_API_KEY is set on the Gateway."
+    },
+    {
+      "name": "curl-check",
+      "when": "appendix/user_data|\\bcurl\\b",
+      "reply": "I exported the variable with a leading space and ran the curl line in my terminal. It printed status 20000, message Ok., balance 1. Then I ran unset DATAFORSEO_API_KEY.",
+      "once": true
+    },
+    {
+      "name": "app-check",
+      "when": "Keyword Research|openseo\\.apps\\.example\\.com|search (?:one|a|for a) keyword",
+      "reply": "I opened OpenSEO, opened a project, went to Keyword Research and searched one keyword. Search volume and difficulty appeared.",
+      "once": true
+    },
+    {
+      "name": "funds-skipped",
+      "when": "app\\.dataforseo\\.com/api-settings|\\badd funds\\b",
+      "reply": "I'll skip adding funds for now; the $1 trial credit is enough to test. I set a daily limit under API Settings.",
+      "once": true,
+      "skipWhenDone": true
+    },
+    {
+      "use": "check-result"
+    },
+    {
+      "use": "opened-url"
+    },
+    {
+      "use": "yes"
+    }
+  ],
+  "expect": {
+    "set": [
+      "DATAFORSEO_API_KEY"
+    ],
+    "commands": [
+      "^status\\b",
+      {
+        "pattern": "^secret list\\b",
+        "cwd": "apps/openseo",
+        "phase": "after"
+      }
+    ],
+    "mustMention": [
+      "app.dataforseo.com/register",
+      "app.dataforseo.com/api-access"
+    ]
+  }
+}
