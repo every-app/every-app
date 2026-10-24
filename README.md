@@ -1,4 +1,14 @@
-# Every App
+# EveryApp
+> Make every app open source
+
+> Own and customize your software. Pay only for what you use.
+
+> Why vibe code something from scratch?
+
+It's so fun making a tool for yourself. But, it's still scary to move it off of localhost. EveryApp gives you piece of mind, with a default private design.
+
+
+
 The open source personal software platform.
 - Build exactly what you want.
 - Bring your own AI. No credits, no limits.
