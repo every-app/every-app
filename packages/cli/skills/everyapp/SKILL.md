@@ -45,7 +45,11 @@ sendEmail() or integrationFetch() (secrets page); an OAuth client with
 scope sets (google-workspace, microsoft-365, slack) is listed with
 scopes: [...] and held to them; after a schema change run pnpm run
 db:generate; a value only dev needs goes in .dev.vars, never in git (dev
-page).
+page). The way back: the first row of the app's sidebar (or of its page
+header when it has no sidebar) is a muted "‹ Every App" link to
+GATEWAY_URL (aria-label "Back to Every App"), above the app's own name,
+so every app on the Gateway reads the same; put nothing else about the
+Gateway in the footer.
 
 Pass --json. One JSON event per line; "done" = success; exit 2 = show the
 user the last action_required (url, code), then run its data.rerun (the same
