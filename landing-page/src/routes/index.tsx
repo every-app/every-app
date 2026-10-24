@@ -159,7 +159,8 @@ function Home() {
         </div>
       </header>
 
-      <div className="flex min-h-screen items-center px-6">
+      {/* Clears the absolutely positioned header: at phone width the hero is taller than the screen and would start under it. */}
+      <div className="flex min-h-screen items-center px-6 pt-28 pb-16">
         <div className="mx-auto w-full max-w-6xl">
           <div className="max-w-2xl">
             <h1 className="landing-reveal mb-6 text-[clamp(3rem,10vw,7rem)] font-bold leading-none tracking-tight text-white">
