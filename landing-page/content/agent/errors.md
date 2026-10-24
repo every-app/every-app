@@ -1,6 +1,6 @@
 ---
 title: Error codes
-description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors, a hosted Gateway's deploy API), every warning, and every problem status reports, each with what it means and how to fix it.
+description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors), the codes the Gateway's deploy API and browser install answer, every warning, and every problem status reports, each with what it means and how to fix it.
 ---
 
 Codes are stable strings for scripts; messages are for people. With `--json` a code arrives on an `error` event (`code`, `message`, `retryable`, `data.fix`, `data.rerun`, `data.rerunNote`, `data.authorize`), a `warning` event (`code`) or in `status --json`'s `data.fixes[]` ([the protocol](/docs/agent/json)). An entry's anchor is its code, lowercased (`#dns_record_conflict`). Where a fix is a command that takes something over (`--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`), the event carries `data.authorize: true`: show it to the person and ask before running it.
@@ -133,8 +133,8 @@ The app the command acts on has no usable row in the Gateway's registry (never d
 | `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                | `The app is no longer registered on this Gateway`                                                          | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
 | `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                           | `No app named <app> on this Gateway`                                                                       | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
 | `secret set`, `secret unset` for an app's names, before any value is read                                             | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`         | `rerun`: `pnpm everyapp deploy`                                                                           |
-| `deploy`, `register` recording the upload (`markDeployed`): the row is gone, or is a tombstone                        | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.` | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
-| `deploy`, `register` in step `app.live`: the row was deleted while the run waited for the app to go live              | `<app> was deleted during this run`                                                                        | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
+| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                    | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.` | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
+| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                          | `<app> was deleted during this run`                                                                        | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
 
 **Fix:** as the table says; in every case but the last two, deploy the app first. No takeover.
 
@@ -142,15 +142,15 @@ Source: `packages/cli/src/lib/gateway/registry.ts`, `packages/cli/src/commands/d
 
 ### APP_NOT_LIVE
 
-The last step of `deploy` and `register` (`app.live`) sends `GET https://<hostname>/` every 3 seconds and reads the registry after each, until the row says `active` or 10 minutes pass (`DEFAULT_MAX_WAIT_MS = 600_000`). This code is the timeout in the case where the Gateway did answer the probe at some point, so a certificate isn't what's missing: the Gateway can't reach the app's Worker. Headline: `<app> isn't live after <Nm NNs>: the Gateway can't reach its Worker yet`, then `<app> stays uploaded and bound.` (`deploy`) or `registered and bound.` (`register`). A timeout with no answer at all is the `CERT_PENDING` warning instead, and the run ends normally; `--no-wait` skips the wait.
+The last step of `deploy` (`app.live`) sends `GET https://<hostname>/` every 3 seconds and reads the registry after each, until the row says `active` or 10 minutes pass (`DEFAULT_MAX_WAIT_MS = 600_000`). This code is the timeout in the case where the Gateway did answer the probe at some point, so a certificate isn't what's missing: the Gateway can't reach the app's Worker. Headline: `<app> isn't live after <Nm NNs>: the Gateway can't reach its Worker yet`, then `<app> stays uploaded and bound.` A timeout with no answer at all is the `CERT_PENDING` warning instead, and the run ends normally; `--no-wait` skips the wait.
 
-**Fix:** `retryable: true`; `rerun`: `pnpm everyapp status`, `rerunNote`: `then deploy again` or `then register again`. No takeover.
+**Fix:** `retryable: true`; `rerun`: `pnpm everyapp status`, `rerunNote`: `then deploy again`. No takeover.
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, called through `awaitLive` in `packages/cli/src/commands/appGateway.ts`.
 
 ### APP_POLICY
 
-The app's Build Output (`.cloudflare/output/v0`) fails the app policy, checked before anything is uploaded: in `deploy` (step `app.build`, self-host and hosted alike), `deploy --bundle-only`, and `create --deploy`. Three headlines:
+The app's Build Output (`.cloudflare/output/v0`) fails the app policy, checked before anything is uploaded: in `deploy` (step `app.build`) and `deploy --bundle-only`. Three headlines:
 
 - ``The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).``
 - `The app's Build Output has no default Worker. Build it from everyAppWorker() in cloudflare.config.ts.`
@@ -164,7 +164,7 @@ Source: `packages/cli/src/lib/app/policy.ts` (`prepareAppBuildOutput`, `appPolic
 
 ### BUILD_FAILED
 
-The app's production build failed (step `app.build` of `deploy`, `deploy --bundle-only` and `create --deploy`). The build runs with `EVERYAPP_BUILD=1`: `cf build` by default, or the manifest's `build` command. With `cf build`, the headline is `Build failed`, then `cf build's last lines:` and the tail of what it printed. With a manifest `build` command, the headline is `Build failed`, then `<command> exited with code <n>. Its last lines:`, the tail, and `Full log: <path>` (`$TMPDIR/everyapp/<name>-<time>-<pid>.log`), with `data.command`, `data.exitCode`, `data.tail` and `data.log`. A `cf build` that runs past 10 minutes is a `CfTimeoutError`, reported as `CF_TIMEOUT`, not this code.
+The app's production build failed (step `app.build` of `deploy` and `deploy --bundle-only`). The build runs with `EVERYAPP_BUILD=1`: `cf build` by default, or the manifest's `build` command. With `cf build`, the headline is `Build failed`, then `cf build's last lines:` and the tail of what it printed. With a manifest `build` command, the headline is `Build failed`, then `<command> exited with code <n>. Its last lines:`, the tail, and `Full log: <path>` (`$TMPDIR/everyapp/<name>-<time>-<pid>.log`), with `data.command`, `data.exitCode`, `data.tail` and `data.log`. A `cf build` that runs past 10 minutes is a `CfTimeoutError`, reported as `CF_TIMEOUT`, not this code.
 
 **Fix:** none offered: fix the build error in the tail or the log. No rerun; not retryable. `--verbose` streams the build's output to stderr.
 
@@ -180,15 +180,15 @@ Source: `packages/cli/src/commands/deploy/index.ts` (`refuseBundleFlags`).
 
 ### CHECKOUT_MISSING
 
-everyapp isn't running from a checkout of the Every App repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. The starter template `create` copies comes from the checkout, so `create` is what raises it (`lib/gateway/source.ts` uses the nullable `findCheckoutRoot` and falls back to a published Gateway release instead). Headline: `everyapp has to run from a checkout of the Every App repository`, then `This copy is installed in <package dir>, outside any checkout.`
+everyapp isn't running from a checkout of the Every App repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout) and by every Gateway deploy (`checkoutGateway` in `lib/gateway/checkoutRelease.ts` builds the Gateway's release from the checkout: `setup`, `gateway deploy`, and the rebind `deploy` and `delete` run). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the Every App repository`, then `This copy is installed in <package dir>, outside any checkout.`
 
 **Fix:** `fix`: `in your checkout, run pnpm everyapp <the same arguments>`. No rerun; not retryable.
 
-Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`), called from `packages/cli/src/commands/create/index.ts`.
+Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`, `findCheckoutRoot`), called from `packages/cli/src/commands/create/index.ts`, `packages/cli/src/lib/gateway/checkoutRelease.ts`, `packages/cli/src/commands/status/index.ts`.
 
 ### CLI_TOO_OLD
 
-A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `gateway deploy` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy`, `register` and `delete` run (`lib/gateway/reconcile.ts`), and by `deploy <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).
+A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `gateway deploy` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `deploy <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).
 
 **Fix:** `fix`: `update everyapp (in a checkout: git pull), then run this again`. No rerun; not retryable.
 
@@ -288,11 +288,11 @@ Source: `packages/cli/src/commands/dev/index.ts` (`waitForAppServer`), `packages
 
 ### DNS_RECORD_CONFLICT
 
-A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy` and `register`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `gateway deploy` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict.
+A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `gateway deploy` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict.
 
 **Fix:** `fix`: `delete the record in Cloudflare (<zone> → DNS), or use another name` (`the records` for several). Takeover: `rerun` is this same command with `--force-dns`, `data.authorize: true`; ask before using it. With `--force-dns` the run goes on and warns `DNS_RECORD_REPLACED` instead. Not retryable.
 
-Source: `packages/cli/src/lib/domains/preflight.ts` (`checkDnsRecords`), called from `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/register/registerApp.ts`, `packages/cli/src/lib/gateway/apply.ts`.
+Source: `packages/cli/src/lib/domains/preflight.ts` (`checkDnsRecords`), called from `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/gateway/apply.ts`.
 
 ### DNS_UNREADABLE
 
@@ -320,14 +320,14 @@ Source: `packages/cli/src/commands/setup/runSetup.ts` (`pickDomain`).
 
 ### DOWNGRADE_REFUSED
 
-The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)`; a release reads `The Gateway from <origin>` instead; `data.live`, `data.candidate`. Two forms:
+The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)` (every Gateway deploy builds its release from the checkout, `lib/gateway/checkoutRelease.ts`); `data.live`, `data.candidate`. Two forms:
 
-- `setup` and `gateway deploy` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again` for a checkout, `pass --release a newer Gateway release` for a release; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag).
-- `deploy`, `register` and `delete`, which rebind the Gateway with the one this checkout builds and so stop before anything changes (`refuseOlderCheckout`), and the rebind's recheck under the Gateway lease: `fix`: `git pull` for a checkout, `run everyapp from a checkout at least as new` for a release; `rerun`: this same command, `rerunNote`: `after that`. No takeover.
+- `setup` and `gateway deploy` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag).
+- `deploy` and `delete`, which rebind the Gateway with the one this checkout builds and so stop before anything changes (`refuseOlderCheckout`), and the rebind's recheck under the Gateway lease: `fix`: `git pull`; `rerun`: this same command, `rerunNote`: `after that`. No takeover.
 
-**Fix:** as above: `git pull` (or a newer `--release`), then the same command; a deliberate rollback is `setup --allow-downgrade`, after asking. Not retryable.
+**Fix:** as above: `git pull`, then the same command; a deliberate rollback is `setup --allow-downgrade`, after asking. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/apply.ts` (`downgradeRefused`, `refuseDowngrade`, `refuseOlderCheckout`), called from `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/register/registerApp.ts`, `packages/cli/src/commands/delete/index.ts`.
+Source: `packages/cli/src/lib/gateway/apply.ts` (`downgradeRefused`, `refuseDowngrade`, `refuseOlderCheckout`), called from `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/delete/index.ts`.
 
 ### DRIZZLE_KIT_MISSING
 
@@ -459,7 +459,7 @@ The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an erro
 
 ### GATEWAY_NOT_FOUND
 
-`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `create --deploy`, `delete`, `db query` without `--local`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`, `register`), by `status`, and by `gateway deploy`. When the login lists accounts and none has a Gateway, `deploy` and `create --deploy` offer to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` and `create --deploy` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
+`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `delete`, `db query` without `--local`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`), by `status`, and by `gateway deploy`. When the login lists accounts and none has a Gateway, `deploy` offers to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
 
 | Situation                                                                                                                 | Message                                                                                                                                                                                                              | `data.fix` / `data.rerun`                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -478,23 +478,15 @@ The Gateway's D1 database exists but its install never finished. Four raise site
 - `notDeployedByEveryapp()` in `lib/gateway/install.ts`: the database has no `_everyapp_install` row. Message `The Gateway's install didn't finish` then `Setup stopped before it recorded the install.`; `data.rerun` `pnpm everyapp setup`, `data.rerunNote` `asks for the hostname again`. Raised by `connectToGateway()` for every app command, and by `gateway deploy` (which uses this message for a null `live_version_id` too).
 - `requireInstall()` in `lib/gateway/connect.ts`: the row exists with `live_version_id` null (setup stopped before its first upload). Message `The Gateway at https://<host> isn't finished installing` then `Setup stopped before its first upload.`; `data.rerun` `pnpm everyapp setup`. Every command through `connectToGateway()`.
 - `everyapp secret set|unset` of a Gateway setting (step `secrets.gateway`): the install row, re-read under the Gateway's lease, is gone. Message `The Gateway in <account> isn't fully installed` (the account omitted when cf doesn't name it); `data.rerun` `pnpm everyapp setup`.
-- `reconcileGateway()` in `lib/gateway/reconcile.ts` reads the install row again before the rebind (`deploy` and `register`, step `app.bind`; `delete`; the repair or `--redeploy` of `setup` and `gateway deploy`) and throws `notDeployedByEveryapp()` when the row is gone by then: the first site's message, `data.rerun` and `data.rerunNote`.
+- `reconcileGateway()` in `lib/gateway/reconcile.ts` reads the install row again before the rebind (`deploy`, step `app.bind`; `delete`; the repair or `--redeploy` of `setup` and `gateway deploy`) and throws `notDeployedByEveryapp()` when the row is gone by then: the first site's message, `data.rerun` and `data.rerunNote`.
 
 **Fix:** run `pnpm everyapp setup`; it resumes from the row it wrote, or asks for the hostname again when there is none. No `data.fix`, not retryable.
 
 Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway/connect.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/gateway/reconcile.ts`
 
-### GATEWAY_UNREACHABLE
-
-A `warning` from `setup` (step `setup.owner`), not an error: the new Gateway doesn't answer over HTTPS yet (the probe of its URL failed), so the owner link below can't be reached until it does. Message `<host> doesn't answer over HTTPS yet`, then why, then `The link below works as soon as it does.`; `data.kind` and `data.reason` say what failed. Until 2026-10-24 the deploy-key path (`everyapp deploy` with `EVERYAPP_DEPLOY_TOKEN`) raised it as an error too; that path left the CLI (restorable from `5ef30882`).
-
-**Fix:** none; wait for the certificate, then open the link.
-
-Source: `packages/cli/src/commands/setup/runSetup.ts`
-
 ### GATEWAY_URL_MISMATCH
 
-In self-host, `--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `create --deploy`, `delete`, `db query`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`, `register`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
+`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `delete`, `db query`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
 
 **Fix:** when the host came from `--gateway` on the command line, `data.rerun` is this command without `--gateway` and its value (`thisCommandWithout()`), `data.rerunNote` `to use <found host>`; when it came from the environment, `data.fix` is `unset EVERYAPP_GATEWAY_URL to use <found host>`. Not retryable.
 
@@ -502,7 +494,7 @@ Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gatewa
 
 ### HELPER_DURABLE_OBJECT_REMOVED
 
-Self-host `deploy` or `create --deploy`, in `checkDurableObjects()` right after taking the app's lease and before any resource is touched: the last deployed manifest declared a Durable Object class with a `worker` (a helper Worker), and the new `everyapp.config.ts` no longer declares that class. Removing a helper Worker's class isn't supported, and `--allow-delete-durable-object-data` doesn't cover it (that flag covers classes on the app's own Worker: `DURABLE_OBJECT_REMOVED`). Message `The helper Worker <worker> still defines <class>` then `Removing a helper Worker's Durable Object class isn't supported yet.`
+`deploy`, in `checkDurableObjects()` right after taking the app's lease and before any resource is touched: the last deployed manifest declared a Durable Object class with a `worker` (a helper Worker), and the new `everyapp.config.ts` no longer declares that class. Removing a helper Worker's class isn't supported, and `--allow-delete-durable-object-data` doesn't cover it (that flag covers classes on the app's own Worker: `DURABLE_OBJECT_REMOVED`). Message `The helper Worker <worker> still defines <class>` then `Removing a helper Worker's Durable Object class isn't supported yet.`
 
 **Fix:** `data.fix`: `keep declaring <class> in everyapp.config.ts`. No rerun, not retryable.
 
@@ -518,7 +510,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/app/deplo
 
 ### IDENTITY_KEY_UNKNOWN
 
-Self-host `deploy` or `create --deploy`, after the `app.deploy` step and before the app is registered: the install row's `jwt_public_key` is null, so the deploy has no public key to give the app's Workers for verifying the identities the Gateway signs. Message `The Gateway is missing its sign-in public key` then `App Workers need it to check who is signed in.`
+`deploy`, after the `app.deploy` step and before the app is registered: the install row's `jwt_public_key` is null, so the deploy has no public key to give the app's Workers for verifying the identities the Gateway signs. Message `The Gateway is missing its sign-in public key` then `App Workers need it to check who is signed in.`
 
 **Fix:** `data.fix`: `restore JWT_PUBLIC_KEY as in https://github.com/every-app/every-app/blob/main/docs/runbooks/key-rotation.md` (mirrored at `/docs/agent/repo/runbooks/key-rotation`). No rerun, not retryable.
 
@@ -526,11 +518,11 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/g
 
 ### INSTALL_FAILED
 
-The app's dependency install exited non-zero: the manifest's `install` command (run through a shell) or, without one, the detected package manager's install (`pnpm install`, `npx pnpm install` when pnpm isn't on PATH, `yarn install`, `npm install`; detection: `packageManager` in package.json, then the lockfile, else pnpm). `runLogged()` keeps the child's output in `$TMPDIR/everyapp/<command>-<time>-<pid>.log`, echoed to stderr with `--verbose`. Raised in step `app.install` by self-host `deploy` (unless deploying a release or the manifest sets `install: false`), hosted `deploy`, and `deploy --bundle-only`: message `Installing dependencies failed` (or `Installing dependencies with <pnpm|yarn|npm> failed`), then `<command> exited with code <n>. Its last lines:` (or `… was stopped by <signal>`), the last 20 lines indented, and `Full log: <path>`. `everyapp create` (step `create.install`) rewraps it as `Couldn't install dependencies`, `<command> exited <n>. Its last lines:`, the last 5 lines, `Full log: <path>`, and `<./dir> is created; only the install is left.` Why pnpm installs fail: pnpm 10 and later block dependency build scripts unless approved, pnpm 11 exits 1 with `ERR_PNPM_IGNORED_BUILDS`, and nobody can answer `pnpm approve-builds` in this non-interactive install, so a project must declare its approvals.
+The app's dependency install exited non-zero: the manifest's `install` command (run through a shell) or, without one, the detected package manager's install (`pnpm install`, `npx pnpm install` when pnpm isn't on PATH, `yarn install`, `npm install`; detection: `packageManager` in package.json, then the lockfile, else pnpm). `runLogged()` keeps the child's output in `$TMPDIR/everyapp/<command>-<time>-<pid>.log`, echoed to stderr with `--verbose`. Raised in step `app.install` by `deploy` (unless deploying a release or the manifest sets `install: false`) and `deploy --bundle-only`: message `Installing dependencies failed` (or `Installing dependencies with <pnpm|yarn|npm> failed`), then `<command> exited with code <n>. Its last lines:` (or `… was stopped by <signal>`), the last 20 lines indented, and `Full log: <path>`. `everyapp create` (step `create.install`) rewraps it as `Couldn't install dependencies`, `<command> exited <n>. Its last lines:`, the last 5 lines, `Full log: <path>`, and `<./dir> is created; only the install is left.` Why pnpm installs fail: pnpm 10 and later block dependency build scripts unless approved, pnpm 11 exits 1 with `ERR_PNPM_IGNORED_BUILDS`, and nobody can answer `pnpm approve-builds` in this non-interactive install, so a project must declare its approvals.
 
 **Fix:** no `data.fix`. From `create`, `data.rerun` is `cd <dir> && pnpm install`; from `deploy`, no rerun. `data` carries `command`, `exitCode` (null when a signal stopped it), `tail` (the last lines) and `log` (the file). Not retryable.
 
-Source: `packages/cli/src/lib/package-manager.ts`, `packages/cli/src/lib/childLog.ts`, `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/deploy/deployToGateway.ts`, `packages/cli/src/commands/deploy/bundleApp.ts`
+Source: `packages/cli/src/lib/package-manager.ts`, `packages/cli/src/lib/childLog.ts`, `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/deploy/bundleApp.ts`
 
 ### INSTALL_INPUTS_MISSING
 
@@ -550,7 +542,7 @@ Source: `packages/cli/src/lib/app/installBuildOutput.ts`
 
 ### INVALID_APP_BASE_DOMAIN
 
-Patching the Gateway's Build Output for a Gateway deploy (`setup`, `gateway deploy`, or the rebind an app's `deploy`, `register` or `delete` runs): the gateway host and the app base domain differ. The Gateway scopes its session cookie to `APP_BASE_DOMAIN` and apps find the Gateway by dropping their first label, so the base must be the Gateway's own host; one label above would hand the cookie to every other name in the zone. Message `Apps live one label below the gateway host <host>, so APP_BASE_DOMAIN must be <host>, not <base>.` Both values come from `--domain` on an install (`gatewayTarget` in `commands/setup/deployGateway.ts` sets the base to the domain) and from the install row on a rebind (`lib/gateway/reconcile.ts`), so the guard trips only on an install row whose base isn't its host.
+Patching the Gateway's Build Output for a Gateway deploy (`setup`, `gateway deploy`, or the rebind an app's `deploy` or `delete` runs): the gateway host and the app base domain differ. The Gateway scopes its session cookie to `APP_BASE_DOMAIN` and apps find the Gateway by dropping their first label, so the base must be the Gateway's own host; one label above would hand the cookie to every other name in the zone. Message `Apps live one label below the gateway host <host>, so APP_BASE_DOMAIN must be <host>, not <base>.` Both values come from `--domain` on an install (`gatewayTarget` in `commands/setup/deployGateway.ts` sets the base to the domain) and from the install row on a rebind (`lib/gateway/reconcile.ts`), so the guard trips only on an install row whose base isn't its host.
 
 **Fix:** none offered (no `data.fix`, no rerun); not retryable.
 
@@ -574,7 +566,7 @@ Source: `packages/cli/src/commands/create/steps/appId.ts`, `packages/perimeter/s
 
 ### INVALID_BUILD_OUTPUT
 
-`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config in the app policy (`prepareAppBuildOutput()`: self-host and hosted `deploy`, `deploy --bundle-only`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
+`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config in the app policy (`prepareAppBuildOutput()`: `deploy`, `deploy --bundle-only`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
 
 **Fix:** none offered; not retryable.
 
@@ -590,7 +582,7 @@ Source: `packages/cli/src/commands/dev/mode.ts`
 
 ### INVALID_DOMAIN
 
-`normalizeHostname()` refused a hostname. The input is trimmed, lowercased and stripped of `http://` or `https://`, anything from the first `/`, `?` or `#`, and a trailing dot; what is left must be at least two labels of `[a-z0-9]` and `-` (1 to 63 characters each, no leading or trailing dash), 253 characters at most. `normalizeHostname()`'s own message is `<value> isn't a full hostname`, but its only callers are in `setup`'s `runSetup.ts`, and the form that surfaces is `domainFlag()`'s re-raise under the same code, `--domain <value> isn't a full hostname`: from `everyapp setup --domain <value>`, and from the Gateway install that `deploy` and `create --deploy` offer, which passes `apps.<zone>` (always a hostname) the same way. The interactive address prompt's `validate` catches it and asks again (`Enter a hostname like apps.<zone>`), and the call on the prompt's answer runs after that check.
+`normalizeHostname()` refused a hostname. The input is trimmed, lowercased and stripped of `http://` or `https://`, anything from the first `/`, `?` or `#`, and a trailing dot; what is left must be at least two labels of `[a-z0-9]` and `-` (1 to 63 characters each, no leading or trailing dash), 253 characters at most. `normalizeHostname()`'s own message is `<value> isn't a full hostname`, but its only callers are in `setup`'s `runSetup.ts`, and the form that surfaces is `domainFlag()`'s re-raise under the same code, `--domain <value> isn't a full hostname`: from `everyapp setup --domain <value>`, and from the Gateway install that `deploy` offers, which passes `apps.<zone>` (always a hostname) the same way. The interactive address prompt's `validate` catches it and asks again (`Enter a hostname like apps.<zone>`), and the call on the prompt's answer runs after that check.
 
 **Fix:** `data.fix`: `use a name like apps.example.com`. No rerun, not retryable.
 
@@ -598,7 +590,7 @@ Source: `packages/cli/src/lib/domains/hostnames.ts`, `packages/cli/src/commands/
 
 ### INVALID_GATEWAY_URL
 
-`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses (a valid one is normalized: trailing slashes, query and fragment dropped). Raised by every command that reads them (`deploy`, `create`, `delete`, `db query`, `db restore`, `workflow`, `register`, `secret`, `email`, `access on|off|show`). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
+`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses (a valid one is normalized: trailing slashes, query and fragment dropped). Raised by every command that reads them (`deploy`, `delete`, `db query`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
 
 **Fix:** for the environment variable, `data.fix`: `set it to https://<value without its scheme>, or unset it`; for the flag, nothing beyond the message. No rerun, not retryable.
 
@@ -608,7 +600,7 @@ Source: `packages/cli/src/lib/gateway/connect.ts`
 
 `everyapp.config.ts` loaded, but `validateManifestStrict()` (`@every-app/perimeter/manifest`) threw a `ManifestError`. `everyapp dev` raises it itself: `everyapp.config.ts isn't valid` then the validator's message. In every other command the `ManifestError` propagates and `reportFailure()` reports it under this code with the validator's message alone (`knownFailure()` in `lib/output/report.ts`).
 
-The registry raises the same code (a `RegistrationError`, status 400, passed through `lib/gateway/registry.ts` and answered by the hosted deploy API) when the manifest it is handed fails `validateManifest` (the validator's message, else `Invalid manifest`), when its `id` isn't the app id being registered (`manifest.id "<id>" does not match appId "<appId>"`), or when a `resources.r2` binding's bucket name is one Cloudflare refuses (`resources.r2: <binding> would be the R2 bucket "<name>", which Cloudflare refuses (at most <n> lowercase letters, digits and hyphens, starting and ending with a letter or digit). Rename the binding in everyapp.config.ts.`).
+The registry raises the same code (a `RegistrationError`, status 400, passed through `lib/gateway/registry.ts` and answered by the Gateway's deploy API) when the manifest it is handed fails `validateManifest` (the validator's message, else `Invalid manifest`), when its `id` isn't the app id being registered (`manifest.id "<id>" does not match appId "<appId>"`), or when a `resources.r2` binding's bucket name is one Cloudflare refuses (`resources.r2: <binding> would be the R2 bucket "<name>", which Cloudflare refuses (at most <n> lowercase letters, digits and hyphens, starting and ending with a letter or digit). Rename the binding in everyapp.config.ts.`).
 
 **Fix:** correct what the message names in `everyapp.config.ts`. No `data.fix`, no rerun, not retryable.
 
@@ -616,7 +608,7 @@ Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/r
 
 ### LEASE_HELD
 
-A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` and `register` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `gateway deploy`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.` (`deploy`) or `Its version is recorded; registering again binds it and makes it live.` (`register`), and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
+A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `gateway deploy`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
 
 **Fix:** `retryable: true`: `data.rerun` is this same command, `data.rerunNote` `once it's done (pnpm everyapp status shows it)`. `data.holder`, when there is one, is the row: `id`, `holder`, `purpose` (`app.deploy`, `app.register`, `app.secrets`, `app.email`, `gateway.deploy`, `gateway.upgrade`, `gateway.reconcile`, `gateway.secrets`, `access.sync`, `db.restore`), `acquiredAt`, `expiresAt`, `app`, `deployer`, `machine`. No `data.fix`.
 
@@ -632,11 +624,11 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sy
 
 ### MANIFEST_NOT_FOUND
 
-`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `deploy --bundle-only`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`, `workflow`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `register --manifest <path>`: `No manifest at <path>`, `data.fix` `pass <appId>'s everyapp.config.ts with --manifest`. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
+`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `deploy --bundle-only`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`, `workflow`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
 
 **Fix:** as above. No rerun, not retryable.
 
-Source: `packages/cli/src/lib/manifest.ts`, `packages/cli/src/commands/register/registerApp.ts`, `packages/cli/src/commands/email/index.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/dev/index.ts`
+Source: `packages/cli/src/lib/manifest.ts`, `packages/cli/src/commands/email/index.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/dev/index.ts`
 
 ### MIGRATIONS_FAILED
 
@@ -650,7 +642,7 @@ Source: `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/dev/
 
 A production migration failed. Migrations run before the upload, so the version that's serving keeps running. Three raise sites:
 
-- D1, `cf d1 migrations apply` (`lib/migrations/remote.ts`): an app's (`deploy`, `create --deploy`; step `app.migrations`) or the Gateway's (`setup`, `gateway deploy`, a rebind; step `gateway.migrations`). Message `Database migration failed`, cf's error, `Nothing was uploaded; the version that's serving keeps running.`, and, when a restore point was saved first, `To roll the database back to before this run: pnpm everyapp db restore` (`db restore <appId>` for a release deploy, `db restore --gateway` for the Gateway). A restore point (a Time Travel bookmark recorded in the Gateway's registry) is saved only when the database already held some of the migrations; a fresh database gets none. `data.fix` `correct the migration`; `data.rollbackCommand` is cf's own `d1 time-travel restore` command when a point was saved.
+- D1, `cf d1 migrations apply` (`lib/migrations/remote.ts`): an app's (`deploy`; step `app.migrations`) or the Gateway's (`setup`, `gateway deploy`, a rebind; step `gateway.migrations`). Message `Database migration failed`, cf's error, `Nothing was uploaded; the version that's serving keeps running.`, and, when a restore point was saved first, `To roll the database back to before this run: pnpm everyapp db restore` (`db restore <appId>` for a release deploy, `db restore --gateway` for the Gateway). A restore point (a Time Travel bookmark recorded in the Gateway's registry) is saved only when the database already held some of the migrations; a fresh database gets none. `data.fix` `correct the migration`; `data.rollbackCommand` is cf's own `d1 time-travel restore` command when a point was saved.
 - Postgres with drizzle (`lib/migrations/postgres.ts`, the app's own `drizzle-kit migrate`): `drizzle-kit couldn't migrate the Postgres database` then `<why>. Nothing was uploaded.`; `data.fix` `check POSTGRES_DATABASE_URL in .everyapp/secrets.env and the migrations`.
 - Postgres with Prisma (`lib/migrations/prisma.ts`, the app's own `prisma migrate deploy`): `prisma migrate deploy couldn't migrate the Postgres database` then `<why>. Nothing was uploaded.`; `data.fix` `check POSTGRES_DATABASE_URL in .everyapp/secrets.env, prisma.config.ts (its datasource reads it) and the migrations`.
 
@@ -694,7 +686,7 @@ Source: `packages/cli/src/commands/create/index.ts`
 
 ### NODE_TOO_OLD
 
-Before `cf build` or `cf dev` (the cf calls that run the project's package manager: `deploy`, `create --deploy`, `dev`, `deploy --bundle-only`, hosted `deploy`), the runner asks the package manager which Node it runs the project's tools on (`pnpm exec node -p process.versions.node`, `npm exec -- node …`, `yarn node …`). One older than 22.18.0 can't load `cloudflare.config.ts` (the build fails with `Unknown file extension ".ts"`); a Volta `volta.node` pin in package.json or pnpm's `use-node-version` puts another Node first. A probe that fails or prints no version raises nothing (cf reports in its own words). Message `<pm> runs this project's tools on Node.js <version>; cf needs 22.18.0 or newer` then ``everyapp runs on <node>, but something pins this project's (a Volta `volta.node` in package.json, pnpm's use-node-version). cf needs 22.18.0 or newer to load cloudflare.config.ts.``
+Before `cf build` or `cf dev` (the cf calls that run the project's package manager: `deploy`, `dev`, `deploy --bundle-only`), the runner asks the package manager which Node it runs the project's tools on (`pnpm exec node -p process.versions.node`, `npm exec -- node …`, `yarn node …`). One older than 22.18.0 can't load `cloudflare.config.ts` (the build fails with `Unknown file extension ".ts"`); a Volta `volta.node` pin in package.json or pnpm's `use-node-version` puts another Node first. A probe that fails or prints no version raises nothing (cf reports in its own words). Message `<pm> runs this project's tools on Node.js <version>; cf needs 22.18.0 or newer` then ``everyapp runs on <node>, but something pins this project's (a Volta `volta.node` in package.json, pnpm's use-node-version). cf needs 22.18.0 or newer to load cloudflare.config.ts.``
 
 **Fix:** `data.fix`: raise the pin (`volta pin node@22`, for Volta); `data.rerun` is this same command. Not retryable.
 
@@ -742,7 +734,7 @@ Source: `packages/cli/src/commands/deploy/index.ts`
 
 ### POSTGRES_URL_MISSING
 
-Self-host `deploy` or `create --deploy` of an app whose manifest sets `migrations.dialect: "postgresql"`: `.everyapp/secrets.env` has no `POSTGRES_DATABASE_URL`. Checked right after the manifest loads, before the Gateway is contacted or anything is created. Message `<app> needs a Postgres URL to migrate its database` then `Format: postgres://<user>:<password>@<host>:<port>/<database>`.
+`deploy` of an app whose manifest sets `migrations.dialect: "postgresql"`: `.everyapp/secrets.env` has no `POSTGRES_DATABASE_URL`. Checked right after the manifest loads, before the Gateway is contacted or anything is created. Message `<app> needs a Postgres URL to migrate its database` then `Format: postgres://<user>:<password>@<host>:<port>/<database>`.
 
 **Fix:** `data.fix`: `set POSTGRES_DATABASE_URL in .everyapp/secrets.env, then deploy again`. No rerun, not retryable.
 
@@ -766,7 +758,7 @@ Source: `packages/cli/src/commands/db/index.ts`, `packages/cli/src/lib/cf/d1.ts`
 
 ### RELEASE_CORRUPT
 
-Opening a release (`extractRelease()`): the SHA-256 over the extracted tree (every file except `release.json`: each path and the hash of its contents, in path order) isn't the `sha256` its `release.json` records. Gateway releases (`setup --release`, the latest GitHub release when everyapp runs outside a checkout, a checkout's cached build) and app releases (`deploy <url|tarball>`) alike. Message `<Gateway|App> release <version> doesn't match its checksum` then `The download may be damaged. Download it again.`
+Opening a release (`extractRelease()`): the SHA-256 over the extracted tree (every file except `release.json`: each path and the hash of its contents, in path order) isn't the `sha256` its `release.json` records. Gateway releases (the build from the checkout that every Gateway deploy opens, kept under the checkout's `node_modules/.cache/everyapp/<tree>.tar.gz`; `lib/gateway/checkoutRelease.ts`) and app releases (`deploy <url|tarball>`) alike. Message `<Gateway|App> release <version> doesn't match its checksum` then `The download may be damaged. Download it again.`
 
 **Fix:** download it again. `data.expected` and `data.actual` carry the two hashes. No `data.fix`, no rerun, not retryable.
 
@@ -774,11 +766,11 @@ Source: `packages/cli/src/lib/gateway/release.ts`
 
 ### RELEASE_DOWNLOAD_FAILED
 
-Downloading a release tarball over HTTPS failed: `deploy <url>` (step `app.release`; the Gateway's own download path left the CLI on 2026-10-24, restorable from `5ef30882`). Downloads are anonymous (no token, cookie or identifying header), follow at most 5 redirects, HTTPS only, within 5 minutes and 200 MB. Messages: `<url> redirects nowhere.` or `<url> redirects too many times.`; `<href> isn't a URL.`; `<url> isn't an HTTPS URL.` or `<url> redirects to <href>, which isn't an HTTPS URL.`; `Couldn't download <url>: HTTP <status>.` (a 404 is `RELEASE_NOT_FOUND`); `GitHub didn't say which release of <owner/repo> <url> is.` (no redirect named a tag); `Downloading <url> timed out.`; `Couldn't download <url>: <error>`.
+Downloading a release tarball over HTTPS failed: `deploy <url>` (step `app.release`). Downloads are anonymous (no token, cookie or identifying header), follow at most 5 redirects, HTTPS only, within 5 minutes and 200 MB. Messages: `<url> redirects nowhere.` or `<url> redirects too many times.`; `<href> isn't a URL.`; `<url> isn't an HTTPS URL.` or `<url> redirects to <href>, which isn't an HTTPS URL.`; `Couldn't download <url>: HTTP <status>.` (a 404 is `RELEASE_NOT_FOUND`); `GitHub didn't say which release of <owner/repo> <url> is.` (no redirect named a tag); `Downloading <url> timed out.`; `Couldn't download <url>: <error>`.
 
 **Fix:** `retryable: true` (`data.rerun` is this same command) for a timeout, a thrown request or stream error, and an HTTP 5xx; not for the other messages. No `data.fix`.
 
-Source: `packages/cli/src/lib/release/github.ts`, `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/gateway/source.ts`
+Source: `packages/cli/src/lib/release/github.ts`, `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/app/release.ts`
 
 ### RELEASE_INVALID
 
@@ -806,11 +798,11 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/a
 
 ### RELEASE_NOT_FOUND
 
-The release a command names isn't there. A source that is neither a URL nor an existing file: for `deploy <source>`, `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.`; for `setup --release <path>`, `<path> doesn't exist` then `--release takes a GitHub repository, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz. Check the path, or leave out --release for the latest release.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `deploy` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
+The release `deploy <source>` names isn't there. A source that is neither a URL nor an existing file: `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `deploy` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
 
 **Fix:** none offered beyond the message; not retryable.
 
-Source: `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/release/github.ts`, `packages/cli/src/lib/gateway/source.ts`, `packages/cli/src/lib/app/release.ts`
+Source: `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/release/github.ts`, `packages/cli/src/lib/app/release.ts`
 
 ### RELEASE_PACK_FAILED
 
@@ -880,7 +872,7 @@ Source: `packages/cli/src/commands/db/restore.ts`
 
 ### SCHEMA_CHECK_FAILED
 
-`deploy` (the self-host deploy, the hosted `deploy --gateway`, and `deploy --bundle-only`), step `app.schema`: `drizzle-kit generate`, run with the app's own drizzle config but its `out` pointed at a copy of the migrations under `.everyapp/`, failed without writing a migration, so whether the schema matches is unknown. Headline `drizzle-kit couldn't compare the schema with the migrations`, then the first `...Error` line of drizzle-kit's stderr (else its last line, else `no answer in 120 s` or `exit <code>`), then `Nothing was migrated or uploaded.` The check runs after the build and before the database or the Worker changes, only for `migrations.engine` `"drizzle"` (the default) with D1 resources or `migrations.dialect` `"postgresql"`; a Prisma app is not checked (its step says so), and a missing drizzle-kit or config is the warning `SCHEMA_CHECK_SKIPPED`, not this error.
+`deploy` and `deploy --bundle-only`, step `app.schema`: `drizzle-kit generate`, run with the app's own drizzle config but its `out` pointed at a copy of the migrations under `.everyapp/`, failed without writing a migration, so whether the schema matches is unknown. Headline `drizzle-kit couldn't compare the schema with the migrations`, then the first `...Error` line of drizzle-kit's stderr (else its last line, else `no answer in 120 s` or `exit <code>`), then `Nothing was migrated or uploaded.` The check runs after the build and before the database or the Worker changes, only for `migrations.engine` `"drizzle"` (the default) with D1 resources or `migrations.dialect` `"postgresql"`; a Prisma app is not checked (its step says so), and a missing drizzle-kit or config is the warning `SCHEMA_CHECK_SKIPPED`, not this error.
 
 **Fix:** `rerun`: `pnpm db:generate`, `rerunNote`: `in a terminal; it asks about renamed columns and tables`. Not retryable.
 
@@ -964,7 +956,7 @@ Source: `packages/cli/src/lib/secretValue.ts`
 
 ### SHARED_APP_FORBIDDEN
 
-A Cloudflare login whose verified email isn't an owner or admin of the platform organization tried to `deploy`, `register` or `delete` a shared app, or to change its email lists with `email set|unset`: `Only <organization> owners and admins can <deploy|register|delete|change the email of> shared apps` / `<email> isn't an owner or admin of <organization>, the platform organization.` An API token (`CLOUDFLARE_API_TOKEN` set, so the deployer has no email) is the account's own authority and is never checked.
+A Cloudflare login whose verified email isn't an owner or admin of the platform organization tried to `deploy` or `delete` a shared app (a row whose scope is `shared`; a redeploy keeps the row's scope), or to change its email lists with `email set|unset`: `Only <organization> owners and admins can <deploy|delete|change the email of> shared apps` / `<email> isn't an owner or admin of <organization>, the platform organization.` An API token (`CLOUDFLARE_API_TOKEN` set, so the deployer has no email) is the account's own authority and is never checked.
 
 **Fix:** `fix`: `ask an owner of <organization> to make you an admin, or to do it for you`.
 
@@ -1034,15 +1026,15 @@ Source: `packages/cli/src/lib/runtime.ts`, `packages/cli/src/bin/cli.ts`
 
 ### VERSION_UNKNOWN
 
-`deploy`, step `app.upload`: cf uploaded the Worker but reported no version id: `Cloudflare reports no version for <app> after the upload`, `data.workerName`; nothing to run. `register <app> --worker <name>`: the Worker exists but has no version serving traffic: `<worker> has no version serving traffic`; `fix`: `deploy a version of it, then register again`.
+`deploy`, step `app.upload`: cf uploaded the Worker but reported no version id: `Cloudflare reports no version for <app> after the upload`, `data.workerName`; nothing to run.
 
 **Fix:** as above. Not retryable.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/register/registerApp.ts`
+Source: `packages/cli/src/commands/deploy/deployApp.ts`
 
 ### WORKER_NAME_MISMATCH
 
-`register <app> --worker <name>`: the registry's naming rules give the app's Worker another name, and the Gateway binds each app's Worker by that name only: `<app>'s Worker must be named <expected>, not <given>` / `The Gateway binds each app's Worker by that name only.` Only `register` names the Worker it expects; `deploy` names the Worker itself.
+`register()` in `lib/gateway/registry.ts`, when its caller passes an `expectedWorkerName` that isn't the one the registry's naming rules give the app: `<app>'s Worker must be named <expected>, not <given>` / `The Gateway binds each app's Worker by that name only.` No command passes one (`deploy` takes the Worker name from the registration), so no command ends with it.
 
 **Fix:** `fix`: `deploy the Worker as <expected>`; `rerun`: this command without `--worker`, then `--worker <expected>`.
 
@@ -1050,7 +1042,7 @@ Source: `packages/cli/src/lib/gateway/registry.ts`
 
 ### WORKER_NAME_TAKEN
 
-`deploy`, step `app.resources` (`claimAppWorker`, for the app's Worker and each helper Worker): a Worker with the name exists in the Cloudflare account, but the Gateway's resource ledger doesn't record it as this app's: `A Worker named <name> already exists in this Cloudflare account` / `No deploy of this app created it; it may belong to another Gateway or project.`; `fix`: `delete or rename it`, `rerun`: this command. The same code comes from the registry rules (a `RegistrationError`, status 409, passed through `lib/gateway/registry.ts` and the hosted deploy API) when the Worker name is registered to another app on this Gateway: `The worker name "<name>" is already registered to another app on this gateway. Choose a different app id.`
+`deploy`, step `app.resources` (`claimAppWorker`, for the app's Worker and each helper Worker): a Worker with the name exists in the Cloudflare account, but the Gateway's resource ledger doesn't record it as this app's: `A Worker named <name> already exists in this Cloudflare account` / `No deploy of this app created it; it may belong to another Gateway or project.`; `fix`: `delete or rename it`, `rerun`: this command. The same code comes from the registry rules (a `RegistrationError`, status 409, passed through `lib/gateway/registry.ts` and the Gateway's deploy API) when the Worker name is registered to another app on this Gateway: `The worker name "<name>" is already registered to another app on this gateway. Choose a different app id.`
 
 **Fix:** as above. The registry variant is not retryable (status 409 is below 500).
 
@@ -1098,7 +1090,7 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts` (`TAKEOVER_FLAGS` in `pa
 
 ### ZONE_CUSTOM_DOMAIN_LIMIT
 
-`preflightDomains` before new hostnames are published on the Gateway (setup and the Gateway rebind, step `gateway.domains`; `deploy` and `register`, step `app.domain`): the Gateway would publish more than Cloudflare's 100 Custom Domains in the zone: `<zone> would go over Cloudflare's 100 Custom Domains per zone` / `The Gateway alone needs <total> there, before other Workers' domains.` `data.total`, `data.limit: 100`. From 95 on it's the warning `ZONE_CUSTOM_DOMAIN_LIMIT_NEAR`.
+`preflightDomains` before new hostnames are published on the Gateway (setup and the Gateway rebind, step `gateway.domains`; `deploy`, step `app.domain`): the Gateway would publish more than Cloudflare's 100 Custom Domains in the zone: `<zone> would go over Cloudflare's 100 Custom Domains per zone` / `The Gateway alone needs <total> there, before other Workers' domains.` `data.total`, `data.limit: 100`. From 95 on it's the warning `ZONE_CUSTOM_DOMAIN_LIMIT_NEAR`.
 
 **Fix:** `fix`: `delete apps you no longer use (pnpm everyapp delete <app>), or install a second Gateway on another domain`.
 
@@ -1330,15 +1322,11 @@ Exit 252 from the argument parser: any other exception stricli raised while rout
 
 Source: `packages/cli/src/argumentErrors.ts`, `packages/cli/src/lib/childLog.ts`
 
-## Codes a hosted Gateway's deploy API answers
+## Codes the Gateway's deploy API and the browser install answer
 
-`deploy --gateway <url>` with `EVERYAPP_DEPLOY_TOKEN` set (`packages/cli/src/commands/deploy/deployToGateway.ts`) calls `GET /api/v1/deploy-key`, `POST /api/v1/orgs/{orgId}/apps`, `POST /api/v1/orgs/{orgId}/apps/{appId}/deploys` and `GET /api/v1/orgs/{orgId}/deploys/{id}` with `authorization: Bearer <token>`. Each route answers a refusal as JSON `{ "error": "<code>", "message": "<sentence>" }` with the code's HTTP status (`DeployError` in `apps/every-app-gateway/src/server/deploy/errors.ts`; anything else thrown is `INTERNAL_ERROR`, 500). The CLI passes the body's `error` through as its own error code, or `HTTP_<status>` when the body has none:
+The Gateway's deploy API (`apps/every-app-gateway/src/server/deploy/routes.ts`: `GET /api/v1/deploy-key`, `POST /api/v1/orgs/{orgId}/apps`, `POST /api/v1/orgs/{orgId}/apps/{appId}/deploys` and `GET /api/v1/orgs/{orgId}/deploys/{id}`, called with a deploy key as `authorization: Bearer <token>`) and the browser install (Admin → Apps → Install app: `POST /api/admin/apps/install`, `GET /api/admin/deploys/{id}`, with a session) raise the codes in this section. No everyapp command calls either, so none of them arrives on an `error` event. Each route answers a refusal as JSON `{ "error": "<code>", "message": "<sentence>" }` with the code's HTTP status (`DeployError` in `apps/every-app-gateway/src/server/deploy/errors.ts`; anything else thrown is `INTERNAL_ERROR`, 500).
 
-- HTTP 401 or 403: `<host> refused the deploy (HTTP <status>)` / `<message>`, `fix`: `check EVERYAPP_DEPLOY_TOKEN`.
-- Any other failure: `<host> couldn't deploy <app> (HTTP <status>)` / `It said: <message>`; `retryable: true` with `rerun`: `pnpm everyapp deploy --gateway <url>` and `rerunNote`: `to try again` when the status is 500 or more, or 409.
-- The network failing is `GATEWAY_UNREACHABLE`, and a 404 on `/api/v1/deploy-key` is `DEPLOY_API_UNAVAILABLE` (the launch gate `THIRD_PARTY_DEPLOYS` isn't `on`, so the routes don't exist); both are documented above.
-
-A deploy runs as a job (`{ id, status: "running" | "succeeded" | "failed", error: { code, message } | null, app }`): the POST answers once it finished or after 20 s, and the CLI polls every 2 s for up to 6 minutes (`DEPLOY_TIMEOUT`, documented above). A job that ends `failed` is reported with its `error.code`, or `DEPLOY_FAILED` when it has none, as `<host> couldn't deploy <app>` / `It said: <message>`, with `rerun` (`to try again`) and `data.jobId`. The browser install (Admin → Apps → Install app: `POST /api/admin/apps/install`, `GET /api/admin/deploys/{id}`) deploys through the same pipeline with a session and answers the same codes. On a self-hosted Gateway the browser install deploys with the Cloudflare REST API (`cfRestDeployer.ts` with no dispatch namespace); the codes below marked "self-hosted browser install" come from there.
+A deploy runs as a job (`{ id, status: "running" | "succeeded" | "failed", error: { code, message } | null, app }`): the POST answers once it finished or after 20 s (`INLINE_WAIT_MS` in `run.ts`), and `GET /api/v1/orgs/{orgId}/deploys/{id}` reads it after that. A job that ends `failed` carries its code in `error.code`. The browser install deploys through the same pipeline and answers the same codes. On a self-hosted Gateway the browser install deploys with the Cloudflare REST API (`cfRestDeployer.ts` with no dispatch namespace); the codes below marked "self-hosted browser install" come from there.
 
 ### BUNDLE_REFUSED
 
@@ -1360,19 +1348,19 @@ Status 502, a job error. After the upload the pipeline reads the Worker's bindin
 
 On a self-hosted browser install (`cfRestDeployer.ts`) the same code, also 502, means the read-back itself failed, and nothing is deleted: `Cloudflare did not return the Worker's bindings.` (the Worker's settings came back without a bindings list) or `Cloudflare did not retain the app's Gateway binding. Try again.` (the Gateway's `APP__<worker>` service binding wasn't there after the publish).
 
-**Fix:** deploy again; the CLI gives `rerun` with `to try again`.
+**Fix:** deploy again.
 
 Source: `apps/every-app-gateway/src/server/deploy/pipeline.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
 
 ### DEPLOY_FAILED
 
-A job that failed with an error the deployer didn't name (not a `DeployError`): `The deploy failed in the gateway. Deploy again.` Also the CLI's default when a failed job carries no `error` at all.
+A job that failed with an error the deployer didn't name (not a `DeployError`): `The deploy failed in the gateway. Deploy again.`
 
 `DEPLOY_ABANDONED` is the job's `error.code` when it is read, not stored: a job still `running` 5 minutes after it was created (`DEPLOY_JOB_DEADLINE_MS` in `apps/every-app-gateway/src/server/repositories/DeployJobRepository.ts`) is answered as `failed` with `The deploy stopped without finishing: the gateway gives a deploy about 50 seconds, and a large app (many assets, slow migrations) can run out of them. Deploy again.` A job whose outcome couldn't be recorded ends this way too.
 
-**Fix:** deploy again (`rerun`, `to try again`).
+**Fix:** deploy again.
 
-Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/repositories/DeployJobRepository.ts`, `packages/cli/src/commands/deploy/deployToGateway.ts`
+Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/repositories/DeployJobRepository.ts`
 
 ### INVALID_REPO_URL
 
@@ -1402,7 +1390,7 @@ Source: `apps/every-app-gateway/src/server/deploy/install.ts`, `apps/every-app-g
 
 Status 503 (502 for a Cloudflare answer the deployer can't use): the Gateway lacks what deploying needs. Messages: `This gateway has no GATEWAY_URL or JWT_PUBLIC_KEY to give apps.`; `This gateway's deployer isn't configured (CF_DEPLOY_TOKEN, CLOUDFLARE_ACCOUNT_ID and DISPATCH_NAMESPACE).` (hosted) or `Set CF_DEPLOY_TOKEN and CLOUDFLARE_ACCOUNT_ID on the Gateway.` (self-hosted); `THIRD_PARTY_DOMAIN (<domain>) overlaps the gateway's own domain (<base>); third-party apps need a registrable domain of their own.`; `Set APP_BASE_DOMAIN before installing apps.`; `The Gateway's CLI install record is missing. Finish Gateway setup before installing apps.`; and on a self-hosted install's publish: `A self-hosted app needs its Worker and hostname.`, `App hosts must be below this Gateway's hostname.`, `This account has no Custom Domain for the Gateway.`, `Cloudflare did not return one serving version for <worker>. Reconcile it with the CLI.` (502), `Cloudflare did not return the Gateway's bindings. Nothing was replaced.` (502).
 
-**Fix:** the Gateway's operator sets the named setting; the CLI treats 5xx as retryable.
+**Fix:** the Gateway's operator sets the named setting.
 
 Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`, `apps/every-app-gateway/src/server/deploy/registry.ts`, `apps/every-app-gateway/src/server/deploy/browser-install.ts`
 
@@ -1410,7 +1398,7 @@ Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gatew
 
 Status 403: the deploy key's owner is a member of its organization but not `owner` or `admin`: `Only the organization's owners and admins deploy apps.`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN` (use a key of an owner or admin).
+**Fix:** use a deploy key of an owner or admin.
 
 Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
@@ -1418,15 +1406,15 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 Status 409: another job of the same app is running (and not past its deadline): `Another deploy of <app> is running; wait for it, then deploy again.`; or, for a self-hosted browser install, the install lease `app:<worker>` (shared with the CLI's lease table) is held: `Another install or CLI operation is running. Try again when it finishes.`
 
-**Fix:** wait; the CLI marks 409 retryable with `rerun`.
+**Fix:** wait, then deploy again.
 
 Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/browser-install.ts`
 
 ### DEPLOY_KEY_APP_MISMATCH
 
-Status 403: the deploy key is bound to one app (`appRowId`) and the register or deploy names another: `This deploy key is bound to another app.`
+Status 403: the deploy key is bound to one app (`appRowId`) and the registration or deploy names another: `This deploy key is bound to another app.`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN`.
+**Fix:** use a deploy key bound to this app, or to none.
 
 Source: `apps/every-app-gateway/src/server/deploy/routes.ts`
 
@@ -1434,7 +1422,7 @@ Source: `apps/every-app-gateway/src/server/deploy/routes.ts`
 
 Status 403: the bearer token is a valid personal access token but its scopes aren't exactly `["deploy"]` (`*` doesn't count): `This token isn't a deploy key. Create one in Admin → Tokens (Deploy key).`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN`.
+**Fix:** create a deploy key (Admin → Tokens) and send that.
 
 Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
@@ -1442,7 +1430,7 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 Status 500: the route threw something other than a `DeployError`: `The deploy API failed.` (deploy API) or `The install failed.` (browser install). Also a `PublicError` code on the control plane.
 
-**Fix:** retryable in the CLI (5xx), `rerun` with `to try again`.
+**Fix:** try again.
 
 Source: `apps/every-app-gateway/src/server/deploy/routes.ts`, `apps/every-app-gateway/src/server/deploy/install.ts`, `apps/every-app-gateway/src/server/errors.ts`
 
@@ -1456,25 +1444,25 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`, `apps/every-app-gate
 
 ### PROTOCOL_TOO_OLD
 
-Status 426: the upload's stamp carries a `protocol` below `MIN_HOSTED_DEPLOY_PROTOCOL` (1; the CLI packages `HOSTED_DEPLOY_PROTOCOL` 1): `This CLI packages deploy protocol <n>; the gateway reads <min> or later. Update everyapp and deploy again.`
+Status 426: the upload's stamp carries a `protocol` below `MIN_HOSTED_DEPLOY_PROTOCOL` (1; a browser install stamps the release it fetched with `HOSTED_DEPLOY_PROTOCOL`, 1, in `release.ts`): `This CLI packages deploy protocol <n>; the gateway reads <min> or later. Update everyapp and deploy again.`
 
 **Fix:** update everyapp (`git pull` in the checkout), deploy again.
 
-Source: `apps/every-app-gateway/src/server/deploy/bundle.ts`, `packages/perimeter/src/manifest/deploy.ts`
+Source: `apps/every-app-gateway/src/server/deploy/bundle.ts`, `apps/every-app-gateway/src/server/deploy/release.ts`, `packages/perimeter/src/manifest/deploy.ts`
 
 ### HTTP_nnn
 
-The heading for the `HTTP_<status>` pattern: the CLI's code when a deploy API answer has no JSON body or no `error` in it, `HTTP_` followed by the HTTP status (`HTTP_502` from a proxy). Reported as `<host> couldn't deploy <app> (HTTP <status>)`, retryable with `rerun` for 5xx and 409, or as `<host> refused the deploy (HTTP <status>)` with `fix`: `check EVERYAPP_DEPLOY_TOKEN` for 401 and 403.
+The pattern `HTTP_<status>` (`HTTP_502` from a proxy) is what a client gives a deploy API answer that has no JSON `error` in it. Every refusal of the deploy API and the browser install carries one (`DeployError`, the codes in this section), and no everyapp command reads the API's answers, so no everyapp command ends with a code of this pattern.
 
-**Fix:** as above.
+**Fix:** none.
 
-Source: `packages/cli/src/commands/deploy/deployToGateway.ts`
+Source: `apps/every-app-gateway/src/server/deploy/errors.ts`
 
 ### DEPLOY_KEY_REQUIRED
 
 Status 401: no bearer token: `Send a deploy key as the bearer token (EVERYAPP_DEPLOY_TOKEN).`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN` (set it).
+**Fix:** send a deploy key as the bearer token.
 
 Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
@@ -1482,7 +1470,7 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 Status 401: `The deploy key is unknown, revoked or expired. Create one in Admin → Tokens (Deploy key).`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN`; create a new key.
+**Fix:** create a new key (Admin → Tokens).
 
 Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
@@ -1490,13 +1478,13 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 Status 401: `The deploy key's owner is no longer a member of its organization, or is deactivated.`
 
-**Fix:** `fix`: `check EVERYAPP_DEPLOY_TOKEN`; use a key of a current member.
+**Fix:** use a key of a current member.
 
 Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 ### UNAUTHORIZED
 
-Status 401, browser install: no session or a banned user (`Sign in again.`), or no membership in the chosen organization (`Organization membership required.`). The CLI never sees it.
+Status 401, browser install: no session or a banned user (`Sign in again.`), or no membership in the chosen organization (`Organization membership required.`).
 
 **Fix:** sign in; join the organization.
 
@@ -1506,13 +1494,13 @@ Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
 Status 404: `No such deploy API route.`, also answered when the path's `orgId` isn't the key's organization.
 
-**Fix:** none; the CLI builds the paths itself, so a mismatch is a key of another organization.
+**Fix:** none; a path whose `orgId` isn't the key's organization is a key of another organization.
 
 Source: `apps/every-app-gateway/src/server/deploy/routes.ts`
 
 ### INVALID_REQUEST
 
-Status 400: the body isn't what the route takes. Deploy API: `Send JSON: { appId, manifest }.`, `appId is required.`; browser install: `Send JSON with one repoUrl or releaseUrl.`, `Send one repoUrl or releaseUrl.`, `Choose a valid workspace.` The CLI sends the right body, so it is seen from another client only.
+Status 400: the body isn't what the route takes. Deploy API: `Send JSON: { appId, manifest }.`, `appId is required.`; browser install: `Send JSON with one repoUrl or releaseUrl.`, `Send one repoUrl or releaseUrl.`, `Choose a valid workspace.`
 
 **Fix:** send the body the route asks for.
 
@@ -1522,7 +1510,7 @@ Source: `apps/every-app-gateway/src/server/deploy/routes.ts`, `apps/every-app-ga
 
 Status 400: the multipart upload is malformed: not `multipart/form-data`, a missing or oversized (1 MB) JSON part, a stamp without `protocol` or `cliVersion`, a module, asset or migration path with empty, `.`, `..`, backslash or control-character segments, or an asset path not starting with `/`.
 
-**Fix:** none for the caller (the CLI packages the bundle); not retryable.
+**Fix:** none for the caller; not retryable.
 
 Source: `apps/every-app-gateway/src/server/deploy/bundle.ts`
 
@@ -1538,7 +1526,7 @@ Source: `apps/every-app-gateway/src/server/deploy/bundle.ts`
 
 Status 404: `No such deploy.`: `GET /api/v1/orgs/{orgId}/deploys/{id}` with a job id the organization doesn't have.
 
-**Fix:** none; the CLI polls the id the POST gave it.
+**Fix:** none; poll the id the POST answered with.
 
 Source: `apps/every-app-gateway/src/server/deploy/run.ts`
 
@@ -1546,7 +1534,7 @@ Source: `apps/every-app-gateway/src/server/deploy/run.ts`
 
 Status 409. From the Gateway's resource ledger (`ledger.ts`): the Worker isn't recorded as this app's (`This Worker is not recorded as this app's. Use the CLI to reconcile it.`) or its ownership claim is missing (`The Worker's ownership claim is missing. Use the CLI to reconcile it.`). From a self-hosted browser install (`cfRestDeployer.ts`), before anything is uploaded: Cloudflare's Worker list doesn't include the existing Worker (`Cloudflare did not list the existing Worker's ownership. Nothing was uploaded.`), or it lacks the `org-<organization id>` and `app-<app slug>` tags the installer writes (`A Worker with this name already exists outside this browser installer. Use the CLI to manage it.`).
 
-**Fix:** reconcile or manage the Worker with the CLI (`pnpm everyapp deploy` from the app's directory); the CLI treats 409 as retryable.
+**Fix:** reconcile or manage the Worker with the CLI (`pnpm everyapp deploy` from the app's directory).
 
 Source: `apps/every-app-gateway/src/server/deploy/ledger.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
 
@@ -1600,7 +1588,7 @@ Source: `apps/every-app-gateway/src/server/deploy/release.ts`
 
 `POST /api/setup/claim` (the one-time owner claim from the Gateway's `/setup` page, `apps/every-app-gateway/src/routes/api/setup/claim.ts`) is not a deploy API route and the CLI never calls it. Its refusals are `UNSUPPORTED_MEDIA_TYPE` (415: the `content-type` isn't `application/json`), `ORIGIN_NOT_ALLOWED` (403: the request's `origin` header isn't the Gateway's own origin, `GATEWAY_URL`'s else the request URL's; the route is for the Gateway's `/setup` page only, and the code is also a `GatewayError` in `apps/every-app-gateway/src/server/errors.ts`) and `INVALID_INPUT` (400: a body that isn't JSON or fails its schema, `message` the first issue; also the `PublicError` the control plane's request validation throws, `apps/every-app-gateway/src/middleware/publicError.ts`).
 
-The other codes these routes answer, each passed through by the CLI the same way, are documented where the same code is raised elsewhere:
+The other codes these routes answer are documented where the same code is raised elsewhere:
 
 | Code                  | Status  | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1654,7 +1642,7 @@ Source: `packages/cli/src/commands/access/index.ts`
 
 ### ACCESS_IN_FRONT
 
-The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's login (a `location` matching `cloudflareaccess.com` or `/cdn-cgi/access/`). From `deploy` and `register`, step `app.live`: `Cloudflare Access answers before the Gateway, so this run can't confirm <app> is live` / `It goes live on its first visit, once someone signs in through Access.`, `data.hostname`; the wait ends with outcome `first_visit`. From `setup`, step `setup.owner`, before the owner link is printed: `Cloudflare Access protects <host>` / `Whoever opens the setup link signs in to Access first.` Nothing to do.
+The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's login (a `location` matching `cloudflareaccess.com` or `/cdn-cgi/access/`). From `deploy`, step `app.live`: `Cloudflare Access answers before the Gateway, so this run can't confirm <app> is live` / `It goes live on its first visit, once someone signs in through Access.`, `data.hostname`; the wait ends with outcome `first_visit`. From `setup`, step `setup.owner`, before the owner link is printed: `Cloudflare Access protects <host>` / `Whoever opens the setup link signs in to Access first.` Nothing to do.
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/domains/https.ts`
 
@@ -1690,7 +1678,7 @@ Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan
 
 ### APP_DISABLED
 
-`deploy` and `register`, step `app.live`: `<app> is switched off in Admin → Apps`; the Gateway serves it once an admin turns it on. The wait ends with outcome `disabled`.
+`deploy`, step `app.live`: `<app> is switched off in Admin → Apps`; the Gateway serves it once an admin turns it on. The wait ends with outcome `disabled`.
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`
 
@@ -1714,7 +1702,7 @@ Source: `packages/cli/src/lib/domains/certificates.ts`, `packages/cli/src/comman
 
 ### CERT_PENDING
 
-Two sites. `deploy` and `register`, step `app.live`, when nothing answered over HTTPS within the wait: `No certificate for <hostname> after <elapsed>` / `It usually comes within 5 minutes; <app> goes live on its first visit once it has one.`, `data.hostname`, `data.fix`: `if it never comes, check the zone's CAA records allow Cloudflare's certificate authorities`; outcome `first_visit`. `setup` and the Gateway deploy (`waitForCertificates`), for the Gateway's hostnames still without one: `https://<host>, … has|have no certificate after <elapsed>. It usually comes within five minutes; the gateway serves it|them as soon as it does. If it never comes, check the zone's CAA records allow Cloudflare's certificate authorities. Check later with `pnpm everyapp status`.`, `data.hosts`. `status` shows the same as `CERT_PENDING (status)` below.
+Two sites. `deploy`, step `app.live`, when nothing answered over HTTPS within the wait: `No certificate for <hostname> after <elapsed>` / `It usually comes within 5 minutes; <app> goes live on its first visit once it has one.`, `data.hostname`, `data.fix`: `if it never comes, check the zone's CAA records allow Cloudflare's certificate authorities`; outcome `first_visit`. `setup` and the Gateway deploy (`waitForCertificates`), for the Gateway's hostnames still without one: `https://<host>, … has|have no certificate after <elapsed>. It usually comes within five minutes; the gateway serves it|them as soon as it does. If it never comes, check the zone's CAA records allow Cloudflare's certificate authorities. Check later with `pnpm everyapp status`.`, `data.hosts`. `status` shows the same as `CERT_PENDING (status)` below.
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/lib/domains/certWait.ts`
 
@@ -1760,6 +1748,12 @@ Source: `packages/cli/src/lib/domains/preflight.ts`
 
 Source: `packages/cli/src/commands/setup/deployGateway.ts`
 
+### GATEWAY_UNREACHABLE
+
+`setup`, step `setup.owner`: one plain request to `https://<host>/` (`checkReachable`, before the owner link goes out) got no answer, so the link can't be opened until the host answers. Message `<host> doesn't answer over HTTPS yet`, then why (`Its certificate is probably still on the way (TLS handshake failed).`, `DNS has no address for <host> yet.` or `It didn't answer (<reason>).`), then `The link below works as soon as it does.`; `data.kind` (`tls`, `dns` or `other`, `NoAnswerKind` in `lib/domains/https.ts`) and `data.reason` say what failed. Nothing to do but wait for the certificate or the DNS record, then open the link.
+
+Source: `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/domains/https.ts`
+
 ### HELPER_WORKER_KEPT
 
 `deploy`, step `app.upload`: a helper Worker (`workers`) the previous manifest declared and this one doesn't keeps running, with its crons, because a deploy never deletes a Worker: `Helper Worker <name> is no longer in everyapp.config.ts, but it still runs` / `Its Worker is <worker>--<name>.` `data.fix`: `delete that Worker in the Cloudflare dashboard`.
@@ -1780,7 +1774,7 @@ Source: `packages/cli/src/commands/localMigrations.ts`, `packages/cli/src/lib/ap
 
 ### LOCAL_DNS_STALE
 
-`deploy`/`register`, step `app.live`, and the certificate wait: the hostname is live but this computer's or network's resolver still caches it as missing; `data.host`, `data.negativeCacheTtlSeconds`. Clears by itself; on macOS `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` clears the local cache.
+`deploy`, step `app.live`, and the certificate wait: the hostname is live but this computer's or network's resolver still caches it as missing; `data.host`, `data.negativeCacheTtlSeconds`. Clears by itself; on macOS `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` clears the local cache.
 
 Source: `packages/cli/src/lib/domains/localDns.ts`
 
@@ -1844,13 +1838,12 @@ Source: `packages/cli/src/commands/create/index.ts`
 
 Source: `packages/cli/src/lib/domains/preflight.ts`
 
-Five warnings share their code with an error or a `status` fix and are documented under that heading:
+Four warnings share their code with an error or a `status` fix and are documented under that heading:
 
 | Code                       | Where                        | What                                                                                                                                                                                                                                                 |
 | -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `APP_WORKER_MISSING`       | The Gateway rebind           | `Skipping <app>: its Worker is missing`; `data.fix`: `deploy <app> again, or remove it with pnpm everyapp delete <app>`. Heading under [What status reports as fixes](#what-status-reports-as-fixes).                                                |
 | `EMAIL_INBOUND_UNDECLARED` | `deploy`, `app.email`        | The manifest no longer declares inbound email; the app's mail routes are removed, its stored addresses stay; `data.rerun`: `pnpm everyapp email unset inbound`. Heading under [What status reports as fixes](#what-status-reports-as-fixes).         |
-| `GATEWAY_UNREACHABLE`      | `setup`, `setup.owner`       | `<host> doesn't answer over HTTPS yet` before the owner link; `data.kind`, `data.reason`. The `deploy --gateway` error of the same name is documented above.                                                                                         |
 | `GIT_FAILED`               | `create`, `create.git`       | `git init`/`add`/`commit` failed; the app is complete without a repository. `data.fix`: set `user.name` and `user.email` then commit, or `git init` yourself. Heading under [Codes raised with a dynamic value](#codes-raised-with-a-dynamic-value). |
 | `MIGRATIONS_FAILED`        | `create`, `migrations.local` | The new app's local database couldn't be migrated; `data.rerun`: `pnpm everyapp db migrate`. `db migrate`/`dev` raise it as an error, documented above.                                                                                              |
 
@@ -1976,10 +1969,10 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 Five raise sites pass a code they didn't write themselves:
 
-- `packages/cli/src/commands/create/index.ts`: `createdButNotDeployed` re-raises any `EveryAppError` from the deploy that `create --deploy` ran, with the same code, `fix`, `retryable`, `authorize` and `data`, the line `<app> was created in <dir> but isn't deployed.` appended, and the rerun rewritten to `cd <dir> && pnpm everyapp deploy …` (a rerun that isn't a `create` command keeps its own and gets `Then: cd <dir> && pnpm everyapp deploy`); an `ActionRequiredError` is re-raised the same way, and a `CancelledError` unchanged. `installFailed` re-raises `INSTALL_FAILED` (above) with the install's last 5 lines, the log path and `<dir> is created; only the install is left.` It also handles `GIT_FAILED` (below) as a warning.
+- `packages/cli/src/commands/create/index.ts`: `installFailed` re-raises `INSTALL_FAILED` (above) with the install's last 5 lines, the log path and `<dir> is created; only the install is left.` It also handles `GIT_FAILED` (below) as a warning.
 - `packages/cli/src/commands/email/index.ts`: `assertValidList` raises `EMAIL_SENDER_INVALID` or `EMAIL_INBOUND_INVALID` (above), the code chosen by which flag is being checked; `emailListProblems` in `packages/sdk/src/internal/email.ts` supplies the problems.
 - `packages/cli/src/commands/setup/runSetup.ts`: `domainFlag` re-raises `normalizeHostname`'s `INVALID_DOMAIN` (above) as `--domain <value> isn't a full hostname` with the same `fix` (`use a name like apps.example.com`).
-- `packages/cli/src/lib/gateway/registry.ts`: every registry call turns a `RegistrationError` from `packages/perimeter/src/registry/registration.ts` into an `EveryAppError` with the same code and message, `retryable` when its HTTP status is 500 or more (none is). The hosted deploy API answers the same codes with the same statuses (`run.ts` and `routes.ts` re-raise them as `DeployError`s). Of the `RegistrationErrorCode`s, `INVALID_APP_ID`, `APP_NOT_FOUND`, `INVALID_MANIFEST` and `WORKER_NAME_TAKEN` are documented above, `ORG_KEY_UNAVAILABLE`, `APP_NOT_REGISTERED` and `HOSTNAME_TAKEN` have headings below, and the seven others are in the table after this list.
+- `packages/cli/src/lib/gateway/registry.ts`: every registry call turns a `RegistrationError` from `packages/perimeter/src/registry/registration.ts` into an `EveryAppError` with the same code and message, `retryable` when its HTTP status is 500 or more (none is). The Gateway's deploy API answers the same codes with the same statuses (`run.ts` and `routes.ts` re-raise them as `DeployError`s). Of the `RegistrationErrorCode`s, `INVALID_APP_ID`, `APP_NOT_FOUND`, `INVALID_MANIFEST` and `WORKER_NAME_TAKEN` are documented above, `ORG_KEY_UNAVAILABLE`, `APP_NOT_REGISTERED` and `HOSTNAME_TAKEN` have headings below, and the seven others are in the table after this list.
 - `packages/cli/src/lib/childLog.ts`: `runLogged` raises `options.code ?? "COMMAND_FAILED"` when a child everyapp runs itself exits non-zero: `<what> failed` / `<command> exited with code <n>.` (or `was stopped by <signal>`) `Its last lines:`, the last 20 lines indented, `Full log: $TMPDIR/everyapp/<name>-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Every caller passes a code: `INSTALL_FAILED` (`lib/package-manager.ts`, above), `BUILD_FAILED` (`lib/app/buildApp.ts`, above), `GIT_FAILED` (`lib/git.ts`, below) and `GATEWAY_BUILD_FAILED` (`lib/gateway/checkoutRelease.ts`: the Gateway release built from this checkout, `pnpm --filter @every-app/sdk build` then `pnpm run build:release` in `apps/every-app-gateway`, exited non-zero: `Building the Gateway failed` / `<command> exited with code <n>. Its last lines:` … `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`, `fix`: `fix the build error above, then run this again`; raised by `setup`, and by `deploy`/`delete` when they rebind a Gateway from the checkout), so `COMMAND_FAILED` is the default nobody uses.
 
 The registry rules without a heading of their own (`packages/perimeter/src/registry/registration.ts`; none retryable, every status below 500):
@@ -1990,13 +1983,13 @@ The registry rules without a heading of their own (`packages/perimeter/src/regis
 | `RESERVED_APP_ID`         | 400        | `The app id "everyapp" is reserved for the platform.` (it prefixes the Gateway's own MCP tools). Choose another id.                                                                                                                                                                                                                                                                                                                                                  |
 | `INVALID_WORKER_NAME`     | 400        | `App id "<id>" is too long: its Worker name "<name>" would exceed 63 characters.` or `App id "<id>" can't be registered: its Worker would be "<name>", which is reserved for the gateway or isn't the app's own.` Choose a shorter or different app id.                                                                                                                                                                                                              |
 | `RESOURCE_NAME_CONFLICT`  | 400        | Two bindings of one kind would share a resource name: `Bindings <a> and <b> would share the <kind> "<name>". Rename one of them in everyapp.config.ts.`                                                                                                                                                                                                                                                                                                              |
-| `SHARED_APP_NOT_PLATFORM` | 403        | A shared scope asked for by an organization that isn't the install (platform) organization: `Only the platform organization registers shared apps; "<id>" can't be shared from another organization.` Deploy without `--shared`.                                                                                                                                                                                                                                     |
+| `SHARED_APP_NOT_PLATFORM` | 403        | A shared scope asked for by an organization that isn't the install (platform) organization: `Only the platform organization registers shared apps; "<id>" can't be shared from another organization.`                                                                                                                                                                                                                                                                |
 | `APP_SCOPE_MISMATCH`      | 409        | The existing row's scope isn't the one asked for: `App "<id>" is a shared app, not this organization's own. Deploy it without asking for another scope, or give the organization's own app an id of its own.` or `App "<id>" is this organization's own app, not a shared one. Shared apps need an app id of their own.`                                                                                                                                             |
 | `APP_TIER_MISMATCH`       | 400 or 409 | 400: a shared app on tier `dispatch`: `A shared app is reached over a service binding; "<id>" can't be deployed through the hosted deploy API.` 409: an existing row on another tier than the deploy's: `App "<id>" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.` or `App "<id>" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.` |
 
 ### ORG_KEY_UNAVAILABLE
 
-Registry (409): the organization has no key yet and every candidate from its slug is taken by another organization on this Gateway: `Every key for organization "<slug>" is taken by another organization on this gateway.` The CLI claims a key the same way the hosted API does (`claimOrgKey` in `lib/gateway/registry.ts`: one `INSERT OR IGNORE` statement in the registration batch, so two deploys can't claim two keys), so this means every candidate from the organization's slug is held by another organization.
+Registry (409): the organization has no key yet and every candidate from its slug is taken by another organization on this Gateway: `Every key for organization "<slug>" is taken by another organization on this gateway.` The CLI claims a key the same way the Gateway's deploy API does (`claimOrgKey` in `lib/gateway/registry.ts`: one `INSERT OR IGNORE` statement in the registration batch, so two deploys can't claim two keys), so this means every candidate from the organization's slug is held by another organization.
 
 **Fix:** none for the caller; an operator assigns the key.
 
@@ -2061,20 +2054,17 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/lib/gateway/reconcile.ts`
 `packages/cli/src/lib/gateway/connect.ts`
 `packages/cli/src/lib/gateway/discover.ts`
-`packages/cli/src/lib/gateway/source.ts`
 `packages/cli/src/lib/migrations/postgres.ts`
 `packages/cli/src/lib/migrations/localCli.ts`
 `packages/cli/src/commands/create/index.ts`
 `packages/cli/src/commands/create/steps/appId.ts`
 `packages/cli/src/commands/deploy/index.ts`
 `packages/cli/src/commands/deploy/deployApp.ts`
-`packages/cli/src/commands/deploy/deployToGateway.ts`
 `packages/cli/src/commands/deploy/bundleApp.ts`
 `packages/cli/src/commands/deploy/command.ts`
 `packages/cli/src/commands/deploy/steps/waitForLive.ts`
 `packages/cli/src/commands/deploy/steps/offerGateway.ts`
 `packages/cli/src/commands/appGateway.ts`
-`packages/cli/src/commands/register/registerApp.ts`
 `packages/cli/src/commands/delete/index.ts`
 `packages/cli/src/commands/secret/index.ts`
 `packages/cli/src/commands/db/index.ts`
