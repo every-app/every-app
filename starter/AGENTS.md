@@ -3,6 +3,7 @@
 - Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (also in `.claude/skills/`). `everyapp create` puts it there.
 - The Gateway signs people in; this app has no login, session or token check of its own, and never builds one. Read who the user is only through the SDK: `context.user` behind `ensureUserMiddleware` (`src/middleware/ensureUser.ts`) in a server function, the `user` a tool handler receives, `getEveryAppUser()` on a public route. Never from a header, cookie or parameter a client sent.
 - The Gateway admits every member of the organization; which rows each one sees is the app's job. Scope every query by `user.id`, as `src/server/todos.ts` does.
+- `description` in `everyapp.config.ts` is the one line the Gateway's app library shows under the app's name; change it when the app stops being a todo list.
 
 ## Add a feature
 
@@ -29,4 +30,4 @@ A secret only this app uses (a key it calls out with, a signing secret). List it
 
 ## Deploy
 
-`pnpm run deploy` (`everyapp deploy`) in this directory: it builds, migrates, uploads, registers the app with the Gateway and prints the app's address and who can open it. Run it again for every change; app secrets stay. Never `cf deploy` or `wrangler deploy`. `pnpm everyapp status` says what is online. CI runs Anthropic's security review on every pull request (`.github/workflows/security-review.yml`) once `ANTHROPIC_API_KEY` is in the repository's secrets.
+`pnpm run deploy` (`everyapp deploy`) in this directory: it builds, migrates, uploads, registers the app with the Gateway and prints the app's address and who can open it. Run it again for every change; app secrets stay. Never `cf deploy` or `wrangler deploy`. `pnpm everyapp status` says what is online. When this app is the root of its own GitHub repository (what `everyapp create` makes outside the Every App checkout), `.github/workflows/security-review.yml` runs Anthropic's security review on every pull request once `ANTHROPIC_API_KEY` is in that repository's Actions secrets; at `apps/<name>` inside the checkout GitHub reads no workflow from this folder, and the checkout's own workflow reviews pull requests to the checkout's repository once you have a fork or remote of your own, with the same key in its secrets.

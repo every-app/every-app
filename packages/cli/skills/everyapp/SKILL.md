@@ -31,16 +31,27 @@ or auth; read the user with the SDK (identity page), and scope every query
 by user.id: the Gateway admits every member of the organization. A new app
 edits everyapp.config.ts for name, resources, public, providers,
 capabilities, secrets and email (manifest page), and the Gateway gives it
-nothing it doesn't declare there; an OAuth client with scope sets (google-workspace,
-microsoft-365, slack) is listed with scopes: [...] and held to them;
-after a schema change run pnpm run db:generate; a value
-only dev needs goes in .dev.vars, never in git (dev page).
+nothing it doesn't declare there. AI: list the provider, providers:
+["openai"] (or openrouter, workers-ai), and call it with the SDK's
+createGatewayFetch({ env, for: request }), a fetch for
+http://every-app-gateway.internal/api/ai/<provider>/... (an OpenAI client
+takes it as fetch, with http://every-app-gateway.internal/api/ai/openai/v1
+as baseURL; the other two base URLs and the code are on the identity
+page); the Gateway holds the key, never the app, and a provider the
+manifest doesn't list is refused provider_not_allowed 403. A capability
+(members, email, an OAuth client, DataForSEO) is listed under
+capabilities with access and a why and called with listMembers(),
+sendEmail() or integrationFetch() (secrets page); an OAuth client with
+scope sets (google-workspace, microsoft-365, slack) is listed with
+scopes: [...] and held to them; after a schema change run pnpm run
+db:generate; a value only dev needs goes in .dev.vars, never in git (dev
+page).
 
 Pass --json. One JSON event per line; "done" = success; exit 2 = show the
 user the last action_required (url, code), then run its data.rerun (the same
 command, unless it names another); exit 1 = show the error; if data.authorize
-is set, ask before using data.rerun. waiting: true = keep reading (up to 15
-min: device login, owner link).
+is set, ask before using data.rerun. waiting: true = keep reading (5 min
+for the device login, up to 15 for the owner link).
 
 State:   pnpm everyapp status --json   (data.fixes says what to run when something is off;
          data.apps[].setup says what each app needs set: ready, settings, unmet
@@ -160,9 +171,14 @@ Security: the Gateway signs people in and passes identity to the app in a
          public route is open to the internet and does its own checks.
          Before opening a pull request, run /security-review in Claude Code
          (Anthropic's open-source review of the branch's changes) and fix
-         what it finds; new apps also run it on every pull request from
-         .github/workflows/security-review.yml once ANTHROPIC_API_KEY is in
-         the repository's secrets. What the Gateway promises and what an app
+         what it finds; an app that is the root of its own GitHub repository
+         (what create makes outside the checkout) also runs it on every pull
+         request from .github/workflows/security-review.yml once
+         ANTHROPIC_API_KEY is in that repository's secrets; inside the
+         checkout GitHub reads no workflow from apps/<name>, and the
+         checkout's own workflow reviews pull requests to the checkout's
+         repository once you have a fork or remote of your own, with the
+         same key in its secrets. What the Gateway promises and what an app
          must do itself: docs/threat-model.md in the Every App checkout.
 
 Only a person can: approve the Cloudflare login, open the owner link, pick

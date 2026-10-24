@@ -114,7 +114,7 @@ the file applies):
    `secret list` and `email show` all need the Cloudflare login and an
    installed Gateway. Each logs in by itself: with nothing logged in it
    emits `action_required cloudflare_login` with `waiting: true` (show
-   `data.url` and `data.code`, keep reading; approved within 15 minutes,
+   `data.url` and `data.code`, keep reading; approved within 5 minutes,
    the run goes on, otherwise it ends with the error
    `CLOUDFLARE_LOGIN_FAILED`, exit 1, whose `data.rerun` is `pnpm everyapp
    login`, which also logs in ahead of time). With no Gateway, `status`
