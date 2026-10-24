@@ -1,10 +1,18 @@
 /**
  * What is deployed to a Worker, read with `cf workers deployments list`
- * (by script name), and deleting one.
+ * (by script name), the account's Workers with their Custom Domains
+ * (`cf workers list`), and deleting one.
  */
 import { isCfError } from "./errors";
-import { runCfJson, type CfRunner } from "./runner";
-import { WorkerDeploymentsOutput } from "./schemas";
+import { listAll, runCfJson, type CfRunner } from "./runner";
+import { WorkerDeploymentsOutput, WorkerListOutput, type ListedWorker } from "./schemas";
+
+const PAGE = { perPage: 100, maxPages: 50 };
+
+/** Every Worker in the account, each with the Custom Domains that reference it. */
+export function listWorkers(cf: CfRunner): Promise<ListedWorker[]> {
+  return listAll(cf, ["workers", "list"], WorkerListOutput, PAGE);
+}
 
 interface WorkerDeployment {
   /** The version serving the largest share of traffic. */
@@ -57,15 +65,25 @@ export async function getWorkerDeployment(
 
 /**
  * Delete a Worker with its versions and deployments. `--force` answers cf's
- * confirmation, decided as for `deleteD1`.
+ * confirmation, decided as for `deleteD1`. The API refuses a Worker another
+ * Worker still binds unless asked to delete it anyway (`withReferences`:
+ * `--delete-with-references`, the API's `force`): the teardown asks, since
+ * the Gateway and the apps bind each other and every one of them goes.
  */
 export async function deleteWorker(
   cf: CfRunner,
   workerName: string,
+  { withReferences = false }: { withReferences?: boolean } = {},
 ): Promise<void> {
   await cf.run({
     plane: "account",
     mode: "json",
-    args: ["workers", "delete", workerName, "--force"],
+    args: [
+      "workers",
+      "delete",
+      workerName,
+      "--force",
+      ...(withReferences ? ["--delete-with-references"] : []),
+    ],
   });
 }

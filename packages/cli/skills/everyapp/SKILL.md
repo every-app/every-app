@@ -108,6 +108,14 @@ Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.
          How to write, connect and debug them: mcp.md beside this file.
+Wipe:    pnpm everyapp teardown --account-id <id> --dry-run --json   deletes
+         EVERYTHING Every App made in one Cloudflare account (the Gateway too):
+         only on a dedicated test account the user names, never one they use.
+         Always --dry-run --json first and show the user data.plan. It needs
+         EVERYAPP_TEST_ACCOUNTS=<id> and CLOUDFLARE_API_TOKEN scoped to that
+         account in the environment, which the user sets. Without --confirm it
+         stops with TEARDOWN_CONFIRMATION_REQUIRED (authorize): never add
+         --confirm <id> unless the user explicitly asked for the deletion.
 
 Security: the Gateway signs people in and passes identity to the app in a
          header the SDK verifies (everyApp(), getEveryAppUser(),

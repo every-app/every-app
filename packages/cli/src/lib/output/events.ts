@@ -771,6 +771,14 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       event.status === "start"
         ? { spin: `Querying the ${text(event.data?.["database"])} database...` }
         : null,
+    // `teardown`: the checks, the inventory's spinner, then one ticked line per kind deleted.
+    "teardown.check": saidByMessage,
+    "teardown.inventory": (event) =>
+      event.status === "start" ? { spin: event.message ?? "" } : null,
+    // The plan, shown before a `--confirm` run at a terminal deletes it.
+    "teardown.plan": (event) =>
+      event.status === "ok" ? { done: event.message ?? "", notes: strings(event.data?.["lines"]) } : null,
+    "teardown.delete": saidByMessage,
     "db.restore": (event) => {
       if (event.status === "start") return { spin: "Restoring..." };
       if (event.status !== "ok") return null;

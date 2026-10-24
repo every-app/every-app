@@ -18,7 +18,7 @@ import type { EventSink } from "@/lib/output/events";
 const PACK_PAGE_SIZE = 50;
 const MAX_PACK_PAGES = 20;
 
-function listCertificatePacks(cf: CfRunner, zoneId: string) {
+export function listCertificatePacks(cf: CfRunner, zoneId: string) {
   return listAll(
     cf,
     ["ssl", "certificate-packs", "list", "-z", zoneId],
@@ -27,7 +27,7 @@ function listCertificatePacks(cf: CfRunner, zoneId: string) {
   );
 }
 
-type CertificatePack = Awaited<ReturnType<typeof listCertificatePacks>>[number];
+export type CertificatePack = Awaited<ReturnType<typeof listCertificatePacks>>[number];
 
 function isActive(pack: CertificatePack): boolean {
   return !pack.status || pack.status === "active";
@@ -76,7 +76,7 @@ export async function certificateStatus(
  * chosen no longer counts, so two of the hostname's packs never vouch for
  * each other's apex.
  */
-function packsToDelete(
+export function packsToDelete(
   packs: readonly CertificatePack[],
   hostname: string,
 ): CertificatePack[] {
@@ -99,6 +99,15 @@ function packsToDelete(
     chosen.push(pack);
   }
   return chosen;
+}
+
+/** Delete one pack. cf asks before deleting, and answers no itself when no one can: `--force`. */
+export async function deleteCertificatePack(cf: CfRunner, zoneId: string, packId: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["ssl", "certificate-packs", "delete", packId, "-z", zoneId, "--force"],
+  });
 }
 
 /**
@@ -124,12 +133,7 @@ export async function deleteHostCertificates({
     const packs = packsToDelete(await listCertificatePacks(cf, zoneId), hostname);
     for (const pack of packs) {
       try {
-        // cf asks before deleting, and answers no itself when no one can.
-        await cf.run({
-          plane: "account",
-          mode: "json",
-          args: ["ssl", "certificate-packs", "delete", pack.id, "-z", zoneId, "--force"],
-        });
+        await deleteCertificatePack(cf, zoneId, pack.id);
         deleted.push(pack.id);
       } catch (error) {
         if (!isCfError(error, "not_found")) throw error;

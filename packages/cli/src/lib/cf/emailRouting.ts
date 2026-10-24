@@ -94,6 +94,19 @@ export async function enableEmailRouting(
 }
 
 /**
+ * Turn the zone's Email Routing off (`cf email-routing disable`, `--force`
+ * answering cf's confirmation): Cloudflare removes the MX records it added
+ * for it. Only for a zone whose rules are all gone (the teardown).
+ */
+export async function disableEmailRouting(cf: CfRunner, zoneId: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["email-routing", "disable", "-z", zoneId, "--force"],
+  });
+}
+
+/**
  * Every routing rule in the zone (its catch-all is apart). A page that
  * brings nothing new ends the listing too, so an API that ignores the
  * page asked for can't loop.

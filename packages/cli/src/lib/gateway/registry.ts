@@ -805,6 +805,35 @@ export async function listApps(db: D1Database): Promise<
   }));
 }
 
+/** What a row names in Cloudflare, as the teardown reads every row. */
+interface AppRowNames {
+  appSlug: string;
+  hostname: string | null;
+  workerName: string | null;
+  status: string;
+}
+
+/**
+ * Every `apps` row, tombstones included (a deleted app's Worker may still
+ * exist), with the names it holds; empty when the database has no `apps`
+ * table (a Gateway D1 whose install never finished). Reads only.
+ */
+export async function listAppRows(db: D1Database): Promise<AppRowNames[]> {
+  const [tables = []] = await db.run([
+    { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'apps'" },
+  ]);
+  if (tables.length === 0) return [];
+  const [rows = []] = await db.run([
+    { sql: "SELECT app_slug, hostname, worker_name, status FROM apps ORDER BY app_slug" },
+  ]);
+  return rows.map((row) => ({
+    appSlug: String(row["app_slug"]),
+    hostname: text(row["hostname"]),
+    workerName: text(row["worker_name"]),
+    status: String(row["status"]),
+  }));
+}
+
 /**
  * Delete an app, leaving a tombstone: unrouted and unlisted, its names
  * still its organization's, with nothing of its access, tokens, tools or AI

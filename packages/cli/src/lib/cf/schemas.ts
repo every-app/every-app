@@ -18,6 +18,10 @@ export const D1MigrationsApplyOutput = z.array(
 /** `cf auth whoami`, which exits 0 and says so when logged out too. */
 export const CfWhoamiOutput = z.looseObject({
   authenticated: z.boolean(),
+  /** What cf authenticated with: "CLOUDFLARE_API_TOKEN environment variable", or "OAuth token from <file>". */
+  authSource: z.string().nullish(),
+  /** Whether Cloudflare accepted it: a bad env token reads `authenticated: true, tokenValid: false`, no accounts. */
+  tokenValid: z.boolean().nullish(),
   email: z.string().nullish(),
   accounts: z
     .array(z.looseObject({ id: z.string(), name: z.string().nullish() }))
@@ -85,6 +89,44 @@ export const WorkerDeploymentsOutput = z
     z.array(Deployment),
   ])
   .transform((value) => (Array.isArray(value) ? value : value.deployments));
+
+/**
+ * `cf workers list` (each entry; `cf workers get` prints one): the Worker
+ * and what references it, its Custom Domains among them (hostname and
+ * zone). Checked against cf@1.0.0-beta.14 on 2026-10-24.
+ */
+export const WorkerListOutput = z.array(
+  z.looseObject({
+    id: z.string().nullish(),
+    name: z.string(),
+    references: z
+      .looseObject({
+        domains: z
+          .array(
+            z.looseObject({
+              id: z.string().nullish(),
+              hostname: z.string(),
+              zone_id: z.string().nullish(),
+              zone_name: z.string().nullish(),
+            }),
+          )
+          .nullish(),
+      })
+      .nullish(),
+  }),
+);
+export type ListedWorker = z.infer<typeof WorkerListOutput>[number];
+
+/**
+ * `cf r2 buckets list`: the page's buckets under `buckets` (R2 paginates
+ * with a cursor, which cf doesn't print, so callers take one large page).
+ * Checked against cf@1.0.0-beta.14 on 2026-10-24.
+ */
+export const R2BucketListOutput = z
+  .looseObject({
+    buckets: z.array(z.looseObject({ name: z.string() })).nullish(),
+  })
+  .transform((value) => value.buckets ?? []);
 
 /** `cf workers secrets list`: names (and types), never values. */
 export const WorkerSecretListOutput = z

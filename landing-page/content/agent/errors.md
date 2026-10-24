@@ -961,6 +961,70 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 Source: `packages/cli/src/commands/db/index.ts`
 
+### TEARDOWN_ACCOUNT_FORBIDDEN
+
+`teardown --account-id <id>` names an account that can never be torn down (`FORBIDDEN_ACCOUNTS` in `packages/cli/src/lib/teardown/guards.ts`: the live account that holds openseo.so and everyapp.team). Refused before the allowlist is read and before anything is asked of Cloudflare. Headline: `Cloudflare account <id> can never be torn down`, then `It is a live account, refused by id before any allowlist is read.`; `data.accountId`.
+
+**Fix:** none offered; no rerun; not retryable. Use a dedicated test account (docs/runbooks/onboarding-loop-test-accounts.md in the checkout).
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
+
+### TEARDOWN_ACCOUNT_NOT_VISIBLE
+
+`teardown`: `cf auth whoami` under `CLOUDFLARE_API_TOKEN` doesn't list `--account-id`. Checked after the allowlist and the token's scope, before any read of the account. Headline: `CLOUDFLARE_API_TOKEN doesn't list Cloudflare account <id>`, then `It lists no accounts.` or `It lists <ids>.`; `data.accountId`, `data.accounts` (what it does list, each `{ id, name }`).
+
+**Fix:** `fix`: `use that account's token, with Account Settings: Read on it (runbook step 5)`; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkTokenScope`).
+
+### TEARDOWN_CONFIRMATION_REQUIRED
+
+`teardown` without a terminal (`--json`, a pipe, `CI` set) and without `--confirm`: the inventory was read and is in the event, and nothing was deleted. Headline: `Tearing down <id> needs its id typed at a terminal, or --confirm <id>`, then `<the plan's summary> would be deleted for good. Nothing was changed.`; `data.accountId`, `data.plan` (the inventory, as `--dry-run`'s `done.data.plan`). At a terminal the same step asks `Type <id> to delete all of this`, and anything else typed is `CANCELLED` (exit 1).
+
+**Fix:** `rerun`: this command with `--confirm <id>` (`data.authorize: true`: show the plan to the person and run it only when they asked for the deletion; there is no `--yes`); `rerunNote`: `only for a dedicated test account`. Not retryable.
+
+Source: `packages/cli/src/commands/teardown/index.ts`.
+
+### TEARDOWN_CONFIRM_MISMATCH
+
+`teardown --confirm <x>` where `<x>` (trimmed, lowercased) isn't `--account-id`. Refused before `cf auth whoami`, so before any read. Headline: `--confirm <x> isn't the account id`, then `It must repeat --account-id <id> exactly. Nothing was read or changed.`; `data.accountId`, `data.confirm`.
+
+**Fix:** `fix`: `pass --confirm <id>`; no rerun; not retryable.
+
+Source: `packages/cli/src/commands/teardown/index.ts`.
+
+### TEARDOWN_INVALID_ACCOUNT_ID
+
+`teardown --account-id <x>` where `<x>` (trimmed) isn't 32 hex characters: no allowlist could hold it, so the refusal doesn't send anyone to the allowlist. Checked first, before the forbidden list. Headline: `"<x>" isn't a Cloudflare account id`, then `An account id is 32 hex characters (Compute (Workers) → Overview, or any dashboard URL dash.cloudflare.com/<account id>/...).`; `data.accountId`.
+
+**Fix:** `fix`: `pass the test account's id from the dashboard as --account-id`; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
+
+### TEARDOWN_NEEDS_TOKEN
+
+`teardown` with no `CLOUDFLARE_API_TOKEN` in the environment, or when `cf auth whoami` says it authenticated with something else (`authSource` not the environment token: a `cf auth login` session is a person, who sees every account they belong to), so the command runs only under a token scoped to the test account. The first is checked after the allowlist, before `cf auth whoami`; the second right after whoami, before any read of the account. Headline: `teardown needs CLOUDFLARE_API_TOKEN`, or `teardown needs CLOUDFLARE_API_TOKEN, but cf authenticated with <authSource>`, then `A Cloudflare login is a person, who sees every account they belong to; teardown runs only with an API token scoped to the test account (runbook step 5).`; `data.accountId`, and `data.authSource` in the second case. A token Cloudflare rejects (`tokenValid: false`, no accounts) is `CLOUDFLARE_TOKEN_REJECTED` instead.
+
+**Fix:** `fix`: `set CLOUDFLARE_API_TOKEN to the test account's token for this one command, and run it again`; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
+
+### TEARDOWN_NOT_ALLOWLISTED
+
+`teardown --account-id <id>` where `<id>` isn't on the allowlist of dedicated test accounts: `EVERYAPP_TEST_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/test-accounts` (`$XDG_CONFIG_HOME/everyapp/test-accounts` when set; one id per line, `#` starts a comment), read together. Checked before the token and before any read. Headline: `Cloudflare account <id> isn't on the teardown allowlist`, then `teardown deletes everything Every App made in an account, so it runs only against accounts listed as dedicated test accounts.`; `data.accountId`, `data.file`.
+
+**Fix:** `fix`: `only for a dedicated test account that holds nothing else (docs/runbooks/onboarding-loop-test-accounts.md): set EVERYAPP_TEST_ACCOUNTS=<id> for this one command, or add a line <id> to <file>`; no rerun; not retryable. Never add an account to the list on the person's behalf.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`, `readAllowlist`).
+
+### TEARDOWN_TOKEN_TOO_BROAD
+
+`teardown`: `cf auth whoami` under `CLOUDFLARE_API_TOKEN` lists an account that isn't on the allowlist, or a forbidden one, so there would be a path from this run to a live account. Checked before any read of the account. Headline: `CLOUDFLARE_API_TOKEN sees <n> account(s) that isn't a test account|aren't test accounts: <name (id), …>`, then `A teardown token must be scoped to the test account alone (Account Resources → Include → that account), so there is no path from here to a live account.`; `data.accountId`, `data.accounts` (the accounts outside the list).
+
+**Fix:** `fix`: `mint a token for the test account only (runbook step 5)`; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkTokenScope`).
+
 ### TIER_POLICY
 
 `deploy` (self-host), after the registration and before the `app.register` step is reported (a `--json` run shows no `app.register` step before this error): `manifestTierProblems(manifest, plan.app.tier)` returned problems. Message: `<app> can't be deployed as configured` followed by one problem per line. For tier `service_binding` (the tier the CLI registers every app on) there are never any; for tier `dispatch` the problems are `resources.hyperdrive: Hyperdrive isn't available to apps in a dispatch namespace (an account holds at most 25 configs)`, `resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet`, `email.inbound: apps in a dispatch namespace don't receive mail` and `secrets: third-party apps can't have secrets of their own yet`; any other tier is `apps on tier "<tier>" can't be deployed`.
@@ -1772,6 +1836,24 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`
 `deploy`, step `app.schema`: the drift check (`SCHEMA_CHECK_FAILED` above) couldn't run: `Can't check the schema against the migrations: drizzle-kit isn't installed` (`data.fix`: `add drizzle-kit to devDependencies`); `… : no drizzle.config.ts` (with the detail `An app that writes its SQL by hand sets migrations.engine to "d1-sql".`); or, when `migrations.config` names the file, `… : no <value> (migrations.config)`, where `<value>` is `migrations.config`'s value.
 
 Source: `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
+
+### TEARDOWN_ALLOWLIST_IGNORED
+
+`teardown`, while reading the allowlist: an entry of `EVERYAPP_TEST_ACCOUNTS` or `~/.config/everyapp/test-accounts` isn't 32 hex characters and was ignored. `Ignored <n> entry|entries of the teardown allowlist that isn't|aren't account ids: <entries>` / `An account id is 32 hex characters (EVERYAPP_TEST_ACCOUNTS, <file>).`; `data.ignored`, `data.file`. The run goes on with the ids that parsed.
+
+Source: `packages/cli/src/lib/teardown/guards.ts`
+
+### TEARDOWN_DELETE_FAILED
+
+`teardown`, step `teardown.delete`: one resource couldn't be deleted (Cloudflare refused: an R2 bucket with objects in it, say), or the DNS records at a published name couldn't be read. `Couldn't delete the <kind "name">` / `<Cloudflare's reason>` (`data.kind`, `data.described`, `data.reason`, `data.fix`: `delete it in the Cloudflare dashboard (<place>)`), or `Couldn't read the DNS records at <name>` / `<reason>` (`data.kind: "dns"`, `data.name`, `data.fix`). The resource is listed under `done.data.kept` with its place in the dashboard; the other kinds are still deleted, and a run after the cause is fixed removes it.
+
+Source: `packages/cli/src/lib/teardown/delete.ts`
+
+### TEARDOWN_READ_FAILED
+
+`teardown`, step `teardown.inventory`: one kind of resource couldn't be listed (a permission the token lacks, say). `Couldn't list <what>; whatever is there is kept` / `<reason>`; `data.what`, `data.reason`, `data.fix`: `check the token's permissions (runbook step 5), then run again`. The kind is reported kept; the inventory, the confirmation and the other kinds go on.
+
+Source: `packages/cli/src/lib/teardown/inventory.ts`
 
 ### TOOLS_CATALOG
 

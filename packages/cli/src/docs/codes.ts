@@ -90,6 +90,18 @@ export function codeInventory(): CodeInventory {
   }
   const warnings = new Map<string, Set<string>>();
   collect(files, /type: "warning",\s*code: "([A-Z][A-Z_0-9]+)"/g, warnings, SRC);
+  // Codes an enum names and a command raises or says through it
+  // (`TeardownCode` in lib/teardown/guards.ts): a member whose comment starts
+  // with "Warning:" is a warning, the rest are raised as errors.
+  const teardown = readFileSync(path.join(SRC, "lib", "teardown", "guards.ts"), "utf8");
+  for (const member of teardown.matchAll(
+    /\/\*\* (Warning: )?[^*]*\*\/\s*\n\s*[A-Za-z]+ = "([A-Z][A-Z_0-9]+)"/g,
+  )) {
+    const into = member[1] ? warnings : errors;
+    const sites = into.get(member[2]!) ?? new Set<string>();
+    sites.add("lib/teardown/guards.ts");
+    into.set(member[2]!, sites);
+  }
   const hostedApi = new Map<string, Set<string>>();
   const gateway = sourceFiles(GATEWAY_DEPLOY);
   collect(

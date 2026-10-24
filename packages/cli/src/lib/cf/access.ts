@@ -177,6 +177,25 @@ export function createAccessPolicy(
   ));
 }
 
+/**
+ * Delete a reusable policy; `--force` answers cf's confirmation. False when
+ * it was gone already. Access refuses while an application still uses it,
+ * so callers delete the applications first.
+ */
+export async function deleteAccessPolicy(cf: CfRunner, id: string): Promise<boolean> {
+  try {
+    await cf.run({
+      plane: "account",
+      mode: "json",
+      args: ["zero-trust", "access", "policies", "delete", id, "--force"],
+    });
+    return true;
+  } catch (error) {
+    if (isCfError(error, "not_found")) return false;
+    throw explainAccessError(error);
+  }
+}
+
 /** What the API reports on a policy but won't take back on PUT. */
 const POLICY_READ_ONLY_FIELDS = new Set(["id", "uid", "created_at", "updated_at", "app_count", "reusable"]);
 

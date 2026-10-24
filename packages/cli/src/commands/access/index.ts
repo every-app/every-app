@@ -88,8 +88,9 @@ import type { GatewayCommandFlags } from "../flags";
 
 /** The reusable policy `on` keeps: who may use Every App. */
 export const POLICY_NAME = "Every App gateway members";
-const GATEWAY_APPLICATION_NAME = "Every App gateway";
-const APPS_APPLICATION_NAME = "Every App apps";
+/** The two applications' names (`teardown` finds them by these too, with no Gateway left to say what they cover). */
+export const GATEWAY_APPLICATION_NAME = "Every App gateway";
+export const APPS_APPLICATION_NAME = "Every App apps";
 /** The most Access allows for an application's session: a PIN a month, not a day. */
 const DEFAULT_SESSION = "720h";
 /** Access's default for a team's global session, when unset. */

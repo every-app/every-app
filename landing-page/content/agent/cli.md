@@ -37,22 +37,23 @@ USAGE
   pnpm everyapp <command> [flags]
 
 BUILD AN APP
-  create   Create a new app from the starter template
-  dev      Run the app locally behind a dev Gateway
-  deploy   Deploy the app in this directory
-  release  Pack the app in this directory as a release others can install
-  db       Migrate, query and restore an app's D1 database
+  create    Create a new app from the starter template
+  dev       Run the app locally behind a dev Gateway
+  deploy    Deploy the app in this directory
+  release   Pack the app in this directory as a release others can install
+  db        Migrate, query and restore an app's D1 database
 
 RUN A GATEWAY
-  login    Log in to Cloudflare
-  setup    Install or repair the Gateway
-  update   Update the Gateway to this checkout (after git pull)
-  install  Install an app someone published, from GitHub or a release file
-  status   Show the Gateway, its apps and anything to fix
-  delete   Remove an app from the Gateway
-  access   Put Cloudflare Access in front of the Gateway and its apps, or take it off
-  secret   Set, remove and list secrets and Gateway settings
-  email    Manage the addresses an app sends as and receives at
+  login     Log in to Cloudflare
+  setup     Install or repair the Gateway
+  update    Update the Gateway to this checkout (after git pull)
+  install   Install an app someone published, from GitHub or a release file
+  status    Show the Gateway, its apps and anything to fix
+  delete    Remove an app from the Gateway
+  access    Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  secret    Set, remove and list secrets and Gateway settings
+  email     Manage the addresses an app sends as and receives at
+  teardown  Delete everything Every App created in a dedicated test Cloudflare account
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -471,6 +472,56 @@ FLAGS
 
 ARGUMENTS
   [app]  The app (default: the one in this directory)
+```
+
+### `everyapp teardown`
+
+Delete everything Every App created in a dedicated test Cloudflare account.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--account-id` | `<id>` | yes |  | The dedicated test account to empty (required; never read from CLOUDFLARE_ACCOUNT_ID) |
+| `--confirm` | `<id>` | no |  | The same account id again, for a run without a terminal (--json, a script); at a terminal it is typed instead |
+| `--dry-run` | switch | no |  | List what would be deleted and stop; nothing is written |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp teardown (--account-id id) [--confirm id] [--dry-run] [--json] [--verbose]
+  pnpm everyapp teardown --help
+
+For the accounts the onboarding loop installs into, over and over: removes every Worker,
+Workflow, D1 database, KV namespace, R2 bucket and Hyperdrive config named every-*, the
+Gateway's own included, the two Cloudflare Access applications and the allow policy, the
+Email Routing rules that send mail to those Workers (a catch-all drops mail again, and
+routing is turned off once no rule and no catch-all of anyone else's needs it), the
+certificate packs of the hostnames the Gateway published, and the Custom Domain records
+(A, AAAA, CNAME) left at exactly those names. Never the zone, the Workers Paid subscription,
+the workers.dev subdomain, the Zero Trust team and its identity providers, any other DNS
+record (MX, TXT, CAA...) even at those names, R2 buckets outside the default jurisdiction,
+or anything whose name doesn't start with every- and that no app recorded.
+
+It is destructive and exists for dedicated test accounts only. The account must be on the
+allowlist (EVERYAPP_TEST_ACCOUNTS, or one id per line in ~/.config/everyapp/test-accounts),
+the run needs CLOUDFLARE_API_TOKEN scoped to that account alone (a token that sees any other
+account is refused), and one account is refused by id whatever the lists say. It reads
+everything first and shows what it found; then the account id is typed at the terminal, or
+passed again with --confirm for a run without one. There is no --yes.
+
+Examples:
+  EVERYAPP_TEST_ACCOUNTS=<id> everyapp teardown --account-id <id> --dry-run
+  EVERYAPP_TEST_ACCOUNTS=<id> everyapp teardown --account-id <id>
+  EVERYAPP_TEST_ACCOUNTS=<id> everyapp teardown --account-id <id> --confirm <id> --json
+
+FLAGS
+      --account-id             The dedicated test account to empty (required; never read from CLOUDFLARE_ACCOUNT_ID)
+     [--confirm]               The same account id again, for a run without a terminal (--json, a script); at a terminal it is typed instead
+     [--dry-run/--no-dry-run]  List what would be deleted and stop; nothing is written
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp login`

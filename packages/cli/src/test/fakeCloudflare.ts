@@ -12,7 +12,8 @@
  * API does (it never returns one). Each zone has Email Routing: its
  * settings, rules and catch-all (`emailRouting`), enabled on a domain by
  * adding Cloudflare's MX records there, with rules that may send mail only
- * to a Worker that exists. `api.fetch` is the account's REST API, for the hosted
+ * to a Worker that exists. R2 buckets exist by name, each with a count of
+ * objects (a bucket with any is refused on delete, as R2 does). `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
  * or sent.
@@ -58,12 +59,16 @@ interface FakeDnsRecord {
   name: string;
   type: string;
   content: string;
+  /** Given when first listed, so a delete finds the record. */
+  id?: string;
 }
 
 interface FakeCertificatePack {
   id: string;
   zoneId: string;
   hosts: string[];
+  /** "advanced" (a Custom Domain's) unless a test adds the zone's Universal SSL pack. */
+  type?: string;
 }
 
 interface FakeWorkflow {
@@ -260,6 +265,8 @@ export class FakeCloudflare {
   readonly workflows = new Map<string, FakeWorkflow>();
   /** Hyperdrive configs by id. */
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
+  /** R2 buckets by name, each with how many objects it holds. */
+  readonly buckets = new Map<string, { objects: number }>();
   readonly deploys: RecordedDeploy[] = [];
   /** `cf d1 time-travel restore`s, in order (the data isn't rewound). */
   readonly restores: Array<{ databaseId: string; bookmark: string }> = [];
@@ -357,15 +364,25 @@ export class FakeCloudflare {
                 record.zoneId === flag(call.args, "-z") &&
                 record.name === flag(call.args, "--name-exact"),
             )
-            .map((record, index) => ({ id: `record-${index}`, ...record })),
+            .map((record) => ({ ...record, id: (record.id ??= `record-${(this.counter += 1)}`) })),
         ),
       }))
+      .on(["dns", "records", "delete"], (call) => {
+        const declined = unconfirmed(call, "This permanently deletes the DNS record.");
+        if (declined) return declined;
+        const index = this.dnsRecords.findIndex(
+          (record) => record.id === call.args[3] && record.zoneId === flag(call.args, "-z"),
+        );
+        if (index < 0) return cfError("Record does not exist. [code: 81044]");
+        this.dnsRecords.splice(index, 1);
+        return { stdout: JSON.stringify({ id: call.args[3] }) };
+      })
       .on(["ssl", "certificate-packs", "list"], (call) => ({
         stdout: JSON.stringify(
           flag(call.args, "--page") === "1"
             ? this.certificatePacks
                 .filter((pack) => pack.zoneId === flag(call.args, "-z"))
-                .map(({ id, hosts }) => ({ id, type: "advanced", hosts, status: "active" }))
+                .map(({ id, hosts, type }) => ({ id, type: type ?? "advanced", hosts, status: "active" }))
             : [],
         ),
       }))
@@ -433,6 +450,33 @@ export class FakeCloudflare {
         this.namespaces.delete(call.args[3]!);
         return { stdout: "{}" };
       })
+      // As `/workers/workers` lists them: each with what references it, its Custom Domains among them.
+      .on(["workers", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? [...this.workers.keys()].map((name) => ({
+                id: `worker-${name}`,
+                name,
+                tags: [],
+                created_on: "2026-10-12T00:00:00Z",
+                references: {
+                  workers: this.workersBinding(name).map((worker) => ({ id: `worker-${worker}`, name: worker })),
+                  domains: [...this.customDomains]
+                    .filter(([, worker]) => worker === name)
+                    .map(([hostname]) => {
+                      const zone = this.zoneOf(hostname);
+                      return {
+                        id: `domain-${hostname}`,
+                        hostname,
+                        zone_id: zone?.id ?? null,
+                        zone_name: zone?.name ?? null,
+                      };
+                    }),
+                },
+              }))
+            : [],
+        ),
+      }))
       .on(["workers", "deployments", "list"], (call) => {
         const worker = this.workers.get(flag(call.args, "--worker")!);
         if (!worker) {
@@ -517,7 +561,23 @@ export class FakeCloudflare {
       .on(["workers", "delete"], (call) => {
         const declined = unconfirmed(call, "This will permanently delete the Worker and its associated versions and deployments.");
         if (declined) return declined;
-        this.workers.delete(call.args[2]!);
+        const name = call.args[2]!;
+        if (!this.workers.has(name)) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        // As the API: a Worker another Worker binds (a service binding or
+        // one of its Durable Objects) stays unless `--delete-with-references`.
+        const referencedBy = this.workersBinding(name);
+        if (referencedBy.length > 0 && !call.args.includes("--delete-with-references")) {
+          return cfError(
+            `Worker "${name}" is referenced by ${referencedBy.map((worker) => `"${worker}"`).join(", ")}; pass --delete-with-references to delete it anyway. [code: 10118]`,
+          );
+        }
+        this.workers.delete(name);
+        // Its Custom Domains go with it (their certificate packs stay).
+        for (const [host, worker] of [...this.customDomains]) {
+          if (worker === name) this.customDomains.delete(host);
+        }
         return { stdout: "{}" };
       })
       .on(["workflows", "get"], (call) => {
@@ -559,6 +619,7 @@ export class FakeCloudflare {
       })
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
+      .on(["r2", "buckets"], (call) => this.r2Command(call))
       .on(["email-routing"], (call) => this.emailRoutingCommand(call))
       .on(["zero-trust"], (call) => this.zeroTrustCommand(call))
       .on(["build"], (call) => this.build(call))
@@ -762,6 +823,21 @@ export class FakeCloudflare {
         zt.policies.set(policy["id"] as string, updated);
         return { stdout: JSON.stringify(updated) };
       }
+      if (third === "delete") {
+        const declined = unconfirmed(call, "This permanently deletes the Access policy.");
+        if (declined) return declined;
+        const policy = zt.policies.get(fourth ?? "");
+        if (!policy) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `policies/${fourth}`);
+        // Like the API: a reusable policy an application still uses can't go.
+        const users = [...zt.applications.values()].filter((application) =>
+          (application["policies"] as string[]).includes(policy["id"] as string),
+        );
+        if (users.length > 0) {
+          return accessApiError(12060, "access.api.error.policy_in_use", "400 Bad Request", `policies/${fourth}`);
+        }
+        zt.policies.delete(policy["id"] as string);
+        return { stdout: JSON.stringify({ id: fourth }) };
+      }
     }
 
     if (group === "access" && second === "applications") {
@@ -913,6 +989,24 @@ export class FakeCloudflare {
       }
       return { stdout: JSON.stringify(settings()) };
     }
+    if (group === "disable") {
+      const declined = unconfirmed(call, "This disables Email Routing for the zone.");
+      if (declined) return declined;
+      routing.enabled = false;
+      // Cloudflare removes the MX records it added for the apex.
+      for (let index = this.dnsRecords.length - 1; index >= 0; index -= 1) {
+        const record = this.dnsRecords[index]!;
+        if (
+          record.zoneId === zone.id &&
+          record.name === zone.name &&
+          record.type === "MX" &&
+          EMAIL_ROUTING_MX.includes(record.content)
+        ) {
+          this.dnsRecords.splice(index, 1);
+        }
+      }
+      return { stdout: JSON.stringify(settings()) };
+    }
     if (group !== "rules") return cfError(`unknown command email-routing ${group}`);
     if (action === "catch-all") {
       if (call.args[3] === "get") return { stdout: JSON.stringify(routing.catchAll) };
@@ -965,6 +1059,60 @@ export class FakeCloudflare {
       return { stdout: JSON.stringify(rule) };
     }
     return cfError(`unknown command email-routing rules ${action}`);
+  }
+
+  /** The other Workers whose live config binds `name` (a service binding or a Durable Object of its). */
+  private workersBinding(name: string): string[] {
+    return [...this.workers]
+      .filter(
+        ([other, worker]) =>
+          other !== name &&
+          Object.values(worker.config["env"] ?? {}).some(
+            (binding: any) => ["worker", "durable-object"].includes(binding?.type) && binding.worker === name,
+          ),
+      )
+      .map(([other]) => other)
+      .sort();
+  }
+
+  /** The zone that holds `host`, the longest match, as Cloudflare resolves a Custom Domain. */
+  private zoneOf(host: string): FakeZone | undefined {
+    return [...this.zones]
+      .sort((a, b) => b.name.length - a.name.length)
+      .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
+  }
+
+  /**
+   * `cf r2 buckets list|delete`, as cf 1.0.0-beta.14 prints them: a list is
+   * `{ buckets: [{ name, creation_date }] }` (filtered by `--name-contains`),
+   * and a delete refuses a bucket with objects in it.
+   */
+  private r2Command(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2];
+    if (action === "list") {
+      const contains = flag(call.args, "--name-contains") ?? "";
+      return {
+        stdout: JSON.stringify({
+          buckets: [...this.buckets.keys()]
+            .filter((name) => name.includes(contains))
+            .sort()
+            .map((name) => ({ name, creation_date: "2026-10-12T00:00:00.000Z" })),
+        }),
+      };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the R2 bucket.");
+      if (declined) return declined;
+      const name = call.args[3]!;
+      const bucket = this.buckets.get(name);
+      if (!bucket) return cfError("The specified bucket does not exist. [code: 10006]");
+      if (bucket.objects > 0) {
+        return cfError("The bucket you tried to delete is not empty. [code: 10008]");
+      }
+      this.buckets.delete(name);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command r2 buckets ${action}`);
   }
 
   /**

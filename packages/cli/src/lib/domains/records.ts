@@ -1,7 +1,7 @@
 /**
  * DNS records in a Cloudflare zone, read through the Cloudflare API
  * (`cf dns records list`): those at a name, and the wildcard that answers
- * a name with no records of its own.
+ * a name with no records of its own; and deleting one (the teardown).
  */
 import { runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { DnsRecordListOutput } from "@/lib/cf/schemas";
@@ -26,6 +26,19 @@ export function dnsRecordsAt(cf: CfRunner, zoneId: string, name: string) {
     },
     DnsRecordListOutput,
   );
+}
+
+/**
+ * Delete one record (`cf dns records delete`, `--force` answering cf's
+ * confirmation). Only the teardown does: everyapp otherwise leaves a
+ * zone's records alone, Custom Domains' own going with their Worker.
+ */
+export async function deleteDnsRecord(cf: CfRunner, zoneId: string, recordId: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["dns", "records", "delete", recordId, "-z", zoneId, "--force"],
+  });
 }
 
 /**

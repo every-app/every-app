@@ -120,6 +120,24 @@ export async function readResourcesOfKind(
 }
 
 /**
+ * Every app's records, of every kind, with the Worker of the app that made
+ * each; empty when the table was never created. Reads only (no CREATE
+ * TABLE): the teardown's inventory, which must write nothing.
+ */
+export async function readAllRecordedResources(
+  db: D1Database,
+): Promise<Array<OwnedResource & { workerName: string }>> {
+  const [tables = []] = await db.run([
+    { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_everyapp_app_resources'" },
+  ]);
+  if (tables.length === 0) return [];
+  const [rows = []] = await db.run([
+    { sql: "SELECT worker_name, kind, binding, name, resource_id FROM _everyapp_app_resources ORDER BY worker_name, kind, binding" },
+  ]);
+  return rows.map((row) => ({ workerName: String(row["worker_name"]), ...toOwnedResource(row) }));
+}
+
+/**
  * The version a deploy just uploaded, recorded at once: the next unattended
  * deploy replaces only a version everyapp recorded (lib/cf/deploy.ts), even
  * when this run stops before the registry records it.

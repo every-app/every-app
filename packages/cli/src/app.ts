@@ -29,6 +29,7 @@ import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
 import { statusCommand } from "./commands/status/command";
+import { teardownCommand } from "./commands/teardown/command";
 import { updateCommand } from "./commands/update/command";
 import { errorMessage } from "./lib/errors";
 import { CLI } from "./lib/output/command";
@@ -40,6 +41,7 @@ const routes = buildRouteMap({
     deploy: deployCommand,
     release: releaseCommand,
     db: dbRoutes,
+    teardown: teardownCommand,
     login: loginCommand,
     setup: setupCommand,
     update: updateCommand,
@@ -84,7 +86,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
   [
     "RUN A GATEWAY",
-    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "email"],
+    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "email", "teardown"],
   ],
 ];
 
