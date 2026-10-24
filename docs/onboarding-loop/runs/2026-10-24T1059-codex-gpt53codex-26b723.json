@@ -1,0 +1,257 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+  "retryOf": null,
+  "startedAt": "2026-10-24T10:59:57.760Z",
+  "durationS": 285,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "codex",
+    "version": "0.163.0",
+    "model": {
+      "requested": "gpt-5.3-codex",
+      "resolved": "gpt-5.3-codex"
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "full",
+    "exitCodes": true,
+    "cost": "tokens_x_list",
+    "resume": "native"
+  },
+  "cliCommit": "f2a1000de452",
+  "checkoutCommit": "f2a1000de452",
+  "promptVariant": "checkout-present",
+  "promptSha": "e4216a2423a5",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T11:30:57.374Z",
+      "durationS": 50
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T11:31:00.166Z",
+      "durationS": 40
+    },
+    {
+      "name": "setup.owner",
+      "startedAt": "2026-10-24T11:31:41.462Z",
+      "durationS": 6
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T11:31:52.635Z",
+      "durationS": 11
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T11:32:06.604Z",
+      "durationS": 80
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-24T10:59:57.762Z",
+      "durationS": 1799
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T11:30:00.926Z",
+      "durationS": 23
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T11:30:34.718Z",
+      "durationS": 174
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T11:33:32.561Z",
+      "durationS": 23
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T11:33:57.659Z",
+      "durationS": 44
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 50174,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 11360,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 79868,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 1,
+      "linkSurfacedToPerson": true
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "domain_question": "not reached",
+      "create_app": "not reached"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "turn_end_without_done",
+      "expected": false
+    }
+  ],
+  "interventions": [
+    {
+      "source": "loop",
+      "kind": "nudge"
+    }
+  ],
+  "interventionNeeded": true,
+  "hesitations": [
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "Great — I’ll start in `/work/every-app`, install deps, then pause to ask your domain before running setup.",
+      "triage": "unknown"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass-with-intervention",
+    "reasonCode": "nudge",
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": null,
+    "source": "tokens_x_list",
+    "tokens": {
+      "input": 1251541,
+      "output": 1822,
+      "cacheRead": 1182214,
+      "cacheWrite": 48365
+    },
+    "model": "gpt-5.3-codex"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 48,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

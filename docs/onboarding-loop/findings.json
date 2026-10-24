@@ -12,9 +12,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T10:20-script-none-c58fad",
-        "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
-        "at": "2026-10-24T10:25:25.490Z"
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
       },
       "occurrences": [
         {
@@ -22,6 +22,27 @@
           "harness": "script",
           "model": null,
           "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+          "harness": "codex",
+          "model": "gpt-5.3-codex",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
           "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
         }
       ],
@@ -40,9 +61,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T10:20-script-none-c58fad",
-        "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
-        "at": "2026-10-24T10:25:25.490Z"
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
       },
       "occurrences": [
         {
@@ -50,6 +71,27 @@
           "harness": "script",
           "model": null,
           "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+          "harness": "codex",
+          "model": "gpt-5.3-codex",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
           "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
         }
       ],
@@ -68,9 +110,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T10:20-script-none-c58fad",
-        "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
-        "at": "2026-10-24T10:25:25.490Z"
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
       },
       "occurrences": [
         {
@@ -78,6 +120,27 @@
           "harness": "script",
           "model": null,
           "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+          "harness": "codex",
+          "model": "gpt-5.3-codex",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
           "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
         }
       ],
@@ -96,9 +159,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T10:20-script-none-c58fad",
-        "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
-        "at": "2026-10-24T10:25:25.490Z"
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
       },
       "occurrences": [
         {
@@ -107,10 +170,185 @@
           "model": null,
           "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
           "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+          "harness": "codex",
+          "model": "gpt-5.3-codex",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
         }
       ],
       "excerpt": "status from a fresh clone of the same commit calls the Gateway outdated: an app created inside the checkout rewrites pnpm-lock.yaml, which the Gateway's tree hash covers",
       "proposedFix": "give an app created inside the checkout its own workspace (as one outside it has), or hash only the Gateway's lockfile importers",
+      "link": null
+    },
+    {
+      "id": "dc3f6c63d0e076285bcef3acca81da249c0945bb",
+      "area": "prompt",
+      "key": "ended_turn_without_done|-|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+        "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+        "at": "2026-10-24T10:59:56.905Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        }
+      ],
+      "excerpt": "Install done. Which domain should I use? (Setup will run at `apps.<your domain>`.)",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "40c60687b8b52ac6a81bd70770de4afe542f250a",
+      "area": "prompt",
+      "key": "asked_user|-|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+        "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+        "at": "2026-10-24T10:59:56.905Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        }
+      ],
+      "excerpt": "Which domain should I use?",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "ef4f21fc3656a3587af59799f9c34e854ec91482",
+      "area": "loop",
+      "key": "ended_turn_without_done|-|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+        "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+        "at": "2026-10-24T11:34:41.746Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+        "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+        "at": "2026-10-24T11:34:41.746Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
+          "harness": "codex",
+          "model": "gpt-5.3-codex",
+          "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        }
+      ],
+      "excerpt": "Great — I’ll start in `/work/every-app`, install deps, then pause to ask your domain before running setup.",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "0bf9f51b5a8f9616e3813fc86deb75dd4b272174",
+      "area": "prompt",
+      "key": "ended_turn_without_done|setup --domain apps.<zone> --json > /tmp/setup.log 2>&1; echo EXIT $? >> /tmp/setup.log|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        }
+      ],
+      "excerpt": "The Gateway is live. **Your turn:** open this link to create the owner account. It works once and expires in 24 hours, so treat it like a password: <url>",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "5e1bd8e789e04a9647ed5361b24783078a86cece",
+      "area": "prompt",
+      "key": "asked_user|setup --domain apps.<zone> --json > /tmp/setup.log 2>&1; echo EXIT $? >> /tmp/setup.log|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+        "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+        "at": "2026-10-24T13:35:10.388Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T13:03-claude-opus55-bfc389",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "a775e3d5c33188e419066c4312a51bf2f54d85a1",
+          "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        }
+      ],
+      "excerpt": "waiting for you",
+      "proposedFix": null,
       "link": null
     }
   ]
