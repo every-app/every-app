@@ -325,6 +325,11 @@ describe("the manifest fields the documents name", () => {
     return parts.join(".");
   };
 
+  it("are read from the schema (an empty walk would know no field and pass)", () => {
+    expect(fields.paths).toEqual(expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "secrets[].anyOf"]));
+    expect(fields.paths.length).toBeGreaterThanOrEqual(70);
+  });
+
   it("are fields of everyapp.config.ts", () => {
     const unknown: string[] = [];
     for (const file of MANIFEST_PAGES) {

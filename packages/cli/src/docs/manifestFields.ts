@@ -5,7 +5,7 @@
  * `resources.durableObjects[].className`, `capabilities.<id>.access`,
  * `migrations.engine` and its `drizzle`, `d1-sql`, `prisma`.
  *
- * The perimeter's schema is zod 3 (`_def.typeName`), walked structurally so
+ * The perimeter's schema is zod 4 (`_zod.def.type`), walked structurally so
  * this file needs no zod import of its own.
  */
 import {
@@ -14,7 +14,7 @@ import {
 } from "@every-app/perimeter/manifest";
 
 interface ZodNode {
-  _def: { typeName: string } & Record<string, unknown>;
+  _zod: { def: { type: string } & Record<string, unknown> };
 }
 
 interface ManifestFields {
@@ -22,58 +22,72 @@ interface ManifestFields {
   values: string[];
 }
 
-function shapeOf(node: ZodNode): Record<string, ZodNode> {
-  const shape = node._def["shape"];
-  return (typeof shape === "function" ? shape() : shape) as Record<string, ZodNode>;
-}
-
 function walk(node: ZodNode, at: string, out: ManifestFields): void {
-  const def = node._def;
-  switch (def.typeName) {
-    case "ZodOptional":
-    case "ZodNullable":
-    case "ZodDefault":
-    case "ZodCatch":
-    case "ZodReadonly":
+  const def = node._zod.def;
+  switch (def.type) {
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+    case "catch":
+    case "readonly":
+    case "nonoptional":
       walk(def["innerType"] as ZodNode, at, out);
       return;
-    case "ZodBranded":
-      walk(def["type"] as ZodNode, at, out);
-      return;
-    case "ZodEffects":
-      walk(def["schema"] as ZodNode, at, out);
-      return;
-    case "ZodPipeline":
+    // `.transform()` and `.pipe()`: the input side is what an author writes.
+    case "pipe":
       walk(def["in"] as ZodNode, at, out);
       return;
-    case "ZodLazy":
+    case "lazy":
       walk((def["getter"] as () => ZodNode)(), at, out);
       return;
-    case "ZodObject":
-      for (const [key, child] of Object.entries(shapeOf(node))) {
+    case "object":
+      for (const [key, child] of Object.entries(
+        def["shape"] as Record<string, ZodNode>,
+      )) {
         const here = at ? `${at}.${key}` : key;
         out.paths.push(here);
         walk(child, here, out);
       }
       return;
-    case "ZodArray":
-      walk(def["type"] as ZodNode, `${at}[]`, out);
+    case "array":
+      walk(def["element"] as ZodNode, `${at}[]`, out);
       return;
-    case "ZodRecord":
+    case "record":
       walk(def["valueType"] as ZodNode, `${at}.<id>`, out);
       return;
-    case "ZodUnion":
-    case "ZodDiscriminatedUnion":
+    case "union":
       for (const option of def["options"] as ZodNode[]) walk(option, at, out);
       return;
-    case "ZodEnum":
-      out.values.push(...(def["values"] as string[]));
+    case "enum":
+      for (const value of Object.values(
+        def["entries"] as Record<string, unknown>,
+      )) {
+        if (typeof value === "string") out.values.push(value);
+      }
       return;
-    case "ZodLiteral":
-      if (typeof def["value"] === "string") out.values.push(def["value"]);
+    case "literal":
+      for (const value of def["values"] as unknown[]) {
+        if (typeof value === "string") out.values.push(value);
+      }
+      return;
+    // The leaves the manifest has today. Anything else throws rather than
+    // reads as "no fields here": a walk that quietly returns nothing lets
+    // "documents every field" pass with nothing to document, which is how
+    // the zod 3 to 4 move went unseen until the built CLI failed.
+    case "string":
+    case "number":
+    case "boolean":
+    case "undefined":
+    case "null":
+    case "never":
+    case "unknown":
+    case "any":
       return;
     default:
-      return;
+      throw new Error(
+        `manifestFields: unhandled zod def type "${def.type}" at ${at || "(root)"}`,
+      );
   }
 }
 

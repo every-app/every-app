@@ -486,12 +486,12 @@ describe("capabilities manifest field", () => {
     [
       "the retired `as` key",
       { dataforseo: { as: "org", access: "read" } },
-      /Unrecognized key\(s\) in object: 'as'/,
+      /Unrecognized key: "as"/,
     ],
     [
       "the retired `background` key",
       { dataforseo: { access: "read", background: true } },
-      /Unrecognized key\(s\) in object: 'background'/,
+      /Unrecognized key: "background"/,
     ],
     ["an empty why", { dataforseo: { access: "read", why: "" } }, /why/],
     [
@@ -507,7 +507,7 @@ describe("capabilities manifest field", () => {
     [
       "senders on members",
       { members: { access: "read", senders: ["*@mail.example.com"] } },
-      /Unrecognized key\(s\) in object: 'senders'/,
+      /Unrecognized key: "senders"/,
     ],
     [
       "a leftover senders list",
@@ -517,7 +517,7 @@ describe("capabilities manifest field", () => {
     [
       "senders on a capability that doesn't send mail",
       { dataforseo: { access: "read", senders: ["*@mail.example.com"] } },
-      /capabilities\.dataforseo: Unrecognized key\(s\) in object: 'senders'/,
+      /capabilities\.dataforseo: Unrecognized key: "senders"/,
     ],
     [
       "an OAuth client for reading",
@@ -1072,7 +1072,7 @@ describe("helper Workers", () => {
     [
       "an unknown key on a helper Worker",
       { id: "seo", workers: [{ name: "audit", routes: ["/x"] }] },
-      /Unrecognized key\(s\) in object: 'routes'/,
+      /Unrecognized key: "routes"/,
     ],
   ])("refuses %s", (_case, manifest, problem) => {
     expect(() => validateManifestStrict(manifest)).toThrow(problem);
@@ -1372,5 +1372,133 @@ describe("email.inbound manifest field", () => {
         "dispatch",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("what a problem reads as", () => {
+  // The CLI ships this schema under its own zod (its tsup inlines the
+  // perimeter but leaves zod external), so the messages are pinned here
+  // under the major both declare. A record's key is checked in the
+  // record's refinement, not by a key schema: zod 4 would report that as
+  // `Invalid key in record` and stop at the first one.
+  const problem = (validate: (input: unknown) => unknown, input: unknown) => {
+    try {
+      validate(input);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManifestError);
+      return (error as Error).message;
+    }
+    throw new Error("accepted");
+  };
+  const both = [
+    ["validateManifest", validateManifest, "Invalid manifest: "],
+    [
+      "validateManifestStrict",
+      validateManifestStrict,
+      "Invalid everyapp.config: ",
+    ],
+  ] as const;
+
+  it.each(both)(
+    "%s reads a malformed capability id as the provider-name rule, at its path",
+    (_name, validate, prefix) => {
+      const message = problem(validate, {
+        id: "a",
+        capabilities: { OpenAI: { access: "read", why: "x" } },
+      });
+      expect(message).toBe(
+        `${prefix}capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens`,
+      );
+      expect(message).not.toMatch(/Invalid key in record/);
+      expect(message).not.toMatch(/OpenAI\.OpenAI/);
+    },
+  );
+
+  it.each(both)(
+    "%s reads a malformed scope id as `invalid scope id` and `*` as reserved",
+    (_name, validate, prefix) => {
+      expect(problem(validate, { id: "a", scopes: { "Bad Id": "x" } })).toBe(
+        `${prefix}scopes.Bad Id: invalid scope id`,
+      );
+      expect(problem(validate, { id: "a", scopes: { "*": "x" } })).toBe(
+        `${prefix}scopes.*: reserved scope id`,
+      );
+      expect(
+        problem(validate, { id: "a", scopes: { "provider:openai": "x" } }),
+      ).toBe(`${prefix}scopes.provider:openai: reserved scope id`);
+    },
+  );
+
+  it("reports a malformed id and its siblings' problems in one pass", () => {
+    const message = problem(validateManifestStrict, {
+      id: "a",
+      capabilities: {
+        OpenAI: { access: "read" },
+        members: { access: "read", scopes: ["x"] },
+        email: { access: "write", retired: true },
+      },
+    });
+    expect(message).toBe(
+      "Invalid everyapp.config: " +
+        [
+          "capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens",
+          "capabilities.members.scopes: Members takes no scopes; list it as { access: ..., why }",
+          'capabilities.email: Unrecognized key: "retired"',
+        ].join("; "),
+    );
+    // Likewise a scope whose value is wrong beside a key that is.
+    expect(
+      problem(validateManifestStrict, {
+        id: "a",
+        scopes: { "Bad Id": "x", "*": "y", ok: "" },
+      }),
+    ).toBe(
+      "Invalid everyapp.config: scopes.ok: Too small: expected string to have >=1 characters; scopes.Bad Id: invalid scope id; scopes.*: reserved scope id",
+    );
+    // At registration a sibling's wrong access level doesn't hide the id.
+    expect(
+      problem(validateManifest, {
+        id: "a",
+        capabilities: {
+          OpenAI: { access: "read" },
+          dataforseo: { access: "nope" },
+        },
+      }),
+    ).toBe(
+      'Invalid manifest: capabilities.dataforseo.access: Invalid option: expected one of "read"|"write"; capabilities.OpenAI: provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens',
+    );
+  });
+
+  it.each(both)(
+    "%s reads a non-object as a (root) problem",
+    (_name, validate, prefix) => {
+      expect(problem(validate, "todo")).toBe(
+        `${prefix}(root): Invalid input: expected object, received string`,
+      );
+      expect(problem(validate, null)).toMatch(/^.*\(root\): Invalid input/);
+      expect(problem(validate, { id: "a", scopes: "x" })).toBe(
+        `${prefix}scopes: Invalid input: expected record, received string`,
+      );
+    },
+  );
+
+  it("names the command for an inbound address list (the message zod 4 reads from `error`)", () => {
+    expect(
+      problem(validateManifestStrict, {
+        id: "a",
+        email: { inbound: ["*@example.com"] },
+      }),
+    ).toBe(
+      "Invalid everyapp.config: email.inbound: inbound is true (the Worker exports an email() handler) or left out; the addresses moved out of the manifest: set them with `everyapp email set --inbound <address>` in the app's directory after its first deploy",
+    );
+  });
+
+  it("stores a docs URL trimmed (zod 4's url check trims; zod 3 refused the padding)", () => {
+    expect(
+      validateManifestStrict({
+        id: "a",
+        secrets: [{ name: "TOKEN", docs: "  https://example.com/docs  " }],
+      }).secrets,
+    ).toEqual([{ name: "TOKEN", docs: "https://example.com/docs" }]);
   });
 });

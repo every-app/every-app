@@ -100,15 +100,27 @@ const CompatibilityDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD");
 
-const ScopeIdSchema = z
-  .string()
-  .regex(/^[a-z0-9][a-z0-9:_-]{0,63}$/, "invalid scope id");
+const SCOPE_ID = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
+
+/**
+ * The records keyed by an id (`scopes`, `capabilities`) take `z.string()`
+ * keys and check each id in their refinement, so that every problem in the
+ * record is reported in one pass. A key schema would read as zod 4's own
+ * `Invalid key in record` and, since that issue stops the refinement, one
+ * malformed id would hide the reserved-id check and every sibling entry's
+ * problem until it was fixed. `when` runs the refinement on any object the
+ * record got, so a value's problem doesn't hide a key's either.
+ */
+const everyKey: z.core.$ZodSuperRefineParams = {
+  when: ({ value }) =>
+    typeof value === "object" && value !== null && !Array.isArray(value),
+};
 
 // Reserved ids are rejected in BOTH the tolerant (gateway) and strict (CLI)
 // schemas: provider:* scopes belonged to the retired egress credential plane
 // and must not be registrable from any path.
 const ScopesSchema = z
-  .record(ScopeIdSchema, z.string().min(1).max(200))
+  .record(z.string(), z.string().min(1).max(200))
   .superRefine((scopes, ctx) => {
     for (const scope of Object.keys(scopes)) {
       if (scope === "*" || scope.startsWith("provider:")) {
@@ -117,9 +129,15 @@ const ScopesSchema = z
           path: [scope],
           message: "reserved scope id",
         });
+      } else if (!SCOPE_ID.test(scope)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [scope],
+          message: "invalid scope id",
+        });
       }
     }
-  });
+  }, everyKey);
 
 const ScopesSchemaStrict = ScopesSchema;
 
@@ -209,12 +227,24 @@ export type Migrations = z.infer<typeof MigrationsSchema>;
 
 const InstallSchema = z.union([z.literal(false), z.string().min(1)]);
 
+const PROVIDER_NAME = /^[a-z][a-z0-9-]*$/;
+const PROVIDER_NAME_PROBLEM =
+  "provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens";
+
 export const ProviderNameSchema = z
   .string()
-  .regex(
-    /^[a-z][a-z0-9-]*$/,
-    "provider must start with a lowercase letter and contain only lowercase letters, digits, and hyphens",
-  );
+  .regex(PROVIDER_NAME, PROVIDER_NAME_PROBLEM);
+
+/** The `capabilities` keys are provider names; one that isn't is the key's problem (see `everyKey`). */
+function addProviderNameIssue(id: string, ctx: z.RefinementCtx): boolean {
+  if (PROVIDER_NAME.test(id)) return false;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [id],
+    message: PROVIDER_NAME_PROBLEM,
+  });
+  return true;
+}
 
 /**
  * What a provider, capability or secret may say about its need (the
@@ -322,12 +352,11 @@ export function capabilityEntrySchema(id: CapabilityId) {
     "scopePolicy" in capability ? capability.scopePolicy : undefined;
   if (!policy) {
     // A capability with one purpose takes no scope sets: listing it is
-    // the whole grant. `.optional()` so the key may be absent under zod 4
-    // as well as zod 3: the CLI's build resolves this schema against its
-    // own zod 4, where a key whose schema is `z.undefined()` is required.
+    // the whole grant. `.optional()` so the key may be absent: under zod 4
+    // a key whose schema is `z.undefined()` is required.
     const scopes = z
       .undefined({
-        message: `${capability.label} takes no scopes; list it as { access: ..., why }`,
+        error: `${capability.label} takes no scopes; list it as { access: ..., why }`,
       })
       .optional();
     return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
@@ -338,9 +367,9 @@ export function capabilityEntrySchema(id: CapabilityId) {
   const scopes = z
     .array(
       z.enum(names, {
-        message: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
+        error: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
       }),
-      { message: needsScopes },
+      { error: needsScopes },
     )
     .min(1, needsScopes)
     .refine(
@@ -353,15 +382,17 @@ export function capabilityEntrySchema(id: CapabilityId) {
 /** One authored capability entry, whichever capability it is for. */
 export type CapabilityEntry = z.infer<typeof CapabilityEntryBaseSchema>;
 
-const CapabilitiesSchema = z.record(
-  ProviderNameSchema,
-  CapabilityRequestSchema,
-);
+const CapabilitiesSchema = z
+  .record(z.string(), CapabilityRequestSchema)
+  .superRefine((capabilities, ctx) => {
+    for (const id of Object.keys(capabilities)) addProviderNameIssue(id, ctx);
+  }, everyKey);
 
 const CapabilitiesSchemaStrict = z
-  .record(ProviderNameSchema, z.unknown())
+  .record(z.string(), z.unknown())
   .superRefine((capabilities, ctx) => {
     for (const [id, entry] of Object.entries(capabilities)) {
+      if (addProviderNameIssue(id, ctx)) continue;
       if (!isCapabilityId(id)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -389,7 +420,7 @@ const CapabilitiesSchemaStrict = z
         ctx.addIssue({ ...issue, path: [id, ...issue.path] });
       }
     }
-  })
+  }, everyKey)
   .transform((capabilities) => capabilities as Record<string, CapabilityEntry>);
 
 const INBOUND_MOVED = `inbound is true (the Worker exports an email() handler) or left out; the addresses moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --inbound <address>\` in the app's directory after its first deploy`;
@@ -409,7 +440,7 @@ const EmailSchema = z
 const EmailSchemaStrict = z
   .object({
     /** True when the Worker exports `email()` beside `everyApp()`'s `fetch`; `everyapp email set --inbound` routes addresses to it. */
-    inbound: z.boolean({ invalid_type_error: INBOUND_MOVED }).optional(),
+    inbound: z.boolean({ error: INBOUND_MOVED }).optional(),
   })
   .strict();
 
@@ -733,6 +764,20 @@ export class ManifestError extends Error {
 }
 
 /**
+ * Each problem a parse found as `<path>: <message>`, the path dotted
+ * (`capabilities.email.access`) or `(root)`. zod 4's path is a
+ * `PropertyKey[]`, so each segment is stringified rather than joined.
+ */
+function describeIssues(issues: readonly z.core.$ZodIssue[]): string {
+  return issues
+    .map(
+      (issue) =>
+        `${issue.path.map(String).join(".") || "(root)"}: ${issue.message}`,
+    )
+    .join("; ");
+}
+
+/**
  * Parse and strictly validate a manifest object. Throws {@link ManifestError}
  * on any problem. This is the one place catch-all / internal-prefix public
  * routes are rejected as hard errors (not warnings).
@@ -741,9 +786,7 @@ export function validateManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.safeParse(input);
   if (!parsed.success) {
     throw new ManifestError(
-      `Invalid manifest: ${parsed.error.issues
-        .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-        .join("; ")}`,
+      `Invalid manifest: ${describeIssues(parsed.error.issues)}`,
     );
   }
   const manifest = parsed.data;
@@ -764,9 +807,7 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
   const parsed = ManifestSchemaStrict.safeParse(input);
   if (!parsed.success) {
     throw new ManifestError(
-      `Invalid everyapp.config: ${parsed.error.issues
-        .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-        .join("; ")}`,
+      `Invalid everyapp.config: ${describeIssues(parsed.error.issues)}`,
     );
   }
   const manifest = parsed.data;

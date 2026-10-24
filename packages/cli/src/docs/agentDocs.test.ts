@@ -256,6 +256,12 @@ describe("json.md", () => {
 
 describe("manifest.md", () => {
   const fields = manifestFields();
+  it("reads the schema (an empty walk would document nothing and pass)", () => {
+    expect(fields.paths).toEqual(expect.arrayContaining(["id", "capabilities.<id>.access", "migrations.engine", "secrets[].anyOf"]));
+    expect(fields.values).toEqual(expect.arrayContaining(["drizzle", "read", "write"]));
+    expect(fields.paths.length).toBeGreaterThanOrEqual(70);
+    expect(fields.values.length).toBeGreaterThanOrEqual(15);
+  });
   it("documents every field of everyapp.config.ts", () => {
     expectDocumented("manifest", "these manifest fields", fields.paths);
   });
