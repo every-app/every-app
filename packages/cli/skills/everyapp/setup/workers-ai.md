@@ -1,0 +1,134 @@
+# Workers AI for the Gateway
+
+Workers AI runs Meta's Llama and other open models inside the Gateway's own
+Cloudflare account, behind the Gateway's AI proxy. agentic-inbox lists it
+(`providers: ["workers-ai", "openrouter"]`), so `secret list` marks the token
+required; its Worker calls Workers AI (the Email Agent, the draft verifier
+and the prompt-injection scanner, on `/api/ai/workers-ai/v1/chat/completions`)
+only when built with `AI_PROVIDER=workers-ai`, and OpenRouter is its default
+since 2026-10-19. Only the token is missing: the account is
+`CLOUDFLARE_ACCOUNT_ID`, which `everyapp setup` set. At the end the person
+has one Cloudflare API token limited to Workers AI on that account, held by
+the Gateway, and a Workers AI model answering through it.
+
+## Settings
+
+| Name                    | Required                                                                                                                                               | What it holds                                                                                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKERS_AI_API_TOKEN`  | required by agentic-inbox (`providers: ["workers-ai", …]`)                                                                                             | A Cloudflare API token with Workers AI Read on the Gateway's account (and Edit when made by hand: Cloudflare's REST guide asks for both on a custom token): the token string alone, one line, no `Bearer`. New user tokens start `cfut_`, account tokens `cfat_`. |
+| `CLOUDFLARE_ACCOUNT_ID` | set once by `everyapp setup`; `secret set` refuses it (`SECRET_NOT_SETTABLE` from the every-app checkout, `SECRET_NOT_DECLARED` from an app directory) | The account inference runs and bills in: `data.accountId` in `pnpm everyapp status --json`, written `<account id>` below. The token must include this account.                                                                                                   |
+
+`OPENROUTER_API_KEY` stays: the inbox's default path and OpenSEO use it. This file adds a provider; it removes none.
+
+## Costs and plans
+
+As of October 2026 (Cloudflare's pricing page, updated 2026-10-20):
+
+- The Gateway's account is on Workers Paid already ($5 a month; everyapp needs it). Workers AI adds no fixed fee, and an API token is free.
+- 10,000 neurons a day are included. Beyond that, Workers Paid bills $0.011 per 1,000 neurons on the monthly invoice; Workers Free stops for the day instead (error 3036).
+- The Workers AI path's default agent model (and its draft verifier), `@cf/meta/llama-4-scout-17b-16e-instruct`: $0.27 per million input tokens, $0.85 per million output; 300 requests a minute.
+- `@cf/moonshotai/kimi-k2.6` (the inbox's optional `AGENT_MODEL`): paid-only; $0.95 in and $4.00 out per million tokens; 20 requests a minute per account and model on Workers Paid (Cloudflare's 50-a-minute tier is for calls through an AI Gateway on prepaid credits, which the Gateway doesn't use), shared by every organization on the Gateway.
+
+## Only a person can
+
+- Sign in to the Cloudflare dashboard and create the token. `cf`'s OAuth login cannot mint one: `cf auth whoami` lists no API-token scope, and the token endpoints answer it 403 code 9109. So neither `cf accounts tokens create` nor the API works from the login; it needs a token to make a token.
+- Copy the token off the screen (shown once) and type or export it in their own terminal.
+- Choose a user token (tied to their login) or an account token (a team's choice; needs API Token Provisioning or Super Administrator on the account), and whether it expires.
+
+## Before you start
+
+1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true; `data.accountId` is the account the token must include (tell the person; it is not a secret); `data.apps[]` has `"id": "agentic-inbox"` with `"status": "active"` and `"bound": true`. Not there: deploy the app first, from its directory. `action_required cloudflare_login` with `waiting: true` (`status` logs in by itself): show `data.url` and `data.code` to the person and keep reading; `pnpm everyapp login --json` is only for logging in ahead of time.
+2. In the agentic-inbox directory, `pnpm everyapp secret list --json`: `data.gateway.needed` has `WORKERS_AI_API_TOKEN` with `"required": true` (the manifest lists the provider; the Worker's `AI_PROVIDER` doesn't change that). `"set": false` and `data.gateway.missing` naming it: this file applies, and `data.next` is `["pnpm everyapp secret set WORKERS_AI_API_TOKEN"]`. `"set": true`: ask before replacing (a value can't be read back; replacing means a new token).
+3. From any directory, `pnpm everyapp secret list --json`: `CLOUDFLARE_ACCOUNT_ID` is in `data.gateway.names`. Missing: stop and tell the person. It is written once, at install, from the account the Gateway lives in (`data.accountId` is what it should be); `secret set` refuses it and `setup` adds nothing to a Gateway that already has a version, so there is no everyapp repair today.
+4. Ask, together with 5 in one message, and wait for both answers before Steps (they change the steps): was the inbox's Worker deployed with `AI_PROVIDER=workers-ai` (a variable of its own deploy; `status` doesn't show it)? It decides whether Verify's app check uses this token. On the default, OpenRouter, the inbox keeps answering with OpenRouter until its own Worker is deployed again with `AI_PROVIDER=workers-ai` in the deploy's environment, from its repository (its `cloudflare.config.ts` reads it), not from here: say so, ask whether they still want the token set now, and never redeploy the inbox from this file.
+5. Ask whether the person already holds a Cloudflare API token with Workers AI on this account (a token from another project is fine if it includes this account). Yes: skip to step 3.
+
+## Steps
+
+One step per message, and wait between them: step 1 once the two answers from Before you start are in; step 2, then "copied"; step 3, then "done". The curl line comes in Verify, after that.
+
+1. **You:** Say which token to make. A user token (My Profile) is the quick path for a solo operator; an account token keeps working after that person leaves and is the better fit for a team. Both reach Workers AI the same way: the Gateway sends either as a Bearer token to `api.cloudflare.com/client/v4/accounts/<account id>/ai/v1/…`, and Cloudflare's compatibility matrix lists Workers AI as supporting account tokens (not tried live here). Give them `data.accountId` to check against the token's account resources.
+
+2. **Person:** Create the token. Done when the screen shows the token once, with a copy button and a `curl … /user/tokens/verify` test under it. Wait for "copied".
+   - Prefilled user token: open https://dash.cloudflare.com/?to=/:account/ai/workers-ai (the Workers AI page; pick the Gateway's account if asked), select **Use REST API**, then **Create a Workers AI API Token**. A token form opens prefilled (Cloudflare's guide says it grants Workers AI Read on this account, which is what the `/ai/*` endpoints need; one permission row is expected): check that **Account Resources** names the Gateway's account (`data.accountId`), leave **TTL (time to live)** empty unless they want an expiry (the Gateway stops the day it expires), select **Create API Token**, then **Copy API Token**.
+   - Custom user token: https://dash.cloudflare.com/profile/api-tokens, **Create Token**, the custom token at the bottom (label unverified), name it `every-app-gateway workers-ai`, permissions **Account** | **Workers AI** | **Read** and a second row **Account** | **Workers AI** | **Edit** (Cloudflare's REST guide asks for both on a token made by hand), account resources: Include, the Gateway's account (`data.accountId`), no client IP filter (the Gateway's egress addresses vary), **Continue to summary**, **Create Token**.
+   - Account token: in the dashboard pick the Gateway's account, **Manage account** > **Account API tokens**, **Create Token**, the same name and permissions, optional expiration, **Continue to summary**, **Create Token**.
+
+3. **Person:** Hand it to the Gateway (README's third way, the hidden read, in their own terminal, in the `every-app` folder; bash or zsh):
+   ```sh
+   read -rs WORKERS_AI_API_TOKEN; export WORKERS_AI_API_TOKEN
+   pnpm everyapp secret set WORKERS_AI_API_TOKEN --from-env WORKERS_AI_API_TOKEN --json
+   ```
+   After the first line the terminal shows nothing, not even a prompt: paste the token, press Enter, then run the second line. `SECRET_EMPTY` means the paste didn't land: redo the first line in the same terminal. fish: `read -s -x WORKERS_AI_API_TOKEN` (it does show `read> `), then the same `pnpm everyapp secret set … --from-env …` line; `set -e WORKERS_AI_API_TOKEN` clears it afterwards.
+   The last line is `"type": "done"`; the change is live at once (one new Gateway version, no deploy). Keep the variable until the smoke check below is done, then `unset WORKERS_AI_API_TOKEN`. Without the smoke check, README's first way is simpler: `pnpm everyapp secret set WORKERS_AI_API_TOKEN` in a second terminal, paste at the hidden prompt. Wait for "done".
+
+4. **You:** Run the Verify section. The person runs its curl line in the terminal that still has the variable.
+
+## Verify
+
+1. In the agentic-inbox directory, `pnpm everyapp secret list --json`: `WORKERS_AI_API_TOKEN` has `"set": true`, `data.gateway.missing` no longer lists it, and `data.gateway.names` does.
+2. Smoke check, in the person's terminal with `WORKERS_AI_API_TOKEN` exported. The header goes in on stdin (`-H @-`) so the token never sits in curl's argument list, which the process list shows. The token reaches Workers AI on the Gateway's account (a few neurons):
+   ```sh
+   printf 'Authorization: Bearer %s\n' "$WORKERS_AI_API_TOKEN" | curl -s -H @- -H "Content-Type: application/json" https://api.cloudflare.com/client/v4/accounts/<account id>/ai/v1/chat/completions -d '{"model":"@cf/meta/llama-4-scout-17b-16e-instruct","messages":[{"role":"user","content":"Say ok."}],"max_tokens":5}'
+   ```
+   expects a JSON body with `choices[0].message.content`. Any `"success":false` body is read in If it fails; a 401 starts with the verify curl there. Then `unset WORKERS_AI_API_TOKEN`.
+3. The app, only when the inbox's Worker was built with `AI_PROVIDER=workers-ai` (Before you start, 4); on the default, OpenRouter, it never sends this token and the curl line above is the whole proof: open `https://agentic-inbox.<app base domain>/`, open a mailbox, **Show agent panel** (the header button), type in "Ask your email agent..." and send. A reply streams in, and the Gateway's `ai.proxy.usage` line (step 4) says `"provider":"workers-ai"`. A refusal shows up as the Gateway's message in the panel.
+4. The Gateway's logs, when a refusal isn't clear: `cf` has no terminal tail (`cf workers` lists none; `cf o11y telemetry live-tail` only prepares a websocket, not tried here; `cf o11y telemetry query` is the raw query API). Cloudflare's CLI for it is `npx wrangler tail every-app-gateway --format json` (after its own `wrangler login`; wrangler isn't in this checkout). Dashboard, README's path: https://dash.cloudflare.com/?to=/:account/workers-and-pages, then **Workers & Pages** → `every-app-gateway` → **Observability** (**Logs** on older accounts) → **Live**. The proxy writes one JSON line per call: `"evt":"ai.proxy.usage"` with `provider`, `model`, `status` and `usage`; `"evt":"ai.proxy.upstream_failed"` with the message when the request to Cloudflare failed. The Gateway's config turns these logs on; Workers Paid keeps 7 days.
+
+## If it fails
+
+A 401 from the chat call: first, in the same terminal, Cloudflare's verify route says whether the string itself is good. A user token (`cfut_`):
+
+```sh
+printf 'Authorization: Bearer %s\n' "$WORKERS_AI_API_TOKEN" | curl -s -H @- https://api.cloudflare.com/client/v4/user/tokens/verify
+```
+
+An account token (`cfat_`): the same header on `https://api.cloudflare.com/client/v4/accounts/<account id>/tokens/verify`; on the user route it answers 401 code 1000 "Invalid API Token", like any token that route doesn't know. `"success":true` with `"status":"active"`: the string is good, and the rows for code 10000 and 9109 say what is (the permission or the account). 401 code 1000 on its own route: the string (its row).
+
+| Error or symptom                                                                                                        | Meaning                                                                                                                                                                                 | What to do                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 503 `ai_provider_not_configured`, "needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID"                                | the Gateway holds no token, or no account id                                                                                                                                            | `secret list --json`; set the token; `CLOUDFLARE_ACCOUNT_ID` missing: no everyapp repair today, tell the person (Before you start, 3)           |
+| `provider_not_allowed`                                                                                                  | the app's manifest doesn't list `workers-ai` under `providers`                                                                                                                          | agentic-inbox lists it; another app adds it to `everyapp.config.ts` and deploys                                                                 |
+| `model_not_allowed`                                                                                                     | a model id outside the app's `ai.models`                                                                                                                                                | use one from the manifest, or add it and deploy                                                                                                 |
+| `ai_route_not_allowed`                                                                                                  | a path other than `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses` (the native run route is closed)                                                                            | call the OpenAI-compatible routes                                                                                                               |
+| 502 `ai_upstream_failed`                                                                                                | the request to `api.cloudflare.com` failed before an answer                                                                                                                             | retry; the Gateway log line `ai.proxy.upstream_failed` has the message                                                                          |
+| 401, code 1000 "Invalid API Token" (the verify routes)                                                                  | the string is wrong, expired, rolled or deleted; or a `cfat_` token on the user route                                                                                                   | verify a `cfat_` token on `/accounts/<account id>/tokens/verify`; otherwise make a new token and set it again                                   |
+| 401, code 10000 "Authentication error" (the `/ai/v1` route: curl's chat completion, or passed through by the Gateway)   | token invalid, expired, rolled, deleted, IP-filtered, or without Workers AI on this account; or `$WORKERS_AI_API_TOKEN` empty in that terminal                                          | the verify curl above; make a new token with Workers AI Read including `data.accountId`; set it again                                          |
+| 403, code 9109 "Unauthorized to access requested resource" or "Invalid access token"                                    | the token's resources don't include this account                                                                                                                                        | a token whose account resources include the Gateway's account                                                                                   |
+| 403, code 5035 "This model requires a Workers Paid plan."                                                               | a paid-only model (`kimi-k2.6`) on an account without Workers Paid                                                                                                                      | the Gateway's account must be on Workers Paid (everyapp needs it anyway)                                                                        |
+| 429, code 3036 "You have used up your daily free allocation of 10,000 neurons."                                         | Workers Free's daily cap                                                                                                                                                                | Workers Paid; it doesn't occur there                                                                                                            |
+| 429, code 3040 "Capacity temporarily exceeded", or a bare 429                                                           | Cloudflare capacity, or a rate limit (kimi: 20 a minute per account; the limit's own code unverified)                                                                                   | retry later; on kimi expect it, or use `@cf/meta/llama-4-scout-17b-16e-instruct`                                                                |
+| 400 code 5007 "No such model", or 404 code 3042 "The model name is invalid"                                             | the model id isn't in the catalog                                                                                                                                                       | `cf ai models list --search llama` (read-only) for a current id; change the app's manifest and code                                             |
+| `SECRET_EMPTY`                                                                                                          | `$WORKERS_AI_API_TOKEN` is empty in the terminal that ran `secret set`                                                                                                                  | redo the `read -rs …; export …` line in that same terminal, then rerun                                                                          |
+| `SECRET_VALUE_REQUIRED`                                                                                                 | nothing was piped and there is no terminal                                                                                                                                              | one of README's three ways                                                                                                                      |
+| `SECRET_SEVERAL_NAMES`                                                                                                  | `--from-env` or a pipe with several names                                                                                                                                               | one name per call                                                                                                                               |
+| `SECRET_NOT_SETTABLE` (from the every-app checkout) or `SECRET_NOT_DECLARED` (from an app directory)                    | the name is one setup writes (`CLOUDFLARE_ACCOUNT_ID`)                                                                                                                                  | set only `WORKERS_AI_API_TOKEN`; never add it to the manifest's `secrets`; a wrong account id has no everyapp repair today (tell the person)     |
+| 400, code 6003 "Invalid request headers" / 6111 "Invalid format for Authorization header" (the verify routes)           | `$WORKERS_AI_API_TOKEN` is empty in that terminal (not exported, or a new terminal); the chat route shows the same as 401 code 10000                                                      | redo step 3 in one terminal, in order; an HTML page instead means a mistyped URL                                                                |
+
+## Rerun, rotate, remove
+
+- Rerun: every step is safe to repeat. `secret set` replaces the value in one new Gateway version; a second token on Cloudflare's side is harmless until you delete it. Interrupted or back later: start at Verify and continue at the first step that isn't done.
+- Rotate: on the token's row in the dashboard (user tokens at https://dash.cloudflare.com/profile/api-tokens, account tokens under **Manage account** > **Account API tokens**) the three-dot menu, **Roll**, **Confirm**. The new secret keeps the permissions and the old one stops at once, so run step 3 again straight away. The API's roll: `cf user tokens roll <token-id>` for a user token, `cf accounts tokens roll <token-id>` for an account token; both need an API token with the matching API Tokens Edit permission, not the login.
+- Remove: `pnpm everyapp secret unset WORKERS_AI_API_TOKEN --json` (add `--yes` only when the person said so). The proxy answers `ai_provider_not_configured` from then on; an inbox Worker built with `AI_PROVIDER=workers-ai` loses its agent, verifier and scanner (one on the default, OpenRouter, is unaffected). Then delete the token in the same row menu (label unverified): a token the Gateway no longer holds is still a token.
+
+## Sources
+
+Verified 2026-10-23:
+
+- https://developers.cloudflare.com/workers-ai/get-started/rest-api/ (Use REST API, Create a Workers AI API Token; the prefilled token grants Workers AI Read, a token made by hand needs Read and Edit)
+- https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ (dashboard flow, TTL, verify command, `cfut_`)
+- https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/ (Manage account > Account API tokens, roles, Workers AI supported, `cfat_`)
+- https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/ (token creation needs a token with API Tokens Edit)
+- https://developers.cloudflare.com/fundamentals/api/how-to/roll-token/ (Roll, Confirm)
+- https://developers.cloudflare.com/fundamentals/api/reference/permissions/ (Workers AI Read, Workers AI Edit)
+- https://developers.cloudflare.com/api/resources/user/subresources/tokens/methods/verify/ and https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/verify/; probed with a bogus token and an empty header: both verify routes answer 401 code 1000 and 400 code 6003/6111, `/ai/v1/chat/completions` 401 code 10000 for either
+- https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/ (`/accounts/<account id>/ai/v1/chat/completions`, embeddings, responses for gpt-oss only)
+- https://developers.cloudflare.com/workers-ai/platform/pricing/ (neurons, per-model prices, paid-only list)
+- https://developers.cloudflare.com/workers-ai/platform/limits/ (300 a minute; 20 for paid-only models, 50 only through an AI Gateway on prepaid credits with Unified billing)
+- https://developers.cloudflare.com/workers-ai/platform/errors/ (3036, 3040, 3042, 5007, 5035)
+- https://developers.cloudflare.com/ai-gateway/usage/rest-api/ (`/accounts/<account id>/ai/*` needs Workers AI Read; code 10000 without it)
+- https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ and https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/
+- the live catalog via `cf ai models list` (`--search`, from its `--help`)
+- https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (`npx wrangler tail`, no storage) and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (Observability, retention); https://developers.cloudflare.com/workers/wrangler/commands/workers/ (`wrangler tail [WORKER]`, `--format json`)
+- `cf` 1.0.0-beta.14: `cf workers --help`, `cf o11y telemetry live-tail --help`, `cf user tokens --help`, `cf accounts tokens --help`
+- In this repository: `apps/every-app-gateway/src/server/ai-proxy.ts`, `packages/sdk/src/internal/aiProviders.ts`, `packages/sdk/src/internal/gatewaySettings.ts`, `packages/cli/src/lib/gateway/apply.ts` (install-owned secrets go with the first deploy only), `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/lib/secretValue.ts`, `docs/capabilities.md`; in agentic-inbox: `cloudflare.config.ts` (`AI_PROVIDER` defaults to `openrouter`) and `workers/everyapp/gateway.ts` (each provider's models)

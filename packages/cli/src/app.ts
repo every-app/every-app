@@ -4,6 +4,7 @@ import {
   buildRouteMap,
   text_en,
   type Application,
+  type Command,
   type CommandContext,
   type RouteMap,
 } from "@stricli/core";
@@ -70,6 +71,24 @@ const routes = buildRouteMap({
 
 /** The routes as the argument-error helpers walk them, whatever each command's flags. */
 const routeMap = routes as unknown as RouteMap<CommandContext>;
+
+/**
+ * Every path the router answers to ("status", "secret set", "secret ls"),
+ * groups, aliases and hidden routes included: what a document may tell
+ * someone to run (lib/app/setupSkills.test.ts checks the setup files).
+ */
+export function commandPaths(): string[] {
+  const paths: string[] = [];
+  const walk = (target: RouteMap<CommandContext> | Command<CommandContext>, prefix: string[]) => {
+    if (prefix.length > 0) paths.push(prefix.join(" "));
+    if (!("getAllEntries" in target)) return;
+    for (const entry of target.getAllEntries()) {
+      for (const name of [entry.name.original, ...entry.aliases]) walk(entry.target, [...prefix, name]);
+    }
+  };
+  walk(routeMap, []);
+  return paths;
+}
 
 /** The commands `everyapp --help` lists, in groups. */
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [

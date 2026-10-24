@@ -79,7 +79,7 @@ Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          the upload.
 Secrets: pnpm everyapp secret set NAME --from-env VAR --json   (live at once, no deploy)
          The name decides where it goes. A Gateway setting (OPENAI_API_KEY,
-         EMAIL_FROM, LINKEDIN_CLIENT_ID, …) is set on the Gateway from any
+         EMAIL_FROM, GOOGLE_WORKSPACE_CLIENT_ID, …) is set on the Gateway from any
          directory. An app's own secret must be listed under `secrets` in
          its everyapp.config.ts and is set from the app's directory after
          its first deploy (SECRET_NOT_DECLARED: add it there first). Never
@@ -103,6 +103,15 @@ Access:  pnpm everyapp access on --json   (Cloudflare Access in front of the Gat
          in one version. Rerunnable; run again after inviting someone. access off
          asks (--yes); access show reports. Each existing member then signs in once
          with their password through Access; tell the user who (done.data.signIn).
+Set up:  what the Gateway holds for apps, end to end (the provider's side, the
+         key or OAuth client, secret set, the check): read setup/README.md in
+         this skill first, then the file it names, each on its own with the
+         file-reading tool (together they pass a shell's output cap). Cloudflare and the Gateway
+         (setup/gateway.md), Cloudflare Access (setup/access.md), email
+         (setup/email.md), API keys (setup/dataforseo.md, context.md,
+         openrouter.md, openai.md, workers-ai.md), OAuth clients
+         (setup/google.md, microsoft-365.md, slack.md). A key or client secret
+         never goes through the chat: README.md says the three ways it gets in.
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.
