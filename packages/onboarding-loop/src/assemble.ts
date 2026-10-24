@@ -163,7 +163,10 @@ function installPhase(events: NormalizedEvent[]): Phase | null {
   const index = events.findIndex(
     (event) =>
       event.kind === "tool_call" &&
-      /^(pnpm|npm|yarn)\b.*\binstall\b/.test((event.argv ?? []).join(" ")),
+      // Anywhere in the command: harnesses wrap it (`bash -lc 'pnpm install'`, `cat … && (pnpm install …)`).
+      /\b(pnpm|npm|yarn)\b[^&|;]*\binstall\b/.test(
+        (event.argv ?? []).join(" "),
+      ),
   );
   if (index === -1) return null;
   const call = events[index]!;
@@ -255,6 +258,14 @@ export function assemble(input: AssembleInput): {
       seed.fixtures.workers_subdomain === "preexisting"
         ? "workers.dev name preexisting"
         : "not asked";
+  // The prompt tells the agent to create the app, so create_app is a question only when the
+  // agent makes it one; likewise the domain once a reply or the nudge carried it.
+  const ranCommand = (name: string) =>
+    traces.some((trace) => trace.argv[0] === name);
+  if (!exercised.includes("create_app") && ranCommand("create"))
+    skippedBecause["create_app"] = "not a question: the harness ran create";
+  if (!exercised.includes("domain_question") && ranCommand("setup"))
+    skippedBecause["domain_question"] = "not asked: the harness ran setup";
   for (const handoff of EXPECTED_HANDOFFS) {
     if (
       !exercised.includes(handoff) &&
