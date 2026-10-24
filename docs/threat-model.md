@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 315 is
+  try first; the complete register of 317 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -90,7 +90,7 @@ Gateway, attributed to an organization.
 | Sign-up | Invite-only; the setup link makes the first owner | Open into personal organizations once claimed, behind a daily mail budget; `HOSTED_OPEN_SIGNUP=false` keeps it invite-only (the preview default) | A seeded dev user |
 | Apps | Private Workers in the same account, one organization | Shared first-party Workers (one per app, every organization) plus, behind a launch gate, third-party Workers in a dispatch namespace | The app under `vite dev` behind a gateway-lite |
 | Deploy authority | The Cloudflare login (ADR-0003) | Our CLI for first-party apps; deploy keys or an admin's GitHub install for third-party apps | None |
-| Cloudflare Access | Recommended: the outer ring in front of everything, or OIDC sign-in | Ignored (`platformPolicy` refuses it) | A mock (`scripts/access-local.mjs`) |
+| Cloudflare Access | Recommended: the outer ring in front of everything, or OIDC sign-in | Ignored (`platformPolicy` refuses it) | A mock (`apps/every-app-gateway/scripts/access-local.mjs`) |
 | Identity key | The install's `JWT_PRIVATE_KEY`, `kid: everyapp-identity` | The same | A public dev key pair, `kid: everyapp-dev`, accepted only under `EVERYAPP_DEV` |
 
 Anything but `self_hosted` or `hosted` in `GATEWAY_DEPLOYMENT_MODE` (unset
@@ -246,7 +246,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 315 invariants
+stop, the invariants to try first (the complete register, 317 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -282,7 +282,7 @@ meant for MCP being used on app pages. The control plane being served on an
 app origin. A switched-off, half-deployed, deleted or hand-edited registry
 row being routed.
 
-**Invariants.** The full register has 33; these are the ones to try first.
+**Invariants.** The full register has 34; these are the ones to try first.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -334,8 +334,7 @@ and anything on the gateway's own host (B2).
   the third-party path rebuilds the handshake and strips them). An app that
   sets a parent-domain cookie on its handshake can plant a second session
   cookie for the whole gateway, which the duplicate-cookie rule then turns
-  into a lockout of every member. `docs/security-model.md` claims `Domain`
-  is stripped from every app `Set-Cookie`; it isn't on this path.
+  into a lockout of every member.
   `perimeter.first-party-101-cookie-domain` is **not enforced**. TODO:
   "Strip session-named `Set-Cookie` headers from app responses" (Build).
 - *An app can set a cookie named like the session cookie on its own host*
@@ -455,11 +454,6 @@ the session lives in.
 
 **Gaps.**
 
-- *A password reset does not end existing sessions* (medium, small fix).
-  Better Auth's `revokeSessionsOnPasswordReset` is unset, so after a reset
-  every session an attacker already holds keeps working for up to 7 days.
-  Deactivation does end them; on the hosted gateway admins can't deactivate
-  at all. One line in `apps/every-app-gateway/src/auth/config.ts:398-414`.
 - *No owner recovery and no ownership transfer* (medium, known). The owner
   the setup claim made is immutable: nobody can change, deactivate, delete
   or reset an owner, and the `recovery` kind in `owner_setup_tokens` is
@@ -598,10 +592,7 @@ what the app does with a verified user.
 token's organization matches the deployed Worker's organization; it
 doesn't compare `org_id` with `EVERY_APP_ORG_ID`. The guarantee comes from
 the audience: each organization's copy has its own Worker name, and the
-gateway mints `aud` from the registry row. `docs/security-model.md`'s
-"apps verify the signature, issuer, audience, token type and key id" holds
-for identities and system tokens; for markers the issuer is checked only
-when configured.
+gateway mints `aud` from the registry row.
 
 ### B4. App Worker → the Gateway: the AppGateway binding, AI and capabilities
 
@@ -646,7 +637,7 @@ leaking either way.
 | `ai.logs-redacted` | AI logs carry provider, organization, app, route, model, status, request id and token usage, never the prompt, the output or the key. | `ai-proxy.ts:281-295` | `ai-proxy.test.ts` :: logs model, token usage and request id, never the prompt |
 | `cap.grant-required` | A capability call is forwarded only when the app's registry-row manifest lists it with the needed access; otherwise `403 capability_not_requested`. | `integration-proxy.ts:164-170` | `integration-proxy.test.ts` :: refuses a capability the app's registry row doesn't list |
 | `cap.host-allowlist-https` | The upstream of an API-key call is `https://<host><path>` only for a host in the capability's list, matched before any URL is built; `//`, backslashes and a parse that moves the host are refused. | `packages/sdk/src/internal/capabilities.ts:887-934` | `integration-proxy.test.ts` :: refuses %s before anything leaves the gateway |
-| `cap.account-wide-paths-refused` | DataForSEO paths that list the whole account (`tasks_ready`, `id_list`, `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused however spelled. | `capabilities.ts:153-159` | `integration-proxy.test.ts` :: refuses DataForSEO's account-wide %s, which would show one app another's tasks |
+| `cap.account-wide-paths-refused` | DataForSEO paths that list the whole account (`tasks_ready`, `tasks_fixed`, `id_list`, `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused however spelled. | `capabilities.ts:153-159` | `integration-proxy.test.ts` :: refuses DataForSEO's account-wide %s, which would show one app another's tasks |
 | `cap.credentials-stripped-no-redirect` | The upstream request carries the gateway's key and none of the app's `Authorization`, `x-api-key`, cookies, `x-everyapp-*` or forwarding headers, and follows no redirect. | `capabilities/forward.ts:4-29` | `integration-proxy.test.ts` :: forwards a call with the gateway's key and nothing the app sent |
 | `cap.key-existence-hidden` | Only an app that lists a capability learns whether the gateway holds its key, client or sender. | `integration-proxy.ts:100-127, 164-196` | `integration-proxy.test.ts` :: reports whether calls would go through, without calling the provider |
 | `oauth.token-endpoints-only` | An OAuth-client call is completed only for one of the capability's token endpoints: exact https host, exact path, listed method; the network's API hosts and other paths are refused. | `capabilities.ts:906-919` | `capabilities/oauthClient.test.ts` :: refuses %s |
@@ -660,9 +651,9 @@ leaking either way.
 | `members.scoped-to-attributed-organization` | The members list returns only the attributed organization's live members in an active organization who are granted that app; an agent's identity is refused outright. | `capabilities/members.ts:76-90` | `members-capability.sqlite.test.ts` :: lists the organization's live members the app is granted to, and nobody else |
 
 **Not this boundary's job.** What the provider does with a valid call, an
-app's own secrets (its `secrets` in the manifest live on its Worker), the
-Google and Microsoft per-app scope narrowing being built this week
-(`docs/design/2026-10-oauth-scopes.md`), and metering, which doesn't exist.
+app's own secrets (its `secrets` in the manifest live on its Worker), and
+what an app does with the network API tokens it holds (the scope sets bound
+which tokens it gets, not the calls it makes with them).
 
 **Gaps.**
 
@@ -716,9 +707,6 @@ Google and Microsoft per-app scope narrowing being built this week
   now completes only a user's grants (`authorization_code`,
   `refresh_token`, the networks' exchanges, RFC 8693) and refuses the rest
   with `integration_grant_not_allowed`.
-- *DataForSEO `tasks_fixed` is account-wide and served* (medium, small
-  fix). It lists completed task ids for the whole account like
-  `tasks_ready`, which is refused; add it to `accountWidePaths`.
 - *App-mail budgets are per address and gateway-wide only* (medium, known).
   One organization's app can exhaust the gateway's 5,000 a day; on hosted,
   mail from any app goes out as the platform's sender.
@@ -755,9 +743,7 @@ the first gap above; pinned by `app-cap.sqlite.test.ts` (see
 
 **Docs to fix.** `docs/capabilities.md` lists the checks in a different
 order than the code runs them (route, then capability, then account-wide
-path); `docs/security-model.md`'s "headers that would set the sender,
-recipients or subject are refused" should add that the rest pass through
-to whichever provider sends.
+path).
 
 ### B5. AI client → `/mcp`: the OAuth server, personal tokens and the ToolBus
 
@@ -854,12 +840,9 @@ Managed OAuth grant lifetime (Access's).
   member* (info): any member can mint a token for themselves by calling the
   server function, which is the intended rule; the UI hides it.
 
-**Docs to fix.** `docs/runbooks/mcp-oauth.md`: with OAuth off, the
-gateway's `/mcp` also serves a verified Access assertion (Managed OAuth),
-and the per-address registration budgets it quotes are the self-hosted
-ones (200 and 20,000 on hosted). `docs/security-model.md`: "redirect URIs
-must be https or loopback http" holds for the URI an authorization uses;
-a registration may list other schemes, which are never usable.
+**Docs to fix.** `docs/security-model.md`: "redirect URIs must be https or
+loopback http" holds for the URI an authorization uses; a registration may
+list other schemes, which are never usable.
 
 ### B6. Cloudflare Access ↔ the Gateway
 
@@ -883,7 +866,7 @@ A deactivated member getting back in because Access still admits them. A
 site planting a sign-in in someone's browser. The `/mcp` path taking the
 Access cookie, which a cross-site POST could ride.
 
-**Invariants.** The register has 40.
+**Invariants.** The register has 36.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -945,29 +928,31 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
 - *Managed OAuth and the service-token path are unverified against a live
   application* (low, known; TODO "MCP through Cloudflare Access").
 
-**Docs to fix.** `docs/security-model.md`: "the CLI never calls the
-gateway, so nothing is bypassed for it" is almost right: `everyapp setup`
-probes the gateway's root before showing the owner link and `deploy`
-probes app hosts, and both tolerate an Access login page. "The runbook asks
-for HttpOnly and the binding cookie on both" is true for the plain outer
-ring; the Managed OAuth body sets the binding cookie off for the gateway's
+**Docs to fix.** `docs/security-model.md`: "The runbook asks for HttpOnly
+and the binding cookie on both" is true for the plain outer ring; the
+Managed OAuth body sets the binding cookie off for the gateway's
 application, as the runbook itself explains. The sign-out promise above.
 
 ### B7. Operator → Cloudflare: deploy authority on self-host
 
-**What crosses.** `everyapp setup`, `deploy`, `register`, `delete`,
+**What crosses.** `everyapp setup`, `update`, `deploy`, `install`, `delete`,
 `secret`, `email` and `db`, run on the operator's machine or in CI with
 the operator's Cloudflare login or an API token: they build the app,
 check the Build Output against the policy, provision resources, upload
 Workers, write the registry and the owner setup link in the Gateway's D1,
 and reconcile the Gateway's bindings. Since #371 (2026-10-23) there is a
 second path: the browser install, where the Gateway itself downloads a
-public release and uploads it with a `CF_DEPLOY_TOKEN` it holds. On the
-other side, the Cloudflare account: every Worker, every database, the
-Gateway included. The code is `packages/cli/src/lib/app/policy.ts` (the
-policy), `packages/perimeter/src/registry/` (the registration rules the
-CLI runs before every write), `packages/cli/src/lib/gateway/` (discovery,
-leases, the downgrade guard, releases) and, for the browser path,
+public release and uploads it with a `CF_DEPLOY_TOKEN` it holds.
+`everyapp teardown --account-id <id>` is the one command that deletes
+everything Every App made in an account: it runs only against an id on the
+test-account allowlist (`EVERYAPP_TEST_ACCOUNTS` or
+`~/.config/everyapp/test-accounts`), never `CLOUDFLARE_ACCOUNT_ID`, and asks
+for the id again (`--confirm <id>` unattended). On the other side, the
+Cloudflare account: every Worker, every database, the Gateway included.
+The code is `packages/cli/src/lib/app/policy.ts` (the policy),
+`packages/perimeter/src/registry/` (the registration rules the CLI runs
+before every write), `packages/cli/src/lib/gateway/` (discovery, leases,
+the downgrade guard, releases) and, for the browser path,
 `apps/every-app-gateway/src/server/deploy/install.ts` and
 `browser-install.ts`.
 
@@ -1009,11 +994,11 @@ racing.
 | `secrets.values-never-on-argv` | A secret's value is read from a hidden prompt, stdin or `--from-env`, never the command line, and reaches cf only through a private temp file. | `packages/cli/src/lib/secretValue.ts:17-75` | `deployApp.hyperdrive.test.ts` :: never puts the database password on a command line (partial: the general `secret set` path has no such pin) |
 | `secrets.reserved-names-and-routing` | An app's own secret can never be `GATEWAY_URL`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`, a Gateway setting or a binding name; `secret set` sets only names the manifest lists. | `packages/sdk/src/internal/gatewaySettings.ts:122-139`; `packages/cli/src/lib/app/secrets.ts` | `secrets.test.ts` :: refuses names the deploy sets, and the platform's namespaces |
 | `deploy.never-replaces-unrecorded-version-unattended` | An unattended deploy or secret change stops when the Worker's serving version isn't one everyapp recorded. | `packages/cli/src/lib/cf/deploy.ts:189-230` | `deployApp.test.ts` :: stops unattended over an app Worker version it didn't record deploying |
-| `deploy.downgrade-guard` | Deploy, delete and register refuse a checkout or release older than the live Gateway, before the registry is touched. | `packages/cli/src/lib/gateway/apply.ts:182-215` | `deployApp.test.ts` :: refuses a checkout behind the live Gateway, before anything happens |
+| `deploy.downgrade-guard` | Deploy, install and delete refuse a checkout or release older than the live Gateway, before the registry is touched. | `packages/cli/src/lib/gateway/apply.ts:182-215` | `deployApp.test.ts` :: refuses a checkout behind the live Gateway, before anything happens |
 | `deploy.lease-serializes-writes` | One run at a time holds the app's and the Gateway's lease, taken by insert-on-conflict only when expired. | `packages/cli/src/lib/gateway/lease.ts:111-131` | `lease.test.ts` :: lets one of two deploys hold it (partial) |
 | `release.integrity-and-shape` | A release tarball is deployed only if its top level holds exactly its kind's entries, its SHA-256 over every file matches, and it is a production build. | `packages/cli/src/lib/gateway/release.ts:33-36, 146-159` | `release.test.ts` :: refuses a release whose files changed after it was built |
-| `release.never-built-from-url` | A GitHub URL fetches only the release's `everyapp-release.tar.gz`, anonymously, over HTTPS with HTTPS-only redirects, a 200 MB cap and a timeout, into a private temp file; a repository without a release is never built from its URL. | `packages/cli/src/lib/release/github.ts:46-98` | `deployRelease.test.ts` :: takes a GitHub repository's latest release, and sends a repository without one to clone it |
-| `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `deployRelease.test.ts` :: refuses local state, a build that isn't production's |
+| `release.never-built-from-url` | A GitHub URL fetches only the release's `everyapp-release.tar.gz`, anonymously, over HTTPS with HTTPS-only redirects, a 200 MB cap and a timeout, into a private temp file; a repository without a release is never built from its URL. | `packages/cli/src/lib/release/github.ts:46-98` | `packages/cli/src/commands/install/release.test.ts` :: takes a GitHub repository's latest release, and sends a repository without one to its clone |
+| `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `packages/cli/src/commands/install/release.test.ts` :: refuses local state, a build that isn't production's, and Prisma migrations |
 | `gateway.no-deploy-api-on-self-host` | The HTTP deploy API (`/api/v1/*`) is served only when `thirdPartyDeploys` holds, which is false in `self_hosted` and invalid modes. | `apps/every-app-gateway/src/server.ts:151-157` | `platform-policy.test.ts` :: opens third-party deploys only on a hosted gateway whose gate is on |
 | `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
 | `browser-install.policy-subset-and-intake` | A browser-installed release must be a tenant-neutral build with only the allowed keys, no `workers.dev`, no triggers, no `EVERYAPP_DEV`, bindings from the allowlist (D1, own Durable Objects, assets); helpers, Workflows, KV, R2, Hyperdrive, secrets and crons are refused before anything is provisioned. | `apps/every-app-gateway/src/server/deploy/metadata.ts:119-312` | `metadata.test.ts` :: refuses helper Workers, Workflows, KV, secrets and too many Durable Object classes (partial on self-host, see gaps) |
@@ -1027,10 +1012,9 @@ intent).
 **Gaps.**
 
 - *The browser install is a deploy path on the public Worker, open to
-  every organization owner and admin, missing from the security model and
-  untested on self-host* (high, medium fix). `docs/security-model.md`
-  ("nothing on the public Worker accepts a registration, a deploy or a
-  delete") and ADR-0003 predate #371. Once `CF_DEPLOY_TOKEN`,
+  every organization owner and admin, untested on self-host* (high, medium
+  fix). `docs/security-model.md` "Operator Authority" records it as the
+  second deploy authority; ADR-0003 predates #371. Once `CF_DEPLOY_TOKEN`,
   `CLOUDFLARE_ACCOUNT_ID` and `APP_BASE_DOMAIN` are set and
   `BROWSER_APP_INSTALLS` isn't `off`, `POST /api/admin/apps/install`
   registers and uploads an account Worker from a public GitHub release or
@@ -1040,13 +1024,12 @@ intent).
   "isn't available on a self-hosted gateway", which passes only because
   its env sets no `APP_BASE_DOMAIN`; `install.self-hosted-default-on` is
   **unpinned** and `gateway.nothing-public-registers-or-deploys-on-self-host`
-  is **not enforced** as the docs state it. What stands: the admin gate,
+  is **not enforced**. What stands: the admin gate,
   the CSRF guard, the release intake (integrity, tar refusals, the policy
   subset) and, behind the outer ring, Access in front of the page. What
   needs deciding: whether an admin of a secondary organization should be
-  able to deploy at all, and whether to document this as the second deploy
-  authority or default it off. This threat model documents it as the
-  second authority.
+  able to deploy at all, or default it off. The security model and this
+  threat model record it as the second authority.
 - *`CF_DEPLOY_TOKEN` on the public Worker is account-wide authority*
   (high, known, medium fix). The runbook asks for Workers Scripts Edit and
   D1 Edit on the account: the token can rewrite every Worker in the account,
@@ -1074,13 +1057,9 @@ intent).
 - *`secret set|unset` on a shared app skip the platform-admin check*
   (medium, known, hosted only).
 
-**Docs to fix.** `docs/security-model.md` "Operator Authority": add the
-browser install as the second deploy authority (an admin session plus the
-Gateway's `CF_DEPLOY_TOKEN`), and drop "nothing on the public Worker
-accepts a registration, a deploy or a delete". ADR-0003: a note that #371
-added a gateway-served deploy path. `docs/runbooks/browser-app-install.md`:
-"on by default" is true only once the token exists; interactive setup
-defaults to No.
+**Docs to fix.** ADR-0003: a note that #371 added a gateway-served deploy
+path. `docs/runbooks/browser-app-install.md`: "on by default" is true only
+once the token exists; interactive setup defaults to No.
 
 ### B8. The hosted tier: the deploy API, the dispatch namespace, egress, third-party hosts, shared apps
 
@@ -1174,12 +1153,6 @@ unless marked)
 - *The tier is unverified against a live namespace* (known, the launch
   gate).
 
-**Docs to fix.** `docs/security-model.md` "Install from GitHub ... behind
-the same launch gate ... and on every self-hosted gateway": on self-host
-the browser install is available once the deployer is configured, and it
-also accepts an oss.new release URL. `docs/runbooks/hosted-install.md`
-still shows `secret set --for gateway`, a flag that no longer exists.
-
 ## Credentials: lifetime and revocation
 
 Every credential in the system, how long it lives, what ends it, and how
@@ -1214,7 +1187,7 @@ model says they shouldn't, then what the operator is exposed to, then the
 hosted tier. Each line names the boundary and, where one exists, the
 invariant id and the TODO entry. "Fixed" names the pull request; "merged"
 means it is on main (every boundary fix from this pass merged on
-2026-10-24); "held" means it waits for Ben's review.
+2026-10-24).
 
 **Self-hosted, before Monday if possible**
 
@@ -1398,11 +1371,10 @@ means it is on main (every boundary fix from this pass merged on
     the list, HttpOnly off, are silent weakenings. `everyapp access on`
     makes the right shape; a read-back in `status` is the follow-up.
 38. **Hygiene before the public copy** (the launch-review thread's scan):
-    no LICENSE file; a personal street address and account identifiers in
-    `docs/research/` (deleted 2026-10-24); internal notes served at
-    `/docs/internal`; Postiz's
-    AGPL schema as an unattributed test fixture; a personal Expo account in
-    `apps/mobile-native/app.json` (deleted 2026-10-24). `docs/launch-2026-10-27.md` section G.
+    no LICENSE file. The rest of its list is done: `docs/research/` (deleted, #433) and
+    `apps/mobile-native/app.json` deleted, `/docs/internal` unpublished,
+    the Postiz fixture's AGPL schema replaced with our own SQL (#458), all
+    2026-10-24. `docs/launch-2026-10-27.md` section G.
 
 **Hosted only** (nothing here reaches a self-hosted gateway)
 

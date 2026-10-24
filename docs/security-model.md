@@ -51,8 +51,9 @@
 
 > The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
 
-`GATEWAY_DEPLOYMENT_MODE` (`everyapp setup --mode`, a secret set with the
-first upload; ADR-0001) decides what the gateway does, once, in
+`GATEWAY_DEPLOYMENT_MODE` (a secret the CLI sends with the Gateway's first
+upload, `self_hosted`, and never changes; ADR-0001) decides what the gateway
+does, once, in
 `platformPolicy(env)` (`apps/every-app-gateway/src/server/platform-policy.ts`):
 
 - `self_hosted`: invite-only sign-up, Cloudflare Access sign-in when
@@ -199,13 +200,13 @@ first upload; ADR-0001) decides what the gateway does, once, in
 - The registration rules give a shared app only to the install
   organization and never change an app's scope (a redeploy that names none
   keeps the row's; the same id asked for as the other scope is refused,
-  tombstones included). The CLI registers, redeploys or deletes one
-  (`everyapp deploy --shared`, `everyapp register`,
-  `everyapp delete`) only on a gateway whose install row records `hosted`
-  (deletes aside), and only for a Cloudflare login that is an owner or admin
-  of the platform organization by its verified email (an API token is the
+  tombstones included). `deploy --shared` and `everyapp register` were
+  removed with the hosted surface (2026-10-24). A row that is already shared
+  still takes `everyapp deploy`, `email set` and `everyapp delete` only from
+  a Cloudflare login that is an owner or admin of the platform organization
+  by its verified email (`SHARED_APP_FORBIDDEN`; an API token is the
   account's own authority, as below). `secret set|unset` change the live
-  Worker without a deploy since #321 and check neither yet; the Cloudflare
+  Worker without a deploy since #321 and don't check that yet; the Cloudflare
   login they take can change the Worker's secrets through cf directly
   (TODO.md, Build). A shared app's manifest, the names under `secrets`
   included, is read-only visible to every organization's admins in Admin →
@@ -292,17 +293,22 @@ in the gateway's Cloudflare account **is** operator authority.
   gateway still validates the manifest it reads from a row and treats an
   unknown status as disabled; a row whose `tier` isn't `service_binding` or
   `dispatch`, or whose `scope` isn't `org` or `shared`, is never routed (a
-  503 on its host), never read as another tier or scope. A hand-written row that breaks a rule is the
-  operator's doing, as a hand-edited Worker is.
+  503 on its host), never read as another tier or scope. A provider app's
+  row (`everyapp provider on`: tier `provider`, no hostname, no Worker) is
+  left out of that lookup altogether: the gateway serves its tools itself on
+  `/mcp` (docs/threat-model.md B5, `toolbus.provider-app-in-process`). A
+  hand-written row that breaks a rule is the operator's doing, as a
+  hand-edited Worker is.
 - The gateway activates apps itself: a `binding` app (its Worker uploaded)
   becomes `active` on the first request that reaches the Worker over a
   service binding of the gateway version serving that request. A `pending`
   app is never bound or activated, a disabled or deleted one is never
   switched back on, and only `GATEWAY_DEPLOYMENT_MODE=self_hosted` or
   `hosted` activates (any other value, unset included, fails closed).
-- Every deploy records its actor on the app row (`deployed_by_actor`, with
-  `deployed_at`): the Cloudflare login's email, or `api-token:<account id>`
-  in CI. Admin → Apps shows it. There is no deploy event log.
+- Every CLI deploy records its actor on the app row (`deployed_by_actor`,
+  with `deployed_at`): the Cloudflare login's email, or `api-token:<account
+  id>` in CI. Admin → Apps shows it; there is no deploy event log for them.
+  A browser install is a `deploy_jobs` row with the admin's email.
 - Revocation is Cloudflare's alone. Removing, banning or deactivating a
   gateway member doesn't stop them deploying while they still hold the
   Cloudflare login or an API token for the account. Any Cloudflare API
@@ -318,6 +324,13 @@ in the gateway's Cloudflare account **is** operator authority.
 ## Perimeter Contract
 
 - Routes are private unless the app manifest explicitly declares them public.
+- An app with a required setting unset (`docs/manifest-settings.md`) doesn't
+  open: a private HTML navigation gets a 302 to
+  `${GATEWAY_URL}/?setup=<appId>`, everything else, public routes included,
+  `503 app_needs_setup`, naming no setting
+  (`apps/every-app-gateway/src/server/app-needs-setup.ts`;
+  docs/threat-model.md B1). Its tools stay out of `/mcp` until an admin runs
+  the `secret set` command the app lists show.
 - The gateway strips `Cookie` and every inbound `x-everyapp-*` trust header on
   both public and private routes. Apps must never trust client-supplied Every
   App headers.
@@ -445,7 +458,7 @@ in the gateway's Cloudflare account **is** operator authority.
   `Authorization` the app sent (query, body, header, in any case) before it
   puts its own where the endpoint takes it, buffers the body (64 KiB, form
   or JSON only), follows no redirect and drops the network's `set-cookie`.
-  For a client with scope sets (Google, Microsoft) it also holds each app
+  For a client with scope sets (Google, Microsoft, Slack) it also holds each app
   to the sets its manifest lists at every mint and refresh: a void grant, a
   grant type the policy doesn't complete, a request `scope` outside the
   sets and a 2xx answer whose granted scopes exceed them are refused
@@ -456,14 +469,14 @@ in the gateway's Cloudflare account **is** operator authority.
   boundary is which tokens an app can obtain, not what it does with them:
   API calls don't pass through the gateway, a Google token is narrow per
   app only when the app asks for the status's scopes without
-  `include_granted_scopes`, and a shared Microsoft client's wider consent
-  is refused rather than narrowed.
+  `include_granted_scopes`, and a shared Microsoft or Slack client's wider
+  consent is refused rather than narrowed.
   The client secret never reaches an app; the public `clientId` reaches only
   an app that lists the network. Logs name the grant type from a known
   list, never the query, body or answer, which carry codes and tokens (on a
   scope refusal, the declared set names and the scope names in excess). The
   access and refresh tokens the exchange returns are the app's, stored and
-  used by the app (Postiz encrypts them at rest with its own `JWT_SECRET`).
+  used by the app.
   X stays an app secret: OAuth 1.0a signs every call with the user's token
   secret, which the gateway never holds.
 
@@ -552,7 +565,12 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   Listing tools serves those snapshots; the gateway calls an app only to
   take one it lacks (at most 20 apps within a request, for 3 s, with the
   one-minute system token that opens nothing but the catalog). Each tool
-  call is one call over the app's service binding.
+  call is one call over the app's service binding. The gateway's `/mcp` also
+  serves provider apps (`everyapp provider on dataforseo`: tier `provider`,
+  tools `dataforseo_<tool>`) in-process with the Gateway's key, each call
+  under the capability proxy's rules and the organization's monthly cap,
+  counted and audited against the provider row (`docs/capabilities.md`,
+  "Provider apps").
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
   (see below) or a personal access token, never a cookie; a self-hosted
   gateway behind Cloudflare Access's Managed OAuth also takes a verified
@@ -617,7 +635,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 - Each tool call, on either endpoint, logs one `mcp.tool_call` line and
   writes one `mcp_tool_calls` row with a keyed digest of the arguments,
   never the arguments or the result, including calls refused for their
-  arguments. An hourly cron deletes rows older than
+  arguments. Admin → Activity shows them to the organization's owners and
+  admins. An hourly cron deletes rows older than
   `MCP_AUDIT_RETENTION_DAYS` (90 by default).
 
 ## Connected AI apps (OAuth)
@@ -724,6 +743,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 
 ## Dispatch Tier and Egress
 
+> The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
+
 The hosted gateway reaches third-party apps (registry `tier = 'dispatch'`)
 in a Workers for Platforms dispatch namespace. Third-party deploys are off
 unless a hosted gateway's `THIRD_PARTY_DEPLOYS` secret is exactly `on`
@@ -770,6 +791,8 @@ binding once the account has one. Until then every dispatch app answers 503.
   and data providers only through the gateway's metered proxies.
 
 ## Third-Party Hosts and Per-Host Sessions
+
+> The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.
 
 Two classes of app host, decided from the Host header before any registry
 lookup or credential read (`routeHost`,
@@ -875,9 +898,9 @@ lookup or credential read (`routeHost`,
 
 Third-party apps (customer code, forks of OpenSEO included) reach the
 hosted gateway's dispatch namespace only through its deploy pipeline
-(`apps/every-app-gateway/src/server/deploy/`): the deploy API, which
-`everyapp deploy --gateway <url>` with `EVERYAPP_DEPLOY_TOKEN` calls, and
-an admin's install from GitHub.
+(`apps/every-app-gateway/src/server/deploy/`): the deploy API (deploy
+keys; the CLI's path to it left on 2026-10-24) and an admin's install from
+GitHub.
 
 - **The launch gate.** The routes (`/api/v1/…` on the gateway's host)
   exist only while `platformPolicy(env).thirdPartyDeploys` holds: a hosted
@@ -970,12 +993,10 @@ an admin's install from GitHub.
   an admin installs a repository they trust. `deployed_by_actor` is the
   admin's email, and the job records the repository, tag, version and
   commit it came from (`deploy_jobs.source`).
-- **The CLI.** Only `EVERYAPP_DEPLOY_TOKEN` sends `everyapp deploy` to the
-  deploy API; `EVERYAPP_TOKEN` (a self-hoster's MCP bearer) and
-  `EVERYAPP_GATEWAY_URL` alone leave the self-host deploy as it was.
-- The Cloudflare token (`CF_DEPLOY_TOKEN`, Workers for Platforms and D1
-  edit) is a secret of the hosted gateway: whoever reads the gateway's
-  secrets can deploy into the namespace. The hosted gateway is ours alone.
+- The Cloudflare token (`CF_DEPLOY_TOKEN`) is a secret of the gateway: the
+  hosted one (Workers for Platforms and D1 edit) and a self-hosted one whose
+  operator turned the browser install on ("Operator Authority"). Whoever
+  reads the gateway's secrets can deploy with it.
 
 ## Response Contract
 
@@ -999,6 +1020,9 @@ an admin's install from GitHub.
   password or code field. Other error logs (perimeter and app failures)
   record an error's message and stack as thrown, so errors must not put
   credentials in their messages.
-- Deploys happen outside the gateway, so it logs none: who uploaded an
-  app's live version is on its row (`deployed_by_actor`, `deployed_at`,
-  `version_id`), the Cloudflare login's email or `api-token:<account id>`.
+- The CLI's deploys happen outside the gateway, so it logs none of them: who
+  uploaded an app's live version is on its row (`deployed_by_actor`,
+  `deployed_at`, `version_id`), the Cloudflare login's email or
+  `api-token:<account id>`. A browser install is the gateway's own job:
+  `app_install.started`, then `deploy_api.deploy_succeeded` or
+  `deploy_api.deploy_failed`, and a `deploy_jobs` row.
