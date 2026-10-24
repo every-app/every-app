@@ -141,7 +141,7 @@ The gateway-lite calls `handleGatewayRequest` from `packages/perimeter/src/gatew
 - Public routes (`public` in the manifest) are auth-optional: a signed-in caller still gets an identity, an anonymous one the signed public marker.
 - Every inbound `x-everyapp-*` header, `cookie` and `authorization` is stripped (`prepareOutboundHeaders` in `packages/perimeter/src/headers.ts`); `authorization` is restored only on a public route, and only when the Gateway did not consume it (an `epat_` or Gateway OAuth token is never forwarded).
 - An MCP-only credential answers at `/mcp` and nowhere else (`403 token_scope`); `/mcp` goes to the ToolBus unless the manifest sets `mcp: "app"` or declares `/mcp` public.
-- Security headers (CSP floor, see `headers.ts`) are stamped on every response; a crashing app is `502 {"error":"app_error"}`, an unreachable one `503 {"error":"app_unreachable"}`.
+- Security headers (see `headers.ts`) are stamped on every response: HSTS, `nosniff`, `X-Frame-Options: DENY`, `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: strict-origin-when-cross-origin` (the deployed Gateway's own pages send `no-referrer`); the CSP floor is on HTML responses only. A crashing app is `502 {"error":"app_error"}`, an unreachable one `503 {"error":"app_unreachable"}`.
 
 What this means for curl (verified in `docs/TESTING.md`, the rules are in `csrf.ts`):
 

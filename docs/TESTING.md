@@ -777,8 +777,14 @@ curl -s -o /dev/null -w '%{http_code}\n' \
   -X POST https://todo.example.com/__everyapp/tools/call
 # => 404 (the perimeter refuses the tools contract from outside)
 
-# 6. Uniform security headers are stamped on HTML:
+# 6. Uniform security headers on every answer; the CSP floor on HTML only
+#    (a private route's anonymous 401 JSON or 302 carries none, so read it
+#    off a page an anonymous caller can render, like the Gateway's sign-in
+#    page; with Access on, Access answers that first):
 curl -sI https://todo.example.com/ | grep -iE \
+  'strict-transport-security|x-content-type-options'
+# => HSTS, nosniff
+curl -s -D - -o /dev/null https://apps.example.com/sign-in | grep -iE \
   'strict-transport-security|x-content-type-options|content-security-policy'
 # => HSTS, nosniff, CSP with frame-ancestors 'none'
 ```

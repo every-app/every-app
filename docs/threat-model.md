@@ -223,6 +223,13 @@ Cloudflare's job, some are simply not built.
 - **Timing side channels**, except where a comparison guards a secret (token
   hashes are compared as hashes; the code doesn't try to be
   constant-time everywhere).
+- **Which build serves.** The Gateway's build stamp (short commit and build
+  time, with a `*` when the tree was dirty;
+  `apps/every-app-gateway/vite.config.ts`, rendered in the root layout) is in
+  the HTML of every control-plane page, the 404 shell included, for anyone
+  who can load one. That is ordinary version disclosure and is accepted: a
+  self-host builds from the public repository, so its commit is public
+  anyway, and the stamp lets an operator match a screen to a commit.
 - **Supply chain beyond the floors.** `pnpm-workspace.yaml` pins known-bad
   transitive versions (`jose`, `seroval`, `tinypool`), CI fails on critical
   advisories in the lockfile, and the security-review action is
@@ -305,7 +312,7 @@ row being routed.
 | `perimeter.gateway-url-fail-closed` | Without `GATEWAY_URL` the control plane is served on an app-shaped host only while the registry holds no active app; once one exists every such request is `404 gateway_misconfigured`. | `apps/every-app-gateway/src/server.ts:305-328` | `apps/every-app-gateway/src/server.test.ts` :: fails closed without GATEWAY_URL when an active app is registered |
 | `perimeter.status-gating` | Only an `active` row is proxied: `disabled` is 503, `pending`/`binding` 503 with `Retry-After`, an unknown status is treated as disabled, a tombstone is 404, an unknown tier or scope is 503 and never coerced. | `packages/perimeter/src/gateway.ts:282-294`; `packages/perimeter/src/registry/apps.ts:109-117` | `packages/perimeter/src/gateway.test.ts` :: 503s for a disabled app |
 | `perimeter.one-seam` | An app is reached only through `getAppFetcher`: a service-binding app via its `APP__<worker_name>` binding (never a raw-name binding), a dispatch app via `DISPATCHER` only after re-checking the Worker name is `every-<orgKey>-<appId>`. | `packages/perimeter/src/getAppFetcher.ts:106-108, 219-238` | `packages/perimeter/src/getAppFetcher.test.ts` :: does not fall back to raw worker-name bindings |
-| `perimeter.response-hygiene` | Every response but a true 101 carries HSTS, `nosniff`, frame denial, `Referrer-Policy: no-referrer` and, on HTML, the CSP floor; `Domain` is removed from app `Set-Cookie` headers. | `packages/perimeter/src/headers.ts:141-190` | `packages/perimeter/src/headers.test.ts` :: stamps HSTS, nosniff, frame denial on HTML responses |
+| `perimeter.response-hygiene` | Every response but a true 101 carries HSTS, `nosniff`, frame denial, `Referrer-Policy: strict-origin-when-cross-origin` (`no-referrer` on the control plane and the host-session exchange) and, on HTML responses, the CSP floor; `Domain` is removed from app `Set-Cookie` headers. | `packages/perimeter/src/headers.ts:141-179, 182-190, 246-284` | `packages/perimeter/src/headers.test.ts` :: stamps HSTS, nosniff, frame denial on HTML responses; `packages/perimeter/src/headers.test.ts` :: does not add an HTML CSP to JSON responses |
 | `perimeter.cache-bounded-revocation` | Per isolate, a hostname's registry row is cached 30 s (5 s on a miss), a browser session's membership and an organization's status 30 s; a personal token's membership and ban state, `user_app_access` and the session row are read live. | `apps/every-app-gateway/src/server.ts:83-133`; `apps/every-app-gateway/src/server/organization/orgContext.ts:17` | `apps/every-app-gateway/src/server.test.ts` :: caches hostname hits for 30 seconds |
 | `perimeter.logs-redacted` | Proxy log lines carry app id, method, status, latency and mode, never the path; every `logEvent` field named cookie/authorization/set-cookie or matching token/secret/password/code is redacted at any depth. | `packages/perimeter/src/log.ts:13-57` | `packages/perimeter/src/gateway.test.ts` :: logs proxy metadata without the request path |
 
