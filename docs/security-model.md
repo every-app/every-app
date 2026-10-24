@@ -418,8 +418,13 @@ in the gateway's Cloudflare account **is** operator authority.
 - Social networks' OAuth clients (`oauth_client` capabilities,
   `server/capabilities/oauthClient.ts`) are the operator's, one per network
   for every organization. The gateway completes only each network's token
-  endpoints (host, exact path, method) for an app whose manifest lists the
-  network with `write`, refuses agents' identities outright
+  endpoints (host, exact path, method), only for a user's own grants
+  (`authorization_code`, `refresh_token` and the networks' token
+  exchanges: `client_credentials`, or any grant it doesn't know, is
+  refused with `integration_grant_not_allowed`, since it would mint a
+  token for the gateway's own application rather than a person's), for
+  an app whose manifest lists the network with `write`, refuses agents'
+  identities outright
   (`integration_agent_not_allowed`, `mcp:write` or not: an agent can't
   connect accounts or mint tokens), removes any client id, secret or
   `Authorization` the app sent (query, body, header, in any case) before it

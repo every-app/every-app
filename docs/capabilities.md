@@ -253,7 +253,10 @@ A social network's OAuth client is a capability too (`oauth_client`): the
 operator registers one client per network on the network's developer
 console and gives it to the gateway, and every app that lists the network
 connects people's accounts with it. The gateway completes the network's
-**token endpoints only**, putting its client on the request; the app builds
+**token endpoints only**, and only a user's own grants (`authorization_code`,
+`refresh_token` and the network's token exchanges; `client_credentials`, which
+would mint a token for the operator's own application, is refused), putting
+its client on the request; the app builds
 the authorize URL from the client's public id, keeps the access and refresh
 tokens it gets back, and calls the network's API with them itself. The
 client secret never reaches an app. Open CRM uses `slack` (and the two
@@ -336,6 +339,7 @@ token endpoint directly and puts the developer's own client from
 | `capability_not_requested`      | 403     | the deployed manifest doesn't list the network with `access: "write"`                         |
 | `caller_*`                      | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)        |
 | `integration_agent_not_allowed` | 403     | an agent's identity (`chan: "mcp"`), with or without `mcp:write`: agents can't connect accounts or mint tokens |
+| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant (`client_credentials`, say): it would mint a token for the operator's own application |
 | `integration_not_configured`    | 503     | the gateway doesn't hold the client; the message names the `secret set` command               |
 | `integration_body_too_large`    | 413     | the body passes 64 KiB, counted as it streams                                                 |
 | `integration_body_invalid`      | 400     | the body isn't form-encoded or JSON, or not the one the endpoint takes                        |

@@ -531,6 +531,37 @@ describe("refusals", () => {
     expect(upstream).not.toHaveBeenCalled();
   });
 
+  it("refuses the client-credentials grant, which would mint a token for the gateway's own client", async () => {
+    const body = await expectRefusal(
+      call(LINKEDIN, {
+        body: "grant_type=client_credentials",
+        headers: { "content-type": FORM },
+      }),
+      403,
+      "integration_grant_not_allowed",
+    );
+    expect(body["message"]).toMatch(/user's grants only/);
+    // In the query string, as Meta's endpoints take it; and any grant the
+    // gateway doesn't know.
+    await expectRefusal(
+      call(
+        "/api/integrations/facebook/graph.facebook.com/v25.0/oauth/access_token?grant_type=client_credentials",
+        { method: "GET" },
+      ),
+      403,
+      "integration_grant_not_allowed",
+    );
+    await expectRefusal(
+      call(LINKEDIN, {
+        body: "grant_type=password&username=u&password=p",
+        headers: { "content-type": FORM },
+      }),
+      403,
+      "integration_grant_not_allowed",
+    );
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
   it("refuses an agent: agents can't connect accounts or mint tokens", async () => {
     for (const scopes of [undefined, ["mcp:write"]]) {
       await expectRefusal(

@@ -7,8 +7,10 @@ import {
 import {
   injectClientCredentials,
   oauthClientCredentials,
+  requestedGrantType,
   tokenGrantType,
   type TokenRequest,
+  USER_BOUND_GRANT_TYPES,
 } from "./oauthClient";
 
 const CLIENT = { clientId: "gateway-id", clientSecret: "gateway-secret" };
@@ -339,5 +341,33 @@ describe("oauthClientCredentials", () => {
         MASTODON_URL: "http://fosstodon.org",
       }),
     ).toBeNull();
+  });
+});
+
+describe("requestedGrantType and the grants the gateway completes", () => {
+  it("reads the grant as sent, and knows which ones end in a user's own tokens", () => {
+    expect(
+      requestedGrantType(
+        request("https://x.example/t?grant_type=client_credentials", null),
+      ),
+    ).toBe("client_credentials");
+    expect(
+      requestedGrantType(
+        request("https://x.example/t", "grant_type=password&username=u", {
+          "content-type": FORM,
+        }),
+      ),
+    ).toBe("password");
+    expect(
+      requestedGrantType(request("https://x.example/t?code=c", null)),
+    ).toBeNull();
+    for (const grant of [
+      "authorization_code",
+      "refresh_token",
+      "fb_exchange_token",
+    ]) {
+      expect(USER_BOUND_GRANT_TYPES.has(grant)).toBe(true);
+    }
+    expect(USER_BOUND_GRANT_TYPES.has("client_credentials")).toBe(false);
   });
 });

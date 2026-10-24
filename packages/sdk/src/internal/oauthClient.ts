@@ -177,11 +177,27 @@ const GRANT_TYPES = new Set([
 ]);
 
 /**
- * A token request's `grant_type`, from its body or query string, for logs:
- * one of the known grant types, `other`, or null when it names none (Meta's
- * code exchange). Never the request's other fields.
+ * The grants the gateway completes: each ends in a user's own tokens. The
+ * client-credentials grant, and anything else a network serves on the same
+ * endpoint, would mint a token for the gateway's own application instead,
+ * which on Meta, Discord, Twitch or Kick manages the application's
+ * settings, its webhooks and every tenant's tokens.
  */
-export function tokenGrantType(request: TokenRequest): string | null {
+export const USER_BOUND_GRANT_TYPES: ReadonlySet<string> = new Set([
+  "authorization_code",
+  "refresh_token",
+  "fb_exchange_token",
+  "ig_exchange_token",
+  "th_exchange_token",
+  "urn:ietf:params:oauth:grant-type:token-exchange",
+]);
+
+/**
+ * A token request's `grant_type` as the app sent it, from its body or query
+ * string, or null when it names none (Meta's code exchange). Never the
+ * request's other fields.
+ */
+export function requestedGrantType(request: TokenRequest): string | null {
   let value: unknown = null;
   const type = mediaType(request.headers.get("content-type"));
   if (request.body && type === FORM) {
@@ -190,7 +206,16 @@ export function tokenGrantType(request: TokenRequest): string | null {
     value = jsonObject(request.body)?.["grant_type"] ?? null;
   }
   value ??= request.url.searchParams.get("grant_type");
-  if (typeof value !== "string" || !value) return null;
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * A token request's `grant_type` for logs: one of the known grant types,
+ * `other`, or null when it names none.
+ */
+export function tokenGrantType(request: TokenRequest): string | null {
+  const value = requestedGrantType(request);
+  if (value === null) return null;
   return GRANT_TYPES.has(value) ? value : "other";
 }
 

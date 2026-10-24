@@ -19,7 +19,9 @@ import {
   oauthClientOrigin,
   oauthClientSecretSetCommand,
   parseIntegrationProxyPath,
+  requestedGrantType,
   tokenGrantType,
+  USER_BOUND_GRANT_TYPES,
   type CapabilitySettings,
   type OAuthClientCapability,
   type OAuthClientCapabilityId,
@@ -149,6 +151,22 @@ export async function handleOAuthClientCall({
       413,
       "integration_body_too_large",
       `A token request's body is at most ${OAUTH_TOKEN_BODY_LIMIT / 1024} KiB.`,
+    );
+  }
+  // 5a. A user's grants only. The client-credentials grant, and anything
+  // else the network serves on the same endpoint, would mint a token for the
+  // gateway's own application, with its settings, its webhooks and every
+  // tenant's tokens behind it.
+  const grant = requestedGrantType({
+    url: route.upstream,
+    headers: request.headers,
+    body,
+  });
+  if (grant !== null && !USER_BOUND_GRANT_TYPES.has(grant)) {
+    return capabilityRefusal(
+      403,
+      "integration_grant_not_allowed",
+      `Through the gateway, ${capability.label} completes a user's grants only (authorization_code, refresh_token and the network's token exchanges); grant_type ${JSON.stringify(grant.slice(0, 64))} would mint a token for the gateway's own client.`,
     );
   }
   const injected = injectClientCredentials(
