@@ -127,15 +127,17 @@ Source: `packages/cli/src/commands/create/steps/appId.ts` (`resolveAppId`).
 
 The app the command acts on has no usable row in the Gateway's registry (never deployed, deleted, or gone mid-run). Each raise site says it its own way:
 
-| Raised by                                                                                                                    | Headline                                                                                                            | Next step                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `db query` (production), `db restore`, `email set`, `email unset`, `secret list <app>` (registry `readApp`, `writeAppEmail`) | `<app> isn't deployed to this Gateway yet`                                                                          | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                       | `The app is no longer registered on this Gateway`                                                                   | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                                  | `No app named <app> on this Gateway`                                                                                | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `secret set`, `secret unset` for an app's names, before any value is read                                                    | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`                  | `rerun`: `pnpm everyapp deploy`                                                                           |
-| `secret set --app <id>`, `secret unset --app <id>`: no registered app by that id                                             | `<app> isn't deployed to this Gateway` / `An app's secrets can be set after its first deploy. Nothing was changed.` | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                           | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.`          | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
-| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                                 | `<app> was deleted during this run`                                                                                 | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
+| Raised by                                                                                                                    | Headline                                                                                                                                                                                             | Next step                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `db query` (production), `db restore`, `email set`, `email unset`, `secret list <app>` (registry `readApp`, `writeAppEmail`) | `<app> isn't deployed to this Gateway yet`                                                                                                                                                           | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                       | `The app is no longer registered on this Gateway`                                                                                                                                                    | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                                  | `No app named <app> on this Gateway`                                                                                                                                                                 | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `secret set`, `secret unset` for an app's names, before any value is read                                                    | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`                                                                                                   | `rerun`: `pnpm everyapp deploy`                                                                           |
+| `secret set --app <id>`, `secret unset --app <id>`: no registered app by that id                                             | `<app> isn't deployed to this Gateway` / `An app's secrets can be set after its first deploy. Nothing was changed.`                                                                                  | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `configure <app>`: no registered app by that id, or a row whose first deploy never finished (`status: "pending"`)            | `<app> isn't deployed to this Gateway` / `An app is configured by name after its first deploy; in its directory, configure works before that too (for the Gateway's settings). Nothing was changed.` | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `configure` in the app's directory before its first deploy, a name of the app's own on stdin                                 | `<app> isn't deployed yet` / `Its own <NAME> can be set after its first deploy. Nothing was set.`                                                                                                    | `rerun`: `pnpm everyapp deploy`                                                                           |
+| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                           | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.`                                                                                           | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
+| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                                 | `<app> was deleted during this run`                                                                                                                                                                  | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
 
 **Fix:** as the table says; in every case but the last two, deploy the app first. No takeover.
 
@@ -624,7 +626,7 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sy
 
 ### MANIFEST_NOT_FOUND
 
-`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `release`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
+`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `release`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `configure` with no app named: `No everyapp.config.ts in this directory, and no app named`, `data.fix` `name the app: pnpm everyapp configure <app> (pnpm everyapp status lists them), or run this from its directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
 
 **Fix:** as above. No rerun, not retryable.
 
@@ -715,6 +717,14 @@ Source: `packages/cli/src/lib/app/release.ts`, `packages/cli/src/lib/release/git
 **Fix:** none offered; not retryable.
 
 Source: `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/lib/migrations/remote.ts`
+
+### PIPED_LINE_INVALID
+
+`configure <app>` with something piped on stdin: a line that isn't `NAME=value` (a bare value, the `echo "$KEY" | …` habit, or anything else). Message: `Line <n> of the piped input isn't NAME=value` / `Nothing was set.` The line itself is never shown: it may be a secret. Checked before anything is written; a blank line or one starting with `#` is skipped, an `export ` prefix is allowed, one pair of matching quotes around the value is dropped, and the value is otherwise taken as it is (a `#` or an `=` inside it is part of it).
+
+**Fix:** `fix`: `pipe NAME=value lines, one per line; a bare value goes to pnpm everyapp secret set NAME`. No rerun.
+
+Source: `packages/cli/src/commands/configure/index.ts` (`parsePipedLines`)
 
 ### POSTGRES_URL_MISSING
 
@@ -882,17 +892,17 @@ Source: `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
 
 `secret set` or `secret unset`: the change landed on an earlier destination (the Gateway's Worker goes first, then the app's Worker and each helper) and `cf workers secrets bulk` failed on a later one. Message lines: `Couldn't set|remove <names> on|from <destination>`, `Cloudflare said: <first line of cf's error>`, `<done names> is|are set|removed; only <left names> is|are left.` `data.applied` is what already changed (per destination, with the Worker versions it made) and `data.left` the names still to do; the rerun names only those, so no value is asked for twice. When nothing had landed yet the cf error itself is reported instead.
 
-**Fix:** `retryable: true`; `rerun`: `pnpm everyapp secret <set|unset> <left names>`.
+**Fix:** `retryable: true`; `rerun`: `pnpm everyapp secret <set|unset> <left names>`, with ` --app <id>` when the command ran with `--app` and a name of the app's own is left. Raised through `configure <app>` the message and `data` are the same, but the rerun is `pnpm everyapp configure <app>` (`rerunNote` `to set what is left`; before the app's first deploy, `pnpm everyapp configure` with `in the app's directory, to set what is left`), which reads what is set and asks only for what is still missing.
 
 Source: `packages/cli/src/commands/secret/index.ts`
 
 ### SECRET_EMPTY
 
-`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found.
+`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found. From `configure <app>`, a `NAME=` line on stdin with nothing after it: `<NAME> is empty in the piped lines`, before anything is written (`configure --from-env` skips an unset or empty variable instead).
 
-**Fix:** `fix`: `export <VAR> first, or name another variable with --from-env`.
+**Fix:** `fix`: `export <VAR> first, or name another variable with --from-env`; from `configure`: `give <NAME> a value, or leave the line out`.
 
-Source: `packages/cli/src/lib/secretValue.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`
 
 ### SECRET_NAME_INVALID
 
@@ -912,7 +922,7 @@ Source: `packages/cli/src/lib/app/secrets.ts`, `packages/sdk/src/internal/gatewa
 
 ### SECRET_NOT_DECLARED
 
-`secret set|unset`: a name that goes nowhere, refused before anything is read or the network used. Three situations, in the order `notRoutable` checks them:
+`secret set|unset`: a name that goes nowhere, refused before anything is read or the network used. From `configure <app>`: a `NAME=value` line on stdin whose name the app's manifest doesn't declare (no provider, capability or secret reads it, and no capability reads it when set): `<app> doesn't declare <NAME>` / `The piped lines set what its deployed manifest lists (a provider, a capability or one of its secrets). Nothing was set.` (in the app's directory: `its everyapp.config.ts lists`), `data.fix` `leave it out, or declare it in everyapp.config.ts[ and deploy again]; a bare value goes to pnpm everyapp secret set NAME`. The name is shown only when it looks like one (upper case, digits and underscores); otherwise the headline reads `<app> doesn't declare line <n> (not shown: it may be a value)`, since a bare value with an `=` in it (a base64 key's padding) parses as a name. For `secret set`, three situations, in the order `notRoutable` checks them:
 
 - The name differs only in case or underscores from a Gateway setting or one of the manifest's secrets: `<name> isn't a Gateway setting[ or one of <app>'s secrets]`; `rerun` is the same command with the name corrected and `data.didYouMean` is the match.
 - There is no `everyapp.config.ts` in the working directory and no `--app`: `<name> isn't a Gateway setting, and there's no app here` / `An app's own secrets are set|removed from the app's directory (where everyapp.config.ts is), or from anywhere with --app <id>.` / `Gateway settings: pnpm everyapp secret list`; `fix`: `cd into the app's directory and run this again, or add --app <id>`.
@@ -942,9 +952,11 @@ Source: `packages/cli/src/lib/secretValue.ts`
 
 `secret set <name>` with no way to get a value: stdin was piped but empty, or there is no terminal to prompt at (`canPromptInTerminal` in `packages/cli/src/lib/output/prompt.ts`: stdin or stderr isn't a TTY, `--json`, or `CI` is set). Message: `Can't ask for <name>'s value without a terminal` / `Or pipe it in: echo "$<name>" | pnpm everyapp secret set <name>`. A value never comes from the command line.
 
-**Fix:** `rerun`: `pnpm everyapp secret set <name> --from-env <name>`.
+`configure <app>` raises it too, when nothing could be read (no terminal, nothing piped, and `--from-env` found no variable) and a required setting is unset: `Can't ask for <app>'s settings without a terminal` / `<app> needs <names>. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).`; `data.names` lists the names still missing (of a setting with several names, only the ones not set). An app that is ready ends `done` instead.
 
-Source: `packages/cli/src/lib/secretValue.ts`
+**Fix:** `rerun`: `pnpm everyapp secret set <name> --from-env <name>`; from `configure`: `pnpm everyapp configure <app> --from-env` (`rerunNote` `with the variables exported`), or before the app's first deploy `pnpm everyapp configure --from-env` with `in the app's directory, with the variables exported` (the name form is refused until then).
+
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`
 
 ### SETTING_VALUE_INVALID
 
@@ -1087,6 +1099,14 @@ Checked in `packages/cli/src/bin/cli.ts` before any command runs, and reported t
 **Fix:** `fix`: `install Node 22 or 24, then run the command again`.
 
 Source: `packages/cli/src/lib/runtime.ts`, `packages/cli/src/bin/cli.ts`
+
+### VALUE_ON_COMMAND_LINE
+
+`configure NAME=value`: the app argument looks like a value on the command line, which `configure` never takes: a value there lands in the shell's history and the process list. Message: `<NAME>=… looks like a value on the command line, which configure never takes` / `It lands in the shell's history and the process list: rotate it if it was real. Nothing was set.` Checked before the Gateway is reached.
+
+**Fix:** `fix`: `pipe NAME=value lines in (one per line), or export <NAME> and add --from-env`. No rerun.
+
+Source: `packages/cli/src/commands/configure/index.ts`
 
 ### VERSION_UNKNOWN
 
@@ -1762,9 +1782,9 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/g
 
 ### APP_NEEDS_SETUP
 
-`deploy`, after the upload: the app's manifest declares a required provider, capability or secret that isn't set (the settings model, [`/docs/agent/manifest`](/docs/agent/manifest#required-optional-or-one-of-a-group)), so the Gateway won't open it: `<app> won't open until <names> is set` (or `are set`), the second line the first unmet setting's `why`. The one command that opens it is the `done` event's `next` entry (`pnpm everyapp secret set <names> [--app <id>]`), not `data.rerun`. Step `app.secrets`; `data.setup` is the app's `AppSetup` (`ready`, `settings`, `unmet`, `groups`, `command`), the shape [`/docs/agent/json`](/docs/agent/json#done) describes.
+`deploy`, after the upload: the app's manifest declares a required provider, capability or secret that isn't set (the settings model, [`/docs/agent/manifest`](/docs/agent/manifest#required-optional-or-one-of-a-group)), so the Gateway won't open it: `<app> won't open until <names> is set` (or `are set`), the second line the first unmet setting's `why`. The one command that opens it is the `done` event's `next` entry (`pnpm everyapp configure <id>`, note `asks for each; <app> opens once they are set`), not `data.rerun`. `configure` itself raises the same warning when the app is still not ready at its end (values from stdin or `--from-env` covered only some of the settings); its `done.data.next` names the command again. Step `app.secrets`; `data.setup` is the app's `AppSetup` (`ready`, `settings`, `unmet`, `groups`, `command`), the shape [`/docs/agent/json`](/docs/agent/json#done) describes.
 
-Source: `packages/cli/src/commands/deploy/deployApp.ts`
+Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/configure/index.ts`
 
 ### APP_NOT_BOUND
 
@@ -1979,7 +1999,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### APP_NEEDS_SETUP (status)
 
-Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide). Run: `pnpm everyapp secret set <names> [--app <id>]` (`note` carries an unmet any-of group's alternatives). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
+Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide). Run: `pnpm everyapp configure <id>` (the app's `setup.command`: it asks for each unmet setting, which member of an any-of group, then offers the optional ones). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
 
 Source: `packages/cli/src/commands/status/problems.ts`
 

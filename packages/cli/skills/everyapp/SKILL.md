@@ -59,7 +59,7 @@ for the device login, up to 15 for the owner link).
 
 State:   pnpm everyapp status --json   (data.fixes says what to run when something is off;
          data.apps[].setup says what each app needs set: ready, settings, unmet
-         (each with why and docs), and command, the one secret set that opens it)
+         (each with why and docs), and command, pnpm everyapp configure <app>)
 Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
          a fresh install runs 5-20 min: build, certificate, then up to 15 min
          waiting for the owner link, so give it a long timeout or background
@@ -98,27 +98,41 @@ Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          .everyapp/secrets.env, which the user writes; never print, commit or
          ask for its values in chat. deploy runs drizzle-kit migrate before
          the upload.
-Secrets: pnpm everyapp secret set NAME... [--app <id>] --json   (live at once, no deploy;
-         the value from a hidden prompt, stdin, or --from-env VAR, never the command line)
-         The name decides where it goes. A Gateway setting (OPENAI_API_KEY,
-         EMAIL_FROM, GOOGLE_WORKSPACE_CLIENT_ID, …) is set on the Gateway from any
-         directory. An app's own secret must be listed under `secrets` in
-         its everyapp.config.ts and is set after its first deploy, from the
-         app's directory or from anywhere with --app <id> (SECRET_NOT_DECLARED:
-         add it there first). secret unset NAME [--app <id>]; secret list [<app>]
+Secrets: pnpm everyapp configure <app> --json   sets up an app: every setting its
+         manifest declares, each where it is held (an AI key or a capability's
+         client on the Gateway, once for every app; the app's own secrets on
+         its Worker, after its first deploy); live at once, no deploy. At a
+         terminal it shows what is set (names only), asks for each required
+         setting that isn't with a hidden prompt (why, where to get it and its
+         guide above), which member of an any-of group, then offers the
+         optional ones; from you (no prompt): NAME=value lines on stdin (one
+         per line, from a command's output) or --from-env (each unset
+         setting from the variable of its own name; stdin isn't read then).
+         A value never goes on the command line (VALUE_ON_COMMAND_LINE). One
+         name at a time: pnpm everyapp secret set NAME [--app <id>] --json
+         (the value from a hidden prompt, stdin, or --from-env VAR). The name
+         decides where it goes. A Gateway setting (OPENAI_API_KEY, EMAIL_FROM,
+         GOOGLE_WORKSPACE_CLIENT_ID, …) is set on the Gateway from any
+         directory. An app's own secret must be listed under `secrets` in its
+         everyapp.config.ts and is set after its first deploy, from the app's
+         directory or from anywhere with --app <id> (SECRET_NOT_DECLARED: add
+         it there first). secret unset NAME [--app <id>]; secret list [<app>]
          --json (one app's settings, where each is held and whether it is set,
          with data.app.setup; elsewhere with no app named: the Gateway's names
          and every app's settings).
 Needs setup: read data.apps[].setup; for each unmet setting show its why and docs
-         and read its setup guide (.claude/skills/everyapp/<setup>); get the value
-         in without it passing through the chat: tell the person to run
-         `pnpm everyapp secret set <names>` in their own terminal (hidden prompt)
-         and say when done; or pipe a value that came from a command or a file
-         straight in; or --from-env VAR only for a variable the person exported
-         before starting the agent. Never ask for, print or repeat a value; never
-         invent one. An app whose setup.ready is false doesn't open (status shows
-         "needs setup"; deploy warns APP_NEEDS_SETUP and puts the command under
-         next); an any-of group (setup.groups) needs one member set, not all.
+         and read its setup guide (.claude/skills/everyapp/<setup>); then run
+         setup.command, pnpm everyapp configure <app>, without a value passing
+         through the chat: tell the person to run it in their own terminal (it
+         asks for each setting with a hidden prompt and says where to get it)
+         and say when done; or drive it yourself, --json always: NAME=value
+         lines on stdin from a command's output, or --from-env for variables
+         the person exported before starting you. Never a value on the command
+         line; never ask for, print, repeat or invent a value. An app whose
+         setup.ready is false doesn't open (status shows "needs setup"; deploy
+         warns APP_NEEDS_SETUP and puts the command under next); an any-of
+         group (setup.groups) needs one member set, not all: configure asks
+         which.
 Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --json
          In the app's directory, after its first deploy; nothing is deployed. --sender
          replaces the From addresses the Gateway lets the app name (everyapp.config.ts
@@ -137,9 +151,10 @@ Access:  pnpm everyapp access on --json   (Cloudflare Access in front of the Gat
          asks (--yes); access show reports. Each existing member then signs in once
          with their password through Access; tell the user who (done.data.signIn).
 Set up:  what the Gateway holds for apps, end to end (the provider's side, the
-         key or OAuth client, secret set, the check): read setup/README.md in
-         this skill first, then the file it names, each on its own with the
-         file-reading tool (together they pass a shell's output cap). Cloudflare and the Gateway
+         key or OAuth client, configure or secret set, the check): read
+         setup/README.md in this skill first, then the file it names, each on
+         its own with the file-reading tool (together they pass a shell's
+         output cap). Cloudflare and the Gateway
          (setup/gateway.md), Cloudflare Access (setup/access.md), email
          (setup/email.md), API keys (setup/dataforseo.md, context.md,
          openrouter.md, openai.md, workers-ai.md), OAuth clients

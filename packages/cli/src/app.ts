@@ -17,6 +17,7 @@ import {
   type ArgumentProblem,
 } from "./argumentErrors";
 import { accessRoutes } from "./commands/access/command";
+import { configureCommand } from "./commands/configure/command";
 import { createCommand } from "./commands/create/command";
 import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
@@ -48,6 +49,7 @@ const routes = buildRouteMap({
     setup: setupCommand,
     update: updateCommand,
     install: installCommand,
+    configure: configureCommand,
     status: statusCommand,
     delete: deleteCommand,
     access: accessRoutes,
@@ -98,6 +100,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "setup",
       "update",
       "install",
+      "configure",
       "status",
       "delete",
       "access",
@@ -164,6 +167,7 @@ export function rootHelp(): string {
     `  $ ${CLI} create todo`,
     `  $ ${CLI} deploy`,
     `  $ ${CLI} install https://github.com/<owner>/<repo>`,
+    `  $ ${CLI} configure crm`,
     "",
     `Run ${chalk.bold(`${CLI} <command> --help`)} for a command's flags.`,
     "",

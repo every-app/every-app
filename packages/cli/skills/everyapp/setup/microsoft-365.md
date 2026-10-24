@@ -73,13 +73,16 @@ a `429` carries `Retry-After`, which Open CRM honors.
    `kind: "capability"`, `holder: "gateway"`, `names: ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"]`
    (an OAuth client's id and secret are the two names of one setting, set only when both are), `need.kind` as the
    CRM's manifest declares it (Open CRM: `optional`: it sits in `settings` with `set: false`, never in `unmet`, the
-   CRM opens without Outlook and `command` doesn't name it; `required` would put it in `unmet`, close the CRM and
-   put both names in `command`), `setup: "setup/microsoft-365.md"` (this file). While its `set` is false this file
+   CRM opens without Outlook and `command`, `pnpm everyapp configure crm`, offers it after the required ones;
+   `required` would put it in `unmet`, close the CRM and have configure ask for both names first), `setup:
+   "setup/microsoft-365.md"` (this file). While its `set` is false this file
    applies. The same entry in `data.app.setup.settings` with `set: true`: ask before
    replacing; a value can't be read back, so replacing means a new secret in Entra. The same answer says whether
    the CRM's own `TOKEN_ENCRYPTION_KEY` is set (`holder: "app"`; optional, so in `settings`, never in `unmet`): it
-   must be set before anyone can connect (after the CRM's first deploy, from anywhere with `--app crm`, at the
-   hidden prompt, 32 or more random characters), so settle it now, not after the set.
+   must be set before anyone can connect (after the CRM's first deploy, at the hidden prompt of
+   `pnpm everyapp configure crm`, which offers it with the optional ones, or of
+   `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm`, from anywhere; 32 or more random characters), so
+   settle it now, not after the set.
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true; `data.appBaseDomain` is `<app base domain>`;
    `data.apps[]` has `"id": "crm"` with `"status": "active"`, `"bound": true`, the `hostname` the redirect URI
    goes on (step 1) and, as `setup`, 1's `data.app.setup` again: what else the CRM needs. No `crm`: deploy Open
@@ -144,8 +147,11 @@ secret exists.
 6. **You:** Set the client id (not a secret): `echo "<client id>" | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`,
    or from `az`: `az ad app list --display-name "Open CRM" --query "[0].appId" -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`.
    Look for `"type": "done"`. One value per pipe (`SECRET_SEVERAL_NAMES` otherwise). Both at once only at the
-   person's hidden prompt: `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`.
-   The change is live at once, no deploy.
+   person's terminal: `pnpm everyapp configure crm` (it asks for the two names, id then secret, with hidden
+   prompts, after the CRM's required settings; the client is optional for Open CRM, so Yes to `Set the N optional
+   settings too?`, Enter skipping the others; with one of the two names set it asks only for the other; or pick `MICROSOFT_365_CLIENT_ID + MICROSOFT_365_CLIENT_SECRET` from
+   the menu once the CRM is ready) or `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`
+   (two hidden prompts); either covers step 5's set too. The change is live at once, no deploy.
 7. **You:** Verify, below.
 
 ## Verify
@@ -201,6 +207,7 @@ secret exists.
 | `integration_path_not_allowed` (403), `integration_body_invalid` (400), `integration_body_too_large` (413), `integration_scope_not_allowed` (403: the request's `scope` names a scope outside the CRM's sets) | The app's request (an endpoint other than `/common/oauth2/v2.0/token`, a body it doesn't take, or a scope it doesn't declare), not this setup | Check the app's version                                                        |
 | `integration_scope_exceeded` (403) on a connect or a refresh | Two apps on this one registration and one person: Microsoft can issue a token carrying every scope the person consented to either app, and the Gateway refuses the narrower app's exchange rather than narrowing it (docs/design/2026-10-oauth-scopes.md §9; its log line `integration.proxy.scope_refused` names the excess) | The member removes the app at https://myapplications.microsoft.com and connects again; for good, one registration per app, which needs its own registry entry (TODO.md "OAuth scopes (2026-10-24)") |
 | `SECRET_VALUE_REQUIRED`                                                          | Nothing was piped and there is no terminal                                                     | One of README's three ways; `data.rerun` shows the `--from-env` form                                         |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure crm --json`               | Nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the CRM still needs (this client is optional for Open CRM, so never among them) | The pipes in steps 5 and 6, or the person's terminal (step 6)                             |
 | `SECRET_SEVERAL_NAMES`                                                           | Two names with one piped or `--from-env` value                                                 | One `secret set` per name                                                                                    |
 | `SECRET_EMPTY`                                                                   | The `--from-env` variable isn't exported in this shell                                         | The person exports it in the terminal that runs the command                                                  |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                     | The name is misspelled (case or underscores)                                                   | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
@@ -220,11 +227,11 @@ secret exists.
 | `invalid_grant` on refresh: `AADSTS70008` / `AADSTS700082` (unused 90 days), `AADSTS50173` (password reset or tokens revoked), `AADSTS65001` (consent withdrawn); `AADSTS70000` is another refresh-token failure | The refresh token stopped working | The CRM marks the connection NEEDS_RECONNECT; the member connects again |
 | CRM: `email_doesn't_match`                                                       | The mailbox's address isn't the member's Gateway email                                         | Sign in to Microsoft with the matching account                                                               |
 | CRM: "confirm this is an active Exchange Online mailbox"                         | The account has no mailbox (no mail license)                                                   | A licensed mailbox or an outlook.com account                                                                 |
-| CRM: **Connect** fails before Microsoft opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters (the one key its Google, Microsoft and Slack connects share) | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways; connect again |
+| CRM: **Connect** fails before Microsoft opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters (the one key its Google, Microsoft and Slack connects share) | Set it after the CRM's first deploy: `pnpm everyapp configure crm` (which asks for it) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways; connect again |
 
 ## Rerun, rotate, remove
 
-- **Rerun.** Safe at any step: `secret set` replaces; the registration's pages show what exists (one registration,
+- **Rerun.** Safe at any step: `configure` and `secret set` replace; the registration's pages show what exists (one registration,
   not two: look in App registrations first). Interrupted: start from Verify and continue at the first step that
   isn't done.
 - **Rotate the secret** before it expires (the registration's **Certificates & secrets** page shows the dates).

@@ -139,9 +139,9 @@ const listCommand = buildCommand({
     fullDescription: [
       "For one app (the app in this directory, or <app> from anywhere): every setting its manifest",
       "declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one",
-      "secret set command that opens the app when something required is missing. Elsewhere with no",
-      "app named: the Gateway's names and who set them, then every app's settings. Names only, never",
-      "values.",
+      `command that opens the app when something required is missing (${CLI} configure <app>).`,
+      "Elsewhere with no app named: the Gateway's names and who set them, then every app's",
+      "settings. Names only, never values.",
     ].join("\n"),
   },
 });

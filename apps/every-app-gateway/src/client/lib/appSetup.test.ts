@@ -77,8 +77,8 @@ describe("setupDialogModel", () => {
     expect(model.anyOf).toEqual([]);
     expect(model.command).toEqual({
       heading: null,
-      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
-      note: null,
+      command: "pnpm everyapp configure openseo",
+      configures: true,
     });
     expect(model.platformNote).toBeNull();
     // What the admin could also set, for the feature that uses it.
@@ -103,9 +103,7 @@ describe("setupDialogModel", () => {
         docs: null,
       },
     ]);
-    expect(admin.command?.command).toBe(
-      "pnpm everyapp secret set MAIN_SECRET --app research",
-    );
+    expect(admin.command?.command).toBe("pnpm everyapp configure research");
     expect(admin.optional.map((row) => row.label)).toEqual(["WEBHOOK_SECRET"]);
     expect(admin.statusHint).toBe(true);
     // A member can't run status: no hint.
@@ -136,13 +134,13 @@ describe("setupDialogModel", () => {
     expect(model.unmet.map((row) => row.label)).toEqual(["DataForSEO"]);
     expect(model.command).toEqual({
       heading: "Ask an admin to run:",
-      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
-      note: null,
+      command: "pnpm everyapp configure openseo",
+      configures: true,
     });
     expect(model.optional).toEqual([]);
   });
 
-  it("says one member of an any-of group is enough, and carries the command's note", () => {
+  it("says one member of an any-of group is enough, with the same one command", () => {
     const none = setupDialogModel(setupOf(INBOX, []), {
       name: "Inbox",
       canRun: true,
@@ -154,9 +152,24 @@ describe("setupDialogModel", () => {
     expect(none.anyOf).toEqual([
       "One of these is enough: OpenRouter, Workers AI",
     ]);
-    expect(none.command).toMatchObject({
-      command: "pnpm everyapp secret set OPENROUTER_API_KEY",
-      note: expect.stringContaining("one AI model is enough"),
+    expect(none.command).toEqual({
+      heading: null,
+      command: "pnpm everyapp configure inbox",
+      configures: true,
+    });
+
+    // A provider app's command sets its key by name: nothing to explain.
+    const provider = setupDialogModel(
+      {
+        ...setupOf(INBOX, []),
+        command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
+      },
+      { name: "DataForSEO", canRun: true },
+    );
+    expect(provider.command).toEqual({
+      heading: null,
+      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
+      configures: false,
     });
 
     // One set: the other is something the admin could still set.

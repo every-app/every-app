@@ -30,9 +30,9 @@ interface AppSetupDialogProps {
 }
 
 /**
- * What an app needs set before it opens, and the one command that sets it
- * (`everyapp secret set`), for whoever can run it; a member is told to
- * ask an admin. Closes from the footer alone, like every other dialog.
+ * What an app needs set before it opens, and the one command that asks
+ * for it (`everyapp configure <app>`), for whoever can run it; a member is
+ * told to ask an admin. Closes from the footer alone, like every other dialog.
  * Render it only while it is open.
  */
 export function AppSetupDialog({
@@ -75,9 +75,9 @@ export function AppSetupDialog({
               code={model.command.command}
               successMessage="Command copied"
             />
-            {model.command.note ? (
+            {model.command.configures ? (
               <p className="text-xs text-muted-foreground">
-                {model.command.note}
+                It asks for each setting above, then offers the optional ones.
               </p>
             ) : null}
           </div>

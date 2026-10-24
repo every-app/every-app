@@ -354,8 +354,8 @@ export function problemsFor({
 /**
  * An app that doesn't open until something is set: each unmet setting
  * with why it is needed, where its key comes from and the skill's setup
- * guide for it, then the one `secret set` that opens it (an unmet any-of
- * group's alternatives in the note).
+ * guide for it, then the one command that opens it, `everyapp configure
+ * <app>`, which asks for each of them.
  */
 function appNeedsSetup(appId: string, setup: AppSetup): Problem {
   return {
@@ -363,12 +363,7 @@ function appNeedsSetup(appId: string, setup: AppSetup): Problem {
     severity: Severity.Warning,
     headline: `${appId} needs setup`,
     detail: describeUnmetSettings(setup.unmet),
-    ...(setup.command
-      ? {
-          run: command`${setup.command.command}`,
-          ...(setup.command.note ? { runNote: setup.command.note } : {}),
-        }
-      : {}),
+    ...(setup.command ? { run: command`${setup.command.command}` } : {}),
   };
 }
 

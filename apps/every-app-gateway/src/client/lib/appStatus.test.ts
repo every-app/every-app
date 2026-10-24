@@ -22,7 +22,7 @@ const UNREADY: UserAccessApp["setup"] = {
   settings: [],
   unmet: [],
   groups: [],
-  command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
+  command: { command: "pnpm everyapp configure openseo" },
 };
 
 function app(

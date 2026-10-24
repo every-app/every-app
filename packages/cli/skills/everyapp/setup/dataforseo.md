@@ -59,15 +59,15 @@ payment comes in only at Add Funds.
    until it is set: the Gateway lists it as needing setup, sends a browser
    opening `https://openseo.<app base domain>` to its setup dialog and
    answers anything else 503 `app_needs_setup`. `data.app.setup.command` is
-   the one `pnpm everyapp secret set …` naming every missing Gateway
-   setting (`data.next` repeats it; the OpenRouter key is in it too while
-   it is missing: [openrouter.md](openrouter.md); Context is optional for
+   `pnpm everyapp configure openseo`, which asks for every missing setting
+   (`data.next` repeats it; the OpenRouter key is among them while it is
+   missing: [openrouter.md](openrouter.md); Context is optional for
    OpenSEO, so `CONTEXT_API_KEY` sits in `data.app.setup.settings` with
-   `set: false` and never in `unmet` or `command`:
-   [context.md](context.md)). The same entry in `data.app.setup.settings`
-   with `"set": true` means it is set already: ask before replacing; a
-   value can't be read back, so "replace" means the person fetches the
-   credential again. The older fields still say the same:
+   `set: false` and never in `unmet`, and configure offers it after the
+   required ones: [context.md](context.md)). The same entry in
+   `data.app.setup.settings` with `"set": true` means it is set already: ask
+   before replacing; a value can't be read back, so "replace" means the
+   person fetches the credential again. The older fields still say the same:
    `data.gateway.needed` has `{ "name": "DATAFORSEO_API_KEY", "required":
    true, "set": … }` and `data.gateway.missing` names it while unset. This
    is how an agent lands here: `status` (under "openseo needs setup") and
@@ -83,9 +83,11 @@ payment comes in only at Add Funds.
    publishes none). From a clone instead: `pnpm install` there, then this
    checkout's `pnpm everyapp deploy --json` from that directory (a clone's
    own CLI copy can't deploy; its `pnpm everyapp` is for dev). The key can
-   be set before that deploy all the same (step 5's root list is then the
-   check; so is `pnpm everyapp secret list --json` in OpenSEO's directory,
-   which reads its `everyapp.config.ts` instead of the registry).
+   be set before that deploy all the same (`pnpm everyapp configure` in
+   OpenSEO's directory reads its `everyapp.config.ts` instead of the
+   registry and asks for the Gateway's settings before the first deploy;
+   step 5's root list is then the check, and so is
+   `pnpm everyapp secret list --json` in that directory).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true; `data.gatewayUrl` is `https://<gateway host>`; `data.appBaseDomain`
    is `<app base domain>`. The entry in `data.apps` with `"id": "openseo"`
@@ -130,17 +132,27 @@ value is set.
    The $1 trial credit covers the free smoke check and about ten keyword
    lookups (at $0.09 a Google Ads request).
 4. **Person:** The README's first way, the person types it. In a second
-   terminal in the `every-app` folder:
-   `pnpm everyapp secret set DATAFORSEO_API_KEY`. At the hidden prompt, paste
-   the API login, a colon, and the API password (`login:password`): the form
-   to recommend, since Verify 2's check takes it as is. Nothing is echoed. It
-   ends with the setting live on the Gateway. Wait for "done". (The page's
-   Base64 string, or the value an older OpenSEO held, works too; Verify 2
-   then needs its `header =` form.)
+   terminal in the `every-app` folder: `pnpm everyapp configure openseo`
+   (from OpenSEO's directory, `pnpm everyapp configure`, which works before
+   its first deploy too), which asks for this key among OpenSEO's other
+   unset settings (the OpenRouter key while it is missing: [openrouter.md](openrouter.md)
+   says where it comes from; the optional Context key is offered after,
+   and Enter skips it), or `pnpm everyapp secret set DATAFORSEO_API_KEY`
+   for just this one. At the hidden prompt (`DATAFORSEO_API_KEY`, under
+   lines saying what it is for and where it comes from; `secret set` asks
+   `Value for DATAFORSEO_API_KEY`), paste the API login, a colon, and the
+   API password (`login:password`): the form to recommend, since Verify
+   2's check takes it as is. Nothing is echoed. It ends with the setting
+   live on the Gateway (`Set DATAFORSEO_API_KEY on the Gateway`; configure
+   then says `openseo is ready.` or what it still needs). Wait for "done".
+   (The page's Base64 string, or the value an older OpenSEO held, works
+   too; Verify 2 then needs its `header =` form.)
    Alternative, README's third way, when they want the smoke check (Verify
    2) as well: in their terminal the hidden read (bash or zsh
    `read -rs DATAFORSEO_API_KEY && export DATAFORSEO_API_KEY`, fish
    `read -s -x DATAFORSEO_API_KEY`), paste `login:password`, Enter, then there
+   `pnpm everyapp configure openseo --from-env --json` (every unset setting
+   whose variable is exported, at once) or
    `pnpm everyapp secret set DATAFORSEO_API_KEY --from-env DATAFORSEO_API_KEY --json`;
    never a typed `export …=`, which the shell history keeps. No DataForSEO
    CLI or API returns the credential, so the second way does not apply.
@@ -211,9 +223,10 @@ value is set.
 | error or symptom                                                                   | meaning                                                                                                                | what to do                                                                                                                    |
 | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `SECRET_VALUE_REQUIRED` from `secret set --json`                                   | Nothing was piped and there is no terminal to prompt in                                                                | One of the README's three ways: the person's own terminal, or `--from-env`                                                    |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure openseo --json`             | Nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal to ask in; the message names what OpenSEO still needs | The person's own terminal (step 4), `NAME=value` lines on stdin, or the hidden read then its `data.rerun`, `pnpm everyapp configure openseo --from-env` |
 | `SECRET_SEVERAL_NAMES`                                                             | `--from-env` or a pipe with more than one name                                                                         | One name per call                                                                                                             |
 | `SECRET_EMPTY`                                                                     | The `--from-env` variable is empty or not exported in that shell                                                       | The hidden read (README's third way) in that same terminal first, then rerun                                                  |
-| A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key or the OpenRouter one; Context is optional) | `pnpm everyapp secret list openseo --json`: set what `data.app.setup.command` names; Verify 1                        |
+| A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key or the OpenRouter one; Context is optional) | `data.app.setup.command`, `pnpm everyapp configure openseo` (step 4), then Verify 1                                  |
 | `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway yet, or rejected the key it holds. An owner or admin sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
 | `capability_not_requested` (403)                                                   | The deployed manifest does not list `capabilities.dataforseo`                                                          | OpenSEO's does; a fork must add it to `everyapp.config.ts` and deploy again                                                   |
 | `integration_path_not_allowed` (403)                                               | The app called an account-wide path (`appendix/user_data`, `appendix/webhook_resend`, `tasks_ready`, `id_list`, `errors`) | By design: one key serves every app. Check balance and limits from the terminal (Verify 2)                                 |
@@ -233,8 +246,9 @@ value is set.
 ## Rerun, rotate, remove
 
 - **Rerun.** Every step is safe to repeat: the dashboard shows what exists,
-  `secret set` replaces the value in one new Gateway version, and the Verify
-  section says where to continue after an interruption.
+  `configure` and `secret set` replace the value in one new Gateway version
+  (once OpenSEO is ready, configure's menu changes one setting at a time),
+  and the Verify section says where to continue after an interruption.
 - **Rotate.** The person changes the API login in API Access (documented:
   the old `login:password` and its base64 stop working). A new API password
   needs DataForSEO's support (https://dataforseo.com/contact): the help
@@ -270,4 +284,4 @@ value is set.
 - https://dataforseo.com/contact (form and phone; "support available 24/7"; no support@ address anywhere on it)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages, Overview, Worker, Logs, Live; `npx wrangler tail`) and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (Observability tab; JSON log keys are indexed as fields)
 - https://app.dataforseo.com/register and https://app.dataforseo.com/api-access (the pages the person opens; both load a signed-in app, so their text was not read)
-- In code: `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; `setup/dataforseo.md` from the capability registry, `packages/sdk/src/internal/capabilities.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, the kept `data.gateway.needed` and `missing`, `APP_NOT_FOUND`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`); OpenSEO's `everyapp.config.ts` (`dataforseo` required, with its `why`)
+- In code: `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; `setup/dataforseo.md` from the capability registry, `packages/sdk/src/internal/capabilities.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, the kept `data.gateway.needed` and `missing`, `APP_NOT_FOUND`), `packages/cli/src/commands/configure/index.ts` (`configure <app>`: the prompts, `NAME=value` lines on stdin, `--from-env`, `SECRET_VALUE_REQUIRED`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`); OpenSEO's `everyapp.config.ts` (`dataforseo` required, with its `why`)

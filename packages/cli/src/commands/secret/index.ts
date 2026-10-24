@@ -1,6 +1,8 @@
 /**
  * `everyapp secret set|unset|list`: the app's secrets and the Gateway's
- * settings, each by name, with no flag to say which.
+ * settings, each by name, with no flag to say which. (`everyapp configure
+ * <app>`, commands/configure, walks an app's manifest instead and sets
+ * what it finds through `applyAppSettings` below.)
  *
  * A name that is one of the Gateway's settings (`SETTABLE_GATEWAY_SETTINGS`
  * in `@every-app/sdk/internal`: OPENAI_API_KEY, EMAIL_FROM, the OAuth
@@ -197,6 +199,45 @@ export async function applyGatewaySettings(
   return apply(reached, changes, options, removing ? SecretAction.Unset : SecretAction.Set);
 }
 
+/**
+ * Set an app's settings from `configure`, which already reached the
+ * Gateway and found the app: the same routing (a Gateway setting to the
+ * Gateway, a name the manifest lists to the app's Workers, anything else
+ * refused before a value is used), leases, replaceable-version checks,
+ * one `cf workers secrets bulk` per Worker and version records as
+ * `secret set`. `app` is null before the app's first deploy: then a name
+ * of the app's own is refused with APP_NOT_FOUND, and nothing changes.
+ */
+export async function applyAppSettings(
+  connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl">,
+  target: {
+    manifest: SecretsManifest;
+    source: ManifestSource;
+    app: { workerName: string; rowId: string } | null;
+  },
+  changes: Readonly<Record<string, string>>,
+  options: Pick<SecretOptions, "flags" | "out">,
+): Promise<Applied> {
+  const route = routeNames(Object.keys(changes), target.manifest, target.source, SecretAction.Set);
+  if (route.app && !target.app) {
+    throw new EveryAppError(
+      "APP_NOT_FOUND",
+      `${target.manifest.id} isn't deployed yet\nIts own ${listed(route.app.names)} can be set after its first deploy. Nothing was changed.`,
+      { rerun: `${CLI} deploy` },
+    );
+  }
+  const reached: Reached = {
+    route,
+    cf: connection.cf,
+    db: connection.db,
+    deployer: connection.deployer,
+    accountName: connection.accountName,
+    gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
+    app: route.app && target.app ? { ...route.app, ...target.app } : null,
+  };
+  return (await apply(reached, changes, options, SecretAction.Set))!;
+}
+
 /** `secret unset`: every name routed, then, once the person agrees, removed from the Workers that hold it. */
 export async function unsetSecrets(
   options: SecretOptions & {
@@ -384,16 +425,21 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
       rows.push({ app: manifest.id, setting: name, where: manifest.id, status: set });
     }
   }
-  // What to run. The Gateway's settings can be set from anywhere at any
-  // time, the app's own only once its Worker exists (`--app` looks the app
-  // up), so before the first deploy the command names the Gateway's unset
-  // ones, then the deploy: the app's own read as unknown until then, which
-  // never blocks, so the model's command already leaves them out. After it,
-  // the model's one command as it is.
-  const command = setup.command
-    ? [setup.command.note ? { command: setup.command.command, note: setup.command.note } : setup.command.command]
-    : [];
-  const next = workerName ? command : [...command, `${CLI} deploy`];
+  // What to run: the one configure command while something is unmet. The
+  // Gateway's settings can be set from anywhere at any time, the app's own
+  // only once its Worker exists, so before the first deploy configure sets
+  // the Gateway's and the deploy comes next: the app's own read as unknown
+  // until then, which never blocks.
+  // By name once deployed; before that, in the app's directory (the name
+  // form is refused for an app that isn't deployed).
+  const next = workerName
+    ? setup.command
+      ? [setup.command.command]
+      : []
+    : [
+        ...(setup.command ? [{ command: `${CLI} configure`, note: "in the app's directory" }] : []),
+        `${CLI} deploy`,
+      ];
   shown(
     rows.length > 0
       ? [
@@ -436,7 +482,7 @@ function unlistedNote(unlisted: ReadonlyArray<{ id: string; reason: string }>): 
 }
 
 /** Where an app's manifest came from, for what a refusal says about it. */
-enum ManifestSource {
+export enum ManifestSource {
   /** everyapp.config.ts in the working directory. */
   Directory = "directory",
   /** The registry row's, as the app's last deploy stored it (`--app <id>`). */
@@ -444,7 +490,7 @@ enum ManifestSource {
 }
 
 /** What the secret command reads of a manifest: the app's id and its own secrets. */
-interface SecretsManifest {
+export interface SecretsManifest {
   id: string;
   secrets?: ReadonlyArray<string | SecretEntry>;
 }
@@ -463,7 +509,7 @@ function destinationsOf(route: Route): string[] {
 }
 
 /** What one call changed, for its message and `done` data. */
-interface Applied {
+export interface Applied {
   gateway?: { names: string[]; versions: Record<string, string | null> };
   app?: {
     id: string;
@@ -615,7 +661,7 @@ async function appWorkerRecords(db: D1Database, workerName: string) {
  * validates a registration (the lenient schema: a newer CLI's fields pass
  * through), for a command that acts on the app from anywhere.
  */
-function storedManifestOf(app: RegisteredAppInfo): Manifest {
+export function storedManifestOf(app: RegisteredAppInfo): Manifest {
   if (!app.manifest) {
     throw new EveryAppError(
       "MANIFEST_NOT_FOUND",
@@ -887,7 +933,12 @@ async function apply(
                 `${listed(done)} ${done.length === 1 ? "is" : "are"} ${removing ? "removed" : "set"}; only ${listed(left)} ${left.length === 1 ? "is" : "are"} left.`,
               ].join("\n"),
               {
-                rerun: `${CLI} secret ${action} ${left.join(" ")}`,
+                // From anywhere but the app's directory, the app's own names need --app.
+                rerun: `${CLI} secret ${action} ${left.join(" ")}${
+                  app && route.app?.source === ManifestSource.Registry && left.some((name) => app.names.includes(name))
+                    ? ` --app ${app.manifest.id}`
+                    : ""
+                }`,
                 retryable: true,
                 data: { applied: doneData(applied), left },
               },
@@ -978,7 +1029,7 @@ function describe(applied: Applied, preposition: "on" | "from"): string {
   ].join(", and ");
 }
 
-function doneData(applied: Applied): Record<string, unknown> {
+export function doneData(applied: Applied): Record<string, unknown> {
   return {
     ...(applied.gateway ? { gateway: applied.gateway } : {}),
     ...(applied.app ? { app: applied.app } : {}),

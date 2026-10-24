@@ -1,8 +1,8 @@
 /**
  * What an app needs set before it works, and whether it is: the model
  * behind "needs setup" wherever an app is shown (the gateway's home and
- * Admin → Apps, `everyapp status`, `everyapp secret check`, the end of
- * `everyapp deploy`).
+ * Admin → Apps, `everyapp status`, `everyapp secret list`, the end of
+ * `everyapp deploy`, and what `everyapp configure <app>` walks through).
  *
  * A manifest declares three kinds of setting. An AI provider
  * (`providers`) and a capability (`capabilities`) are the Gateway's: their
@@ -440,67 +440,52 @@ export function evaluateAppSettings(
   return { ready: unmet.length === 0, settings: evaluated, groups, unmet };
 }
 
-/** The one command that opens the app, and what it can't say in one line. */
+/** The one command that opens the app. */
 export interface SetupCommand {
-  /** `everyapp secret set <names> [--app <id>]`: every unset name, the Gateway's first. */
+  /**
+   * `everyapp configure <app>`: asks for every required setting the app
+   * lacks, then offers the optional ones, and sets each where it is held.
+   */
   command: string;
-  /** The alternatives of an unmet any-of group, since one of them is enough. */
-  note?: string;
 }
 
 /**
- * What to run for an app that needs setup, from `report.unmet`: one
- * `secret set` with every required name that is unset, the Gateway's
- * first, then the first option of each unmet any-of group, the others in
- * the note; `--app <id>` when a name of the app's own is among them, so
- * the command runs from anywhere (`everyapp secret set` reads the app's
- * manifest from the registry then). Null when the app is ready. `cli` is
- * how the operator runs everyapp (`pnpm everyapp` from a checkout).
+ * What to run for an app that needs setup: `everyapp configure <app>`,
+ * which reads the app's manifest (from the registry, so it runs from
+ * anywhere), prompts for each unmet setting (one member of an any-of group
+ * is enough: it asks which) and sets them where they are held. Null when
+ * the app is ready. `cli` is how the operator runs everyapp (`pnpm
+ * everyapp` from a checkout). Scripts that set one name at a time use
+ * `everyapp secret set NAME [--app <id>]` instead.
+ *
+ * A provider app (`provider`: the gateway's own, with no Worker and no
+ * directory; `everyapp provider on <id>`) has nothing to configure: its
+ * command is the `secret set` of its Gateway key (the first member of an
+ * unmet any-of group), as `provider list` says it.
  */
 export function setupCommand(
   report: Pick<AppSettingsReport, "unmet" | "groups">,
-  { cli, appId }: { cli: string; appId: string },
+  {
+    cli,
+    appId,
+    provider = false,
+  }: { cli: string; appId: string; provider?: boolean },
 ): SetupCommand | null {
+  if (report.unmet.length === 0) return null;
+  if (!provider) return { command: `${cli} configure ${appId}` };
   const names: string[] = [];
   const add = (setting: EvaluatedSetting) => {
     for (const name of setting.names)
       if (!names.includes(name)) names.push(name);
   };
-  const required = report.unmet.filter(
-    (setting) => setting.need.kind === "required",
-  );
-  for (const setting of required.filter((each) => each.holder === "gateway"))
-    add(setting);
-  for (const setting of required.filter((each) => each.holder === "app"))
-    add(setting);
-  const notes: string[] = [];
-  for (const group of report.groups) {
-    if (group.met || !group.members.some((member) => member.blocking)) continue;
-    const [first, ...rest] = group.members;
-    if (!first) continue;
-    add(first);
-    if (rest.length > 0) {
-      notes.push(
-        `${rest
-          .map((member) => member.names.join(" and "))
-          .join(
-            ", or ",
-          )} instead of ${first.names.join(" and ")} is fine too: one ${group.group} is enough`,
-      );
-    }
+  for (const setting of report.unmet) {
+    if (setting.need.kind === "required") add(setting);
   }
-  if (names.length === 0) return null;
-  // `--app` only when the command sets a name of the app's own.
-  const appNames = new Set(
-    report.unmet
-      .filter((setting) => setting.holder === "app")
-      .flatMap((setting) => setting.names),
-  );
-  const own = names.some((name) => appNames.has(name));
-  return {
-    command: `${cli} secret set ${names.join(" ")}${own ? ` --app ${appId}` : ""}`,
-    ...(notes.length > 0 ? { note: notes.join("; ") } : {}),
-  };
+  for (const group of report.groups) {
+    const first = group.members.find((member) => member.blocking);
+    if (first) add(first);
+  }
+  return { command: `${cli} secret set ${names.join(" ")}` };
 }
 
 /** One setting as `AppSetup` carries it: the evaluation without what only the CLI reads. */
@@ -511,8 +496,9 @@ export type AppSetupSetting = Omit<EvaluatedSetting, "alsoReads">;
  * gateway's app lists (`setup`), `everyapp status --json`
  * (`apps[].setup`) and `everyapp secret list --json`: whether it opens,
  * every setting with its state, the any-of groups, and the one command
- * that opens it (null when it is ready, or when whoever reads this can't
- * run it: a shared app seen from another organization).
+ * that opens it, `everyapp configure <app>` (null when it is ready, or
+ * when whoever reads this can't run it: a shared app seen from another
+ * organization).
  */
 export interface AppSetup {
   ready: boolean;
@@ -524,7 +510,12 @@ export interface AppSetup {
 
 export function appSetupOf(
   report: AppSettingsReport,
-  options: { cli: string; appId: string; withCommand?: boolean },
+  options: {
+    cli: string;
+    appId: string;
+    withCommand?: boolean;
+    provider?: boolean;
+  },
 ): AppSetup {
   const strip = ({ alsoReads: _alsoReads, ...setting }: EvaluatedSetting) =>
     setting;

@@ -111,8 +111,9 @@ assessment.
    the two names of one setting, set only when both are), `need.kind` as
    the CRM's manifest declares it (Open CRM: `optional`: it sits in
    `settings` with `set: false`, never in `unmet`, the CRM opens without
-   Gmail and Calendar and `command` doesn't name it; `required` would put
-   it in `unmet`, close the CRM and put both names in `command`), `setup:
+   Gmail and Calendar and `command`, `pnpm everyapp configure crm`, offers
+   it after the required ones; `required` would put it in `unmet`, close
+   the CRM and have configure ask for both names first), `setup:
    "setup/google.md"` (this file). While its `set` is false this file
    applies. The same entry in
    `data.app.setup.settings` with `set: true`: ask before replacing (a new
@@ -120,10 +121,11 @@ assessment.
    id makes every member reconnect Gmail and Calendar).
    `TOKEN_ENCRYPTION_KEY`, the CRM's own secret that connecting needs, is
    in `settings` too (`holder: "app"`; optional, so never in `unmet`): the
-   CRM's admin sets it after the CRM's first deploy, from anywhere with
-   `--app crm`, at the hidden prompt, 32 or more random characters (the
-   CRM refuses shorter); a missing key shows at step 9, the table's last
-   row. `APP_NOT_FOUND`:
+   CRM's admin sets it after the CRM's first deploy, at the hidden prompt
+   of `pnpm everyapp configure crm` (which offers it with the optional
+   ones) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm`, from
+   anywhere, 32 or more random characters (the CRM refuses shorter); a
+   missing key shows at step 9, the table's last row. `APP_NOT_FOUND`:
    deploy Open CRM first (its callback must answer before anyone
    connects).
 2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
@@ -240,8 +242,15 @@ before step 8.
    file still holds the secret and ask them to delete it (or ask before
    running `rm` on it).
    Alternative, the person types it: in their own terminal in the every-app
-   folder, `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
-   (two hidden prompts), then they tell you.
+   folder, `pnpm everyapp configure crm` (it asks for the client's two
+   names, id then secret, with hidden prompts, after the CRM's required
+   settings; the client is optional for Open CRM, so Yes to `Set the N
+   optional settings too?`, Enter skipping the others; with one of
+   the two names set it asks only for the other; or pick
+   `GOOGLE_WORKSPACE_CLIENT_ID + GOOGLE_WORKSPACE_CLIENT_SECRET` from the
+   menu once the CRM is ready) or
+   `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
+   (two hidden prompts, just these), then they tell you.
 9. **Person,** once `data.app.setup.ready` is true: while another required
    setting of the CRM is unmet, the Gateway shows the CRM as "Needs setup"
    and opens its setup dialog instead of the app, so finish those first
@@ -292,6 +301,7 @@ before step 8.
 | Error or symptom | Meaning | What to do |
 | --- | --- | --- |
 | `SECRET_VALUE_REQUIRED` | Nothing was piped and there is no terminal | Use the pipe in step 8 or the person's terminal |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure crm --json` | Nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the CRM still needs (this client is optional for Open CRM, so never among them) | The pipes in step 8, or the person's terminal (step 8's alternative) |
 | `SECRET_SEVERAL_NAMES` | A pipe or `--from-env` with two names | One `secret set` per name |
 | `SECRET_NOT_DECLARED` with `data.didYouMean` | Name typed wrong | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `has("web")` prints `false`; `jq -r .web.client_id` prints `null` | A Desktop client's file (`installed` key); `null` must never be piped | Create a Web application client; unset anything set from it |
@@ -312,13 +322,13 @@ before step 8.
 | Sync stops after 7 days, `invalid_grant` | *External* in Testing: consent expired | Reconnect; publish and verify to stop it |
 | `403 accessNotConfigured` ("has not been used in project") | Gmail or Calendar API not enabled in that project | Step 3 in the project the error names; wait a minute |
 | Google "Error 401: deleted_client" | The client was deleted (30-day restore window) | Restore it under Deleted credentials, or make a new one |
-| Connect fails before Google opens | Open CRM's `TOKEN_ENCRYPTION_KEY` unset | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways, 32 or more random characters; connect again |
+| Connect fails before Google opens | Open CRM's `TOKEN_ENCRYPTION_KEY` unset | Set it after the CRM's first deploy: `pnpm everyapp configure crm` (which asks for it) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways, 32 or more random characters; connect again |
 
 ## Rerun, rotate, remove
 
-- Rerun: every step is safe to repeat. `secret set` replaces; the console
-  shows what exists. After an interruption start at Verify and continue at
-  the first step that isn't done.
+- Rerun: every step is safe to repeat. `configure` and `secret set`
+  replace; the console shows what exists. After an interruption start at
+  Verify and continue at the first step that isn't done.
 - Rotate the secret, never the id: a new client id invalidates every
   member's refresh token. Person: Clients → the client → Add secret (two at
   most; both work until one is disabled); the new secret is shown once, and

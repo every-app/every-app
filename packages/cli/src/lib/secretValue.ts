@@ -1,6 +1,7 @@
 /**
- * Where `secret set` gets a value, and the check a plain Gateway setting
- * gets before anything is written. A credential is typed at a hidden
+ * Where `secret set` gets a value (and `configure`, through the helpers
+ * exported here), and the check a plain Gateway setting gets before
+ * anything is written. A credential is typed at a hidden
  * prompt, piped in, or read from `--from-env`, and never shown. A plain
  * setting (`PLAIN_GATEWAY_SETTINGS` in the SDK: a sender, a switch, a
  * list of domains) is typed at a visible prompt under a line saying what
@@ -266,7 +267,7 @@ function plainSetting(name: string): PlainSetting | undefined {
 }
 
 /** The lines above a plain setting's prompt: what it takes. */
-function plainContext(name: string): string[] {
+export function plainContext(name: string): string[] {
   const setting = plainSetting(name);
   return setting ? [`Takes ${setting.takes}`] : [];
 }
@@ -275,7 +276,7 @@ function plainContext(name: string): string[] {
  * Why `value`, as typed, won't do for the plain setting `name`: one
  * sentence to re-ask with, or null when the Gateway will read it.
  */
-function plainValueProblem(name: string, value: string): string | null {
+export function plainValueProblem(name: string, value: string): string | null {
   if (!value.trim()) return "Enter a value.";
   return plainSetting(name)?.check?.(value.trim()) ?? null;
 }
@@ -286,7 +287,7 @@ function plainValueProblem(name: string, value: string): string | null {
  * names the setting and the value (a plain value is nothing to hide), the
  * detail says what's wrong with it, and the fix what it takes.
  */
-function checkedPlainValue(name: string, value: string): string {
+export function checkedPlainValue(name: string, value: string): string {
   const trimmed = value.trim();
   const problem = plainValueProblem(name, trimmed);
   if (problem === null) return trimmed;

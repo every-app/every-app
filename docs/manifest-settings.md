@@ -16,8 +16,9 @@ default the builders chose.
 An app's `everyapp.config.ts` names what the app needs before it works
 fully: the AI providers it calls, the capabilities it uses through the
 gateway, and the secrets of its own. Each is a **setting**: one thing an
-operator sets once, by name, with `pnpm everyapp secret set NAME`. Four
-kinds, two holders:
+operator sets once. `pnpm everyapp configure <app>` asks for each one the
+app lacks; `pnpm everyapp secret set NAME` sets one by name. Four kinds,
+two holders:
 
 | Kind         | Declared as                                        | Held on              | "Set" means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------ | -------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -55,8 +56,7 @@ Every setting has a **need**, which says what happens while it is unset:
   what is missing, where it is used (§6).
 - **A member of an any-of group**, `anyOf: "AI model"`. The group is met
   once any member is set; more set is fine. While no member is set, every
-  member blocks, and the setup command names the first one with the others
-  as alternatives.
+  member blocks, and `configure` asks which one to set.
 
 The rule for authors:
 
@@ -176,7 +176,9 @@ export default {
 
 With `OPENROUTER_API_KEY` set and the other two unset, the app is closed
 for `DATAFORSEO_API_KEY` alone, and the one command is
-`pnpm everyapp secret set DATAFORSEO_API_KEY`. `CONTEXT_API_KEY` stays "not
+`pnpm everyapp configure openseo`: it asks for `DATAFORSEO_API_KEY`, then
+offers `CONTEXT_API_KEY` (by name, `pnpm everyapp secret set
+DATAFORSEO_API_KEY` sets the first alone). `CONTEXT_API_KEY` stays "not
 set (optional)" in `everyapp status`, and the audit settings say that JS
 rendering isn't set up on this gateway (§6).
 
@@ -207,9 +209,10 @@ export default {
 ```
 
 `members` has nothing to set and is always set. `EMAIL_FROM` unset leaves
-the app open with the weekly email off. `MAIN_SECRET` is the app's own, so
-the one command names the app and runs from anywhere:
-`pnpm everyapp secret set MAIN_SECRET --app analytics`. While it is unset,
+the app open with the weekly email off. `MAIN_SECRET` is the app's own: the
+one command, `pnpm everyapp configure analytics`, reads the manifest from
+the registry, so it runs from anywhere, and sets it on the app's Worker
+(by name: `pnpm everyapp secret set MAIN_SECRET --app analytics`). While it is unset,
 `/collect` answers 503 with the rest of the app (it is public, but public
 routes close with the app); the author accepted that because the tracker
 records nothing without the secret anyway. `MAIN_SECRET`'s `setup` names a
@@ -241,10 +244,10 @@ export default {
 } as const;
 ```
 
-With nothing set, every member of "AI model" blocks and the command is
-`pnpm everyapp secret set EMAIL_FROM OPENROUTER_API_KEY`, with the note
-"WORKERS_AI_API_TOKEN instead of OPENROUTER_API_KEY is fine too: one AI
-model is enough". With `WORKERS_AI_API_TOKEN` set the group is met,
+With nothing set, every member of "AI model" blocks; the command is
+`pnpm everyapp configure writer`, which asks for `EMAIL_FROM`, then
+"Which AI model? One is enough." and the value of the member chosen.
+With `WORKERS_AI_API_TOKEN` set the group is met,
 `OPENROUTER_API_KEY` reads "not set (one of: AI model)", and only
 `EMAIL_FROM` is left. The validator refuses this manifest with one member
 removed ("an any-of group needs two or more"), and refuses `optional: true`
@@ -262,13 +265,19 @@ platform checks at deploy rather than at run time. An MCP app (a provider app in
 (`pnpm everyapp mcp on dataforseo`: an `apps` row of tier `provider`
 with no Worker) lists its capability in its generated manifest, so it reads
 "Needs setup" until `DATAFORSEO_API_KEY` is set
-([docs/capabilities.md](capabilities.md#mcp-apps)). An app whose
+([docs/capabilities.md](capabilities.md#mcp-apps)); it has no Worker
+and nothing to configure, so its command stays
+`pnpm everyapp secret set DATAFORSEO_API_KEY`. An app whose
 `setup.ready` is false shows a "Needs setup" badge (a warning, placed
 after the active check, so an active, bound app that isn't ready shows it)
 and does not open. The card and the Admin → Apps badge open a dialog: each
-unmet setting with its `why` and "Get it at <docs>", then the one command
-with a copy button. A non-admin sees the same names with "Ask an admin to
-run:". A shared app seen from another organization carries no command
+unmet setting with its `why` and "Get it at <docs>", then the one command,
+`pnpm everyapp configure <app>`, with a copy button and the line "It asks
+for each setting above, then offers the optional ones." (the line comes
+only under a configure command, not under a provider app's `secret set`
+one). A non-admin sees
+the same names with "Ask an admin to run:". A shared app seen from another
+organization carries no command
 (`setup.command` is null; the platform operator fixes it). The dialog ends
 with "Already set it another way? `pnpm everyapp status` re-reads the
 Worker." `?setup=<appId>` on the launcher opens the dialog, which is where
@@ -281,7 +290,8 @@ the status and activation checks, for every path, public routes included.
 The gateway evaluates the app's stored manifest against its own env and
 the app's recorded secret names, cached per row, version and names; a
 change reaches every isolate within the 30 seconds the app's row is
-cached, and a redeploy or a `secret set` makes a new version at once. Not
+cached, and a redeploy, a `configure` or a `secret set` makes a new version
+at once. Not
 ready: a private HTML GET navigation is sent (302) to
 `${GATEWAY_URL}/?setup=<appId>`; anything else (a public route, an API
 call, a non-GET) answers `503 { "error": "app_needs_setup", "app": "<id>" }`
@@ -292,7 +302,8 @@ gateway holds is the operator's to know, not a visitor's.
 
 The gateway's `/mcp` leaves out the tools of an app that needs setup and
 says so in the server instructions. `everyapp_list_apps` lists such an app
-with `available: false` and `reason: "needs setup: an admin runs <command>"`
+with `available: false` and
+`reason: "needs setup: an admin runs pnpm everyapp configure <app>"`
 (plain `"needs setup"` when the command isn't the caller's to run), so a
 client holding a listen stream can learn why a tool is gone and ask. The
 app host's own
@@ -303,8 +314,8 @@ app host's own
 For every app that declares any setting, a SETTINGS table (APP, SETTING,
 WHERE, STATUS); the APP table's cell says `! needs setup`; and one
 `APP_NEEDS_SETUP` problem per app (a warning, not a failure), with `Run:`
-the one command, its note when an any-of group has alternatives, and a
-detail line per unmet setting, "NAME: why". `status` reads each deployed
+the one command, `pnpm everyapp configure <app>`, and a detail line per
+unmet setting, "NAME: why". `status` reads each deployed
 app's Worker's secret names and records them (below); `pending` apps and
 apps whose Worker is missing are skipped. When `cf workers secrets list`
 fails, one `SETTINGS_UNKNOWN` warning and the rows read as unknown, which
@@ -326,9 +337,105 @@ Takes an optional app id: by default the app in the current directory;
 from elsewhere with no id, the Gateway's table and then every app's
 settings. The same renderer and vocabulary as `status`. `--json` carries
 `data.app.setup` (the `AppSetup` of §5, what the setup skills read) and
-`data.app.settings`, and keeps `next` as the one command.
+`data.app.settings`, and `next`: the one configure command while something
+is unmet (before the first deploy, `{ command: "pnpm everyapp configure", note: "in the app's directory" }`,
+followed by `pnpm everyapp deploy`, since the app's own secrets wait for
+its Worker; an app row left `pending` by a first deploy that never
+finished counts as undeployed).
+
+### `everyapp configure <app>`
+
+The one command that sets up an app, and the one every surface prints for
+an app that needs setup. It reads the app's manifest (the registry's, as
+its last deploy stored it, when the app is named, so it runs from
+anywhere; the `everyapp.config.ts` here when not, which works before the
+first deploy for the Gateway's settings) and what is set, then, at a
+terminal: one dim line saying where values go (an AI key or a capability's
+client on the Gateway Worker, once for every app; the app's own secrets on
+its Worker; changes live at once, no deploy), the SETTING, WHERE, STATUS
+table (names only, never values), a hidden prompt per required unset
+setting with "Label: why", "Get it at <docs>" and "Guide:
+.claude/skills/everyapp/setup/<file>.md" above it (a plain setting such as
+`EMAIL_FROM` gets a visible prompt with what it takes, and is checked; a
+setting with several names, an OAuth client's id and secret, reads unset
+while one is missing and is asked only for the missing one),
+"Which <group>? One is enough." for an unmet any-of group, then "Set the N
+optional settings too?" ("Set the optional setting too?" for one; No by
+default: one keystroke skips them all; Yes asks each with "(Enter to
+skip)"). An app that is ready gets a menu,
+"Everything <app> needs is set. Change one?", listing every setting with
+its status and "No, done". Everything is applied in one go at the end
+(one new Worker version per destination, the Gateway's first), through
+the same machinery as `secret set`: leases, the replaceable-version
+check, the app's secret names recorded. Ctrl-C at a prompt: "Cancelled.
+Nothing changed."
+
+Without a terminal (a script, a coding agent), values come from
+`NAME=value` lines on stdin (one per line; blank lines and lines starting
+with `#` are skipped, an `export ` prefix is allowed, one pair of matching
+quotes around the value is dropped, the value is otherwise taken as it is,
+and a later line for the same name wins; a name a capability reads once
+set, `EMAIL_FROM_NAME`, is taken too) or, with `--from-env`, from the
+environment variable of each unset setting's own name
+(`DATAFORSEO_API_KEY` from `$DATAFORSEO_API_KEY`; a name that is set
+already is never replaced, so a client with one name set gets only the
+other; stdin isn't read then, so a parent that keeps the pipe open never
+holds the run). The two never combine. Each is checked before anything is
+written: a line that isn't `NAME=value` is `PIPED_LINE_INVALID` ("Line <n>
+of the piped input isn't NAME=value"; the line is never echoed, since it
+may be a bare secret, which goes to `secret set NAME`), a piped name the
+manifest doesn't declare is `SECRET_NOT_DECLARED` ("<app> doesn't declare
+NAME" when it looks like a setting name, else "<app> doesn't declare line
+<n> (not shown: it may be a value)"; fix "leave it out, or declare it in
+everyapp.config.ts; a bare value goes to pnpm everyapp secret set NAME"),
+an empty value `SECRET_EMPTY`, a plain setting's bad value
+`SETTING_VALUE_INVALID`, one of the app's own secrets before its first
+deploy `APP_NOT_FOUND`. A value never goes on the command line:
+`configure NAME=value` is refused with `VALUE_ON_COMMAND_LINE`, and a
+second argument or `--from-env=<value>` by the argument parser before
+that (`TOO_MANY_ARGUMENTS`, `INVALID_VALUE`; the value is cut out of the
+message, with "A value never goes on the command line: it lands in the
+shell's history and the process list. Rotate it if it was real."). With
+nothing piped, no `--from-env` variable found and a required setting
+unset, the run stops with `SECRET_VALUE_REQUIRED` ("Can't ask for <app>'s
+settings without a terminal", then "<app> needs <names>. Run this at a
+terminal, pipe NAME=value lines in (one per line), or export them under
+those names and add --from-env (which also takes the variable of any
+unset optional setting)."); `data.names` lists the names still missing,
+`data.rerun` is `pnpm everyapp configure <app> --from-env` (`rerunNote`
+"with the variables exported") once the app is deployed and
+`pnpm everyapp configure --from-env` ("in the app's directory, with the
+variables exported") before its first deploy, since the name form is
+refused for an undeployed app (a row left `pending` by a deploy that
+never finished counts as one).
+
+The end is `done` with "Set A, B and C. <app> is ready" (or "<app> is
+ready" with nothing to set), or "Set … <app> still needs X" (the names
+still missing) with the `APP_NEEDS_SETUP` warning (`data.setup`) and
+`done.data.next`
+`[{ command: "pnpm everyapp configure <app>", note: "at a terminal, with NAME=value lines on stdin, or with --from-env" }]`
+(before the first deploy
+`[{ command: "pnpm everyapp configure", note: "in the app's directory: at a terminal, with NAME=value lines on stdin, or with --from-env" }]`);
+for an app not deployed yet whose Gateway settings are set, "<app>'s
+Gateway settings are set; its own X and Y come after its first deploy"
+with `next` `[{ command: "pnpm everyapp deploy", note: "then pnpm everyapp configure <app> for X and Y" }]`.
+A failure after one destination already changed is
+`SECRETS_PARTIALLY_APPLIED` with `secret set`'s message and
+`data: { applied, left }`, but its rerun is `pnpm everyapp configure <app>`
+(`rerunNote` "to set what is left"; before the first deploy
+`pnpm everyapp configure`, "in the app's directory, to set what is left"),
+retryable: it reads what is set and asks only for what is still missing.
+`done.data` is `{ app: { id, deployed, setup }, set: string[], changed?: { gateway?: { names, versions }, app?: { id, workerName, names, versions } }, next? }`.
+Progress lines under `--verbose`: the step named configure.env ("<NAME>
+from $<NAME>") and the secret machinery's secrets.route and
+secrets.version lines; the steps are secrets.gateway ("Set A and B on the
+Gateway") and secrets.app ("Set C on <app>"), the same as `secret set`.
 
 ### `everyapp secret set|unset NAME... --app <id>`
+
+One name at a time, by name, for a person who knows the name and for
+scripts; `configure` walks the manifest instead and is what the surfaces
+print.
 
 `--app` reads the app's manifest from its registry row, so the command runs
 from anywhere: a release deploy has no checkout, and the setup command the
@@ -347,7 +454,8 @@ in the manifest's own form.
 After the upload, `deploy` lists the Worker's secrets and records them with
 the deploy (below). When the app then needs setup, it ends with an
 `APP_NEEDS_SETUP` warning ("crm won't open until CONTEXT_API_KEY is set")
-and one `next` entry with the command ("crm opens once these are set").
+and one `next` entry with the command, `pnpm everyapp configure crm`, and
+the note "asks for each; crm opens once they are set".
 `everyapp dev` enforces nothing: in dev the app reads its own `.dev.vars`.
 
 ### How app secret names are recorded
@@ -358,8 +466,8 @@ recorded) holds the names on the app's own Worker, with everyapp's own
 (`GATEWAY_URL`, `EVERY_APP_ORG_ID` and the rest it sets at deploy) left
 out. Written by `deploy` (listed after the upload, in the same registry
 update as the deploy itself, under the app's lease), `secret
-set|unset` (after the app's Workers are patched) and `status` (every
-deployed app, each run). Read by the gateway with the rest of the app's
+set|unset` and `configure` (after the app's Workers are patched) and
+`status` (every deployed app, each run). Read by the gateway with the rest of the app's
 row. Null never blocks and reads `! not recorded`: a change made outside
 the CLI (the dashboard, `cf workers secrets` by hand) or a row from before
 the column heals on the next `pnpm everyapp status`.
@@ -376,7 +484,7 @@ interface AppSetup {
   settings: AppSetupSetting[]; // every setting, in manifest order
   unmet: AppSetupSetting[]; // the ones keeping the app closed
   groups: Array<{ group: string; met: boolean; members: string[] }>;
-  command: { command: string; note?: string } | null; // null: ready, or not yours to run
+  command: { command: string } | null; // "pnpm everyapp configure <app>"; null: ready, or not yours to run
 }
 
 interface AppSetupSetting {
@@ -457,9 +565,7 @@ app's names were recorded with none set:
     }
   ],
   "groups": [],
-  "command": {
-    "command": "pnpm everyapp secret set MAIN_SECRET --app analytics"
-  }
+  "command": { "command": "pnpm everyapp configure analytics" }
 }
 ```
 
@@ -469,14 +575,19 @@ whose `ready` is false, go through `unmet`, show the person each setting's
 `label`, `why` and `docs`, and read its `setup` guide, which walks through
 getting the key or client. Then get the value in without it ever passing
 through the chat, one of the three ways the skill's `setup/README.md`
-gives: tell the person to run `setup.command.command` in their own
-terminal (a hidden prompt asks for each value) and to say when it is done;
-pipe a value that came from a command or a file straight into
-`secret set`; or `--from-env VAR`, only for a variable the person exported
-before starting the agent. Never ask for, print or repeat a value; never
-invent one; never ask for a name that isn't in `unmet`. The command works
-from any directory. When `command` is null and `ready` is false, the app
-is another organization's: tell the person to ask the platform's operator.
+gives: tell the person to run `setup.command.command`
+(`pnpm everyapp configure <app>`, or `pnpm everyapp secret set NAME` for
+one name) in their own terminal, where a hidden prompt asks for each
+value, and to say when it is done; pipe what a command produced straight
+in, `… | pnpm everyapp secret set NAME --json` for one value or several
+at once as `NAME=value` lines into `pnpm everyapp configure <app> --json`;
+or variables the person exported before starting the agent,
+`pnpm everyapp configure <app> --from-env --json` (every exported name at
+once) or `pnpm everyapp secret set NAME --from-env NAME --json`. Never ask
+for, print or repeat a value; never invent one; never ask for a name that
+isn't in `unmet`. The command works from any directory. When `command` is
+null and `ready` is false, the app is another organization's: tell the
+person to ask the platform's operator.
 
 ## 6. How an app degrades for an optional setting
 

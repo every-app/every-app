@@ -43,6 +43,19 @@ export interface ArgumentProblem {
 type Routes = RouteMap<CommandContext>;
 type RoutingTarget<CONTEXT extends CommandContext> = Command<CONTEXT> | RouteMap<CONTEXT>;
 
+/** Said when an argument may have carried a value: it is in the shell's history already. */
+const VALUE_NOTE = "\nA value never goes on the command line: it lands in the shell's history and the process list. Rotate it if it was real.";
+
+/** An argument as a message shows it: `NAME=value` cut at its `=`, since the value may be a secret. */
+function shownInput(input: string): string {
+  return input.includes("=") ? `${input.split("=")[0]}=…` : input;
+}
+
+/** The note, for an argument that looked like `NAME=value`. */
+function valueNote(input: string): string {
+  return input.includes("=") ? VALUE_NOTE : "";
+}
+
 /** The command path the arguments name ("create", "secret set") and its target, as far as it goes. */
 export function commandPath(
   routes: Routes,
@@ -175,9 +188,11 @@ export function argumentProblem(
     const flag = exc.externalFlagNameOrPlaceholder;
     const isFlag = Object.keys(flags).map(kebab).includes(flag);
     if (isFlag && flags[Object.keys(flags).find((key) => kebab(key) === flag)!]?.kind === "boolean") {
+      // What was typed after `=` is never shown: a switch takes no value,
+      // so whatever it got may be one (`--from-env=<key>`).
       return {
         code: ArgumentErrorCode.InvalidValue,
-        message: `--${flag} is a switch and takes no value (got "${exc.input}")`,
+        message: `--${flag} is a switch and takes no value${VALUE_NOTE}`,
         data: { fix: `use --${flag} or --no-${flag}` },
       };
     }
@@ -192,7 +207,7 @@ export function argumentProblem(
     }
     return {
       code: ArgumentErrorCode.InvalidValue,
-      message: `"${exc.input}" won't do for <${flag}>\n${reason}`,
+      message: `"${shownInput(exc.input)}" won't do for <${flag}>\n${reason}${valueNote(exc.input)}`,
       data: usage,
     };
   }
@@ -240,15 +255,15 @@ export function argumentProblem(
       code: ArgumentErrorCode.TooManyArguments,
       message:
         exc.expectedCount === 0
-          ? `${name || "everyapp"} takes no arguments (got "${exc.input}")`
-          : `${name || "everyapp"} takes ${takes}, but got another: "${exc.input}"`,
+          ? `${name || "everyapp"} takes no arguments (got "${shownInput(exc.input)}")${valueNote(exc.input)}`
+          : `${name || "everyapp"} takes ${takes}, but got another: "${shownInput(exc.input)}"${valueNote(exc.input)}`,
       data: usage,
     };
   }
   if (exc instanceof InvalidNegatedFlagSyntaxError) {
     return {
       code: ArgumentErrorCode.InvalidValue,
-      message: `--no-${exc.externalFlagName} is a switch and takes no value (got "${exc.valueText}")`,
+      message: `--no-${exc.externalFlagName} is a switch and takes no value${VALUE_NOTE}`,
       data: {},
     };
   }

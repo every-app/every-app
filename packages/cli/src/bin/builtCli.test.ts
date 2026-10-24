@@ -14,9 +14,10 @@
  * email, dataforseo, context and a scoped Slack client through `db migrate`
  * (the #543 regression) and one with scopes on members refused; `release`
  * (a production build, not the development one a stray NODE_ENV makes);
- * and `status --json` against a fake Cloudflare account (lib/cf/bin.ts's
- * EVERYAPP_CF_BINARY seam points cf at a stand-in that answers from
- * src/test/fakeCloudflare.ts over a loopback bridge). Every --json line must
+ * `status --json` and `configure <app> --json` (NAME=value lines on stdin,
+ * then --from-env, then the refusals) against a fake Cloudflare account
+ * (lib/cf/bin.ts's EVERYAPP_CF_BINARY seam points cf at a stand-in that
+ * answers from src/test/fakeCloudflare.ts over a loopback bridge). Every --json line must
  * be a protocol event and the exit codes must follow it; no run may rebuild
  * dist (the launcher says "Updated everyapp CLI" when it does).
  *
@@ -59,6 +60,8 @@ const LAUNCHER = path.join(CLI_DIR, "bin", "everyapp.js");
 const APP_ID = "notes";
 /** The app registered on the fake Gateway, which `status` must list. */
 const REGISTERED_APP = "crm";
+/** The app registered with settings to set, which `configure` sets from stdin and the environment. */
+const CONFIGURED_APP = "seo";
 const EVENT_TYPES = new Set(["step", "progress", "warning", "error", "action_required", "done"]);
 /** What the launcher prints after it rebuilt dist/: never, here. */
 const REBUILT = /Updated everyapp CLI/;
@@ -222,20 +225,28 @@ async function everyapp(
   {
     cwd,
     env,
+    input,
     timeoutMs = 600_000,
-  }: { cwd: string; env?: Record<string, string | undefined>; timeoutMs?: number },
+  }: {
+    cwd: string;
+    env?: Record<string, string | undefined>;
+    /** Piped to the child's stdin (what a script hands `configure`); none by default. */
+    input?: string;
+    timeoutMs?: number;
+  },
 ): Promise<Run> {
   const began = Date.now();
   const exited = await new Promise<Pick<Run, "exitCode" | "signal" | "stdout" | "stderr">>((resolve, reject) => {
     const child = spawn(process.execPath, [LAUNCHER, ...args], {
       cwd,
       env: childEnv(env),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (input !== undefined) child.stdin!.end(input);
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.stdout!.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     const deadline = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error(`everyapp ${args.join(" ")} ran past ${timeoutMs / 1000}s\n${tail(stdout)}\n${tail(stderr)}`));
@@ -372,6 +383,124 @@ function withLastField(manifest: string, block: string): string {
   const closing = /,?\s*\}\s*as const;?\s*$/;
   expect(manifest, "the starter manifest should end in `} as const;`").toMatch(closing);
   return manifest.replace(closing, `,\n  ${block}\n} as const;\n`);
+}
+
+/** A fake Cloudflare account with a Gateway installed, reached by the built CLI through the cf seam. */
+interface FakeGateway {
+  account: FakeCloudflare;
+  resources: Awaited<ReturnType<typeof ensureGatewayResources>>;
+  /** What a run needs to reach it: the stand-in cf and its bridge. */
+  env: Record<string, string>;
+  /** Register an app as deployed and bound, with its Worker in the account, and make it live. */
+  registerApp(manifest: { id: string } & Record<string, unknown>): Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
+ * The fake account with a Gateway installed, as commands/status/status.test.ts
+ * sets it up in process, behind a bridge: each call the stand-in cf receives
+ * runs against the fake account's runner, and goes back as cf's stdout,
+ * stderr and exit code (a CfError carries all three).
+ */
+async function fakeGateway(): Promise<FakeGateway> {
+  const account = new FakeCloudflare();
+  const events: Event[] = [];
+  const sink = () => createNdjsonSink((line) => events.push(JSON.parse(line) as Event));
+  const quick = { sleep: async () => undefined, leaseWaitMs: 0 };
+  const tarball = await buildGatewayRelease();
+  const release = await openRelease(tarball);
+  const resources = await ensureGatewayResources(account.cf);
+  const db = cfD1Database(account.cf, resources.d1Id);
+  await applyGateway({
+    cf: account.cf,
+    out: sink(),
+    reason: "deploy",
+    release,
+    accountId: ACCOUNT_ID,
+    gatewayHost: "example.com",
+    zone: { id: "zone-1", name: "example.com" },
+    appBaseDomain: "example.com",
+    resources,
+    db,
+    interactive: false,
+    cliVersion: "0.3.0",
+    ...quick,
+  });
+  const bridge = http.createServer(async (request, response) => {
+    const body = JSON.parse(await text(request)) as {
+      args: string[];
+      json: boolean;
+      accountId: string | null;
+      files: Record<string, string>;
+    };
+    const reply = (answer: { stdout: string; stderr: string; exitCode: number }) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(answer));
+    };
+    try {
+      const result = await account.cf.run({
+        args: body.args,
+        plane: "account",
+        mode: body.json ? "json" : "text",
+        env: body.accountId ? { CLOUDFLARE_ACCOUNT_ID: body.accountId } : {},
+        files: body.files,
+      });
+      reply({ stdout: result.stdout, stderr: result.stderr, exitCode: 0 });
+    } catch (error) {
+      if (error instanceof CfError) {
+        reply({ stdout: error.stdout, stderr: error.stderr, exitCode: error.exitCode ?? 1 });
+      } else {
+        reply({ stdout: "", stderr: `┌ Error\n│ ${(error as Error).message}\n└\n`, exitCode: 1 });
+      }
+    }
+  });
+  const bridgeUrl = await new Promise<string>((resolve) =>
+    bridge.listen(0, "127.0.0.1", () => {
+      const address = bridge.address() as net.AddressInfo;
+      resolve(`http://127.0.0.1:${address.port}/`);
+    }),
+  );
+  const standIn = path.join(tmp, "cf-stand-in.mjs");
+  fs.writeFileSync(standIn, CF_STAND_IN);
+  return {
+    account,
+    resources,
+    env: { EVERYAPP_CF_BINARY: standIn, EVERYAPP_CF_BRIDGE: bridgeUrl },
+    async registerApp(manifest) {
+      const { plan } = await register(db, {
+        appSlug: manifest.id,
+        name: manifest.id,
+        description: manifest.id,
+        manifest,
+        appBaseDomain: "example.com",
+        deployer: { actor: "dev@example.com", email: "dev@example.com" },
+        organizationName: "Acme",
+      });
+      await markDeployed(db, plan.app.id, { versionId: `${manifest.id}-v1`, manifest, actor: "dev@example.com" });
+      account.workers.set(plan.app.workerName!, {
+        versions: [`${manifest.id}-v1`],
+        config: { name: plan.app.workerName, env: {} },
+        secrets: {},
+      });
+      await reconcileGateway({
+        cf: account.cf,
+        out: sink(),
+        accountId: ACCOUNT_ID,
+        databaseId: resources.d1Id,
+        openRelease: () => openRelease(tarball),
+        interactive: false,
+        cliVersion: "0.3.0",
+        ...quick,
+      });
+      // The Gateway's first request for the app makes it live.
+      await new GatewayWorker(account).fetch(`https://${manifest.id}.example.com/`);
+      expect(events.filter((event) => event.type === "error")).toEqual([]);
+    },
+    async close() {
+      await new Promise<void>((resolve) => bridge.close(() => resolve()));
+      await release.cleanup();
+    },
+  };
 }
 
 describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { timeout: 600_000 }, () => {
@@ -638,112 +767,10 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
 
   it("reports a Gateway's status from a fake Cloudflare account through the cf seam", () =>
     timed("status", async () => {
-      // The fake account with a Gateway installed and one app deployed and
-      // bound, as commands/status/status.test.ts sets it up in process.
-      const account = new FakeCloudflare();
-      const events: Event[] = [];
-      const sink = () => createNdjsonSink((line) => events.push(JSON.parse(line) as Event));
-      const quick = { sleep: async () => undefined, leaseWaitMs: 0 };
-      const tarball = await buildGatewayRelease();
-      let release: GatewayRelease | undefined;
-      let bridge: http.Server | undefined;
+      const gateway = await fakeGateway();
       try {
-        release = await openRelease(tarball);
-        const resources = await ensureGatewayResources(account.cf);
-        const db = cfD1Database(account.cf, resources.d1Id);
-        await applyGateway({
-          cf: account.cf,
-          out: sink(),
-          reason: "deploy",
-          release,
-          accountId: ACCOUNT_ID,
-          gatewayHost: "example.com",
-          zone: { id: "zone-1", name: "example.com" },
-          appBaseDomain: "example.com",
-          resources,
-          db,
-          interactive: false,
-          cliVersion: "0.3.0",
-          ...quick,
-        });
-        const manifest = { id: REGISTERED_APP };
-        const { plan } = await register(db, {
-          appSlug: REGISTERED_APP,
-          name: REGISTERED_APP,
-          description: REGISTERED_APP,
-          manifest,
-          appBaseDomain: "example.com",
-          deployer: { actor: "dev@example.com", email: "dev@example.com" },
-          organizationName: "Acme",
-        });
-        await markDeployed(db, plan.app.id, {
-          versionId: `${REGISTERED_APP}-v1`,
-          manifest,
-          actor: "dev@example.com",
-        });
-        account.workers.set(plan.app.workerName!, {
-          versions: [`${REGISTERED_APP}-v1`],
-          config: { name: plan.app.workerName, env: {} },
-          secrets: {},
-        });
-        await reconcileGateway({
-          cf: account.cf,
-          out: sink(),
-          accountId: ACCOUNT_ID,
-          databaseId: resources.d1Id,
-          openRelease: () => openRelease(tarball),
-          interactive: false,
-          cliVersion: "0.3.0",
-          ...quick,
-        });
-        // The Gateway's first request for the app makes it live.
-        await new GatewayWorker(account).fetch(`https://${REGISTERED_APP}.example.com/`);
-        expect(events.filter((event) => event.type === "error")).toEqual([]);
-
-        // The bridge: each call the stand-in cf receives runs against the
-        // fake account's runner, and goes back as cf's stdout, stderr and
-        // exit code (a CfError carries all three).
-        bridge = http.createServer(async (request, response) => {
-          const body = JSON.parse(await text(request)) as {
-            args: string[];
-            json: boolean;
-            accountId: string | null;
-            files: Record<string, string>;
-          };
-          const reply = (answer: { stdout: string; stderr: string; exitCode: number }) => {
-            response.writeHead(200, { "content-type": "application/json" });
-            response.end(JSON.stringify(answer));
-          };
-          try {
-            const result = await account.cf.run({
-              args: body.args,
-              plane: "account",
-              mode: body.json ? "json" : "text",
-              env: body.accountId ? { CLOUDFLARE_ACCOUNT_ID: body.accountId } : {},
-              files: body.files,
-            });
-            reply({ stdout: result.stdout, stderr: result.stderr, exitCode: 0 });
-          } catch (error) {
-            if (error instanceof CfError) {
-              reply({ stdout: error.stdout, stderr: error.stderr, exitCode: error.exitCode ?? 1 });
-            } else {
-              reply({ stdout: "", stderr: `┌ Error\n│ ${(error as Error).message}\n└\n`, exitCode: 1 });
-            }
-          }
-        });
-        const bridgeUrl = await new Promise<string>((resolve) =>
-          bridge!.listen(0, "127.0.0.1", () => {
-            const address = bridge!.address() as net.AddressInfo;
-            resolve(`http://127.0.0.1:${address.port}/`);
-          }),
-        );
-        const standIn = path.join(tmp, "cf-stand-in.mjs");
-        fs.writeFileSync(standIn, CF_STAND_IN);
-
-        const run = await everyapp(["status", "--json"], {
-          cwd: tmp,
-          env: { EVERYAPP_CF_BINARY: standIn, EVERYAPP_CF_BRIDGE: bridgeUrl },
-        });
+        await gateway.registerApp({ id: REGISTERED_APP });
+        const run = await everyapp(["status", "--json"], { cwd: tmp, env: gateway.env });
         const last = expectProtocol(run);
         expect(run.exitCode, describeRun(run)).toBe(0);
         expect(run.events.filter((event) => event.type === "error"), describeRun(run)).toEqual([]);
@@ -761,12 +788,87 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
         expect(data.apps[0]).toMatchObject({ status: "active", bound: true });
         expect(last.message).toContain("1 app live");
         // The built CLI asked who it was and read the Gateway's database through the stand-in.
-        const calls = account.cf.calls.map((call) => call.args.join(" "));
+        const calls = gateway.account.cf.calls.map((call) => call.args.join(" "));
         expect(calls).toContain("auth whoami");
-        expect(calls.some((call) => call.startsWith(`d1 query ${resources.d1Id} --body @`))).toBe(true);
+        expect(calls.some((call) => call.startsWith(`d1 query ${gateway.resources.d1Id} --body @`))).toBe(true);
       } finally {
-        await new Promise<void>((resolve) => (bridge ? bridge.close(() => resolve()) : resolve()));
-        await release?.cleanup();
+        await gateway.close();
+      }
+    }));
+
+  it("configures an app from NAME=value lines on stdin through the cf seam, and refuses a value on the command line", () =>
+    timed("configure", async () => {
+      const gateway = await fakeGateway();
+      try {
+        // An app that needs two Gateway settings: a provider's key and a capability's.
+        await gateway.registerApp({
+          id: CONFIGURED_APP,
+          providers: ["openrouter"],
+          capabilities: { dataforseo: { access: "read", why: "Keyword data." } },
+        });
+        const secrets = () => gateway.account.workers.get("every-app-gateway")!.secrets;
+
+        // One of the two, piped: set, and the warning names the other.
+        const partial = await everyapp(["configure", CONFIGURED_APP, "--json"], {
+          cwd: tmp,
+          env: gateway.env,
+          input: "# from a script\nOPENROUTER_API_KEY=sk-or-built\n",
+        });
+        const first = expectProtocol(partial);
+        expect(partial.exitCode, describeRun(partial)).toBe(0);
+        expect(first).toMatchObject({
+          type: "done",
+          message: `Set OPENROUTER_API_KEY. ${CONFIGURED_APP} still needs DATAFORSEO_API_KEY`,
+          data: {
+            app: { id: CONFIGURED_APP, deployed: true, setup: { ready: false } },
+            set: ["OPENROUTER_API_KEY"],
+            // "pnpm everyapp" under pnpm, "everyapp" run directly: the invocation the run had.
+            next: [{ command: expect.stringMatching(new RegExp(`everyapp configure ${CONFIGURED_APP}$`)) }],
+          },
+        });
+        expect(partial.events.filter((event) => event.type === "warning").map((event) => event.code)).toEqual(["APP_NEEDS_SETUP"]);
+        expect(secrets()["OPENROUTER_API_KEY"]).toBe("sk-or-built");
+
+        // The other, from the environment: ready.
+        const rest = await everyapp(["configure", CONFIGURED_APP, "--from-env", "--json"], {
+          cwd: tmp,
+          env: { ...gateway.env, DATAFORSEO_API_KEY: "login:password" },
+        });
+        expectProtocol(rest);
+        expect(rest.exitCode, describeRun(rest)).toBe(0);
+        expect(rest.events.at(-1)).toMatchObject({
+          type: "done",
+          message: `Set DATAFORSEO_API_KEY. ${CONFIGURED_APP} is ready`,
+          data: { set: ["DATAFORSEO_API_KEY"], app: { setup: { ready: true, command: null } } },
+        });
+        expect(rest.events.filter((event) => event.type === "warning"), describeRun(rest)).toEqual([]);
+        expect(secrets()["DATAFORSEO_API_KEY"]).toBe("login:password");
+
+        // Nothing piped, nothing to set: done, nothing changed.
+        const ready = await everyapp(["configure", CONFIGURED_APP, "--json"], { cwd: tmp, env: gateway.env });
+        expectProtocol(ready);
+        expect(ready.exitCode, describeRun(ready)).toBe(0);
+        expect(ready.events.at(-1)).toMatchObject({ type: "done", message: `${CONFIGURED_APP} is ready`, data: { set: [] } });
+
+        // A name the app doesn't declare is refused before anything is written.
+        const undeclared = await everyapp(["configure", CONFIGURED_APP, "--json"], {
+          cwd: tmp,
+          env: gateway.env,
+          input: "STRIPE_KEY=sk_live\n",
+        });
+        const refusal = expectProtocol(undeclared);
+        expect(undeclared.exitCode, describeRun(undeclared)).toBe(1);
+        expect(refusal).toMatchObject({ type: "error", code: "SECRET_NOT_DECLARED" });
+        expect(secrets()["STRIPE_KEY"]).toBeUndefined();
+
+        // A value after the verb never goes anywhere.
+        const argued = await everyapp(["configure", "DATAFORSEO_API_KEY=typed", "--json"], { cwd: tmp, env: gateway.env });
+        const argument = expectProtocol(argued);
+        expect(argued.exitCode, describeRun(argued)).toBe(1);
+        expect(argument).toMatchObject({ type: "error", code: "VALUE_ON_COMMAND_LINE" });
+        expect(secrets()["DATAFORSEO_API_KEY"]).toBe("login:password");
+      } finally {
+        await gateway.close();
       }
     }));
 

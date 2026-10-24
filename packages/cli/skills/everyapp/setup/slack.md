@@ -48,10 +48,11 @@ an internal app installed in its own workspace.
    OAuth client's id and secret are the two names of one setting, set
    only when both are), `need.kind` as the CRM's manifest declares it
    (Open CRM: `optional`: it sits in `settings` with `set: false`, never
-   in `unmet`, the CRM opens without Slack and `command` doesn't name it;
-   `required` would put it in `unmet`, close the CRM and put both names
-   in `command`), `setup: "setup/slack.md"` (this file). While its `set`
-   is false this file applies.
+   in `unmet`, the CRM opens without Slack and `command`,
+   `pnpm everyapp configure crm`, offers it after the required ones;
+   `required` would put it in `unmet`, close the CRM and have configure
+   ask for both names first), `setup: "setup/slack.md"` (this file). While
+   its `set` is false this file applies.
    The same entry in `data.app.setup.settings` with `set: true`: ask
    before replacing (a new app, or a regenerated secret). Not deployed
    yet: `secret list crm` stops with `APP_NOT_FOUND`; a bare
@@ -71,9 +72,11 @@ an internal app installed in its own workspace.
    `TOKEN_ENCRYPTION_KEY`, the CRM's own secret its Slack connect needs (it
    stores the tokens encrypted under it; optional in the manifest, so its
    entry sits in `settings` with `holder: "app"`, never in `unmet`).
-   Unset: set it first, after the CRM's first deploy,
-   from anywhere with `--app crm`, at the hidden prompt, 32 or more random
-   characters, never through the chat; without it **Connect Slack** stops
+   Unset: set it first, after the CRM's first deploy, at the hidden prompt
+   of `pnpm everyapp configure crm` (which offers it with the optional
+   ones) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm`, from
+   anywhere, 32 or more random characters, never through the chat; without
+   it **Connect Slack** stops
    before Slack opens (the table). Not deployed yet: set it right after its
    first deploy, before Verify 3.
 4. Ask: which workspace; whether a Slack app for this exists already at
@@ -152,12 +155,18 @@ an internal app installed in its own workspace.
    `app_id=` and the same manifest; it returns no credentials.
 
 3a. **Person (path A):** in a second terminal, in the `every-app` folder:
-   `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
-   (README's first way; no `--json`, so it prompts). Paste the Client ID at
-   the first prompt; click **Show** next to Client Secret and paste it at
-   the second. Nothing is echoed. Give 2a and 3a in one message and wait
-   once, until they say both values are in (a create that failed, they
-   report instead). Go to Verify.
+   `pnpm everyapp configure crm` (it asks for the client's two names, id
+   then secret, with hidden prompts, after the CRM's required settings;
+   the client is optional for Open CRM, so Yes to `Set the N optional
+   settings too?`, Enter skipping the others; with one of the two
+   names set it asks only for the other; or pick
+   `SLACK_CLIENT_ID + SLACK_CLIENT_SECRET` from the menu once the CRM is
+   ready) or `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
+   for just these two (README's first way; no `--json`, so it prompts).
+   Paste the Client ID at the first prompt; click **Show** next to Client
+   Secret and paste it at the second. Nothing is echoed. Give 2a and 3a in
+   one message and wait once, until they say both values are in (a create
+   that failed, they report instead). Go to Verify.
 
 2b. **Person (path B):** open https://api.slack.com/apps; below the list of
    apps, under **Your App Configuration Tokens**, click **Generate Token**,
@@ -272,12 +281,13 @@ an internal app installed in its own workspace.
 | Error or symptom                                                               | Meaning                                                                                  | What to do                                                                                              |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `SECRET_VALUE_REQUIRED`                                                        | Nothing was piped (path B: the field was missing, so `// empty` piped nothing) and there is no terminal to prompt at | `jq '.error' /tmp/slack-app.json`; or one of README's three ways (its `data.rerun` shows the `--from-env` form) |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure crm --json`             | Nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the CRM still needs (this client is optional for Open CRM, so never among them) | The pipes in 3b, or the person's terminal (3a)                                              |
 | `SECRET_SEVERAL_NAMES`                                                         | A pipe or `--from-env` with two names                                                    | One name per call (the fix in `data.fix`)                                                                |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                   | The name differs from a known one in case or underscores only                            | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `SECRET_NOT_DECLARED` without it                                               | A misspelt name; in Open CRM's directory its `data.fix` offers to add it to the CRM's own `secrets` | Retype the name from Settings above; never add a `SLACK_*` name to Open CRM's `secrets`            |
 | CRM: **Slack is not configured**, the `secret set` command, no **Connect Slack** | The Gateway holds no client, or one of the two names (a call would get `integration_not_configured`); or the deployed CRM doesn't list `slack` with `access: "write"` and `scopes` (`capability_not_requested`; without `scopes`, `integration_scopes_undeclared`) | `secret set` both, then Verify 1; or its `everyapp.config.ts` (`slack: { access: "write", scopes: [...], why }`), then `pnpm everyapp deploy --json` in its directory |
 | CRM: `exchange_failed`; its log `[slack] connect refused` with `status` 503 or 403 | The Gateway refused between **Connect Slack** and the callback: the client was unset, or the manifest changed, meanwhile | The row above, then connect again                                                              |
-| CRM: **Connect Slack** fails before Slack opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters                 | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways (Before you start 3); connect again |
+| CRM: **Connect Slack** fails before Slack opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters                 | Set it after the CRM's first deploy: `pnpm everyapp configure crm` (which asks for it) or `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways (Before you start 3); connect again |
 | Slack's page: "redirect_uri did not match any configured URIs", then `Passed URI: …` | The URI the CRM sent isn't registered on the app exactly, or under a registered URL  | Register the Passed URI, `https://<app>.<app base domain>/integrations/slack/callback` (https only, no `#`), under OAuth & Permissions → Redirect URLs; Verify 2 |
 | `bad_redirect_uri` (token call)                                                | `redirect_uri` differed between the authorize and token calls                            | The CRM sends its own host; check the app runs on `https://<app>.<app base domain>`                     |
 | `invalid_scope`                                                                | A scope name doesn't exist, or bot and user scopes are mixed up                          | Compare with step 1; bot scopes go in `scope`, user scopes in `user_scope`                               |
@@ -292,7 +302,7 @@ an internal app installed in its own workspace.
 
 ## Rerun, rotate, remove
 
-- **Rerun.** `secret set` replaces. Never run `apps.manifest.create` twice
+- **Rerun.** `configure` and `secret set` replace. Never run `apps.manifest.create` twice
   for one app: update the existing one (step 2a's second paragraph, or
   `apps.manifest.update`). A duplicate it made: with `SLACK_CONFIG_TOKEN`
   and the duplicate's id exported, and only when the person said to delete

@@ -313,7 +313,7 @@ describe("the gateway /mcp and an app that needs setup", () => {
     const text = await instructions();
     expect(text).toContain("Apps: todo (Todos).");
     expect(text).toContain(
-      "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY.",
+      "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp configure openseo.",
     );
 
     expect(await listApps()).toEqual([
@@ -322,8 +322,7 @@ describe("the gateway /mcp and an app that needs setup", () => {
         id: "openseo",
         name: "OpenSEO",
         available: false,
-        reason:
-          "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY",
+        reason: "needs setup: an admin runs pnpm everyapp configure openseo",
       },
     ]);
 
@@ -373,14 +372,13 @@ describe("the gateway /mcp and an app that needs setup", () => {
       .where(eq(apps.id, id));
     expect(await toolNames()).not.toContain("analytics_ping");
     expect(await instructions()).toContain(
-      "analytics (Analytics) is not available: needs setup: an admin runs pnpm everyapp secret set MAIN_SECRET --app analytics.",
+      "analytics (Analytics) is not available: needs setup: an admin runs pnpm everyapp configure analytics.",
     );
     expect(await listApps()).toContainEqual({
       id: "analytics",
       name: "Analytics",
       available: false,
-      reason:
-        "needs setup: an admin runs pnpm everyapp secret set MAIN_SECRET --app analytics",
+      reason: "needs setup: an admin runs pnpm everyapp configure analytics",
     });
 
     // `secret set` recorded it: the next request serves the app again.
@@ -391,7 +389,7 @@ describe("the gateway /mcp and an app that needs setup", () => {
     expect(await toolNames()).toContain("analytics_ping");
   });
 
-  it("says the alternatives of an unmet any-of group, and serves the app once any is set", async () => {
+  it("names the one configure command for an unmet any-of group, and serves the app once any member is set", async () => {
     await deploy("inbox", {
       id: "inbox",
       name: "Inbox",
@@ -405,8 +403,7 @@ describe("the gateway /mcp and an app that needs setup", () => {
       id: "inbox",
       name: "Inbox",
       available: false,
-      reason:
-        "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY (WORKERS_AI_API_TOKEN instead of OPENROUTER_API_KEY is fine too: one AI model is enough)",
+      reason: "needs setup: an admin runs pnpm everyapp configure inbox",
     });
 
     // The other member of the group is enough. A Gateway setting arrives
@@ -463,8 +460,7 @@ describe("the gateway /mcp and an app that needs setup", () => {
       id: "crm",
       name: "CRM",
       available: false,
-      reason:
-        "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY",
+      reason: "needs setup: an admin runs pnpm everyapp configure crm",
     });
 
     // Set on the Gateway (a new deploy, so a fresh cache): back for everyone.

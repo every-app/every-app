@@ -48,7 +48,7 @@ export const installCommand = buildCommand({
       "(the everyapp-release.tar.gz on its latest release; …/releases/tag/<tag> for that one), a",
       "tarball's HTTPS URL, or a downloaded everyapp-release.tar.gz. The release holds the app's",
       "tenant-neutral Build Output, migrations and manifest, checked against its SHA-256. Run it",
-      `again later to update the app. Its secrets are set with ${CLI} secret set <NAME> --app <id>;`,
+      `again later to update the app. Its settings are set with ${CLI} configure <id>;`,
       ".everyapp/secrets.env in this directory is the deploy's own file, read only for a Hyperdrive",
       "app's database URL.",
       "",

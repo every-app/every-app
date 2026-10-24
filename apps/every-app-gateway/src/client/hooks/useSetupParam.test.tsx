@@ -40,7 +40,7 @@ const SEO = app({
     settings: [],
     unmet: [],
     groups: [],
-    command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
+    command: { command: "pnpm everyapp configure openseo" },
   },
 });
 const TODO = app({ id: "row-todo", appId: "todo", name: "Todos" });

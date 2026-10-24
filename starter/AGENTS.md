@@ -26,7 +26,7 @@ A capability is something the Gateway does for the app with keys the Gateway hol
 
 ## Add a secret
 
-A secret only this app uses (a key it calls out with, a signing secret). List its name under `secrets` in `everyapp.config.ts`; `{ name: "GITHUB_TOKEN", optional: true }` when the app works without it. Declare it in `src/env.d.ts` and read `env.GITHUB_TOKEN`. Locally: a `GITHUB_TOKEN=...` line in `.dev.vars` (gitignored). Live: after a deploy, `pnpm everyapp secret set GITHUB_TOKEN` in this directory; the person types the value at the hidden prompt, never in the chat. A required secret keeps the app closed ("Needs setup") until it is set. The keys of AI providers and capabilities are the Gateway's, set once for every app: never list those here.
+A secret only this app uses (a key it calls out with, a signing secret). List its name under `secrets` in `everyapp.config.ts`; `{ name: "GITHUB_TOKEN", optional: true }` when the app works without it. Declare it in `src/env.d.ts` and read `env.GITHUB_TOKEN`. Locally: a `GITHUB_TOKEN=...` line in `.dev.vars` (gitignored). Live: after a deploy, `pnpm everyapp secret set GITHUB_TOKEN` in this directory, or `pnpm everyapp configure` for everything the app needs; the person types the value at the hidden prompt, never in the chat. A required secret keeps the app closed ("Needs setup") until it is set. The keys of AI providers and capabilities are the Gateway's, set once for every app: never list those here.
 
 ## Deploy
 

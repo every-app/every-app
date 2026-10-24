@@ -100,7 +100,7 @@ pnpm everyapp secret set OPENAI_API_KEY
 
 Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`. For Workers AI, use `WORKERS_AI_API_TOKEN`.
 
-In an app's folder, `pnpm everyapp secret list` shows which keys it needs, which are set, and where to get each one. Until every key it requires is set, the app shows **Needs setup** on your Gateway and won't open.
+In an app's folder, `pnpm everyapp secret list` shows which keys it needs, which are set, and where to get each one. `pnpm everyapp configure` there asks for everything the app needs at once. Until every key it requires is set, the app shows **Needs setup** on your Gateway and won't open.
 
 An app you build says which provider it uses in its `everyapp.config.ts`:
 

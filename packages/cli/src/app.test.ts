@@ -47,7 +47,8 @@ describe("argument problems", () => {
   it("says what is wrong with a value, in the words a person typed", async () => {
     expect((await parse("create", "--yes=maybe")).problems[0]).toEqual({
       code: "INVALID_VALUE",
-      message: '--yes is a switch and takes no value (got "maybe")',
+      message:
+        "--yes is a switch and takes no value\nA value never goes on the command line: it lands in the shell's history and the process list. Rotate it if it was real.",
       data: { fix: "use --yes or --no-yes" },
     });
     expect((await parse("dev", "--port", "many")).problems[0]).toMatchObject({
@@ -78,6 +79,21 @@ describe("argument problems", () => {
     });
   });
 
+
+  it("never echoes an argument that may be a value: NAME=value is cut at its =, a switch's value isn't shown", async () => {
+    const extra = (await parse("configure", "crm", "OPENAI_API_KEY=sk-live-abc123")).problems[0];
+    expect(extra).toMatchObject({ code: "TOO_MANY_ARGUMENTS" });
+    expect(extra!.message).toBe(
+      'configure takes one argument, but got another: "OPENAI_API_KEY=…"\nA value never goes on the command line: it lands in the shell\'s history and the process list. Rotate it if it was real.',
+    );
+    expect(extra!.message).not.toContain("sk-live");
+    const switched = (await parse("configure", "crm", "--from-env=sk-live-abc123")).problems[0];
+    expect(switched).toMatchObject({ code: "INVALID_VALUE", data: { fix: "use --from-env or --no-from-env" } });
+    expect(switched!.message).toBe(
+      "--from-env is a switch and takes no value\nA value never goes on the command line: it lands in the shell's history and the process list. Rotate it if it was real.",
+    );
+    expect(switched!.message).not.toContain("sk-live");
+  });
   it("tells a required flag never given from a flag typed without a value, and names it in the usage", async () => {
     expect((await parse("teardown", "--dry-run")).problems[0]).toEqual({
       code: "MISSING_FLAG_VALUE",
@@ -126,7 +142,7 @@ describe("argument problems", () => {
 describe("the command tree", () => {
   it("has the build verbs, the run verbs, and nothing hidden", () => {
     const paths = commandPaths();
-    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "status", "delete", "access on", "secret set", "email show"]) {
+    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "configure", "status", "delete", "access on", "secret set", "email show"]) {
       expect(paths).toContain(route);
     }
     for (const gone of ["gateway", "gateway deploy", "workflow", "completion"]) {

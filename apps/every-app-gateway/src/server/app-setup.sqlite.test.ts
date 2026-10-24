@@ -42,7 +42,7 @@ const SEO = {
 };
 // How an operator runs everyapp while publishing is paused (app-setup.ts keeps the same string).
 const SETUP_CLI = "pnpm everyapp";
-const SET_DATAFORSEO = `${SETUP_CLI} secret set DATAFORSEO_API_KEY`;
+const CONFIGURE_SEO = `${SETUP_CLI} configure seo`;
 
 describe("app setup on the app lists (SQLite)", () => {
   let db: TestDb;
@@ -114,7 +114,7 @@ describe("app setup on the app lists (SQLite)", () => {
       why: "Keyword data.",
       docs: "https://app.dataforseo.com/api-access",
     });
-    expect(unset.setup!.command).toEqual({ command: SET_DATAFORSEO });
+    expect(unset.setup!.command).toEqual({ command: CONFIGURE_SEO });
     // The registry columns the evaluation read stay server-side; the tier
     // is listed, since a provider app shows as its tools, not a page.
     for (const column of ["manifest", "secretNames", "versionId"]) {
@@ -131,7 +131,7 @@ describe("app setup on the app lists (SQLite)", () => {
       "MAIN_SECRET",
     ]);
     expect(recorded.setup!.command).toEqual({
-      command: `${SET_DATAFORSEO} MAIN_SECRET --app seo`,
+      command: CONFIGURE_SEO,
     });
 
     // Both set (the env is read fresh by a new isolate; here, a cleared
@@ -168,7 +168,7 @@ describe("app setup on the app lists (SQLite)", () => {
     expect(own).toMatchObject({ readOnly: false });
     expect(own.setup).toMatchObject({
       ready: false,
-      command: { command: SET_DATAFORSEO },
+      command: { command: CONFIGURE_SEO },
     });
     expect(own).not.toHaveProperty("versionId");
 

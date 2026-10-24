@@ -67,8 +67,8 @@ gives no API credit.
    the same `setup`) means this file applies, and the app doesn't open until
    it is set: the Gateway lists it as needing setup, sends a browser opening
    `https://<app>.<app base domain>` to its setup dialog and answers
-   anything else 503 `app_needs_setup`. `data.app.setup.command` is the one
-   `pnpm everyapp secret set …` naming every missing Gateway setting
+   anything else 503 `app_needs_setup`. `data.app.setup.command` is
+   `pnpm everyapp configure <app id>`, which asks for every missing setting
    (`data.next` repeats it). No `OPENAI_API_KEY` entry in
    `data.app.setup.settings`: the manifest's `providers` doesn't list
    `openai`; nothing to do. The entry with `"set": true`: ask before
@@ -157,13 +157,20 @@ when they want a project of their own.
    no Permissions choice at creation.
 6. **Person:** Set it, the README's first way (the value is on a dashboard
    they are looking at). In a second terminal, in the `every-app` folder:
-   `pnpm everyapp secret set OPENAI_API_KEY`, paste at the hidden prompt
-   (nothing is echoed). It prints "Live now on <gateway host>. No deploy
-   needed." Wait for "done".
+   `pnpm everyapp configure <app id>`, which asks for this key among the
+   app's other unset settings (`AI_PROXY_EXTRA_ROUTES` too, at a visible
+   prompt, when the manifest has `ai.routes`: step 7 says what it takes),
+   or `pnpm everyapp secret set OPENAI_API_KEY` for just this one; paste at
+   the hidden prompt (nothing is echoed). It prints
+   `Set OPENAI_API_KEY on the Gateway`, then "Live now. No deploy needed."
+   (`secret set`: "Live now on <gateway host>. No deploy needed."). Wait
+   for "done".
    Alternative, the README's third way, when the person exported
    `OPENAI_API_KEY` before starting you: **You:**
-   `pnpm everyapp secret set OPENAI_API_KEY --from-env OPENAI_API_KEY --json`;
-   the `done` event's `data.gateway.names` holds `OPENAI_API_KEY`.
+   `pnpm everyapp configure <app id> --from-env --json` (the `done` event's
+   `data.set` holds `OPENAI_API_KEY`) or
+   `pnpm everyapp secret set OPENAI_API_KEY --from-env OPENAI_API_KEY --json`
+   (its `data.gateway.names` holds `OPENAI_API_KEY`).
 7. **You:** Only when a manifest has `ai.routes`. The value is one list for
    every app on the Gateway, and `secret set` replaces it whole, so a list
    set for one app drops another's: `pnpm everyapp status --json` lists
@@ -239,11 +246,12 @@ when they want a project of their own.
 | Error or symptom                                                                | Meaning                                                                                                                            | What to do                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SECRET_VALUE_REQUIRED` from `secret set`                                       | nothing was piped and there is no terminal to ask in                                                                               | one of README's three ways: the person's terminal, a pipe, or `--from-env`                                                                                                                                                                                       |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`         | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs | the person's terminal (step 6), `NAME=value` lines on stdin, or the hidden read then its `data.rerun`, `pnpm everyapp configure <app id> --from-env`                                                                                                  |
 | `SECRET_SEVERAL_NAMES`                                                          | several names with `--from-env` or a pipe, which carry one value                                                                   | one call per name                                                                                                                                                                                                                                                |
 | `SECRET_EMPTY`                                                                  | the `--from-env` variable is unset or empty in your process                                                                        | the person reads it in hidden (README's third way) in the shell that runs the command, or types it at the prompt                                                                                                                                                  |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                    | the name is misspelt                                                                                                               | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED`                                                           |
 | `CONFIRMATION_REQUIRED` from `secret unset --json`                              | no `--yes`, and no terminal to ask in                                                                                              | that is the ask: show it to the person; rerun with `--yes` only if they say so                                                                                                                                                                                   |
-| a browser opening the app is sent to `https://<gateway host>/?setup=<app id>`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"<app id>"}` | the Gateway's setup gate: a required setting of the app is still unset (this key, `AI_PROXY_EXTRA_ROUTES` when the manifest has `ai.routes`, or another the manifest requires) | `pnpm everyapp secret list <app id> --json`: set what `data.app.setup.command` names; Verify step 1 |
+| a browser opening the app is sent to `https://<gateway host>/?setup=<app id>`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"<app id>"}` | the Gateway's setup gate: a required setting of the app is still unset (this key, `AI_PROXY_EXTRA_ROUTES` when the manifest has `ai.routes`, or another the manifest requires) | `data.app.setup.command`, `pnpm everyapp configure <app id>` (step 6), then Verify step 1 |
 | 503, `x-everyapp-error: ai_provider_not_configured`                             | the Gateway holds no `OPENAI_API_KEY` (behind the setup gate an app whose manifest requires `openai` doesn't open in this state; one that marks it `optional: true` sees this) | `secret set` it; then Verify step 1                                                                                                                                                                                                                              |
 | 400 `ai_request_invalid`                                                        | an inference POST whose body isn't a JSON object, or a malformed path                                                              | an app bug; nothing to set                                                                                                                                                                                                                                       |
 | 403 `provider_not_allowed`                                                      | the app's manifest `providers` doesn't list `openai`                                                                               | add it and `pnpm everyapp deploy --json`                                                                                                                                                                                                                         |
@@ -264,9 +272,9 @@ when they want a project of their own.
 
 ## Rerun, rotate, remove
 
-- Rerun: every step is safe to repeat; `secret set` replaces the value.
-  Interrupted or back later: start at Verify and continue at the first
-  step that isn't done.
+- Rerun: every step is safe to repeat; `configure` and `secret set`
+  replace the value. Interrupted or back later: start at Verify and
+  continue at the first step that isn't done.
 - Rotate: step 5 for a new key (OpenAI recommends an Expiration date and a
   regular rotation: make the replacement before the old key expires), step
   6, Verify, then revoke the old key at https://platform.openai.com/api-keys
@@ -307,4 +315,4 @@ Verified on 2026-10-23:
 - https://community.openai.com/t/missing-scopes-model-request-on-restricted-api-key/1371602 (the Restricted dialog's labels and the `model.request` error), https://community.openai.com/t/unable-to-use-api-phone-number-reached-max-uses/625230 (three accounts per number, deleted ones counted), https://github.com/openai/codex/issues/1982 (the verification error's text)
 - https://help.specinnovations.com/openai-api-key (third party: the key dialog's fields)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (the dashboard path, `npx wrangler tail`, 10 viewers, nothing stored) and wrangler's `src/tail/index.ts` (the Worker name as an optional positional)
-- In this checkout: `apps/every-app-gateway/src/server/ai-proxy.ts` (routes, `store: false`, `AI_PROXY_EXTRA_ROUTES` parsing, refusal codes, log events), `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts` (identity refusals on `/api/ai/*`), `apps/every-app-gateway/cloudflare.config.ts` (Workers Logs on), `packages/perimeter/src/manifest/manifest.ts` (`ai.routes`), `packages/sdk/src/internal/gatewaySettings.ts`, `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; the `ai-routes` entry and its `why`; `needOf`: a plain provider id is required, `optional: true` isn't; `setup/openai.md` from the provider registry, `packages/sdk/src/internal/aiProviders.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, `data.app.deployed`, `APP_NOT_FOUND`, `SECRET_NOT_DECLARED` and its `data.rerun`, `data.gateway.names`, `data.gateway.needed`, `data.removed`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`), `packages/cli/src/lib/secretValue.ts` (`SECRET_VALUE_REQUIRED`, `SECRET_SEVERAL_NAMES`, `SECRET_EMPTY`), `packages/cli/src/lib/output/prompt.ts` (`CONFIRMATION_REQUIRED`), `landing-page/content/docs/create-an-app.mdx`, `docs/capabilities.md`
+- In this checkout: `apps/every-app-gateway/src/server/ai-proxy.ts` (routes, `store: false`, `AI_PROXY_EXTRA_ROUTES` parsing, refusal codes, log events), `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts` (identity refusals on `/api/ai/*`), `apps/every-app-gateway/cloudflare.config.ts` (Workers Logs on), `packages/perimeter/src/manifest/manifest.ts` (`ai.routes`), `packages/sdk/src/internal/gatewaySettings.ts`, `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; the `ai-routes` entry and its `why`; `needOf`: a plain provider id is required, `optional: true` isn't; `setup/openai.md` from the provider registry, `packages/sdk/src/internal/aiProviders.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, `data.app.deployed`, `APP_NOT_FOUND`, `SECRET_NOT_DECLARED` and its `data.rerun`, `data.gateway.names`, `data.gateway.needed`, `data.removed`), `packages/cli/src/commands/configure/index.ts` (`configure <app>`: the prompts, `NAME=value` lines on stdin, `--from-env`, `SECRET_VALUE_REQUIRED`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`), `packages/cli/src/lib/secretValue.ts` (`SECRET_VALUE_REQUIRED`, `SECRET_SEVERAL_NAMES`, `SECRET_EMPTY`), `packages/cli/src/lib/output/prompt.ts` (`CONFIRMATION_REQUIRED`), `landing-page/content/docs/create-an-app.mdx`, `docs/capabilities.md`

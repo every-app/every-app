@@ -39,7 +39,7 @@ const SETUP: AppSetup = {
   ],
   unmet: [],
   groups: [],
-  command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY" },
+  command: { command: "pnpm everyapp configure openseo" },
 };
 SETUP.unmet = [SETUP.settings[0]!];
 
@@ -61,9 +61,7 @@ const SETUP_OWN_SECRET: AppSetup = {
   ],
   unmet: [],
   groups: [],
-  command: {
-    command: "pnpm everyapp secret set MAIN_SECRET --app research",
-  },
+  command: { command: "pnpm everyapp configure research" },
 };
 SETUP_OWN_SECRET.unmet = [SETUP_OWN_SECRET.settings[0]!];
 
@@ -114,7 +112,10 @@ it("mounts with the unmet setting, its link, the command and the optional sectio
   expect(text).toContain("DATAFORSEO_API_KEY");
   expect(text).toContain("Keyword data.");
   expect(text).toContain("Get it at app.dataforseo.com/api-access");
-  expect(text).toContain("pnpm everyapp secret set DATAFORSEO_API_KEY");
+  expect(text).toContain("pnpm everyapp configure openseo");
+  expect(text).toContain(
+    "It asks for each setting above, then offers the optional ones.",
+  );
   expect(text).not.toContain("Ask an admin to run:");
   expect(text).toContain("Optional (1)");
   // Gateway settings are read live: nothing for `status` to re-read.
@@ -131,14 +132,14 @@ it("tells a member to ask an admin", () => {
   const text = render(false);
   expect(text).toContain("It opens once these are set.");
   expect(text).toContain("Ask an admin to run:");
-  expect(text).toContain("pnpm everyapp secret set DATAFORSEO_API_KEY");
+  expect(text).toContain("pnpm everyapp configure openseo");
   expect(text).not.toContain("Optional (");
   expect(text).not.toContain("pnpm everyapp status");
 });
 
 it("names an app's own secret once and says status re-reads the Worker", () => {
   const text = render(true, SETUP_OWN_SECRET);
-  expect(text.split("MAIN_SECRET").length - 1).toBe(2); // the row, the command
-  expect(text).toContain("pnpm everyapp secret set MAIN_SECRET --app research");
+  expect(text.split("MAIN_SECRET").length - 1).toBe(1); // the row; the command names the app
+  expect(text).toContain("pnpm everyapp configure research");
   expect(text).toContain("pnpm everyapp status");
 });

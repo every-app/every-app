@@ -922,7 +922,7 @@ async function deploySteps(
  * Gateway's names and the Worker's own. An app that needs setup gets an
  * APP_NEEDS_SETUP warning ("crm won't open until CONTEXT_API_KEY is set",
  * the first unmet setting's why under it) and one `next` entry with the
- * command that opens it. Nothing when the app declares nothing to set
+ * command that opens it (`everyapp configure <app>`). Nothing when the app declares nothing to set
  * (the Gateway's secrets aren't listed then). A list that fails leaves
  * its names unknown, which never blocks: with the Gateway's unlisted, a
  * secret of the app's own that is known to be unset still warns.
@@ -958,10 +958,7 @@ async function warnIfNeedsSetup({
     ].join("\n"),
     data: { setup },
   });
-  next.push({
-    command: setup.command.command,
-    note: `${appId} opens once these are set${setup.command.note ? `; ${setup.command.note}` : ""}`,
-  });
+  next.push({ command: setup.command.command, note: `asks for each; ${appId} opens once they are set` });
 }
 
 /**

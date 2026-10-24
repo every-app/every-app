@@ -457,7 +457,7 @@ describe("everyapp status", () => {
             expect.objectContaining({ id: "openrouter", set: false }),
             expect.objectContaining({ id: "TOKEN_ENCRYPTION_KEY", set: false }),
           ],
-          command: { command: "pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm" },
+          command: { command: "pnpm everyapp configure crm" },
         }),
       }),
     );
@@ -467,7 +467,7 @@ describe("everyapp status", () => {
       severity: "warning",
       message:
         "crm needs setup\nOpenRouter: Drafts replies.\nGet it at https://openrouter.ai/settings/keys\nGuide: .claude/skills/everyapp/setup/openrouter.md\nTOKEN_ENCRYPTION_KEY",
-      run: "pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm",
+      run: "pnpm everyapp configure crm",
     });
     // todo goes live on its first visit; the setup problem counts with the missing owner.
     expect(done["message"]).toBe("Gateway https://example.com: 1 app live, 2 problems to fix");
@@ -490,7 +490,7 @@ describe("everyapp status", () => {
         "  Get it at https://openrouter.ai/settings/keys",
         "  Guide: .claude/skills/everyapp/setup/openrouter.md",
         "  TOKEN_ENCRYPTION_KEY",
-        "  Run: pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm",
+        "  Run: pnpm everyapp configure crm",
       ].join("\n"),
     );
 

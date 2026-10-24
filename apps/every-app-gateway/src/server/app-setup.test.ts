@@ -92,7 +92,7 @@ describe("appSetupFor", () => {
       setup!.settings.find((setting) => setting.id === "context"),
     ).toMatchObject({ set: false, blocking: false });
     expect(setup!.command).toEqual({
-      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
+      command: "pnpm everyapp configure openseo",
     });
   });
 
@@ -120,7 +120,7 @@ describe("appSetupFor", () => {
     );
     expect(unset!.ready).toBe(false);
     expect(unset!.command).toEqual({
-      command: "pnpm everyapp secret set MAIN_SECRET --app analytics",
+      command: "pnpm everyapp configure analytics",
     });
 
     const set = await appSetupFor(

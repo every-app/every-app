@@ -388,7 +388,7 @@ describe("evaluateAppSettings", () => {
 describe("setupCommand and appSetupOf", () => {
   const cli = "pnpm everyapp";
 
-  it("names every unset name in one command, the Gateway's first, with --app when one is the app's own", () => {
+  it("is the one configure command for the app, whatever is unmet", () => {
     const settings: AppSetting[] = appSettings({
       providers: [
         { id: "workers-ai", anyOf: "AI model" },
@@ -401,22 +401,21 @@ describe("setupCommand and appSetupOf", () => {
       secrets: ["MAIN_SECRET", { name: "GITHUB_TOKEN", optional: true }],
     });
     const report = evaluateAppSettings(settings, setOn([], []));
+    // Configure asks for each unmet setting itself, so the command names
+    // no setting, and an unmet any-of group needs no note: it asks which.
     expect(setupCommand(report, { cli, appId: "seo" })).toEqual({
-      command:
-        "pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM MAIN_SECRET WORKERS_AI_API_TOKEN --app seo",
-      note: "OPENROUTER_API_KEY instead of WORKERS_AI_API_TOKEN is fine too: one AI model is enough",
+      command: "pnpm everyapp configure seo",
     });
     const gatewayOnly = evaluateAppSettings(
       appSettings({ providers: ["openai"], secrets: ["MAIN_SECRET"] }),
       setOn([], ["MAIN_SECRET"]),
     );
     expect(setupCommand(gatewayOnly, { cli, appId: "todo" })).toEqual({
-      command: "pnpm everyapp secret set OPENAI_API_KEY",
+      command: "pnpm everyapp configure todo",
     });
   });
 
-  it("adds --app only when the command sets a name of the app's own", () => {
-    // A group whose first option is the Gateway's and whose other is the app's.
+  it("is the same command when only an any-of group is unmet", () => {
     const report = evaluateAppSettings(
       appSettings({
         providers: [{ id: "openrouter", anyOf: "AI model" }],
@@ -425,9 +424,23 @@ describe("setupCommand and appSetupOf", () => {
       setOn([], []),
     );
     expect(setupCommand(report, { cli, appId: "inbox" })).toEqual({
-      command: "pnpm everyapp secret set OPENROUTER_API_KEY",
-      note: "ANTHROPIC_API_KEY instead of OPENROUTER_API_KEY is fine too: one AI model is enough",
+      command: "pnpm everyapp configure inbox",
     });
+  });
+
+  it("names the key to set for a provider app, which has nothing to configure", () => {
+    const report = evaluateAppSettings(
+      appSettings({ capabilities: { dataforseo: { access: "read" } } }),
+      setOn([], []),
+    );
+    expect(
+      setupCommand(report, { cli, appId: "dataforseo", provider: true }),
+    ).toEqual({
+      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
+    });
+    expect(
+      appSetupOf(report, { cli, appId: "dataforseo", provider: true }).command,
+    ).toEqual({ command: "pnpm everyapp secret set DATAFORSEO_API_KEY" });
   });
 
   it("is null for an app that is ready", () => {
@@ -462,7 +475,7 @@ describe("setupCommand and appSetupOf", () => {
       { group: "AI model", met: true, members: ["workers-ai", "openrouter"] },
     ]);
     expect(setup.command).toEqual({
-      command: "pnpm everyapp secret set MAIN_SECRET --app inbox",
+      command: "pnpm everyapp configure inbox",
     });
     expect(
       appSetupOf(report, { cli, appId: "inbox", withCommand: false }).command,

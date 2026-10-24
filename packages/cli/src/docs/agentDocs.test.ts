@@ -311,8 +311,8 @@ describe("secrets.md", () => {
     expectDocumented("secrets", "the reserved app secret names", ["GATEWAY_URL", "CF_VERSION_METADATA", "EVERYAPP_", "EVERY_APP_", "APP__"]);
     expectDocumented("secrets", "the secrets file and its variables", [".everyapp/secrets.env", "POSTGRES_DATABASE_URL", ".dev.vars", "--from-env"]);
   });
-  it("documents every secret flag", () => {
-    expectDocumented("secrets", "the flags of everyapp secret", flagsOf("secret"));
+  it("documents every secret and configure flag", () => {
+    expectDocumented("secrets", "the flags of everyapp secret and everyapp configure", flagsOf("secret", "configure"));
   });
 });
 

@@ -48,6 +48,7 @@ RUN A GATEWAY
   setup      Install or repair the Gateway
   update     Update the Gateway to this checkout (after git pull)
   install    Install an app someone published, from GitHub or a release file
+  configure  Set up an app: asks for each setting it needs, required ones first, then the optional ones
   status     Show the Gateway, its apps and anything to fix
   delete     Remove an app from the Gateway
   access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
@@ -67,6 +68,7 @@ EXAMPLES
   $ pnpm everyapp create todo
   $ pnpm everyapp deploy
   $ pnpm everyapp install https://github.com/<owner>/<repo>
+  $ pnpm everyapp configure crm
 
 Run pnpm everyapp <command> --help for a command's flags.
 ```
@@ -724,7 +726,7 @@ would from the app's directory, with nothing to build: <source> is a GitHub repo
 (the everyapp-release.tar.gz on its latest release; …/releases/tag/<tag> for that one), a
 tarball's HTTPS URL, or a downloaded everyapp-release.tar.gz. The release holds the app's
 tenant-neutral Build Output, migrations and manifest, checked against its SHA-256. Run it
-again later to update the app. Its secrets are set with pnpm everyapp secret set <NAME> --app <id>;
+again later to update the app. Its settings are set with pnpm everyapp configure <id>;
 .everyapp/secrets.env in this directory is the deploy's own file, read only for a Hyperdrive
 app's database URL.
 
@@ -754,6 +756,64 @@ FLAGS
 
 ARGUMENTS
   source  The app release to install: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz
+```
+
+### `everyapp configure`
+
+Set up an app: asks for each setting it needs, required ones first, then the optional ones.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<app>` | no | The app to configure (default: the app in this directory) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--from-env` | switch | no |  | Take each unset setting's value, optional ones too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY); a set name is never replaced; stdin isn't read; the rest are asked for at a terminal |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp configure [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
+  pnpm everyapp configure --help
+
+Reads what the app's everyapp.config.ts declares (AI providers, capabilities, its own
+secrets) and what is set, then asks for each required setting that isn't (hidden input,
+with where to get it beside each), offers the optional ones (Enter skips them all), and
+says whether the app is ready. One member of an any-of group is enough: it asks which.
+Run it again any time: it shows what is set (names only, never values) and lets you
+change one.
+
+Where they go: an AI provider's key or a capability's client is a Gateway setting, held
+once for every app on the Gateway Worker; the app's own secrets go on its Worker, after
+its first deploy. Changes are live at once; no deploy needed.
+
+For a script or a coding agent, which can't answer a prompt: pipe NAME=value lines in
+(one per line; # starts a comment only at the start of a line; a value is taken as it is,
+one pair of quotes around it dropped), or export the variables under the settings' own
+names and add --from-env (then stdin isn't read). A value never goes on the command line.
+
+Examples:
+  pnpm everyapp configure crm
+  pnpm everyapp configure                       (in the app's directory)
+  pnpm everyapp configure crm --from-env --json
+  printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" | pnpm everyapp configure crm --json
+
+One setting at a time, by name: pnpm everyapp secret set <NAME> [--app <id>]
+
+FLAGS
+     [--from-env/--no-from-env]  Take each unset setting's value, optional ones too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY); a set name is never replaced; stdin isn't read; the rest are asked for at a terminal
+     [--gateway]                 The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]              The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]          Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]    Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                     Print help information and exit
+      --                         All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [app]  The app to configure (default: the app in this directory)
 ```
 
 ### `everyapp status`
@@ -1068,9 +1128,9 @@ USAGE
 
 For one app (the app in this directory, or <app> from anywhere): every setting its manifest
 declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one
-secret set command that opens the app when something required is missing. Elsewhere with no
-app named: the Gateway's names and who set them, then every app's settings. Names only, never
-values.
+command that opens the app when something required is missing (pnpm everyapp configure <app>).
+Elsewhere with no app named: the Gateway's names and who set them, then every app's
+settings. Names only, never values.
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)

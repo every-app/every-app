@@ -62,10 +62,7 @@ describe("appSetupFrom", () => {
 
     const unset = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: [], secretNames: [] });
     expect(unset.setup.ready).toBe(false);
-    expect(unset.setup.command).toEqual({
-      command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY OPENAI_API_KEY --app crm",
-      note: "OPENROUTER_API_KEY instead of OPENAI_API_KEY is fine too: one AI model is enough",
-    });
+    expect(unset.setup.command).toEqual({ command: "pnpm everyapp configure crm" });
     expect(namesToSet(unset.setup)).toEqual(["TOKEN_ENCRYPTION_KEY", "OPENAI_API_KEY"]);
 
     // The Gateway's names unknown: nothing of the Gateway's blocks.

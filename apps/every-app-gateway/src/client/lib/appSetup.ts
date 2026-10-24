@@ -2,7 +2,8 @@
  * What the setup dialog says about an app that needs setup, from the
  * `setup` its list row carries (the SDK's AppSetup): the unmet settings
  * with why each is needed and where its key comes from, the one command
- * that sets them (or who to ask), and what else could be set. Pure, so
+ * that asks for them, `everyapp configure <app>` (or who to ask), and what
+ * else could be set. Pure, so
  * the dialog's wording is tested without rendering it.
  */
 import type { AppSetup, AppSetupSetting } from "@every-app/sdk/internal";
@@ -31,9 +32,14 @@ export interface SetupDialogRow {
 interface SetupDialogCommand {
   /** "Ask an admin to run:" for a reader who can't run it; null for one who can. */
   heading: string | null;
+  /** `pnpm everyapp configure <app>`: asks for each unmet setting, then the optional ones. */
   command: string;
-  /** The alternatives of an unmet any-of group. */
-  note: string | null;
+  /**
+   * Whether the command is `configure` (which asks for each setting and
+   * offers the optional ones), rather than a provider app's `secret set
+   * <KEY>` (one hidden prompt): what the line under it may say.
+   */
+  configures: boolean;
 }
 
 interface SetupDialogModel {
@@ -126,7 +132,7 @@ export function setupDialogModel(
       ? {
           heading: canRun ? null : ASK_AN_ADMIN,
           command: setup.command.command,
-          note: setup.command.note ?? null,
+          configures: / configure /.test(setup.command.command),
         }
       : null,
     platformNote: setup.command ? null : PLATFORM_NOTE,

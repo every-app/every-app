@@ -298,8 +298,7 @@ function recheckFor(request: Request, caller: McpCaller): () => Promise<void> {
  */
 function needsSetupReason(setup: AppSetup): string {
   if (!setup.command) return "needs setup";
-  const { command, note } = setup.command;
-  return `needs setup: an admin runs ${command}${note ? ` (${note})` : ""}`;
+  return `needs setup: an admin runs ${setup.command.command}`;
 }
 
 interface GatewayViewInput {

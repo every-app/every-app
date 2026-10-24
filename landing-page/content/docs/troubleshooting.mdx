@@ -51,7 +51,7 @@ Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
 ## An app in your Gateway says Needs deploy, Needs setup, Deploying or Disabled
 
 - **Needs deploy:** the app isn't online yet. Run `pnpm run deploy` in its folder.
-- **Needs setup:** a key the app requires isn't set, so it won't open. `pnpm everyapp secret list my-app` says which; set it with `pnpm everyapp secret set NAME --app my-app`.
+- **Needs setup:** a key the app requires isn't set, so it won't open. Run `pnpm everyapp configure my-app`: it asks for what is missing. `pnpm everyapp secret list my-app` says which.
 - **Deploying:** the app is still being connected. Refresh in a minute.
 - **Disabled:** the app has been turned off.
 

@@ -3,7 +3,7 @@
  * fake Cloudflare account (test/fakeCloudflare.ts): after the upload the
  * Worker's own secret names go on the app's row (`secret_names`), and an
  * app whose required settings aren't all set ends with an APP_NEEDS_SETUP
- * warning and the one `secret set` that opens it under Next. A ready app,
+ * warning and the one `configure` that opens it under Next. A ready app,
  * or one that declares nothing to set, gets neither.
  */
 import fs from "node:fs";
@@ -149,10 +149,7 @@ describe("deploy and the app's settings", () => {
       }),
     ]);
     expect(result.next).toEqual([
-      {
-        command: "pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm",
-        note: "crm opens once these are set",
-      },
+      { command: "pnpm everyapp configure crm", note: "asks for each; crm opens once they are set" },
     ]);
 
     // Set by hand (as `secret set` would), the redeploy records them and says nothing.
@@ -203,7 +200,7 @@ describe("deploy and the app's settings", () => {
       }),
     ]);
     expect(result.next).toEqual([
-      { command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm", note: "crm opens once these are set" },
+      { command: "pnpm everyapp configure crm", note: "asks for each; crm opens once they are set" },
     ]);
   });
 

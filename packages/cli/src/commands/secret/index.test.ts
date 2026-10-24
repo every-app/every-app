@@ -675,14 +675,14 @@ describe("secret list", () => {
           setup: {
             ready: false,
             groups: [{ group: "AI model", met: true, members: ["openai", "openrouter"] }],
-            command: { command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm" },
+            command: { command: "pnpm everyapp configure crm" },
           },
         },
         {
           id: "todo",
           setup: {
             ready: false,
-            command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo" },
+            command: { command: "pnpm everyapp configure todo" },
           },
         },
       ],
@@ -722,7 +722,7 @@ describe("secret list", () => {
         setup: expect.objectContaining({
           ready: false,
           settings: expect.arrayContaining([expect.objectContaining({ id: "GITHUB_TOKEN", set: null })]),
-          command: { command: "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM" },
+          command: { command: "pnpm everyapp configure todo" },
         }),
       },
     ]);
@@ -789,7 +789,7 @@ describe("secret list", () => {
         ]),
         setup: {
           ready: false,
-          command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo" },
+          command: { command: "pnpm everyapp configure todo" },
         },
       },
       gateway: {
@@ -806,7 +806,7 @@ describe("secret list", () => {
         ],
         missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM"],
       },
-      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo"],
+      next: ["pnpm everyapp configure todo"],
     });
     expect(done()!["data"]["app"]["workers"]).toHaveLength(1);
 
@@ -838,25 +838,16 @@ describe("secret list", () => {
         "TOKEN_ENCRYPTION_KEY: Encrypts the OAuth tokens it stores.",
       ].join("\n"),
     );
-    // One of the group is enough: the command names the first after what
-    // is required, the note the other.
+    // One of the group is enough: configure asks which.
     expect(done()!["data"]).toMatchObject({
       app: {
         setup: {
           ready: false,
           groups: [{ group: "AI model", met: false }],
-          command: {
-            command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY OPENAI_API_KEY --app crm",
-            note: "OPENROUTER_API_KEY instead of OPENAI_API_KEY is fine too: one AI model is enough",
-          },
+          command: { command: "pnpm everyapp configure crm" },
         },
       },
-      next: [
-        {
-          command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY OPENAI_API_KEY --app crm",
-          note: "OPENROUTER_API_KEY instead of OPENAI_API_KEY is fine too: one AI model is enough",
-        },
-      ],
+      next: ["pnpm everyapp configure crm"],
     });
 
     await setFor("crm", elsewhere, "OPENROUTER_API_KEY", "TOKEN_ENCRYPTION_KEY");
@@ -992,9 +983,9 @@ describe("secret list", () => {
       app: { id: "todo", deployed: false, workerName: null, secretNames: null, workers: [] },
       gateway: { missing: ["OPENAI_API_KEY", "DATAFORSEO_API_KEY", "EMAIL_FROM"] },
       next: [
-        // The Gateway's names first, settable before the deploy; the sender's
-        // display name is optional, so it isn't among them.
-        "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM",
+        // Configure sets the Gateway's names before the deploy, in the app's
+        // directory (by name it is refused until then); the app's own wait.
+        { command: "pnpm everyapp configure", note: "in the app's directory" },
         "pnpm everyapp deploy",
       ],
     });
@@ -1044,7 +1035,7 @@ describe("secret list", () => {
     expect(done()!["message"]).toContain("GITHUB_TOKEN        todo     after first deploy");
     expect(done()!["data"]).toMatchObject({
       app: { deployed: false },
-      next: ["pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM", "pnpm everyapp deploy"],
+      next: [{ command: "pnpm everyapp configure", note: "in the app's directory" }, "pnpm everyapp deploy"],
     });
   });
 });

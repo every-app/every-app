@@ -113,7 +113,7 @@ crm  GITHUB_TOKEN          crm      not set (optional)
   Context.dev: Company brand data, LinkedIn profiles and website extraction for the research agent.
   Get it at https://context.dev/
   Guide: .claude/skills/everyapp/setup/context.md
-  Run: pnpm everyapp secret set OPENROUTER_API_KEY CONTEXT_API_KEY
+  Run: pnpm everyapp configure crm
 ```
 
 Two blocks, two things to do: open the setup link that `pnpm everyapp setup` prints, and set the two keys the block names. The block tells you what each key is for, where to get it, and which setup guide in the everyapp skill walks your coding agent through it. The certificate row needs nothing from you.
@@ -136,7 +136,7 @@ Each block is one of these. The command under **Run** is the whole fix.
 
 ### Finish an app
 
-- **&lt;app&gt; needs setup**: a key it requires isn't set. The block names each key, what it's for, where to get it, and the setup guide for it; **Run** is the one `pnpm everyapp secret set …` that opens the app. When the key is only that app's, the command ends with `--app <app>`. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
+- **&lt;app&gt; needs setup**: a key it requires isn't set. The block names each key, what it's for, where to get it, and the setup guide for it; **Run** is `pnpm everyapp configure <app>`: it asks for each key, with where to get it beside it, and ends with "&lt;app&gt; is ready" or what is still missing. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
 - **&lt;app&gt; was registered, but none of its deploys finished**: `pnpm everyapp deploy` from the app's folder, or `pnpm everyapp delete <app>` if you don't want it.
 - **&lt;app&gt;'s Worker no longer exists**: its Worker was deleted in Cloudflare. Deploy it again from its folder, or delete it from the Gateway.
 - **The Gateway can't bind &lt;app&gt;**: its Worker isn't named the way the Gateway expects (it was renamed, or made by hand). `pnpm everyapp delete <app>`, then deploy it again.

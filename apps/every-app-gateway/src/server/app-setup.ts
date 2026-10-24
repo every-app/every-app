@@ -22,6 +22,7 @@ import {
   type AppSetting,
   type AppSettingsReport,
   type AppSetup,
+  PROVIDER_APP_TIER,
 } from "@every-app/sdk/internal";
 
 /** How an operator runs everyapp while publishing is paused. */
@@ -157,6 +158,8 @@ export async function appSetupFor(
     cli: SETUP_CLI,
     appId: input.appId,
     withCommand: input.canFix,
+    // A provider app has no Worker and no directory: its key is set by name.
+    provider: input.tier === PROVIDER_APP_TIER,
   });
 }
 
