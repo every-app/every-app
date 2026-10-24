@@ -4,6 +4,7 @@ import {
   formatCount,
   monthLabel,
   monthOptions,
+  usageTargetLabel,
 } from "./usage";
 
 describe("usage formatting", () => {
@@ -40,5 +41,18 @@ describe("usage formatting", () => {
     expect(monthOptions(new Date("2026-10-31T23:30:00Z"))[0]?.value).toBe(
       "2026-10",
     );
+  });
+});
+
+describe("usageTargetLabel", () => {
+  it("names a provider or capability as the registries do, and an unknown target by its id", () => {
+    expect(usageTargetLabel("ai", "openrouter")).toBe("OpenRouter");
+    expect(usageTargetLabel("ai", "workers-ai")).toBe("Workers AI");
+    expect(usageTargetLabel("capability", "dataforseo")).toBe("DataForSEO");
+    expect(usageTargetLabel("capability", "email")).toBe("Email");
+    expect(usageTargetLabel("capability", "not-a-capability")).toBe(
+      "not-a-capability",
+    );
+    expect(usageTargetLabel("ai", "mystery")).toBe("mystery");
   });
 });

@@ -1,6 +1,24 @@
 /** Formatting for the Admin, Usage view. */
+import {
+  CAPABILITIES,
+  isCapabilityId,
+  providerLabel,
+} from "@every-app/sdk/internal";
 
 const count = new Intl.NumberFormat("en-US");
+
+/**
+ * What a usage row's target is called: the registry's name for an AI
+ * provider ("OpenRouter") or a capability ("DataForSEO"), the id itself
+ * for one this gateway doesn't know.
+ */
+export function usageTargetLabel(kind: string, target: string): string {
+  if (kind === "ai") return providerLabel(target);
+  if (kind === "capability" && isCapabilityId(target)) {
+    return CAPABILITIES[target].label;
+  }
+  return target;
+}
 
 /** A count with thousands separators: 1,240. */
 export function formatCount(value: number): string {

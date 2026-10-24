@@ -9,6 +9,7 @@ import {
   formatCapProgress,
   formatCostMicros,
   formatCount,
+  usageTargetLabel,
 } from "@/client/lib/usage";
 import type {
   UsageAppRow,
@@ -301,14 +302,25 @@ const targetColumns: ColumnDef<UsageTargetRow>[] = [
     id: "target",
     accessorFn: (row) => `${row.kind} ${row.target}`,
     header: ({ column }) => <SortableHeader column={column} label="Provider" />,
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        <span className="font-medium">{row.original.target}</span>
-        <Badge variant={row.original.kind === "ai" ? "info" : "secondary"}>
-          {KIND_LABELS[row.original.kind] ?? row.original.kind}
-        </Badge>
-      </div>
-    ),
+    // The registry's name, as the setup dialog and Admin → Apps say it;
+    // the id under it is what the manifest and `secret set` use.
+    cell: ({ row }) => {
+      const { kind, target } = row.original;
+      const label = usageTargetLabel(kind, target);
+      return (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{label}</span>
+            <Badge variant={kind === "ai" ? "info" : "secondary"}>
+              {KIND_LABELS[kind] ?? kind}
+            </Badge>
+          </div>
+          {label !== target ? (
+            <p className="truncate text-xs text-muted-foreground">{target}</p>
+          ) : null}
+        </>
+      );
+    },
   },
   ...providerColumns<UsageTargetRow>(),
 ];

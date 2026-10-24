@@ -96,14 +96,13 @@ export function SetMonthlyCapModal({
     }
   };
 
-  // The cap is on the current month: a past month's count says nothing
-  // about how far into it the app is.
-  const today =
-    app.monthlyCallCap === null
-      ? "No cap today: the app's calls are unlimited."
-      : isCurrentMonth
-        ? `Today ${formatCount(app.monthlyCallCap)}; this month ${formatCount(app.calls)} so far.`
-        : `Today ${formatCount(app.monthlyCallCap)}.`;
+  // How far into the month the app is, under the field: only for the
+  // current month, since a past month's count says nothing about it, and
+  // only once there is a cap to measure against (the field shows it).
+  const soFar =
+    app.monthlyCallCap !== null && isCurrentMonth
+      ? `${formatCount(app.calls)} so far this month.`
+      : undefined;
 
   return (
     <Dialog
@@ -116,19 +115,18 @@ export function SetMonthlyCapModal({
         <form.AppForm>
           <form.Form className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>Monthly cap</DialogTitle>
+              <DialogTitle>Monthly cap for {name}</DialogTitle>
               <DialogDescription>
-                Provider calls {name} may make for this organization in a UTC
-                month: AI providers and capabilities, counted together. Once
-                reached, the gateway refuses the app's calls until the month
-                ends or the cap is raised.
+                Provider calls per UTC month, AI providers and capabilities
+                together. Once reached, the gateway refuses the app's calls
+                until the month ends or the cap is raised.
               </DialogDescription>
             </DialogHeader>
             <form.AppField name="cap">
               {(field) => (
                 <field.TextField
                   label="Calls per month"
-                  description={today}
+                  description={soFar}
                   type="number"
                   inputMode="numeric"
                   min={CAP_MIN}
