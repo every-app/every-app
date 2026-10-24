@@ -30,9 +30,13 @@ Cloudflare asks every account to pick this name once. Open the link the terminal
 
 Something on your domain already uses the address you chose. Delete that record in Cloudflare (your domain, then **DNS**), or choose another address.
 
-## You lost the owner link, or it stopped working
+## Open the setup link above to create the owner account
 
-Run `pnpm everyapp setup` again for a new link.
+Nobody opened the owner link within 15 minutes, so setup stopped waiting. The link still works for about 24 hours: open it to create your owner account. If you've lost it, run `pnpm everyapp setup` again for a new link. That replaces the old one.
+
+## Use the newer setup link, or get a new one
+
+The owner link stopped working before anyone used it: setup ran again, maybe on another machine, and made a newer link, or the link expired. Use the newer link if you have it, or run `pnpm everyapp setup` again for a new one.
 
 ## A new address doesn't load yet
 

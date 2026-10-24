@@ -15,6 +15,8 @@ pnpm everyapp access on
 
 If your Cloudflare account has no Zero Trust team yet, the terminal asks for a team name. People will sign in at `<name>.cloudflareaccess.com`, and the name can't be changed later, so pick something like your company's name.
 
+The first time, Cloudflare may ask you to pick a Zero Trust plan and enter payment details in its dashboard, even for the Free plan, before the command can create the team. If it does, open **Zero Trust** in the Cloudflare dashboard, finish that, and run the command again.
+
 The command then sets everything up and says what it did:
 
 ```
@@ -33,6 +35,8 @@ Everyone who is a member, or has a pending invitation, is let in. Anything your 
 ## The first sign-in
 
 The first time, each person opens the Gateway, gets a code by email from Access, and then signs in with their Gateway password as usual. That links the two, and from then on Access alone signs them in. People you invite later never need a password.
+
+Create your owner account and invite people with the email addresses Access will see: the ones your company login or the emailed code uses. An account under a different address can't sign in behind Access.
 
 Once everyone has done that, you can turn passwords off:
 
