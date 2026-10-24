@@ -871,7 +871,13 @@ never invited (unless the operator opted into auto-join). An Access
 identity being handed an existing password account by email coincidence.
 A deactivated member getting back in because Access still admits them. A
 site planting a sign-in in someone's browser. The `/mcp` path taking the
-Access cookie, which a cross-site POST could ride.
+Access cookie, which a cross-site POST could ride. Cloudflare Access
+matches its bypass paths case-insensitively, so `/MCP` and `/OAUTH/TOKEN`
+reach the gateway without a login; the gateway answers every spelling of a
+bypassed prefix that its MCP/OAuth router doesn't serve (an unclaimed
+`/.well-known/<name>` included) with a JSON 404, never the control plane's
+shell. No control-plane route, server function or auth endpoint lives under
+`/mcp`, `/oauth/token`, `/oauth/register` or `/.well-known/`; keep it so.
 
 **Invariants.** The register has 36.
 

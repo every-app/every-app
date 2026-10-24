@@ -721,6 +721,60 @@ describe("gateway host (control plane)", () => {
     expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
   });
 
+  it("answers a JSON 404, never the control plane, on every spelling of a bypassed prefix it doesn't serve", async () => {
+    // Cloudflare Access matches its bypass paths case-insensitively and
+    // `/.well-known/*` spans the whole prefix; the MCP/OAuth router matches
+    // exact lower-case paths. What Access lets through and the router
+    // doesn't claim must not reach the control plane's shell.
+    for (const [method, path] of [
+      ["GET", "/MCP"],
+      ["POST", "/MCP"],
+      ["GET", "/Mcp"],
+      ["GET", "/MCP/api/auth/get-session"],
+      ["GET", "/OAUTH/TOKEN"],
+      ["POST", "/OAUTH/REGISTER"],
+      ["GET", "/.WELL-KNOWN/x"],
+      ["GET", "/.WELL-KNOWN/oauth-authorization-server"],
+      ["GET", "/.well-known/foo"],
+      ["GET", "/.well-known/jwks.json"],
+    ] as const) {
+      const response = await server.fetch(
+        gatewayRequest(path, {
+          method,
+          body: method === "POST" ? "{}" : undefined,
+        }),
+      );
+      expect(response.status, `${method} ${path}`).toBe(404);
+      expect(response.headers.get("content-type"), path).toContain(
+        "application/json",
+      );
+      expect(await response.json(), path).toEqual({ error: "not_found" });
+      expect(response.headers.get("cache-control"), path).toBe("no-store");
+      expect(response.headers.get("x-content-type-options"), path).toBe(
+        "nosniff",
+      );
+      expect(response.headers.get("x-frame-options"), path).toBe("DENY");
+      expect(response.headers.get("strict-transport-security"), path).toBe(
+        "max-age=63072000",
+      );
+      expect(response.headers.get("referrer-policy"), path).toBe("no-referrer");
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    // The lower-case paths answer as before: the router's own replies.
+    const mcp = await server.fetch(
+      gatewayRequest("/mcp", { method: "POST", body: "{}" }),
+    );
+    expect(mcp.status).toBe(401);
+    const metadata = await server.fetch(
+      gatewayRequest("/.well-known/oauth-authorization-server"),
+    );
+    expect(metadata.status).toBe(200);
+    // And the consent page, under /oauth but not bypassed, is still a page.
+    await server.fetch(gatewayRequest("/oauth/consent?handle=x"));
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
+  });
+
   it("never reads the session cookie on /mcp, and exempts it from the cookie CSRF check", async () => {
     const response = await server.fetch(
       gatewayRequest("/mcp", {

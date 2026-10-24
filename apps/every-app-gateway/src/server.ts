@@ -143,6 +143,32 @@ function isMcpAuthPath(pathname: string): boolean {
 }
 
 /**
+ * The paths Cloudflare Access lets through without a login
+ * (packages/cli/src/lib/access/plan.ts), matched as Access matches them:
+ * case-insensitively, `*` spanning segments. The MCP/OAuth router above is
+ * exact-case, so what it doesn't serve under these prefixes is a JSON 404
+ * here, never the control plane's shell (docs/threat-model.md, B6).
+ */
+const ACCESS_BYPASSED_EXACT = ["/mcp", "/oauth/token", "/oauth/register"];
+const ACCESS_BYPASSED_PREFIXES = ["/mcp/", "/.well-known/"];
+
+function isAccessBypassedPath(pathname: string): boolean {
+  const lower = pathname.toLowerCase();
+  return (
+    ACCESS_BYPASSED_EXACT.includes(lower) ||
+    ACCESS_BYPASSED_PREFIXES.some((prefix) => lower.startsWith(prefix))
+  );
+}
+
+/** A bypassed path the gateway doesn't serve: not found, and not cached. */
+function refuseBypassedPath(): Response {
+  return Response.json(
+    { error: "not_found" },
+    { status: 404, headers: { "cache-control": "no-store" } },
+  );
+}
+
+/**
  * The gateway host: its MCP and OAuth routes, the deploy API (only past
  * the launch gate: without it, its paths are the control plane's like any
  * other), the third-party host handoff (only with a third-party domain:
@@ -175,6 +201,7 @@ async function serveGatewayHost(request: Request): Promise<Response> {
     const served = await serveMcpAuthRoute(request);
     if (served) return served;
   }
+  if (isAccessBypassedPath(pathname)) return refuseBypassedPath();
   return serveControlPlane(request, env);
 }
 
