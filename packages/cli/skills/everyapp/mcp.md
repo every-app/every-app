@@ -198,11 +198,10 @@ admins only), tab **Tokens**, heading **Personal access tokens**, button
 claude mcp add --transport http todos https://<app-host>/mcp --header "Authorization: Bearer $EVERYAPP_TOKEN"
 ```
 
-Disconnecting: the sidebar footer's **AI connections** link
-(`/settings/connections`, beside **Manage workspace**) lists each OAuth
-connection; revoking one makes the client's next request
-fail `invalid_token`. Removing or deactivating a person ends all of theirs;
-tokens are revoked on Admin, Tokens.
+Disconnecting: **AI connections** in the account menu at the bottom of the
+sidebar (`/settings/connections`) lists each OAuth connection; revoking one
+makes the client's next request fail `invalid_token`. Removing or
+deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
 ## Troubleshooting
 

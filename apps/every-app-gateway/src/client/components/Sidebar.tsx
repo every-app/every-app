@@ -2,16 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
-import {
-  ArrowUpRight,
-  BookOpen,
-  ExternalLink,
-  LayoutGrid,
-  Link2,
-  LogOut,
-  Settings,
-  User,
-} from "lucide-react";
+import { ArrowUpRight, LayoutGrid, Settings, User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
 import { useSession } from "@/client/hooks/useSession";
 import { useAppLibrary } from "@/client/hooks/useAppLibrary";
@@ -47,6 +38,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/client/components/ui/dropdown-menu";
+
+const DOCS_URL = "https://everyapp.com/docs";
 
 const navButtonClass =
   "h-10 rounded-lg px-3 text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground";
@@ -207,8 +200,14 @@ export function Sidebar() {
   );
 }
 
+/**
+ * The foot of the rail: Manage workspace for owners and admins, then the
+ * account block, whose menu holds what is the person's own (their AI
+ * connections, the docs, the theme, sign out).
+ */
 function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   const { data: session } = useSession();
+  const { setOpenMobile } = useSidebar();
   const email = session?.user.email;
   const { data: methods } = useSignInMethods();
   const accessProvider = methods?.providers[0];
@@ -245,40 +244,17 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
 
   return (
     <UiSidebarFooter className="gap-0 p-0 pb-safe">
-      <nav aria-label="Workspace settings" className="px-3 pb-3">
-        <SidebarMenu>
-          <SidebarNavLink
-            icon={Link2}
-            label="AI connections"
-            linkProps={{ to: "/settings/connections" }}
-          />
-          {canManageApps ? (
+      {canManageApps ? (
+        <div className="px-3 pb-3">
+          <SidebarMenu>
             <SidebarNavLink
               icon={Settings}
               label="Manage workspace"
               linkProps={{ to: "/admin" }}
             />
-          ) : null}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className={navButtonClass}
-              render={
-                <a
-                  href="https://everyapp.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              }
-            >
-              <span className="flex size-6 shrink-0 items-center justify-center">
-                <BookOpen className="size-4" />
-              </span>
-              <span className="truncate">Documentation</span>
-              <ExternalLink className="ml-auto size-3.5 opacity-60" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </nav>
+          </SidebarMenu>
+        </div>
+      ) : null}
       <div className="border-t border-sidebar-border px-3 pt-3">
         <SidebarMenu>
           {email ? (
@@ -307,10 +283,34 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                 <DropdownMenuContent side="top" className="w-56">
                   {accessProvider && accessLinked === false && (
                     <DropdownMenuItem onClick={() => void connectAccess()}>
-                      <Link2 className="size-4" />
                       Connect {accessProvider.label}
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem
+                    render={
+                      <Link
+                        to="/settings/connections"
+                        onClick={() => setOpenMobile(false)}
+                      />
+                    }
+                  >
+                    AI connections
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={
+                      <a
+                        href={DOCS_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setOpenMobile(false)}
+                      />
+                    }
+                  >
+                    Documentation
+                    <span className="sr-only"> (opens in a new tab)</span>
+                    <ArrowUpRight className="ml-auto size-3.5" aria-hidden />
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>Theme</DropdownMenuLabel>
                     <div className="px-1 pb-1">
@@ -318,11 +318,8 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                     </div>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => void handleSignOut()}
-                  >
-                    <LogOut className="size-4" />
+                  {/* Routine, not destructive: nothing is lost. */}
+                  <DropdownMenuItem onClick={() => void handleSignOut()}>
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>

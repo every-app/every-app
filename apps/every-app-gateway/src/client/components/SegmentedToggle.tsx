@@ -20,7 +20,8 @@ const ITEM_SIZE_CLASS: Record<SegmentedToggleSize, string> = {
 
 interface SegmentedToggleItem<T extends string> {
   value: T;
-  icon: ReactNode;
+  /** Omit it for a text-only segment (with `showLabels`). */
+  icon?: ReactNode;
   label: string;
 }
 
@@ -30,12 +31,15 @@ export function SegmentedToggle<T extends string>({
   value,
   onChange,
   showLabels = false,
+  fullWidth = false,
   size = SegmentedToggleSize.Compact,
 }: {
   items: SegmentedToggleItem<T>[];
   value: T;
   onChange: (value: T) => void;
   showLabels?: boolean;
+  /** The track fills its container and the segments share it equally. */
+  fullWidth?: boolean;
   size?: SegmentedToggleSize;
 }) {
   return (
@@ -50,17 +54,21 @@ export function SegmentedToggle<T extends string>({
       }}
       // A border (not an inset ring) keeps the padding clear, and the larger outer
       // radius keeps the pressed pill concentric with the track.
-      className="rounded-lg border border-border bg-muted p-0.5 data-[size=sm]:rounded-lg"
+      className={cn(
+        "rounded-lg border border-border bg-muted p-0.5 data-[size=sm]:rounded-lg",
+        fullWidth && "w-full",
+      )}
     >
       {items.map((item) => (
         <ToggleGroupItem
           key={item.value}
           value={item.value}
           aria-label={showLabels ? undefined : item.label}
-          title={item.label}
+          title={showLabels ? undefined : item.label}
           className={cn(
             ITEM_SIZE_CLASS[size],
             "text-muted-foreground aria-pressed:bg-primary/15 aria-pressed:text-primary",
+            fullWidth && "flex-1",
           )}
         >
           {item.icon}

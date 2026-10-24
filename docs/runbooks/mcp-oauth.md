@@ -177,8 +177,8 @@ registration), where access is sent, all apps or chosen ones, and read &
 write or read only. Every `/mcp` request re-reads it with the member's role,
 ban state and app access. It ends when:
 
-- the user revokes it at `/settings/connections` (the sidebar footer's
-  "AI connections" link);
+- the user revokes it at `/settings/connections` ("AI connections" in the
+  account menu at the bottom of the sidebar);
 - the member is removed from the organization, or deactivated (all of their
   connections);
 - the same client connects again for the same user (the new one supersedes
