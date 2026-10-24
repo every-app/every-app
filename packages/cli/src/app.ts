@@ -93,6 +93,14 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   completion: ["completion install"],
 };
 
+/** What a group's help says under its brief, where one line isn't enough. */
+const GROUP_NOTES: Readonly<Record<string, readonly string[]>> = {
+  email: [
+    "Invites, and apps that don't set their own senders, send as the Gateway's sender.",
+    "Set it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME",
+  ],
+};
+
 const briefOf = (input: string) => routes.getRoutingTargetForInput(input)!.brief;
 
 /**
@@ -147,8 +155,10 @@ export function groupHelp(args: readonly string[]): string | null {
   const entries = target.getAllEntries().filter((entry) => !entry.hidden);
   const width = Math.max(...entries.map((entry) => entry.name.original.length));
   const examples = GROUP_EXAMPLES[group] ?? [];
+  const notes = GROUP_NOTES[group] ?? [];
   return [
     `${target.brief}.`,
+    ...(notes.length > 0 ? ["", ...notes] : []),
     "",
     chalk.bold("USAGE"),
     `  everyapp ${group} <command> [flags]`,

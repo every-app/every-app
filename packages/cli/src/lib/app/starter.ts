@@ -55,10 +55,12 @@ export function newAppDir({
 
 /**
  * What an app outside the checkout installs with: it is its own pnpm
- * workspace there, and pnpm runs no dependency build scripts but these.
- * Inside, the checkout's pnpm-workspace.yaml allows them.
+ * workspace there, and pnpm runs no dependency build scripts but these
+ * (the ones the checkout's pnpm-workspace.yaml allows; without the list,
+ * every `pnpm install` warns about ignored build scripts). Inside, the
+ * checkout's pnpm-workspace.yaml covers the app.
  */
-const STANDALONE_WORKSPACE = "allowBuilds:\n  esbuild: true\n  workerd: true\n";
+const STANDALONE_WORKSPACE = "allowBuilds:\n  esbuild: true\n  sharp: true\n  workerd: true\n";
 
 /** Copy the starter, without local state, to `targetDir` as app `appId`. */
 export async function copyStarter({

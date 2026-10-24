@@ -1109,6 +1109,36 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
       { name: "0000_init.sql" },
     ]);
   });
+
+  it("says where a drizzle config elsewhere goes, when there is no drizzle.config.ts", async () => {
+    await useDrizzle();
+    fs.rmSync(path.join(appDir, "drizzle.config.ts"));
+
+    await deploy();
+
+    expect(schemaEvents()).toEqual([
+      expect.objectContaining({
+        type: "warning",
+        code: "SCHEMA_CHECK_SKIPPED",
+        message:
+          "Can't check the schema against the migrations: no drizzle.config.ts\n" +
+          'An app whose drizzle config lives elsewhere sets migrations.config to its path; an app that writes its SQL by hand sets migrations.engine to "d1-sql".',
+      }),
+    ]);
+  });
+
+  it("checks with the drizzle config migrations.config names", async () => {
+    await useDrizzle();
+    fs.renameSync(path.join(appDir, "drizzle.config.ts"), path.join(appDir, "drizzle", "sqlite.config.ts"));
+
+    await deploy({ ...TODO, migrations: { engine: "drizzle", config: "drizzle/sqlite.config.ts" } });
+
+    expect(schemaEvents()).toEqual([
+      expect.objectContaining({ type: "step", status: "start" }),
+      expect.objectContaining({ type: "step", status: "ok" }),
+    ]);
+    expect(scratchLeft()).toEqual([]);
+  });
 });
 
 describe("deploy of an app without helper Workers", () => {
@@ -2123,6 +2153,36 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ step: "setup.owner", status: "ok" }),
     );
+    expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
+    expect(account.gatewayDomains().sort()).toEqual(["apps.example.com", "todo.apps.example.com"]);
+  });
+
+  it("with --yes installs without a question, browser installs included, then deploys", async () => {
+    const asked: string[] = [];
+    const setup = setupSeams();
+
+    const result = await deploy(TODO, {
+      interactive: true,
+      offerInstall: {
+        yes: true,
+        confirm: async (question) => {
+          asked.push(question);
+          return true;
+        },
+        setup: {
+          ...setup,
+          prompts: {
+            ...setup.prompts,
+            browserDeploymentToken: async () => {
+              asked.push("Configure browser app installs?");
+              return null;
+            },
+          },
+        },
+      },
+    });
+
+    expect(asked).toEqual([]);
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
     expect(account.gatewayDomains().sort()).toEqual(["apps.example.com", "todo.apps.example.com"]);
   });

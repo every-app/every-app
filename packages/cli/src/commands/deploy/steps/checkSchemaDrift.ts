@@ -86,7 +86,10 @@ export async function checkSchemaDrift({
       named ? `no ${named} (migrations.config)` : "no drizzle.config.ts",
       named
         ? {}
-        : { detail: 'An app that writes its SQL by hand sets migrations.engine to "d1-sql".' },
+        : {
+            detail:
+              'An app whose drizzle config lives elsewhere sets migrations.config to its path; an app that writes its SQL by hand sets migrations.engine to "d1-sql".',
+          },
     );
     return;
   }

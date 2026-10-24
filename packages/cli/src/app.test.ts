@@ -112,11 +112,19 @@ describe("help", () => {
   });
 
   it("shows a group's commands and examples for the group alone, or with --help", () => {
-    for (const args of [["secret"], ["secret", "--help"], ["email"]]) {
+    for (const args of [["secret"], ["secret", "--help"], ["db"]]) {
       expect(groupHelp(args)).toMatch(/^.+\.\n\nUSAGE\n  everyapp \w+ <command> \[flags\]\n\nCOMMANDS\n/);
     }
     expect(groupHelp(["secret", "set"])).toBeNull();
     expect(groupHelp(["create"])).toBeNull();
+  });
+
+  it("says under email what the Gateway's own sender is, and the command that sets it", () => {
+    for (const args of [["email"], ["email", "--help"]]) {
+      expect(groupHelp(args)).toMatch(
+        /^.+\.\n\nInvites, and apps that don't set their own senders, send as the Gateway's sender\.\nSet it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME\n\nUSAGE\n  everyapp email <command> \[flags\]\n\nCOMMANDS\n/,
+      );
+    }
   });
 
   it("names the tool with its version", () => {

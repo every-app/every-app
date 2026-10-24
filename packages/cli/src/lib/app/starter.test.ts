@@ -90,6 +90,14 @@ describe("the starter template", () => {
     expect(path.resolve(target, packageJson.devDependencies.everyapp.slice("link:".length))).toBe(
       path.join(root, "packages", "cli"),
     );
-    expect(fs.readFileSync(path.join(target, "pnpm-workspace.yaml"), "utf8")).toContain("allowBuilds:");
+    // Its own pnpm-workspace.yaml allows the build scripts the checkout's
+    // does, so `pnpm install` there doesn't warn about ignored builds.
+    const workspace = fs.readFileSync(path.join(target, "pnpm-workspace.yaml"), "utf8");
+    expect(workspace).toBe("allowBuilds:\n  esbuild: true\n  sharp: true\n  workerd: true\n");
+    const checkoutAllows = [
+      ...fs.readFileSync(path.join(checkoutRoot(), "pnpm-workspace.yaml"), "utf8").matchAll(/^  ([\w-]+): true$/gm),
+    ].map((match) => match[1]);
+    expect(checkoutAllows).not.toEqual([]);
+    for (const name of checkoutAllows) expect(workspace).toContain(`  ${name}: true\n`);
   });
 });
