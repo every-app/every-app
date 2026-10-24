@@ -28,7 +28,20 @@ const SHIPPED_MIGRATIONS: Record<string, string> = {
     "f170fde008780207f57d19219f58f2974f5e1a665dd36b6289bf4aa317bcc109",
   "0002_app_email_config.sql":
     "adbeaccf4cfd4e51a129aad721e0c8811f0438281a0aa63002a32bdcf4870f45",
-  // 0004_app_secret_names.sql: add its hash once everyapp.team has applied it.
+  // everyapp.team, applied 2026-10-24 (0003 at 03:56Z by the simplify thread's
+  // update; 0004 to 0008 at 22:11Z by the rollout, docs/overnight/2026-10-24.md item 26)
+  "0003_usage_counters.sql":
+    "ac6e018a06877cb2c2257b1c034ceb83c71b7007027e15b58f164fff4180f61c",
+  "0004_app_secret_names.sql":
+    "ece1c887f6a7ebb25ac30ab8260e34d2d0c9f5ccd34ab75ac2c118d5599e14b7",
+  "0005_groups.sql":
+    "b43528411057cd78a5915b0e9383cd071cf45362114b0621e0f03610431d662a",
+  "0006_org_app_settings.sql":
+    "e593f5a8fcb8da55a76b5df047a168e4488ae5ca63e9013ae5b43732603ef91d",
+  "0007_mcp_tool_calls_client_info.sql":
+    "4988b6c4abfd8c04dfe3d096a38185a6de50b7f7df7738f519c51c8977afa73d",
+  "0008_mcp_tool_calls_via.sql":
+    "7758be526e5e3b761d0f769f83b29971adfe3ecef760fbd82bdb12d37a54961e",
 };
 const FIRST_CHECKED_MIGRATION = 0;
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../drizzle", import.meta.url));
