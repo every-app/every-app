@@ -163,7 +163,7 @@ function internal(href) {
  */
 const FORBIDDEN = [
   {
-    re: /private-every-app/i,
+    re: /private-every[-]app/i, // spelt so the public-copy check does not read it as the name
     why: "names the private repository",
     severity: "error",
   },

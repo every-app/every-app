@@ -1430,8 +1430,7 @@ scope narrowing is the OAuth-scopes design (`docs/design/2026-10-oauth-scopes.md
 Every App is alpha and open source. If you find a hole, we'd rather know:
 
 - Open a private vulnerability report on the repository (**Security → Report
-  a vulnerability**) so it isn't public before a fix is out, or email
-  REPORT_ADDRESS.
+  a vulnerability**) so it isn't public before a fix is out.
 - Say which invariant breaks (its id from this document), the shape it
   affects (self-hosted, hosted, both; with or without Access in front), and
   how to reproduce it. A failing test is the best report.

@@ -113,3 +113,21 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  public-copy-check:
+    name: Public copy dry run
+    runs-on: ubuntu-latest
+    # Builds the public copy of this commit in a temporary directory and runs
+    # its checks (scripts/public-copy.mjs, docs/runbooks/public-copy.md): a
+    # file on the deny list, a secret shape or a private name in the tree
+    # fails here, before the copy is ever made. Nothing is written or pushed.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+      - name: Prove the checks refuse what they must
+        run: node scripts/public-copy.mjs --self-test
+      - name: Dry-run the public copy of this commit
+        run: node scripts/public-copy.mjs --commit HEAD --no-fetch

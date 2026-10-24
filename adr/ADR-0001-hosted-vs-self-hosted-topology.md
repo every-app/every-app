@@ -1,7 +1,7 @@
 # ADR-0001: Hosted vs Self-Hosted Topology
 
-- Status: Accepted
-- Date: 2026-03-02
+- Status: Accepted, in part superseded. The hosted topology below (one Worker per organization for every app) was reversed on 2026-10-16: first-party apps share one Worker per app, third-party apps run one Worker per organization in a dispatch namespace. The rulings and the invariants that bind the code are in `docs/hosted-vision.md`; the self-host side of this record still holds.
+- Date: 2026-03-02 (note added 2026-10-24)
 
 ## Context
 

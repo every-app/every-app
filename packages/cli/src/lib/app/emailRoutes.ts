@@ -542,7 +542,7 @@ function sameRule(rule: EmailRoutingRule, wanted: EmailRoutingRuleBody): boolean
   );
 }
 
-/** What a rule someone else made does with mail, after "already": "forwards to ben@gmail.com". */
+/** What a rule someone else made does with mail, after "already": "forwards to someone@example.com". */
 function delivery(rule: EmailRoutingRule): string {
   const action = rule.actions[0];
   if (!action || action.type === "drop") return "drops mail";

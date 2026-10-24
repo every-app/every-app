@@ -1,0 +1,28 @@
+# The names that must not travel: scrubbed from TODO.md, docs/ and adr/ in the copy, and
+# refused anywhere in it afterwards. One rule per line: /regex/flags, a TAB, the
+# replacement ($1 for a group), a TAB, why. Every rule runs global and case-insensitive.
+# Order matters: links first, then paths that may contain a name, then bare names.
+# This file is left out of the copy (policy.exclude); in the public repository it is absent.
+
+/\[([^\]]+)\]\(https:\/\/github\.com\/every-app\/private-every-app\/(?:blob|tree)\/([0-9a-f]{7,40})\/[^)\s]+\)/g	$1 (removed from the tree; the maintainers' history has it at $2)	a link into the private repository's history
+/\(https:\/\/github\.com\/every-app\/private-every-app\/pull\/(\d+)\)/g	(#$1)	a link to a pull request of the private repository
+/\[([^\]]+)\]\(https:\/\/github\.com\/every-app\/private-every-app[^)]*\)/g	$1 (in the maintainers' private repository)	a link into the private repository
+/https:\/\/github\.com\/every-app\/private-every-app[^\s)`"']*/g	the maintainers' private repository	a link into the private repository
+/`?~\/workspaces\/[^\s`)\]]+`?/g	a local checkout	a path on the maintainer's machine
+/`?\/Users\/bensenescu[^\s`)\]]*`?/g	a local path	a path on the maintainer's machine
+/`?(?:\.\.\/)?every-app\/private-every-app(?:\/[^\s`)\]]*)?`?/g	the maintainers' private repository	the private repository's name
+/`?(?:\.\.\/)?private-every-app(?:\/[^\s`)\]]*)?`?/g	the maintainers' private repository	the private repository's name
+/`?bensenescu\/open-seo-everyapp(?:\/[^\s`)\]]*)?`?/g	a private scratch copy of OpenSEO	the OpenSEO scratch repository
+/`?(?:private-)?open-seo-everyapp(?:\/[^\s`)\]]*)?`?/g	the OpenSEO port	the OpenSEO port's checkout name
+/`?(?:private-)?agentic-inbox-everyapp(?:\/[^\s`)\]]*)?`?/g	the agentic-inbox port	the agentic-inbox port's checkout name
+/`?postiz-everyapp(?:\/[^\s`)\]]*)?`?/g	the Postiz port	the Postiz port's checkout name
+/`?private-open-crm(?:\/[^\s`)\]]*)?`?/g	the OpenCRM port	the OpenCRM port's checkout name
+/`?private-open-analytics(?:\/[^\s`)\]]*)?`?/g	the OpenAnalytics port	the OpenAnalytics port's checkout name
+/`?[a-z0-9.-]*bensenescu\.workers\.dev`?/g	a workers.dev hostname of the maintainers' account	a hostname of the maintainers' account
+/`?every-bensenescu-[a-z0-9-]+`?/g	an old Worker of the maintainers' account	a Worker of the maintainers' account
+/`?thecomeup\.cc`?/g	the old dogfood domain	the maintainers' old dogfood domain
+/\bCarter\b/g	a teammate	a teammate's name
+/`(?:66f98c9e|8f4956ad|a19108d7)…`/g	`<id>`	an Access application or policy id of the maintainers' gateway
+/\(every-every-workout-tracker[^)]*\)/g	(a list the maintainers keep)	the inventory of the maintainers' old Workers
+/\(`every-chef`[^)]*\)/g	(a list the maintainers keep)	the inventory of the maintainers' old Workers
+/\bevery-(?:graham|julia|winery)\b/g	every-<name>	a Worker named after a person in the maintainers' account

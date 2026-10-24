@@ -1,0 +1,79 @@
+# gitleaks rules for the public copy (scripts/public-copy.mjs --scan) and for
+# a scan of this repository's history (docs/runbooks/public-copy.md). The
+# default rules, plus the shapes Every App handles: Cloudflare tokens (the
+# account-owned `cfat_` kind and the 40-character user kind), Anthropic,
+# OpenAI and OpenRouter keys, the Gateway's Better Auth secret and identity
+# key, setup links. D1 and account ids are not secrets and are not matched.
+title = "Every App public copy"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "cloudflare-account-token"
+description = "Cloudflare account-owned API token"
+regex = '''\bcfat_[A-Za-z0-9_-]{20,}'''
+keywords = ["cfat_"]
+
+[[rules]]
+id = "cloudflare-user-token-assignment"
+description = "A 40-character Cloudflare API token assigned next to the word token"
+regex = '''(?i)\b(?:api[_-]?token|cloudflare[_a-z]*token|cf[_-]?token)\b["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{40})\b'''
+secretGroup = 1
+keywords = ["token"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''\bsk-ant-[A-Za-z0-9_-]{20,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "openai-project-key"
+description = "OpenAI project key"
+regex = '''\bsk-proj-[A-Za-z0-9_-]{20,}'''
+keywords = ["sk-proj-"]
+
+[[rules]]
+id = "openrouter-key"
+description = "OpenRouter key"
+regex = '''\bsk-or-v1-[A-Za-z0-9_-]{20,}'''
+keywords = ["sk-or-v1-"]
+
+[[rules]]
+id = "better-auth-secret"
+description = "The Gateway's Better Auth secret with a value"
+regex = '''BETTER_AUTH_SECRET\s*[:=]\s*["']?([A-Za-z0-9+/=_-]{32,})'''
+secretGroup = 1
+keywords = ["BETTER_AUTH_SECRET"]
+
+[[rules]]
+id = "jwt-private-key-value"
+description = "The Gateway's identity private key with a value"
+regex = '''JWT_PRIVATE_KEY\s*[:=]\s*["']?(-----BEGIN[^"']{40,})'''
+secretGroup = 1
+keywords = ["JWT_PRIVATE_KEY"]
+
+[[rules]]
+id = "everyapp-setup-link-token"
+description = "An owner setup link token"
+regex = '''\best_[A-Za-z0-9]{24,}\b'''
+keywords = ["est_"]
+
+[allowlist]
+description = "The documented local-dev keypair, and the tests' obvious fakes"
+paths = [
+  '''packages/sdk/src/dev/keypair\.ts$''',
+]
+regexes = [
+  '''(?i)test-secret''',
+  '''(?i)sample''',
+  '''[aA]{10,}|q{10,}|x{10,}|0{10,}''',
+  '''(?i)abcdefghijklmnop''',
+  '''(?i)loop-p[a-z]*''',
+  '''(?i)fake''',
+  '''0123456789''',
+  '''(?i)x{10,}''',
+  '''0{10,}''',
+  '''(?i)example''',
+]

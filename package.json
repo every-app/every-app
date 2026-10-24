@@ -7,7 +7,8 @@
     "format:write": "pnpm -r --no-bail run format:write",
     "test": "pnpm -r --no-bail run test",
     "knip": "pnpm -r --no-bail run knip",
-    "loop": "pnpm -C packages/onboarding-loop loop"
+    "loop": "pnpm -C packages/onboarding-loop loop",
+    "public-copy": "node scripts/public-copy.mjs"
   },
   "devDependencies": {
     "everyapp": "workspace:*"
