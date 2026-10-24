@@ -271,6 +271,25 @@ describe("codex adapter", () => {
 });
 
 describe("opencode adapter", () => {
+  it("picks the provider from the model: openai/* runs on the Codex key handed over as OPENAI_API_KEY, anthropic/* on the Anthropic key, Zen models on OPENCODE_API_KEY", () => {
+    const adapter = createOpencodeAdapter();
+    expect(adapter.providerFor?.("openai/gpt-5.3-codex")).toEqual({
+      var: "CODEX_API_KEY",
+      env: "OPENAI_API_KEY",
+    });
+    expect(adapter.providerFor?.("anthropic/claude-opus-5-5")).toEqual({
+      var: "ANTHROPIC_API_KEY",
+      env: "ANTHROPIC_API_KEY",
+    });
+    expect(adapter.providerFor?.("opencode/glm-5.3")).toEqual({
+      var: "OPENCODE_API_KEY",
+      env: "OPENCODE_API_KEY",
+    });
+    expect(adapter.providerFor?.(null)).toEqual({
+      var: "OPENCODE_API_KEY",
+      env: "OPENCODE_API_KEY",
+    });
+  });
   it("writes the turn-1 line per design 4.4 with --standalone", () => {
     const line = createOpencodeAdapter().command(launch).argv.join(" ");
     for (const flag of [

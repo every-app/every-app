@@ -47,6 +47,14 @@ export function createOpencodeAdapter(): HarnessAdapter {
     version: OPENCODE_VERSION,
     status: "measured",
     providerVar: "OPENCODE_API_KEY",
+    providerFor(model) {
+      const id = model ?? OPENCODE_DEFAULT_MODEL;
+      if (id.startsWith("openai/"))
+        return { var: "CODEX_API_KEY", env: "OPENAI_API_KEY" };
+      if (id.startsWith("anthropic/"))
+        return { var: "ANTHROPIC_API_KEY", env: "ANTHROPIC_API_KEY" };
+      return { var: "OPENCODE_API_KEY", env: "OPENCODE_API_KEY" };
+    },
     defaultModel: OPENCODE_DEFAULT_MODEL,
     signal: {
       toolCalls: "full",

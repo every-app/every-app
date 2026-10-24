@@ -145,6 +145,12 @@ export interface HarnessAdapter {
   status: HarnessStatus;
   /** Which provider variable the container gets; `null` for the control, which only needs the Cloudflare token. */
   providerVar: ProviderVar | null;
+  /**
+   * The provider for a given model, when the harness can talk to several (OpenCode: `openai/…`
+   * runs on the Codex key handed over as OPENAI_API_KEY, `anthropic/…` on the Anthropic key).
+   * `var` names the providers.env line, `env` the variable the container gets. Absent: `providerVar` under its own name.
+   */
+  providerFor?(model: string | null): { var: ProviderVar; env: string } | null;
   /** The default dated model id, or `null` for the control. */
   defaultModel: string | null;
   signal: Signal;

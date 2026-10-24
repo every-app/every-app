@@ -485,7 +485,7 @@ async function runOnce(
 
   // 1. The account and the provider key, or the stub for a dry run.
   let account = STUB_ACCOUNT;
-  let provider: { name: ProviderVar; value: string } | null = null;
+  let provider: { name: ProviderVar; env: string; value: string } | null = null;
   let stub = false;
   try {
     // `--account stub --dry-run` is the stub whether or not accounts.json exists.
@@ -497,14 +497,19 @@ async function runOnce(
       options.account ?? accounts.accounts[0]!.name,
     );
     const providers = loadProviders(deps.configDir);
-    if (adapter.providerVar) {
-      const value = providers[adapter.providerVar];
+    const wanted =
+      adapter.providerFor?.(model) ??
+      (adapter.providerVar
+        ? { var: adapter.providerVar, env: adapter.providerVar }
+        : null);
+    if (wanted) {
+      const value = providers[wanted.var];
       if (!value && !options.dryRun)
         throw new AccountsError(
           "file_invalid",
-          `${adapter.providerVar} is not in providers.env; the ${adapter.name} harness needs it.`,
+          `${wanted.var} is not in providers.env; the ${adapter.name} harness needs it${wanted.env !== wanted.var ? ` (handed over as ${wanted.env})` : ""}.`,
         );
-      if (value) provider = { name: adapter.providerVar, value };
+      if (value) provider = { name: wanted.var, env: wanted.env, value };
     }
   } catch (error) {
     if (
@@ -647,7 +652,7 @@ interface RunContext {
   account: Account;
   adapter: HarnessAdapter;
   model: string | null;
-  provider: { name: ProviderVar; value: string } | null;
+  provider: { name: ProviderVar; env: string; value: string } | null;
   redactor: Redactor;
   log: (line: string) => void;
   docker: Docker | null;
@@ -975,7 +980,7 @@ class RunState {
       CLOUDFLARE_API_TOKEN: account.token,
       CLOUDFLARE_ACCOUNT_ID: account.accountId,
       ...(this.ctx.provider
-        ? { [this.ctx.provider.name]: this.ctx.provider.value }
+        ? { [this.ctx.provider.env]: this.ctx.provider.value }
         : {}),
       EVERYAPP_EVENT_LOG: EVENT_LOG_PATH,
     };
