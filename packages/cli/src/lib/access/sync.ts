@@ -13,6 +13,7 @@
  * its own lease, so two deploys finishing together don't each PUT a list
  * without the other's host.
  */
+import { storedPublicRoutes } from "@/lib/app/publicRoutes";
 import type { D1Database } from "@/lib/cf/d1";
 import {
   applicationUpdateBody,
@@ -60,24 +61,8 @@ ORDER BY hostname`,
   return rows.map((row) => ({
     appId: String(row["app_slug"]),
     hostname: String(row["hostname"]),
-    publicPaths: publicPathsOf(row["manifest"]),
+    publicPaths: storedPublicRoutes(row["manifest"]).map((route) => route.path),
   }));
-}
-
-function publicPathsOf(stored: unknown): string[] {
-  if (typeof stored !== "string") return [];
-  try {
-    const manifest: unknown = JSON.parse(stored);
-    const routes = (manifest as { public?: unknown } | null)?.public;
-    return Array.isArray(routes)
-      ? routes.flatMap((route) => {
-          const path = (route as { path?: unknown } | null)?.path;
-          return typeof path === "string" ? [path] : [];
-        })
-      : [];
-  } catch {
-    return [];
-  }
 }
 
 /** What the plan leaves out, for the warnings. */

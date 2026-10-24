@@ -34,6 +34,7 @@ import {
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
 import { parseEmailList, storedEmailList, type AppEmailConfig } from "@every-app/sdk/internal";
+import { storedPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
@@ -622,6 +623,11 @@ export interface RegisteredAppInfo {
    * declaration, however the local everyapp.config.ts reads.
    */
   declaresInbound: boolean;
+  /**
+   * The routes that manifest opens to anyone on the internet (`public` in
+   * everyapp.config.ts), in its order; none until a deploy uploads them.
+   */
+  publicRoutes: PublicRouteSummary[];
 }
 
 function info(app: StoredAppRow): RegisteredAppInfo {
@@ -635,6 +641,7 @@ function info(app: StoredAppRow): RegisteredAppInfo {
     resources: appResources(app),
     email: { senders: parseEmailList(app.emailSenders), inbound: parseEmailList(app.emailInbound) },
     declaresInbound: declaresInbound(app.manifest),
+    publicRoutes: storedPublicRoutes(app.manifest),
   };
 }
 

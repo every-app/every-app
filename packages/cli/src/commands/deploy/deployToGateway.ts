@@ -30,6 +30,7 @@ import { buildApp } from "@/lib/app/buildApp";
 import { appSdkVersion, packageHostedBundle } from "@/lib/app/hostedBundle";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { publicRoutesOf } from "@/lib/app/publicRoutes";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
@@ -211,12 +212,20 @@ export async function deployToGateway(
         : {}),
     },
   });
+  // What the manifest opens to the internet: the end of the run says it,
+  // every deploy, as the self-host deploy does (deployApp.ts).
   out.emit({
     type: "step",
     step: "app.register",
     status: "ok",
     message: `${manifest.id} is ${app.workerName} on ${gatewayUrl}${app.hostname ? `, at https://${app.hostname}` : " (no hostname yet: the gateway has no third-party domain)"} (${app.status}).`,
-    data: { appId: manifest.id, workerName: app.workerName, hostname: app.hostname, organizationId: key.organizationId },
+    data: {
+      appId: manifest.id,
+      workerName: app.workerName,
+      hostname: app.hostname,
+      organizationId: key.organizationId,
+      publicRoutes: publicRoutesOf(manifest),
+    },
   });
 
   // 2. The build, with placeholders for everything the deployer installs;

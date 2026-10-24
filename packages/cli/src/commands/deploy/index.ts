@@ -1,4 +1,5 @@
 import type { LocalContext } from "@/context";
+import { publicRoutesOf } from "@/lib/app/publicRoutes";
 import { APP_RELEASE_TARBALL, fetchAppRelease, type AppRelease } from "@/lib/app/release";
 import { EveryAppError } from "@/lib/errors";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
@@ -125,6 +126,7 @@ async function deployFrom({
         jobId: result.jobId,
         status: result.status,
         live: result.live,
+        publicRoutes: publicRoutesOf(manifest),
       },
     });
     return;
@@ -148,12 +150,23 @@ async function deployFrom({
   });
   // `app.live` said it to a person already (or that it goes live on its
   // first visit).
-  out.emit({
-    type: "done",
+  out.emit({ type: "done", ...deployDone(result) });
+}
+
+/**
+ * `deploy`'s `done`, for a script: where the app is, the routes its
+ * manifest opens to the internet (`publicRoutes`, empty when none) and
+ * what is left to run (`next`).
+ */
+export function deployDone(result: Awaited<ReturnType<typeof deployApp>>): {
+  data: Record<string, unknown>;
+} {
+  return {
     data: {
       ...liveDone(result),
       organization: result.organizationName,
+      publicRoutes: result.publicRoutes,
       ...(result.next.length > 0 ? { next: result.next } : {}),
     },
-  });
+  };
 }

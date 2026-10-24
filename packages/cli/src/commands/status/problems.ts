@@ -6,6 +6,7 @@
  */
 import chalk from "chalk";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
+import type { PublicRouteSummary } from "@/lib/app/publicRoutes";
 import type { DesiredState } from "@/lib/gateway/desiredState";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
@@ -101,6 +102,8 @@ export interface AppState {
    * the stored addresses).
    */
   email: { senders: string[]; inbound: string[]; routed: string[]; declaresInbound: boolean };
+  /** The routes its deployed manifest opens to anyone on the internet (`public` in everyapp.config.ts). */
+  publicRoutes: PublicRouteSummary[];
 }
 
 /** This checkout against the live release, by the install row. */

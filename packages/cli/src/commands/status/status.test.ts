@@ -221,6 +221,40 @@ describe("everyapp status", () => {
     expect(await shown()).toMatch(/\ntodo +○ live on first visit +https:\/\/todo\.example\.com +API token\n/);
   });
 
+  it("counts the routes each app's deployed manifest opens to the internet, and lists them under --json", async () => {
+    await deployed("hooks", {
+      manifest: {
+        id: "hooks",
+        public: [
+          { path: "/hooks/*" },
+          { path: "/collect", methods: ["POST"] },
+          { path: "/uploads/**", methods: ["GET", "HEAD"] },
+        ],
+      },
+    });
+    await deployed("todo");
+
+    const done = await status();
+    expect(done["data"]["apps"]).toEqual([
+      expect.objectContaining({
+        id: "hooks",
+        publicRoutes: [
+          { path: "/hooks/*", methods: ["GET"] },
+          { path: "/collect", methods: ["POST"] },
+          { path: "/uploads/**", methods: ["GET", "HEAD"] },
+        ],
+      }),
+      expect.objectContaining({ id: "todo", publicRoutes: [] }),
+    ]);
+    const report = await shown();
+    expect(report).toMatch(/\nAPP +STATUS +URL +DEPLOYED BY +PUBLIC\n/);
+    expect(report).toMatch(
+      /\nhooks +○ live on first visit +https:\/\/hooks\.example\.com +dev@example\.com +3 routes\n/,
+    );
+    // An app that opens nothing: an empty cell, and no blanks after its row.
+    expect(report).toMatch(/\ntodo +○ live on first visit +https:\/\/todo\.example\.com +dev@example\.com\n/);
+  });
+
   it("lists the mail each app's deploys route to it, and what to run when a route stops delivering", async () => {
     const inbox = await deployed("inbox", { manifest: INBOX });
     await deployed("todo");

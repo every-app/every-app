@@ -25,6 +25,7 @@
  */
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
+import { listPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
@@ -501,7 +502,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       };
     },
     // `register`'s own header; for a deploy, who can open an app that has
-    // never been live: a fact for the end.
+    // never been live, and what its manifest opens to anyone on the
+    // internet (every deploy): facts for the end.
     "app.register": (event) => {
       const data = event.data ?? {};
       if (event.status !== "ok") return null;
@@ -519,7 +521,10 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           },
         ];
       }
-      if (data["firstDeploy"] !== true) return null;
+      const routes = publicRoutesIn(data["publicRoutes"]);
+      const open: Shown[] =
+        routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : [];
+      if (data["firstDeploy"] !== true) return open.length > 0 ? open : null;
       const organization = text(data["organizationName"]);
       const change = chalk.dim(`· change it at ${text(data["gatewayUrl"])}/admin/apps`);
       const access =
@@ -534,7 +539,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         data["hasOwner"] === false
           ? `\n  ${chalk.dim(`The Gateway has no owner yet; its first owner gets the app (${CLI} setup).`)}`
           : "";
-      return { fact: { label: "Access", value: `${access}${noOwner}` } };
+      return [{ fact: { label: "Access", value: `${access}${noOwner}` } }, ...open];
     },
     "app.hyperdrive": (event) =>
       event.status === "ok"
@@ -970,6 +975,23 @@ function factsIn(value: unknown): Fact[] {
     label: fact.label,
     value: `${/^https?:\/\//.test(fact.value) ? chalk.cyan(fact.value) : fact.value}${fact.note ? `  ${chalk.dim(fact.note)}` : ""}`,
   }));
+}
+
+/** A deploy's `data.publicRoutes`: `{ path, methods }` each. */
+function publicRoutesIn(value: unknown): PublicRouteSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((route: PublicRouteSummary) => route);
+}
+
+/**
+ * The Public fact: what the manifest opens to anyone on the internet,
+ * `GET /hooks/*, POST /collect`, the first few, then how many more.
+ */
+function publicValue(routes: readonly PublicRouteSummary[]): string {
+  const { shown, more } = listPublicRoutes(routes);
+  return `Open to the internet without sign-in: ${shown}${
+    more > 0 ? chalk.dim(` … and ${more} more (everyapp.config.ts public)`) : ""
+  }`;
 }
 
 /** `data.next`: commands, each as a string or `{ command, note }`. */

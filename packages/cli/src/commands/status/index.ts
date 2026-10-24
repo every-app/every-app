@@ -177,6 +177,7 @@ export async function reportStatus({
         .map((route) => route.name),
       declaresInbound: app.declaresInbound,
     },
+    publicRoutes: app.publicRoutes,
   }));
   const readCertificates = "error" in certificates ? null : certificates.value;
   const waiting = (readCertificates ?? []).filter((c) => !c.ready).map((c) => c.host);

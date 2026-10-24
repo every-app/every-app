@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILD_SENTINEL, resourceSentinel } from "@every-app/sdk/cloudflare";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { openAppRelease } from "@/lib/app/release";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
 import { bundleApp } from "./bundleApp";
@@ -170,6 +170,7 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
     expect(events.find((e) => e["step"] === "app.register")?.["data"]).toMatchObject({
       workerName: "every-acme-todo",
       organizationId: "org-acme",
+      publicRoutes: [],
     });
     expect(events.find((e) => e["step"] === "app.deploy")?.["data"]).toMatchObject({
       appId: "todo",
@@ -189,6 +190,42 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
       status: "skip",
       data: { url: "https://todo-acme.everyapp.dev" },
     });
+  });
+
+  it("carries what the manifest opens to the internet, for the end of the run", async () => {
+    const manifest: EveryAppCliManifest = {
+      ...TODO,
+      public: [{ path: "/hooks/*" }, { path: "/collect", methods: ["POST"] }],
+    };
+    account.apps.set(appDir, manifest);
+    await run({ manifest });
+    expect(gateway.registered).toEqual({ appId: "todo", manifest });
+    expect(events.find((e) => e["step"] === "app.register")?.["data"]).toMatchObject({
+      publicRoutes: [
+        { path: "/hooks/*", methods: ["GET"] },
+        { path: "/collect", methods: ["POST"] },
+      ],
+    });
+  });
+
+  it("says what the manifest opens to the internet at a terminal, after the app's URL", async () => {
+    const manifest: EveryAppCliManifest = {
+      ...TODO,
+      public: [{ path: "/hooks/*" }, { path: "/collect", methods: ["POST"] }],
+    };
+    account.apps.set(appDir, manifest);
+    let stdout = "";
+    const out = createHumanSink({
+      write: (text) => void (stdout += text),
+      writeProblem: () => undefined,
+      now: () => 0,
+    });
+    const result = await run({ manifest, out });
+    // The end of the run, as `deploy` emits it once the hosted deploy returns.
+    out.emit({ type: "done", data: { url: result.liveUrl } });
+    expect(stdout).toContain(
+      "\nURL     https://todo-acme.everyapp.dev\nPublic  Open to the internet without sign-in: GET /hooks/*, POST /collect\n",
+    );
   });
 
   it("uploads an app release as it is, without building anything", async () => {

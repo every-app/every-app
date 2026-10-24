@@ -157,6 +157,43 @@ describe("deploy, as a person sees it", () => {
     expect(live.stdout).toContain("\nLive  https://todo.example.com\n");
   });
 
+  it("says what the manifest opens to the internet, after who can open the app, on every deploy", async () => {
+    const hooks: EveryAppCliManifest = {
+      ...TODO,
+      public: [{ path: "/hooks/*" }, { path: "/collect", methods: ["POST"] }],
+    };
+    const first = await deployShown(hooks);
+    expect(first.stdout).toContain(
+      [
+        "Live    https://todo.example.com",
+        "Access  Private to owners and admins · change it at https://example.com/admin/apps",
+        "  The Gateway has no owner yet; its first owner gets the app (pnpm everyapp setup).",
+        "Public  Open to the internet without sign-in: GET /hooks/*, POST /collect",
+        "",
+      ].join("\n"),
+    );
+
+    // A redeploy says it too: the first six routes, then how many more.
+    const nine: EveryAppCliManifest = {
+      ...TODO,
+      public: [
+        { path: "/hooks/*" },
+        { path: "/collect", methods: ["POST"] },
+        { path: "/uploads/**", methods: ["GET", "HEAD"] },
+        ...["/r4", "/r5", "/r6", "/r7", "/r8", "/r9"].map((path) => ({ path })),
+      ],
+    };
+    const again = await deployShown(nine);
+    expect(again.stdout).toContain(
+      [
+        "Live    https://todo.example.com",
+        "Public  Open to the internet without sign-in: GET /hooks/*, POST /collect, GET/HEAD /uploads/**, GET /r4, GET /r5, GET /r6 … and 3 more (everyapp.config.ts public)",
+        "",
+      ].join("\n"),
+    );
+    expect(again.stdout).not.toContain("Access");
+  });
+
   it("says a deleted Workflow is gone, with its own ticked line", async () => {
     const withWorkflow: EveryAppCliManifest = {
       ...TODO,

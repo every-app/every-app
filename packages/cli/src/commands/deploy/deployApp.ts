@@ -99,6 +99,7 @@ import {
   type AppSecrets,
 } from "@/lib/app/deploySecrets";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { publicRoutesOf, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import {
   readOwnedResources,
@@ -223,6 +224,8 @@ interface DeployAppResult {
   versionId: string;
   /** The registry says the app is active (it can also go live on its first visit). */
   live: boolean;
+  /** The routes the manifest opens to anyone on the internet (`done`'s `data.publicRoutes`). */
+  publicRoutes: PublicRouteSummary[];
   /** What to run next, when something is left to do (`done`'s `data.next`). */
   next: Array<{ command: string; note: string }>;
 }
@@ -391,7 +394,9 @@ async function deploySteps(
       { fix: "change everyapp.config.ts, then deploy again" },
     );
   }
-  // Until the app has been live once, the end of the run says who can open it.
+  // Until the app has been live once, the end of the run says who can open
+  // it; what the manifest opens to the internet, it says every time.
+  const publicRoutes = publicRoutesOf(manifest);
   out.emit({
     type: "step",
     step: "app.register",
@@ -407,6 +412,7 @@ async function deploySteps(
       defaultAccess: plan.app.isDefault,
       deployerAccess: deployerGranted,
       hasOwner,
+      publicRoutes,
       scope: plan.app.scope,
       organizationId: organization.id,
       organizationName: organization.name,
@@ -876,7 +882,7 @@ async function deploySteps(
   // soon as it is live (nothing to do when Access isn't in front).
   await syncAppsAccessAfter(
     { cf, db: registry, install, out },
-    { appId: manifest.id, publicRoutes: (manifest.public ?? []).length > 0 },
+    { appId: manifest.id, publicRoutes: publicRoutes.length > 0 },
   );
   if (outsideBase) {
     out.emit({
@@ -896,6 +902,7 @@ async function deploySteps(
     workerName,
     versionId,
     live: live || (status === "active" && !outsideBase),
+    publicRoutes,
     next,
   };
 }

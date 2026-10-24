@@ -350,6 +350,38 @@ describe("createHumanSink", () => {
     ]);
   });
 
+  it("says what a redeploy's manifest opens to the internet, after where the app is", () => {
+    const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "app.register",
+      status: "ok",
+      data: {
+        appId: "hooks",
+        hostname: "hooks.apps.example.com",
+        existingApp: true,
+        firstDeploy: false,
+        organizationName: "Example Inc",
+        publicRoutes: [
+          { path: "/hooks/*", methods: ["GET"] },
+          { path: "/uploads/**", methods: ["GET", "HEAD"] },
+        ],
+      },
+    });
+    sink.emit({
+      type: "step",
+      step: "app.live",
+      status: "ok",
+      data: { hostname: "hooks.apps.example.com", url: "https://hooks.apps.example.com" },
+    });
+    sink.emit({ type: "done", data: { url: "https://hooks.apps.example.com" } });
+    expect(lines()).toEqual([
+      "",
+      "Live    https://hooks.apps.example.com",
+      "Public  Open to the internet without sign-in: GET /hooks/*, GET/HEAD /uploads/**",
+    ]);
+  });
+
   it("heads a release's deploy with its version and origin", () => {
     const { sink, lines } = human();
     sink.emit({

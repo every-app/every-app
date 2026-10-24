@@ -106,14 +106,16 @@ export function renderStatus({
     "",
     ...(apps.length > 0
       ? formatTable(
-          ["APP", "STATUS", "URL", "DEPLOYED BY"],
+          ["APP", "STATUS", "URL", "DEPLOYED BY", "PUBLIC"],
           apps.map((app) => [
             app.id,
             appCell(app),
             chalk.cyan(`https://${app.hostname}`),
             deployer(app.deployedBy),
+            publicCell(app),
           ]),
-        )
+          // Most apps open nothing: no blanks trail their rows.
+        ).map((line) => line.trimEnd())
       : [
           uploaded
             ? `${chalk.dim("No apps yet.")} Deploy one from its directory: ${chalk.bold(`${CLI} deploy`)}`
@@ -160,6 +162,11 @@ function tls(
 function deployer(deployedBy: string | null): string {
   if (!deployedBy) return "";
   return deployedBy.startsWith("api-token:") ? "API token" : deployedBy;
+}
+
+/** The PUBLIC cell: how many routes the deployed manifest opens to the internet; nothing when none. */
+function publicCell(app: AppState): string {
+  return app.publicRoutes.length > 0 ? plural(app.publicRoutes.length, "route") : "";
 }
 
 /** An app's STATUS cell: a glyph (✓ live, ! to do, ✗ broken, ○ settling by itself) and a few words. */

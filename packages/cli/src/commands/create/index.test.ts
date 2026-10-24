@@ -88,6 +88,7 @@ function seams() {
       workerName: "every-my-app",
       versionId: "v1",
       live: true,
+      publicRoutes: [],
       next: [],
     })),
   };

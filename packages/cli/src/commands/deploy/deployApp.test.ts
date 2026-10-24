@@ -45,6 +45,7 @@ import { makeTestHome } from "@/test/home";
 import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
 import { sqliteD1Script } from "@/test/sqliteD1";
 import { deployApp } from "./deployApp";
+import { deployDone } from "./index";
 
 const GATEWAY_URL = "https://example.com";
 
@@ -325,6 +326,30 @@ describe("deploy", () => {
     expect(leases).toEqual([]);
     // Nothing went to the gateway over HTTPS but the live wait's request.
     expect(account.cf.calls.some((call) => call.args.join(" ").includes("/api/"))).toBe(false);
+  });
+
+  it("carries the routes the manifest opens to the internet, for the end of the run and done's data", async () => {
+    const plain = await deploy();
+    expect(plain.publicRoutes).toEqual([]);
+    expect(deployDone(plain).data["publicRoutes"]).toEqual([]);
+    events = [];
+
+    const hooks: EveryAppCliManifest = {
+      ...TODO,
+      public: [{ path: "/hooks/*" }, { path: "/collect", methods: ["POST"] }],
+    };
+    const result = await deploy(hooks);
+    const routes = [
+      { path: "/hooks/*", methods: ["GET"] },
+      { path: "/collect", methods: ["POST"] },
+    ];
+    expect(result.publicRoutes).toEqual(routes);
+    // The register step carries them, so a person sees them at the end of
+    // the run, first deploy or not.
+    expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
+      data: { appId: "todo", firstDeploy: false, publicRoutes: routes },
+    });
+    expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes });
   });
 
   it("gives the deployer access once the gateway has an owner and they are a verified member", async () => {
