@@ -1,5 +1,8 @@
 const DEFAULT_SITE_URL = "https://everyapp.com";
 
+/** The image a shared link shows, as an absolute URL (scrapers ignore a relative one). */
+export const OG_IMAGE_PATH = "/OpenGraphPreview.png";
+
 export const SITE_URL = (
   process.env.SITE_URL ??
   process.env.VITE_SITE_URL ??
@@ -47,6 +50,14 @@ export function buildPageSeo({
         ? [{ property: "og:description", content: description }]
         : []),
       { property: "og:url", content: canonicalUrl },
+      { property: "og:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
+      { property: "og:image:alt", content: fullTitle },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: fullTitle },
+      ...(description
+        ? [{ name: "twitter:description", content: description }]
+        : []),
+      { name: "twitter:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
       ...(noindex ? [{ name: "robots", content: "noindex" }] : []),
     ],
     links: [{ rel: "canonical", href: canonicalUrl }],

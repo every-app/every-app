@@ -1,19 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { homeOptions } from "@/lib/layout.shared";
+import { buildPageSeo } from "@/lib/seo";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPolicy,
-  head: () => ({
-    meta: [
-      { title: "Privacy — Every App" },
-      {
-        name: "description",
-        content:
-          "What everyapp.com collects: self-hosted page view analytics and the email addresses people leave to hear about the launch.",
-      },
-    ],
-  }),
+  head: () =>
+    buildPageSeo({
+      title: "Privacy",
+      titleSuffix: "Every App",
+      path: "/privacy",
+      description:
+        "What everyapp.com collects: self-hosted page view analytics and the email addresses people leave to hear about releases.",
+    }),
 });
 
 function PrivacyPolicy() {
@@ -35,11 +34,11 @@ function PrivacyPolicy() {
             </p>
           </Section>
 
-          <Section title="Join the waitlist">
+          <Section title="Hear about releases">
             <p>
-              If you leave your email address in the "Join the waitlist" form on
+              If you leave your email address in the "Keep me posted" form on
               the home page, we store it in a Cloudflare D1 database and use it
-              only to tell you when Every App launches. Email
+              only to tell you about releases and breaking changes. Email
               support@everyapp.dev to have it removed.
             </p>
           </Section>

@@ -15,7 +15,7 @@ const DEFAULT_SITE_URL = "https://everyapp.com";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
-const STATIC_PATHS = new Set(["/", "/docs", "/docs/agent"]);
+const STATIC_PATHS = new Set(["/", "/privacy", "/docs", "/docs/agent"]);
 
 function walkMarkdownFiles(directory) {
   if (!existsSync(directory)) return [];

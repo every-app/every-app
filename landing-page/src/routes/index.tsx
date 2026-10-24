@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toCanonicalUrl } from "@/lib/seo";
+import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
 const homeTitle =
@@ -21,12 +21,12 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: homeTitle },
       { property: "og:description", content: homeDescription },
       { property: "og:url", content: toCanonicalUrl("/") },
-      { property: "og:image", content: "/OpenGraphPreview.png" },
+      { property: "og:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
       { property: "og:image:alt", content: homeTitle },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: homeTitle },
       { name: "twitter:description", content: homeDescription },
-      { name: "twitter:image", content: "/OpenGraphPreview.png" },
+      { name: "twitter:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
       { name: "twitter:image:alt", content: homeTitle },
     ],
     links: [{ rel: "canonical", href: toCanonicalUrl("/") }],

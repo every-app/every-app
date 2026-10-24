@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { agentLlms, agentSource, decodeMarkdownSegments } from "@/lib/source";
 
 export const Route = createFileRoute("/docs/agent/{$}.md")({
@@ -8,7 +8,7 @@ export const Route = createFileRoute("/docs/agent/{$}.md")({
         const page = agentSource.getPage(
           decodeMarkdownSegments(params._splat?.split("/") ?? []),
         );
-        if (!page) throw notFound();
+        if (!page) return new Response("Not found", { status: 404 });
 
         return new Response(await agentLlms.page(page), {
           headers: { "content-type": "text/markdown; charset=utf-8" },

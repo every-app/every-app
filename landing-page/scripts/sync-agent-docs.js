@@ -141,12 +141,14 @@ function escapeTags(markdown) {
       continue;
     }
     // Outside code spans, a `<` that opens what reads as a tag becomes text
-    // (HTML comments stay comments).
+    // (HTML comments stay comments; a `<https://…>` autolink stays a link).
     out.push(
       line
         .split(/(`+[^`]*?`+)/)
         .map((part, index) =>
-          index % 2 === 1 ? part : part.replace(/<(?=[A-Za-z/?])/g, "\\<"),
+          index % 2 === 1
+            ? part
+            : part.replace(/<(?!https?:\/\/)(?=[A-Za-z/?])/g, "\\<"),
         )
         .join(""),
     );
