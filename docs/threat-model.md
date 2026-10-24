@@ -668,25 +668,36 @@ Google and Microsoft per-app scope narrowing being built this week
   hosted it is why the preview stays invite-only. The teams thread's usage
   counters and caps are the first slice (`docs/design/2026-10-teams.md`).
 - *A granted OAuth client is all-or-nothing per app* (medium; the
-  OAuth-scopes slice, `docs/design/2026-10-oauth-scopes.md`, PR #393 for
-  the design and a held gateway PR for the code). Today the gateway
-  completes a network's token endpoints without reading scopes: the app
-  chooses the consent's scopes and keeps the tokens, so nothing stopped an
-  app granted `google-workspace` for Search Console from reading Gmail. The
-  slice adds declared scope sets per capability and refuses to forward a
-  token whose granted scopes exceed them (`integration_scopes_undeclared`,
-  `integration_scope_not_allowed`, `integration_scope_exceeded`,
-  `integration_scope_unverified`), narrows the grant types per client on
-  top of #387's floor (Google and Microsoft: `authorization_code` and
-  `refresh_token` only), and for those clients refuses `grant_type`,
-  `scope` or `user_scope` in the query string so the body decides. Its
-  honest limits, which stay in this model: the network's API calls still don't pass through the gateway (the
-  app holds the tokens, so the per-set host and path allowlist is data
-  until an outbound Worker or gateway-held tokens use it); refresh tokens
-  are app-held bearer credentials not bound to an app; a shared Microsoft
-  client or a Slack installation may issue a wider token than requested,
-  which the gateway then refuses (availability lost, not narrowing); and
-  the boundary exists only because the client is confidential.
+  OAuth-scopes slice: `docs/design/2026-10-oauth-scopes.md` for the
+  design, #398 merged for the registry's `scopePolicy` on
+  `google-workspace` and `microsoft-365`, #414 held for the manifest
+  field, #411 held for the gateway). Today the gateway completes a
+  network's token endpoints without reading scopes: the app chooses the
+  consent's scopes and keeps the tokens, so nothing stopped an app granted
+  `google-workspace` for Search Console from reading Gmail. Once #411
+  merges the invariants in the table below hold. Their honest limits,
+  which stay in this model: the network's API calls still don't pass
+  through the gateway (the app holds the tokens, so the per-set host and
+  path allowlist in `packages/sdk/src/internal/oauthScopes.ts` enforces
+  nothing until an outbound Worker or gateway-held tokens use it; the
+  boundary is which tokens an app can obtain); Google and Slack narrow per
+  app only when the app asks for the status's scopes without
+  `include_granted_scopes` (a wider token is refused, not narrowed);
+  Microsoft, and Slack installations, may return every scope the person
+  consented to any app on the shared client, which the gateway refuses
+  (availability lost, not narrowing: the fix is one registered client per
+  app); refresh tokens are app-held bearer credentials not bound to an
+  app; and the boundary exists only because the client is confidential
+  (the registry requires a client secret for a scope policy).
+
+  | Id | Invariant (once #411 merges; lines at commit 40159f82) | Enforced by | Pinned by |
+  |---|---|---|---|
+  | `oauth.scopes-declared-or-no-token` | An app that lists `google-workspace` or `microsoft-365` without a valid `scopes` list (missing, empty, duplicated, or a name the registry doesn't define) gets no token at all: `403 integration_scopes_undeclared` before attribution and before any upstream call. | `apps/every-app-gateway/src/server/capabilities/oauthClient.ts:185` | `oauthClient.test.ts` :: refuses an app that lists the client without scope sets (the "scope sets: Google and Microsoft" cases); `oauth-client.sqlite.test.ts` |
+  | `oauth.granted-scopes-within-sets` | The gateway never forwards a token whose granted scopes exceed the app's declared sets, on exchange and on refresh, for a person's call and for background calls: the provider's 2xx answer is buffered (64 KiB), its `scope` parsed per provider, and an excess answers `403 integration_scope_exceeded` with the body dropped, never stored, logged or revoked. | `oauthClient.ts:384-437` | `oauthClient.test.ts` :: refuses a token outside the app's sets, dropping it; :: refuses the union include_granted_scopes yields; :: refuses a refresh echoing a scope set the manifest dropped, in the background too; the Microsoft case |
+  | `oauth.unverifiable-answer-refused` | A token-bearing answer that names no scopes is `502 integration_scope_unverified`, not forwarded; a non-JSON or oversized 2xx is `502 integration_response_invalid`; a read that breaks off is `502 integration_upstream_failed` with nothing forwarded. | `oauthClient.ts:384, 408, 429` | `oauthClient.test.ts` :: the unverified and broken-read cases |
+  | `oauth.request-decided-on-body` | The token request is decided on its body alone: `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` twice in the body, is `400 integration_body_invalid`; the grant must be one the client's policy completes (`authorization_code`, `refresh_token`) on top of #387's user-grant floor (`403 integration_grant_not_allowed`); a request asking for a scope outside the sets is `403 integration_scope_not_allowed`; Microsoft's request `scope` is replaced by the app's allowed list, Google's dropped. | `oauthClient.ts:227-239, 252, 309, 324, 331` | `oauthClient.test.ts` :: the query-string cases; :: the scope-outside-the-sets case |
+  | `oauth.scope-logs-names-only` | Logs carry the declared set names and, on a refusal, the scope names in excess (capped), never a token, code, id_token, body or client value, across log, warn and error lines. | `oauthClient.ts` (the logged object) | `oauthClient.test.ts` :: logs no client, code or token across a Google exchange, a Microsoft exchange and a refused answer |
+
 - *The token endpoint signed any grant type* (high before #387; fixed
   there, held for Ben). Facebook's client-credentials grant returns the
   app access token `<app id>|<app secret>`: the operator's secret itself;
