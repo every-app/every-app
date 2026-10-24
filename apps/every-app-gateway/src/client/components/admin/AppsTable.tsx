@@ -15,7 +15,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
-import { appEmail } from "@/client/lib/appEmail";
 import {
   AppStatusLabel,
   MCP_APP_KIND_LABEL,
@@ -25,7 +24,8 @@ import {
 } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
-import { integrationLabel } from "./integrationLabel";
+import { CountCell } from "./CountCell";
+import { deployedBy } from "./deployedBy";
 import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 
 // The search box only shows once the catalog is long enough to need it.
@@ -58,7 +58,6 @@ function AppNameCell({
   app: AppWithAccessCount;
   onUseMcp: (app: AppWithAccessCount) => void;
 }) {
-  const email = appEmail(app);
   const mcp = isMcpApp(app);
   return (
     <>
@@ -100,32 +99,51 @@ function AppNameCell({
             ? ` · agents call ${app.appId}_<tool>`
             : null}
       </p>
+      {/* Who deployed it, in plain words; its mail addresses and
+          integrations are the Edit app dialog's, in full. */}
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">
           {/* An MCP app has no deploy: the operator turned it on. */}
-          {mcp ? "Turned on by" : "Deployed by"} {app.deployedByActor}
-        </p>
-      ) : null}
-      {email.senders.length || email.inbound.length ? (
-        <p className="truncate text-xs text-muted-foreground">
-          {[
-            email.senders.length
-              ? `Sends as ${email.senders.join(", ")}`
-              : null,
-            email.inbound.length
-              ? `Receives ${email.inbound.join(", ")}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      ) : null}
-      {app.capabilities.length ? (
-        <p className="truncate text-xs text-muted-foreground">
-          Integrations: {app.capabilities.map(integrationLabel).join(" · ")}
+          {mcp
+            ? `Turned on by ${app.deployedByActor}`
+            : deployedBy(app.deployedByActor)}
         </p>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The grants are what the gateway checks, so the count is the truth;
+ * "Available to everyone" is an auto-grant to each member as they join,
+ * said under it. Nobody is granted a shared app: every organization has it.
+ */
+function WhoCanOpenCell({
+  app,
+  onManageAccess,
+}: {
+  app: AppWithAccessCount;
+  onManageAccess: (app: AppWithAccessCount) => void;
+}) {
+  if (app.scope === "shared") {
+    return (
+      <span className="text-sm text-muted-foreground">Every organization</span>
+    );
+  }
+  return (
+    <div className="flex flex-col items-start">
+      <CountCell
+        count={app.accessCount}
+        noun="user"
+        aria-label={`Manage access to ${app.name}`}
+        onClick={() => onManageAccess(app)}
+      />
+      {app.isDefault ? (
+        <span className="text-xs text-muted-foreground">
+          + everyone who joins
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -176,39 +194,14 @@ function buildColumns({
       },
     },
     {
-      id: "availableTo",
-      accessorFn: (app) => app.isDefault,
-      header: "Available to",
-      enableSorting: false,
-      cell: ({ row }) =>
-        row.original.scope === "shared" ? (
-          <Badge variant="info">Every organization</Badge>
-        ) : row.original.isDefault ? (
-          <Badge variant="success">Everyone</Badge>
-        ) : (
-          <Badge variant="secondary">Selected people</Badge>
-        ),
-    },
-    {
-      accessorKey: "accessCount",
-      header: ({ column }) => <SortableHeader column={column} label="Access" />,
-      cell: ({ row }) => {
-        // Nobody is granted a shared app; there is no access to manage.
-        if (row.original.scope === "shared") {
-          return <span className="text-sm text-muted-foreground">—</span>;
-        }
-        const count = row.original.accessCount;
-        return (
-          <Button
-            variant="ghost"
-            size="xs"
-            className="-ml-2 tabular-nums"
-            onClick={() => onManageAccess(row.original)}
-          >
-            {count} {count === 1 ? "user" : "users"}
-          </Button>
-        );
-      },
+      id: "whoCanOpen",
+      accessorFn: (app) => app.accessCount,
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Who can open" />
+      ),
+      cell: ({ row }) => (
+        <WhoCanOpenCell app={row.original} onManageAccess={onManageAccess} />
+      ),
     },
     {
       accessorKey: "updatedAt",

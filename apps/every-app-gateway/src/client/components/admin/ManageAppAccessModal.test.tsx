@@ -57,7 +57,7 @@ function user(
 let root: Root;
 let container: HTMLElement;
 
-async function render(users: UserAccessState[]) {
+async function render(users: UserAccessState[], app: AppWithAccessCount = APP) {
   mocks.users = users;
   await act(async () =>
     root.render(
@@ -66,7 +66,7 @@ async function render(users: UserAccessState[]) {
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <ManageAppAccessModal app={APP} onClose={() => undefined} />
+        <ManageAppAccessModal app={app} onClose={() => undefined} />
       </QueryClientProvider>,
     ),
   );
@@ -208,5 +208,34 @@ describe("a user granted directly and through a group", () => {
     expect(document.body.textContent).not.toContain("losing access");
     expect(footer()).toBe("2 of 3 users will have access (1 through groups)");
     expect(await save()).toEqual(["admin"]);
+  });
+});
+
+describe("an app available to everyone", () => {
+  const LINE =
+    "Available to everyone: people who join later get access too. Unchecking someone here takes theirs away.";
+
+  it("says the flag is an auto-grant, and unchecking still revokes", async () => {
+    await render(
+      [user("admin", { hasAccess: true }), user("alice", { hasAccess: true })],
+      { ...APP, isDefault: true },
+    );
+    // The dialog's description, so it is announced on open.
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const description = document.getElementById(
+      dialog.getAttribute("aria-describedby") ?? "",
+    );
+    expect(description?.textContent).toBe(LINE);
+
+    // The grants stay the truth: the flag bypasses nothing.
+    await press(checkboxInput("Alice"));
+    expect(row("Alice").textContent).toContain("Revoking");
+    expect(footer()).toBe("1 of 2 users will have access");
+    expect(await save()).toEqual(["admin"]);
+  });
+
+  it("says nothing of the flag when it is off", async () => {
+    await render([user("admin", { hasAccess: true })]);
+    expect(document.body.textContent).not.toContain("Available to everyone");
   });
 });

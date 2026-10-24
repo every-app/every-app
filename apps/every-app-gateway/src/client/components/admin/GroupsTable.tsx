@@ -38,7 +38,7 @@ function MembersCell({ group }: { group: AdminGroup }) {
     <CountCell
       count={group.memberCount}
       noun="member"
-      aria-label={`${group.memberCount} ${group.memberCount === 1 ? "member" : "members"} of ${group.name}`}
+      aria-label={`Manage members of ${group.name}`}
       onClick={() => onManageMembers(group)}
     />
   );
@@ -50,7 +50,7 @@ function AppsCell({ group }: { group: AdminGroup }) {
     <CountCell
       count={group.appCount}
       noun="app"
-      aria-label={`${group.appCount} ${group.appCount === 1 ? "app" : "apps"} for ${group.name}`}
+      aria-label={`Manage apps for ${group.name}`}
       onClick={() => onManageApps(group)}
     />
   );

@@ -11,6 +11,7 @@ import { Checkbox } from "@/client/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -244,6 +245,14 @@ export function ManageAppAccessModal({
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage access to {app.name}</DialogTitle>
+          {/* The flag is an auto-grant at join; the grants below stay the
+              truth. The dialog's description, so it is read on open. */}
+          {app.isDefault ? (
+            <DialogDescription>
+              Available to everyone: people who join later get access too.
+              Unchecking someone here takes theirs away.
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
 
         {/* Search and bulk actions */}

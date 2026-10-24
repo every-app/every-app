@@ -13,12 +13,14 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { Separator } from "@/client/components/ui/separator";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { getServerErrorMessage } from "@/client/errors";
 import { appEmail } from "@/client/lib/appEmail";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
 import type { AppWithAccessCount } from "@/types/app";
 import { CapabilitySentence } from "./CapabilitySentence";
+import { deployedBy } from "./deployedBy";
 
 interface EditAppModalProps {
   app: AppWithAccessCount;
@@ -94,6 +96,12 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                 Served at <span className="font-mono">{app.hostname}</span>
               </p>
             ) : null}
+            {/* A provider app has no deploy: the Apps table says who turned it on. */}
+            {app.tier !== PROVIDER_APP_TIER && app.deployedByActor ? (
+              <p className="text-sm text-muted-foreground">
+                {deployedBy(app.deployedByActor)}
+              </p>
+            ) : null}
             {email.sends || email.receives ? (
               <p className="text-sm text-muted-foreground">
                 Mail:{" "}
@@ -146,7 +154,7 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                   {(field) => (
                     <field.SwitchField
                       label="Available to everyone"
-                      description="Turning this off keeps the people who already have access."
+                      description="Grants every current member, and everyone who joins later. Turning it off keeps the people who already have access."
                     />
                   )}
                 </form.AppField>
