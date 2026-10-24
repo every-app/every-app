@@ -314,10 +314,19 @@ describe("DockerSandbox", () => {
       "/tmp/launch.bundle",
       "/loop/launch.bundle",
     );
-    expect(calls.at(-1)?.args).toEqual([
-      "cp",
-      "/tmp/launch.bundle",
-      "loop-run1:/loop/launch.bundle",
+    // The copy, then the file handed to the sandbox's user (docker cp leaves it root's, mode 600).
+    expect(calls.slice(-2).map((call) => call.args)).toEqual([
+      ["cp", "/tmp/launch.bundle", "loop-run1:/loop/launch.bundle"],
+      [
+        "exec",
+        "-u",
+        "root",
+        "loop-run1",
+        "chown",
+        "-R",
+        "dev:dev",
+        "/loop/launch.bundle",
+      ],
     ]);
     await docker.sandbox.copyOut(handle, "/loop", "/tmp/run/loop");
     expect(calls.at(-1)?.args).toEqual([

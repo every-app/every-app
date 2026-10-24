@@ -42,11 +42,40 @@ describe("cf", () => {
   it("sends the bearer token and parses the envelope", async () => {
     const { cf, calls } = api(okRoutes());
     expect(await cf.verifyToken()).toEqual({ id: "tok", status: "active" });
-    expect(calls[0]).toEqual({
-      method: "GET",
-      path: "/user/tokens/verify",
-      body: undefined,
+    // An account-owned token is tried first; a user token falls back to /user/tokens/verify.
+    expect(calls.slice(0, 2)).toEqual([
+      { method: "GET", path: `/accounts/${ID}/tokens/verify`, body: undefined },
+      { method: "GET", path: "/user/tokens/verify", body: undefined },
+    ]);
+  });
+
+  it("verifies an account-owned token at the account endpoint, where the user endpoint refuses it", async () => {
+    const { cf, calls } = api([
+      {
+        method: "GET",
+        path: new RegExp(`^/accounts/${ID}/tokens/verify$`),
+        reply: () => ({ result: { id: "acct-tok", status: "active" } }),
+      },
+      {
+        method: "GET",
+        path: /^\/user\/tokens\/verify$/,
+        reply: () => ({
+          status: 401,
+          errors: [{ code: 1000, message: "Invalid API Token" }],
+        }),
+      },
+      ...okRoutes().filter(
+        (route) => !/tokens\/verify/.test(String(route.path)),
+      ),
+    ]);
+    expect(await cf.verifyToken()).toEqual({
+      id: "acct-tok",
+      status: "active",
     });
+    expect(calls.map((call) => call.path)).toEqual([
+      `/accounts/${ID}/tokens/verify`,
+    ]);
+    expect(await tokenGate(cf, ID)).toMatchObject({ ok: true });
   });
 
   it("walks every page of a list", async () => {

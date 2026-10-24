@@ -10,6 +10,7 @@ import {
   readLastTeardownAt,
   recordTeardown,
   TEARDOWN_GAP_MS,
+  affectsDns,
   teardownGapRemainingMs,
 } from "./lock";
 
@@ -118,5 +119,27 @@ describe("lock", () => {
     );
     expect(teardownGapRemainingMs(at, then + TEARDOWN_GAP_MS)).toBe(0);
     expect(teardownGapRemainingMs("garbage", then)).toBe(0);
+  });
+});
+
+describe("affectsDns", () => {
+  it("is true for anything with a name in DNS, false for the kinds that touch none", () => {
+    expect(affectsDns(['Worker "every-app-gateway"'])).toBe(true);
+    expect(affectsDns(["certificate pack abc for apps.example.com"])).toBe(
+      true,
+    );
+    expect(affectsDns(["DNS record A apps.example.com"])).toBe(true);
+    expect(affectsDns(["Email Routing change: rule deleted"])).toBe(true);
+    expect(
+      affectsDns([
+        'KV namespace "every-loop-run-2026"',
+        'D1 database "every-app-gateway"',
+        'R2 bucket "every-x"',
+        'Hyperdrive config "every-x--DB"',
+        'Workflow "every-x--w"',
+        'Access application "Every App gateway"',
+      ]),
+    ).toBe(false);
+    expect(affectsDns([])).toBe(false);
   });
 });

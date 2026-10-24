@@ -22,7 +22,7 @@ import {
   resolveDockerBinary,
   type Docker,
 } from "./docker";
-import { recordTeardown } from "./lock";
+import { affectsDns, recordTeardown } from "./lock";
 import { createRedactor, type Redactor } from "./redact";
 import { DOCKERFILE, PACKAGE_DIR, REPO_ROOT } from "./run";
 import { spawnProcess } from "./spawn";
@@ -161,11 +161,12 @@ export async function teardownMain(
       log(
         `removed ${result.removed.length}, kept ${result.kept.length}, ${result.polls} poll(s); after: ${result.after.total}`,
       );
-      recordTeardown(
-        locksDir(dir),
-        account.accountId,
-        new Date().toISOString(),
-      );
+      if (affectsDns(result.removed))
+        recordTeardown(
+          locksDir(dir),
+          account.accountId,
+          new Date().toISOString(),
+        );
     }
     for (const line of result.skipped) log(`skipped ${line}`);
     log(

@@ -170,6 +170,19 @@ export function readLastTeardownAt(
   }
 }
 
+/**
+ * Whether a wipe could have left negative DNS caches behind: it removed a
+ * Worker (its Custom Domains with it), a certificate pack, a DNS record or
+ * an Email Routing change. KV, D1, R2, Hyperdrive, Workflows and Access
+ * items touch no name, so a wipe of those alone (the loop's own run marker,
+ * say) needs no 30-minute gap.
+ */
+const DNS_NEUTRAL =
+  /^(KV namespace|D1 database|R2 bucket|Hyperdrive config|Workflow|Access )/;
+export function affectsDns(removed: readonly string[]): boolean {
+  return removed.some((item) => !DNS_NEUTRAL.test(item));
+}
+
 export function recordTeardown(
   locksDir: string,
   accountId: string,

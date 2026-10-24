@@ -438,12 +438,29 @@ class DockerSandbox implements Sandbox {
     return { id, name: spec.name };
   }
 
+  /**
+   * `docker cp` keeps the host file's mode and makes root the owner, so a
+   * 600 file from the driver's temp dir is unreadable by the sandbox's user
+   * (seen live: "bash: /loop/script.sh: Permission denied"). Hand it to that
+   * user afterwards.
+   */
   async copyIn(
     handle: SandboxHandle,
     hostPath: string,
     sandboxPath: string,
   ): Promise<void> {
     await this.dockerCapture(["cp", hostPath, `${handle.name}:${sandboxPath}`]);
+    const user = this.specs.get(handle.name)?.user ?? "dev";
+    await this.dockerCapture([
+      "exec",
+      "-u",
+      "root",
+      handle.name,
+      "chown",
+      "-R",
+      `${user}:${user}`,
+      sandboxPath,
+    ]);
   }
 
   /**

@@ -35,7 +35,7 @@ Whether a fresh account's first Worker upload needs a `workers.dev` name is unve
 
 ## 5. Create the API token (5 minutes)
 
-My Profile → API Tokens → **Create Token** → Custom token → "Get started".
+Prefer an **account-owned token**, which belongs to the account and to no person: in the test account, Manage Account → **Account API Tokens** → **Create Token** → Custom token → "Get started" (its value starts with `cfat_`; the loop and `cf` verify it at the account endpoint). A user token from My Profile → API Tokens works too, with the same permissions.
 
 Permissions (the least that lets `setup`, `create` then `deploy`, `access on`, `email set` and the teardown run; derived from the cf commands the CLI calls):
 

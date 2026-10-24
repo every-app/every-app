@@ -96,7 +96,12 @@ export class CfApiError extends Error {
 
 export interface CfApi {
   accountId: string;
-  /** GET /user/tokens/verify: the token's own status ("active"). */
+  /**
+   * The token's own status ("active"): GET /accounts/{id}/tokens/verify for
+   * an account-owned token (the `cfat_` kind, which belongs to no person and
+   * is what the runbook asks for), then GET /user/tokens/verify when the
+   * account endpoint answers 4xx (a user-owned token).
+   */
   verifyToken(): Promise<{ id: string; status: string }>;
   /** GET /accounts: every account the token sees. */
   listAccounts(): Promise<Array<{ id: string; name: string | null }>>;
@@ -196,7 +201,14 @@ export function createCfApi(options: CfApiOptions): CfApi {
 
   return {
     accountId: options.accountId,
-    verifyToken: () => call("GET", "/user/tokens/verify", TokenVerify),
+    verifyToken: async () => {
+      try {
+        return await call("GET", `${account}/tokens/verify`, TokenVerify);
+      } catch (error) {
+        if (!(error instanceof CfApiError) || error.status >= 500) throw error;
+        return call("GET", "/user/tokens/verify", TokenVerify);
+      }
+    },
     listAccounts: async () =>
       (await paged("/accounts", AccountRow)).map((row) => ({
         id: row.id,

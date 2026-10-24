@@ -48,7 +48,7 @@ import {
 import { commandLineString } from "./harnesses/shared";
 import { scriptFor, SCRIPT_PATH } from "./harnesses/script";
 import { createHttpFetch } from "./httpFetch";
-import { recordTeardown } from "./lock";
+import { affectsDns, recordTeardown } from "./lock";
 import { appFrom, everyappCommandsFrom } from "./parse/eventLog";
 import { formatChecks, runPreflight, type PreflightResult } from "./preflight";
 import { promptSha256, promptText, type PromptVariant } from "./prompt";
@@ -1244,7 +1244,7 @@ class RunState {
       file,
       `${JSON.stringify({ before: result.before, after: result.after, removed: result.removed, kept: result.kept, dnsLeftovers: result.dnsLeftovers, skipped: result.skipped }, null, 2)}\n`,
     );
-    if (result.removed.length > 0)
+    if (affectsDns(result.removed))
       recordTeardown(
         locksDir(this.deps.configDir),
         account.accountId,
