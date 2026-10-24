@@ -33,3 +33,10 @@ export {
   type RegistrationInput,
   type RegistrationPlan,
 } from "./registration";
+export {
+  planProviderAppOn,
+  providerAppId,
+  providerAppOffUpdate,
+  type ProviderAppInput,
+  type ProviderAppPlan,
+} from "./providerApps";

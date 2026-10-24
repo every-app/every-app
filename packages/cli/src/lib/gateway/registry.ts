@@ -48,7 +48,7 @@ import { CLI, thisCommandWithout } from "@/lib/output/command";
 
 type D1Row = Record<string, unknown>;
 
-interface Organization {
+export interface Organization {
   id: string;
   name: string;
   slug: string;
@@ -88,7 +88,7 @@ function asEveryAppError(error: unknown): unknown {
   return error;
 }
 
-async function registryCall<T>(call: () => Promise<T>): Promise<T> {
+export async function registryCall<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call();
   } catch (error) {
@@ -96,23 +96,23 @@ async function registryCall<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
-const APP_COLUMNS =
+export const APP_COLUMNS =
   "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound, secret_names";
 
-const text = (value: unknown): string | null =>
+export const text = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
 
 /**
  * An `apps` row with its email configuration columns and the app Worker's
  * recorded secret names (each a JSON string[] or null).
  */
-type StoredAppRow = AppRow & {
+export type StoredAppRow = AppRow & {
   emailSenders: string | null;
   emailInbound: string | null;
   secretNames: string | null;
 };
 
-function toAppRow(row: D1Row): StoredAppRow {
+export function toAppRow(row: D1Row): StoredAppRow {
   return {
     id: String(row["id"]),
     organizationId: String(row["organization_id"]),
@@ -205,7 +205,7 @@ function slugify(name: string): string {
  * claim to adopt. Only ever the first organization: two deploys racing to
  * create it make one.
  */
-async function ensureInstallOrganization(
+export async function ensureInstallOrganization(
   db: D1Database,
   name: string,
   now: number,
@@ -399,7 +399,7 @@ async function registerApp(
 }
 
 /** An organization's members, then the user with the deployer's verified email. */
-function memberQueries(organizationId: string, email: string | null): D1Statement[] {
+export function memberQueries(organizationId: string, email: string | null): D1Statement[] {
   return [
     {
       sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
@@ -412,7 +412,7 @@ function memberQueries(organizationId: string, email: string | null): D1Statemen
   ];
 }
 
-function toMembers(rows: D1Row[]): Array<{ id: string; role: string | null }> {
+export function toMembers(rows: D1Row[]): Array<{ id: string; role: string | null }> {
   return rows.map((member) => ({ id: String(member["user_id"]), role: text(member["role"]) }));
 }
 
@@ -528,7 +528,7 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
  * cap). The same writes as the gateway's own delete
  * (AppRepository.tombstone).
  */
-function withoutAppData(
+export function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
   now: number,
 ): D1Statement[] {

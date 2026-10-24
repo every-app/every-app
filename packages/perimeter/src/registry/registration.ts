@@ -19,6 +19,7 @@
  * ever the install organization's, the platform organization there, and
  * keeps its scope for good.
  */
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { AppScope, Tier } from "./apps";
 import {
   bucketNameFor,
@@ -100,7 +101,8 @@ export type RegistrationErrorCode =
   | "APP_NOT_REGISTERED"
   | "SHARED_APP_NOT_PLATFORM"
   | "APP_SCOPE_MISMATCH"
-  | "APP_TIER_MISMATCH";
+  | "APP_TIER_MISMATCH"
+  | "PROVIDER_APP_UNKNOWN";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {
@@ -495,9 +497,11 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
       status: 409,
       code: "APP_TIER_MISMATCH",
       message:
-        existingApp.tier === "dispatch"
-          ? `App "${input.appSlug}" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.`
-          : `App "${input.appSlug}" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.`,
+        existingApp.tier === PROVIDER_APP_TIER
+          ? `"${input.appSlug}" is the Gateway's provider app of that name${existingApp.status === DELETED_APP_STATUS ? " (turned off)" : ""}; give this app an id of its own.`
+          : existingApp.tier === "dispatch"
+            ? `App "${input.appSlug}" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.`
+            : `App "${input.appSlug}" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.`,
     });
   }
   // Reserved and malformed ids first, as appNames would refuse them.

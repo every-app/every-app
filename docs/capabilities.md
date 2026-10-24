@@ -736,6 +736,22 @@ In local dev (`everyapp dev`, no binding) there is no directory:
 `listMembers()` answers the request's signed-in user alone, and no one for
 background work.
 
+## Provider apps
+
+A provider app offers an `api_key` provider's data to members' AI clients
+directly, as an app of the gateway's own with nothing to deploy: the
+operator turns it on (`pnpm everyapp provider on dataforseo`) and sets the
+key as for any capability; the gateway serves a curated set of the
+provider's tools on its `/mcp` under `<id>_<tool>` names. The registry is
+`PROVIDER_APPS` in `packages/sdk/src/internal/providerApps.ts`; the row is
+an `apps` row on tier `provider` with no hostname or Worker, whose generated
+manifest lists the capability with `access: "read"`, so the key's need shows
+wherever an app's settings do. Each tool call goes through the same checks
+as an app's capability call (the provider's hosts, the account-wide paths,
+the key, the cost tap) and is counted and audited against the provider row.
+The agent docs page is
+[/docs/agent/mcp](https://everyapp.com/docs/agent/mcp) ("Provider apps").
+
 ## Limits today
 
 - One key, client or gateway sender per capability, shared by every app and

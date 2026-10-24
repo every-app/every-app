@@ -52,6 +52,7 @@ RUN A GATEWAY
   delete    Remove an app from the Gateway
   access    Put Cloudflare Access in front of the Gateway and its apps, or take it off
   secret    Set, remove and list secrets and Gateway settings
+  provider  Offer a data provider (DataForSEO) to members' AI clients as an app, with the Gateway's key
   email     Manage the addresses an app sends as and receives at
   teardown  Delete everything Every App created in a dedicated test Cloudflare account
 
@@ -1035,6 +1036,126 @@ FLAGS
 
 ARGUMENTS
   [app]  An app id (default: the app in this directory; elsewhere, every app)
+```
+
+### `everyapp provider on`
+
+Turn a provider app on: its tools reach members' AI clients through the Gateway's /mcp.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The provider app (provider list names them): dataforseo |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider on [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp provider on --help
+
+A provider app is a data provider (DataForSEO) offered as an app of the Gateway's own,
+with nothing to deploy: the Gateway serves the provider's tools on its /mcp under
+<id>_<tool> names, with its own key, and counts and audits every call like an app's.
+It appears in Admin → Apps and the app library like any app; you, the owners and the
+admins get it at once, and an admin grants other members with Manage access.
+
+The provider's key is a Gateway setting the tools need (provider list names it):
+  pnpm everyapp secret set DATAFORSEO_API_KEY
+
+Safe to repeat: an app that is on stays on, with its access.
+
+Examples:
+  pnpm everyapp provider on dataforseo
+  pnpm everyapp provider on dataforseo --json
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The provider app (provider list names them): dataforseo
+```
+
+### `everyapp provider off`
+
+Turn a provider app off: it leaves /mcp and the app library, and everyone's access to it goes.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The provider app (provider list names them): dataforseo |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider off [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp provider off --help
+
+Like deleting an app: the Gateway stops serving the provider's tools within 30 seconds, and
+everyone's access to it, the personal tokens bound to it and its place in AI connections go
+with it. The Gateway setting holding the provider's key stays; unset it with
+pnpm everyapp secret unset <NAME> if nothing else needs it. Turning it on again starts fresh.
+
+Example:
+  pnpm everyapp provider off dataforseo
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The provider app (provider list names them): dataforseo
+```
+
+### `everyapp provider list`
+
+List the provider apps the Gateway offers: which are on, and whether each one's key is set.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider list [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp provider list --help
+
+Nothing is changed. The key's value can't be read back; only whether it is set.
+
+Example:
+  pnpm everyapp provider list
+
+ALIASES
+  pnpm everyapp provider ls
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp email show`

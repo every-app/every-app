@@ -25,6 +25,7 @@ import { devCommand } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
 import { installCommand } from "./commands/install/command";
 import { loginCommand } from "./commands/login/command";
+import { providerRoutes } from "./commands/provider/command";
 import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
@@ -50,6 +51,7 @@ const routes = buildRouteMap({
     delete: deleteCommand,
     access: accessRoutes,
     secret: secretRoutes,
+    provider: providerRoutes,
     email: emailRoutes,
   },
   docs: {
@@ -86,7 +88,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
   [
     "RUN A GATEWAY",
-    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "email", "teardown"],
+    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "provider", "email", "teardown"],
   ],
 ];
 
@@ -100,6 +102,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   ],
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
+  provider: ["provider list", "provider on dataforseo", "provider off dataforseo"],
   db: ["db migrate", "db query 'select count(*) from todos'"],
 };
 
