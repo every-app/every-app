@@ -29,7 +29,8 @@ describe("the setup prompt", () => {
     );
     expect(prompt).toContain("Setup can run 20 minutes");
     expect(prompt).toContain('"type":"action_required"');
-    expect(prompt).toContain("run the same command again, with --json");
+    expect(prompt).toContain("run its data.rerun exactly as given");
+    expect(prompt).toContain("data.needsTerminal");
     expect(prompt).toContain("print DONE and the Gateway URL");
     expect(prompt).toContain("BLOCKED: <why>");
     expect(prompt).not.toMatch(
