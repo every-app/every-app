@@ -8,6 +8,7 @@
  * on its own host (`appSurfaceView`); every app the caller reaches, plus the
  * built-in `everyapp_*` tools, on the gateway (`gatewaySurfaceView`).
  */
+export { BUILTIN_APP_ID, listBuiltinTools } from "./builtins";
 export {
   CATALOG_LIMITS,
   fetchAppCatalog,

@@ -31,6 +31,7 @@ import {
   DEV_ENV,
   DEV_ISSUER,
 } from "@every-app/sdk/internal";
+import { listBuiltinTools } from "@every-app/toolbus";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
 import { manifestFields } from "./manifestFields";
@@ -59,6 +60,13 @@ function mirrored(): Map<string, string> {
 }
 
 const HOW = "Document it on the page (see the brief at the top of the page), or run `pnpm -C packages/cli docs:update` for a generated page.";
+
+/**
+ * The Gateway connector's built-in tools (`everyapp_whoami`, …) from the code
+ * that lists them, so a new built-in fails here until the docs name it.
+ */
+const BUILTIN_TOOLS = listBuiltinTools().map((tool) => tool.name);
+const BUILTINS_WHAT = "the built-in tools of the Gateway connector (listBuiltinTools in packages/toolbus/src/builtins.ts)";
 
 /** The identifiers of `expected` that `page` doesn't have in backticks. */
 function missingFrom(page: string, expected: Iterable<string>): string[] {
@@ -329,8 +337,9 @@ describe("the command pages", () => {
     expectDocumented("setup", "the flags of everyapp setup, login, create and update", flagsOf("setup", "login", "create", "update"));
     expectDocumented("setup", "the credentials", ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "EVERYAPP_GATEWAY_URL"]);
   });
-  it("mcp.md documents the MCP settings and the SDK's tool API", () => {
-    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "everyapp_whoami", "everyapp_list_apps", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ"]);
+  it("mcp.md documents the MCP settings, the SDK's tool API and every built-in tool", () => {
+    expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ"]);
+    expectDocumented("mcp", BUILTINS_WHAT, BUILTIN_TOOLS);
   });
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));
@@ -355,5 +364,30 @@ describe("the everyapp skill", () => {
     const skill = readPage("../../../packages/cli/skills/everyapp/SKILL");
     expect(skill).toContain("https://everyapp.com/llms.txt");
     expect(skill).toContain("/docs/agent/");
+  });
+
+  it("mcp.md names every built-in tool", () => {
+    const missing = missingFrom(readPage("../../../packages/cli/skills/everyapp/mcp"), BUILTIN_TOOLS);
+    expect(
+      missing,
+      `packages/cli/skills/everyapp/mcp.md doesn't name ${BUILTINS_WHAT}: ${missing.join(", ")}. Add each, in backticks, to the "Built-ins" line under "What the Gateway does with them".`,
+    ).toEqual([]);
+  });
+});
+
+describe("the threat model's invariant register", () => {
+  it("names every built-in tool in toolbus.builtins-readonly-reserved", () => {
+    const id = "toolbus.builtins-readonly-reserved";
+    const register = readFileSync(
+      fileURLToPath(new URL("../../../../docs/threat-model-invariants.md", import.meta.url)),
+      "utf8",
+    );
+    const row = register.split("\n").find((line) => line.startsWith(`| ${id} |`));
+    expect(row, `docs/threat-model-invariants.md has no row ${id}`).toBeDefined();
+    const missing = BUILTIN_TOOLS.filter((name) => !row!.includes(name));
+    expect(
+      missing,
+      `the row ${id} in docs/threat-model-invariants.md doesn't name ${BUILTINS_WHAT}: ${missing.join(", ")}. Name each in the row's invariant text (the second column).`,
+    ).toEqual([]);
   });
 });

@@ -16,7 +16,9 @@ export function createArgumentsDigester(
   context: string,
 ): (args: unknown) => Promise<string> {
   const encoder = new TextEncoder();
-  let key: Promise<CryptoKey> | undefined;
+  // Typed off the global so the CLI, compiled with Node's types alone and
+  // no CryptoKey global, can import this package too.
+  let key: ReturnType<typeof crypto.subtle.importKey> | undefined;
   return async (args) => {
     key ??= crypto.subtle.importKey(
       "raw",
