@@ -1022,7 +1022,11 @@ class RunState {
       PROMPT_PATH,
     );
     if (adapter.name === "script") {
-      const script = scriptFor({ zone: account.zone, loopDir: LOOP_DIR });
+      const script = scriptFor({
+        zone: account.zone,
+        loopDir: LOOP_DIR,
+        team: this.options.withAccess ? subdomainFor(account.name) : null,
+      });
       await sandbox.copyIn(
         handle,
         this.tempFile("script.sh", script),

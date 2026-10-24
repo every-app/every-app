@@ -468,6 +468,23 @@ describe("script control", () => {
   it("refuses a zone that is not a hostname", () => {
     expect(() => scriptFor({ zone: "a b; rm -rf /" })).toThrow(/zone/);
     expect(() => scriptFor({})).toThrow(/zone/);
+    // --with-access: the step runs access on with the team named, before DONE; absent otherwise.
+    const withAccess = scriptFor({
+      zone: "everyapp-loop1.com",
+      team: "everyapp-loop1",
+    });
+    expect(withAccess).toContain(
+      "pnpm everyapp access on --team everyapp-loop1 --json",
+    );
+    expect(withAccess.indexOf("access on")).toBeLessThan(
+      withAccess.indexOf('echo "DONE'),
+    );
+    expect(scriptFor({ zone: "everyapp-loop1.com" })).not.toContain(
+      "access on",
+    );
+    expect(() =>
+      scriptFor({ zone: "everyapp-loop1.com", team: "bad team;" }),
+    ).toThrow(/team/);
   });
   it("turns its markers into tool events, passes CLI NDJSON through, ends on DONE", () => {
     const adapter = createScriptAdapter();

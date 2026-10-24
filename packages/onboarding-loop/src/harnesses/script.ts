@@ -81,12 +81,21 @@ echo "LOOP_EXIT $code"
 
 APP_URL=$(field "$(last_event "$LOOP/deploy.ndjson" done)" data.url)
 echo "App URL: $APP_URL"
-echo "DONE $GATEWAY_URL"
+{{ACCESS}}echo "DONE $GATEWAY_URL"
 `;
 
-/** The script with the zone and loop directory filled in; written to /loop/script.sh by the driver. */
+/** The `--with-access` step: Access in front, the team named so no hand-off is needed (the control cannot be resumed). */
+const ACCESS_STEP = `cd /work/every-app
+echo "LOOP_CMD pnpm everyapp access on --team {{TEAM}} --json"
+pnpm everyapp access on --team {{TEAM}} --json | tee -a "$LOOP/access.ndjson"
+code=\${PIPESTATUS[0]}
+echo "LOOP_EXIT $code"
+[ "$code" -eq 0 ] || { echo "BLOCKED: access on exited $code"; exit 1; }
+`;
+
+/** The script with the zone and loop directory filled in (and the Access step with its team under --with-access); written to /loop/script.sh by the driver. */
 export function scriptFor(
-  launch: Pick<HarnessLaunch, "zone" | "loopDir">,
+  launch: Pick<HarnessLaunch, "zone" | "loopDir"> & { team?: string | null },
 ): string {
   const zone = launch.zone;
   if (!zone || !/^[a-z0-9.-]+$/i.test(zone)) {
@@ -97,10 +106,17 @@ export function scriptFor(
   const loopDir = launch.loopDir ?? "/loop";
   if (!/^\/[A-Za-z0-9_./-]*$/.test(loopDir))
     throw new Error("loopDir must be an absolute plain path");
-  return SCRIPT_TEMPLATE.replaceAll("{{ZONE}}", zone).replaceAll(
-    "{{LOOP}}",
-    loopDir,
-  );
+  const team = launch.team ?? null;
+  if (team !== null && !/^[a-z0-9-]+$/.test(team))
+    throw new Error(
+      "the Access team name must be lowercase letters, digits and dashes",
+    );
+  return SCRIPT_TEMPLATE.replaceAll("{{ZONE}}", zone)
+    .replaceAll("{{LOOP}}", loopDir)
+    .replace(
+      "{{ACCESS}}",
+      team ? ACCESS_STEP.replaceAll("{{TEAM}}", team) : "",
+    );
 }
 
 export function createScriptAdapter(): HarnessAdapter {
