@@ -22,7 +22,7 @@ import {
   resolveDockerBinary,
   type Docker,
 } from "./docker";
-import { affectsDns, recordTeardown } from "./lock";
+import { affectsDns, knownLocks, recordTeardown } from "./lock";
 import { createRedactor, type Redactor } from "./redact";
 import { DOCKERFILE, PACKAGE_DIR, REPO_ROOT } from "./run";
 import { spawnProcess } from "./spawn";
@@ -141,6 +141,9 @@ export async function teardownMain(
           cf,
           dryRunOnly,
           force: args.flags["force"] === true,
+          // A marker whose run's lock died here is a dead driver's: wiped without --force. One with
+          // no lock here at all may be another machine's run: refused for 2 hours.
+          locks: knownLocks(locksDir(dir)),
           confirm: async () => {
             const fromFile = readConfirmFile(
               confirmPath(dir, account.accountId),

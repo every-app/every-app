@@ -79,6 +79,15 @@ export interface VerifyContext {
   wildcardAppsRecord?: boolean;
   /** `git status --porcelain --untracked-files=all -- <roots>` in the harness's checkout, when it could be run: the precise taint source (T1). */
   gitStatus?: string[] | null;
+  /**
+   * The event log showed a Gateway upload (`setup.gateway` ok or skip, or a
+   * `gateway.deploy` step). False: nothing can answer at the origin, so G1
+   * probes once instead of waiting its window, and a run whose `setup` died
+   * in the build ends in a minute, not sixteen; should G1 pass anyway (the
+   * log was wrong about it), the rows after it keep their windows. Absent
+   * (no event log to read, or no `setup` in it): the full windows.
+   */
+  gatewayUploaded?: boolean;
 }
 
 export interface VerifyDeps {
@@ -378,18 +387,25 @@ export async function verify(
   };
 
   const origin = ctx.gatewayOrigin;
+  // The event log says nothing was uploaded: G1 is evidence of that, not a wait for it. Only G1:
+  // a G1 that passes refutes the log, and then a fresh app's 503 app_deploying is waited out as ever.
+  const noUpload = ctx.gatewayUploaded === false;
 
   // G1: the sign-in page answers with valid TLS.
-  const g1 = await row("G1", async () => {
-    const e = await probe(deps.fetchImpl, `${origin}/sign-in`);
-    const pass = e.status === 200;
-    return {
-      pass,
-      retry: !pass && retryable(e),
-      evidence: e,
-      note: pass ? undefined : `expected 200, got ${e.status ?? e.error}`,
-    };
-  });
+  const g1 = await row(
+    "G1",
+    async () => {
+      const e = await probe(deps.fetchImpl, `${origin}/sign-in`);
+      const pass = e.status === 200;
+      return {
+        pass,
+        retry: !pass && retryable(e),
+        evidence: e,
+        note: pass ? undefined : `expected 200, got ${e.status ?? e.error}`,
+      };
+    },
+    noUpload ? 0 : windowMs,
+  );
   // Past G1's window with no gateway, the rest is evidence, not a wait: one attempt each.
   const gatewayDown = g1.status !== "pass";
   const laterWindow = gatewayDown ? 0 : Math.min(windowMs, AFTER_G1_WINDOW_MS);

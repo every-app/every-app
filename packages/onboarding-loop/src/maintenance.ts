@@ -22,7 +22,7 @@ import {
 import { assemble, type AssembleInput } from "./assemble";
 import { ownerCredentials, parseEventLogLine } from "./claim";
 import type { Docker } from "./docker";
-import { liveLocks, lockIsLive, type LockInfo } from "./lock";
+import { liveLocks, lockIsLive, rememberDeadRun, type LockInfo } from "./lock";
 import {
   emptyLedger,
   mergeFindings,
@@ -470,8 +470,12 @@ export async function gcMain(deps: {
       if (!name.endsWith(".json") || name.endsWith(".state.json")) continue;
       const file = path.join(locks, name);
       const lock = readJson<LockInfo>(file);
+      const deadRunId = lock?.runId ?? null;
       if (!lockIsLive(lock, deps.now)) {
         fs.rmSync(file, { force: true });
+        // Remembered as dead, so the next wipe reads its marker as stale rather than another machine's.
+        if (deadRunId)
+          rememberDeadRun(locks, name.slice(0, -".json".length), deadRunId);
         deps.log(`removed stale lock ${name}`);
       }
     }

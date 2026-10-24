@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acquireAccountLock,
+  knownLocks,
   liveLocks,
+  rememberDeadRun,
   LOCK_STALE_MS,
   LockHeldError,
   readLastTeardownAt,
@@ -91,6 +93,48 @@ describe("lock", () => {
       /remote/,
     );
     expect(liveLocks(dir, now).map((l) => l.runId)).toEqual(["remote"]);
+  });
+
+  it("knows a live lock from a dead one, and remembers the dead runs a takeover or gc removed", () => {
+    const dir = tempDir();
+    const now = Date.parse("2026-10-25T10:00:00Z");
+    expect(knownLocks(dir, now)).toEqual({ live: [], dead: [] });
+    const crashed = acquireAccountLock(dir, ID, "crashed", { now: now - 1000 });
+    fs.writeFileSync(
+      crashed.file,
+      JSON.stringify({ ...crashed.info, pid: 2 ** 22 - 1 }),
+    );
+    // A dead lock file still in the dir.
+    expect(knownLocks(dir, now)).toEqual({ live: [], dead: ["crashed"] });
+    // Taken over: the file is the new run's, the dead holder stays known through the state file.
+    const next = acquireAccountLock(dir, ID, "next", { now });
+    expect(knownLocks(dir, now)).toEqual({ live: ["next"], dead: ["crashed"] });
+    // The state file keeps lastTeardownAt and the dead list side by side.
+    recordTeardown(dir, ID, "2026-10-25T10:01:00.000Z");
+    rememberDeadRun(dir, ID, "swept-by-gc");
+    rememberDeadRun(dir, ID, "swept-by-gc");
+    expect(readLastTeardownAt(dir, ID)).toBe("2026-10-25T10:01:00.000Z");
+    expect(knownLocks(dir, now)).toEqual({
+      live: ["next"],
+      dead: ["crashed", "swept-by-gc"],
+    });
+    expect(
+      (fs.statSync(path.join(dir, `${ID}.state.json`)).mode & 0o777).toString(
+        8,
+      ),
+    ).toBe("600");
+    next.release();
+    // A lock older than 3 hours is dead too, whoever's host it is.
+    const old = acquireAccountLock(dir, "f".repeat(32), "old", {
+      now: now - LOCK_STALE_MS - 1,
+      host: "another-mac",
+    });
+    expect(knownLocks(dir, now).dead).toEqual([
+      "old",
+      "crashed",
+      "swept-by-gc",
+    ]);
+    old.release();
   });
 
   it("release removes only its own lock", () => {

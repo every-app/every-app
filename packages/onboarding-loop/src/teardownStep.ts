@@ -7,11 +7,18 @@
  * read from the confirm file Ben wrote once, then the dry run again every
  * 20 s for up to 3 minutes until nothing is left, then the zone's DNS must
  * show nothing at or under apps.<zone>. An in-account marker (a KV
- * namespace `every-loop-run-<runId>`) younger than 2 hours means another
- * run is using the account: refused unless forced.
+ * namespace `every-loop-run-<runId>`) means another run may be using the
+ * account. With what lock.ts knows (knownLocks): a run holding a live lock
+ * here is refused unless forced; one whose lock died here (a SIGKILLed
+ * driver, a stale lock gc swept) is stale whatever its age; one with no
+ * lock here at all may be a run on another machine or under another
+ * EVERYAPP_LOOP_HOME, so it is refused while younger than 2 hours. Without
+ * a lock list the age rule decides alone. A stale marker goes with the
+ * rest of the wipe. The run's own marker is never another run's.
  */
 import fs from "node:fs";
 import type { CfApi, DnsRecord } from "./cf";
+import type { KnownLocks } from "./lock";
 import type { Sibling } from "./withTestAccount";
 import type { Account, CliEvent, Plan, PlanItem, PlanKind } from "./types";
 
@@ -49,8 +56,15 @@ interface TeardownStepOptions {
   confirm: () => Promise<string>;
   /** Plan only: nothing is deleted. */
   dryRunOnly?: boolean;
-  /** Ignore a young in-account marker. */
+  /** Ignore another run's marker (`pnpm loop teardown --account <name> --force`). */
   force?: boolean;
+  /**
+   * The runs this machine knows (lock.ts knownLocks): a marker of a live
+   * one blocks, one of a dead one is stale whatever its age, one of a run
+   * in neither list falls back to the 2-hour age rule. Absent, the age
+   * rule decides alone.
+   */
+  locks?: KnownLocks;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;
@@ -209,25 +223,46 @@ export function runIdTime(runId: string): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-/** Markers younger than 2 hours that are not this run's. */
-export function youngMarkers(
+/**
+ * Another run's markers that may still be in use, never this run's own: a
+ * run with a live lock here blocks at any age, one whose lock died here is
+ * stale at any age, one this machine has no lock for (another machine's
+ * run?) blocks while younger than 2 hours.
+ */
+export function blockingMarkers(
   titles: string[],
   runId: string,
   now: number,
+  locks?: KnownLocks,
 ): string[] {
   return titles.filter((title) => {
     if (!title.startsWith(MARKER_PREFIX)) return false;
     const other = title.slice(MARKER_PREFIX.length);
     if (other === runId) return false;
+    if (locks?.live.includes(other)) return true;
+    if (locks?.dead.includes(other)) return false;
     const time = runIdTime(other);
     // A marker whose age can't be read is treated as young: refuse, say so.
     return time === null || now - time < MARKER_FRESH_MS;
   });
 }
 
-/** Puts this run's marker in the account; the run's final teardown removes it (it is an `every-*` KV namespace). */
+/** Puts this run's marker in the account; cleanup removes it (removeRunMarker), and the wipe would too (it is an `every-*` KV namespace). */
 export async function createRunMarker(cf: CfApi, runId: string): Promise<void> {
   await cf.kvNamespaceCreate(markerTitle(runId));
+}
+
+/** Removes this run's own marker, by its exact title; true when one was there. */
+export async function removeRunMarker(
+  cf: CfApi,
+  runId: string,
+): Promise<boolean> {
+  const title = markerTitle(runId);
+  const own = (await cf.kvNamespacesList()).filter(
+    (row) => row.title === title,
+  );
+  for (const row of own) await cf.kvNamespaceDelete(row.id);
+  return own.length > 0;
 }
 
 /** The unattended confirmation: the file's content is `delete everything in <accountId>`. */
@@ -305,12 +340,17 @@ export async function runTeardownStep(
     markers = (await options.cf.kvNamespacesList())
       .map((row) => row.title)
       .filter((t) => t.startsWith(MARKER_PREFIX));
-    const young = youngMarkers(markers, runId, now());
-    if (young.length > 0 && !options.force) {
+    const blocking = blockingMarkers(markers, runId, now(), options.locks);
+    if (blocking.length > 0 && !options.force) {
+      const why = blocking.map((title) =>
+        options.locks?.live.includes(title.slice(MARKER_PREFIX.length))
+          ? `${title} still holds the lock here`
+          : `${title} has no lock on this machine and is younger than 2 hours (a run elsewhere?)`,
+      );
       throw new TeardownStepError(
         "marker_refused",
-        `Another run left a marker younger than 2 hours in the account (${young.join(", ")}); --force to ignore it.`,
-        young,
+        `Another run left its marker in the account: ${why.join("; ")}; if that run is really gone, \`pnpm loop teardown --account ${account.name} --force\` wipes anyway.`,
+        blocking,
       );
     }
   } else {

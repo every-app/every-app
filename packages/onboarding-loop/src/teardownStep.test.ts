@@ -10,10 +10,11 @@ import {
   readConfirmFile,
   createRunMarker,
   recordsUnderGateway,
+  removeRunMarker,
   runIdTime,
   runTeardownStep,
   TeardownStepError,
-  youngMarkers,
+  blockingMarkers,
   markerTitle,
 } from "./teardownStep";
 import type { Account } from "./types";
@@ -274,7 +275,7 @@ describe("teardownStep helpers", () => {
     expect(flattenPlan(null, "t")).toMatchObject({ total: 0, items: [] });
   });
 
-  it("reads a runId's minute and finds young markers that are not this run's", () => {
+  it("reads a runId's minute and finds the markers that block a wipe: live-locked ones, young ones with no lock here, never a dead lock's or this run's", () => {
     expect(runIdTime("2026-10-25T10:30-claude-abc123")).toBe(
       Date.parse("2026-10-25T10:30:00Z"),
     );
@@ -287,10 +288,34 @@ describe("teardownStep helpers", () => {
       markerTitle("weird"),
       "every-app-gateway-OAUTH_KV",
     ];
-    expect(youngMarkers(titles, RUN_ID, now)).toEqual([
+    expect(blockingMarkers(titles, RUN_ID, now)).toEqual([
       "every-loop-run-2026-10-25T11:30-claude-aaa",
       "every-loop-run-weird",
     ]);
+    // With the locks known: a dead lock's marker is stale at 30 minutes, a live lock's blocks at
+    // 3 hours, and one this machine has no lock for (another machine's run?) keeps the age rule.
+    expect(
+      blockingMarkers(titles, RUN_ID, now, {
+        live: [],
+        dead: ["2026-10-25T11:30-claude-aaa", "weird"],
+      }),
+    ).toEqual([]);
+    expect(
+      blockingMarkers(titles, RUN_ID, now, {
+        live: ["2026-10-25T09:00-codex-bbb", RUN_ID],
+        dead: [],
+      }),
+    ).toEqual([
+      "every-loop-run-2026-10-25T11:30-claude-aaa",
+      "every-loop-run-2026-10-25T09:00-codex-bbb",
+      "every-loop-run-weird",
+    ]);
+    expect(
+      blockingMarkers(titles, RUN_ID, now, {
+        live: [RUN_ID],
+        dead: ["2026-10-25T11:30-claude-aaa"],
+      }),
+    ).toEqual(["every-loop-run-weird"]);
   });
 
   it("the confirm file counts only with the exact sentence and mode 600", () => {
@@ -340,6 +365,44 @@ describe("createRunMarker", () => {
       RUN_ID,
     );
     expect(fake.calls[0]?.body).toEqual({ title: markerTitle(RUN_ID) });
+  });
+});
+
+describe("removeRunMarker", () => {
+  it("deletes the run's own marker by its exact title and nothing else", async () => {
+    const fake = createFakeCfFetch([
+      {
+        method: "GET",
+        path: /\/storage\/kv\/namespaces$/,
+        reply: () => ({
+          result: [
+            {
+              id: "kv-other",
+              title: markerTitle("2026-10-25T11:30-claude-zzz"),
+            },
+            { id: "kv-own", title: markerTitle(RUN_ID) },
+            { id: "kv-gw", title: "every-app-gateway-OAUTH_KV" },
+          ],
+        }),
+      },
+      {
+        method: "DELETE",
+        path: /\/storage\/kv\/namespaces\/kv-own$/,
+        reply: () => ({ result: null }),
+      },
+    ]);
+    const cf = createCfApi({
+      token: account.token,
+      accountId: ID,
+      fetch: fake.fetch,
+    });
+    expect(await removeRunMarker(cf, RUN_ID)).toBe(true);
+    expect(
+      fake.calls.filter((call) => call.method === "DELETE").map((c) => c.path),
+    ).toEqual([`/accounts/${ID}/storage/kv/namespaces/kv-own`]);
+    expect(await removeRunMarker(cf, "2026-10-25T13:00-codex-none")).toBe(
+      false,
+    );
   });
 });
 
@@ -460,11 +523,16 @@ describe("runTeardownStep", () => {
     });
   });
 
-  it("another run's young marker in the account refuses the wipe unless forced", async () => {
+  it("another run's young marker in the account refuses the wipe unless forced, naming the command that forces", async () => {
     const cf = cfWith([], [markerTitle("2026-10-25T11:30-claude-zzz")]);
     await expect(
       runTeardownStep(base(fakeSibling([[done(emptyPlan)]]), { cf })),
-    ).rejects.toMatchObject({ code: "marker_refused" });
+    ).rejects.toMatchObject({
+      code: "marker_refused",
+      message: expect.stringContaining(
+        "`pnpm loop teardown --account loop-1 --force`",
+      ),
+    });
     const result = await runTeardownStep(
       base(fakeSibling([[done(emptyPlan)]]), { cf, force: true }),
     );
@@ -477,6 +545,43 @@ describe("runTeardownStep", () => {
       }),
     );
     expect(own.markers).toEqual([markerTitle(RUN_ID)]);
+  });
+
+  it("with the locks known, a dead lock's marker is stale at any age, a live lock's blocks at any age, and one with no lock here keeps the age rule", async () => {
+    const young = markerTitle("2026-10-25T11:30-claude-zzz");
+    const old = markerTitle("2026-10-25T08:00-codex-yyy");
+    const stale = await runTeardownStep(
+      base(fakeSibling([[done(emptyPlan)]]), {
+        cf: cfWith([], [young, old]),
+        locks: { live: [RUN_ID], dead: ["2026-10-25T11:30-claude-zzz"] },
+      }),
+    );
+    expect(stale.markers).toEqual([young, old]);
+    await expect(
+      runTeardownStep(
+        base(fakeSibling([[done(emptyPlan)]]), {
+          cf: cfWith([], [old]),
+          locks: { live: [RUN_ID, "2026-10-25T08:00-codex-yyy"], dead: [] },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "marker_refused",
+      message: `Another run left its marker in the account: ${old} still holds the lock here; if that run is really gone, \`pnpm loop teardown --account loop-1 --force\` wipes anyway.`,
+    });
+    // No lock here for the young one: a run on another machine, or under another
+    // EVERYAPP_LOOP_HOME, could be using the account; the message says which marker and why.
+    await expect(
+      runTeardownStep(
+        base(fakeSibling([[done(emptyPlan)]]), {
+          cf: cfWith([], [young, old]),
+          locks: { live: [RUN_ID], dead: [] },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "marker_refused",
+      message: `Another run left its marker in the account: ${young} has no lock on this machine and is younger than 2 hours (a run elsewhere?); if that run is really gone, \`pnpm loop teardown --account loop-1 --force\` wipes anyway.`,
+      data: [young],
+    });
   });
 
   it("a DNS record left at or under apps.<zone> after the wipe is an error; without a Cloudflare client the check is skipped", async () => {

@@ -1,9 +1,11 @@
 /**
  * One run per account at a time (design 4.2 step 1, must-fix 6): an O_EXCL
  * lock file `locks/<accountId>.json` holding pid, runId, startedAt and host,
- * stale after 3 hours; and the account's `lastTeardownAt`, so the next run
+ * stale after 3 hours; the account's `lastTeardownAt`, so the next run
  * waits out Cloudflare's 30-minute SOA negative TTL before it reinstalls at
- * the same hostnames.
+ * the same hostnames; and the runs whose lock on the account died here
+ * (`deadRunIds`), so the wipe knows their in-account marker is a dead
+ * driver's and not a run on another machine.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -81,12 +83,11 @@ export function lockIsLive(
   return !holderDead(holder, options.host ?? os.hostname());
 }
 
-/** The runs that hold a live lock on any account: their containers belong to them. */
-export function liveLocks(
-  locksDir: string,
-  now: number = Date.now(),
-  options: LockOptions = {},
-): LockInfo[] {
+const isLockFile = (name: string): boolean =>
+  name.endsWith(".json") && !name.endsWith(".state.json");
+
+/** Every lock file in the dir, live or not. */
+function readLocks(locksDir: string): LockInfo[] {
   let names: string[];
   try {
     names = fs.readdirSync(locksDir);
@@ -94,10 +95,60 @@ export function liveLocks(
     return [];
   }
   return names.flatMap((name) => {
-    if (!name.endsWith(".json") || name.endsWith(".state.json")) return [];
+    if (!isLockFile(name)) return [];
     const holder = readLock(path.join(locksDir, name));
-    return lockIsLive(holder, now, options) ? [holder] : [];
+    return holder && typeof holder.runId === "string" ? [holder] : [];
   });
+}
+
+/** The runs that hold a live lock on any account: their containers belong to them. */
+export function liveLocks(
+  locksDir: string,
+  now: number = Date.now(),
+  options: LockOptions = {},
+): LockInfo[] {
+  return readLocks(locksDir).filter((holder) =>
+    lockIsLive(holder, now, options),
+  );
+}
+
+/** What this machine knows about the runs whose marker a wipe may find. */
+export interface KnownLocks {
+  /** Holding a live lock: a driver still running, its marker and containers in use. */
+  live: string[];
+  /**
+   * Their lock died here: a stale file still in the dir, or one a later run
+   * took over (acquireAccountLock) or gc swept. A SIGKILLed driver's marker
+   * is theirs, stale whatever its age. A run on another machine, or under
+   * another EVERYAPP_LOOP_HOME, is in neither list.
+   */
+  dead: string[];
+}
+
+export function knownLocks(
+  locksDir: string,
+  now: number = Date.now(),
+  options: LockOptions = {},
+): KnownLocks {
+  const live: string[] = [];
+  const dead: string[] = [];
+  for (const holder of readLocks(locksDir))
+    (lockIsLive(holder, now, options) ? live : dead).push(holder.runId);
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(locksDir);
+  } catch {
+    // No dir: nothing known.
+  }
+  for (const name of names) {
+    if (!name.endsWith(".state.json")) continue;
+    for (const runId of readState(
+      locksDir,
+      name.slice(0, -".state.json".length),
+    ).deadRunIds)
+      if (!dead.includes(runId)) dead.push(runId);
+  }
+  return { live, dead };
 }
 
 /**
@@ -134,8 +185,11 @@ export function acquireAccountLock(
   };
   if (!take()) {
     const holder = readLock(file);
+    const deadRunId = holder?.runId ?? null;
     if (lockIsLive(holder, now, options)) throw new LockHeldError(file, holder);
     fs.rmSync(file, { force: true });
+    // The dead holder is remembered: its marker in the account is a dead driver's, not another machine's.
+    if (deadRunId) rememberDeadRun(locksDir, accountId, deadRunId);
     if (!take()) throw new LockHeldError(file, readLock(file) ?? info);
   }
   return {
@@ -150,24 +204,63 @@ export function acquireAccountLock(
 
 interface AccountState {
   lastTeardownAt: string | null;
+  /** The runs whose lock on this account was found dead and removed, newest last. */
+  deadRunIds: string[];
 }
+
+/** Dead runs remembered per account; older ones have long lost their marker to a wipe. */
+const DEAD_RUNS_KEPT = 20;
 
 const stateFile = (locksDir: string, accountId: string): string =>
   path.join(locksDir, `${accountId}.state.json`);
+
+function readState(locksDir: string, accountId: string): AccountState {
+  try {
+    const state = JSON.parse(
+      fs.readFileSync(stateFile(locksDir, accountId), "utf8"),
+    ) as Partial<AccountState>;
+    return {
+      lastTeardownAt: state.lastTeardownAt ?? null,
+      deadRunIds: Array.isArray(state.deadRunIds)
+        ? state.deadRunIds.filter((id) => typeof id === "string")
+        : [],
+    };
+  } catch {
+    return { lastTeardownAt: null, deadRunIds: [] };
+  }
+}
+
+function writeState(
+  locksDir: string,
+  accountId: string,
+  state: AccountState,
+): void {
+  fs.mkdirSync(locksDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    stateFile(locksDir, accountId),
+    `${JSON.stringify(state, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+}
 
 /** When the account was last wiped, or null when never recorded. */
 export function readLastTeardownAt(
   locksDir: string,
   accountId: string,
 ): string | null {
-  try {
-    const state = JSON.parse(
-      fs.readFileSync(stateFile(locksDir, accountId), "utf8"),
-    ) as AccountState;
-    return state.lastTeardownAt ?? null;
-  } catch {
-    return null;
-  }
+  return readState(locksDir, accountId).lastTeardownAt;
+}
+
+/** A dead lock was removed (a takeover, gc): its run goes in the account's dead list for knownLocks. */
+export function rememberDeadRun(
+  locksDir: string,
+  accountId: string,
+  runId: string,
+): void {
+  const state = readState(locksDir, accountId);
+  if (state.deadRunIds.includes(runId)) return;
+  state.deadRunIds = [...state.deadRunIds, runId].slice(-DEAD_RUNS_KEPT);
+  writeState(locksDir, accountId, state);
 }
 
 /**
@@ -188,13 +281,10 @@ export function recordTeardown(
   accountId: string,
   at: string,
 ): void {
-  fs.mkdirSync(locksDir, { recursive: true, mode: 0o700 });
-  const state: AccountState = { lastTeardownAt: at };
-  fs.writeFileSync(
-    stateFile(locksDir, accountId),
-    `${JSON.stringify(state, null, 2)}\n`,
-    { mode: 0o600 },
-  );
+  writeState(locksDir, accountId, {
+    ...readState(locksDir, accountId),
+    lastTeardownAt: at,
+  });
 }
 
 /** Milliseconds still to wait before the account may be reinstalled; 0 when the gap has passed or nothing is recorded. */

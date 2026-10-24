@@ -206,10 +206,141 @@ describe("the decision table, in order", () => {
       }),
     ).toBeNull();
   });
+  it("a pre-run wipe that refused or failed, and a killed driver, are infra: the verifier never ran", () => {
+    const wipe = (code: string, step: string | null) => ({
+      ...clean(),
+      verify: null,
+      errors: [{ code, step, source: "infra" as const, message: code }],
+    });
+    expect(
+      decide(wipe("teardown_marker_refused", "teardown.before")),
+    ).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "teardown_refused",
+    });
+    expect(decide(wipe("teardown_leftovers", "teardown.before"))).toMatchObject(
+      {
+        value: "fail-infra",
+        reasonCode: "teardown_failed",
+      },
+    );
+    // The post-run wipe failing is a note on the record, never the verdict.
+    expect(decide(wipe("teardown_after_failed", "teardown"))).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "verifier_red",
+    });
+    expect(
+      decide({
+        ...clean(),
+        killed: true,
+        verify: verifyResult({ G1: "fail" }),
+      }),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "killed" });
+    // The driver itself threw (a clone, a bundle, the image) and no verifier ran: the loop broke,
+    // not the agent; with a verifier result the driver error is a note and the verdict reads it.
+    expect(
+      decide({
+        ...clean(),
+        driverError: true,
+        verify: null,
+        errors: [
+          {
+            code: "clone_failed",
+            step: "checkout",
+            source: "loop",
+            message: "git clone of the bundle exited 128",
+          },
+        ],
+      }),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "driver_error" });
+    expect(
+      decide({ ...clean(), driverError: true, verify: verifyResult() }),
+    ).toMatchObject({ value: "pass" });
+    // A sibling or token-gate failure in the pre-run wipe is recorded at teardown.before too.
+    expect(
+      decide(wipe("teardown_sibling_failed", "teardown.before")),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "teardown_failed" });
+  });
+  it("an everyapp exit-1 code that came before the verifier decides ahead of what the verifier then could not reach; a 5xx, a fixture or CERT_PENDING still comes first", () => {
+    // Run 2026-10-24T07:36: setup said GATEWAY_BUILD_FAILED, nothing was uploaded, and the verifier's
+    // G1 could not reach a Gateway that was never there. The build error is the first blocking event.
+    const buildFailed = {
+      ...clean(),
+      everyappErrorCodes: ["GATEWAY_BUILD_FAILED"],
+      verify: verifyResult({ G1: "fail", G2: "fail", O1: "fail" }),
+      printedDone: false,
+      reportedUrl: null,
+    };
+    expect(decide({ ...buildFailed, gatewayUnreachable: true })).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    expect(decide({ ...buildFailed, certPendingPast15m: true })).toMatchObject({
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    expect(decide({ ...buildFailed, dnsNegativeCache: true })).toMatchObject({
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    expect(
+      decide({ ...buildFailed, verifierInconclusive: true }),
+    ).toMatchObject({ reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED" });
+    expect(decide({ ...buildFailed, timeCapHit: true })).toMatchObject({
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    // The real infra signatures keep their precedence: they are what blocked the CLI.
+    expect(
+      decide({
+        ...buildFailed,
+        gatewayUnreachable: true,
+        errors: [
+          {
+            code: "GATEWAY_BUILD_FAILED",
+            step: "setup",
+            source: "cli",
+            message: "cf deploy: Cloudflare API 502 Bad Gateway",
+          },
+        ],
+      }),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "cloudflare_5xx" });
+    expect(
+      decide({
+        ...buildFailed,
+        errors: [
+          {
+            code: "CERT_PENDING",
+            step: "setup",
+            source: "infra",
+            message: "certificate still pending",
+          },
+        ],
+      }),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "cert_pending" });
+    expect(
+      decide({ ...buildFailed, codesSeen: ["upgrade_workers_paid"] }),
+    ).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "fixture_upgrade_workers_paid",
+    });
+    expect(decide({ ...buildFailed, killed: true })).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "killed",
+    });
+    // No everyapp error: the verifier's infra codes read as before.
+    expect(
+      decide({
+        ...buildFailed,
+        everyappErrorCodes: [],
+        gatewayUnreachable: true,
+      }),
+    ).toMatchObject({ value: "fail-infra", reasonCode: "gateway_unreachable" });
+  });
   it("then onboarding failures, each with its code", () => {
     expect(
       decide({ ...clean(), everyappErrorCodes: ["DOMAIN_REQUIRED"] }),
-    ).toMatchObject({ value: "fail-onboarding", reasonCode: "everyapp_error" });
+    ).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "everyapp_error:DOMAIN_REQUIRED",
+    });
     expect(decide({ ...clean(), blocked: "no token" })).toMatchObject({
       value: "fail-onboarding",
       reasonCode: "blocked",

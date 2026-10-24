@@ -522,6 +522,14 @@ export type Verdict =
 export type InfraReasonCode =
   | "preflight_failed"
   | "whoami_gate_failed"
+  /** The pre-run wipe refused: another run's marker is in the account (its lock live here, or unknown and young). */
+  | "teardown_refused"
+  /** The pre-run wipe failed in any other way (its sibling, the token gate, a CLI error, leftovers, DNS leftovers, no confirmation). */
+  | "teardown_failed"
+  /** The driver itself failed (a clone, a bundle, the image) before the verifier could run. */
+  | "driver_error"
+  /** The driver was stopped by SIGINT or SIGTERM before the verifier could run. */
+  | "killed"
   | "fixture_cloudflare_login"
   | "fixture_choose_account"
   | "fixture_upgrade_workers_paid"
@@ -544,7 +552,8 @@ export type InfraReasonCode =
 
 /** Why a run is fail-onboarding: the agent, the CLI, the prompt or the docs did not get there. */
 export type OnboardingReasonCode =
-  | "everyapp_error"
+  /** `everyapp_error:<CODE>`: the last setup, create, deploy or access exited 1 with that non-infra code. */
+  | `everyapp_error:${string}`
   | "blocked"
   | "unknown_handoff"
   | "caps_exceeded"
@@ -635,6 +644,8 @@ export type TerminalReason =
   | "harness_exit"
   | "fixture_error"
   | "preflight_failed"
+  /** The pre-run wipe threw or its sibling failed: nothing was installed, the verifier never ran. */
+  | "teardown_failed"
   | "driver_error"
   | "killed";
 

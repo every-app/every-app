@@ -91,6 +91,32 @@ export interface AssembleInput {
 /** The commands whose last run decides the verdict; `status` and the rest are read-only and never do. */
 const VERDICT_COMMANDS = ["setup", "create", "deploy", "access"];
 
+/** The CLI's message is a build tail at worst; errors[] keeps this much of it. */
+const CLI_MESSAGE_LIMIT = 500;
+
+/**
+ * An `error` line of the event log as errors[] carries it: the code, the
+ * command and its exit, then the message the CLI gave, because that message
+ * is where a Cloudflare 5xx or a `timed out after` lives (the code says
+ * `GATEWAY_BUILD_FAILED` either way). The verdict probes the same text, so
+ * what the signature table reads here is what it read there.
+ */
+function cliError(
+  trace: CommandTrace,
+  detail: { code: string; message: string },
+): RunError {
+  return {
+    code: detail.code,
+    step: trace.argv[0] ?? null,
+    source: "cli",
+    message:
+      `${detail.code} from everyapp ${trace.argv.join(" ")} (exit ${trace.exit ?? "?"}): ${detail.message}`.slice(
+        0,
+        CLI_MESSAGE_LIMIT,
+      ),
+  };
+}
+
 /**
  * The error codes that fail the run: those of the last invocation of each of
  * setup, create, deploy and access, non-infra. A `status --json` run before
@@ -104,15 +130,9 @@ export function verdictErrorCodes(traces: CommandTrace[]): string[] {
     if (VERDICT_COMMANDS.includes(name)) last.set(name, trace);
   }
   return [...last.values()].flatMap((trace) =>
-    trace.events.errors.filter(
-      (code) =>
-        !classifyInfraError({
-          code,
-          step: trace.argv[0] ?? null,
-          source: "cli",
-          message: code,
-        }),
-    ),
+    trace.events.errorDetails
+      .filter((detail) => !classifyInfraError(cliError(trace, detail)))
+      .map((detail) => detail.code),
   );
 }
 
@@ -176,13 +196,8 @@ export function assemble(input: AssembleInput): {
   const resolved = resolvedModel(events) ?? seed.harness.model.requested;
 
   const cliErrors: RunError[] = traces.flatMap((trace) =>
-    trace.events.errors.map((code) => {
-      const error: RunError = {
-        code,
-        step: trace.argv[0] ?? null,
-        source: "cli",
-        message: `${code} from everyapp ${trace.argv.join(" ")} (exit ${trace.exit ?? "?"})`,
-      };
+    trace.events.errorDetails.map((detail) => {
+      const error = cliError(trace, detail);
       return classifyInfraError(error) ? { ...error, source: "infra" } : error;
     }),
   );
@@ -278,6 +293,8 @@ export function assemble(input: AssembleInput): {
           ? "whoami"
           : input.preflight.reasonCode,
     },
+    killed: input.driverFailure === "killed",
+    driverError: input.driverFailure === "driver_error",
     codesSeen: codes,
     preRunPlanTotal: input.preRunPlanTotal,
     harnessExit: {

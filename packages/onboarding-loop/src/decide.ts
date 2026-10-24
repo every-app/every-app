@@ -30,6 +30,14 @@ export const FIXTURE_CODES: Record<string, InfraReasonCode> = {
   DOMAIN_REQUIRED_AFTER_ANSWER: "fixture_add_domain",
 };
 
+/**
+ * A 5xx as an HTTP answer reads: `HTTP 502`, `status 503`, `API 520`,
+ * `answered 530`, `502 Bad Gateway`. A CLI error's message is read whole
+ * (a build tail at worst), where `524 modules transformed` is not one.
+ */
+const HTTP_5XX =
+  /\b(?:HTTP\/?[\d.]*|status(?: code)?|code|API|answered|returned|responded(?: with)?|error)\s*:?\s*\(?(?:50[0-9]|52[0-9]|530)\b|\b(?:50[0-9]|52[0-9]|530)\s+(?:Bad Gateway|Service Unavailable|Gateway Time-?out|Internal Server Error|Origin|Web Server|(?:A )?Timeout|Connection Timed Out|Unknown Error|Error|SSL)/i;
+
 /** Infra signatures in an error's code or message (design 4.8, first row). */
 const INFRA_SIGNATURES: Array<{
   code: InfraReasonCode;
@@ -43,7 +51,7 @@ const INFRA_SIGNATURES: Array<{
   {
     code: "cloudflare_5xx",
     test: (e) =>
-      /\b(50[0-9]|52[0-9]|530)\b/.test(e.message) &&
+      HTTP_5XX.test(e.message) &&
       /cloudflare|api\.cloudflare\.com|cf /i.test(`${e.code} ${e.message}`),
   },
   { code: "cert_pending", test: (e) => e.code === "CERT_PENDING" },
@@ -58,6 +66,17 @@ const INFRA_SIGNATURES: Array<{
     code: "deploy_lease",
     test: (e) => /waiting for the deploy lease/i.test(e.message),
   },
+  // The pre-run wipe threw (run.ts records it with step teardown.before): nothing was installed,
+  // so the red verifier it would have been is the fixture's doing, never the agent's.
+  {
+    code: "teardown_refused",
+    test: (e) =>
+      e.step === "teardown.before" && e.code === "teardown_marker_refused",
+  },
+  {
+    code: "teardown_failed",
+    test: (e) => e.step === "teardown.before" && e.code.startsWith("teardown_"),
+  },
 ];
 
 export function classifyInfraError(error: RunError): InfraReasonCode | null {
@@ -68,6 +87,10 @@ export function classifyInfraError(error: RunError): InfraReasonCode | null {
 
 export interface DecideInput {
   preflight: { ok: boolean; reason: string | null };
+  /** The driver was stopped by a signal: whatever the verifier would have said, it never ran. */
+  killed: boolean;
+  /** The driver itself threw (terminal driver_error): with no verifier run, the loop broke, not the agent. */
+  driverError: boolean;
   /** action_required actions and error codes seen in the event log or the harness stream. */
   codesSeen: string[];
   preRunPlanTotal: number;
@@ -121,6 +144,7 @@ function infra(input: DecideInput): InfraReasonCode | null {
     return input.preflight.reason === "whoami"
       ? "whoami_gate_failed"
       : "preflight_failed";
+  if (input.killed) return "killed";
   for (const code of input.codesSeen) {
     const fixture = FIXTURE_CODES[code];
     if (fixture) return fixture;
@@ -136,6 +160,12 @@ function infra(input: DecideInput): InfraReasonCode | null {
     const code = classifyInfraError(error);
     if (code) return code;
   }
+  if (input.driverError && input.verify === null) return "driver_error";
+  // First blocking event (design 4.8): the CLI exited 1 with a non-infra code (setup, create,
+  // deploy) before the verifier ran, so the Gateway it then could not reach, the cert that never
+  // came, the cap or the inconclusive verifier followed from it. The signatures above (a 5xx, a
+  // fixture, CERT_PENDING on an upload) still come first: they are what blocked the CLI.
+  if (input.everyappErrorCodes.length > 0) return null;
   if (input.certPendingPast15m) return "cert_pending";
   if (input.gatewayUnreachable) return "gateway_unreachable";
   if (input.dnsNegativeCache) return "dns_negative_cache";
@@ -147,7 +177,9 @@ function infra(input: DecideInput): InfraReasonCode | null {
 }
 
 function onboarding(input: DecideInput): OnboardingReasonCode | null {
-  if (input.everyappErrorCodes.length > 0) return "everyapp_error";
+  // The code rides on the reason, so the summary line and the report name it without opening errors[].
+  const everyappCode = input.everyappErrorCodes[0];
+  if (everyappCode) return `everyapp_error:${everyappCode}`;
   if (input.blocked !== null) return "blocked";
   if (input.unknownHandoff) return "unknown_handoff";
   if (input.capsExceeded || (input.timeCapHit && input.idleLoop))
@@ -213,6 +245,8 @@ export function decideInput(
 ): DecideInput {
   return {
     preflight: { ok: true, reason: null },
+    killed: false,
+    driverError: false,
     codesSeen: [],
     preRunPlanTotal: 0,
     harnessExit: { code: 0, signal: null },

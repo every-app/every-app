@@ -151,6 +151,7 @@ const runRecordSchema = z.object({
     "harness_exit",
     "fixture_error",
     "preflight_failed",
+    "teardown_failed",
     "driver_error",
     "killed",
   ]),

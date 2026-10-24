@@ -277,6 +277,41 @@ describe("verify: what each row catches", () => {
     expect(result.rows.S1.note).toContain("GATEWAY_NOT_FOUND");
     expect(result.phaseReached).toBe("none");
   });
+  it("with no Gateway upload in the event log, G1 and A1 probe once: a setup that died in the build costs a probe, not a window", async () => {
+    const routes = healthyRoutes();
+    let hits = 0;
+    routes[`GET ${origin}/sign-in`] = () => {
+      hits += 1;
+      return new TypeError("fetch failed: getaddrinfo ENOTFOUND");
+    };
+    const { fetchImpl } = fakeFetch(routes);
+    const result = await verify(
+      baseCtx({ gatewayUploaded: false }),
+      deps(fetchImpl, healthyStatus()),
+    );
+    expect(result.rows.G1.status).toBe("fail");
+    expect(result.rows.G1.attempts).toBe(1);
+    expect(hits).toBe(1);
+    for (const id of ["G2", "G3", "O1", "A1", "A2", "S1"] as const)
+      expect(result.rows[id].attempts, id).toBeLessThanOrEqual(1);
+
+    // A G1 that passes refutes the log: the Gateway is there, so a fresh app's 503 app_deploying is
+    // waited out as with an upload in the log or no log to read.
+    const appRoutes = healthyRoutes();
+    appRoutes[`GET https://${appHost}/`] = () =>
+      new Response('{"error":"app_deploying"}', { status: 503 });
+    for (const gatewayUploaded of [false, true, undefined]) {
+      const waited = await verify(
+        baseCtx(gatewayUploaded === undefined ? {} : { gatewayUploaded }),
+        deps(fakeFetch(appRoutes).fetchImpl, healthyStatus()),
+      );
+      expect(waited.rows.G1.status, String(gatewayUploaded)).toBe("pass");
+      expect(waited.rows.A1.status, String(gatewayUploaded)).toBe("fail");
+      expect(waited.rows.A1.attempts, String(gatewayUploaded)).toBeGreaterThan(
+        1,
+      );
+    }
+  });
   it("S1 does not re-poll a status that printed GATEWAY_NOT_FOUND: nothing is installed, and 15 minutes of reruns would not change that", async () => {
     let statusRuns = 0;
     const result = await verify(

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { verdictErrorCodes } from "./assemble";
+import { assemble, verdictErrorCodes } from "./assemble";
 import { everyappCommandsFrom } from "./parse/eventLog";
 import { parseEventLogLine } from "./claim";
+import { sampleRecord } from "./testing/sampleRecord";
 import type { EventLogLine } from "./types";
 
 const invocation = (pid: number, argv: string[]) =>
@@ -56,5 +57,115 @@ describe("verdictErrorCodes", () => {
       exit(2, 1),
     ];
     expect(verdictErrorCodes(traces(lines))).toEqual(["DOMAIN_REQUIRED"]);
+  });
+});
+
+/** The record and decision from an event log alone: a run that ended on the harness's BLOCKED, no verifier. */
+function assembleFrom(lines: string[]) {
+  return assemble({
+    seed: sampleRecord(),
+    startedAt: "2026-10-25T14:02:00.000Z",
+    finishedAt: "2026-10-25T14:10:00.000Z",
+    eventLog: lines.flatMap((line) => {
+      const parsed = parseEventLogLine(line);
+      return parsed ? [parsed as EventLogLine] : [];
+    }),
+    processes: [],
+    exits: [{ exitCode: 1, signal: null, durationMs: 1000, killed: false }],
+    resumes: [],
+    turns: { terminal: "blocked", fixtureCode: null },
+    user: null,
+    claim: {
+      how: "none",
+      linkEmittedAt: null,
+      claimedAt: null,
+      latencyS: null,
+      harnessSelfClaimed: false,
+    },
+    verify: null,
+    preflight: { ok: true, reasonCode: null },
+    preRunPlanTotal: 0,
+    driverErrors: [],
+    exposure: {
+      cf_token: 0,
+      provider_key: 0,
+      est_link: 0,
+      owner_password: 0,
+      bearer: 0,
+    },
+    statsPeakMiB: null,
+    memoryLimitMiB: 6144,
+    withAccess: false,
+    team: null,
+    gatewayOrigin: "https://apps.x.com",
+    verifierInconclusive: false,
+    dnsNegativeCache: false,
+    extraPhases: [],
+    toolEnv: null,
+    driverFailure: null,
+  });
+}
+
+describe("assemble reads the CLI's error message, not only its code", () => {
+  const setupFailed = (message: string) => [
+    invocation(1, ["setup", "--domain", "apps.x.com", "--json"]),
+    event(1, { type: "error", code: "GATEWAY_BUILD_FAILED", message }),
+    exit(1, 1),
+  ];
+  it("a Cloudflare 5xx inside a setup error is fail-infra cloudflare_5xx, and errors[] says so", () => {
+    const { record } = assembleFrom(
+      setupFailed(
+        "Uploading the Gateway failed\ncf deploy: Cloudflare API 502 Bad Gateway",
+      ),
+    );
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "cloudflare_5xx",
+    });
+    expect(record.errors).toEqual([
+      {
+        code: "GATEWAY_BUILD_FAILED",
+        step: "setup",
+        source: "infra",
+        message:
+          "GATEWAY_BUILD_FAILED from everyapp setup --domain apps.x.com --json (exit 1): Uploading the Gateway failed\ncf deploy: Cloudflare API 502 Bad Gateway",
+      },
+    ]);
+  });
+  it("a timed-out upload is cf_timeout from the message alone", () => {
+    const { record } = assembleFrom(
+      setupFailed("cf workers deploy timed out after 120s"),
+    );
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "cf_timeout",
+    });
+  });
+  it("a plain build tail is the product's: fail-onboarding everyapp_error:<CODE>, even when it names @cloudflare and counts 524 modules", () => {
+    const tail = [
+      "Building the Gateway failed",
+      "pnpm run build:release exited with code 1",
+      "> vite build",
+      "✓ 524 modules transformed.",
+      "[@cloudflare/vite-plugin] prerender: Error: connect ECONNREFUSED 127.0.0.1:50321",
+    ].join("\n");
+    const { record, decision } = assembleFrom(setupFailed(tail));
+    expect(decision.everyappErrorCodes).toEqual(["GATEWAY_BUILD_FAILED"]);
+    expect(record.verdict).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    expect(record.errors[0]).toMatchObject({
+      source: "cli",
+      message: expect.stringContaining("524 modules transformed"),
+    });
+    expect(record.everyappCommands[0]).toMatchObject({
+      exit: 1,
+      events: { errors: ["GATEWAY_BUILD_FAILED"] },
+    });
+  });
+  it("keeps 500 characters of a long message", () => {
+    const { record } = assembleFrom(setupFailed("x".repeat(2000)));
+    expect(record.errors[0]!.message).toHaveLength(500);
   });
 });

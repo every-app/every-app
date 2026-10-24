@@ -12,6 +12,7 @@ import {
   codesSeen,
   everyappArgv,
   everyappCommandsFrom,
+  gatewayUploadedFrom,
   ownerNotClaimedCause,
   parseEventLog,
   PARSER_VERSION,
@@ -158,6 +159,25 @@ describe("event log", () => {
     );
     expect(ownerNotClaimedCause(ci)).toBe("ci_set_by_harness");
     expect(ownerNotClaimedCause(traces)).toBeNull();
+  });
+  it("sees a Gateway upload in setup.gateway ok or skip or a gateway.deploy step, and none in a setup that died in the build", () => {
+    expect(gatewayUploadedFrom(traces)).toBe(true);
+    const died = (step: string, status: string) =>
+      everyappCommandsFrom(
+        parseEventLog(
+          [
+            LOG.split("\n")[0]!,
+            '{"v":1,"ts":"2026-10-25T14:07:00.000Z","type":"step","step":"setup.gateway","status":"start","pid":41}',
+            `{"v":1,"ts":"2026-10-25T14:07:01.000Z","type":"step","step":"${step}","status":"${status}","pid":41}`,
+            '{"v":1,"ts":"2026-10-25T14:07:20.000Z","type":"error","code":"GATEWAY_BUILD_FAILED","message":"m","retryable":false,"pid":41}',
+            '{"type":"exit","pid":41,"code":1,"ms":18000,"ts":"2026-10-25T14:07:20.000Z"}',
+          ].join("\n"),
+        ),
+      );
+    expect(gatewayUploadedFrom(died("gateway.release", "start"))).toBe(false);
+    expect(gatewayUploadedFrom(died("gateway.deploy", "start"))).toBe(true);
+    expect(gatewayUploadedFrom(died("setup.gateway", "skip"))).toBe(true);
+    expect(gatewayUploadedFrom([])).toBe(false);
   });
   it("derives phases from the CLI's own timestamps", () => {
     expect(phasesFrom(traces)).toEqual([

@@ -48,8 +48,13 @@ import {
 import { commandLineString } from "./harnesses/shared";
 import { scriptFor, SCRIPT_PATH } from "./harnesses/script";
 import { createHttpFetch } from "./httpFetch";
-import { affectsDns, recordTeardown } from "./lock";
-import { appFrom, everyappCommandsFrom } from "./parse/eventLog";
+import { affectsDns, knownLocks, recordTeardown } from "./lock";
+import {
+  appFrom,
+  everyappCommandsFrom,
+  gatewayUploadedFrom,
+  parseEventLog,
+} from "./parse/eventLog";
 import { formatChecks, runPreflight, type PreflightResult } from "./preflight";
 import { promptSha256, promptText, type PromptVariant } from "./prompt";
 import {
@@ -70,6 +75,7 @@ import {
   runTeardownStep,
   TeardownStepError,
   createRunMarker,
+  removeRunMarker,
   type TeardownStepResult,
 } from "./teardownStep";
 import { runHarnessTurns, type TurnsResult } from "./turns";
@@ -87,6 +93,7 @@ import type {
   Account,
   Deviation,
   DiffEntry,
+  EventLogLine,
   ExecLine,
   FetchLike,
   HarnessAdapter,
@@ -190,9 +197,28 @@ export interface RunDeps {
   caffeinate?: boolean;
   /** The adapter for a harness name; tests hand in a fake. */
   createHarness?: (name: HarnessName) => HarnessAdapter;
-  /** Handle SIGINT and SIGTERM (clean up, then exit 130); off in tests. */
-  signals?: boolean;
+  /** Where SIGINT and SIGTERM come from and how the process ends after the cleanup they start; the process itself by default, nothing in tests unless one is handed in. */
+  signals?: SignalSource;
 }
+
+/** A source of SIGINT and SIGTERM and the exit that follows their cleanup. */
+export interface SignalSource {
+  /** Registers the handler; returns what unregisters it. */
+  on(handler: (signal: NodeJS.Signals) => void): () => void;
+  exit(code: number): void;
+}
+
+const processSignals: SignalSource = {
+  on(handler) {
+    process.once("SIGINT", handler);
+    process.once("SIGTERM", handler);
+    return () => {
+      process.off("SIGINT", handler);
+      process.off("SIGTERM", handler);
+    };
+  },
+  exit: (code) => process.exit(code),
+};
 
 export function defaultRunDeps(log: (line: string) => void): RunDeps {
   const dir = defaultConfigDir();
@@ -211,7 +237,7 @@ export function defaultRunDeps(log: (line: string) => void): RunDeps {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     log,
     caffeinate: process.platform === "darwin",
-    signals: true,
+    signals: processSignals,
   };
 }
 
@@ -552,27 +578,31 @@ async function runOnce(
     preflight,
     image,
   });
-  // Ctrl-C or a kill: the container with the secrets in its env goes, every open link expires,
-  // the account is wiped and the lock released, then exit 130. Node would otherwise just die.
+  // Ctrl-C or a kill: the container with the secrets in its env goes, so does every sibling
+  // still running, the run's marker, every open link, then the wipe, the record and the lock,
+  // then exit 130. Nothing exits before cleanup() has finished: the main path below awaits the
+  // same cleanup, and the exit here comes after it. Node would otherwise just die.
   const onSignal = (signal: NodeJS.Signals): void => {
     log(
-      `${signal}: cleaning up (container, links, teardown, lock), then exiting 130`,
+      `${signal}: cleaning up (container, siblings, marker, links, teardown, record, lock), then exiting 130`,
     );
+    run.kill(signal);
     void (async () => {
       try {
         await run.cleanup();
       } catch (error) {
         log(`cleanup after ${signal} failed: ${(error as Error).message}`);
-      } finally {
-        preflight.release();
-        process.exit(130);
       }
+      try {
+        run.finish();
+      } catch (error) {
+        log(`no record after ${signal}: ${(error as Error).message}`);
+      }
+      preflight.release();
+      deps.signals?.exit(130);
     })();
   };
-  if (deps.signals) {
-    process.once("SIGINT", onSignal);
-    process.once("SIGTERM", onSignal);
-  }
+  const offSignals = deps.signals?.on(onSignal);
   try {
     if (!preflight.ok) {
       run.terminal = "preflight_failed";
@@ -592,10 +622,7 @@ async function runOnce(
   } finally {
     await run.cleanup();
     preflight.release();
-    if (deps.signals) {
-      process.off("SIGINT", onSignal);
-      process.off("SIGTERM", onSignal);
-    }
+    offSignals?.();
   }
   const record = run.finish();
   return {
@@ -654,17 +681,28 @@ class RunState {
   gitStatus: string[] | null = null;
   /** `setup` processes found dead with no exit line while a reply was held for them. */
   readonly backgroundKills: Array<{ at: string; pid: number }> = [];
-  private cleaned = false;
+  /** The one cleanup pass; every caller (the finally, a signal) awaits the same one. */
+  private cleanupPromise: Promise<void> | null = null;
+  /** Sibling containers alive right now (a wipe or the verifier in progress), by name. */
+  private readonly siblings = new Map<string, SandboxHandle>();
+  /** The signal that stopped the run, when one did. */
+  killedBy: NodeJS.Signals | null = null;
+  /** Aborted by kill() while the run is still going: a sibling created after it is destroyed at once. */
+  private readonly stopped = new AbortController();
+  private finished: RunRecord | null = null;
   /** Replies decided from the event log (the subdomain PUT's "Done, continue", the Access team), delivered at the next turn end. */
   private readonly queuedReplies: string[] = [];
   /** Work started from the event log that a turn end waits for (the subdomain PUT and its settle). */
   private pendingWork: Promise<void> = Promise.resolve();
   /** The CLI's event log as the tail delivered it, parsed for the scripted user and kept for the record. */
   readonly feed: EventFeed;
+  /** The same log as `docker cp` took it out of the container after the harness ended: complete where the tail's last lines were not. */
+  private completeEventLog: EventLogLine[] | null = null;
   readonly owner: ReturnType<typeof ownerCredentials>;
   readonly gatewayOrigin: string;
   readonly d1: ReturnType<typeof createGatewayD1>;
   private markerCreated = false;
+  private containerRemoved = false;
   private caffeinatePid: number | null = null;
 
   constructor(
@@ -728,7 +766,45 @@ class RunState {
     return this.ctx.log;
   }
 
+  /**
+   * A signal stopped the run: the terminal reason stays `killed` whatever
+   * the interrupted step throws next. Once the run has ended on its own and
+   * its cleanup is under way (the post-run wipe, say), the signal changes
+   * nothing about what the run was: the record keeps its verdict, the
+   * signal path waits for the same cleanup and exits 130.
+   */
+  kill(signal: NodeJS.Signals): void {
+    if (this.killedBy) return;
+    this.killedBy = signal;
+    if (this.cleanupPromise) {
+      this.log(
+        `${signal} during the cleanup after the run: the record keeps what the run was`,
+      );
+      return;
+    }
+    this.stopped.abort(
+      new RunAbort("killed", {
+        code: "killed",
+        step: null,
+        source: "loop",
+        message: `${signal}: stopped while a container was created`,
+      }),
+    );
+    this.terminal = "killed";
+    this.errors.push({
+      code: "killed",
+      step: null,
+      source: "loop",
+      message: `${signal}: the driver was stopped before the run ended`,
+    });
+  }
+
   fail(error: unknown): void {
+    if (this.killedBy) {
+      // The step the signal interrupted threw (its container is gone): the kill is the reason, not this.
+      this.log(`after ${this.killedBy}: ${(error as Error).message ?? error}`);
+      return;
+    }
     if (error instanceof RunAbort) {
       this.terminal = error.terminal;
       this.errors.push(error.error);
@@ -740,18 +816,27 @@ class RunState {
     this.terminal = "driver_error";
     this.errors.push({
       code:
-        error instanceof TeardownStepError
-          ? `teardown_${error.code}`
-          : error instanceof TokenGateError
-            ? error.gate.code
-            : error instanceof SiblingError
-              ? "sibling_failed"
-              : "driver_error",
+        error instanceof TokenGateError
+          ? error.gate.code
+          : error instanceof SiblingError
+            ? "sibling_failed"
+            : "driver_error",
       step: null,
       source: error instanceof TokenGateError ? "infra" : "loop",
       message: message.slice(0, 500),
     });
     this.log(`driver error: ${message}`);
+  }
+
+  /** Between steps: a signal has arrived, so nothing more is started (cleanup() is already running). */
+  private stopIfKilled(): void {
+    if (this.killedBy)
+      throw new RunAbort("killed", {
+        code: "killed",
+        step: null,
+        source: "loop",
+        message: `${this.killedBy}: stopped between steps`,
+      });
   }
 
   /** The run, in order; anything thrown lands in fail() and cleanup() still runs. */
@@ -868,6 +953,7 @@ class RunState {
     log(
       `wiped: ${before.before.total} resource(s) before, ${before.after.total} after, dns leftovers ${before.dnsLeftovers.length}`,
     );
+    this.stopIfKilled();
     await createRunMarker(this.ctx.cf, this.ctx.runId);
     this.markerCreated = true;
 
@@ -891,6 +977,10 @@ class RunState {
       user: "dev",
       workdir: "/work",
     });
+    // A signal while the create was in flight: cleanup() looked before the handle existed, so the
+    // container with the token in its env goes now, not at the re-sweep.
+    if (this.killedBy) await this.removeContainer();
+    this.stopIfKilled();
     const sandbox = this.sandbox;
     const handle = this.handle;
     await sandbox.copyIn(handle, this.testBundle, BUNDLE_PATH);
@@ -910,14 +1000,14 @@ class RunState {
       });
     await sandbox.copyIn(
       handle,
-      writePrivate(this.tempDir, "prompt.txt", prompt),
+      this.tempFile("prompt.txt", prompt),
       PROMPT_PATH,
     );
     if (adapter.name === "script") {
       const script = scriptFor({ zone: account.zone, loopDir: LOOP_DIR });
       await sandbox.copyIn(
         handle,
-        writePrivate(this.tempDir, "script.sh", script),
+        this.tempFile("script.sh", script),
         SCRIPT_PATH,
       );
     }
@@ -1053,7 +1143,7 @@ class RunState {
           const inside = `${LOOP_DIR}/reply-${index}.txt`;
           await sandbox.copyIn(
             handle,
-            writePrivate(this.tempDir, `reply-${index}.txt`, `${text}\n`),
+            this.tempFile(`reply-${index}.txt`, `${text}\n`),
             inside,
           );
           log(`reply ${index}: ${text.slice(0, 120)}`);
@@ -1115,11 +1205,15 @@ class RunState {
       `claim: ${this.claim.how}${this.claim.latencyS !== null ? `, ${this.claim.latencyS} s after the link` : ""}${this.claim.harnessSelfClaimed ? ", harness self-claimed" : ""}`,
     );
 
+    // A kill ended the harness's exec (its container is gone): no collect, no verifier.
+    this.stopIfKilled();
+
     // 8. Collect, redact, diff; expire any link still open (cleanup() does it again on every exit path).
     await this.collect();
     await this.expireLinks();
 
     // 9. The outside-in verifier.
+    this.stopIfKilled();
     await this.verifyFromOutside(fetchImpl);
   }
 
@@ -1211,34 +1305,76 @@ class RunState {
     return text || null;
   }
 
+  /**
+   * The wipe in a sibling. Before the run, whatever fails in it (the marker
+   * refused, the sibling's clone or install, the token gate, the CLI, what
+   * is left) ends the run as `teardown_failed` with an infra error at step
+   * `teardown.before`: nothing was installed and the verifier never ran, so
+   * the decision table reads it as fail-infra, never as the agent's red
+   * verifier. After the run, cleanup() catches and records instead.
+   */
   private async teardown(
     label: "before" | "after",
     file: string,
   ): Promise<TeardownStepResult> {
     const { account, cf, log } = this.ctx;
     const started = this.deps.now();
-    const result = await withTestAccount(
-      {
-        sandbox: this.ctx.docker!.sandbox,
-        image: this.ctx.image,
-        account,
-        runId: this.ctx.runId,
-        allowlist: true,
-        bundlePath: this.toolsBundle,
-        cf,
-        onLine: (line) => this.siblingLine("teardown", line),
-      },
-      (sibling) =>
-        runTeardownStep({
-          sibling,
+    let result: TeardownStepResult;
+    try {
+      await this.ensureBundle(this.toolsBundle, this.options.toolsRef, "wipe");
+      result = await withTestAccount(
+        {
+          sandbox: this.ctx.docker!.sandbox,
+          image: this.ctx.image,
           account,
           runId: this.ctx.runId,
+          allowlist: true,
+          bundlePath: this.toolsBundle,
           cf,
-          now: this.deps.now,
-          sleep: this.deps.sleep,
-          confirm: () => this.confirm(),
-        }),
-    );
+          onLine: (line) => this.siblingLine("teardown", line),
+          ...this.trackSibling(),
+          // The post-run wipe is cleanup itself: a signal during it must not cut it short.
+          ...(label === "before" ? { signal: this.stopped.signal } : {}),
+        },
+        (sibling) =>
+          runTeardownStep({
+            sibling,
+            account,
+            runId: this.ctx.runId,
+            cf,
+            now: this.deps.now,
+            sleep: this.deps.sleep,
+            confirm: () => this.confirm(),
+            // A marker whose run's lock died here is a dead driver's, stale whatever its age; one
+            // with no lock here may be another machine's run, refused while young; this run's own
+            // marker is never another run's, so the post-run wipe removes it.
+            locks: knownLocks(locksDir(this.deps.configDir), this.deps.now()),
+          }),
+      );
+    } catch (error) {
+      // A kill interrupted the wipe (cleanup removed its sibling): the kill is the reason, not this.
+      if (label === "after" || error instanceof RunAbort || this.killedBy)
+        throw error;
+      const code =
+        error instanceof TeardownStepError
+          ? error.code
+          : error instanceof SiblingError
+            ? "sibling_failed"
+            : error instanceof TokenGateError
+              ? "token_gate"
+              : "error";
+      const message =
+        error instanceof TokenGateError
+          ? `${error.message} (${error.gate.code})`
+          : `${(error as Error).message ?? error}`;
+      log(`wipe before the run ${code}: ${message}`);
+      throw new RunAbort("teardown_failed", {
+        code: `teardown_${code}`,
+        step: "teardown.before",
+        source: "infra",
+        message: message.slice(0, 500),
+      });
+    }
     writePrivate(
       this.ctx.runDir,
       file,
@@ -1259,6 +1395,62 @@ class RunState {
       `teardown ${label}: removed ${result.removed.length}, kept ${result.kept.length}, ${result.polls} poll(s)`,
     );
     return result;
+  }
+
+  /**
+   * A file for the container to copy in, in the driver's temp dir. The dir
+   * is made again first: the live run of 2026-10-24 found it gone mid-run
+   * (by what is not known; noteTempDir() logs when), and a reply that
+   * cannot be written would end the harness's turns for that.
+   */
+  private tempFile(name: string, text: string): string {
+    fs.mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
+    return writePrivate(this.tempDir, name, text);
+  }
+
+  /**
+   * Whether the temp dir is still there, in the log at the moments that
+   * matter (verify start, before the post-run wipe), so the next live run
+   * pins when the 2026-10-24 deletion happened. Nothing in this process
+   * removes it before cleanup()'s last line.
+   */
+  private noteTempDir(when: string): void {
+    const present = fs.existsSync(this.tempDir);
+    this.log(
+      `temp dir ${present ? "present" : "GONE"} ${when} (${this.tempDir}${present ? "" : "; removed by something outside this driver"})`,
+    );
+  }
+
+  /**
+   * The bundles every sibling clones (the tools bundle for a wipe, the test
+   * bundle for the verifier) live in the driver's temp dir, which cleanup()
+   * removes last of all, after the post-run wipe. Should one be gone anyway
+   * when a sibling needs it (the live run of 2026-10-24 found the temp dir
+   * so and kept the Gateway), the bundle is made again from the checkout
+   * rather than the sibling skipped.
+   */
+  private async ensureBundle(
+    file: string | null,
+    ref: string,
+    what: "wipe" | "verifier",
+  ): Promise<void> {
+    if (!file || fs.existsSync(file)) return;
+    this.log(
+      `the bundle ${file} is gone before the ${what}: making it again from ${ref}`,
+    );
+    fs.mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
+    await createBundle(this.deps.spawn, this.deps.repoRoot, ref, file);
+  }
+
+  /** The hooks that keep `siblings` current, so cleanup() can remove one a signal interrupted. */
+  private trackSibling(): {
+    onCreated: (handle: SandboxHandle) => void;
+    onDestroyed: (handle: SandboxHandle) => void;
+  } {
+    return {
+      onCreated: (handle) => this.siblings.set(handle.name, handle),
+      onDestroyed: (handle) => this.siblings.delete(handle.name),
+    };
   }
 
   private confirm(): Promise<string> {
@@ -1342,8 +1534,53 @@ class RunState {
         // A session store the harness never wrote: nothing to collect.
       }
     }
+    const copiedLog = path.join(
+      collected,
+      "loop",
+      path.basename(EVENT_LOG_PATH),
+    );
+    const adopt = this.readCopiedEventLog(copiedLog);
     const files = redactTree(collected, redactor, log);
     log(`collected ${files} file(s) into ${collected}, redacted`);
+    // Now redacted like the tailed file was, line by line as it arrived: the copy replaces it.
+    if (adopt) {
+      writePrivate(
+        runDir,
+        RUN_FILES.eventLog,
+        fs.readFileSync(copiedLog, "utf8"),
+      );
+      this.completeEventLog = adopt;
+    }
+  }
+
+  /**
+   * The tail can miss the CLI's last lines (its `error` and `exit`, written
+   * in the second before the process ended and the harness's exec
+   * returned); the copy `docker cp` took out of the container is complete.
+   * Parsed raw, like the feed's lines, when it exists and is at least as
+   * long as what the tail delivered; null keeps the tail's.
+   */
+  private readCopiedEventLog(file: string): EventLogLine[] | null {
+    if (!fs.existsSync(file)) return null;
+    const text = fs.readFileSync(file, "utf8");
+    const copied = text.split("\n").filter((line) => line.trim() !== "").length;
+    const tailed = this.feed.raw.length;
+    if (copied < tailed) {
+      this.log(
+        `event log: the copy from the container has ${copied} line(s), the tail delivered ${tailed}; keeping the tail's`,
+      );
+      return null;
+    }
+    if (copied > tailed)
+      this.log(
+        `event log: the tail delivered ${tailed} of ${copied} line(s); the copy from the container replaces it`,
+      );
+    return parseEventLog(text);
+  }
+
+  /** The event log the record is assembled from: the complete copy when collect() got one, else the tail's lines. */
+  private eventLogLines(): EventLogLine[] {
+    return this.completeEventLog ?? this.feed.lines;
   }
 
   /** A `*.apps.<zone>` record exists (then G3's unknown-host probe reaches the gateway); false when none or unreadable. */
@@ -1367,7 +1604,8 @@ class RunState {
   private async verifyFromOutside(fetchImpl: FetchLike): Promise<void> {
     const { account, cf, log } = this.ctx;
     const started = this.deps.now();
-    const app = appFrom(everyappCommandsFrom(this.feed.lines));
+    const traces = everyappCommandsFrom(this.eventLogLines());
+    const app = appFrom(traces);
     const events: NormalizedEvent[] = this.turns?.processes.flat() ?? [];
     // The event log says the harness deployed; without the seam, its own tool calls do (an
     // `everyapp deploy` whose next tool result is not an error). The verifier confirms with status.
@@ -1375,7 +1613,14 @@ class RunState {
     const appHost = app.url ? new URL(app.url).hostname : null;
     const team = this.options.withAccess ? subdomainFor(account.name) : null;
     const wildcard = await this.wildcardAppsRecord();
+    // The log speaks about an upload only once a setup or update ran under the seam. None (the npx
+    // trap: a published pre-seam CLI; or everyapp run with the env stripped): the full windows.
+    const logSpeaks =
+      this.eventLogSeam &&
+      traces.some((t) => t.argv[0] === "setup" || t.argv[0] === "update");
+    this.noteTempDir("at verify start");
     try {
+      await this.ensureBundle(this.testBundle, this.options.ref, "verifier");
       this.verifyResult = await withTestAccount(
         {
           sandbox: this.ctx.docker!.sandbox,
@@ -1385,6 +1630,8 @@ class RunState {
           bundlePath: this.testBundle,
           cf,
           onLine: (line) => this.siblingLine("verify", line),
+          ...this.trackSibling(),
+          signal: this.stopped.signal,
         },
         (sibling: Sibling) =>
           verify(
@@ -1402,6 +1649,9 @@ class RunState {
               templateMarker: TEMPLATE_MARKER,
               wildcardAppsRecord: wildcard,
               gitStatus: this.gitStatus,
+              ...(logSpeaks
+                ? { gatewayUploaded: gatewayUploadedFrom(traces) }
+                : {}),
             },
             {
               fetchImpl,
@@ -1483,27 +1733,76 @@ class RunState {
     });
   }
 
-  /** The container gone, every open link expired, the wipe again: in a finally and on a signal, once, whatever happened. */
-  async cleanup(): Promise<void> {
-    if (this.cleaned) return;
-    this.cleaned = true;
+  /**
+   * The container gone, every sibling a signal interrupted gone, the run's
+   * marker gone, every open link expired, the wipe again, then a second
+   * look for any container that appeared meanwhile: in a finally and on a
+   * signal, once, whatever happened. Every caller awaits the same pass, so
+   * neither path exits while the other's cleanup is half done.
+   */
+  cleanup(): Promise<void> {
+    this.cleanupPromise ??= this.cleanupOnce();
+    return this.cleanupPromise;
+  }
+
+  /** `docker rm -f` of the harness's container, once; --keep leaves it. */
+  private async removeContainer(): Promise<void> {
     const { log } = this.ctx;
-    if (this.handle && this.sandbox) {
-      if (this.options.keep)
-        log(
-          `--keep: container ${this.handle.name} left running (docker exec -it ${this.handle.name} bash; docker rm -f it when done)`,
-        );
-      else
-        await this.sandbox
-          .destroy(this.handle)
-          .catch((error: unknown) =>
-            log(`docker rm failed: ${(error as Error).message}`),
-          );
+    if (!this.handle || !this.sandbox || this.containerRemoved) return;
+    this.containerRemoved = true;
+    if (this.options.keep) {
+      log(
+        `--keep: container ${this.handle.name} left running (docker exec -it ${this.handle.name} bash; docker rm -f it when done)`,
+      );
+      return;
     }
-    // Anything after the seed was written may have created resources (the marker included): expire
-    // any link `setup` minted, then wipe again.
+    await this.sandbox
+      .destroy(this.handle)
+      .catch((error: unknown) =>
+        log(`docker rm failed: ${(error as Error).message}`),
+      );
+  }
+
+  /**
+   * A wipe or the verifier a signal cut short: its container goes now
+   * (withTestAccount's own finally would, but only once its exec returns,
+   * and the exec is what the kill interrupted).
+   */
+  private async removeSiblings(): Promise<void> {
+    const { log } = this.ctx;
+    for (const [name, handle] of [...this.siblings]) {
+      log(
+        `removing sibling ${name} the ${this.killedBy ?? "cleanup"} interrupted`,
+      );
+      await this.ctx
+        .docker!.sandbox.destroy(handle)
+        .catch((error: unknown) =>
+          log(`docker rm ${name} failed: ${(error as Error).message}`),
+        );
+      this.siblings.delete(name);
+    }
+  }
+
+  private async cleanupOnce(): Promise<void> {
+    const { log } = this.ctx;
+    await this.removeContainer();
+    await this.removeSiblings();
+    // This run's marker: its own runId is never "another run's", so the wipe below would remove
+    // it too; removing it here first costs one call and holds when the wipe cannot run.
+    if (this.markerCreated) {
+      await removeRunMarker(this.ctx.cf, this.ctx.runId).then(
+        (removed) => {
+          if (removed) log("run marker removed");
+        },
+        (error: unknown) =>
+          log(`run marker not removed: ${(error as Error).message}`),
+      );
+    }
+    // Anything after the seed was written may have created resources: expire any link `setup`
+    // minted, then wipe again.
     if (this.toolsBundle && this.seed && (this.markerCreated || this.handle)) {
       await this.expireLinks();
+      this.noteTempDir("before the post-run wipe");
       try {
         const after = await this.teardown("after", RUN_FILES.inventoryAfter);
         if (after.after.total > 0)
@@ -1518,6 +1817,10 @@ class RunState {
         log(`teardown after the run failed: ${(error as Error).message}`);
       }
     }
+    // A create that was in flight when the first pass looked (the harness's container, a sibling)
+    // has returned by now: nothing outlives the driver.
+    await this.removeContainer();
+    await this.removeSiblings();
     if (this.caffeinatePid) {
       try {
         process.kill(this.caffeinatePid);
@@ -1525,11 +1828,13 @@ class RunState {
         // Already gone.
       }
     }
+    // Last of all: the post-run wipe's sibling copied the tools bundle out of here.
     fs.rmSync(this.tempDir, { recursive: true, force: true });
   }
 
-  /** run.json, rotate.json when a secret was echoed, the summary. */
+  /** run.json, rotate.json when a secret was echoed, the summary; once, whichever path gets here first. */
   finish(): RunRecord {
+    if (this.finished) return this.finished;
     const { log, runDir, redactor } = this.ctx;
     const finishedMs = this.deps.now();
     const seed =
@@ -1596,7 +1901,7 @@ class RunState {
     const assembled = assemble({
       ...saved,
       seed,
-      eventLog: this.feed.lines,
+      eventLog: this.eventLogLines(),
       processes: this.turns?.processes ?? [],
       verify: this.verifyResult,
     });
@@ -1642,6 +1947,7 @@ class RunState {
     log(
       `${record.verdict.value}${record.verdict.reasonCode ? ` (${record.verdict.reasonCode})` : ""}: phase ${record.verify.phaseReached}, ${record.durationS} s, ${record.everyappCommands.length} everyapp command(s), ${record.interventions.length} intervention(s), cost ${record.cost.usd === null ? "n/a" : `$${record.cost.usd.toFixed(2)}`}; record ${file}`,
     );
+    this.finished = record;
     return record;
   }
 

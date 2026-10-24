@@ -127,6 +127,8 @@ export interface CfApi {
   kvNamespacesList(): Promise<Array<{ id: string; title: string }>>;
   /** POST /accounts/{id}/storage/kv/namespaces. */
   kvNamespaceCreate(title: string): Promise<{ id: string; title: string }>;
+  /** DELETE /accounts/{id}/storage/kv/namespaces/{namespaceId}: the loop's own run marker, nothing else. */
+  kvNamespaceDelete(namespaceId: string): Promise<void>;
 }
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -260,6 +262,13 @@ export function createCfApi(options: CfApiOptions): CfApi {
       call("POST", `${account}/storage/kv/namespaces`, KvNamespaceRow, {
         title,
       }),
+    kvNamespaceDelete: async (namespaceId) => {
+      await call(
+        "DELETE",
+        `${account}/storage/kv/namespaces/${namespaceId}`,
+        z.unknown(),
+      );
+    },
   };
 }
 

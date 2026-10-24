@@ -131,6 +131,8 @@ export class FakeSandbox implements Sandbox {
     string,
     Array<(line: string) => void>
   >();
+  /** Hanging execs per container, ended by `destroy` the way `docker rm -f` ends a real one. */
+  private readonly hanging = new Map<string, Array<() => void>>();
 
   constructor(
     private readonly script: (
@@ -184,10 +186,14 @@ export class FakeSandbox implements Sandbox {
           options.timeoutMs !== undefined
             ? setTimeout(() => resolve(true), options.timeoutMs)
             : null;
-        options.signal?.addEventListener("abort", () => {
+        const end = (): void => {
           if (timer) clearTimeout(timer);
           resolve(true);
-        });
+        };
+        options.signal?.addEventListener("abort", end);
+        const ends = this.hanging.get(handle.name) ?? [];
+        ends.push(end);
+        this.hanging.set(handle.name, ends);
       });
       return {
         exitCode: 137,
@@ -247,5 +253,12 @@ export class FakeSandbox implements Sandbox {
 
   async destroy(handle: SandboxHandle): Promise<void> {
     this.destroyed.push(handle.name);
+    for (const end of this.hanging.get(handle.name) ?? []) end();
+    this.hanging.delete(handle.name);
+  }
+
+  /** Containers created and not destroyed: what a cleanup must leave none of. */
+  get running(): string[] {
+    return this.started.filter((name) => !this.destroyed.includes(name));
   }
 }

@@ -20,11 +20,13 @@ import {
   runLoop,
   type RunDeps,
   type RunOptions,
+  type SignalSource,
 } from "./run";
 import { FakeSandbox, type FakeExecAnswer, type FakeExecCall } from "./sandbox";
 import { capture, createFakeSpawn, spawnProcess, type Spawn } from "./spawn";
 import { createRedactor } from "./redact";
 import { acquireAccountLock } from "./lock";
+import { markerTitle } from "./teardownStep";
 import type { FetchLike, HarnessAdapter, NormalizedEvent } from "./types";
 
 const ID = "0123456789abcdef0123456789abcdef";
@@ -247,10 +249,102 @@ const happyScriptLines = [
   `DONE ${ORIGIN}`,
 ];
 
+/**
+ * The event log of a `setup` whose Gateway build failed (run
+ * 2026-10-24T07:36 on Linux): the install started, nothing was uploaded, the
+ * CLI exited 1 with GATEWAY_BUILD_FAILED in its last second.
+ */
+function buildFailedEventLog(): string[] {
+  const t = (s: number) =>
+    `2026-10-25T14:10:${String(s).padStart(2, "0")}.000Z`;
+  return [
+    JSON.stringify({
+      type: "invocation",
+      pid: 41,
+      ts: t(0),
+      argv: ["node", "cli.js", "setup", "--domain", `apps.${ZONE}`, "--json"],
+      cwd: "/work/every-app",
+      json: true,
+      isatty: { stdin: false, stdout: false, stderr: false },
+      ci: false,
+    }),
+    cliEvent({
+      pid: 41,
+      ts: t(4),
+      type: "step",
+      step: "setup.gateway",
+      status: "start",
+      data: { change: "install", gatewayUrl: ORIGIN },
+    }),
+    cliEvent({
+      pid: 41,
+      ts: t(4),
+      type: "step",
+      step: "gateway.release",
+      status: "start",
+    }),
+    cliEvent({
+      pid: 41,
+      ts: t(18),
+      type: "error",
+      code: "GATEWAY_BUILD_FAILED",
+      message:
+        "Building the Gateway failed\npnpm run build:release exited with code 1",
+      retryable: false,
+      data: { command: "pnpm run build:release", exitCode: 1 },
+    }),
+    JSON.stringify({ type: "exit", pid: 41, ts: t(18), code: 1, ms: 18118 }),
+  ];
+}
+
+/** What the control script prints when `setup` exits 1: it stops there. */
+const buildFailedScriptLines = [
+  "LOOP_CMD pnpm install",
+  "LOOP_EXIT 0",
+  `LOOP_CMD pnpm everyapp setup --domain apps.${ZONE} --json`,
+  "LOOP_EXIT 1",
+  "BLOCKED: setup exited 1",
+];
+
+/** No Gateway at the origin: every probe of it fails at DNS, as the verifier saw it from outside. */
+function unreachableGateway(): Record<string, (init: RequestInit) => Response> {
+  const noAddress = (): Response => {
+    throw new TypeError(
+      `apps.${ZONE} has no address at its zone's nameservers.`,
+    );
+  };
+  return {
+    [`GET ${ORIGIN}/sign-in`]: noAddress,
+    [`POST ${ORIGIN}/api/setup/claim`]: noAddress,
+    [`GET ${ORIGIN}/api/me/apps`]: noAddress,
+    [`POST ${ORIGIN}/api/auth/sign-in/email`]: noAddress,
+  };
+}
+
+/** `everyapp status --json` in the verifier's sibling when nothing is installed. */
+const gatewayNotFoundStatus = (
+  call: FakeExecCall,
+): FakeExecAnswer | undefined =>
+  call.argv.join(" ").includes("everyapp status")
+    ? {
+        code: 1,
+        stdout: [
+          cliEvent({
+            type: "error",
+            code: "GATEWAY_NOT_FOUND",
+            message: "No Gateway in this account",
+            retryable: false,
+          }),
+        ],
+      }
+    : undefined;
+
 interface World {
   deps: RunDeps;
   sandbox: FakeSandbox;
   cfCalls: FakeCfCall[];
+  /** The account's KV namespaces as the fake holds them: created by POST, gone on DELETE. */
+  kv: Array<{ id: string; title: string }>;
   gatewayCalls: string[];
   /** Execs and gateway calls in the order they happened. */
   timeline: string[];
@@ -274,9 +368,12 @@ function makeWorld(
     ) => FakeExecAnswer | undefined;
     /** Rows the fake D1 returns for the claimer's SELECT on owner_setup_tokens. */
     d1Rows?: Array<Record<string, unknown>>;
+    /** KV namespace titles already in the account (another run's marker, say). */
+    kv?: string[];
   },
 ): World {
   const configDir = makeConfigDir();
+  const kv = (script.kv ?? []).map((title, i) => ({ id: `kv-${i}`, title }));
   const runsRoot = path.join(configDir, "runs");
   const logs: string[] = [];
   const timeline: string[] = [];
@@ -390,17 +487,29 @@ function makeWorld(
     {
       method: "GET",
       path: new RegExp(`^/accounts/${ID}/storage/kv/namespaces$`),
-      reply: () => ({ result: [] }),
+      reply: () => ({ result: [...kv] }),
     },
     {
       method: "POST",
       path: new RegExp(`^/accounts/${ID}/storage/kv/namespaces$`),
-      reply: (_m, call) => ({
-        result: {
-          id: "kv-marker",
+      reply: (_m, call) => {
+        const row = {
+          id: `kv-${kv.length}`,
           title: (call.body as { title: string }).title,
-        },
-      }),
+        };
+        kv.push(row);
+        return { result: row };
+      },
+    },
+    {
+      method: "DELETE",
+      path: new RegExp(`^/accounts/${ID}/storage/kv/namespaces/([^/]+)$`),
+      reply: (match) => {
+        const index = kv.findIndex((row) => row.id === match[1]);
+        if (index === -1) return { status: 404, success: false };
+        kv.splice(index, 1);
+        return { result: null };
+      },
     },
     {
       method: "GET",
@@ -497,6 +606,7 @@ function makeWorld(
     deps,
     sandbox,
     cfCalls: cf.calls,
+    kv,
     gatewayCalls,
     timeline,
     logs,
@@ -915,6 +1025,352 @@ describe("runLoop", () => {
     ).toBe(2);
   });
 
+  it("a pre-run wipe refused on another live run's marker is fail-infra teardown_refused: nothing installed, no verifier, the command that forces named", async () => {
+    const repo = await makeRepo();
+    // Another lane's run holds a live lock (another account's, on this host) and its marker is in
+    // this account: the one shape of marker the wipe still refuses on.
+    const otherRunId = "2026-10-25T13:00-claude-other1";
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      kv: [markerTitle(otherRunId), "every-app-gateway-OAUTH_KV"],
+    });
+    const otherLane = acquireAccountLock(
+      path.join(world.configDir, "locks"),
+      "fedcba9876543210fedcba9876543210",
+      otherRunId,
+    );
+    try {
+      const outcome = await runLoop(options(), world.deps);
+      const record = outcome.record!;
+      expect(outcome.exitCode).toBe(1);
+      expect(record.verdict).toMatchObject({
+        value: "fail-infra",
+        reasonCode: "teardown_refused",
+        falseDone: false,
+      });
+      expect(record.terminal_reason).toBe("teardown_failed");
+      expect(record.errors).toEqual([
+        {
+          code: "teardown_marker_refused",
+          step: "teardown.before",
+          source: "infra",
+          message: expect.stringContaining(
+            `Another run left its marker in the account: ${markerTitle(otherRunId)} still holds the lock here; if that run is really gone, \`pnpm loop teardown --account loop-1 --force\` wipes anyway.`,
+          ),
+        },
+      ]);
+      expect(record.verify.phaseReached).toBe("none");
+      // Refused before the dry run: no everyapp ran, no marker went in, no harness container, no verifier.
+      expect(
+        world.sandbox.execs.filter((e) => e.argv.includes("everyapp")),
+      ).toEqual([]);
+      expect(world.kv.map((row) => row.title)).toEqual([
+        markerTitle(otherRunId),
+        "every-app-gateway-OAUTH_KV",
+      ]);
+      expect(
+        world.sandbox.created.some(
+          (spec) => spec.name === containerName(outcome.runId),
+        ),
+      ).toBe(false);
+      expect(world.gatewayCalls).toEqual([]);
+      expect(world.sandbox.running).toEqual([]);
+      expect(world.logs.join("\n")).toContain(
+        "wipe before the run marker_refused",
+      );
+    } finally {
+      otherLane.release();
+    }
+  });
+
+  it("a marker left by a run whose lock died here (a SIGKILLed driver) is stale at any age: the next run takes the lock over and wipes without --force", async () => {
+    const repo = await makeRepo();
+    // The dead run's marker is 30 minutes old: young by the age rule, but its lock on this account
+    // is a dead process's, which the next run's preflight takes over and remembers.
+    const deadRunId = `${new Date(Date.now() - 30 * 60_000).toISOString().slice(0, 16)}-script-dead01`;
+    const world = makeWorld(repo, {
+      eventLog: happyEventLog(),
+      harnessLines: happyScriptLines,
+      kv: [markerTitle(deadRunId)],
+    });
+    const locks = path.join(world.configDir, "locks");
+    const dead = acquireAccountLock(locks, ID, deadRunId);
+    fs.writeFileSync(
+      dead.file,
+      JSON.stringify({ ...dead.info, pid: 2 ** 22 - 1 }),
+    );
+    const outcome = await runLoop(options(), world.deps);
+    const text = world.logs.join("\n");
+    expect(outcome.exitCode, text).toBe(0);
+    expect(outcome.record!.verdict.value).toBe("pass");
+    expect(text).not.toContain("marker_refused");
+    // The dead run stays known after its lock file was replaced, and the wipe found the marker.
+    expect(
+      JSON.parse(fs.readFileSync(path.join(locks, `${ID}.state.json`), "utf8")),
+    ).toMatchObject({ deadRunIds: [deadRunId] });
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(world.runsRoot, outcome.runId, RUN_FILES.inventoryBefore),
+          "utf8",
+        ),
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a pre-run wipe whose sibling fails (pnpm install exits 1) is fail-infra teardown_failed: nothing installed, no harness container, no verifier", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      // Only a sibling runs `pnpm install` as an exec of its own (the control script's is a line it prints).
+      exec: (call) =>
+        call.argv.join(" ") === "pnpm install"
+          ? { code: 1, stderr: ["ERR_PNPM_NO_SCRIPT_OR_WHATEVER"] }
+          : undefined,
+    });
+    const outcome = await runLoop(options(), world.deps);
+    const record = outcome.record!;
+    expect(outcome.exitCode).toBe(1);
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "teardown_failed",
+      falseDone: false,
+    });
+    expect(record.terminal_reason).toBe("teardown_failed");
+    expect(record.errors).toEqual([
+      {
+        code: "teardown_sibling_failed",
+        step: "teardown.before",
+        source: "infra",
+        message: "pnpm install failed in the sibling",
+      },
+    ]);
+    expect(record.verify.phaseReached).toBe("none");
+    expect(record.phases.map((p) => p.name)).not.toContain("verify");
+    expect(
+      world.sandbox.execs.filter((e) => e.argv.includes("everyapp")),
+    ).toEqual([]);
+    expect(world.kv).toEqual([]);
+    expect(
+      world.sandbox.created.some(
+        (spec) => spec.name === containerName(outcome.runId),
+      ),
+    ).toBe(false);
+    expect(world.sandbox.running).toEqual([]);
+    expect(world.logs.join("\n")).toContain(
+      "wipe before the run sibling_failed",
+    );
+  });
+
+  it("SIGTERM mid-harness: cleanup removes the container, the run's marker and every sibling, wipes, writes a killed record, and only then exits 130", async () => {
+    const repo = await makeRepo();
+    let onSignal: ((signal: NodeJS.Signals) => void) | null = null;
+    const exits: number[] = [];
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      exec: (call) => {
+        if (call.argv.join(" ") !== "bash /loop/script.sh") return undefined;
+        // The kill arrives while the harness runs; `docker rm -f` of its container ends the exec.
+        setTimeout(() => onSignal?.("SIGTERM"), 0);
+        return { hang: true };
+      },
+    });
+    // What the world looks like at the moment of exit(130): the proof that nothing exits before
+    // cleanup is done, whatever the assertions after runLoop returns would say.
+    const atExit: Array<{
+      running: number;
+      marker: boolean;
+      record: boolean;
+      lock: boolean;
+    }> = [];
+    const signals: SignalSource = {
+      on: (handler) => {
+        onSignal = handler;
+        return () => {
+          onSignal = null;
+        };
+      },
+      exit: (code) => {
+        exits.push(code);
+        atExit.push({
+          running: world.sandbox.running.length,
+          marker: world.kv.some((row) =>
+            row.title.startsWith("every-loop-run-"),
+          ),
+          record:
+            fs.existsSync(world.runsRoot) &&
+            fs
+              .readdirSync(world.runsRoot)
+              .some((dir) =>
+                fs.existsSync(path.join(world.runsRoot, dir, RUN_FILES.record)),
+              ),
+          lock: fs.existsSync(
+            path.join(world.configDir, "locks", `${ID}.json`),
+          ),
+        });
+      },
+    };
+    const outcome = await runLoop(options(), { ...world.deps, signals });
+    const text = world.logs.join("\n");
+    expect(exits, text).toEqual([130]);
+    expect(atExit).toEqual([
+      { running: 0, marker: false, record: true, lock: false },
+    ]);
+    const record = outcome.record!;
+    expect(record.terminal_reason).toBe("killed");
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "killed",
+    });
+    expect(record.errors[0]).toMatchObject({ code: "killed", source: "loop" });
+    // The marker was created, then removed by cleanup, and the post-run wipe was not refused on it.
+    expect(
+      world.cfCalls.some(
+        (c) => c.method === "POST" && c.path.endsWith("/storage/kv/namespaces"),
+      ),
+    ).toBe(true);
+    expect(
+      world.cfCalls.filter((c) => c.method === "DELETE").map((c) => c.path),
+    ).toEqual([`/accounts/${ID}/storage/kv/namespaces/kv-0`]);
+    expect(
+      world.kv.filter((row) => row.title.startsWith("every-loop-run-")),
+    ).toEqual([]);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+    expect(text).not.toContain("teardown after the run failed");
+    // No verifier after a kill, and nothing left running: not the harness's container, not a sibling.
+    expect(
+      world.sandbox.execs.some((e) =>
+        e.argv.join(" ").includes("everyapp status"),
+      ),
+    ).toBe(false);
+    expect(record.phases.map((p) => p.name)).not.toContain("verify");
+    expect(world.sandbox.running).toEqual([]);
+    expect(world.sandbox.destroyed).toContain(containerName(outcome.runId));
+    // The record exists on disk and the lock is released.
+    expect(
+      fs.existsSync(path.join(world.runsRoot, outcome.runId, RUN_FILES.record)),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(world.configDir, "locks", `${ID}.json`)),
+    ).toBe(false);
+    expect(text).toContain("SIGTERM: cleaning up");
+    expect(text).toContain("run marker removed");
+  });
+
+  it("a signal during the post-run wipe leaves a finished run as it was: the wipe completes, the verdict stays pass, then exit 130", async () => {
+    const repo = await makeRepo();
+    let onSignal: ((signal: NodeJS.Signals) => void) | null = null;
+    const exits: number[] = [];
+    let teardowns = 0;
+    const world = makeWorld(repo, {
+      eventLog: happyEventLog(),
+      harnessLines: happyScriptLines,
+      exec: (call) => {
+        if (!call.argv.join(" ").includes("everyapp teardown"))
+          return undefined;
+        teardowns += 1;
+        // The wipe before the run is one dry run (the account is empty); the next teardown exec is
+        // the post-run wipe's, already inside cleanup.
+        if (teardowns === 2) onSignal?.("SIGTERM");
+        return undefined;
+      },
+    });
+    const signals: SignalSource = {
+      on: (handler) => {
+        onSignal = handler;
+        return () => {
+          onSignal = null;
+        };
+      },
+      exit: (code) => {
+        exits.push(code);
+      },
+    };
+    const outcome = await runLoop(options(), { ...world.deps, signals });
+    const text = world.logs.join("\n");
+    expect(exits, text).toEqual([130]);
+    const record = outcome.record!;
+    expect(record.terminal_reason).toBe("completed");
+    expect(record.verdict.value).toBe("pass");
+    expect(record.errors.map((e) => e.code)).not.toContain("killed");
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+    expect(text).toContain(
+      "SIGTERM during the cleanup after the run: the record keeps what the run was",
+    );
+    expect(text).not.toContain("teardown after the run failed");
+    expect(world.sandbox.running).toEqual([]);
+  });
+
+  it("a signal while the harness's container is being created still removes it, the marker and the siblings: nothing outlives the driver", async () => {
+    const repo = await makeRepo();
+    let onSignal: ((signal: NodeJS.Signals) => void) | null = null;
+    const exits: number[] = [];
+    const world = makeWorld(repo, { eventLog: [], harnessLines: [] });
+    const create = world.sandbox.create.bind(world.sandbox);
+    world.sandbox.create = async (spec) => {
+      // The kill lands while `docker create` of the harness's container (the one with the event
+      // log in its env) is in flight: cleanup's first pass finds no handle to remove.
+      if (spec.env["EVERYAPP_EVENT_LOG"]) onSignal?.("SIGTERM");
+      return create(spec);
+    };
+    const signals: SignalSource = {
+      on: (handler) => {
+        onSignal = handler;
+        return () => {
+          onSignal = null;
+        };
+      },
+      exit: (code) => {
+        exits.push(code);
+      },
+    };
+    const outcome = await runLoop(options(), { ...world.deps, signals });
+    const text = world.logs.join("\n");
+    expect(exits, text).toEqual([130]);
+    const record = outcome.record!;
+    expect(record.terminal_reason).toBe("killed");
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "killed",
+    });
+    const harness = world.sandbox.created.find(
+      (spec) => spec.env["EVERYAPP_EVENT_LOG"],
+    );
+    expect(harness?.name).toBe(containerName(outcome.runId));
+    expect(world.sandbox.destroyed).toContain(harness!.name);
+    expect(world.sandbox.running).toEqual([]);
+    // Never launched, never verified; the marker went and the account was wiped again.
+    expect(
+      world.sandbox.execs.some(
+        (e) => e.argv.join(" ") === "bash /loop/script.sh",
+      ),
+    ).toBe(false);
+    expect(
+      world.sandbox.execs.some((e) =>
+        e.argv.join(" ").includes("everyapp status"),
+      ),
+    ).toBe(false);
+    expect(
+      world.kv.filter((row) => row.title.startsWith("every-loop-run-")),
+    ).toEqual([]);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+  });
+
   it("without the event-log seam in the commit under test, the log stays empty, the claim runs D1-side, the app comes from status --json, and the record is still a pass", async () => {
     const repo = await makeRepo({ seam: false });
     const world = makeWorld(repo, {
@@ -1135,6 +1591,414 @@ describe("runLoop", () => {
     expect(world.logs.join("\n")).toContain(
       "registering the workers.dev subdomain everyapp-loop1",
     );
+  });
+
+  it("the event log the record reads is the copy docker cp took, not the tail's buffer: the CLI's last two lines (error, exit) reach everyappCommands[] and reparse", async () => {
+    const repo = await makeRepo();
+    const full = buildFailedEventLog();
+    const world = makeWorld(repo, {
+      // The tail stops two lines short: the `error` and `exit` lines were written in the second
+      // before the process ended and the harness's exec returned (run 2026-10-24T07:36 saw 9 of 11).
+      eventLog: full.slice(0, -2),
+      harnessLines: buildFailedScriptLines,
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: gatewayNotFoundStatus,
+    });
+    const copyOut = world.sandbox.copyOut.bind(world.sandbox);
+    world.sandbox.copyOut = async (handle, inside, host) => {
+      await copyOut(handle, inside, host);
+      if (inside !== "/loop") return;
+      fs.mkdirSync(host, { recursive: true });
+      fs.writeFileSync(
+        path.join(host, "everyapp-events.ndjson"),
+        `${full.join("\n")}\n`,
+      );
+    };
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+    });
+    const text = world.logs.join("\n");
+    const record = outcome.record!;
+    expect(text).toContain(
+      "event log: the tail delivered 3 of 5 line(s); the copy from the container replaces it",
+    );
+    expect(record.everyappCommands).toHaveLength(1);
+    expect(record.everyappCommands[0]).toMatchObject({
+      argv: ["setup", "--domain", `apps.${ZONE}`, "--json"],
+      exit: 1,
+      ms: 18118,
+      endedBy: "exit",
+      events: { errors: ["GATEWAY_BUILD_FAILED"] },
+    });
+    expect(record.steps.setup).toEqual({ status: "error", reruns: 0 });
+    expect(record.errors).toContainEqual({
+      code: "GATEWAY_BUILD_FAILED",
+      step: "setup",
+      source: "cli",
+      message: expect.stringContaining("exit 1"),
+    });
+    expect(record.verdict).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+    });
+    // The run directory's everyapp-events.ndjson is the complete file, mode 600, and reparse reads it.
+    const dir = path.join(world.runsRoot, outcome.runId);
+    const onDisk = fs
+      .readFileSync(path.join(dir, RUN_FILES.eventLog), "utf8")
+      .split("\n")
+      .filter((line) => line !== "");
+    expect(onDisk).toHaveLength(5);
+    expect(onDisk[4]).toContain('"type":"exit"');
+    expect(fs.statSync(path.join(dir, RUN_FILES.eventLog)).mode & 0o077).toBe(
+      0,
+    );
+    const logs: string[] = [];
+    expect(
+      recomputeMain({
+        runsRoot: world.runsRoot,
+        runId: outcome.runId,
+        renormalize: false,
+        log: (line) => logs.push(line),
+      }),
+    ).toBe(0);
+    const reparsed = readRunRecord(world.runsRoot, outcome.runId);
+    expect(reparsed.everyappCommands[0]).toMatchObject({
+      exit: 1,
+      events: { errors: ["GATEWAY_BUILD_FAILED"] },
+    });
+    expect(reparsed.verdict.reasonCode).toBe(
+      "everyapp_error:GATEWAY_BUILD_FAILED",
+    );
+  });
+
+  it("setup's GATEWAY_BUILD_FAILED decides fail-onboarding with the code, and the verifier probes a Gateway that was never uploaded once instead of waiting its windows", async () => {
+    const repo = await makeRepo();
+    const sleeps: number[] = [];
+    const world = makeWorld(repo, {
+      eventLog: buildFailedEventLog(),
+      harnessLines: buildFailedScriptLines,
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: gatewayNotFoundStatus,
+    });
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    const text = world.logs.join("\n");
+    const record = outcome.record!;
+    expect(outcome.exitCode).toBe(1);
+    expect(record.verdict, text).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "everyapp_error:GATEWAY_BUILD_FAILED",
+      falseDone: false,
+    });
+    expect(record.terminal_reason).toBe("blocked");
+    expect(record.everyappCommands[0]).toMatchObject({
+      argv: ["setup", "--domain", `apps.${ZONE}`, "--json"],
+      exit: 1,
+      events: { errors: ["GATEWAY_BUILD_FAILED"] },
+    });
+    expect(record.verify.phaseReached).toBe("none");
+    expect(record.verify.rows.G1).toBe("fail");
+    // Every verifier row ran once: one probe of the sign-in page, one status, no 10-second poll.
+    const verifyJson = JSON.parse(
+      fs.readFileSync(
+        path.join(world.runsRoot, outcome.runId, RUN_FILES.verify),
+        "utf8",
+      ),
+    ) as { rows: Record<string, { attempts: number }> };
+    for (const [id, row] of Object.entries(verifyJson.rows))
+      expect(row.attempts, id).toBeLessThanOrEqual(1);
+    expect(
+      world.gatewayCalls.filter((c) => c === `GET ${ORIGIN}/sign-in`),
+    ).toHaveLength(1);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp status"),
+      ),
+    ).toHaveLength(1);
+    expect(sleeps.filter((ms) => ms >= 10_000)).toEqual([]);
+    // Both wipes ran, so the account holds nothing of the half-built install.
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+    expect(record.errors.map((e) => e.code)).not.toContain(
+      "teardown_after_failed",
+    );
+    expect(text).toContain(
+      "fail-onboarding (everyapp_error:GATEWAY_BUILD_FAILED)",
+    );
+  });
+
+  it("the driver's temp dir with the tools bundle outlives the post-run wipe and goes last; a bundle found missing is made again, so a run that failed early still ends with an empty account", async () => {
+    const repo = await makeRepo();
+    const bundleCopies: Array<{ hostPath: string; existed: boolean }> = [];
+    let tempDirSeen: string | null = null;
+    const world = makeWorld(repo, {
+      eventLog: buildFailedEventLog(),
+      harnessLines: buildFailedScriptLines,
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: gatewayNotFoundStatus,
+    });
+    // What the sibling sees when the bundle is copied in: is the file there at that moment?
+    const copyIn = world.sandbox.copyIn.bind(world.sandbox);
+    world.sandbox.copyIn = async (handle, hostPath, sandboxPath) => {
+      if (hostPath.endsWith("/tools.bundle")) {
+        bundleCopies.push({ hostPath, existed: fs.existsSync(hostPath) });
+        tempDirSeen = path.dirname(hostPath);
+      }
+      await copyIn(handle, hostPath, sandboxPath);
+    };
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+    });
+    const text = world.logs.join("\n");
+    // The pre-run wipe and the post-run wipe each copied the bundle in, and it was there both times.
+    expect(
+      bundleCopies.map((c) => c.existed),
+      text,
+    ).toEqual([true, true]);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+    expect(outcome.record!.errors.map((e) => e.code)).not.toContain(
+      "teardown_after_failed",
+    );
+    expect(outcome.record!.phases.map((p) => p.name)).toContain(
+      "teardown.after",
+    );
+    expect(text).not.toContain("is gone before the wipe");
+    // Logged at the two moments that matter, so a live run pins when a deletion happened.
+    expect(text).toContain("temp dir present at verify start");
+    expect(text).toContain("temp dir present before the post-run wipe");
+    // Removed at the very end: nothing after cleanup needs it.
+    expect(tempDirSeen).toMatch(/everyapp-loop-run-/);
+    expect(fs.existsSync(tempDirSeen!)).toBe(false);
+
+    // The live run of 2026-10-24 found the temp dir gone when the post-run wipe needed the bundle:
+    // whatever removed it, the bundle is made again and the wipe runs.
+    const again: Array<{ existed: boolean }> = [];
+    const vanished = makeWorld(repo, {
+      eventLog: buildFailedEventLog(),
+      harnessLines: buildFailedScriptLines,
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: (call, sandbox) => {
+        if (call.argv.join(" ") === "bash /loop/script.sh") {
+          const bundle = sandbox.copiedIn.find((c) =>
+            c.hostPath.endsWith("/tools.bundle"),
+          )!;
+          fs.rmSync(path.dirname(bundle.hostPath), {
+            recursive: true,
+            force: true,
+          });
+        }
+        return gatewayNotFoundStatus(call);
+      },
+    });
+    const copyInAgain = vanished.sandbox.copyIn.bind(vanished.sandbox);
+    vanished.sandbox.copyIn = async (handle, hostPath, sandboxPath) => {
+      if (hostPath.endsWith("/tools.bundle"))
+        again.push({ existed: fs.existsSync(hostPath) });
+      await copyInAgain(handle, hostPath, sandboxPath);
+    };
+    const second = await runLoop(options(), {
+      ...vanished.deps,
+      now: advancingClock(),
+    });
+    const secondText = vanished.logs.join("\n");
+    expect(secondText).toContain("temp dir GONE at verify start");
+    expect(secondText).toContain(
+      "is gone before the verifier: making it again",
+    );
+    expect(secondText).toContain("is gone before the wipe: making it again");
+    expect(
+      again.map((c) => c.existed),
+      secondText,
+    ).toEqual([true, true]);
+    expect(
+      vanished.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ),
+    ).toHaveLength(2);
+    expect(second.record!.errors.map((e) => e.code)).not.toContain(
+      "teardown_after_failed",
+    );
+    expect(
+      fs.existsSync(
+        path.dirname(
+          vanished.sandbox.copiedIn.find((c) =>
+            c.hostPath.endsWith("/tools.bundle"),
+          )!.hostPath,
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("a reply still reaches the container after the temp dir vanished mid-harness: the dir is made again for it", async () => {
+    const repo = await makeRepo();
+    const t = (s: number) =>
+      `2026-10-25T14:${String(10 + s).padStart(2, "0")}:00.000Z`;
+    const inv = (pid: number, ts: string, argv: string[], cwd: string) =>
+      JSON.stringify({
+        type: "invocation",
+        pid,
+        ts,
+        argv: ["node", "cli.js", ...argv],
+        cwd,
+        json: true,
+        isatty: { stdin: false, stdout: false, stderr: false },
+        ci: false,
+      });
+    const exit = (pid: number, ts: string) =>
+      JSON.stringify({ type: "exit", pid, ts, code: 0, ms: 1000 });
+    const push = (sandbox: FakeSandbox, lines: string[]) => {
+      for (const line of lines)
+        sandbox.pushTail("/loop/everyapp-events.ndjson", line);
+    };
+    let tempDir: string | null = null;
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      exec: (call, sandbox) => {
+        const argv = call.argv.join(" ");
+        if (argv === "fake --turn 1") {
+          push(sandbox, [
+            inv(
+              11,
+              t(0),
+              ["setup", "--domain", `apps.${ZONE}`, "--json"],
+              "/work/every-app",
+            ),
+            cliEvent({
+              pid: 11,
+              ts: t(6),
+              type: "action_required",
+              action: "claim_owner",
+              message: "Open this link",
+              data: { url: `${ORIGIN}/setup#token=${EST}`, waiting: true },
+            }),
+            cliEvent({
+              pid: 11,
+              ts: t(7),
+              type: "step",
+              step: "setup.owner",
+              status: "ok",
+            }),
+            cliEvent({
+              pid: 11,
+              ts: t(8),
+              type: "done",
+              data: { gatewayUrl: ORIGIN },
+            }),
+            exit(11, t(8)),
+          ]);
+          // Whatever removed the live run's temp dir does so while the harness runs.
+          tempDir = path.dirname(
+            sandbox.copiedIn.find((c) => c.sandboxPath === "/loop/prompt.txt")!
+              .hostPath,
+          );
+          fs.rmSync(tempDir, { recursive: true, force: true });
+          return {
+            stdout: [
+              "TEXT Open the setup link and tell me when you have.",
+              "RESULT",
+            ],
+            code: 0,
+          };
+        }
+        if (argv.startsWith("fake --resume s1")) {
+          push(sandbox, [
+            inv(12, t(9), ["create", "hello", "--json"], "/work/every-app"),
+            cliEvent({
+              pid: 12,
+              ts: t(10),
+              type: "done",
+              data: { appId: "hello" },
+            }),
+            exit(12, t(10)),
+            inv(13, t(11), ["deploy", "--json"], "/work/every-app/apps/hello"),
+            cliEvent({
+              pid: 13,
+              ts: t(13),
+              type: "done",
+              data: { url: `https://${APP_HOST}` },
+            }),
+            exit(13, t(13)),
+          ]);
+          return { stdout: [`TEXT DONE ${ORIGIN}`, "RESULT"], code: 0 };
+        }
+        return undefined;
+      },
+    });
+    const replies: Array<{ hostPath: string; existed: boolean }> = [];
+    const copyIn = world.sandbox.copyIn.bind(world.sandbox);
+    world.sandbox.copyIn = async (handle, hostPath, sandboxPath) => {
+      if (/\/reply-\d+\.txt$/.test(hostPath))
+        replies.push({ hostPath, existed: fs.existsSync(hostPath) });
+      await copyIn(handle, hostPath, sandboxPath);
+    };
+    const outcome = await runLoop(
+      options({ harness: "claude", claimAfter: "turn-end" }),
+      { ...world.deps, createHarness: () => fakeTurnsAdapter() },
+    );
+    const text = world.logs.join("\n");
+    expect(tempDir).not.toBeNull();
+    expect(replies, text).toHaveLength(1);
+    expect(replies[0]!.existed).toBe(true);
+    expect(path.dirname(replies[0]!.hostPath)).toBe(tempDir);
+    expect(text).toContain("reply 1:");
+    expect(outcome.record!.verdict.value, text).toBe("pass");
+    expect(outcome.record!.errors.map((e) => e.code)).not.toContain(
+      "teardown_after_failed",
+    );
+    expect(fs.existsSync(tempDir!)).toBe(false);
+  });
+
+  it("with the seam but no setup in the log (the npx trap), the verifier keeps its windows: nothing says the Gateway is absent", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [
+        "LOOP_CMD pnpm install",
+        "LOOP_EXIT 0",
+        "LOOP_CMD npx everyapp setup --json",
+        "LOOP_EXIT 1",
+        "BLOCKED: setup exited 1",
+      ],
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: gatewayNotFoundStatus,
+    });
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+    });
+    const record = outcome.record!;
+    expect(record.everyappCommands).toEqual([]);
+    const verifyJson = JSON.parse(
+      fs.readFileSync(
+        path.join(world.runsRoot, outcome.runId, RUN_FILES.verify),
+        "utf8",
+      ),
+    ) as { rows: Record<string, { attempts: number }> };
+    expect(verifyJson.rows["G1"]!.attempts).toBeGreaterThan(1);
+    expect(record.verdict).toMatchObject({
+      value: "fail-infra",
+      reasonCode: "gateway_unreachable",
+    });
   });
 
   it("a failed preflight (the account is locked by another run) writes a fail-infra record and creates nothing", async () => {

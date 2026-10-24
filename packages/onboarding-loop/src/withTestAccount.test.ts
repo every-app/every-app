@@ -191,6 +191,54 @@ describe("withTestAccount", () => {
     expect(throwing.execs).toHaveLength(0);
   });
 
+  it("a signal already aborted when the sibling exists destroys it at once: no clone, no work, both hooks called", async () => {
+    const sandbox = new FakeSandbox();
+    const stopped = new AbortController();
+    stopped.abort(new Error("the driver was stopped"));
+    const seen: string[] = [];
+    await expect(
+      withTestAccount(
+        {
+          sandbox,
+          image: "img",
+          account,
+          runId: "r",
+          bundlePath: "/tmp/b",
+          cf: null,
+          signal: stopped.signal,
+          onCreated: (handle) => seen.push(`created ${handle.name}`),
+          onDestroyed: (handle) => seen.push(`destroyed ${handle.name}`),
+        },
+        async () => "ran",
+      ),
+    ).rejects.toThrow("the driver was stopped");
+    expect(sandbox.created).toHaveLength(1);
+    expect(sandbox.destroyed).toEqual([sandbox.created[0]!.name]);
+    expect(sandbox.execs).toHaveLength(0);
+    expect(sandbox.copiedIn).toHaveLength(0);
+    expect(seen).toEqual([
+      `created ${sandbox.created[0]!.name}`,
+      `destroyed ${sandbox.created[0]!.name}`,
+    ]);
+    // Not aborted: the same options run as before.
+    const live = new FakeSandbox();
+    await expect(
+      withTestAccount(
+        {
+          sandbox: live,
+          image: "img",
+          account,
+          runId: "r",
+          bundlePath: null,
+          cf: null,
+          signal: new AbortController().signal,
+        },
+        async () => "ran",
+      ),
+    ).resolves.toBe("ran");
+    expect(live.destroyed).toHaveLength(1);
+  });
+
   it("without a bundle there is no checkout and everyapp refuses", async () => {
     const sandbox = new FakeSandbox();
     await withTestAccount(

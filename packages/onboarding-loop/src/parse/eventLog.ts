@@ -24,6 +24,8 @@ export interface CommandTrace extends EveryappCommand {
   endedAt: string | null;
   events: EveryappCommand["events"] & {
     steps: Array<{ step: string; status: string; ts: string }>;
+    /** Each `error` line's code with the message the CLI gave it, in order: what the infra signature table reads (a Cloudflare 5xx is in the message, never the code). */
+    errorDetails: Array<{ code: string; message: string }>;
     done: boolean;
     doneData: Record<string, unknown> | null;
   };
@@ -67,6 +69,7 @@ export function everyappCommandsFrom(lines: EventLogLine[]): CommandTrace[] {
           actions: [],
           errors: [],
           steps: [],
+          errorDetails: [],
           done: false,
           doneData: null,
         },
@@ -98,6 +101,10 @@ export function everyappCommandsFrom(lines: EventLogLine[]): CommandTrace[] {
         break;
       case "error":
         trace.events.errors.push(line.code);
+        trace.events.errorDetails.push({
+          code: line.code,
+          message: line.message,
+        });
         break;
       case "action_required":
         trace.events.actions.push(line.action);
@@ -182,6 +189,24 @@ export function appFrom(traces: CommandTrace[]): {
       ? (deploy.events.doneData["url"] as string)
       : null;
   return { created, deployed: deploy !== undefined, url };
+}
+
+/**
+ * The log shows a Gateway upload: `setup.gateway` ok or skip (a live
+ * Gateway), or any `gateway.deploy` step (the upload began, so a Worker may
+ * exist even if the command then stopped). False when `setup` failed before
+ * it (a build error, say): nothing answers at the origin and the verifier
+ * need not wait its windows for it.
+ */
+export function gatewayUploadedFrom(traces: CommandTrace[]): boolean {
+  return traces.some((trace) =>
+    trace.events.steps.some(
+      (s) =>
+        (s.step === "setup.gateway" &&
+          (s.status === "ok" || s.status === "skip")) ||
+        s.step === "gateway.deploy",
+    ),
+  );
 }
 
 /** The actions, warnings and errors over every command, deduplicated in order. */

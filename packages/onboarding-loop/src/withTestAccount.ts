@@ -66,6 +66,17 @@ interface SiblingOptions {
   onLine?: (line: ExecLine) => void;
   /** Extra non-secret variables (EVERYAPP_EVENT_LOG for a sibling whose events are wanted). */
   extraEnv?: Record<string, string>;
+  /** The sibling exists; the driver notes it so a cleanup that interrupts `fn` can remove it. */
+  onCreated?: (handle: SandboxHandle) => void;
+  /** The sibling is gone (the finally ran), whichever way `fn` ended. */
+  onDestroyed?: (handle: SandboxHandle) => void;
+  /**
+   * The driver was stopped: a sibling whose `create` was in flight when
+   * the signal landed is destroyed the moment it exists, before any clone,
+   * and `fn` never runs. Without it a container created after the cleanup
+   * pass looked would outlive the driver.
+   */
+  signal?: AbortSignal;
 }
 
 export interface Sibling {
@@ -152,6 +163,14 @@ export async function withTestAccount<T>(
     workdir: "/work",
   };
   const handle = await options.sandbox.create(spec);
+  options.onCreated?.(handle);
+  if (options.signal?.aborted) {
+    await options.sandbox.destroy(handle).catch(() => undefined);
+    options.onDestroyed?.(handle);
+    throw options.signal.reason instanceof Error
+      ? options.signal.reason
+      : new Error("the driver was stopped while the sibling was created");
+  }
   const onLine = options.onLine;
   const exec = (
     argv: string[],
@@ -213,5 +232,6 @@ export async function withTestAccount<T>(
     return await fn(sibling);
   } finally {
     await options.sandbox.destroy(handle).catch(() => undefined);
+    options.onDestroyed?.(handle);
   }
 }

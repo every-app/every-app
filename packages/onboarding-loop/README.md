@@ -79,8 +79,16 @@ yet. Everything below is proven by running it, on fakes where it has to be.
   seam switches to the D1-side claim and records the deviation `d1_claim`;
   `register_workers_subdomain` in the event log triggers the REST `PUT` and
   queues "Done, continue" for the turn end; a locked account fails preflight
-  into a `fail-infra` record with nothing created; `reparse`, `replay`,
-  `report`, `findings`, `answer` and `gc` over the finished run.
+  into a `fail-infra` record with nothing created; a pre-run wipe refused on
+  another live run's marker is `fail-infra: teardown_refused`, one whose
+  sibling's `pnpm install` fails is `fail-infra: teardown_failed`, both with
+  the verifier never run; a marker left by a run whose lock died here is
+  wiped without `--force`; a SIGTERM mid-harness (or while the harness's
+  container is still being created) leaves no container, no sibling and no
+  marker behind, the record says `killed`, and the exit comes only after
+  that; a signal during the post-run wipe keeps the finished run's verdict;
+  `reparse`, `replay`, `report`, `findings`, `answer` and `gc` over the
+  finished run.
 - **The harness turns** (`src/turns.test.ts`): stop on `DONE`; the domain
   question asked mid-turn is answered through the native resume at the turn
   end as an expected hand-off, no nudge counted; a turn without `DONE` gets
@@ -227,7 +235,9 @@ without it the account id is typed at `/dev/tty`.
 process index), `harness.raw.redacted.jsonl` (every harness line per
 process and stream, for `reparse`), `harness.stdout.redacted.log`,
 `harness.stderr.redacted.log`, `everyapp-events.ndjson` (the CLI's event
-log), `verify.json`, `inventory-before.json`, `inventory-after.json`,
+log, the copy taken out of the container after the harness ended: the
+tail can miss the last lines a process writes in its final second),
+`verify.json`, `inventory-before.json`, `inventory-after.json`,
 `diff.txt`, `git-status.txt` (`git status --porcelain` over the gateway,
 packages and templates in the harness's checkout: the taint source),
 `versions.txt` (every binary's `--version` and `ls -la $HOME` in the
@@ -253,8 +263,11 @@ pnpm loop verify <runId> | reparse <runId> | replay <runId> | answer <runId> "<t
 pnpm loop report | findings [runId] [--onboarding-dx <id>] [--agent-docs <id>] | gc [--days n]
 # gc removes old run directories, stale locks, temp dirs and every loop-* container
 # that no run with a live lock owns (running or not); preflight removes only
-# stopped ones, and never under --dry-run. Ctrl-C during a run removes the
-# container, expires open setup links, wipes the account and releases the lock.
+# stopped ones, and never under --dry-run. Ctrl-C or SIGTERM during a run removes
+# the container and any sibling still running, removes the run's marker, expires
+# open setup links, wipes the account, writes the record (terminal_reason killed,
+# fail-infra: killed) and releases the lock, then exits 130; nothing exits before
+# that cleanup has finished.
 pnpm -C packages/onboarding-loop test        # vitest over fixtures and fakes
 pnpm -C packages/onboarding-loop types:check
 pnpm -C packages/onboarding-loop knip
