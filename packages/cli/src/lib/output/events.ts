@@ -22,6 +22,10 @@
  * a person and keep reading. If it is taken in time the run goes on and
  * ends `done` (exit 0), or with an error (exit 1) like any run; if not, a
  * last `action_required` ends it (exit 2).
+ *
+ * With `EVERYAPP_EVENT_LOG=<path>` in the environment, every event is also
+ * appended there, with the process's invocation and exit (eventLog.ts): a
+ * dormant seam for test harnesses and bug reports.
  */
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
@@ -30,6 +34,7 @@ import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
 import { CLI } from "./command";
+import { logEvent } from "./eventLog";
 import { formatFacts, type Fact } from "./table";
 import { capitalize, listed, plural, strings, text } from "./text";
 import { duration, roughly } from "./time";
@@ -1148,6 +1153,8 @@ function emitter(
       // Done after the actions it waited for were taken.
       else if (event.type === "done") waiting = false;
       write(event);
+      // EVERYAPP_EVENT_LOG, when set: the event as --json would carry it.
+      logEvent(event.type === "done" ? { ...event, display: undefined } : event, new Date(now()));
     },
     get exitCode() {
       if (failed) return 1;

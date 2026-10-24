@@ -4,6 +4,7 @@ import { run } from "@stricli/core";
 import { buildContext } from "@/context";
 import { buildApp, groupHelp, rootHelp, versionLine } from "@/app";
 import { requestedExitCode } from "@/lib/exit-code";
+import { logExit, logInvocation } from "@/lib/output/eventLog";
 import type { EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { eventSink } from "@/lib/output/run";
@@ -31,6 +32,10 @@ function globalOptions(argv: readonly string[]): {
 }
 
 const { args, json, noColor } = globalOptions(process.argv.slice(2));
+// With EVERYAPP_EVENT_LOG set, the process's start and end bracket its events there.
+const started = Date.now();
+logInvocation({ argv: process.argv.slice(2), json });
+process.on("exit", (code) => logExit(code, Date.now() - started));
 const color = colorEnabled(noColor);
 if (!color) chalk.level = 0;
 // What everyapp runs (cf attached to the terminal) doesn't color either.

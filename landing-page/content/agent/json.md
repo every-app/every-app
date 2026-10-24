@@ -424,9 +424,14 @@ Two cautions. Reruns are built without `--json`, so add it back, except a `rerun
 
 `everyapp dev` is the exception: a long-running, human-facing command. Its flags are `--port`, `--host`, `--mode`, `--gateway`, `--base-host` (declared `baseHost`; `--help` prints the kebab form and the parser takes both, stricli's `caseStyle` in `packages/cli/src/app.ts`) and `--skip-migrations`, with no `--json` (`packages/cli/src/commands/dev/command.ts`), and it always writes for a person (`eventSink(false)` in `packages/cli/src/commands/dev/index.ts`): the ready line, how to reach the app, then its request and tool-call lines (`dev.session`, `dev.mcp`) as they come. Ctrl-C stops the app's dev server and exits `130`. Drive it from an agent as a background process and read its text; use [/docs/agent/dev](/docs/agent/dev) for what it prints.
 
+## The event log: EVERYAPP_EVENT_LOG
+
+A dormant seam for test harnesses and bug reports, never for an agent's own use. With `EVERYAPP_EVENT_LOG=<path>` in the environment, every everyapp process appends to that file, one JSON object per line, whether or not it was run with `--json`: `{ "type": "invocation", "pid", "ts", "argv", "cwd", "json", "isatty": { "stdin", "stdout", "stderr" }, "ci" }` once at start, then each event as the run's sink emitted it (the same object its `--json` line carries, plus `pid`; a warning once, `done` with `durationMs` and no `display`), then `{ "type": "exit", "pid", "ts", "code", "ms" }`. What a command never emits is not there either: `setup` mints its owner link only when `maySetupLinkBeShown` allows (`packages/cli/src/lib/gateway/setup-link.ts`), so the link is absent from the log exactly when a person would not have seen it. Each line is one `fs.appendFileSync` (`O_APPEND`), so the processes that share a file (`pnpm run deploy` running everyapp, `npx everyapp`) interleave whole lines, told apart by `pid`. A path that can't be written is said once on stderr and the run goes on (`packages/cli/src/lib/output/eventLog.ts`). Unset, nothing is written. It is how the onboarding loop (`docs/design/2026-10-onboarding-loop.md`) times a harness's `everyapp` runs and claims the owner link from outside the harness, and what to ask for in a bug report: `EVERYAPP_EVENT_LOG=/tmp/everyapp-events.ndjson pnpm everyapp setup …`, then attach the file after reading it for anything secret (an owner link, `est_…`, is a password).
+
 ## Sources
 
 - `packages/cli/src/lib/output/events.ts`
+- `packages/cli/src/lib/output/eventLog.ts`
 - `packages/cli/src/lib/output/report.ts`
 - `packages/cli/src/lib/output/prompt.ts`
 - `packages/cli/src/lib/output/run.ts`
