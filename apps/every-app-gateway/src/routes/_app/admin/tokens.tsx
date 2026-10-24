@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { UserRound } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { queryClient } from "@/client/tanstack-db";
@@ -58,11 +58,11 @@ function TokensPage() {
       await queryClient.invalidateQueries({
         queryKey: ["admin", "userTokens"],
       });
-      toast.success("Personal access token revoked");
+      toast.success("Token revoked");
       setRevokingUserToken(null);
     },
     onError: () => {
-      toast.error("Failed to revoke personal access token");
+      toast.error("Failed to revoke the token");
     },
   });
 
@@ -89,8 +89,8 @@ function TokensPage() {
               onClick={() => setShowCreateUserTokenModal(true)}
               disabled={isAppsLoading}
             >
-              <UserRound data-icon="inline-start" />
-              Create access token
+              <Plus data-icon="inline-start" />
+              New token
             </Button>
           }
         />
@@ -140,7 +140,7 @@ function TokensPage() {
             })
           }
         >
-          API clients using it will immediately lose access.
+          Anything using it loses access on its next request.
         </ConfirmDialog>
       ) : null}
     </div>

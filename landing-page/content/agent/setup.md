@@ -213,7 +213,7 @@ Email, so invites and resets go out by mail: the person onboards the domain in t
 
 ### Connect an AI client
 
-The person connects Claude, ChatGPT, Claude Code or Cursor to the Gateway's one MCP address, `https://<gateway>/mcp`, once: the assistant signs in to the Gateway as them and asks which apps it may use. The steps per client are in [/docs/connect-ai](/docs/connect-ai) (Claude Code: `claude mcp add --transport http everyapp https://<gateway>/mcp`, then `/mcp` → **everyapp** → **Authenticate**); a tool that can't sign in takes a personal access token from **Admin** → **Tokens** → **Create access token** as `Authorization: Bearer`. Connections are listed and revoked under **AI connections** (`https://<gateway>/settings/connections`). It works behind Access. Reference: [/docs/agent/mcp](/docs/agent/mcp).
+The person connects Claude, ChatGPT, Claude Code or Cursor to the Gateway's one MCP address, `https://<gateway>/mcp`, once: the assistant signs in to the Gateway as them and asks which apps it may use. The steps per client are in [/docs/connect-ai](/docs/connect-ai) (Claude Code: `claude mcp add --transport http everyapp https://<gateway>/mcp`, then `/mcp` → **everyapp** → **Authenticate**); a tool that can't sign in takes a personal access token from **Admin** → **Tokens** → **New token** as `Authorization: Bearer`. Connections are listed and revoked under **AI connections** (`https://<gateway>/settings/connections`). It works behind Access. Reference: [/docs/agent/mcp](/docs/agent/mcp).
 
 ### AI keys and app secrets
 

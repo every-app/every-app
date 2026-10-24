@@ -259,7 +259,7 @@ delete it to close the API again (deployed apps keep running; nobody can
 deploy).
 
 Then an organization's owner or admin makes a deploy key (Admin → Tokens →
-Create access token → Kind: Deploy key; 30 days by default, optionally
+New token → Kind: Deploy key; 30 days by default, optionally
 bound to one app) and deploys from the app's directory, in CI too:
 
 ```sh

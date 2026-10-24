@@ -712,7 +712,7 @@ async function main() {
   const tokens = [
     {
       id: tokenId("claude-code"),
-      name: "Claude Code on MacBook",
+      name: "Work laptop",
       prefix: "epat_a1b2",
       appId: null,
       scopes: ["mcp:write"],

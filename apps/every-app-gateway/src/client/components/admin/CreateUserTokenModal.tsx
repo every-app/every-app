@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { revalidateLogic } from "@tanstack/react-form";
+import { Link } from "@tanstack/react-router";
 import { CircleAlert } from "lucide-react";
 import { z } from "zod";
 import { useAppForm } from "@/client/components/form/useAppForm";
@@ -135,10 +136,11 @@ export function CreateUserTokenModal({
         <form.AppForm>
           <form.Form className="flex flex-col gap-4">
             <DialogHeader>
-              <DialogTitle>Create personal access token</DialogTitle>
+              <DialogTitle>New token</DialogTitle>
               <DialogDescription>
-                For Claude Code, Cursor, and API clients. claude.ai connectors
-                need the OAuth connector (coming later).
+                For Claude Code, Cursor and API clients. claude.ai and ChatGPT
+                connect through{" "}
+                <Link to="/settings/connections">AI connections</Link> instead.
               </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">

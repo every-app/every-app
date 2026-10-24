@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Trash2 } from "lucide-react";
+import { Unplug } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
@@ -110,7 +110,7 @@ export function UserTokensTable({
                 disabled={isRevoking}
                 onClick={() => onRevoke(row.original)}
               >
-                <Trash2 />
+                <Unplug />
                 Revoke token
               </DropdownMenuItem>
             </RowActionsMenu>

@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { BadgeCheck, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
+import { ConnectAiHint } from "@/client/components/ConnectAiHint";
 import { ErrorState } from "@/client/components/ErrorState";
 import { Page, PageHeader } from "@/client/components/PageHeader";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
@@ -14,6 +15,7 @@ import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
+import { authClient } from "@/client/auth-client";
 import { queryClient } from "@/client/tanstack-db";
 import {
   listMyMcpConnections,
@@ -132,7 +134,7 @@ function connectionColumns({
             onClick={() => onRevoke(connection)}
           >
             <Unplug />
-            Revoke
+            Revoke connection
           </DropdownMenuItem>
         </RowActionsMenu>
       ),
@@ -142,6 +144,9 @@ function connectionColumns({
 
 function ConnectionsPage() {
   const [revoking, setRevoking] = useState<Connection | null>(null);
+  // The empty state's tokens line: owners and admins are sent to
+  // Manage workspace → Tokens, which refuses members.
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const connectionsQuery = useQuery({
     queryKey: CONNECTIONS_KEY,
     queryFn: () => listMyMcpConnections(),
@@ -190,15 +195,15 @@ function ConnectionsPage() {
         }
         empty={{
           title: "No AI connections yet",
-          description:
-            "Claude, ChatGPT and other AI apps you allow show up here.",
+          description: "Claude, ChatGPT and Claude Code connect here.",
+          action: <ConnectAiHint role={activeMemberRole?.role} />,
         }}
       />
 
       {revoking ? (
         <ConfirmDialog
           title={`Revoke ${revoking.clientName}?`}
-          confirmLabel="Revoke"
+          confirmLabel="Revoke connection"
           destructive
           pending={revokeMutation.isPending}
           onClose={() => setRevoking(null)}
