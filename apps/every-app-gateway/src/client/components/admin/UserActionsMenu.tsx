@@ -126,8 +126,9 @@ function MemberActionsMenu({
   const [confirming, setConfirming] = useState<MemberConfirmation | null>(null);
 
   // The server's rule (MembershipService): nobody manages themselves, an
-  // admin manages members only, and an owner manages everyone but the
-  // organization's last owner. The menu never offers what it refuses.
+  // admin manages members only (deleting them included), and an owner
+  // manages everyone but the organization's last owner. Only an owner makes
+  // or demotes an owner. The menu never offers what it refuses.
   if (user.id === currentUserId) {
     return null;
   }
@@ -145,7 +146,7 @@ function MemberActionsMenu({
   const showMakeOwner = showRoleChange && isOwner && !targetIsOwner;
   const showReactivate = canManage && !!user.banned;
   const showDeactivate = canManage && !user.banned;
-  const showDelete = isOwner && canManage;
+  const showDelete = canManage;
 
   const hasSafeItems =
     showResetEmail || showResetLink || showRoleChange || showReactivate;

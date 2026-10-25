@@ -7,7 +7,7 @@ import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 
 /**
  * Collection of all apps in the catalog for admin management.
- * Owner-only access.
+ * Owners' and admins' access.
  */
 export const adminAppsCollection = lazyInitForWorkers(() =>
   createCollection(

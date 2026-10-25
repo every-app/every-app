@@ -39,13 +39,13 @@ type AppRowActions = {
   onUseMcp: (app: AppWithAccessCount) => void;
   onManageAccess: (app: AppWithAccessCount) => void;
   onEdit: (app: AppWithAccessCount) => void;
-  /** Deletes an app; removes an MCP app (owners only, either way). */
+  /** Deletes an app; removes an MCP app (owners and admins, either way). */
   onDelete: (app: AppWithAccessCount) => void;
   /** Turns an MCP app off when it is on, and on when it is off. */
   onToggleMcpStatus: (app: AppWithAccessCount) => void;
   /** Opens the Add app chooser, the empty table's one action. */
   onAddApp?: () => void;
-  isOwner: boolean;
+  isAdmin: boolean;
 };
 
 interface AppsTableProps extends AppRowActions {
@@ -163,7 +163,7 @@ function buildColumns({
   onEdit,
   onDelete,
   onToggleMcpStatus,
-  isOwner,
+  isAdmin,
 }: AppRowActions): ColumnDef<AppWithAccessCount>[] {
   return [
     {
@@ -260,7 +260,7 @@ function buildColumns({
                   }
                 : undefined
             }
-            isOwner={isOwner}
+            isAdmin={isAdmin}
           />
         ),
     },
@@ -278,7 +278,7 @@ export function AppsTable({
   onDelete,
   onToggleMcpStatus,
   onAddApp,
-  isOwner,
+  isAdmin,
 }: AppsTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const showSearch = apps.length > SEARCH_THRESHOLD;
@@ -308,7 +308,7 @@ export function AppsTable({
         onEdit,
         onDelete,
         onToggleMcpStatus,
-        isOwner,
+        isAdmin,
       }),
     [
       onSetup,
@@ -317,7 +317,7 @@ export function AppsTable({
       onEdit,
       onDelete,
       onToggleMcpStatus,
-      isOwner,
+      isAdmin,
     ],
   );
 

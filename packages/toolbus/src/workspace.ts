@@ -202,12 +202,12 @@ function membersChange(
 
 const ADMIN_READ = { risk: "read", minRole: "admin" } as const;
 const ADMIN_WRITE = { risk: "write", minRole: "admin" } as const;
-const OWNER_WRITE = { risk: "write", minRole: "owner" } as const;
 
 /**
  * Every workspace tool, in the order tools/list shows them. Role `admin`
- * means owner or admin; `owner` means the owner alone; `member` is every
- * member, on their own account only.
+ * means owner or admin (no tool is the owner's alone since 2026-10-25; what
+ * stays owner-only is inside the services: making or demoting an owner,
+ * removing one); `member` is every member, on their own account only.
  */
 export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
   {
@@ -300,11 +300,11 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     inputSchema: objectWith({ user: USER }, ["user"]),
   },
   {
-    ...OWNER_WRITE,
+    ...ADMIN_WRITE,
     name: "workspace_remove",
     title: "Remove a member",
     description:
-      "Remove a member from the organization: their membership, app access, group places, tokens and AI connections go, and their account when it belongs to no other organization. Where Cloudflare Access would let them straight back in they are deactivated instead, and the answer says so. Cannot be undone: needs confirm: true. Owners only.",
+      "Remove a member from the organization: their membership, app access, group places, tokens and AI connections go, and their account when it belongs to no other organization. Where Cloudflare Access would let them straight back in they are deactivated instead, and the answer says so. Cannot be undone: needs confirm: true. Owners and admins; an owner is removed only by another owner, never the last one.",
     inputSchema: objectWith({ user: USER, confirm: CONFIRM }, [
       "user",
       "confirm",
@@ -524,11 +524,11 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     ),
   },
   {
-    ...OWNER_WRITE,
+    ...ADMIN_WRITE,
     name: "workspace_app_delete",
     title: "Delete an app",
     description:
-      "Delete an app from the catalog: it stops being served and leaves every list. Its Worker stays until `everyapp delete`. Cannot be undone: needs confirm: true. Owners only.",
+      "Delete an app from the catalog: it stops being served and leaves every list. Its Worker stays until `everyapp delete`. Cannot be undone: needs confirm: true. Owners and admins.",
     inputSchema: objectWith({ app: APP, confirm: CONFIRM }, ["app", "confirm"]),
     irreversible: true,
   },

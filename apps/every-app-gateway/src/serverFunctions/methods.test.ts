@@ -8,7 +8,6 @@ vi.mock("@/middleware/auth", () => ({
   authMiddleware: {},
   organizationMemberMiddleware: {},
   organizationAdminMiddleware: {},
-  organizationOwnerMiddleware: {},
 }));
 vi.mock("@/middleware/publicError", () => ({ publicErrorMiddleware: {} }));
 vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: vi.fn() }));

@@ -206,15 +206,15 @@ describe("the workspace tool definitions", () => {
     }
   });
 
-  it("make the irreversible tools ask confirm: true, removing a member, an app or an MCP app owner-only and removing an event subscription an admin's", () => {
+  it("make the irreversible tools ask confirm: true, every one an owner's or admin's (removing an owner stays an owner's inside the service)", () => {
     const irreversible = WORKSPACE_TOOLS.filter((tool) => tool.irreversible);
     expect(
       irreversible.map((tool) => [tool.name, tool.minRole] as const),
     ).toEqual([
-      ["workspace_remove", "owner"],
-      ["workspace_app_delete", "owner"],
+      ["workspace_remove", "admin"],
+      ["workspace_app_delete", "admin"],
       ["workspace_events_remove", "admin"],
-      ["mcp_remove", "owner"],
+      ["mcp_remove", "admin"],
     ]);
     for (const tool of irreversible) {
       expect(tool.risk, tool.name).toBe("write");
@@ -223,11 +223,9 @@ describe("the workspace tool definitions", () => {
         (tool.inputSchema["properties"] as Record<string, unknown>)["confirm"],
       ).toMatchObject({ type: "boolean", const: true });
     }
-    expect(OWNER_TOOLS).toEqual([
-      "everyapp_workspace_remove",
-      "everyapp_workspace_app_delete",
-      "everyapp_mcp_remove",
-    ]);
+    // No workspace tool is the owner's alone (Ben's ruling of 2026-10-25:
+    // owners and admins control the Gateway).
+    expect(OWNER_TOOLS).toEqual([]);
   });
 
   it("split the member-level tools from the admin ones: the four on the caller's own account", () => {
@@ -524,12 +522,8 @@ describe("listing the workspace tools", () => {
     expect(names(OWNER, "full")).toEqual(
       WORKSPACE_TOOLS.map((tool) => listed(tool.name)),
     );
-    // An admin: every admin tool, never an owner-only one.
-    expect(names(ADMIN, "full")).toEqual(
-      WORKSPACE_TOOLS.filter((tool) => tool.minRole !== "owner").map((tool) =>
-        listed(tool.name),
-      ),
-    );
+    // An admin: the same, since no tool is owner-only.
+    expect(names(ADMIN, "full")).toEqual(names(OWNER, "full"));
     // A member: the four on their own account.
     expect(names(MEMBER, "full")).toEqual(MEMBER_TOOLS);
     // Read-only connections: the read tools of the role.
@@ -733,12 +727,12 @@ describe("running a workspace tool", () => {
     }
   });
 
-  it("answers Unknown tool to a member, to a read-only connection for a write tool, to an admin for an owner tool, and without a host", async () => {
+  it("answers Unknown tool to a member, to a read-only connection for a write tool, and without a host", async () => {
     const { deps, calls, events } = harness();
     const cases: [McpPrincipal, string, string][] = [
       [MEMBER, "everyapp_workspace_users", "role_required"],
       [readOnly(MEMBER), "everyapp_workspace_users", "role_required"],
-      [ADMIN, "everyapp_workspace_remove", "role_required"],
+      [MEMBER, "everyapp_workspace_remove", "role_required"],
       [readOnly(ADMIN), "everyapp_workspace_invite", "read_only_connection"],
       [readOnly(MEMBER), "everyapp_revoke_token", "read_only_connection"],
     ];

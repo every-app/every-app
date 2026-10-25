@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   publicErrorMiddleware: { name: "publicErrorMiddleware" },
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
-  organizationOwnerMiddleware: { name: "organizationOwnerMiddleware" },
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -26,7 +25,6 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 vi.mock("@/middleware/auth", () => ({
   organizationAdminMiddleware: mocks.organizationAdminMiddleware,
-  organizationOwnerMiddleware: mocks.organizationOwnerMiddleware,
 }));
 vi.mock("@/middleware/publicError", () => ({
   publicErrorMiddleware: mocks.publicErrorMiddleware,
@@ -72,10 +70,10 @@ describe("MCP app server functions", () => {
     ]);
   });
 
-  it("removeMcpApp is the owners'", () => {
+  it("removeMcpApp is the owners' and admins', like the rest", () => {
     expect(fns["removeMcpApp"]!.middlewares).toEqual([
       mocks.publicErrorMiddleware,
-      mocks.organizationOwnerMiddleware,
+      mocks.organizationAdminMiddleware,
     ]);
   });
 

@@ -96,21 +96,3 @@ export const organizationAdminMiddleware = createMiddleware({
 
     return next({ context });
   });
-
-/**
- * Middleware that requires owner access for the active organization.
- */
-export const organizationOwnerMiddleware = createMiddleware({
-  type: "function",
-})
-  .middleware([organizationMemberMiddleware])
-  .server(async ({ next, context }) => {
-    if (context.org.role !== "owner") {
-      throw new GatewayError(
-        "UNAUTHORIZED",
-        "Unauthorized: Organization owner access required",
-      );
-    }
-
-    return next({ context });
-  });

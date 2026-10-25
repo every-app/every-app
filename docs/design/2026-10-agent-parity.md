@@ -15,7 +15,7 @@ and the apps."
 
 | Surface | Who acts | Authority | Audit |
 | --- | --- | --- | --- |
-| Gateway UI (Admin → Users, Groups, Apps, Tokens, Usage, Activity; AI connections; the account menu) | a signed-in person | their role in the active organization (owner, admin, member); server functions in `apps/every-app-gateway/src/serverFunctions/*.ts` gated by `organizationAdminMiddleware` / `organizationOwnerMiddleware` | `logEvent` lines |
+| Gateway UI (Admin → Users, Groups, Apps, Tokens, Usage, Activity; AI connections; the account menu) | a signed-in person | their role in the active organization (owner, admin, member); server functions in `apps/every-app-gateway/src/serverFunctions/*.ts` gated by `organizationAdminMiddleware` (owner or admin; nothing is owner-only at the middleware since 2026-10-25) | `logEvent` lines |
 | CLI, `everyapp workspace …` | the operator: the Cloudflare login or API token that owns the Gateway's account | root (ADR-0003: write access to the Gateway's D1 is operator authority); the commands write D1 directly like `email set` and `provider on`, with the same guards the services hold (never the last owner; never an owner by an admin) written as SQL conditions | none in the Gateway (Cloudflare's audit log has the D1 writes); a workspace changes log is a follow-up |
 | Gateway MCP, `everyapp_workspace_*` tools on `/mcp` | the person behind an OAuth connection, a personal access token or a Cloudflare Access assertion | their live role, re-read on every request (`mcp-auth/validate.ts`), and the connection's access (read only, or read & write): a write tool is hidden from and refused for a read-only connection like any app write tool; a tool is hidden below its role; a credential narrowed to apps (a personal token bound to one app, a connection consented for selected apps) sees no workspace tool at all; the service's own rules apply on top | one `mcp_tool_calls` row per call, shown in Admin → Activity like any tool call (app `everyapp`, `via` when wrapped) |
 
@@ -44,11 +44,12 @@ Decisions taken as defaults (Ben can flip any; TODO.md "Agent parity (2026-10-24
    `everyapp_workspace_events_add` generates, once, for a URL the caller
    chose; it signs deliveries there and opens nothing here
    (docs/design/2026-10-events-out.md, section 9).
-3. **Irreversible tools ask for `confirm: true`** (`remove`, `app_delete`)
-   and are owner-only; they are `write` risk (a `destructive` tier stays
-   hidden until approvals exist, `packages/toolbus/src/policy.ts`).
-   `events_remove` asks it too and is an owner's or admin's, as removing
-   a subscription is in Admin → Events.
+3. **Irreversible tools ask for `confirm: true`** (`remove`, `app_delete`,
+   `mcp_remove`, `events_remove`) and are an owner's or admin's (Ben's
+   ruling of 2026-10-25: owners and admins control the Gateway; before it
+   the first three were owner-only); they are `write` risk (a `destructive`
+   tier stays hidden until approvals exist, `packages/toolbus/src/policy.ts`).
+   Removing an owner stays the service's owner-only rule.
 4. **Workspace tools are listed in the full listing only.** In the compact
    listing an admin finds them with `everyapp_search_tools` and runs them
    through `everyapp_call_read` / `everyapp_call_write`, like app tools.
@@ -76,10 +77,10 @@ read them; the Gateway supplies the handlers
 (`apps/every-app-gateway/src/server/toolbus/workspace-tools.ts`), which
 build an `OrgContext` from the caller and call the same services the UI's
 server functions call. A `PublicError` becomes the tool's error result
-(`CODE: message`). Role: `admin` means owner or admin; `owner` means owner
-only. Every tool is `admin` unless the row says `owner`; the services'
-finer rules (only an owner changes an admin, never the last owner, never
-yourself) apply on top and come back as errors.
+(`CODE: message`). Role: `admin` means owner or admin. Every tool is
+`admin` (no tool is owner-only since 2026-10-25); the services' finer rules
+(only an owner changes an admin or an owner, makes or demotes an owner,
+never the last owner, never yourself) apply on top and come back as errors.
 
 | Tool | Risk | Role | Input | Service |
 | --- | --- | --- | --- | --- |
@@ -87,7 +88,7 @@ yourself) apply on top and come back as errors.
 | `everyapp_workspace_users` | read | admin | – | `AdminService.listMembers`: members with role, deactivated flag, created; pending invitations with role and expiry |
 | `everyapp_workspace_invite` | write | admin | `email`, `role` (member, admin; default member) | the invitation row + link token + mail when configured (`InvitationService`, session-less variant); returns `invitationId`, `email`, `expiresAt`, `emailed`; never the link |
 | `everyapp_workspace_uninvite` | write | admin | `invitation` (id or email) | cancel a pending invitation (`AdminService.cancelInvitation`, session-less) |
-| `everyapp_workspace_role` | write | admin | `user`, `role` (member, admin, owner) | `MembershipService.changeRole` (owner promotion/demotion is owner-only; the UI review thread widens it) |
+| `everyapp_workspace_role` | write | admin | `user`, `role` (member, admin, owner) | `MembershipService.changeRole` (owner promotion/demotion stays owner-only) |
 | `everyapp_workspace_deactivate` | write | admin | `user` | `MembershipService.deactivate` |
 | `everyapp_workspace_reactivate` | write | admin | `user` | `MembershipService.reactivate` |
 | `everyapp_workspace_remove` | write | owner | `user`, `confirm: true` | `AdminService.deleteUser` (deactivates instead where Access would let them back in; says which) |
@@ -225,7 +226,7 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | --- | --- | --- | --- | --- |
 | Setup and sign-up pages ask whether the Gateway has an owner | `admin.hasOwner` | `status` | `everyapp_workspace_show` | public read; `status` reports the owner |
 | Admin → Users: the list | `admin.listMembers` | `workspace users` | `everyapp_workspace_users` | |
-| Admin → Users → Delete | `admin.deleteUser` | `workspace remove` | `everyapp_workspace_remove` | owner only; MCP asks `confirm: true` |
+| Admin → Users → Delete | `admin.deleteUser` | `workspace remove` | `everyapp_workspace_remove` | owners and admins (an admin removes members only, `OWNER_REQUIRED` otherwise); MCP asks `confirm: true` |
 | Admin → Users → Change role to admin / to member (and to owner, once the UI review thread widens it) | `admin.updateMemberRole` | `workspace role` | `everyapp_workspace_role` | the service's rules: never yourself, never the last owner; an admin changes members only, an owner changes admins and (after the UI review thread's PR) makes or demotes owners; until #604 lands the tool answers `owner` with `OWNER_ROLE_PENDING`; `workspace role` is #604's |
 | Admin → Users → Deactivate | `admin.deactivateUser` | `workspace deactivate` | `everyapp_workspace_deactivate` | |
 | Admin → Users → Reactivate | `admin.reactivateUser` | `workspace reactivate` | `everyapp_workspace_reactivate` | |
@@ -239,13 +240,13 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Activity: the App filter's choices | `activity.listToolCallApps` | `workspace activity` | `everyapp_workspace_activity` | the CLI and the tool take `--app` / `app` directly |
 | Admin → Apps: the list | `apps.getApps` | `workspace apps` | `everyapp_workspace_apps` | |
 | Admin → Apps → Edit (name, description, available to everyone) | `apps.updateApp` | `workspace app set` | `everyapp_workspace_app_set` | |
-| Admin → Apps → Delete | `apps.deleteApp` | `delete` | `everyapp_workspace_app_delete` | `everyapp delete` removes the Worker too; MCP asks `confirm: true`, owner only |
+| Admin → Apps → Delete | `apps.deleteApp` | `delete` | `everyapp_workspace_app_delete` | `everyapp delete` removes the Worker too; MCP asks `confirm: true`; owners and admins |
 | Admin → Apps → Manage access: who has it | `apps.getAppAccessState` | `workspace app access` | `everyapp_workspace_app_access` | |
 | Admin → Apps → Manage access: save | `apps.updateAppAccess` | `workspace app access` | `everyapp_workspace_app_access_set` | `--add` / `--remove` / `--set` |
 | Admin → Apps → Add app → Add an MCP server (#629) | `mcpApps.addRemoteMcpApp` | `mcp add` | `everyapp_mcp_add` | the same registry rules on all three (`planRemoteMcpAppAdd`); the credential is never passed, only its setting name: the CLI offers to set it in the terminal, the UI and the tool answer the `secret set` command |
 | Admin → Apps → an MCP app → Edit (risk default, per-tool overrides, name) | `mcpApps.updateRemoteMcpApp` | `mcp tool` | `everyapp_mcp_tool` | the CLI and the tool change one tool at a time, by its listed or its server name; the risk default, name and description change in the UI alone after `mcp add` (`--risk` there) |
 | Admin → Apps → an MCP app → Turn on / Turn off | `mcpApps.setMcpAppStatus` | `mcp on` / `mcp off` | `everyapp_mcp_on` / `everyapp_mcp_off` | both kinds of MCP app, status active ↔ disabled, access, tokens and the snapshot kept; only `mcp on` adds a built-in's first row |
-| Admin → Apps → an MCP app → Remove | `mcpApps.removeMcpApp` | `mcp remove` | `everyapp_mcp_remove` | owner only; MCP asks `confirm: true`; the credential and its pin stay |
+| Admin → Apps → an MCP app → Remove | `mcpApps.removeMcpApp` | `mcp remove` | `everyapp_mcp_remove` | owners and admins; MCP asks `confirm: true`; the credential and its pin stay |
 | Admin → Apps → an MCP app → Refresh tools | `mcpApps.refreshMcpAppTools` | `mcp refresh` | `everyapp_mcp_refresh` | the UI and the tool list within the request and say which names are new or gone; the CLI drops the snapshot and the Gateway lists again on first use |
 | Admin → Apps → an MCP app → the edit dialog's facts (URL, auth, credential state, tools) | `mcpApps.getMcpApp` | `mcp show` | `everyapp_mcp_show` | never a credential's value; the tool leaves out the origin a credential is bound to |
 | Admin → Events: the subscriptions (the Events tab, docs/design/2026-10-events-out.md section 10) | `events.listEventSubscriptions` | `events list` | `everyapp_workspace_events` | the CLI and the tool show a webhook's host and path, never its query |

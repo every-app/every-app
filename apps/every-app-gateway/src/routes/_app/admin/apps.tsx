@@ -64,8 +64,8 @@ async function toggleMcpStatus(app: AppWithAccessCount) {
 
 function AppsPage() {
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
-  const isOwner = activeMemberRole?.role === "owner";
-  const isAdmin = isOwner || activeMemberRole?.role === "admin";
+  const isAdmin =
+    activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
   // Hosted deployer or a configured self-hosted browser deployer.
   const { data: canInstall } = useAppInstallAvailable(isAdmin);
   // Each dialog renders only while its app is set. The setters are stable, so
@@ -161,7 +161,7 @@ function AppsPage() {
         onDelete={setDeletingApp}
         onToggleMcpStatus={toggleMcpStatus}
         onAddApp={() => setAddingApp(true)}
-        isOwner={isOwner}
+        isAdmin={isAdmin}
       />
 
       {addingApp ? (
@@ -205,7 +205,7 @@ function AppsPage() {
         )
       ) : null}
 
-      {isOwner && deletingApp ? (
+      {isAdmin && deletingApp ? (
         <DeleteAppModal
           app={deletingApp}
           pending={removing}

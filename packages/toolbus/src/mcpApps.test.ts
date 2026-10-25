@@ -1,8 +1,8 @@
 /**
  * The MCP app tools (`everyapp_mcp_*`) as the ToolBus lists and runs
  * them: the eight the design names, workspace tools like the rest (kind
- * `host`, listed in full mode to owners and admins, `mcp_remove` to owners
- * alone with confirm), closed schemas that take a credential's name and
+ * `host`, listed in full mode to owners and admins, `mcp_remove` with
+ * confirm), closed schemas that take a credential's name and
  * never its value, hidden from a member and from a read-only connection's
  * writes. What each one does is the gateway's
  * (server/toolbus/mcp-app-tools.sqlite.test.ts there).
@@ -96,7 +96,7 @@ describe("the MCP app tool definitions", () => {
     }
   });
 
-  it("are owners' and admins': reads for list and show, writes for the rest, remove the owners' alone and irreversible", () => {
+  it("are owners' and admins': reads for list and show, writes for the rest, remove irreversible", () => {
     const shape = MCP_APP_TOOLS.map((tool) => [
       tool.name,
       tool.minRole,
@@ -107,7 +107,7 @@ describe("the MCP app tool definitions", () => {
       ["mcp_list", "admin", "read", false],
       ["mcp_show", "admin", "read", false],
       ["mcp_add", "admin", "write", false],
-      ["mcp_remove", "owner", "write", true],
+      ["mcp_remove", "admin", "write", true],
       ["mcp_on", "admin", "write", false],
       ["mcp_off", "admin", "write", false],
       ["mcp_refresh", "admin", "write", false],
@@ -116,9 +116,7 @@ describe("the MCP app tool definitions", () => {
     for (const tool of MCP_APP_TOOLS) {
       expect(tool.title, tool.name).toBeTruthy();
       // Each says who may call it.
-      expect(tool.description, tool.name).toMatch(
-        tool.minRole === "owner" ? /Owners only\.$/ : /Owners and admins\.$/,
-      );
+      expect(tool.description, tool.name).toMatch(/Owners and admins\.$/);
     }
     expect(properties("mcp_remove")["confirm"]).toMatchObject({
       type: "boolean",
@@ -197,11 +195,9 @@ describe("the MCP app tool definitions", () => {
 });
 
 describe("who sees the MCP app tools", () => {
-  it("lists all eight to an owner in full mode, every one but remove to an admin, none in compact mode", () => {
+  it("lists all eight to an owner and to an admin in full mode, none in compact mode", () => {
     expect(listed(OWNER)).toEqual(NAMES);
-    expect(listed(ADMIN)).toEqual(
-      NAMES.filter((name) => name !== "everyapp_mcp_remove"),
-    );
+    expect(listed(ADMIN)).toEqual(NAMES);
     expect(listed(OWNER, "compact")).toEqual([]);
     // Deferred behind Claude Code's tool search like the other workspace
     // tools, and remove says it can't be undone.
@@ -232,7 +228,7 @@ describe("who sees the MCP app tools", () => {
     ]);
   });
 
-  it("answers Unknown tool to a member, to a read-only connection for a write, and to an admin for remove, never running the host", async () => {
+  it("answers Unknown tool to a member and to a read-only connection for a write, never running the host", async () => {
     const { deps, calls, events } = harness();
     const cases: [McpPrincipal, string, JsonObject, string][] = [
       [MEMBER, "everyapp_mcp_list", {}, "role_required"],
@@ -253,12 +249,6 @@ describe("who sees the MCP app tools", () => {
         "everyapp_mcp_off",
         { app: "treg" },
         "read_only_connection",
-      ],
-      [
-        ADMIN,
-        "everyapp_mcp_remove",
-        { app: "treg", confirm: true },
-        "role_required",
       ],
     ];
     for (const [principal, name, args, reason] of cases) {

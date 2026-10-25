@@ -4,9 +4,9 @@
  * action of the UI (invite, role, groups, app access, caps, the reads) and
  * each call leaves one `mcp_tool_calls` row Admin → Activity lists; a
  * read-only admin lists the read tools and cannot write; a member sees
- * none of the admin tools and only their own; an owner-only tool refuses
- * an admin; the irreversible tools ask confirm; no answer carries a
- * credential. Drives serveGatewayMcp with resolved callers, as
+ * none of the admin tools and only their own; the irreversible tools ask
+ * confirm and run for an admin as for an owner (removing an owner stays
+ * the service's owner-only rule); no answer carries a credential. Drives serveGatewayMcp with resolved callers, as
  * gateway-mcp.sqlite.test.ts does.
  */
 import {
@@ -419,12 +419,8 @@ beforeEach(async () => {
 });
 
 describe("who sees which workspace tools", () => {
-  it("lists every admin tool and the member's own to an admin with write access, in full mode only", async () => {
-    expect(await toolNames(admin())).toEqual(
-      WORKSPACE_TOOLS.filter((tool) => tool.minRole !== "owner").map(
-        (tool) => `everyapp_${tool.name}`,
-      ),
-    );
+  it("lists every admin tool and the member's own to an admin with write access, the same as to the owner, in full mode only", async () => {
+    expect(await toolNames(admin())).toEqual(WORKSPACE_NAMES);
     expect(await toolNames(owner())).toEqual(WORKSPACE_NAMES);
     expect(await toolNames(owner(), "?tools=compact")).toEqual([]);
   });
@@ -439,9 +435,9 @@ describe("who sees which workspace tools", () => {
     expect(listed).toContain("everyapp_workspace_show");
     expect(listed).not.toContain("everyapp_workspace_invite");
     expect(listed).toEqual(
-      WORKSPACE_TOOLS.filter(
-        (tool) => tool.risk === "read" && tool.minRole !== "owner",
-      ).map((tool) => `everyapp_${tool.name}`),
+      WORKSPACE_TOOLS.filter((tool) => tool.risk === "read").map(
+        (tool) => `everyapp_${tool.name}`,
+      ),
     );
     // Reads work: a member carries their account's creation and when they
     // joined this organization.
@@ -509,18 +505,29 @@ describe("who sees which workspace tools", () => {
     ).toEqual([...MEMBER_NAMES].sort());
   });
 
-  it("refuses an admin the owner-only tools as unknown, and runs them for the owner only with confirm", async () => {
+  it("removes a member for an owner or an admin, only with confirm; a member finds the tool unknown; an admin never removes an owner", async () => {
     expect(
       await call(
         "everyapp_workspace_remove",
         { user: "member@example.com", confirm: true },
-        admin(),
+        member(),
       ),
     ).toEqual({
       ok: false,
       unknown: true,
       message: "Unknown tool: everyapp_workspace_remove",
     });
+    // An admin removes no owner: the service's rule (OWNER_REQUIRED).
+    expect(
+      await refusal(
+        "everyapp_workspace_remove",
+        { user: "owner@example.com", confirm: true },
+        admin(),
+      ),
+    ).toMatch(/^OWNER_REQUIRED: /);
+    expect(
+      (await data("everyapp_workspace_users", {}, admin()))["members"],
+    ).toHaveLength(3);
     // The owner without confirm: the schema refuses it before anything runs.
     expect(
       await refusal(
@@ -539,12 +546,12 @@ describe("who sees which workspace tools", () => {
     expect(
       (await data("everyapp_workspace_users", {}, owner()))["members"],
     ).toHaveLength(3);
-    // With it, the member goes.
+    // With it, the member goes (an admin may do this too).
     expect(
       await data(
         "everyapp_workspace_remove",
         { user: "member@example.com", confirm: true },
-        owner(),
+        admin(),
       ),
     ).toMatchObject({
       user: { id: memberId, email: "member@example.com" },
@@ -1106,21 +1113,22 @@ describe("an admin administering the workspace over /mcp", () => {
       await refusal("everyapp_workspace_usage", { month: "2026-13" }, admin()),
     ).toBe("INVALID_INPUT: month must be YYYY-MM");
 
+    // Deleting an app is an owner's or admin's; a member finds no such tool.
     expect(
       await call(
         "everyapp_workspace_app_delete",
         { app: "crm", confirm: true },
-        admin(),
+        member(),
       ),
     ).toMatchObject({ unknown: true });
     expect(
-      await refusal("everyapp_workspace_app_delete", { app: "crm" }, owner()),
+      await refusal("everyapp_workspace_app_delete", { app: "crm" }, admin()),
     ).toMatch(/^Invalid arguments for everyapp_workspace_app_delete: /);
     expect(
       await data(
         "everyapp_workspace_app_delete",
         { app: "crm", confirm: true },
-        owner(),
+        admin(),
       ),
     ).toMatchObject({ deleted: { id: crmRowId, appId: "crm" } });
     expect(

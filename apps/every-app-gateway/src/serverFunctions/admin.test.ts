@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   publicErrorMiddleware: { name: "publicErrorMiddleware" },
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
-  organizationOwnerMiddleware: { name: "organizationOwnerMiddleware" },
   cancelInvitation: vi.fn(),
   getRequest: vi.fn(),
 }));
@@ -37,7 +36,6 @@ vi.mock("@/auth", () => ({
 
 vi.mock("@/middleware/auth", () => ({
   organizationAdminMiddleware: mocks.organizationAdminMiddleware,
-  organizationOwnerMiddleware: mocks.organizationOwnerMiddleware,
 }));
 
 vi.mock("@/middleware/publicError", () => ({

@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
   organizationAdminMiddleware,
-  organizationOwnerMiddleware,
   organizationMemberMiddleware,
 } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
@@ -40,10 +39,10 @@ export const updateApp = createServerFn({ method: "POST" })
 
 /**
  * Delete an app from the catalog.
- * Only accessible by organization owner.
+ * Only accessible by organization admins and owners.
  */
 export const deleteApp = createServerFn({ method: "POST" })
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .validator((app: unknown) => deleteAppSchema.parse(app))
   .handler(async ({ data: app, context }) => {
     return AppService.delete(context.org, app.id);

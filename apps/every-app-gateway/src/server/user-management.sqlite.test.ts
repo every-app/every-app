@@ -431,6 +431,27 @@ describe("user management (SQLite)", () => {
   });
 
   describe("delete user", () => {
+    it("lets an admin remove a member, never an admin or an owner (OWNER_REQUIRED)", async () => {
+      await expect(
+        AdminService.deleteUser(ctx(admin, "admin"), owner),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      const second = await seedMember(db, {
+        organizationId: org,
+        role: "admin",
+      });
+      await expect(
+        AdminService.deleteUser(ctx(admin, "admin"), second),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      expect(
+        await db.select().from(users).where(eq(users.id, owner)),
+      ).toHaveLength(1);
+
+      await AdminService.deleteUser(ctx(admin, "admin"), member);
+      expect(await db.select().from(users).where(eq(users.id, member))).toEqual(
+        [],
+      );
+    });
+
     it("revokes the deleted user's personal access tokens", async () => {
       await seedCredentials();
       await expect(authenticatePat()).resolves.toMatchObject({ sub: member });

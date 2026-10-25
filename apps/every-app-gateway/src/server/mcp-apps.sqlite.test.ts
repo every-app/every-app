@@ -5,8 +5,8 @@
  * written, a server with no credential has its tools listed in the same
  * request, a member is refused, a refused URL or a taken credential name
  * comes back with the rule's sentence; an update bumps the block's
- * revision; on and off keep everything; remove is the owners' and is the
- * tombstone; Refresh tools lists again and says what changed; getMcpApp
+ * revision; on and off keep everything; remove is an owner's or admin's
+ * and is the tombstone; Refresh tools lists again and says what changed; getMcpApp
  * shows the credential's state and every tool's risk with its source;
  * each add, status change and remove announces its one event on the bus.
  *
@@ -693,16 +693,18 @@ describe("turning an MCP app off and on", () => {
 });
 
 describe("removing an MCP app", () => {
-  it("is the owners': an admin is refused", async () => {
+  it("is an owner's or admin's: a member is refused, an admin removes", async () => {
     const { rowId } = await McpAppService.add(
       as(admin, "admin"),
       { url: TREG, auth: { kind: "none" } },
       null,
     );
     await expect(
-      McpAppService.remove(as(admin, "admin"), { id: rowId }),
+      McpAppService.remove(as(member, "member"), { id: rowId }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     expect((await row(rowId)).status).toBe("active");
+    await McpAppService.remove(as(admin, "admin"), { id: rowId });
+    expect((await row(rowId)).status).toBe("deleted");
   });
 
   it("leaves a tombstone: access, the snapshot and what the server listed go; the credential's binding stays", async () => {
@@ -1112,7 +1114,7 @@ describe("the events an MCP app's changes announce", () => {
     );
     const builtin = await turnOnDataForSeo();
     await expect(
-      McpAppService.remove(as(admin, "admin"), { id: rowId }),
+      McpAppService.remove(as(member, "member"), { id: rowId }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await McpAppService.remove(as(owner, "owner"), { id: rowId });
     await McpAppService.remove(as(owner, "owner"), { id: builtin });

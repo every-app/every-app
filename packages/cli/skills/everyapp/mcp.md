@@ -161,10 +161,10 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          nothing on the Gateway, so the person stores it in the receiver now),
          `everyapp_workspace_events_set`, `everyapp_workspace_events_remove`
          (asks `confirm: true`; Cap alerts is turned off instead),
-         `everyapp_workspace_events_test`, `everyapp_workspace_event_deliveries`
-         and `everyapp_workspace_event_redeliver`; owners alone get
-         `everyapp_workspace_remove` and `everyapp_workspace_app_delete`
-         (both ask `confirm: true`); every member gets their own
+         `everyapp_workspace_events_test`, `everyapp_workspace_event_deliveries`,
+         `everyapp_workspace_event_redeliver`, `everyapp_workspace_remove`
+         and `everyapp_workspace_app_delete` (the last two ask `confirm: true`;
+         an admin never removes an owner); every member gets their own
          `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`
          and `everyapp_revoke_connection`. A user is an email or id, an app a
          manifest id or row id, a group a name or `grp_` id, an event
@@ -172,7 +172,7 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `mcp` commands as tools: `everyapp_mcp_list`, `everyapp_mcp_show`,
          `everyapp_mcp_add` (a credential's setting name, never its value; the
          answer names `secret set`), `everyapp_mcp_on`, `everyapp_mcp_off`,
-         `everyapp_mcp_refresh`, `everyapp_mcp_tool`, and for owners
+         `everyapp_mcp_refresh`, `everyapp_mcp_tool` and
          `everyapp_mcp_remove` (`confirm: true`). Full reference:
          /docs/agent/mcp#workspace-tools.
 Provider tools (Gateway connector only; one audit row per call like the

@@ -7,9 +7,9 @@
  * CLI runs against D1; a refusal comes back as a PublicError with the
  * rule's code and sentence, which the form shows as it is.
  *
- * Owners and admins do all of it but remove, which is the owners' (as
- * deleting an app is). The server functions' middleware checks the role;
- * each operation checks it again here.
+ * Owners and admins do all of it, remove included (as deleting an app
+ * is). The server functions' middleware checks the role; each operation
+ * checks it again here.
  *
  * `on`/`off` are the status for both kinds (`active` serves, `disabled`
  * keeps access, tokens and the snapshot and serves nothing); `remove` is
@@ -121,15 +121,6 @@ function assertAdmin(ctx: OrgContext): void {
     throw new GatewayError(
       "UNAUTHORIZED",
       "Unauthorized: Organization admin access required",
-    );
-  }
-}
-
-function assertOwner(ctx: OrgContext): void {
-  if (ctx.role !== "owner") {
-    throw new GatewayError(
-      "UNAUTHORIZED",
-      "Unauthorized: Organization owner access required",
     );
   }
 }
@@ -464,7 +455,7 @@ async function setStatus(
  * credential stays set on the Gateway (only the operator unsets it).
  */
 async function remove(ctx: OrgContext, input: { id: string }): Promise<void> {
-  assertOwner(ctx);
+  assertAdmin(ctx);
   const row = await AppRepository.findById(input.id, ctx.orgId);
   if (!row || !mcpAppRemoveUpdate(registryRow(row))) throw notFound();
   await AppRepository.tombstone(row);

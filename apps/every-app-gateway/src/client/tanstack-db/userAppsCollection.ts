@@ -7,7 +7,7 @@ import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 
 /**
  * Collection of apps the current user has access to.
- * Read-only - app management is done by owners through the admin panel.
+ * Read-only - app management is done by owners and admins through the admin panel.
  */
 export const userAppsCollection = lazyInitForWorkers(() =>
   createCollection(
@@ -21,7 +21,7 @@ export const userAppsCollection = lazyInitForWorkers(() =>
       getKey: (item: UserAccessApp) => item.id,
 
       // Note: Insert, update, and delete are not supported.
-      // App management is owner-only through the admin panel.
+      // App management is owners' and admins' through the admin panel.
     }),
   ),
 );

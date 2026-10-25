@@ -2,14 +2,11 @@
  * MCP apps from Admin → Apps (docs/design/2026-10-mcp-by-url.md, section
  * 4): add any remote MCP server by URL, change it, turn an MCP app of
  * either kind on or off, list its tools again, show it, and remove it.
- * Owners and admins; removing is the owners', like deleting an app. The
- * rules and the writes are McpAppService's.
+ * Owners and admins, removing included (like deleting an app). The rules
+ * and the writes are McpAppService's.
  */
 import { createServerFn } from "@tanstack/react-start";
-import {
-  organizationAdminMiddleware,
-  organizationOwnerMiddleware,
-} from "@/middleware/auth";
+import { organizationAdminMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { McpAppService } from "@/server/services/McpAppService";
 import {
@@ -52,7 +49,7 @@ export const setMcpAppStatus = createServerFn({ method: "POST" })
  * AI connections go; the credential stays set on the Gateway.
  */
 export const removeMcpApp = createServerFn({ method: "POST" })
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .validator((data: unknown) => mcpAppIdSchema.parse(data))
   .handler(async ({ data, context }) => {
     await McpAppService.remove(context.org, data);

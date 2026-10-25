@@ -25,8 +25,8 @@ interface AppActionsMenuProps {
   onDelete: () => void;
   /**
    * An MCP app's own actions: Use from your agent first, and Turn off or
-   * Turn on (by its status) before Remove. Owners and admins turn it on
-   * and off; only owners remove it, as only owners delete an app.
+   * Turn on (by its status) before Remove. Owners and admins do all of
+   * it, Remove included, as they delete an app.
    */
   mcp?: {
     onUseMcp: () => void;
@@ -34,10 +34,11 @@ interface AppActionsMenuProps {
     on: boolean;
     onToggle: () => void;
   };
-  isOwner: boolean;
+  /** Owner or admin: shows Delete (Remove for an MCP app). */
+  isAdmin: boolean;
 }
 
-/** The kebab menu at the end of an app row. Only owners can delete an app. */
+/** The kebab menu at the end of an app row. Owners and admins delete an app. */
 export function AppActionsMenu({
   appName,
   onSetup,
@@ -45,7 +46,7 @@ export function AppActionsMenu({
   onEdit,
   onDelete,
   mcp,
-  isOwner,
+  isAdmin,
 }: AppActionsMenuProps) {
   const copy = MCP_APP_COPY.menu;
   return (
@@ -78,7 +79,7 @@ export function AppActionsMenu({
           {mcp.on ? copy.turnOff : copy.turnOn}
         </DropdownMenuItem>
       ) : null}
-      {isOwner ? (
+      {isAdmin ? (
         <>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={onDelete}>

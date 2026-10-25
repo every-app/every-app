@@ -143,12 +143,11 @@ export const MCP_APP_TOOLS: readonly WorkspaceToolDefinition[] = [
     ),
   },
   {
-    risk: "write",
-    minRole: "owner",
+    ...ADMIN_WRITE,
     name: "mcp_remove",
     title: "Remove an MCP app",
     description:
-      "Remove an MCP app, built-in or remote: it stops being served, and everyone's access, its tokens, its tools snapshot and its place in AI connections go. The credential stays set on the Gateway. To stop serving it and keep all that, use everyapp_mcp_off. Cannot be undone: needs confirm: true. Owners only.",
+      "Remove an MCP app, built-in or remote: it stops being served, and everyone's access, its tokens, its tools snapshot and its place in AI connections go. The credential stays set on the Gateway. To stop serving it and keep all that, use everyapp_mcp_off. Cannot be undone: needs confirm: true. Owners and admins.",
     inputSchema: closed(
       {
         app: APP,

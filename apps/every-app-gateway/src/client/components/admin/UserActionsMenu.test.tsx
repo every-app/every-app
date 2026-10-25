@@ -136,9 +136,15 @@ describe("owners", () => {
     );
   });
 
-  it("offers an admin no way to make anyone an owner", () => {
+  it("offers an admin no way to make anyone an owner, but lets them delete a member", () => {
     render({ user: user("member"), isOwner: false });
-    expect(items()).not.toContain("Make owner");
+    expect(items()).toEqual([
+      "Send password reset email",
+      "Password reset link",
+      "Change role to admin",
+      "Deactivate user",
+      "Delete user",
+    ]);
   });
 
   it("lets an owner demote, deactivate or delete another owner, never reset them", () => {

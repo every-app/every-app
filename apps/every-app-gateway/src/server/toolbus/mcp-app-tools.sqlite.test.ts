@@ -818,20 +818,18 @@ describe("who may manage MCP apps over /mcp", () => {
     expect((await listedApps())[0]).toMatchObject({ status: "on" });
   });
 
-  it("lists every MCP app tool but remove to an admin, all eight to the owner", async () => {
-    expect(await mcpTools(admin())).toEqual(
-      MCP_NAMES.filter((name) => name !== "everyapp_mcp_remove"),
-    );
+  it("lists all eight MCP app tools to an admin as to the owner", async () => {
+    expect(await mcpTools(admin())).toEqual(MCP_NAMES);
     expect(await mcpTools(owner())).toEqual(MCP_NAMES);
   });
 
-  it("removes an MCP app for the owner alone, with confirm: the tombstone", async () => {
+  it("removes an MCP app for an owner or an admin, with confirm: the tombstone; a member finds no such tool", async () => {
     const added = await addOpen();
     expect(
       await call(
         "everyapp_mcp_remove",
         { app: "open", confirm: true },
-        admin(),
+        member(),
       ),
     ).toEqual({
       ok: false,

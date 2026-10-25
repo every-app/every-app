@@ -1,10 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import {
-  organizationAdminMiddleware,
-  organizationOwnerMiddleware,
-} from "@/middleware/auth";
+import { organizationAdminMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AdminService } from "@/server/services/AdminService";
 import { InvitationService } from "@/server/services/InvitationService";
@@ -51,11 +48,11 @@ const deleteUserSchema = z.object({
 
 /**
  * Delete a user from the system.
- * Only accessible by owners.
- * Cannot delete yourself, or the last owner.
+ * Owners and admins; an admin removes members only, an owner anyone but
+ * themselves and the last owner (MembershipService.requireManageableMember).
  */
 export const deleteUser = createServerFn({ method: "POST" })
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .validator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AdminService.deleteUser(context.org, data.userId);

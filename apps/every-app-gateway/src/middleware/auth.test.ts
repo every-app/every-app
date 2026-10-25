@@ -39,7 +39,6 @@ vi.mock("@/server/organization/orgContext", () => ({
 import {
   organizationAdminMiddleware,
   organizationMemberMiddleware,
-  organizationOwnerMiddleware,
 } from "./auth";
 
 type MiddlewareHandler = (input: {
@@ -146,26 +145,6 @@ describe("organization middleware", () => {
     ).rejects.toThrow("Unauthorized: Organization admin access required");
     expect(next).not.toHaveBeenCalled();
   });
-
-  it("allows owners through owner middleware", async () => {
-    const next = vi.fn().mockResolvedValue("ok");
-
-    await expect(
-      ownerHandler()({ next, context: { org: soleOrg } }),
-    ).resolves.toBe("ok");
-  });
-
-  it("rejects non-owners from owner middleware", async () => {
-    const next = vi.fn();
-
-    await expect(
-      ownerHandler()({
-        next,
-        context: { org: { ...soleOrg, role: "member" } },
-      }),
-    ).rejects.toThrow("Unauthorized: Organization owner access required");
-    expect(next).not.toHaveBeenCalled();
-  });
 });
 
 function memberHandler(): MiddlewareHandler {
@@ -179,14 +158,6 @@ function memberHandler(): MiddlewareHandler {
 function adminHandler(): MiddlewareHandler {
   return (
     organizationAdminMiddleware as unknown as {
-      serverHandler: MiddlewareHandler;
-    }
-  ).serverHandler;
-}
-
-function ownerHandler(): MiddlewareHandler {
-  return (
-    organizationOwnerMiddleware as unknown as {
       serverHandler: MiddlewareHandler;
     }
   ).serverHandler;
