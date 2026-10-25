@@ -184,6 +184,16 @@ Roles:   pnpm everyapp workspace role <email> owner|admin|member --json   sets a
          page does the same). Owners are peers and the workspace always keeps
          one: the last owner's role is refused (LAST_OWNER); someone still
          invited isn't a member yet (MEMBER_NOT_FOUND).
+Manage:  pnpm everyapp workspace --help   the rest of Manage workspace from the
+         terminal, under the Cloudflare login: show, users, invite (prints the
+         link; nothing is mailed), invite-link, uninvite, deactivate, reactivate,
+         remove (--yes), reset-link, groups, group create|set|delete|members|apps,
+         apps, app set|access|cap, usage, activity, tokens, token revoke,
+         connections, connection revoke; --json on each. --org <slug> acts on
+         another organization (a name two organizations share is refused:
+         ORG_AMBIGUOUS; scripts pass the slug or id). deactivate and remove keep
+         the last owner who can act (LAST_OWNER); a ban is account-wide, so
+         deactivate checks every organization the person owns.
 Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.

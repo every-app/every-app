@@ -55,8 +55,10 @@ RUN A GATEWAY
   secret     Set, remove and list secrets and Gateway settings
   mcp        Offer DataForSEO to members' AI clients as an MCP app, with the Gateway's key
   email      Manage the addresses an app sends as and receives at
-  workspace  Rename the workspace and set members' roles
   teardown   Delete everything Every App created in a dedicated test Cloudflare account
+
+MANAGE THE WORKSPACE
+  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, tokens and AI connections
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -186,19 +188,50 @@ Run pnpm everyapp email <command> --help for its flags.
 ### `everyapp workspace`
 
 ```text
-Rename the workspace and set members' roles.
+Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, tokens and AI connections.
+
+Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.
+Acts under your Cloudflare login (the operator is root in every organization of the Gateway),
+on the install organization unless --org names another by slug, id or name (a name two
+organizations share is refused: give the slug). The Gateway mails nothing from here: invite
+and reset-link print the link to hand over.
+Depth-two groups have their own help: pnpm everyapp workspace group --help, app, token, connection.
 
 USAGE
   pnpm everyapp workspace <command> [flags]
 
 COMMANDS
-  rename  Rename the workspace: the name members see in the organization switcher and in invitations
-  role    Set a member's role: owner, admin or member
+  show         The organization: its owners, whether it can send mail, and how many members, invitations, groups and apps it has
+  rename       Rename the workspace: the name members see in the organization switcher and in invitations
+  users        The members with their role and state, then the pending invitations
+  role         Set a member's role: owner, admin or member
+  invite       Invite someone by email and print the link to send them (the Gateway mails nothing from here)
+  invite-link  Print a new link for a pending invitation (earlier links keep working until it is used)
+  uninvite     Cancel a pending invitation: its links stop working
+  deactivate   Lock a member out everywhere: no sign-in, every session ended, their tokens and AI connections revoked
+  reactivate   Lift a deactivation: they can sign in again (revoked tokens and connections stay revoked)
+  remove       Remove a member from the organization, and their account when it belongs to no other
+  reset-link   Print a one-hour, single-use password-reset link to hand to a member
+  groups       The groups, with how many members and apps each has
+  group        Make, change or delete a group, and set its members and apps
+  apps         Every app with who can open it, whether everyone can, its state and what it still needs set
+  app          Change an app's listing, who can open it, and its monthly cap
+  usage        What the apps spent in a month: per app (with its cap), per member and per provider
+  activity     The tool-call audit trail, newest first: who called which tool on which app, and what came of it
+  tokens       Every member's personal access tokens for the organization (never a token's value)
+  token        Revoke a personal access token
+  connections  Every member's AI connections to the organization: which AI app, which apps it may use, read or write
+  connection   Revoke an AI connection
 
 EXAMPLES
   $ pnpm everyapp workspace rename 'Acme Corp'
+  $ pnpm everyapp workspace users
   $ pnpm everyapp workspace role sam@example.com owner
   $ pnpm everyapp workspace role sam@example.com member
+  $ pnpm everyapp workspace invite ann@example.com --role admin
+  $ pnpm everyapp workspace app access crm --add ann@example.com
+  $ pnpm everyapp workspace group members Sales --set ann@example.com --set bob@example.com
+  $ pnpm everyapp workspace usage --month 2026-10 --json
 
 Run pnpm everyapp workspace <command> --help for its flags.
 ```
@@ -1388,6 +1421,40 @@ ARGUMENTS
   senders|inbound...  List to clear: senders or inbound
 ```
 
+### `everyapp workspace show`
+
+The organization: its owners, whether it can send mail, and how many members, invitations, groups and apps it has.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace show [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace show --help
+
+Nothing is changed. Email counts as configured when the Gateway settings EMAIL_FROM and a
+provider key are set, which is what invitations need to be mailed from the Gateway (this
+command prints links instead either way).
+
+Example:
+  pnpm everyapp workspace show --json
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
 ### `everyapp workspace rename`
 
 Rename the workspace: the name members see in the organization switcher and in invitations.
@@ -1430,6 +1497,39 @@ FLAGS
 
 ARGUMENTS
   name  The new name: 1 to 64 characters, no line breaks (quote one with spaces)
+```
+
+### `everyapp workspace users`
+
+The members with their role and state, then the pending invitations.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace users [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace users --help
+
+Nothing is changed. A deactivated member is listed as such; a pending invitation with when
+it expires.
+
+Example:
+  pnpm everyapp workspace users
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp workspace role`
@@ -1479,4 +1579,951 @@ FLAGS
 ARGUMENTS
   email               The member's email address, as Manage workspace → Users lists it
   owner|admin|member  The role to give them
+```
+
+### `everyapp workspace invite`
+
+Invite someone by email and print the link to send them (the Gateway mails nothing from here).
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The address to invite |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--role` | `member`, `admin` | no | `member` | The role they join with |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace invite [--role member|admin] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  pnpm everyapp workspace invite --help
+
+Makes a pending invitation (72 hours, single use, only for an account with that email) in
+your name: your Cloudflare login's email must be a member of the organization. Prints
+<gateway>/accept-invitation?token=einv_…, which is the invitation's only secret: hand it to
+the person yourself. The Gateway mails invitations only from Admin → Users.
+
+Examples:
+  pnpm everyapp workspace invite ann@example.com
+  pnpm everyapp workspace invite ann@example.com --role admin --json
+
+FLAGS
+     [--role]                  The role they join with                                                                                                                                      [member|admin, default = member]
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email  The address to invite
+```
+
+### `everyapp workspace invite-link`
+
+Print a new link for a pending invitation (earlier links keep working until it is used).
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email\|id>` | yes | The pending invitation, by invited email or id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace invite-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
+  pnpm everyapp workspace invite-link --help
+
+The link's token is new each time and stored only as its hash. Every link of an invitation
+stops working once it is accepted, canceled or expired.
+
+Example:
+  pnpm everyapp workspace invite-link ann@example.com
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email|id  The pending invitation, by invited email or id (workspace users lists them)
+```
+
+### `everyapp workspace uninvite`
+
+Cancel a pending invitation: its links stop working.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email\|id>` | yes | The pending invitation, by invited email or id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace uninvite [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
+  pnpm everyapp workspace uninvite --help
+
+Example:
+  pnpm everyapp workspace uninvite ann@example.com
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email|id  The pending invitation, by invited email or id (workspace users lists them)
+```
+
+### `everyapp workspace deactivate`
+
+Lock a member out everywhere: no sign-in, every session ended, their tokens and AI connections revoked.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The member, by email or user id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace deactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  pnpm everyapp workspace deactivate --help
+
+The account stays, listed as deactivated, and the ban holds in every organization it belongs
+to; workspace reactivate lifts it (revoked tokens and connections stay revoked). An
+organization always keeps an owner who can act, and the ban is account-wide, so the last
+live owner of this organization, or of any other they own, can't be deactivated
+(LAST_OWNER, naming the organization): a deactivated owner doesn't count.
+
+Example:
+  pnpm everyapp workspace deactivate ann@example.com
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email  The member, by email or user id (workspace users lists them)
+```
+
+### `everyapp workspace reactivate`
+
+Lift a deactivation: they can sign in again (revoked tokens and connections stay revoked).
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The member, by email or user id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace reactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  pnpm everyapp workspace reactivate --help
+
+Example:
+  pnpm everyapp workspace reactivate ann@example.com
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email  The member, by email or user id (workspace users lists them)
+```
+
+### `everyapp workspace remove`
+
+Remove a member from the organization, and their account when it belongs to no other.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The member, by email or user id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--yes` | switch | no |  | Remove without asking (needed where nobody is at a terminal) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace remove [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  pnpm everyapp workspace remove --help
+
+Deletes the membership, their app grants and places in groups, and revokes their personal
+access tokens for the organization and AI connections to it, in one write. The account goes
+too when it belongs to no other organization (a hosted Gateway keeps accounts). Someone
+Cloudflare Access would let straight back in (the Gateway has CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS
+or CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN set) is deactivated and kept listed instead, as the
+Gateway's own Delete does. Owners are peers, and the organization always keeps one who can
+act: the last owner who isn't deactivated can't be removed (LAST_OWNER). Asks first at a
+terminal; elsewhere it needs --yes.
+
+Example:
+  pnpm everyapp workspace remove ann@example.com --yes --json
+
+FLAGS
+  -y [--yes/--no-yes]          Remove without asking (needed where nobody is at a terminal)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email  The member, by email or user id (workspace users lists them)
+```
+
+### `everyapp workspace reset-link`
+
+Print a one-hour, single-use password-reset link to hand to a member.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The member, by email or user id (workspace users lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace reset-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  pnpm everyapp workspace reset-link --help
+
+Better Auth's own reset token, consumed by the Gateway's /reset-password page: whoever opens
+it sets the account's password, so hand it to the person yourself. Only for an active
+account (PASSWORD_RESET_REQUIRES_ACTIVE_USER) that belongs to this organization alone
+(USER_IN_OTHER_ORGANIZATION: a password is account-wide, so the Gateway's rule holds here
+too). Password sign-in must be on (EMAIL_PASSWORD_SIGN_IN) for the page to take it. An
+owner's too: the operator is root (the Gateway refuses that to admins and other owners),
+which is the way back in for a sole owner who lost their password.
+
+Example:
+  pnpm everyapp workspace reset-link ann@example.com
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email  The member, by email or user id (workspace users lists them)
+```
+
+### `everyapp workspace groups`
+
+The groups, with how many members and apps each has.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace groups [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace groups --help
+
+Nothing is changed.
+
+Example:
+  pnpm everyapp workspace groups
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace group create`
+
+Make a group: a named set of members that apps are granted to as one.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<name>` | yes | The group's name, 1 to 60 characters, unique in the organization |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--description` | `<text>` | no |  | What the group is for (empty text clears it) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace group create [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <name>
+  pnpm everyapp workspace group create --help
+
+A member opens an app when they hold a grant to it, or belong to a group that does.
+
+Example:
+  pnpm everyapp workspace group create Sales --description "The sales team"
+
+FLAGS
+     [--description]           What the group is for (empty text clears it)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  name  The group's name, 1 to 60 characters, unique in the organization
+```
+
+### `everyapp workspace group set`
+
+Rename or describe a group.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<group>` | yes | The group, by name or grp_ id (workspace groups lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--name` | `<name>` | no |  | A new name |
+| `--description` | `<text>` | no |  | What the group is for (empty text clears it) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace group set [--name name] [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  pnpm everyapp workspace group set --help
+
+Example:
+  pnpm everyapp workspace group set Sales --name "Sales and marketing"
+
+FLAGS
+     [--name]                  A new name
+     [--description]           What the group is for (empty text clears it)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  group  The group, by name or grp_ id (workspace groups lists them)
+```
+
+### `everyapp workspace group delete`
+
+Delete a group: what it granted ends with it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<group>` | yes | The group, by name or grp_ id (workspace groups lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--yes` | switch | no |  | Delete without asking (needed where nobody is at a terminal) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace group delete [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  pnpm everyapp workspace group delete --help
+
+Its members keep their direct grants and their other groups. Asks first at a terminal;
+elsewhere it needs --yes.
+
+Example:
+  pnpm everyapp workspace group delete Sales --yes
+
+FLAGS
+  -y [--yes/--no-yes]          Delete without asking (needed where nobody is at a terminal)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  group  The group, by name or grp_ id (workspace groups lists them)
+```
+
+### `everyapp workspace group members`
+
+Who is in a group; --add, --remove or --set change it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<group>` | yes | The group, by name or grp_ id (workspace groups lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--add` | `<email>` (repeatable) | no |  | Add a member, by email or user id (repeat for several) |
+| `--remove` | `<email>` (repeatable) | no |  | Remove a member, by email or user id (repeat for several) |
+| `--set` | `<email>` (repeatable) | no |  | Replace the whole list with these (repeat for several; alone, with neither --add nor --remove) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace group members [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  pnpm everyapp workspace group members --help
+
+Without a change flag, lists every member of the organization and whether they are in the
+group. Only members of the organization can be in its groups.
+
+Examples:
+  pnpm everyapp workspace group members Sales
+  pnpm everyapp workspace group members Sales --add ann@example.com --add bob@example.com
+  pnpm everyapp workspace group members Sales --set ann@example.com
+
+FLAGS
+     [--add]...                Add a member, by email or user id (repeat for several)
+     [--remove]...             Remove a member, by email or user id (repeat for several)
+     [--set]...                Replace the whole list with these (repeat for several; alone, with neither --add nor --remove)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  group  The group, by name or grp_ id (workspace groups lists them)
+```
+
+### `everyapp workspace group apps`
+
+Which apps a group opens; --add, --remove or --set change it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<group>` | yes | The group, by name or grp_ id (workspace groups lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--add` | `<app>` (repeatable) | no |  | Add an app, by id (repeat for several) |
+| `--remove` | `<app>` (repeatable) | no |  | Remove an app, by id (repeat for several) |
+| `--set` | `<app>` (repeatable) | no |  | Replace the whole list with these (repeat for several; alone, with neither --add nor --remove) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace group apps [--add app]... [--remove app]... [--set app]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  pnpm everyapp workspace group apps --help
+
+Without a change flag, lists the organization's own apps and whether the group opens each.
+A shared app opens for everyone already and is never granted to a group.
+
+Examples:
+  pnpm everyapp workspace group apps Sales
+  pnpm everyapp workspace group apps Sales --add crm
+
+FLAGS
+     [--add]...                Add an app, by id (repeat for several)
+     [--remove]...             Remove an app, by id (repeat for several)
+     [--set]...                Replace the whole list with these (repeat for several; alone, with neither --add nor --remove)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  group  The group, by name or grp_ id (workspace groups lists them)
+```
+
+### `everyapp workspace apps`
+
+Every app with who can open it, whether everyone can, its state and what it still needs set.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace apps [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace apps --help
+
+The admin's view (Admin → Apps); everyapp status has the operator's. Nothing is changed.
+
+Example:
+  pnpm everyapp workspace apps --json
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace app set`
+
+Change an app's name, description or whether everyone can open it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<app>` | yes | The app, by id (crm) or row id (workspace apps lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--name` | `<name>` | no |  | The name the app library shows (1 to 255 characters) |
+| `--description` | `<text>` | no |  | The description under it |
+| `--everyone` | `on`, `off` | no |  | Available to everyone: on grants every member now and every future member on joining; off keeps existing access |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace app set [--name name] [--description text] [--everyone on|off] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
+  pnpm everyapp workspace app set --help
+
+Catalog metadata only: the next deploy sets the name and description again from
+everyapp.config.ts.
+
+Examples:
+  pnpm everyapp workspace app set crm --everyone on
+  pnpm everyapp workspace app set crm --name "Open CRM" --description "Contacts and deals"
+
+FLAGS
+     [--name]                  The name the app library shows (1 to 255 characters)
+     [--description]           The description under it
+     [--everyone]              Available to everyone: on grants every member now and every future member on joining; off keeps existing access                                              [on|off]
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  app  The app, by id (crm) or row id (workspace apps lists them)
+```
+
+### `everyapp workspace app access`
+
+Who can open an app; --add, --remove or --set change the direct grants.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<app>` | yes | The app, by id (crm) or row id (workspace apps lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--add` | `<email>` (repeatable) | no |  | Add a member's direct grant, by email or user id (repeat for several) |
+| `--remove` | `<email>` (repeatable) | no |  | Remove a member's direct grant, by email or user id (repeat for several) |
+| `--set` | `<email>` (repeatable) | no |  | Replace the whole list with these (repeat for several; alone, with neither --add nor --remove) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace app access [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
+  pnpm everyapp workspace app access --help
+
+Without a change flag, lists every member with whether they hold a direct grant and which
+groups open the app for them. A change touches direct grants only; what a group grants
+stays (workspace group apps). A shared app's access can't be changed.
+
+Examples:
+  pnpm everyapp workspace app access crm
+  pnpm everyapp workspace app access crm --add ann@example.com
+  pnpm everyapp workspace app access crm --set ann@example.com --set bob@example.com --json
+
+FLAGS
+     [--add]...                Add a member's direct grant, by email or user id (repeat for several)
+     [--remove]...             Remove a member's direct grant, by email or user id (repeat for several)
+     [--set]...                Replace the whole list with these (repeat for several; alone, with neither --add nor --remove)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  app  The app, by id (crm) or row id (workspace apps lists them)
+```
+
+### `everyapp workspace app cap`
+
+Cap an app's provider calls per month, or lift the cap.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<app>` | yes | The app, by id or row id: the organization's own, or a shared one |
+| `<n\|off>` | yes | Provider calls per UTC month (1 to 1,000,000,000), or off for no cap |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace app cap [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app> <n|off>
+  pnpm everyapp workspace app cap --help
+
+Past the cap, a provider tool answers a tool error naming it and an app's brokered call
+gets 429 app_monthly_cap_exceeded until the next UTC month. Binds within seconds.
+
+Examples:
+  pnpm everyapp workspace app cap crm 5000
+  pnpm everyapp workspace app cap crm off
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  app    The app, by id or row id: the organization's own, or a shared one
+  n|off  Provider calls per UTC month (1 to 1,000,000,000), or off for no cap
+```
+
+### `everyapp workspace usage`
+
+What the apps spent in a month: per app (with its cap), per member and per provider.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--month` | `<YYYY-MM>` | no |  | The UTC month (default: this one) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace usage [--month YYYY-MM] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace usage --help
+
+Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a
+provider answered, and allowed MCP tool calls from the audit trail. Every callable app is
+listed, with zeros in a month it made no call. Nothing is changed.
+
+Example:
+  pnpm everyapp workspace usage --month 2026-10 --json
+
+FLAGS
+     [--month]                 The UTC month (default: this one)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace activity`
+
+The tool-call audit trail, newest first: who called which tool on which app, and what came of it.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--app` | `<app>` | no |  | Calls on this app only, by id or row id |
+| `--user` | `<email>` | no |  | Calls by this member only, by email or user id |
+| `--decision` | `allowed`, `blocked` | no |  | Allowed or blocked calls only |
+| `--risk` | `read`, `write`, `destructive` | no |  | Tools of this risk only |
+| `--since` | `<time>` | no |  | Calls at or after this time (ISO 8601, UTC) |
+| `--limit` | `<n>` | no |  | Rows per page, 1 to 200 (default 50) |
+| `--before` | `<cursor>` | no |  | The next page: the previous page's nextBefore, as <createdAt>:<id> |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace activity [--app app] [--user email] [--decision allowed|blocked] [--risk read|write|destructive] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace activity --help
+
+Never the arguments or the result: the trail holds neither. One page at a time; --json
+carries data.nextBefore for the next page. Nothing is changed.
+
+Examples:
+  pnpm everyapp workspace activity --limit 20
+  pnpm everyapp workspace activity --app crm --decision blocked --since 2026-10-24 --json
+
+FLAGS
+     [--app]                   Calls on this app only, by id or row id
+     [--user]                  Calls by this member only, by email or user id
+     [--decision]              Allowed or blocked calls only                                                                                                                                [allowed|blocked]
+     [--risk]                  Tools of this risk only                                                                                                                                      [read|write|destructive]
+     [--since]                 Calls at or after this time (ISO 8601, UTC)
+     [--limit]                 Rows per page, 1 to 200 (default 50)
+     [--before]                The next page: the previous page's nextBefore, as <createdAt>:<id>
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace tokens`
+
+Every member's personal access tokens for the organization (never a token's value).
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--user` | `<email>` | no |  | One member's only, by email or user id |
+| `--all` | switch | no |  | Revoked and expired tokens too |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace tokens [--user email] [--all] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace tokens --help
+
+Tokens are created in Admin → Tokens only: their hash is keyed by a Gateway secret the CLI
+never holds. Nothing is changed.
+
+Example:
+  pnpm everyapp workspace tokens --user ann@example.com
+
+FLAGS
+     [--user]                  One member's only, by email or user id
+     [--all/--no-all]          Revoked and expired tokens too
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace token revoke`
+
+Revoke a personal access token: it stops working on its next request.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The token's id (workspace tokens lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace token revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp workspace token revoke --help
+
+Example:
+  pnpm everyapp workspace token revoke 3f2a…
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The token's id (workspace tokens lists them)
+```
+
+### `everyapp workspace connections`
+
+Every member's AI connections to the organization: which AI app, which apps it may use, read or write.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--user` | `<email>` | no |  | One member's only, by email or user id |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace connections [--user email] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace connections --help
+
+A connection is an OAuth client (Claude, Cursor, …) a member connected to the Gateway's /mcp.
+Nothing is changed.
+
+Example:
+  pnpm everyapp workspace connections
+
+FLAGS
+     [--user]                  One member's only, by email or user id
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace connection revoke`
+
+Revoke an AI connection: the client is out on its next request.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The connection's id (workspace connections lists them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace connection revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp workspace connection revoke --help
+
+Example:
+  pnpm everyapp workspace connection revoke mcpc_…
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The connection's id (workspace connections lists them)
 ```

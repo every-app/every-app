@@ -99,6 +99,22 @@ No `--account-id` and no `CLOUDFLARE_ACCOUNT_ID`, and the Cloudflare login lists
 
 Source: `packages/cli/src/lib/cf/account.ts` (`resolveAccount`).
 
+### ALREADY_INVITED
+
+`workspace invite <email>`: the address has a pending invitation to the organization that hasn't expired (`invitations.status = 'pending'`, `expires_at` still to come). Checked before the write and again on it (the insert's `WHERE NOT EXISTS`), so an invite racing this one loses; a second raise after the write is `retryable`. An expired invitation doesn't count: a new one is made beside it. Headline: `<email> has a pending invitation to <organization> already`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace invite-link <email>`, `rerunNote`: `prints a new link for it`. Cancel it first with `workspace uninvite` to invite with another role.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`invite`, `refuseKnownAddress`).
+
+### ALREADY_MEMBER
+
+`workspace invite <email>`: a member of the organization has that email (letter case aside). Checked before the write and again on it. Headline: `<email> is a member of <organization> already`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the members`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`refuseKnownAddress`).
+
 ### APP_CHANGING
 
 After the Worker is uploaded, the deploy records its version on the app's registry row with an `UPDATE … WHERE id = ? AND status = ?` over the status it just read, so an admin switching the app off meanwhile keeps it off; when that write matches no row three times running (`MARK_DEPLOYED_ATTEMPTS = 3`), the row is changing under the run. Headline: `The app's registry row keeps changing while this deploy records its upload`, then `The upload is kept.` Raised by `deploy` (under the app's lease, after the `app.email` step and before the Gateway rebind).
@@ -123,25 +139,34 @@ Source: `packages/cli/src/commands/create/index.ts`.
 
 Source: `packages/cli/src/commands/create/steps/appId.ts` (`resolveAppId`).
 
+### APP_NAME_INVALID
+
+`workspace app set <app> --name <name>`: the name is empty once trimmed, or longer than 255 characters (the rule Admin → Apps → Edit applies, `schemas/app.ts`). The command line's parser refuses it first, as `INVALID_VALUE` (exit 252: `--name can't be ""`); this is the library's own check behind it. Headline: `An app's name is 1 to 255 characters, not empty` (or `(<n> given)`). Nothing is written.
+
+**Fix:** `fix`: `give --name the name the app library should show, or leave --name off`. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`appName`, `updateApp`), `packages/cli/src/commands/workspace/command.ts` (the `--name` parser).
+
 ### APP_NOT_FOUND
 
 The app the command acts on has no usable row in the Gateway's registry (never deployed, deleted, or gone mid-run). Each raise site says it its own way:
 
-| Raised by                                                                                                                    | Headline                                                                                                                                                                                             | Next step                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `db query` (production), `db restore`, `email set`, `email unset`, `secret list <app>` (registry `readApp`, `writeAppEmail`) | `<app> isn't deployed to this Gateway yet`                                                                                                                                                           | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                       | `The app is no longer registered on this Gateway`                                                                                                                                                    | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                                  | `No app named <app> on this Gateway`                                                                                                                                                                 | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `secret set`, `secret unset` for an app's names, before any value is read                                                    | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`                                                                                                   | `rerun`: `pnpm everyapp deploy`                                                                           |
-| `secret set --app <id>`, `secret unset --app <id>`: no registered app by that id                                             | `<app> isn't deployed to this Gateway` / `An app's secrets can be set after its first deploy. Nothing was changed.`                                                                                  | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `configure <app>`: no registered app by that id, or a row whose first deploy never finished (`status: "pending"`)            | `<app> isn't deployed to this Gateway` / `An app is configured by name after its first deploy; in its directory, configure works before that too (for the Gateway's settings). Nothing was changed.` | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `configure` in the app's directory before its first deploy, a name of the app's own on stdin                                 | `<app> isn't deployed yet` / `Its own <NAME> can be set after its first deploy. Nothing was set.`                                                                                                    | `rerun`: `pnpm everyapp deploy`                                                                           |
-| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                           | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.`                                                                                           | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
-| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                                 | `<app> was deleted during this run`                                                                                                                                                                  | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
+| Raised by                                                                                                                                                                                                                                         | Headline                                                                                                                                                                                             | Next step                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `db query` (production), `db restore`, `email set`, `email unset`, `secret list <app>` (registry `readApp`, `writeAppEmail`)                                                                                                                      | `<app> isn't deployed to this Gateway yet`                                                                                                                                                           | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                                                                                                                                            | `The app is no longer registered on this Gateway`                                                                                                                                                    | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                                                                                                                                                       | `No app named <app> on this Gateway`                                                                                                                                                                 | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `secret set`, `secret unset` for an app's names, before any value is read                                                                                                                                                                         | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`                                                                                                   | `rerun`: `pnpm everyapp deploy`                                                                           |
+| `secret set --app <id>`, `secret unset --app <id>`: no registered app by that id                                                                                                                                                                  | `<app> isn't deployed to this Gateway` / `An app's secrets can be set after its first deploy. Nothing was changed.`                                                                                  | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `configure <app>`: no registered app by that id, or a row whose first deploy never finished (`status: "pending"`)                                                                                                                                 | `<app> isn't deployed to this Gateway` / `An app is configured by name after its first deploy; in its directory, configure works before that too (for the Gateway's settings). Nothing was changed.` | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `configure` in the app's directory before its first deploy, a name of the app's own on stdin                                                                                                                                                      | `<app> isn't deployed yet` / `Its own <NAME> can be set after its first deploy. Nothing was set.`                                                                                                    | `rerun`: `pnpm everyapp deploy`                                                                           |
+| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                                                                                                                                                | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.`                                                                                           | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
+| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                                                                                                                                                      | `<app> was deleted during this run`                                                                                                                                                                  | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
+| `workspace app set/access/cap`, `workspace group apps --add/--set`, `workspace activity --app` (`findApp`): no app of the organization by that id or row id (a deleted app's tombstone doesn't count; `cap` and `activity` take a shared app too) | `No app named <app> in <organization>`                                                                                                                                                               | `rerun`: `pnpm everyapp workspace apps`, `rerunNote`: `lists them`                                        |
 
-**Fix:** as the table says; in every case but the last two, deploy the app first. No takeover.
+**Fix:** as the table says; in every case but the last three, deploy the app first. No takeover.
 
-Source: `packages/cli/src/lib/gateway/registry.ts`, `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/perimeter/src/registry/registration.ts` (`assertLiveApp`).
+Source: `packages/cli/src/lib/gateway/registry.ts`, `packages/cli/src/lib/gateway/workspace.ts`, `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/perimeter/src/registry/registration.ts` (`assertLiveApp`).
 
 ### APP_NOT_LIVE
 
@@ -219,10 +244,20 @@ A step needs a person's yes, `--yes` wasn't given, and nobody is at a terminal (
 | `db restore`                                            | `Restoring <app>'s database needs a person at a terminal to confirm, or --yes` / `It undoes <n> migration(s) (<names>) applied <time> ago by <who>; anything written to it since is lost too.` (`the Gateway's database` instead of `<app>'s database` with `--gateway`; `<who>` is `an API token` for a restore point an API token saved; `data`: `appId`, `databaseId`, `bookmark`, `migrations`, `createdAt`, `createdBy`) |
 | `delete <app>`                                          | `Deleting an app needs confirmation at a terminal, or --yes`                                                                                                                                                                                                                                                                                                                                                                  |
 | `secret unset`                                          | `Removing secrets needs confirmation, and there's no terminal to ask in`                                                                                                                                                                                                                                                                                                                                                      |
+| `workspace remove <email>`                              | `Removing a member needs confirmation at a terminal, or --yes` (raised after the member is found; `data`: `userId`, `email`. At a terminal: `Remove <email> from <organization>?`, No is `Cancelled. Nothing removed.`)                                                                                                                                                                                                       |
+| `workspace group delete <group>`                        | `Deleting a group needs confirmation at a terminal, or --yes` (raised after the group is found; `data`: `groupId`, `name`. At a terminal: `Delete the group <name>?`, No is `Cancelled. Nothing deleted.`)                                                                                                                                                                                                                    |
 
 **Fix:** takeover: `rerun` is this same command with `--yes`, and `data.authorize: true`. Show the message and ask the person before rerunning with `--yes`. Not retryable.
 
-Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`.
+Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/workspace/index.ts` (`removeMember`), `packages/cli/src/commands/workspace/groups.ts` (`deleteGroup`).
+
+### CONNECTION_NOT_FOUND
+
+`workspace connection revoke <id>`: no AI connection (`mcp_connections` row) with that id belongs to the organization. One revoked already is not an error: the command says so (`data.already: true`). Headline: `No AI connection <id> in <organization>`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace connections`, `rerunNote`: `lists them by id`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`revokeConnection`).
 
 ### D1_NOT_FOUND
 
@@ -451,6 +486,14 @@ Source: `packages/cli/src/lib/app/emailRoutes.ts` (`emailZone`), `packages/cli/s
 
 The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` included when the run had it, built by `thisCommand()`: run it as it is); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
 
+### FLAGS_CONFLICT
+
+`workspace group members`, `workspace group apps` and `workspace app access`: `--set` was given with `--add` or `--remove`. `--set` replaces the whole list; `--add` and `--remove` change it, and may go together. Checked before anything connects. Headline: `--set replaces the whole list: give it alone, or --add and --remove without it`.
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/commands/workspace/shared.ts` (`listChange`).
+
 ### GATEWAY_BUILD_FAILED
 
 Building the Gateway's release from this checkout failed (step `gateway.release`; raised by `setup`, and by `deploy`, `install` and `delete` when they rebind a Gateway from the checkout). The build is two children, `pnpm --filter @every-app/sdk build` at the root, then `pnpm run build:release` in `apps/every-app-gateway`; the first to exit non-zero raises this. Headline: `Building the Gateway failed`, then `<command> exited with code <n>. Its last lines:` (or `was stopped by <signal>`), the last 20 lines indented, and `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Under `--json`, after the `gateway.release` start event (`Building the Gateway from this checkout (usually 1–2m)`) nothing more arrives until the build ends: give it the time.
@@ -493,6 +536,30 @@ Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway
 **Fix:** when the host came from `--gateway` on the command line, `data.rerun` is this command without `--gateway` and its value (`thisCommandWithout()`), `data.rerunNote` `to use <found host>`; when it came from the environment, `data.fix` is `unset EVERYAPP_GATEWAY_URL to use <found host>`. Not retryable.
 
 Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gateway/connect.ts`
+
+### GROUP_NAME_INVALID
+
+`workspace group create <name>` and `workspace group set --name <name>`: the name, trimmed, is empty or longer than 60 characters, the Gateway's own rule. Checked before the write. Headline: `A group name is 1 to 60 characters (<n> given)`.
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`groupName`).
+
+### GROUP_NAME_TAKEN
+
+`workspace group create <name>` and `workspace group set --name <name>`: the organization has a group with that name, letter case aside (the Gateway's `groups_organization_name_unique` index is on `lower(name)`). Held on the write (`INSERT … WHERE NOT EXISTS`, `UPDATE … WHERE NOT EXISTS`), so two creates racing each other make one group. Headline: `A group named "<name>" exists already in this organization`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace groups`, `rerunNote`: `lists them`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`createGroup`, `updateGroup`).
+
+### GROUP_NOT_FOUND
+
+`workspace group set/delete/members/apps <group>`: no group of the organization has that name (letter case aside) or `grp_` id. Headline: `No group named <group> in <organization>`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace groups`, `rerunNote`: `lists them`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`findGroup`).
 
 ### HELPER_DURABLE_OBJECT_REMOVED
 
@@ -574,6 +641,14 @@ Source: `packages/cli/src/commands/create/steps/appId.ts`, `packages/perimeter/s
 
 Source: `packages/cli/src/lib/gateway/patchBuildOutput.ts`, `packages/cli/src/lib/app/policy.ts`
 
+### INVALID_CAP
+
+`workspace app cap <app> <n|off>`: the cap isn't a whole number from 1 to 1,000,000,000 (`MONTHLY_CALL_CAP_MAX`, the Gateway's bound), or `off`. The command line's parser refuses most such values first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `A monthly cap is a whole number from 1 to 1,000,000,000, or off`.
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`setMonthlyCap`), `packages/cli/src/commands/workspace/command.ts` (`parseCap`).
+
 ### INVALID_DEV_MODE
 
 `everyapp dev`: `--mode`, or `EVERYAPP_DEV_MODE` when the flag is absent, isn't `stub` or `mirror` (compared lowercase). Message `--mode must be stub or mirror, not "<value>"` (or `EVERYAPP_DEV_MODE must be stub or mirror, not "<value>"`) then `stub signs you in as a seeded dev user; mirror uses real login through a local Gateway.`
@@ -608,13 +683,31 @@ The registry raises the same code (a `RegistrationError`, status 400, passed thr
 
 Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/report.ts`, `packages/cli/src/lib/manifest.ts`, `packages/perimeter/src/registry/registration.ts`
 
+### INVALID_MONTH
+
+`workspace usage --month <month>`: the month isn't written `YYYY-MM`. The command line's parser refuses it first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `--month <month> isn't a month: use YYYY-MM`.
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`usage`), `packages/cli/src/commands/workspace/command.ts` (`parseMonth`).
+
+### INVITATION_NOT_PENDING
+
+`workspace invite-link <email|id>` and `workspace uninvite <email|id>`: no pending invitation of the organization matches the id or the invited email (it was accepted, canceled or never made), or, for `invite-link`, the pending one has expired (`expires_at` passed), or it was used or canceled between the read and the write (the insert's `WHERE EXISTS`, the update's `AND status = 'pending'`). Headline: `No pending invitation for <x> in <organization>`, or `The invitation for <email> expired on <time>`, or `… was used or canceled meanwhile`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the pending invitations`; for an expired one, `rerun`: `pnpm everyapp workspace invite <email>`, `rerunNote`: `makes a new one`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`findPendingInvitation`, `inviteLink`, `uninvite`).
+
 ### LAST_OWNER
 
 `workspace role <email> admin|member` named an owner while no other owner of the workspace can act (step `workspace.role`): they are the only owner, or every other owner is deactivated (`users.banned` with no expiry or one still to come). The workspace always keeps at least one owner who can act, so the guarded `UPDATE` changed nothing and the row is as it was. Headline: `<email> is the last owner of <workspace>`, then `The workspace always keeps one owner, so their role stays until someone else is an owner.` The Gateway's Users page refuses the same move with the same code, and its write carries the same guard.
 
-**Fix:** `data.rerun`: `pnpm everyapp workspace role <email> owner` (literal `<email>`: another member's), `data.rerunNote`: `for someone else, then this command again`. `data.workspace` (`id`, `name`), `data.member` (`id`, `email`, `name`), `data.role` (the role asked for). Not retryable.
+`workspace remove <email>` refuses the organization's last owner who can act the same way (the predicate is the one `role` holds, `anotherLiveOwnerSql` in members.ts). `workspace deactivate <email>` bans the account, which is account-wide (every session, token and AI connection goes with it), so it keeps the rule in every organization the member owns: refused when they are the last live owner of the organization acted on or of any other, naming the one that would be left without an owner (`data.organization`). The Gateway refuses such a person to an admin outright (`USER_IN_OTHER_ORGANIZATION`); the operator, root everywhere, is held to the rule itself. Both are checked on the read and held on the write: every statement of the batch carries the same condition, so an owner left alone between the read and the write is refused too (nothing is written, and the read is repeated to say so). Headline: `<email> is the last owner of <organization> who can act, so they can't be deactivated` (or `removed`); for another organization of theirs, `<email> is the last owner of <organization> who can act, and a deactivation is account-wide: it would leave <organization> without one`; then `Make someone else an owner of <organization> first, then try again.`
 
-Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`), `packages/cli/src/lib/gateway/members.ts` (`setMemberRole`).
+**Fix:** `data.rerun`: `pnpm everyapp workspace role <email> owner` (literal `<email>`: another member's), `data.rerunNote`: `for someone else, then this command again`, when the organization is the install one (the one `workspace role` acts on); for another organization, `fix`: `an owner of <organization> makes someone else an owner under Manage workspace → Users, then run this again`. From `role`, `data.workspace` (`id`, `name`), `data.member` (`id`, `email`, `name`), `data.role` (the role asked for); from `deactivate` and `remove`, `data.organization` (`id`, `name`, `slug`) and `data.member` (`id`, `email`, `name`). Not retryable.
+
+Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`), `packages/cli/src/lib/gateway/members.ts` (`setMemberRole`, `anotherLiveOwnerSql`), `packages/cli/src/lib/gateway/workspace.ts` (`lastOwner`, `lastLiveOwnerOf`, `MANAGEABLE_MEMBER`, `DEACTIVATABLE_MEMBER`).
 
 ### LEASE_HELD
 
@@ -710,6 +803,14 @@ Before `cf build` or `cf dev` (the cf calls that run the project's package manag
 
 Source: `packages/cli/src/lib/cf/toolchain.ts`, `packages/cli/src/lib/cf/runner.ts`, `packages/cli/src/lib/runtime.ts`
 
+### NOTHING_TO_SET
+
+`workspace app set <app>` without `--name`, `--description` or `--everyone`, and `workspace group set <group>` without `--name` or `--description`: there is nothing to change. Checked before the write (`group set` before anything connects). Headline: `Nothing to set: give --name, --description or --everyone on|off` (or `give --name or --description`).
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`updateApp`), `packages/cli/src/commands/workspace/groups.ts` (`updateGroup`).
+
 ### NO_D1
 
 `everyapp db query` on an app whose manifest declares no `resources.d1` (checked before `--local` or production is decided). Message `<app> declares no D1 database`.
@@ -733,6 +834,30 @@ Source: `packages/cli/src/lib/app/release.ts`, `packages/cli/src/lib/release/git
 **Fix:** none offered; not retryable.
 
 Source: `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/lib/migrations/remote.ts`
+
+### ORG_AMBIGUOUS
+
+Every `workspace …` command that takes `--org`, when the value is no organization's id or slug and matches more than one by name (letter case aside). Names aren't unique (the `organizations` table is unique on `slug` only) and any owner or admin can rename their organization, so a script's `--org <name>` could land on an organization someone renamed; the command refuses rather than take the older one. Headline: `<n> organizations are named <x>: <slug> (<id>) and <slug> (<id>)`, then `A name isn't unique, and any owner or admin can rename their organization; a slug or id is one organization's.`; `fix`: `name it by its slug or id with --org`; `data.organizations` lists the candidates (`id`, `name`, `slug`). Nothing is read or written past this. Scripts should pass the slug or the id.
+
+**Fix:** as above. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`resolveOrganization`).
+
+### ORGANIZATION_NOT_FOUND
+
+Every `workspace …` command, when the organization it acts on can't be found. Without `--org`, the install organization (the oldest with an owner, or the oldest of all) and the Gateway has none yet: headline `The Gateway has no organization yet`, then `Its owner creates the first one by claiming it.`; `rerun`: `pnpm everyapp setup`, `rerunNote`: `prints the owner link`. With `--org <x>`, no organization has that id, slug or name (letter case aside): headline `No organization named <x> on this Gateway`, then `The Gateway has: <slug> (<name>) and …`; `fix`: `name one by its slug, id or name with --org`; `data.organizations` lists them (`id`, `name`, `slug`). A name two organizations share is `ORG_AMBIGUOUS` instead.
+
+**Fix:** as above. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`openWorkspace`, `resolveOrganization`).
+
+### PASSWORD_RESET_REQUIRES_ACTIVE_USER
+
+`workspace reset-link <email>`: the member is deactivated (`users.banned`, with `ban_expires` unset or still to come), and a password-reset link is only made for an active account, the Gateway's own rule. Headline: `<email> is deactivated, and a password-reset link is only for an active account`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace reactivate <email>`, `rerunNote`: `first, if they should be back`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`resetLink`).
 
 ### PIPED_LINE_INVALID
 
@@ -982,6 +1107,14 @@ Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/config
 
 Source: `packages/cli/src/lib/secretValue.ts`
 
+### SHARED_APP_ACCESS
+
+`workspace app set <app> --everyone on`, `workspace app access <app>` (listing or changing), and `workspace group apps <group> --add/--set <app>`: the app is a shared app (`apps.scope = 'shared'`), which every member of every organization can open already, so its access is nobody's to change and it is never an organization's default or a group's app. Checked before the write; the group insert checks it again (`WHERE EXISTS (… scope != 'shared' …)`). Headline: `<app> is a shared app: every member of every organization can open it, so its access can't be changed`.
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`sharedAppAccess`).
+
 ### SHARED_APP_FORBIDDEN
 
 A Cloudflare login whose verified email isn't an owner or admin of the platform organization tried to `deploy` or `delete` a shared app (a row whose scope is `shared`; a redeploy keeps the row's scope), or to change its email lists with `email set|unset`: `Only <organization> owners and admins can <deploy|delete|change the email of> shared apps` / `<email> isn't an owner or admin of <organization>, the platform organization.` An API token (`CLOUDFLARE_API_TOKEN` set, so the deployer has no email) is the account's own authority and is never checked.
@@ -1086,6 +1219,14 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkTokenScope`).
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/perimeter/src/manifest/manifest.ts` (`manifestTierProblems`)
 
+### TOKEN_NOT_FOUND
+
+`workspace token revoke <id>`: no personal access token (`user_access_tokens` row) with that id belongs to the organization. One revoked already is not an error: the command says so (`data.already: true`). Headline: `No personal access token <id> in <organization>`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace tokens`, `rerunNote`: `lists them by id`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`revokeToken`).
+
 ### UNKNOWN_D1_BINDING
 
 `db query --binding <name>` where `<name>` isn't one of the manifest's `resources.d1`: `No D1 binding <name> in everyapp.config.ts` / `It declares <bindings>.` Without `--binding` the query goes to the migration binding (`migrations.binding`, else the first D1 binding).
@@ -1115,6 +1256,22 @@ Checked in `packages/cli/src/bin/cli.ts` before any command runs, and reported t
 **Fix:** `fix`: `install Node 22 or 24, then run the command again`.
 
 Source: `packages/cli/src/lib/runtime.ts`, `packages/cli/src/bin/cli.ts`
+
+### USER_IN_OTHER_ORGANIZATION
+
+`workspace reset-link <email>`: the member also belongs to another organization of the Gateway. A password is account-wide, so a reset link made through one organization sets the password that signs in to the others too; the Gateway's own rule (`requireAccountWideManageable` in MembershipService) refuses it to every admin, and the CLI keeps it (the design's parity row for `admin.createPasswordResetLink`). Checked after the member is found and before anything is written. Headline: `<email> also belongs to <organization> and <organization>, and a password is account-wide`, then `The Gateway's own rule: a password-reset link is never made for someone in another organization, since it would reach that one too.`; `data.member` (`id`, `email`, `name`), `data.organizations` (the others: `id`, `name`, `slug`).
+
+**Fix:** `fix`: `they reset it themselves with Forgot password (the Gateway's email must be configured), or they are removed from the other organization first`. Not retryable. (`deactivate` and `remove` don't carry this code: the operator is root in every organization, and their account-wide rule is `LAST_OWNER` across every organization the person owns.)
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`resetLink`).
+
+### USER_NOT_FOUND
+
+`workspace deactivate/reactivate/remove/reset-link <email>`, `workspace group members --add/--remove/--set`, `workspace app access --add/--remove/--set`, and the `--user` of `workspace activity/tokens/connections` given an email: no member of the organization has that email (letter case aside) or user id. A member of another organization only is not found here: `--org` names the organization. The group and grant inserts check membership again on the write (`WHERE EXISTS (SELECT 1 FROM members …)`). Headline: `<x> isn't a member of <organization>`. On the three trails, a `--user` that isn't an email and isn't a member's id is taken as the id of someone who has since left (the trails keep their rows, named by id, as Admin → Activity shows them), so it lists their rows or none, and the headline says `<id> (no longer a member)`.
+
+**Fix:** `rerun`: `pnpm everyapp workspace users`, `rerunNote`: `lists the members and invitations`.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`findMember`), `packages/cli/src/commands/workspace/shared.ts` (`userFilter`).
 
 ### VALUE_ON_COMMAND_LINE
 
@@ -1179,6 +1336,14 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts` (`TAKEOVER_FLAGS` in `pa
 **Fix:** `fix`: give the name as one argument, quoted when it has spaces. Not retryable.
 
 Source: `packages/cli/src/commands/workspace/index.ts` (`renameWorkspace`).
+
+### WORKSPACE_NOT_A_MEMBER
+
+`workspace invite <email>`: an invitation records who sent it (`invitations.inviter_id`), so the operator needs an account on the Gateway that is a member of the organization, found by the Cloudflare login's verified email as the registry finds a deployer. Raised when the login is an API token (no email), when no verified account has the login's email, or when that account isn't a member of the organization. Nothing is written. Headline: `Only a member can invite: an invitation records who sent it`, then which of the three it is.
+
+**Fix:** `fix`: `claim the Gateway (pnpm everyapp setup) or get invited to <organization>, or invite from Admin → Users` (for an API token: `log in with your Cloudflare account (pnpm everyapp login), claim the Gateway …`). No rerun; not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`requireOperatorMembership`).
 
 ### WORKSPACE_NOT_CLAIMED
 

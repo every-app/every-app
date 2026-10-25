@@ -32,6 +32,21 @@ WHERE members.organization_id = ?1 AND lower(users.email) = ?2
 LIMIT 1`;
 
 /**
+ * SQL: an owner of organization `organization` who can act exists besides
+ * user `user`, at `now` (milliseconds): the last-owner rule as the write
+ * holds it (the Gateway's `wouldLeaveNoLiveOwner`, negated). The three
+ * are SQL expressions: a `?n` parameter, or a column of the statement
+ * around it. `workspace role` demotes, `workspace deactivate` bans and
+ * `workspace remove` deletes only while this holds for the owner acted on.
+ */
+export const anotherLiveOwnerSql = (organization: string, user: string, now: string): string =>
+  `EXISTS (
+      SELECT 1 FROM members owners JOIN users owner ON owner.id = owners.user_id
+      WHERE owners.organization_id = ${organization} AND owners.role = 'owner' AND owners.user_id <> ${user}
+        AND (owner.banned IS NULL OR owner.banned = 0 OR (owner.ban_expires IS NOT NULL AND owner.ban_expires <= ${now}))
+    )`;
+
+/**
  * Set a member's role by email (matched without case), in one D1 batch:
  * the row before, the guarded UPDATE, the row after. The UPDATE changes
  * nothing when the member isn't one, already has the role, or is an owner
@@ -55,11 +70,7 @@ WHERE organization_id = ?1
   AND role <> ?3
   AND NOT (
     role = 'owner' AND ?3 <> 'owner'
-    AND NOT EXISTS (
-      SELECT 1 FROM members owners JOIN users owner ON owner.id = owners.user_id
-      WHERE owners.organization_id = ?1 AND owners.role = 'owner' AND owners.user_id <> members.user_id
-        AND (owner.banned IS NULL OR owner.banned = 0 OR (owner.ban_expires IS NOT NULL AND owner.ban_expires <= ?4))
-    )
+    AND NOT ${anotherLiveOwnerSql("?1", "members.user_id", "?4")}
   )`,
       params: [organizationId, address, role, nowMs],
     },

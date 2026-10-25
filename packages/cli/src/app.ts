@@ -89,7 +89,8 @@ export function commandPaths(): string[] {
 
 /**
  * The commands `everyapp --help` lists, by what the person is doing:
- * building an app of their own, or running the Gateway and the apps on it.
+ * building an app of their own, running the Gateway and the apps on it,
+ * or managing the people and apps of its workspace.
  */
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
@@ -107,10 +108,10 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "secret",
       "mcp",
       "email",
-      "workspace",
       "teardown",
     ],
   ],
+  ["MANAGE THE WORKSPACE", ["workspace"]],
 ];
 
 /** What `everyapp <group> --help` shows as examples. */
@@ -124,12 +125,17 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
   mcp: ["mcp list", "mcp on dataforseo", "mcp off dataforseo"],
+  db: ["db migrate", "db query 'select count(*) from todos'"],
   workspace: [
     "workspace rename 'Acme Corp'",
+    "workspace users",
     "workspace role sam@example.com owner",
     "workspace role sam@example.com member",
+    "workspace invite ann@example.com --role admin",
+    "workspace app access crm --add ann@example.com",
+    "workspace group members Sales --set ann@example.com --set bob@example.com",
+    "workspace usage --month 2026-10 --json",
   ],
-  db: ["db migrate", "db query 'select count(*) from todos'"],
 };
 
 /** What a group's help says under its brief, where one line isn't enough. */
@@ -137,6 +143,14 @@ const GROUP_NOTES: Readonly<Record<string, readonly string[]>> = {
   email: [
     "Invites, and apps that don't set their own senders, send as the Gateway's sender.",
     `Set it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
+  ],
+  workspace: [
+    "Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.",
+    "Acts under your Cloudflare login (the operator is root in every organization of the Gateway),",
+    "on the install organization unless --org names another by slug, id or name (a name two",
+    "organizations share is refused: give the slug). The Gateway mails nothing from here: invite",
+    "and reset-link print the link to hand over.",
+    `Depth-two groups have their own help: ${CLI} workspace group --help, app, token, connection.`,
   ],
 };
 
