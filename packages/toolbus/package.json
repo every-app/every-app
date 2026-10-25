@@ -11,6 +11,10 @@
     "./dev": {
       "types": "./src/dev/index.ts",
       "default": "./src/dev/index.ts"
+    },
+    "./remote": {
+      "types": "./src/remote/index.ts",
+      "default": "./src/remote/index.ts"
     }
   },
   "scripts": {

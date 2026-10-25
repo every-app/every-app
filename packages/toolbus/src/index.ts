@@ -52,6 +52,24 @@ export {
   type PrincipalResolution,
   type SessionLike,
 } from "./principal";
+export {
+  CALL_MAX_BYTES,
+  CALL_TIMEOUT_MS,
+  LIST_TIMEOUT_MS,
+  MAX_LIST_PAGES,
+  normalizeRemoteCatalog,
+  RemoteMcpClient,
+  RemoteMcpError,
+  riskHintOf,
+  type NormalizedRemoteCatalog,
+  type RemoteMcpClientOptions,
+  type RemoteMcpErrorKind,
+  type RemoteToolRecord,
+  type RiskHint,
+  type UpstreamCallResult,
+  type UpstreamListing,
+  type UpstreamTool,
+} from "./remote";
 export { listTools, TOOLBUS_VERSION } from "./server";
 export { ViewRefusedError } from "./types";
 export {

@@ -243,6 +243,67 @@ describe("planRemoteMcpAppAdd", () => {
     expect(plan.grants).toHaveLength(3);
   });
 
+  it("refuses the id of a shared app every organization sees", () => {
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({
+          sharedApp: () => ({
+            ...deployedRow,
+            organizationId: "platform",
+            scope: "shared",
+          }),
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "APP_TIER_MISMATCH",
+        message: expect.stringMatching(/shared app/),
+      }),
+    );
+    expect(
+      planRemoteMcpAppAdd(
+        input({
+          sharedApp: () => ({
+            ...deployedRow,
+            organizationId: "platform",
+            scope: "shared",
+            status: "deleted",
+          }),
+        }),
+      ).id,
+    ).toBe("treg");
+  });
+
+  it("says where a taken credential name goes as the caller labelled it", () => {
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({ secretUsedAt: () => "https://other.example" }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining("at https://other.example;"),
+      }),
+    );
+    expect(() =>
+      planRemoteMcpAppAdd(
+        input({ secretUsedAt: () => "another organization" }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining("at another organization;"),
+      }),
+    );
+  });
+
+  it("continues the revision count when it revives a tombstone", () => {
+    const row = remoteRow();
+    const edited = remoteMcpAppUpdate(row, { risk: "read" });
+    const tombstone = { ...row, manifest: edited.manifest, status: "deleted" };
+    const plan = planRemoteMcpAppAdd(input({ existingApp: () => tombstone }));
+    expect(plan.kind).toBe("revived");
+    expect(plan.remote.rev).toBe(3);
+  });
+
   it("refuses a row of another organization", () => {
     expect(() =>
       planRemoteMcpAppAdd(
@@ -315,6 +376,22 @@ describe("remoteMcpAppUpdate", () => {
     };
     expect(stored.id).toBe("treg");
     expect(stored.name).toBe("Treg");
+  });
+
+  it("keeps rev when nothing about the catalog changed, and refuses an override the block can't hold", () => {
+    const row = remoteRow();
+    const renamed = remoteMcpAppUpdate(row, { name: "Treg" });
+    expect(renamed.remote.rev).toBe(1);
+    const same = remoteMcpAppUpdate(row, { risk: "annotations", tools: {} });
+    expect(same.remote.rev).toBe(1);
+    expect(() =>
+      remoteMcpAppUpdate(row, { tools: { bad: { risk: "nuke" as never } } }),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_INVALID" }));
+    expect(() =>
+      remoteMcpAppUpdate(row, {
+        tool: { name: "x", override: { enabled: "no" as never } },
+      }),
+    ).toThrow(expect.objectContaining({ code: "REMOTE_MCP_INVALID" }));
   });
 
   it("refuses a bad risk, a tombstone, and a row that isn't a remote app's", () => {

@@ -72,6 +72,7 @@ import {
 } from "@/server/mcp-auth/validate";
 import {
   INLINE_SYNCS_MAX,
+  RETRY_FAILED_MCP_SYNC_MS,
   RETRY_FAILED_SYNC_MS,
   syncUnsyncedCatalogs,
 } from "./catalog-sync";
@@ -399,10 +400,40 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
           workerName: catalog.workerName,
           tier: catalog.tier,
           versionId: catalog.versionId,
+          manifest: catalog.manifest,
+          name: catalog.name,
         },
       ),
     );
   });
+
+  // An MCP app with no serving snapshot (a remote server that couldn't be
+  // listed: its credential unset or bound elsewhere, or the server down)
+  // has no page where its user would learn why: it is named here.
+  const unserved = await AppToolRepository.findVisibleUnservedMcpApps(scope);
+  for (const app of unserved) {
+    const setup = await appSetupFor({
+      rowId: app.appRowId,
+      versionId: app.versionId,
+      secretNames: parseSecretNames(app.secretNames),
+      appId: app.appSlug,
+      tier: app.tier,
+      manifest: app.manifest,
+      canFix: app.organizationId === principal.organizationId,
+    });
+    unavailable.push({
+      appId: app.appSlug,
+      name: app.name,
+      reason:
+        setup && !setup.ready
+          ? needsSetupReason(setup)
+          : app.catalogStatus === "empty"
+            ? "its server lists no tools"
+            : app.lastError
+              ? `its tools couldn't be listed: ${app.lastError}`
+              : "its tools are being listed; list tools again in a moment",
+    });
+  }
 
   const { gatewaySurfaceView } = await import("@every-app/toolbus");
   return {
@@ -439,6 +470,7 @@ async function syncUnsyncedApps(
   try {
     const unsynced = await AppToolRepository.findVisibleUnsyncedApps(scope, {
       failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
+      mcpFailedBefore: new Date(Date.now() - RETRY_FAILED_MCP_SYNC_MS),
       limit: INLINE_SYNCS_MAX,
       providerCatalogVersion: await providerCatalogVersion(),
     });

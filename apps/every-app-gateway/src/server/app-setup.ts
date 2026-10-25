@@ -23,6 +23,7 @@ import {
   type AppSettingsReport,
   type AppSetup,
   PROVIDER_APP_TIER,
+  remoteMcpOf,
 } from "@every-app/sdk/internal";
 
 /** How an operator runs everyapp while publishing is paused. */
@@ -51,12 +52,28 @@ export interface AppSetupDeps {
   settings: Readonly<Record<string, unknown>>;
   /** The gateway's own email rule, read only for an app that lists email. */
   emailConfigured: () => Promise<boolean>;
+  /**
+   * A remote MCP app's credential rule (server/remote-mcp/bind.ts): set,
+   * and bound to the row's origin. Read only for a row with a `remote`
+   * block; `undefined` leaves it to the names.
+   */
+  remoteMcpReady?: (
+    manifest: Record<string, unknown>,
+    rowId: string,
+  ) => Promise<boolean | undefined>;
 }
 
 const defaultDeps: AppSetupDeps = {
   settings: env as unknown as Readonly<Record<string, unknown>>,
   emailConfigured: async () =>
     (await import("@/server/email/sendEmail")).isEmailConfigured(),
+  remoteMcpReady: async (manifest, rowId) => {
+    const remote = remoteMcpOf(manifest);
+    if (!remote) return undefined;
+    const { credentialFor } = await import("@/server/remote-mcp/bind");
+    const state = await credentialFor(remote, rowId);
+    return state.kind === "ready" || state.kind === "none";
+  },
 };
 
 const REPORTS_MAX_ENTRIES = 500;
@@ -123,13 +140,22 @@ export async function appSettingsReport(
   if (!manifest) return null;
   const settings = appSettings(manifest);
   if (settings.length === 0) return null;
-  const key = cacheKey(input);
+  // A remote MCP app's row keeps its id across a remove and an add
+  // (revived), and its version is null: its registration's revision keys
+  // the cache instead.
+  const remoteRev = remoteMcpOf(manifest)?.rev;
+  const key = `${cacheKey(input)}\0${remoteRev ?? ""}`;
   const cached = reports.get(key);
   if (cached) return cached;
   const listsEmail = settings.some(
     (setting) => setting.kind === "capability" && setting.id === "email",
   );
   const emailConfigured = listsEmail ? await deps.emailConfigured() : undefined;
+  const listsRemote = settings.some((setting) => setting.kind === "remote-mcp");
+  const remoteReady =
+    listsRemote && deps.remoteMcpReady
+      ? await deps.remoteMcpReady(manifest, input.rowId)
+      : undefined;
   const report = evaluateAppSettings(
     settings,
     isSetOn(deps, input.secretNames),
@@ -137,7 +163,9 @@ export async function appSettingsReport(
       readiness: (setting) =>
         setting.kind === "capability" && setting.id === "email"
           ? emailConfigured
-          : undefined,
+          : setting.kind === "remote-mcp"
+            ? remoteReady
+            : undefined,
     },
   );
   remember(key, report);

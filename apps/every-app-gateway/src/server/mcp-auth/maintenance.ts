@@ -11,7 +11,9 @@
  *    months, monthly after 25), up to 10,000 rows of each a run
  *    (repositories/UsageRepository.ts);
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
- *    the library's purgeExpiredData, resuming from a cursor kept in KV.
+ *    the library's purgeExpiredData, resuming from a cursor kept in KV;
+ *  - re-list the tools of every active remote MCP app whose snapshot is
+ *    older than an hour (server/remote-mcp/relist.ts), up to 50 a run.
  *
  * Each step runs even when another fails, and the run logs one summary line.
  */
@@ -145,6 +147,14 @@ export async function runMcpMaintenance(
   );
   const usage = await step("usage", () => UsageRepository.deleteOlderThan(now));
   const purge = await step("oauth_purge", () => purgeOauthStorage(env));
+  // Remote MCP apps: re-list each server's tools once an hour, so a
+  // changed list reaches connected clients without waiting for a call.
+  const remoteMcp = await step("remote_mcp", async () => {
+    const { relistStaleRemoteMcpApps } = await import(
+      "@/server/remote-mcp/relist"
+    );
+    return relistStaleRemoteMcpApps(now);
+  });
   // Rows left past the retention after a full run: more calls an hour than
   // a run deletes, which needs a look. Usage rows age out a month at a
   // time, so being behind for a few runs after a month boundary is normal.
@@ -162,6 +172,7 @@ export async function runMcpMaintenance(
       usage_monthly_deleted: usage === "failed" ? usage : usage.monthly,
       ...(usageBehind ? { usage_behind: true } : {}),
       oauth_purge: purge,
+      remote_mcp_relisted: remoteMcp,
     },
     auditBehind ? "warn" : "log",
   );

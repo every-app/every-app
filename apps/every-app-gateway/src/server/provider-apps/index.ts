@@ -131,6 +131,21 @@ function publicKeyPem(): Promise<string> {
   return derivedPublicKey;
 }
 
+/**
+ * How an in-process app of the gateway's own verifies the identities
+ * minted for a provider-tier row (a built-in's or a remote MCP app's): the
+ * gateway's public key, the row's audience, the gateway's issuer.
+ */
+export async function providerIdentityVerify(
+  rowId: string,
+): Promise<{ publicKeys: string[]; audience: string; issuer: string }> {
+  return {
+    publicKeys: [await publicKeyPem()],
+    audience: providerAudience(rowId),
+    issuer: issuer(),
+  };
+}
+
 /** The SDK app for a provider, verifying identities minted for `route`'s row. */
 async function providerApp(
   route: ProviderAppRoute & { appSlug: ProviderAppId },

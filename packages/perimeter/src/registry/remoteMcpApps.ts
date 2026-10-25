@@ -20,9 +20,11 @@
  * serves nothing. `remove` is the tombstone (what `off` used to be).
  */
 import {
+  canonicalJson,
   hasRemoteMcpBlock,
   isProviderAppId,
   parseRemoteMcpAuth,
+  parseRemoteMcpBlock,
   PROVIDER_APP_TIER,
   remoteMcpAppManifest,
   remoteMcpIdFromUrl,
@@ -62,12 +64,21 @@ export interface RemoteMcpAddInput {
   /** The organization's row for the id (tombstones included), once the id is known. */
   existingApp: (id: string) => AppRow | null;
   /**
-   * The origin another live MCP app on this Gateway already sends the
-   * credential name to, if one does (any organization: the Gateway has one
-   * set of secrets). A name is bound to one origin; a second server at
-   * another origin takes another name (`REMOTE_MCP_SECRET_TAKEN`).
+   * Where another live MCP app on this Gateway already sends the
+   * credential name, if one does: the origin for the organization's own
+   * app, or a label such as "another organization" for another
+   * organization's (one set of Gateway secrets serves every organization,
+   * and an origin would tell one about another). A name is bound to one
+   * origin; a second server at another origin takes another name
+   * (`REMOTE_MCP_SECRET_TAKEN`); the same origin may share it.
    */
   secretUsedAt?: (secretName: string) => string | null;
+  /**
+   * A shared-scope app (the platform's, visible to every organization on a
+   * hosted gateway) under this id, if any: a remote server can't take its
+   * id, since both would list under the same tool prefix.
+   */
+  sharedApp?: (id: string) => AppRow | null;
   members: readonly OrganizationMember[];
   /** The member adding it, when the registrar is one. */
   actorUserId: string | null;
@@ -196,6 +207,16 @@ export function planRemoteMcpAppAdd(
   }
   const idProblem = remoteMcpIdProblem(id);
   if (idProblem) refuse("REMOTE_MCP_INVALID", idProblem);
+  const shared = input.sharedApp?.(id);
+  if (shared && shared.status !== DELETED_APP_STATUS) {
+    throw new RegistrationError({
+      status: 409,
+      code: "APP_TIER_MISMATCH",
+      message: `"${id}" is a shared app every organization sees; a remote MCP server can't take its id.`,
+    });
+  }
+  const existingApp = input.existingApp(id);
+  assertRowMatches(input.organizationId, id, existingApp);
   const risk = (input.risk ?? "annotations").trim();
   if (!(REMOTE_MCP_RISK_DEFAULTS as readonly string[]).includes(risk)) {
     refuse(
@@ -208,6 +229,9 @@ export function planRemoteMcpAppAdd(
     const usedAt = input.secretUsedAt(auth.secret);
     const origin = new URL(url).origin;
     if (usedAt && usedAt !== origin) {
+      // `usedAt` is what the caller chose to say: the origin for the
+      // organization's own app, or a label such as "another organization"
+      // when an origin would tell one organization about another.
       throw new RegistrationError({
         status: 409,
         code: "REMOTE_MCP_SECRET_TAKEN",
@@ -215,12 +239,17 @@ export function planRemoteMcpAppAdd(
       });
     }
   }
+  // A revived tombstone continues its revision count: a snapshot or an
+  // isolate's cache from the removed registration must read as stale.
+  const previousRev = existingApp
+    ? (remoteMcpBlockOf(existingApp)?.rev ?? 0)
+    : 0;
   const remote: RemoteMcpBlock = {
     url,
     auth,
     risk: risk as RemoteMcpRiskDefault,
     tools: {},
-    rev: 1,
+    rev: previousRev + 1,
   };
   const manifest = remoteMcpAppManifest({
     id,
@@ -229,8 +258,6 @@ export function planRemoteMcpAppAdd(
     remote,
   });
 
-  const existingApp = input.existingApp(id);
-  assertRowMatches(input.organizationId, id, existingApp);
   if (existingApp) {
     if (isProviderAppId(id) || !isRemoteMcpRow(existingApp)) {
       assertRemoteRow(id, existingApp);
@@ -347,12 +374,19 @@ export function remoteMcpAppUpdate(
       else tools[name] = merged;
     }
   }
+  // The catalog depends on the risk default and the overrides alone: only
+  // a change there bumps the revision (and re-lists on first use).
+  const catalogChanged =
+    canonicalJson({ risk, tools }) !==
+    canonicalJson({ risk: current.risk, tools: current.tools });
   const remote: RemoteMcpBlock = {
     ...current,
     risk,
     tools,
-    rev: current.rev + 1,
+    rev: catalogChanged ? current.rev + 1 : current.rev,
   };
+  const checked = parseRemoteMcpBlock(remote);
+  if (!checked.ok) refuse("REMOTE_MCP_INVALID", checked.problem);
   const stored = JSON.parse(app.manifest ?? "{}") as Record<string, unknown>;
   const manifest = remoteMcpAppManifest({
     id: app.appSlug,

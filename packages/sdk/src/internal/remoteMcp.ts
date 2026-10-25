@@ -267,14 +267,24 @@ export function remoteMcpUrlProblem(
   if (loopback && !local) {
     return "the URL must name a public host";
   }
+  // The Gateway's own host: any port and every subdomain of it in
+  // production (a Worker on the same zone would be the gateway or an app);
+  // in local dev the exact origin only, so a fake server on another
+  // localhost port is fine.
+  let gatewayHost = "";
   let gatewayOrigin = "";
   try {
-    gatewayOrigin = new URL(env.gatewayUrl).origin.toLowerCase();
+    const gateway = new URL(env.gatewayUrl);
+    gatewayHost = gateway.hostname.toLowerCase().replace(/\.$/, "");
+    gatewayOrigin = gateway.origin.toLowerCase();
   } catch {
-    gatewayOrigin = "";
+    gatewayHost = "";
   }
-  if (gatewayOrigin && parsed.origin.toLowerCase() === gatewayOrigin) {
-    return "the URL is this Gateway's own address";
+  if (gatewayHost) {
+    const ownHost = local
+      ? parsed.origin.toLowerCase() === gatewayOrigin
+      : isSameOrSubdomain(host, gatewayHost);
+    if (ownHost) return "the URL is this Gateway's own address";
   }
   for (const domain of [env.appBaseDomain, env.thirdPartyDomain]) {
     const normalized = (domain ?? "").trim().toLowerCase().replace(/\.$/, "");
@@ -464,9 +474,45 @@ export function remoteMcpSecretOf(auth: RemoteMcpAuth): string | null {
   return "secret" in auth ? auth.secret : null;
 }
 
-/** A description for a row that gave none: the server's URL, read as a sentence. */
+/**
+ * A description for a row that gave none: the server's origin, read as a
+ * sentence. The origin only: a path or query may carry something the
+ * registrar meant for the server alone, and the description reaches every
+ * member with access and every AI client.
+ */
 export function remoteMcpDefaultDescription(name: string, url: string): string {
-  return `${name}'s MCP server (${url}), served to your AI clients through this Gateway.`;
+  let where = "";
+  try {
+    where = new URL(url).origin;
+  } catch {
+    where = "";
+  }
+  return `${name}'s MCP server${where ? ` at ${where}` : ""}, served to your AI clients through this Gateway.`;
+}
+
+/**
+ * The operator's override for a server tool: by the server's name, or by
+ * a name that becomes the same ToolBus name ({@link normalizeRemoteToolName}),
+ * so a server that renames `send-mail` to `send_mail` can't bring a tool the
+ * operator turned off back under the same listed name.
+ */
+export function remoteToolOverride(
+  block: Pick<RemoteMcpBlock, "tools">,
+  upstreamName: string,
+): RemoteMcpToolOverride | undefined {
+  const exact = block.tools[upstreamName];
+  if (exact) return exact;
+  const local = normalizeRemoteToolName(upstreamName);
+  if (!local) return undefined;
+  for (const [key, override] of Object.entries(block.tools)) {
+    if (normalizeRemoteToolName(key) === local) return override;
+  }
+  return undefined;
+}
+
+/** Whether a server's tool name can travel in an HTTP header (`Mcp-Name`): visible ASCII, bounded. */
+export function isHeaderSafeToolName(name: string): boolean {
+  return /^[\x21-\x7e]{1,256}$/.test(name);
 }
 
 /** The manifest a remote MCP app's row stores, from what the registrar gave. */
@@ -500,7 +546,7 @@ export function remoteToolRisk(
   block: Pick<RemoteMcpBlock, "risk" | "tools">,
   upstreamName: string,
 ): { risk: ToolRisk; source: RemoteToolRiskSource } {
-  const override = block.tools[upstreamName]?.risk;
+  const override = remoteToolOverride(block, upstreamName)?.risk;
   if (override) return { risk: override, source: "override" };
   if (block.risk === "read" || block.risk === "write") {
     return { risk: block.risk, source: "app" };
@@ -517,7 +563,7 @@ export function remoteToolEnabled(
   block: Pick<RemoteMcpBlock, "tools">,
   upstreamName: string,
 ): boolean {
-  return block.tools[upstreamName]?.enabled !== false;
+  return remoteToolOverride(block, upstreamName)?.enabled !== false;
 }
 
 /**

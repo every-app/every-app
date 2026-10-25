@@ -13,13 +13,16 @@ import {
   parseRemoteMcpAuth,
   parseRemoteMcpBlock,
   remoteMcpAppManifest,
+  isHeaderSafeToolName,
   remoteMcpAuthHeaders,
+  remoteMcpDefaultDescription,
   remoteMcpIdFromUrl,
   remoteMcpIdProblem,
   remoteMcpOf,
   remoteMcpSecretName,
   remoteMcpUrlProblem,
   remoteToolEnabled,
+  remoteToolOverride,
   remoteToolRisk,
   reservedUpstreamHosts,
   type RemoteMcpBlock,
@@ -111,7 +114,13 @@ describe("the URL rule", () => {
     );
     expect(
       remoteMcpUrlProblem("https://crm.apps.example.com/mcp", LIVE),
-    ).toMatch(/app domain/);
+    ).toMatch(/own address|app domain/);
+    expect(
+      remoteMcpUrlProblem("https://apps.example.com:8443/mcp", LIVE),
+    ).toMatch(/own address/);
+    expect(remoteMcpUrlProblem("https://APPS.example.com./mcp", LIVE)).toMatch(
+      /own address/,
+    );
     expect(remoteMcpUrlProblem("https://api.openai.com/mcp", LIVE)).toMatch(
       /holds a key/,
     );
@@ -255,9 +264,16 @@ describe("the stored block", () => {
   it("round-trips through the manifest and is read back strictly", () => {
     const manifest = remoteMcpAppManifest({ id: "treg", remote: block });
     expect(manifest.name).toBe("treg");
-    expect(manifest.description).toMatch(
-      /treg's MCP server \(https:\/\/treg.to\/mcp\/\)/,
+    // The origin only: a path or query may carry something meant for the server alone.
+    expect(manifest.description).toBe(
+      "treg's MCP server at https://treg.to, served to your AI clients through this Gateway.",
     );
+    expect(
+      remoteMcpDefaultDescription(
+        "X",
+        "https://x.example/mcp?key=abc",
+      ).includes("key=abc"),
+    ).toBe(false);
     expect(remoteMcpOf(JSON.parse(JSON.stringify(manifest)))).toEqual(block);
     expect(remoteMcpOf({ id: "crm" })).toBeNull();
     expect(
@@ -363,6 +379,34 @@ describe("a tool's risk and name", () => {
       false,
     );
     expect(remoteToolEnabled({ tools: {} }, "t")).toBe(true);
+  });
+
+  it("finds an override by the server's name or by the ToolBus name it becomes", () => {
+    const withOverrides = {
+      tools: {
+        "send-mail": { enabled: false },
+        GetUser: { risk: "read" as const },
+      },
+    };
+    expect(remoteToolOverride(withOverrides, "send-mail")).toEqual({
+      enabled: false,
+    });
+    expect(remoteToolOverride(withOverrides, "send_mail")).toEqual({
+      enabled: false,
+    });
+    expect(remoteToolOverride(withOverrides, "sendMail")).toEqual({
+      enabled: false,
+    });
+    expect(remoteToolOverride(withOverrides, "getUser")).toEqual({
+      risk: "read",
+    });
+    expect(remoteToolOverride(withOverrides, "other")).toBeUndefined();
+    expect(remoteToolEnabled(withOverrides, "send_mail")).toBe(false);
+    expect(isHeaderSafeToolName("getUser")).toBe(true);
+    expect(isHeaderSafeToolName("get user")).toBe(false);
+    expect(isHeaderSafeToolName("get\nuser")).toBe(false);
+    expect(isHeaderSafeToolName("ünïcode")).toBe(false);
+    expect(isHeaderSafeToolName("a".repeat(257))).toBe(false);
   });
 
   it("normalizes a server's names to the ToolBus's shape", () => {

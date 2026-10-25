@@ -30,6 +30,11 @@ import {
   providerCatalogVersion,
 } from "@/server/provider-apps";
 import {
+  remoteMcpAppFetcher,
+  remoteMcpRouteOf,
+  remoteMcpVersion,
+} from "@/server/remote-mcp";
+import {
   AppToolRepository,
   type CatalogStatus,
   type UnsyncedApp,
@@ -37,6 +42,12 @@ import {
 
 /** A snapshot that isn't serving is tried again at most this often. */
 export const RETRY_FAILED_SYNC_MS = 5 * 60_000;
+/**
+ * An MCP app's sooner: its listing fails while its credential isn't set,
+ * and once `secret set` runs it should serve on the next request or so.
+ * A claim per isolate (`claimCatalogSync`) still spaces the attempts.
+ */
+export const RETRY_FAILED_MCP_SYNC_MS = 30_000;
 /** How long a request waits for the snapshots it is missing. */
 const INLINE_SYNC_BUDGET_MS = 3_000;
 /** At most this many apps are synced within one request; the rest later. */
@@ -55,6 +66,13 @@ export type SyncableApp = {
   tier: string;
   /** The app's `version_id` when the sync started. */
   versionId: string | null;
+  /**
+   * The stored manifest's JSON: what tells a remote MCP app's row (a
+   * `remote` block) from a built-in provider's. Deployed apps need none.
+   */
+  manifest?: string | null;
+  /** The row's name, for a remote app's messages. */
+  name?: string;
 };
 
 type ToolSyncResult = {
@@ -67,7 +85,14 @@ type ToolSyncResult = {
 };
 
 /** What made the gateway take a snapshot, for the log. */
-type SyncTrigger = "drift" | "first_use" | "new_version" | "consent";
+type SyncTrigger =
+  | "drift"
+  | "first_use"
+  | "new_version"
+  | "consent"
+  /** The hourly re-list of remote MCP apps, and an operator's refresh. */
+  | "scheduled"
+  | "refresh";
 
 /**
  * The gateway has no service binding to the app yet: a deploy just updated
@@ -86,7 +111,20 @@ export class BindingNotReadyError extends Error {
  * the gateway's own in-process app (server/provider-apps).
  */
 export function appFetcherFor(app: SyncableApp): AppFetcher {
-  if (app.tier === PROVIDER_APP_TIER) return providerAppFetcher(app);
+  if (app.tier === PROVIDER_APP_TIER) {
+    // A remote MCP server's row (its manifest has a `remote` block), or
+    // a built-in provider's.
+    if (remoteMcpRouteOf(app)) {
+      return remoteMcpAppFetcher({
+        rowId: app.rowId,
+        organizationId: app.organizationId,
+        appSlug: app.appSlug,
+        ...(app.name ? { name: app.name } : {}),
+        manifest: app.manifest ?? null,
+      });
+    }
+    return providerAppFetcher(app);
+  }
   if (!app.workerName) {
     throw new AppUnreachableError(
       `App "${app.appSlug}" has no Worker to reach.`,
@@ -126,9 +164,11 @@ function catalogTarget(app: SyncableApp): {
  * provider tools changed re-syncs on first use.
  */
 async function snapshotVersion(app: SyncableApp): Promise<string | null> {
-  return app.tier === PROVIDER_APP_TIER
-    ? providerCatalogVersion()
-    : app.versionId;
+  if (app.tier !== PROVIDER_APP_TIER) return app.versionId;
+  const remote = remoteMcpRouteOf(app);
+  // A remote app's snapshot records its registration's revision, so a
+  // changed override or risk default re-lists on first use.
+  return remote ? remoteMcpVersion(remote) : providerCatalogVersion();
 }
 
 export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
@@ -194,6 +234,11 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
     };
   }
 
+  // A remote MCP app's list can change under the gateway: say what did.
+  const remote = app.tier === PROVIDER_APP_TIER && remoteMcpRouteOf(app);
+  const before = remote
+    ? await AppToolRepository.findByOrgApp(app.organizationId, app.appSlug)
+    : null;
   await AppToolRepository.replace({
     appRowId: app.rowId,
     organizationId: app.organizationId,
@@ -206,6 +251,23 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
     lastError: null,
     tools: snapshot.tools,
   });
+  if (remote && before && before.catalogHash !== snapshot.hash) {
+    const was = new Set(before.tools.map((tool) => tool.name));
+    const now = new Set(snapshot.tools.map((tool) => tool.name));
+    const added = [...now].filter((name) => !was.has(name)).slice(0, 50);
+    const removed = [...was].filter((name) => !now.has(name)).slice(0, 50);
+    if (added.length > 0 || removed.length > 0) {
+      // events: app.tools_changed (kind "remote"): { app, toolCount, previousToolCount, added, removed }
+      logEvent("mcp.remote.tools_changed", {
+        app: app.appSlug,
+        org: app.organizationId,
+        tools: snapshot.tools.length,
+        previous: before.tools.length,
+        added,
+        removed,
+      });
+    }
+  }
   return {
     status: snapshot.status,
     toolCount: snapshot.tools.length,

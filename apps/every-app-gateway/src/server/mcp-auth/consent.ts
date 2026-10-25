@@ -32,6 +32,7 @@ import {
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import {
   INLINE_SYNCS_MAX,
+  RETRY_FAILED_MCP_SYNC_MS,
   RETRY_FAILED_SYNC_MS,
   syncUnsyncedCatalogs,
 } from "@/server/toolbus/catalog-sync";
@@ -169,6 +170,7 @@ async function syncUnknownCatalogs(
         },
         {
           failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
+          mcpFailedBefore: new Date(Date.now() - RETRY_FAILED_MCP_SYNC_MS),
           limit: INLINE_SYNCS_MAX,
           providerCatalogVersion: await providerCatalogVersion(),
         },

@@ -150,12 +150,33 @@ function locallySetSecrets(
   );
 }
 
+/**
+ * Remote MCP apps' credentials (`<ID>_MCP_TOKEN`, docs/design/2026-10-mcp-by-url.md)
+ * are named by registry rows, not here: in dev every such name set in
+ * .dev.vars is declared, so the Worker sees it as a deployed one would.
+ * The family rule is `isRemoteMcpSecretName` in
+ * packages/sdk/src/internal/gatewaySettings.ts, kept as a regex here
+ * since this file loads before the SDK is built.
+ */
+const REMOTE_MCP_SECRET_PATTERN = /^[A-Z][A-Z0-9_]*_MCP_TOKEN$/;
+
+function locallySetRemoteMcpSecrets(
+  values: Record<string, string | undefined>,
+): Record<string, ReturnType<typeof bindings.secret>> {
+  return Object.fromEntries(
+    Object.keys(values)
+      .filter((name) => REMOTE_MCP_SECRET_PATTERN.test(name) && values[name])
+      .map((name) => [name, bindings.secret()]),
+  );
+}
+
 function devBindings(values: Record<string, string | undefined>) {
   return {
     GATEWAY_DEPLOYMENT_MODE: bindings.text<string>(
       values["GATEWAY_DEPLOYMENT_MODE"] || "self_hosted",
     ),
     ...locallySetSecrets(values),
+    ...locallySetRemoteMcpSecrets(values),
   };
 }
 

@@ -132,7 +132,7 @@ describe("addRemoteMcpApp", () => {
     expect(manifestOf("treg")).toEqual({
       id: "treg",
       name: "treg",
-      description: expect.stringContaining("https://treg.to/mcp/"),
+      description: expect.stringContaining("https://treg.to"),
       remote: {
         url: "https://treg.to/mcp/",
         auth: { kind: "bearer", secret: "TREG_MCP_TOKEN" },
@@ -347,7 +347,17 @@ describe("readMcpAppDetail", () => {
         problem: null,
       },
       { name: null, serverName: "get.user", title: null, risk: "write", source: "hint", on: false, problem: "turned off" },
-      { name: "treg_get_user", serverName: "getUser", title: null, risk: "read", source: "hint", on: true, problem: null },
+      // The override on get.user reaches getUser too: both become the ToolBus name
+      // get_user, so a server renaming one into the other can't bring it back.
+      {
+        name: "treg_get_user",
+        serverName: "getUser",
+        title: null,
+        risk: "read",
+        source: "hint",
+        on: false,
+        problem: "turned off; leaves the catalog at the next listing",
+      },
     ]);
   });
 });

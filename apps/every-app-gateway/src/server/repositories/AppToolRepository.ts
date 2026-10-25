@@ -446,6 +446,9 @@ export type UnsyncedApp = {
   workerName: string | null;
   tier: string;
   versionId: string | null;
+  /** The stored manifest's JSON (a remote MCP app's `remote` block lives in it). */
+  manifest: string | null;
+  name: string;
   /** The snapshot row's status, or null without a row. */
   catalogStatus: string | null;
   /**
@@ -468,10 +471,13 @@ async function findVisibleUnsyncedApps(
   scope: VisibilityScope,
   {
     failedBefore,
+    mcpFailedBefore,
     limit,
     providerCatalogVersion,
   }: {
     failedBefore: Date;
+    /** An MCP app's failed sync is retried after this instead (sooner). */
+    mcpFailedBefore?: Date;
     limit: number;
     /**
      * The gateway's provider catalog version (server/provider-apps): a
@@ -490,6 +496,8 @@ async function findVisibleUnsyncedApps(
       workerName: apps.workerName,
       tier: apps.tier,
       versionId: apps.versionId,
+      manifest: apps.manifest,
+      name: apps.name,
       catalogStatus: appToolCatalogs.status,
       lastError: appToolCatalogs.lastError,
     })
@@ -508,16 +516,47 @@ async function findVisibleUnsyncedApps(
               ne(appToolCatalogs.versionId, apps.versionId),
             ),
           ),
+          // A built-in provider's snapshot is current while it records the
+          // gateway's provider catalog version; a remote MCP app's (its
+          // manifest has a `remote` block) while it records the
+          // registration's revision (`remote:<rev>`).
           and(
             eq(apps.tier, PROVIDER_APP_TIER),
             or(
               isNull(appToolCatalogs.versionId),
-              ne(appToolCatalogs.versionId, providerCatalogVersion),
+              and(
+                or(
+                  isNull(apps.manifest),
+                  sql`NOT json_valid(${apps.manifest})`,
+                  sql`json_extract(${apps.manifest}, '$.remote') IS NULL`,
+                ),
+                ne(appToolCatalogs.versionId, providerCatalogVersion),
+              ),
+              and(
+                sql`json_valid(${apps.manifest})`,
+                sql`json_extract(${apps.manifest}, '$.remote') IS NOT NULL`,
+                ne(
+                  appToolCatalogs.versionId,
+                  sql`'remote:' || json_extract(${apps.manifest}, '$.remote.rev')`,
+                ),
+              ),
             ),
           ),
+          // A failed sync is tried again after `failedBefore`; an MCP app's
+          // sooner (`mcpFailedBefore`): its listing fails while its credential
+          // isn't set, and once it is set the app should serve within moments.
           and(
             eq(appToolCatalogs.status, "error"),
-            lt(appToolCatalogs.fetchedAt, failedBefore),
+            or(
+              and(
+                ne(apps.tier, PROVIDER_APP_TIER),
+                lt(appToolCatalogs.fetchedAt, failedBefore),
+              ),
+              and(
+                eq(apps.tier, PROVIDER_APP_TIER),
+                lt(appToolCatalogs.fetchedAt, mcpFailedBefore ?? failedBefore),
+              ),
+            ),
           ),
         ),
       ),
@@ -615,12 +654,63 @@ async function deleteSnapshot(
   ]);
 }
 
+type UnservedMcpApp = {
+  appRowId: string;
+  organizationId: string;
+  appSlug: string;
+  name: string;
+  tier: string;
+  versionId: string | null;
+  manifest: string | null;
+  secretNames: string | null;
+  /** The snapshot's status, or null without one. */
+  catalogStatus: string | null;
+  lastError: string | null;
+};
+
+/**
+ * The MCP apps (provider-tier rows) a caller reaches whose snapshot isn't
+ * serving: none yet, or the last listing failed (a remote server down, or
+ * one whose credential isn't set or is bound elsewhere, which can't be
+ * listed at all). A deployed app in that state is simply absent, as it
+ * has always been; an MCP app has no page, so `/mcp` is where its user
+ * looks, and the view names it there with the reason.
+ */
+async function findVisibleUnservedMcpApps(
+  scope: VisibilityScope,
+): Promise<UnservedMcpApp[]> {
+  return db
+    .select({
+      appRowId: apps.id,
+      organizationId: apps.organizationId,
+      appSlug: apps.appSlug,
+      name: apps.name,
+      tier: apps.tier,
+      versionId: apps.versionId,
+      manifest: apps.manifest,
+      secretNames: apps.secretNames,
+      catalogStatus: appToolCatalogs.status,
+      lastError: appToolCatalogs.lastError,
+    })
+    .from(apps)
+    .leftJoin(appToolCatalogs, catalogOfApp)
+    .where(
+      and(
+        ...reachableApps(scope),
+        eq(apps.tier, PROVIDER_APP_TIER),
+        or(isNull(appToolCatalogs.appRowId), ne(appToolCatalogs.status, "ok")),
+      ),
+    )
+    .orderBy(asc(apps.appSlug));
+}
+
 export const AppToolRepository = {
   findByOrgApp,
   findVisibleCatalogs,
   findVisibleUnsyncedApps,
   findCatalog,
   toolNames,
+  findVisibleUnservedMcpApps,
   replace,
   recordError,
   deleteSnapshot,
