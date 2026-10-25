@@ -568,3 +568,67 @@ describe("helper Workers", () => {
     ).rejects.toThrow(/has no Worker every-acme-todo--audit/);
   });
 });
+
+describe("with resources.browser", () => {
+  const WITH_BROWSER: InstallTarget = { ...INPUTS, declared: { browser: ["BROWSER"] } };
+
+  it("accepts the Browser Rendering binding everyAppWorker() builds, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, browser: ["BROWSER"] },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_BROWSER);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      expect(config["env"]["BROWSER"]).toEqual({ type: "browser" });
+    }
+    const inputs = { ...WITH_BROWSER, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    // The same build, with the manifest's declaration gone: cloudflare.config.ts
+    // can't add account-wide browser time on its own.
+    const undeclared = { ...inputs, declared: undefined };
+    const problem =
+      "BROWSER is a Browser Rendering binding, which everyapp.config.ts doesn't declare; list it in resources.browser";
+    expect(appPolicyProblems(app, undeclared)).toEqual([problem]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", undeclared)).toEqual([problem]);
+  });
+
+  it("refuses Browser Rendering the manifest doesn't declare", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "browser" };
+    const problem =
+      "EXTRA is a Browser Rendering binding, which everyapp.config.ts doesn't declare; list it in resources.browser";
+    expect(appPolicyProblems(config, INPUTS)).toEqual([problem]);
+    expect(appPolicyProblems(config, { ...INPUTS, declared: { browser: [] } })).toEqual([problem]);
+  });
+
+  it("refuses Browser Rendering under a name resources.browser doesn't list", async () => {
+    const config = await builtConfig();
+    config["env"].BROWSER = { type: "browser" };
+    config["env"].MORE_BROWSER = { type: "browser" };
+    expect(appPolicyProblems(config, WITH_BROWSER)).toEqual([
+      "MORE_BROWSER is a Browser Rendering binding, which isn't one of the app's in resources.browser (BROWSER)",
+    ]);
+  });
+});

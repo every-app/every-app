@@ -50,6 +50,12 @@ export interface EveryAppWorkerManifest {
      * turns `remoteBindings` on (see {@link AiBinding}).
      */
     ai?: readonly string[];
+    /**
+     * Browser Rendering, by binding (`["BROWSER"]`), which every one of the
+     * app's Workers binds: nothing to create (Workers Paid). Local in
+     * development (see {@link BrowserBinding}).
+     */
+    browser?: readonly string[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -184,6 +190,16 @@ export interface AiBinding {
   dev?: { remote?: boolean };
 }
 /**
+ * Browser Rendering (`env.BROWSER`, for `@cloudflare/puppeteer` or
+ * `@cloudflare/playwright`), which cf types as `BrowserRun`. Deployed, it
+ * drives a headless Chrome on Cloudflare (Workers Paid). In development
+ * the same binding reaches Miniflare's local stand-in: the first session
+ * downloads a Chrome into the global `.wrangler` cache and starts it.
+ */
+export interface BrowserBinding {
+  type: "browser";
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -237,6 +253,7 @@ export type EveryAppBinding =
   | R2Binding
   | HyperdriveBinding
   | AiBinding
+  | BrowserBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -263,6 +280,11 @@ type R2Names<M> = M extends { resources: { r2: readonly (infer B)[] } }
   ? B & string
   : never;
 type AiNames<M> = M extends { resources: { ai: readonly (infer B)[] } }
+  ? B & string
+  : never;
+type BrowserNames<M> = M extends {
+  resources: { browser: readonly (infer B)[] };
+}
   ? B & string
   : never;
 type DurableObjects<M> = M extends {
@@ -454,6 +476,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in R2Names<M>]: R2Binding;
 } & {
   [B in AiNames<M>]: AiBinding;
+} & {
+  [B in BrowserNames<M>]: BrowserBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -788,6 +812,7 @@ export function everyAppWorker<
 
   Object.assign(env, storageBindings(manifest, name, deploy));
   addAiBindings(env, manifest, deploy);
+  addBrowserBindings(env, manifest);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -876,7 +901,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases, KV namespaces, R2 buckets and Workers AI, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI and Browser Rendering, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -922,6 +947,7 @@ export function everyAppAuxiliaryWorker<
     addDevProviders(env, options.root);
   }
   addAiBindings(env, manifest, deploy);
+  addBrowserBindings(env, manifest);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1089,6 +1115,25 @@ function addAiBindings(
     env[binding] = deploy
       ? { type: "ai" }
       : { type: "ai", dev: { remote: true } };
+  }
+}
+
+/**
+ * The manifest's Browser Rendering bindings, which every one of the app's
+ * Workers gets: `{ type: "browser" }` in both modes (account-wide,
+ * nothing to provision; Miniflare serves a local browser in development).
+ */
+function addBrowserBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+): void {
+  for (const binding of manifest.resources?.browser ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `browser: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    env[binding] = { type: "browser" };
   }
 }
 

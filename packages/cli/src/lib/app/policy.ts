@@ -47,7 +47,9 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * outside the Gateway's budgets, caps and usage tap (its `workers-ai`
  * provider is the brokered path), and the deploy provisions nothing to
  * check it against: so only under a binding name the manifest declares in
- * `resources.ai`, never one cloudflare.config.ts adds on its own.
+ * `resources.ai`, never one cloudflare.config.ts adds on its own. Browser
+ * Rendering is the same: account-wide browser time billed to the account,
+ * so only under a name `resources.browser` declares.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -63,6 +65,7 @@ const ALLOWED_BINDINGS = new Set([
   "worker",
   "hyperdrive",
   "ai",
+  "browser",
 ]);
 
 /**
@@ -213,6 +216,8 @@ function bindingProblems(
   const buckets = Object.values(resources.r2 ?? {}).map((bucket) => bucket.name);
   // Workers AI only under the names resources.ai declares.
   const aiBindings = declared?.ai ?? [];
+  // Browser Rendering only under the names resources.browser declares.
+  const browserBindings = declared?.browser ?? [];
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -257,6 +262,15 @@ function bindingProblems(
             aiBindings.length > 0
               ? `${name} is a Workers AI binding, which isn't one of the app's in resources.ai (${aiBindings.join(", ")})`
               : `${name} is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai`,
+          );
+        }
+        break;
+      case "browser":
+        if (!browserBindings.includes(name)) {
+          problems.push(
+            browserBindings.length > 0
+              ? `${name} is a Browser Rendering binding, which isn't one of the app's in resources.browser (${browserBindings.join(", ")})`
+              : `${name} is a Browser Rendering binding, which everyapp.config.ts doesn't declare; list it in resources.browser`,
           );
         }
         break;

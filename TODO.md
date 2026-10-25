@@ -1300,6 +1300,22 @@ The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners
 - [ ] **MySQL is documented as Hyperdrive with no `database` or `migrations`**: the deploy accepts a `mysql://` origin and migrates nothing. Walk-back: `database.provider: "mysql"` and a migrations dialect.
 - [ ] **No Hyperdrive live test**: loop-1 has no Postgres and `hyperdrive create` needs a reachable origin. Walk-back: a Neon free database for the loop account, its URL in `providers.env`.
 
+### Provisioners: Browser Rendering (2026-10-25)
+
+`resources.browser: ["BROWSER"]` binds Browser Rendering on every Worker of an app: nothing created, recorded or purged; browser time is billed to the account, which needs Workers Paid ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `browser` row; `landing-page/content/agent/manifest.md`, "Browser Rendering").
+
+**Defaults to confirm**
+
+- [ ] **Declared or refused.** The deploy's policy allows a `browser` binding only under a name `resources.browser` declares, so `cloudflare.config.ts` can't add account-wide browser time on its own. Walk-back: allow `browser` by type alone.
+- [ ] **Local in development, not remote.** The design's row said `dev: { remote: true }`; Miniflare serves a local stand-in and the first session downloads Chrome `126.0.6478.182` into the global `.wrangler` cache, so the binding is `{ type: "browser" }` in both modes and dev needs no login. Walk-back: mark it remote (dev sessions then bill the account).
+- [ ] **Refused on the dispatch tier:** the browser time would bill the platform's account.
+- [ ] **No Gateway budget on browser time.** Sessions aren't counted, capped or attributed by the Gateway.
+
+**Follow-ups**
+
+- [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.browser`; its bundle check refuses the binding type (`BROWSER is a browser binding, which third-party apps can't have`).
+- [ ] **`everyapp status`'s RESOURCES cell** gains `Browser` once the first lane's cell is on main.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).

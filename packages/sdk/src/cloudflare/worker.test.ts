@@ -20,6 +20,7 @@ import {
   resourceSentinel,
   sentinelDeployTarget,
   type AiBinding,
+  type BrowserBinding,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -1683,6 +1684,95 @@ describe("Workers AI (resources.ai)", () => {
     expect(
       Object.values(config.env as Record<string, { type: string }>).filter(
         (binding) => binding.type === "ai",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("Browser Rendering (resources.browser)", () => {
+  const crawler = {
+    id: "crawler",
+    resources: { d1: ["DB"], browser: ["BROWSER"] },
+    workers: [{ name: "render", binding: "RENDER" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: crawler,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _render, ...render } = everyAppAuxiliaryWorker({
+      manifest: crawler,
+      worker: "render",
+      entrypoint: "/app/src/render.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, render };
+  };
+
+  it("binds Browser Rendering on the app's Worker and every helper, with nothing to install", () => {
+    const { app, render } = build("production");
+    for (const env of [app.env, render.env] as Record<string, unknown>[]) {
+      expect(env["BROWSER"]).toEqual({ type: "browser" });
+    }
+    // Account-wide: no placeholder for the deploy to rewrite.
+    expect(sentinelDeployTarget(crawler).resources).not.toHaveProperty(
+      "browser",
+    );
+  });
+
+  it("binds the same shape in development, where Miniflare serves a local browser", () => {
+    const { app, render } = build("development");
+    for (const env of [app.env, render.env] as Record<string, unknown>[]) {
+      expect(env["BROWSER"]).toEqual({ type: "browser" });
+    }
+  });
+
+  it("binds several names when the manifest lists several", () => {
+    const { env } = everyAppWorker({
+      manifest: { id: "crawler", resources: { browser: ["BROWSER", "PDF"] } },
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(env).toMatchObject({
+      BROWSER: { type: "browser" },
+      PDF: { type: "browser" },
+    });
+  });
+
+  it("types each binding as Browser Rendering, which cf turns into BrowserRun", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.BROWSER).toEqualTypeOf<BrowserBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "crawler",
+          resources: { kv: ["BROWSER"], browser: ["BROWSER"] },
+        },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow("browser: BROWSER reuses a binding name the Worker already has.");
+  });
+
+  it("leaves a manifest without resources.browser with no browser binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "browser",
       ),
     ).toEqual([]);
   });

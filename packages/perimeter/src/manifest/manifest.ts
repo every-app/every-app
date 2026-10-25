@@ -103,6 +103,12 @@ export const ResourcesSchema = z
      * to create. The Gateway's `workers-ai` provider is the brokered path.
      */
     ai: z.array(z.string()).optional(),
+    /**
+     * Browser Rendering, by binding (`["BROWSER"]`), which every one of the
+     * app's Workers binds: a headless Chrome the account runs, nothing to
+     * create (Workers Paid).
+     */
+    browser: z.array(z.string()).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -860,6 +866,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   kv: z.array(BindingNameSchema).optional(),
   r2: z.array(BindingNameSchema).optional(),
   ai: z.array(BindingNameSchema).optional(),
+  browser: z.array(BindingNameSchema).optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -1122,6 +1129,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.r2 ?? []),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
     ...(manifest.resources?.ai ?? []),
+    ...(manifest.resources?.browser ?? []),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1148,6 +1156,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
     ...(manifest.resources?.ai ?? []),
+    ...(manifest.resources?.browser ?? []),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1161,10 +1170,11 @@ export function bindingNamesOf(
  * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
  * refuses R2 bindings. Nor Workers AI: the binding bills whatever account
  * the Worker runs in, the platform's here, with no Gateway budget (the
- * `workers-ai` provider is the brokered path). Nor inbound mail: the
- * platform's zones aren't an organization's to route. Nor secrets of its
- * own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID only, and
- * nothing sets another.
+ * `workers-ai` provider is the brokered path). Nor Browser Rendering: the
+ * browser time bills the platform's account the same way. Nor inbound
+ * mail: the platform's zones aren't an organization's to route. Nor secrets
+ * of its own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID
+ * only, and nothing sets another.
  */
 export function manifestTierProblems(
   manifest: Pick<Manifest, "resources" | "email" | "secrets">,
@@ -1186,6 +1196,11 @@ export function manifestTierProblems(
   if (manifest.resources?.ai?.length) {
     problems.push(
       "resources.ai: the Workers AI binding isn't available to apps in a dispatch namespace (it bills the platform's account); list the workers-ai provider instead",
+    );
+  }
+  if (manifest.resources?.browser?.length) {
+    problems.push(
+      "resources.browser: Browser Rendering isn't available to apps in a dispatch namespace (it bills the platform's account)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);

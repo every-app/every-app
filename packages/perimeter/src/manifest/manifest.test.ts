@@ -1640,3 +1640,63 @@ describe("what a problem reads as", () => {
     ).toEqual([{ name: "TOKEN", docs: "https://example.com/docs" }]);
   });
 });
+
+describe("Browser Rendering (resources.browser)", () => {
+  const crawler = {
+    id: "crawler",
+    resources: { d1: ["DB"], browser: ["BROWSER"] },
+  };
+
+  it("accepts Browser Rendering bindings in both schemas", () => {
+    expect(validateManifestStrict(crawler)).toEqual(crawler);
+    expect(validateManifest(crawler)).toEqual(crawler);
+    const two = { ...crawler, resources: { browser: ["BROWSER", "PDF"] } };
+    expect(validateManifestStrict(two)).toEqual(two);
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { browser: ["my-browser"] } },
+      /resources\.browser\.0/,
+    ],
+    [
+      "a binding named like a D1 database",
+      { resources: { d1: ["BROWSER"], browser: ["BROWSER"] } },
+      /the binding BROWSER is declared twice/,
+    ],
+    [
+      "the same binding twice",
+      { resources: { browser: ["BROWSER", "BROWSER"] } },
+      /the binding BROWSER is declared twice/,
+    ],
+    [
+      "a secret named like the binding",
+      { resources: { browser: ["BROWSER"] }, secrets: ["BROWSER"] },
+      /secrets: BROWSER is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...crawler, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("stays tolerant of entries at registration", () => {
+    expect(
+      validateManifest({
+        id: "crawler",
+        resources: { browser: ["my-browser"] },
+      }).resources?.browser,
+    ).toEqual(["my-browser"]);
+  });
+
+  it("is refused on the dispatch tier, where it would bill the platform's account", () => {
+    expect(manifestTierProblems(crawler, "dispatch")).toEqual([
+      "resources.browser: Browser Rendering isn't available to apps in a dispatch namespace (it bills the platform's account)",
+    ]);
+    expect(manifestTierProblems(crawler, "service_binding")).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { browser: [] } }, "dispatch"),
+    ).toEqual([]);
+  });
+});
