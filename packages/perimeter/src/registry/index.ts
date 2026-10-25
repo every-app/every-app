@@ -40,3 +40,16 @@ export {
   type ProviderAppInput,
   type ProviderAppPlan,
 } from "./providerApps";
+export {
+  isMcpAppRow,
+  isRemoteMcpRow,
+  mcpAppRemoveUpdate,
+  mcpAppStatusUpdate,
+  planRemoteMcpAppAdd,
+  remoteMcpAppUpdate,
+  remoteMcpBlockOf,
+  type McpAppStatus,
+  type RemoteMcpAddInput,
+  type RemoteMcpAddPlan,
+  type RemoteMcpChange,
+} from "./remoteMcpApps";

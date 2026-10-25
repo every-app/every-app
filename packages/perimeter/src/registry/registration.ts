@@ -102,7 +102,11 @@ export type RegistrationErrorCode =
   | "SHARED_APP_NOT_PLATFORM"
   | "APP_SCOPE_MISMATCH"
   | "APP_TIER_MISMATCH"
-  | "PROVIDER_APP_UNKNOWN";
+  | "PROVIDER_APP_UNKNOWN"
+  | "REMOTE_MCP_INVALID"
+  | "REMOTE_MCP_URL_REFUSED"
+  | "REMOTE_MCP_EXISTS"
+  | "REMOTE_MCP_SECRET_TAKEN";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {

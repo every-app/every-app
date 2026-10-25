@@ -12,3 +12,4 @@ export * from "./deploy-jobs.schema";
 export * from "./usage.schema";
 export * from "./groups.schema";
 export * from "./org-app-settings.schema";
+export * from "./remote-mcp.schema";

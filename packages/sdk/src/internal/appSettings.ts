@@ -36,6 +36,11 @@ import {
   isInstallOwnedGatewaySetting,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
+import {
+  remoteMcpAuthLabel,
+  remoteMcpOf,
+  remoteMcpSecretOf,
+} from "./remoteMcp.js";
 
 /** A provider as `providers` lists it: its id, or an entry with a need. */
 export interface ProviderEntry extends SettingNeedFields {
@@ -76,9 +81,18 @@ export interface SettingsManifestLike {
   readonly capabilities?: { readonly [id: string]: unknown };
   readonly secrets?: ReadonlyArray<string | SecretEntry>;
   readonly ai?: { readonly routes?: readonly string[] };
+  /** A remote MCP app's registration (./remoteMcp.ts): its credential is a required Gateway setting. */
+  readonly remote?: unknown;
+  readonly name?: string;
 }
 
-export type SettingKind = "provider" | "capability" | "secret" | "ai-routes";
+export type SettingKind =
+  | "provider"
+  | "capability"
+  | "secret"
+  | "ai-routes"
+  /** A remote MCP app's credential (./remoteMcp.ts): one Gateway setting named by the row. */
+  | "remote-mcp";
 
 /** Which Worker holds a setting: the Gateway's, or the app's own. */
 export type SettingHolder = "gateway" | "app";
@@ -350,6 +364,27 @@ export function appSettings(manifest: SettingsManifestLike): AppSetting[] {
       why: `Lets the app call ${manifest.ai.routes.join(", ")} through the AI proxy.`,
       setup: "setup/openai.md",
     });
+  }
+  const remote = remoteMcpOf(manifest);
+  if (remote) {
+    const secret = remoteMcpSecretOf(remote.auth);
+    if (secret) {
+      const label =
+        typeof manifest.name === "string" && manifest.name.trim()
+          ? manifest.name.trim()
+          : "the MCP server";
+      settings.push({
+        kind: "remote-mcp",
+        id: secret,
+        label: `${label} credential`,
+        holder: "gateway",
+        names: [secret],
+        alsoReads: [],
+        need: { kind: "required" },
+        why: `What ${label} expects: ${remoteMcpAuthLabel(remote.auth)}. The Gateway sends it to ${remote.url} and nowhere else.`,
+        setup: "setup/remote-mcp.md",
+      });
+    }
   }
   for (const entry of secretEntries(manifest)) {
     settings.push(

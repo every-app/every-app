@@ -197,6 +197,9 @@ function devSettings(manifest: SettingsManifestLike): AppSetting[] {
           : [setting];
       case "ai-routes":
         return [];
+      // A remote MCP app is the Gateway's own row, never an app run here.
+      case "remote-mcp":
+        return [];
       case "secret":
         return [setting];
     }

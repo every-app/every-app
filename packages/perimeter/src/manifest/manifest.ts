@@ -19,6 +19,7 @@ import {
   gatewaySettingOwner,
   isCapabilityId,
   isReservedAppSecretName,
+  isRemoteMcpSecretName,
   isSettableGatewaySetting,
   providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
@@ -737,6 +738,12 @@ const AppSecretsSchemaStrict = z
       }
       const upper = name.toUpperCase();
       if (!isSettableGatewaySetting(upper)) return;
+      if (isRemoteMcpSecretName(upper)) {
+        issue(
+          `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's secret another name`,
+        );
+        return;
+      }
       const owner = gatewaySettingOwner(upper);
       const instead = owner
         ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`

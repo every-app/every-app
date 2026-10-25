@@ -55,8 +55,9 @@ export interface ProviderAppPlan {
   /**
    * `new`: insert `app` and `grants`. `revived`: a tombstone of this
    * organization's comes back as `app` with `grants`, nothing of the old
-   * access kept. `existing`: the app is on already; update its name and
-   * description and nothing else.
+   * access kept. `existing`: the app has a live row (on, or off with
+   * `mcp off`); update its name, description and status (`active`) and
+   * nothing else.
    */
   kind: "new" | "revived" | "existing";
   app: AppRow;
@@ -106,6 +107,8 @@ export function planProviderAppOn(input: ProviderAppInput): ProviderAppPlan {
   const definition = PROVIDER_APPS[id];
   if (existingApp) assertProviderRow(id, existingApp);
   if (existingApp && existingApp.status !== DELETED_APP_STATUS) {
+    // On already, or off (`mcp off`: status "disabled", everything kept):
+    // `on` serves it again with the registry's current name and description.
     return {
       kind: "existing",
       app: {
@@ -113,6 +116,7 @@ export function planProviderAppOn(input: ProviderAppInput): ProviderAppPlan {
         name: definition.name,
         description: definition.description,
         manifest: JSON.stringify(providerAppManifest(id)),
+        status: "active",
       },
       grants: [],
     };

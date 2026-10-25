@@ -97,11 +97,28 @@ export type SettableGatewaySetting = (typeof SETTABLE_GATEWAY_SETTINGS)[number];
 
 const SETTABLE: ReadonlySet<string> = new Set(SETTABLE_GATEWAY_SETTINGS);
 
-/** Whether `everyapp secret set <name>` changes the Gateway. */
-export function isSettableGatewaySetting(
-  name: string,
-): name is SettableGatewaySetting {
-  return SETTABLE.has(name);
+/**
+ * The credential names of remote MCP apps (`everyapp mcp add <url>`,
+ * ./remoteMcp.ts): `<ID>_MCP_TOKEN` by default, any name ending in
+ * `_MCP_TOKEN` by choice. A family rather than a list, so the names a
+ * registry row declares at run time route to the Gateway like the fixed
+ * names (`everyapp secret set` reads no registry to decide), an app's own
+ * secret can never take one (the manifest validator refuses the family),
+ * and a remote server can never be given a fixed provider key.
+ */
+export const REMOTE_MCP_SECRET_PATTERN = /^[A-Z][A-Z0-9_]*_MCP_TOKEN$/;
+
+/** Whether `name` is a remote MCP app's credential name (`TREG_MCP_TOKEN`). */
+export function isRemoteMcpSecretName(name: string): boolean {
+  return REMOTE_MCP_SECRET_PATTERN.test(name);
+}
+
+/**
+ * Whether `everyapp secret set <name>` changes the Gateway: one of the
+ * fixed settings, or a remote MCP app's credential name.
+ */
+export function isSettableGatewaySetting(name: string): boolean {
+  return SETTABLE.has(name) || isRemoteMcpSecretName(name);
 }
 
 /**
