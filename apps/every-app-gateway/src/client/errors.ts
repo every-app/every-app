@@ -115,6 +115,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   OAUTH_CLIENT_REQUIRED: "Paste the client id and the client secret.",
   SEALING_UNAVAILABLE: "This Gateway can't store a secret yet.",
   ADMIN_REQUIRED: "Only an owner or admin can do that.",
+  PROVIDER_HOSTED:
+    "On a hosted gateway the platform's operator manages providers and their clients.",
 };
 
 /**
@@ -145,6 +147,7 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "OAUTH_PROVIDER_REQUIRED",
   "OAUTH_CLIENT_REQUIRED",
   "SEALING_UNAVAILABLE",
+  "PROVIDER_HOSTED",
 ]);
 
 /** A rule's fragment as a sentence: a capital first, a full stop last. */

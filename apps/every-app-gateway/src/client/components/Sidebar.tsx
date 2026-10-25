@@ -325,6 +325,16 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     render={
+                      <Link
+                        to="/settings/accounts"
+                        onClick={() => setOpenMobile(false)}
+                      />
+                    }
+                  >
+                    Connected accounts
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={
                       <a
                         href={DOCS_URL}
                         target="_blank"

@@ -28,10 +28,12 @@ import { Route as AppAdminActivityRouteImport } from './routes/_app/admin/activi
 import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
 import { Route as AppAdminEventsRouteImport } from './routes/_app/admin/events'
 import { Route as AppAdminGroupsRouteImport } from './routes/_app/admin/groups'
+import { Route as AppAdminProvidersRouteImport } from './routes/_app/admin/providers'
 import { Route as AppAdminSignInRouteImport } from './routes/_app/admin/sign-in'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppSettingsAccountsRouteImport } from './routes/_app/settings/accounts'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
@@ -135,6 +137,11 @@ const AppAdminGroupsRoute = AppAdminGroupsRouteImport.update({
   path: '/groups',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminProvidersRoute = AppAdminProvidersRouteImport.update({
+  id: '/providers',
+  path: '/providers',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminSignInRoute = AppAdminSignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
@@ -154,6 +161,11 @@ const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AppAdminRoute,
+} as any)
+const AppSettingsAccountsRoute = AppSettingsAccountsRouteImport.update({
+  id: '/settings/accounts',
+  path: '/settings/accounts',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsConnectionsRoute = AppSettingsConnectionsRouteImport.update({
   id: '/settings/connections',
@@ -215,10 +227,12 @@ export interface FileRoutesByFullPath {
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/providers': typeof AppAdminProvidersRoute
   '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
@@ -246,10 +260,12 @@ export interface FileRoutesByTo {
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/providers': typeof AppAdminProvidersRoute
   '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/settings/accounts': typeof AppSettingsAccountsRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
@@ -280,10 +296,12 @@ export interface FileRoutesById {
   '/_app/admin/apps': typeof AppAdminAppsRoute
   '/_app/admin/events': typeof AppAdminEventsRoute
   '/_app/admin/groups': typeof AppAdminGroupsRoute
+  '/_app/admin/providers': typeof AppAdminProvidersRoute
   '/_app/admin/sign-in': typeof AppAdminSignInRoute
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/settings/accounts': typeof AppSettingsAccountsRoute
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
@@ -314,10 +332,12 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/events'
     | '/admin/groups'
+    | '/admin/providers'
     | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
+    | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
@@ -345,10 +365,12 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/events'
     | '/admin/groups'
+    | '/admin/providers'
     | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
+    | '/settings/accounts'
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
@@ -378,10 +400,12 @@ export interface FileRouteTypes {
     | '/_app/admin/apps'
     | '/_app/admin/events'
     | '/_app/admin/groups'
+    | '/_app/admin/providers'
     | '/_app/admin/sign-in'
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
     | '/_app/admin/users'
+    | '/_app/settings/accounts'
     | '/_app/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
@@ -548,6 +572,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminGroupsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/providers': {
+      id: '/_app/admin/providers'
+      path: '/providers'
+      fullPath: '/admin/providers'
+      preLoaderRoute: typeof AppAdminProvidersRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/sign-in': {
       id: '/_app/admin/sign-in'
       path: '/sign-in'
@@ -575,6 +606,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/users'
       preLoaderRoute: typeof AppAdminUsersRouteImport
       parentRoute: typeof AppAdminRoute
+    }
+    '/_app/settings/accounts': {
+      id: '/_app/settings/accounts'
+      path: '/settings/accounts'
+      fullPath: '/settings/accounts'
+      preLoaderRoute: typeof AppSettingsAccountsRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/settings/connections': {
       id: '/_app/settings/connections'
@@ -640,6 +678,7 @@ interface AppAdminRouteChildren {
   AppAdminAppsRoute: typeof AppAdminAppsRoute
   AppAdminEventsRoute: typeof AppAdminEventsRoute
   AppAdminGroupsRoute: typeof AppAdminGroupsRoute
+  AppAdminProvidersRoute: typeof AppAdminProvidersRoute
   AppAdminSignInRoute: typeof AppAdminSignInRoute
   AppAdminTokensRoute: typeof AppAdminTokensRoute
   AppAdminUsageRoute: typeof AppAdminUsageRoute
@@ -652,6 +691,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminAppsRoute: AppAdminAppsRoute,
   AppAdminEventsRoute: AppAdminEventsRoute,
   AppAdminGroupsRoute: AppAdminGroupsRoute,
+  AppAdminProvidersRoute: AppAdminProvidersRoute,
   AppAdminSignInRoute: AppAdminSignInRoute,
   AppAdminTokensRoute: AppAdminTokensRoute,
   AppAdminUsageRoute: AppAdminUsageRoute,
@@ -667,6 +707,7 @@ interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
   AppOrganizationsRoute: typeof AppOrganizationsRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppSettingsAccountsRoute: typeof AppSettingsAccountsRoute
   AppSettingsConnectionsRoute: typeof AppSettingsConnectionsRoute
 }
 
@@ -674,6 +715,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRouteWithChildren,
   AppOrganizationsRoute: AppOrganizationsRoute,
   AppIndexRoute: AppIndexRoute,
+  AppSettingsAccountsRoute: AppSettingsAccountsRoute,
   AppSettingsConnectionsRoute: AppSettingsConnectionsRoute,
 }
 

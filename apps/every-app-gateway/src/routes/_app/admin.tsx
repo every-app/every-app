@@ -13,6 +13,7 @@ import {
   KeyRound,
   LogIn,
   Pencil,
+  Plug,
   ScrollText,
   ShieldAlert,
   Users,
@@ -51,6 +52,7 @@ enum AdminTab {
   Groups = "groups",
   Apps = "apps",
   Tokens = "tokens",
+  Providers = "providers",
   Usage = "usage",
   Activity = "activity",
   Events = "events",
@@ -76,6 +78,12 @@ const adminTabs = [
     label: "Tokens",
     to: "/admin/tokens",
     icon: KeyRound,
+  },
+  {
+    value: AdminTab.Providers,
+    label: "Providers",
+    to: "/admin/providers",
+    icon: Plug,
   },
   {
     value: AdminTab.Usage,
