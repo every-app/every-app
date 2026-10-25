@@ -37,6 +37,7 @@ import type {
 } from "@/server/email/sendEmail";
 import { EMAIL_TRANSPORTS_TEXT } from "@/server/email/providers";
 import type { IntegrationCallAdmission } from "@/server/integration-proxy";
+import { readCapped } from "./read-capped";
 import { capabilityRefusal } from "./refusal";
 
 const EMAIL = CAPABILITIES.email;
@@ -169,7 +170,7 @@ export async function handleEmailSend({
   }
 
   // 4. The message.
-  const body = await readCapped(request);
+  const body = await readCapped(request, EMAIL_LIMITS.bodyBytes);
   if (body === null) {
     return capabilityRefusal(
       413,
@@ -323,37 +324,4 @@ function deliveryFailure(error: unknown): {
 function secondsUntil(at: Date | undefined): number {
   if (!at) return 60;
   return Math.max(1, Math.ceil((at.getTime() - Date.now()) / 1000));
-}
-
-/**
- * The request body as text, or null once it passes the cap: counted as it
- * streams, so a body that lies about (or omits) its length still stops at
- * the cap.
- */
-async function readCapped(request: Request): Promise<string | null> {
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > EMAIL_LIMITS.bodyBytes) {
-    return null;
-  }
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > EMAIL_LIMITS.bodyBytes) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }

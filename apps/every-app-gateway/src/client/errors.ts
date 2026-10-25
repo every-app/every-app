@@ -81,6 +81,18 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
   GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
   GROUP_NAME_TAKEN: "A group with this name already exists.",
+  EVENT_TARGET_REFUSED:
+    "That URL can't be a webhook target: use https and a public hostname, not this gateway or one of its apps.",
+  EVENT_SUBSCRIPTIONS_LIMIT:
+    "This workspace has as many event subscriptions as it may. Remove one first.",
+  EVENT_SUBSCRIPTION_NOT_FOUND:
+    "That subscription doesn't exist or was removed.",
+  EVENT_DELIVERY_NOT_FOUND: "That delivery doesn't exist any more.",
+  EVENT_TYPE_UNKNOWN:
+    "One of the event types isn't one the gateway emits. Pick from the list, or use a pattern like member.* or app.crm.*.",
+  EVENT_SECRET_INVALID: "A signing secret is 16 to 128 characters.",
+  EVENT_SINK_CONFLICT:
+    "A subscription is a webhook URL or an email to owners and admins, not both.",
   // The rules' own messages say more (getRuleErrorMessage); these are the
   // fallbacks for an error that arrives without one.
   REMOTE_MCP_INVALID: "Check the server's details and try again.",

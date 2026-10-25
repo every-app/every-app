@@ -68,3 +68,41 @@ export function invitationEmail({
     html: `<p>${escapeHtml(inviter)} invited you to join ${escapeHtml(org)}.</p><p>${link(url, "Accept invitation")}</p>`,
   };
 }
+
+/**
+ * An event notice (server/events/email-sink.ts): the catalogue's summary
+ * as the subject under the organization's name, the fields a person reads
+ * as a short list, and one link to the admin page that acts on it. The
+ * summary and every field come from event data that members and apps
+ * wrote, so each is escaped for where it goes.
+ */
+export function eventEmail({
+  organizationName,
+  summary,
+  fields,
+  url,
+  pageLabel,
+}: {
+  organizationName: string;
+  summary: string;
+  fields: readonly { label: string; value: string }[];
+  url: string;
+  pageLabel: string;
+}): Email {
+  const org = oneLine(organizationName);
+  const line = oneLine(summary);
+  const textFields = fields
+    .map((field) => `${oneLine(field.label)}: ${oneLine(field.value)}`)
+    .join("\n");
+  const htmlFields = fields
+    .map(
+      (field) =>
+        `<li><strong>${escapeHtml(oneLine(field.label))}:</strong> ${escapeHtml(oneLine(field.value))}</li>`,
+    )
+    .join("");
+  return {
+    subject: `[${org}] ${line}`,
+    text: `${line}\n\n${textFields ? `${textFields}\n\n` : ""}${pageLabel}: ${url}\n\nYou get this because you are an owner or admin of ${org}. Change it under Manage workspace, Events.`,
+    html: `<p>${escapeHtml(line)}</p>${htmlFields ? `<ul>${htmlFields}</ul>` : ""}<p>${link(url, pageLabel)}</p><p style="color:#666;font-size:12px">You get this because you are an owner or admin of ${escapeHtml(org)}. Change it under Manage workspace, Events.</p>`,
+  };
+}

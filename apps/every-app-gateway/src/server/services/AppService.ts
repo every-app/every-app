@@ -1,8 +1,12 @@
 import { env } from "cloudflare:workers";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { AppRepository } from "../repositories/AppRepository";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { userActor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { appCapabilities } from "./appCapabilities";
@@ -129,6 +133,19 @@ async function deleteApp(ctx: OrgContext, id: string) {
   }
 
   await AppRepository.tombstone(existingApp);
+  // A tombstone, never a purge: the slug and worker name stay reserved.
+  const app = {
+    id: existingApp.appSlug,
+    rowId: existingApp.id,
+    name: existingApp.name,
+  };
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...(existingApp.tier === PROVIDER_APP_TIER
+      ? catalogue.mcpAppRemoved({ app, kind: "builtin" })
+      : catalogue.appRemoved({ app, purged: false })),
+  }));
 }
 
 export const AppService = {

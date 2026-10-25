@@ -25,6 +25,7 @@ import { logEvent } from "@every-app/perimeter";
 import type { McpAccess, McpPrincipal } from "@every-app/toolbus";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
+import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
 import { UserPatService } from "@/server/services/UserPatService";
@@ -179,7 +180,7 @@ export async function resolveOauthCaller(
     (connection.memberSince && connection.memberSince > connection.createdAt)
   ) {
     background(
-      McpConnectionRepository.revokeById(connection.id, "member_removed"),
+      McpConnectionService.revokeConnection(connection.id, "member_removed"),
       "mcp.connection.revoke_failed",
     );
     return null;

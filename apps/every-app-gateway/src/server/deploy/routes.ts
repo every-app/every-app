@@ -107,6 +107,7 @@ async function deployRoute(
     manifest,
     bundle,
     actor: `deploy-key:${caller.tokenId}`,
+    via: "cli",
   });
   return jobAnswer(caller.organizationId, jobId, 202);
 }

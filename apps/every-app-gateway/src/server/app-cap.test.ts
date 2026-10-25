@@ -56,10 +56,10 @@ describe("checkMonthlyCap", () => {
     expect(monthlyCalls).not.toHaveBeenCalled();
   });
 
-  it("passes under the cap and refuses at it, with the seconds left in the UTC month", async () => {
+  it("passes under the cap with the month's standing, and refuses at it with the seconds left in the UTC month", async () => {
     const under = sources(10, 9);
     await expect(checkMonthlyCap(under.api, "org-a", "app-1")).resolves.toEqual(
-      { exceeded: false },
+      { exceeded: false, cap: 10, calls: 9, month: "2026-10", source: "app" },
     );
     expect(under.monthlyCalls).toHaveBeenCalledWith(
       "org-a",
@@ -74,6 +74,7 @@ describe("checkMonthlyCap", () => {
       cap: 10,
       calls: 10,
       month: "2026-10",
+      source: "app",
       retryAfterSeconds: secondsUntilUtcMonthEnd(new Date()),
     });
   });

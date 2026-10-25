@@ -16,7 +16,9 @@
  *
  * Readiness comes from app-setup.ts, cached by row, version and recorded
  * secret names; a refused app is logged once per isolate per row and
- * version, not per request.
+ * version, not per request. The result is recorded on the row after the
+ * response (`apps.setup_state`, server/events/setup-state.ts), which
+ * announces an app that came to need setup, or became ready.
  */
 import { env } from "cloudflare:workers";
 import {
@@ -24,7 +26,9 @@ import {
   withSecurityHeaders,
   type NeedsSetupInput,
 } from "@every-app/perimeter";
-import { appIsReady } from "./app-setup";
+import { appSettingsReport } from "./app-setup";
+import { deferEventWork } from "./events/defer";
+import { recordSetupState } from "./events/setup-state";
 
 const LOGGED_MAX_ENTRIES = 500;
 // Per isolate: the row+version pairs already logged as needing setup.
@@ -68,7 +72,7 @@ export async function refuseUnreadyApp(
   input: NeedsSetupInput,
 ): Promise<Response | null> {
   const { app, request, publicRoute } = input;
-  const ready = await appIsReady({
+  const report = await appSettingsReport({
     // A row from D1 always has its id; the app id stands in for one that
     // doesn't, so the cache still has a key.
     rowId: app.rowId ?? app.appId,
@@ -79,6 +83,20 @@ export async function refuseUnreadyApp(
     manifest: app.manifest,
     canFix: false,
   });
+  if (report && app.rowId) {
+    const rowId = app.rowId;
+    deferEventWork(() =>
+      recordSetupState({
+        rowId,
+        organizationId: app.organizationId,
+        appId: app.appId,
+        name: app.manifest.name ?? app.appId,
+        ready: report.ready,
+        unmet: report.unmet.flatMap((setting) => setting.names),
+      }),
+    );
+  }
+  const ready = report?.ready ?? true;
   if (ready) return null;
   logOnce(input);
 

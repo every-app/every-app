@@ -22,6 +22,7 @@ import {
 } from "@every-app/sdk/internal";
 import { ToolError, type ToolContext } from "@every-app/sdk/server";
 import { checkMonthlyCap } from "@/server/app-cap";
+import { noteCapCheck } from "@/server/events/cap-events";
 import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
@@ -91,6 +92,22 @@ export async function providerCall(
     app.organizationId,
     app.rowId,
   );
+  // The standing goes to the event bus after the answer (cap.warning,
+  // cap.reached, app.paused_cap), as the AppGateway entrypoint reports it.
+  if (cap.cap !== undefined) {
+    waitUntil(
+      noteCapCheck(app.organizationId, app.rowId, cap).catch((error: unknown) =>
+        logEvent(
+          "events.cap_failed",
+          {
+            app: app.id,
+            message: error instanceof Error ? error.message : String(error),
+          },
+          "warn",
+        ),
+      ),
+    );
+  }
   if (cap.exceeded) {
     logEvent(
       "usage.cap_exceeded",

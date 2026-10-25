@@ -70,7 +70,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createCloudflareRest } from "@/server/deploy/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
-import { apps, deployJobs, members, organizations, users } from "@/db/schema";
+import {
+  apps,
+  deployJobs,
+  events,
+  members,
+  organizations,
+  users,
+} from "@/db/schema";
 import { Route as InstallRoute } from "@/routes/api/admin/apps/install";
 import { Route as ContextRoute } from "@/routes/api/admin/apps/install/context";
 import { Route as JobRoute } from "@/routes/api/admin/deploys/$id";
@@ -482,6 +489,31 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
     });
     const [stored] = await db.select().from(deployJobs);
     expect(JSON.parse(stored!.source!)).toEqual(job["source"]);
+    // The upload record is app.installed, from the browser, by the admin.
+    expect(
+      (await db.select().from(events))
+        .filter((event) => event.type === "app.installed")
+        .map((event) => ({
+          type: event.type,
+          data: JSON.parse(event.data),
+          actor: JSON.parse(event.actor),
+        })),
+    ).toEqual([
+      {
+        type: "app.installed",
+        data: {
+          app: { id: "todo", rowId: (await row())!.id, name: "Todos" },
+          version: (await row())!.versionId,
+          hostname: "todo-acme.everyapp.dev",
+          scope: "org",
+          source: "browser",
+        },
+        actor: expect.objectContaining({
+          kind: "user",
+          email: "carol@example.com",
+        }),
+      },
+    ]);
 
     const polled = await poll(job["id"]);
     expect(((await polled.json()) as any).job).toMatchObject({

@@ -10,6 +10,8 @@
  *  - delete usage counters past their retention (daily rows after 13
  *    months, monthly after 25), up to 10,000 rows of each a run
  *    (repositories/UsageRepository.ts);
+ *  - delete events and their deliveries older than EVENT_RETENTION_DAYS
+ *    (docs/design/2026-10-events-out.md), up to 10,000 of each a run;
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
  *    the library's purgeExpiredData, resuming from a cursor kept in KV;
  *  - re-list the tools of every active remote MCP app whose snapshot is
@@ -17,11 +19,14 @@
  *
  * Each step runs even when another fails, and the run logs one summary line.
  */
+import { EVENT_RETENTION_DAYS } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
-import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
+import { EventDeliveryRepository } from "@/server/repositories/EventDeliveryRepository";
+import { EventRepository } from "@/server/repositories/EventRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
+import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { getMcpAuth } from "./config";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -138,7 +143,7 @@ export async function runMcpMaintenance(
     ),
   );
   const connectionsExpired = await step("connections", () =>
-    McpConnectionRepository.expireUnusedSince(
+    McpConnectionService.expireIdle(
       new Date(now.getTime() - CONNECTION_IDLE_DAYS * DAY_MS),
     ),
   );
@@ -146,6 +151,13 @@ export async function runMcpMaintenance(
     RateLimitCounterRepository.deleteExpired(now),
   );
   const usage = await step("usage", () => UsageRepository.deleteOlderThan(now));
+  const eventsCutoff = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS);
+  const eventsPruned = await step("events", () =>
+    EventRepository.deleteOlderThan(eventsCutoff),
+  );
+  const deliveriesPruned = await step("event_deliveries", () =>
+    EventDeliveryRepository.deleteOlderThan(eventsCutoff),
+  );
   const purge = await step("oauth_purge", () => purgeOauthStorage(env));
   // Remote MCP apps: re-list each server's tools once an hour, so a
   // changed list reaches connected clients without waiting for a call.
@@ -171,6 +183,12 @@ export async function runMcpMaintenance(
       usage_daily_deleted: usage === "failed" ? usage : usage.daily,
       usage_monthly_deleted: usage === "failed" ? usage : usage.monthly,
       ...(usageBehind ? { usage_behind: true } : {}),
+      events_deleted:
+        eventsPruned === "failed" ? eventsPruned : eventsPruned.deleted,
+      event_deliveries_deleted:
+        deliveriesPruned === "failed"
+          ? deliveriesPruned
+          : deliveriesPruned.deleted,
       oauth_purge: purge,
       remote_mcp_relisted: remoteMcp,
     },

@@ -21,6 +21,14 @@ import type { TestDb } from "@/test/sqlite-db";
 
 const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
 
+vi.mock("cloudflare:workers", () => ({
+  env: {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+    GATEWAY_URL: "https://gateway.example.com",
+    BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
+  },
+  waitUntil: () => undefined,
+}));
 vi.mock("@/db", async () => {
   const { testDbProxy } = await import("@/test/sqlite-db");
   return { db: testDbProxy(testDb) };

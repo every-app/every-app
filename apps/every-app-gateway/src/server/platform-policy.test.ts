@@ -22,6 +22,7 @@ describe("platformPolicy", () => {
         verification: { perAddress: 10, perGateway: 1_000 },
         reset: { perAddress: 10, perGateway: 1_000 },
         invitation: { perAddress: 10, perGateway: 1_000 },
+        notice: { perAddress: 50, perGateway: 2_000 },
         app: { perAddress: 100, perGateway: 5_000 },
       },
     });
@@ -52,6 +53,7 @@ describe("platformPolicy", () => {
         verification: { perAddress: 5, perGateway: 2_000 },
         reset: { perAddress: 5, perGateway: 1_000 },
         invitation: { perAddress: 5, perGateway: 2_000 },
+        notice: { perAddress: 20, perGateway: 2_000 },
         app: { perAddress: 20, perGateway: 5_000 },
       },
     });
@@ -80,6 +82,7 @@ describe("platformPolicy", () => {
           verification: { perAddress: 0, perGateway: 0 },
           reset: { perAddress: 0, perGateway: 0 },
           invitation: { perAddress: 0, perGateway: 0 },
+          notice: { perAddress: 0, perGateway: 0 },
           app: { perAddress: 0, perGateway: 0 },
         },
       });

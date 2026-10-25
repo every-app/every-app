@@ -83,19 +83,30 @@ export function secondsUntilUtcMonthEnd(at: Date): number {
   return Math.max(1, Math.ceil((next - at.getTime()) / 1000));
 }
 
-type MonthlyCapCheck =
-  | { exceeded: false }
-  | {
-      exceeded: true;
-      cap: number;
-      calls: number;
-      month: string;
-      retryAfterSeconds: number;
-    };
+/** Where a cap came from: the app's own setting, or an organization default. */
+type CapSource = "app" | "default";
+
+/** The month's standing against a cap that is set. */
+interface CapStanding {
+  cap: number;
+  calls: number;
+  /** "YYYY-MM" */
+  month: string;
+  source: CapSource;
+}
+
+export type MonthlyCapCheck =
+  | { exceeded: false; cap?: undefined }
+  | ({ exceeded: false } & CapStanding)
+  | ({ exceeded: true; retryAfterSeconds: number } & CapStanding);
 
 /**
  * Whether (organization, app) has used up its month: true once the month's
- * counted calls reach the cap. With no cap set the counter is never read.
+ * counted calls reach the cap. With no cap set the counter is never read
+ * and nothing else is reported; with one, the standing comes back either
+ * way, so the caller can warn at 80% (server/events/cap-events.ts).
+ * Every cap today is the app's own (`source: "app"`); an organization
+ * default, when one exists, reports "default".
  */
 export async function checkMonthlyCap(
   sources: AppCapSources,
@@ -107,12 +118,11 @@ export async function checkMonthlyCap(
   if (cap === null) return { exceeded: false };
   const month = utcMonth(now);
   const calls = await sources.monthlyCalls(organizationId, appRowId, month);
-  if (calls < cap) return { exceeded: false };
+  const standing: CapStanding = { cap, calls, month, source: "app" };
+  if (calls < cap) return { exceeded: false, ...standing };
   return {
     exceeded: true,
-    cap,
-    calls,
-    month,
+    ...standing,
     retryAfterSeconds: secondsUntilUtcMonthEnd(now),
   };
 }

@@ -20,6 +20,14 @@ vi.mock("../user-pat-hash", () => ({
   hashUserPat: vi.fn(),
 }));
 
+// The token events ride the bus; the bus and its lookups read D1, which
+// this test doesn't have. What they are told is pinned here.
+vi.mock("@/server/events/bus", () => ({ emit: vi.fn() }));
+vi.mock("@/server/events/subjects", () => ({
+  userActor: vi.fn(async (id: string) => ({ kind: "user", id })),
+  userSubject: vi.fn(async (id: string) => ({ id, email: null, name: null })),
+}));
+
 const workerEnv = vi.hoisted(
   () =>
     ({ BETTER_AUTH_SECRET: "test-secret" }) as Record<
@@ -29,6 +37,7 @@ const workerEnv = vi.hoisted(
 );
 vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
+import { emit } from "@/server/events/bus";
 import { AppRepository } from "../repositories/AppRepository";
 import { UserPatRepository } from "../repositories/UserPatRepository";
 import { hashUserPat } from "../user-pat-hash";
@@ -96,6 +105,19 @@ describe("UserPatService", () => {
       "test-secret",
     );
     expect(verified?.id).toBe("token-id");
+    // token.created names the row, never the value or its hash
+    // (events.no-secrets-no-tool-io).
+    expect(emit).toHaveBeenCalledTimes(1);
+    // The subjects are looked up inside the bus's guard: emit got a builder.
+    const built = vi.mocked(emit).mock.calls[0]![0];
+    const event = typeof built === "function" ? await built() : built;
+    expect(event).toMatchObject({
+      organizationId: "org-id",
+      type: "token.created",
+      data: { name: "Claude", scopes: ["mcp:read"], appId: "todo" },
+    });
+    expect(JSON.stringify(event)).not.toContain(created.plaintext);
+    expect(JSON.stringify(event)).not.toContain("token-hash");
   });
 
   it("returns null for expired tokens", async () => {

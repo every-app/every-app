@@ -11,8 +11,10 @@
  * through its AppGateway binding, metered, never directly. So are the token
  * endpoints of the OAuth clients the gateway holds (not their hosts, which
  * serve the APIs apps call with their users' tokens), the gateway's own
- * hosts, and every third-party app host (THIRD_PARTY_DOMAIN), which a
- * dispatched app has no business calling from outside the perimeter.
+ * hosts, and every third-party app host (THIRD_PARTY_DOMAIN; the list is
+ * server/gateway-hosts.ts, shared with the event bus's target rules),
+ * which a dispatched app has no business calling from outside the
+ * perimeter.
  *
  * The hosted install wires it once the account has a dispatch namespace:
  * the gateway's DISPATCHER binding declares
@@ -31,7 +33,11 @@ import {
   OUTBOUND_PARAMETER,
   type OutboundParameters,
 } from "@every-app/perimeter";
-import { appBaseDomain } from "@/server/app-hosts";
+import {
+  gatewayHosts,
+  isSameOrSubdomain,
+  normalizeHost,
+} from "@/server/gateway-hosts";
 
 /** Hosts whose keys live in the gateway: reached through it or not at all. */
 const PROVIDER_HOSTS = [
@@ -65,14 +71,6 @@ type EgressDecision =
         | "not_allowed";
     };
 
-function normalizeHost(host: string): string {
-  return host.trim().toLowerCase().replace(/\.$/, "");
-}
-
-function isSameOrSubdomain(host: string, domain: string): boolean {
-  return host === domain || host.endsWith(`.${domain}`);
-}
-
 /** The calling app, or null when the dispatcher passed nothing usable. */
 function callingApp(value: unknown): OutboundParameters | null {
   if (typeof value !== "object" || value === null) return null;
@@ -87,20 +85,6 @@ function callingApp(value: unknown): OutboundParameters | null {
     return null;
   }
   return candidate as OutboundParameters;
-}
-
-function gatewayHosts(env: OutboundEnv): string[] {
-  const hosts: string[] = [];
-  const base = appBaseDomain(env);
-  if (base) hosts.push(base);
-  // As set, unvalidated: whatever it names is denied.
-  if (env.THIRD_PARTY_DOMAIN?.trim()) hosts.push(env.THIRD_PARTY_DOMAIN);
-  try {
-    if (env.GATEWAY_URL) hosts.push(new URL(env.GATEWAY_URL).hostname);
-  } catch {
-    // An unparsable GATEWAY_URL names no host to protect.
-  }
-  return hosts.map(normalizeHost);
 }
 
 /** Times a path may decode to something new before it counts as hiding one. */

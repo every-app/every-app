@@ -56,6 +56,7 @@ import {
   apps,
   appToolCatalogs,
   deployJobs,
+  events,
   members,
   organizations,
   userAccessTokens,
@@ -397,6 +398,46 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
       toolCount: 1,
     });
 
+    // The first recorded upload is app.installed, from the deploy key's
+    // owner, with the Worker version (docs/design/2026-10-events-out.md);
+    // the snapshot it took is app.tools_changed. The deploy keys made
+    // above are token.created rows beside them.
+    const emitted = (await db.select().from(events))
+      .filter((event) => event.type.startsWith("app."))
+      .map((event) => ({
+        type: event.type,
+        data: JSON.parse(event.data),
+        actor: JSON.parse(event.actor),
+      }));
+    expect(emitted).toEqual([
+      {
+        type: "app.installed",
+        data: {
+          app: { id: "todo", rowId: live.id, name: "Todos" },
+          version: live.versionId,
+          hostname: "todo-acme.everyapp.dev",
+          scope: "org",
+          source: "cli",
+        },
+        actor: expect.objectContaining({
+          kind: "user",
+          email: "alice@example.com",
+        }),
+      },
+      {
+        type: "app.tools_changed",
+        data: {
+          app: { id: "todo", rowId: live.id, name: "Todos" },
+          kind: "app",
+          toolCount: 1,
+          previousToolCount: 0,
+          added: ["list_todos"],
+          removed: [],
+        },
+        actor: { kind: "gateway" },
+      },
+    ]);
+
     // Its own database, created, named after its Worker and migrated.
     const [databaseId, database] = [...account.databases].find(
       ([, entry]) => entry.name === "every-acme-todo",
@@ -515,6 +556,23 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
         },
       ]),
     );
+    // The redeploy is app.updated, naming both versions; nothing between.
+    const emitted = (await db.select().from(events))
+      .filter((event) => ["app.installed", "app.updated"].includes(event.type))
+      .map((event) => ({
+        type: event.type,
+        data: JSON.parse(event.data) as Record<string, unknown>,
+      }));
+    expect(emitted.map((event) => event.type)).toEqual([
+      "app.installed",
+      "app.updated",
+    ]);
+    expect(emitted[1]!.data).toEqual({
+      app: { id: "todo", rowId: (await row())!.id, name: "Todos" },
+      version: (await row())!.versionId,
+      previousVersion: emitted[0]!.data["version"],
+    });
+    expect(emitted[1]!.data["version"]).not.toBe(emitted[0]!.data["version"]);
     // One database, kept.
     expect(
       [...account.databases.values()].filter(

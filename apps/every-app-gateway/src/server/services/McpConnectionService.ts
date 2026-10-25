@@ -10,8 +10,18 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue, type EventActor } from "@/server/events/catalogue";
+import {
+  GATEWAY_ACTOR,
+  userActor,
+  userSubject,
+} from "@/server/events/subjects";
 import { sameInstallation } from "@/server/mcp-auth/installation";
-import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
+import {
+  McpConnectionRepository,
+  type RevokedConnection,
+} from "@/server/repositories/McpConnectionRepository";
 
 /** What the consent decision records with a grant. */
 type GrantMetadata = {
@@ -34,6 +44,45 @@ type UserGrant = {
  * eventually consistent, so a grant just written may not be listed yet.
  */
 const NEW_GRANT_GRACE_MS = 5 * 60_000;
+
+/**
+ * `connection.revoked` for each row a revoke touched, whatever the reason
+ * (the person, a superseding consent, a removed or deactivated member, an
+ * idle expiry, an ended grant, a failed authorization). Never throws.
+ */
+async function announceRevoked(
+  rows: readonly RevokedConnection[],
+  reason: string,
+  actor: () => Promise<EventActor> = async () => GATEWAY_ACTOR,
+): Promise<void> {
+  for (const row of rows) {
+    await emit(async () => ({
+      organizationId: row.organizationId,
+      actor: await actor(),
+      ...catalogue.connectionRevoked({
+        connection: { id: row.id, clientName: row.clientName },
+        user: await userSubject(row.userId),
+        reason,
+      }),
+    }));
+  }
+}
+
+/** Revoke a connection that can't work any more, and announce it. */
+async function revokeConnection(
+  id: string,
+  reason: "ended" | "failed" | "member_removed",
+): Promise<void> {
+  const revoked = await McpConnectionRepository.revokeById(id, reason);
+  if (revoked) await announceRevoked([revoked], reason);
+}
+
+/** Expire idle connections (the hourly maintenance); how many. */
+async function expireIdle(cutoff: Date): Promise<number> {
+  const expired = await McpConnectionRepository.expireUnusedSince(cutoff);
+  await announceRevoked(expired, "expired");
+  return expired.length;
+}
 
 /** The user's grants in the authorization server, or null without one. */
 async function userGrants(userId: string) {
@@ -118,7 +167,7 @@ async function listForUser(userId: string) {
         now - connection.createdAt.getTime() > NEW_GRANT_GRACE_MS,
     );
     for (const connection of ended) {
-      await McpConnectionRepository.revokeById(connection.id, "ended");
+      await revokeConnection(connection.id, "ended");
     }
     connections = connections.filter(
       (connection) => !ended.includes(connection),
@@ -149,6 +198,7 @@ async function revokeForUser(userId: string, connectionId: string) {
   if (!revoked) {
     throw new PublicError("CONNECTION_NOT_FOUND", "Connection not found");
   }
+  await announceRevoked([revoked], "user", () => userActor(userId));
   // The row already shuts the client out; its grant goes too if it can.
   await revokeGrants(
     userId,
@@ -211,7 +261,14 @@ async function supersedeEarlier(connection: {
     (redirectUri !== undefined &&
       sameInstallation(redirectUri, connection.redirectUri));
   const [rows, grants] = await Promise.allSettled([
-    McpConnectionRepository.supersedeEarlier(connection, inInstallation),
+    McpConnectionRepository.supersedeEarlier(connection, inInstallation).then(
+      async (superseded) => {
+        await announceRevoked(superseded, "superseded", () =>
+          userActor(connection.userId),
+        );
+        return superseded;
+      },
+    ),
     revokeGrants(
       connection.userId,
       (grant) =>
@@ -256,11 +313,12 @@ async function markRevoked(
   organizationId?: string,
 ): Promise<void> {
   try {
-    await McpConnectionRepository.revokeAllForUser(
+    const revoked = await McpConnectionRepository.revokeAllForUser(
       userId,
       reason,
       organizationId,
     );
+    await announceRevoked(revoked, reason);
   } catch (error) {
     logEvent(
       "mcp.connection.revoke_failed",
@@ -300,10 +358,39 @@ async function revokeForDeactivatedUser(userId: string): Promise<void> {
   revokeGrantsLater(userId, () => true, { reason: "user_deactivated" });
 }
 
+/** `connection.created`, once the consent wrote the row (mcp-auth/authorize.ts). */
+async function announceCreated(connection: {
+  id: string;
+  userId: string;
+  organizationId: string;
+  clientName: string;
+  clientDomain: string | null;
+  access: "read" | "write";
+  appScope: "all" | "selected";
+}): Promise<void> {
+  await emit(async () => ({
+    organizationId: connection.organizationId,
+    actor: await userActor(connection.userId),
+    ...catalogue.connectionCreated({
+      connection: {
+        id: connection.id,
+        clientName: connection.clientName,
+        clientDomain: connection.clientDomain,
+        access: connection.access,
+        appScope: connection.appScope,
+      },
+      user: await userSubject(connection.userId),
+    }),
+  }));
+}
+
 export const McpConnectionService = {
   listForUser,
   revokeForUser,
+  revokeConnection,
+  expireIdle,
   supersedeEarlier,
   revokeForRemovedMember,
   revokeForDeactivatedUser,
+  announceCreated,
 } as const;

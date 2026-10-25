@@ -91,6 +91,16 @@ vi.mock("./sign-in-methods", () => ({
 
 vi.mock("@/db/schema", () => ({}));
 
+// The member hooks put events on the bus, which reads D1; what the hooks
+// emit is covered by the event bus's SQLite test.
+vi.mock("@/server/events/bus", () => ({ emit: vi.fn() }));
+vi.mock("@/server/events/password-reset", () => ({
+  announcePasswordReset: vi.fn(),
+}));
+vi.mock("@/server/events/subjects", () => ({
+  actorOf: (member: { id: string }) => ({ kind: "user", id: member.id }),
+}));
+
 vi.mock("@/server/invitation-token", () => ({
   findPendingInvitationByToken: vi.fn(),
 }));

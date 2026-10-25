@@ -31,6 +31,26 @@ async function increment(keys: string[], expiresAt: Date): Promise<void> {
 }
 
 /**
+ * Count one more against a key and return the new count, in one statement,
+ * so concurrent callers at a limit see distinct counts (the decision rides
+ * the write; a read-then-increment would let them all through).
+ */
+async function incrementReturning(
+  key: string,
+  expiresAt: Date,
+): Promise<number> {
+  const [row] = await db
+    .insert(rateLimitCounters)
+    .values({ key, count: 1, expiresAt })
+    .onConflictDoUpdate({
+      target: rateLimitCounters.key,
+      set: { count: sql`${rateLimitCounters.count} + 1` },
+    })
+    .returning({ count: rateLimitCounters.count });
+  return row?.count ?? 1;
+}
+
+/**
  * Claim a key once: true for the one request that writes its row, false
  * for every other, whichever isolate or location it runs in (a budget of
  * one, e.g. a single-use handoff code). The row lives until `expiresAt`,
@@ -57,6 +77,7 @@ async function deleteExpired(now = new Date()): Promise<number> {
 export const RateLimitCounterRepository = {
   read,
   increment,
+  incrementReturning,
   claimOnce,
   deleteExpired,
 } as const;

@@ -1056,6 +1056,28 @@ Ben, over the briefing: the empty home should show the four apps as cards that g
 - [ ] **OpenSEO opens to owners and admins only after install** (its manifest sets no `access: "everyone"`; the other three do). The card and dialog do not say so; the Apps table's "Available to" column does. Say if the dialog should carry one line for it, or OpenSEO's port should set `access: "everyone"` like the others.
 - [ ] **The four lines are now printed in three places** (the cards, the README, the docs home; the launch-copy thread copied the cards' lines verbatim). `featuredApps.test.ts` holds the cards to the README's repository URLs only; once the README settles, hold the lines too or generate one from the other.
 
+### Events out (2026-10-25)
+
+Ben's mandate for the batch: "assume we want all of this and build the best, most robust thing we're going to want long term, so that when we launch on Monday people can just run with it and they're not waiting on us for PRs." Built as an event bus inside the gateway and signed outbound webhooks, so people wire Slack, Zapier, n8n, Linear or their own agent without us building each integration: the design is [docs/design/2026-10-events-out.md](docs/design/2026-10-events-out.md) (the catalogue, the envelope, delivery, the CLI, the admin MCP tools, the Events tab, the SDK's `emit`, the threat-model rows). The defaults it shipped with, each with its walk-back in the design's section 14; yes keeps it:
+
+- [ ] **The retry scheduler is D1 rows plus a per-minute cron trigger**, not a Durable Object or a Queue: the gateway had neither, both are new surface for every self-hosted install two days before launch, and the delivery log has to be in D1 anyway. Retry resolution is one minute; the first attempt is immediate. Walk-back: a per-subscription Durable Object with alarms, same tables.
+- [ ] **A webhook's signing secret is stored as written in D1.** The CLI writes subscriptions straight into D1 (ADR-0003) and holds no key to wrap it with. What it protects is a forged webhook to the subscriber's endpoint, not access to the gateway. Walk-back: wrap with a gateway-held key once the gateway is the only writer.
+- [ ] **Cap alerts are on by default**: setting an organization's first cap creates a built-in email subscription "Cap alerts" (`cap.warning` at 80%, `cap.reached`) to owners and admins, which the Events tab or `everyapp events disable` turns off (a built-in row is disabled, never deleted, so it is never recreated). Replaces the unmerged Caps branch's `usage_cap_notices` path (`t3/caps-core` in `/tmp/ea-caps/core`), which should drop it when rebased.
+- [ ] **Limits**: 30-day retention of events and deliveries, 25 subscriptions per organization, 600 app emits per app per hour, 8 KiB per app event (16 KiB for the gateway's own), seven attempts over about 35 hours (1 min, 5 min, 30 min, 2 h, 8 h, 24 h) then dead, a 10-second timeout, 1 KiB of a failed answer read and 200 characters kept.
+- [ ] **Apps declare nothing in the manifest to emit** (`app.<id>.<name>` through `emit()`; subscribers pick `app.crm.*`). Walk-back: an `events` list in `everyapp.config.ts` the UI shows.
+- [ ] **`everyapp events` is a top-level group** (like `email`, `mcp`, `access`), not `workspace events`.
+- [ ] **Targets are `https:` to a public hostname**; `http:` and private names need the Gateway setting `EVENTS_ALLOW_PRIVATE_TARGETS=true` (self-host only; a private address is not routable from Cloudflare's edge in any case, so the setting buys `http:` and internal names that resolve publicly); the gateway's own and its apps' hosts are never a target.
+- [ ] **The envelope carries a top-level `summary`** (one human line per event) beside `type` and `data`, so Slack's Workflow Builder webhook trigger and Zapier post it without parsing.
+- [ ] **No `member.signed_in` event**: the chattiest one and nothing people wire today.
+- [ ] **The admin MCP tools stack on #614** (`everyapp_workspace_events*`); `everyapp_workspace_events_add` returns a freshly generated secret once, the one credential a workspace tool returns, because it opens nothing on the gateway.
+
+Follow-ups:
+
+- [ ] A Durable Object per subscription for sub-minute retries and strict ordering, when someone needs it.
+- [ ] Pause a subscription automatically after N days of dead letters and tell the owners (today it stays enabled and the tab shows the failures).
+- [ ] `EVENTS_RETENTION_DAYS` as a Gateway setting (a constant now).
+- [ ] The Caps branch rebase: keep its default cap, `unlimited` and Paused UI; delete its notice mail, repository, table and migration (renumbered to 0010 or later); `cap.raised` comes from `AppCapService.setMonthlyCap` already.
+
 ### Agent-forward layer (2026-10-24)
 
 Ben's three asks of 2026-10-24 (how people learn what a Gateway offers, a skill for building an app on the example apps' patterns, which MCP servers to recommend), built as lanes from one thread: the `build-every-app` skill with its patterns index, the agent pages `build`, `patterns` and `gateway`, and the answer on MCP servers below. The other lanes add their lines here.

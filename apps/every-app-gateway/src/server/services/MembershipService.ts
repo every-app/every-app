@@ -9,6 +9,10 @@ import { passwordResetEmail } from "@/server/email/templates";
 import { requirePasswordSignIn } from "@/server/password-sign-in";
 import { requireTenantAdminUserActions } from "@/server/tenant-user-actions";
 import { PublicError, type PublicErrorCode } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { notePasswordResetOrigin } from "@/server/events/password-reset";
+import { userActor, userSubject } from "@/server/events/subjects";
 import {
   resolvePrimaryOrganizationRole,
   type OrganizationRole,
@@ -128,7 +132,10 @@ async function changeRole(
       "Only an owner can make someone an owner",
     );
   }
-  await requireManageableMember(ctx, targetUserId);
+  const { role: previousRole } = await requireManageableMember(
+    ctx,
+    targetUserId,
+  );
   const changed = await OrganizationMembersRepository.updateRole(
     targetUserId,
     ctx.orgId,
@@ -142,6 +149,15 @@ async function changeRole(
     role,
     by: ctx.userId,
   });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...catalogue.memberRoleChanged({
+      user: await userSubject(targetUserId),
+      role,
+      previousRole: previousRole ?? "member",
+    }),
+  }));
   return { role };
 }
 
@@ -195,6 +211,13 @@ async function deactivate(ctx: OrgContext, targetUserId: string) {
     userId: targetUserId,
     by: ctx.userId,
   });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...catalogue.memberDeactivated({
+      user: await userSubject(targetUserId),
+    }),
+  }));
   return { success: true };
 }
 
@@ -206,6 +229,13 @@ async function reactivate(ctx: OrgContext, targetUserId: string) {
     userId: targetUserId,
     by: ctx.userId,
   });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...catalogue.memberReactivated({
+      user: await userSubject(targetUserId),
+    }),
+  }));
   return { success: true };
 }
 
@@ -282,6 +312,9 @@ async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
     userId: user.id,
     by: ctx.userId,
   });
+  // The event comes when the reset completes (auth/config.ts); this
+  // marker lets it say an admin's link started it.
+  await notePasswordResetOrigin(user.id, "admin_link");
 
   return { email: user.email, url, expiresAt };
 }
@@ -323,6 +356,7 @@ async function sendPasswordResetEmail(ctx: OrgContext, targetUserId: string) {
     userId: user.id,
     by: ctx.userId,
   });
+  await notePasswordResetOrigin(user.id, "admin_email");
 
   return { success: true };
 }

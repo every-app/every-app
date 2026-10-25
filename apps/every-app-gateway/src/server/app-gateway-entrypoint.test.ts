@@ -13,6 +13,12 @@ import {
   type AppCallerProps,
   type OrganizationDirectory,
 } from "./app-gateway-entrypoint";
+import type { AppEmitDeps } from "./events/app-emit";
+import {
+  clearAppCapCache,
+  type AppCapSources,
+  type MonthlyCapCheck,
+} from "./app-cap";
 
 let privateKeyPem: string;
 let publicKeyPem: string;
@@ -77,6 +83,14 @@ function call(
     fetchUpstream?: (request: Request) => Promise<Response>;
     env?: Record<string, string>;
     organizations?: OrganizationDirectory;
+    events?: () => Promise<AppEmitDeps>;
+    caps?: AppCapSources;
+    onCap?: (
+      organizationId: string,
+      appRowId: string,
+      check: MonthlyCapCheck,
+    ) => Promise<void>;
+    waitUntil?: (task: Promise<unknown>) => void;
   } = {},
 ) {
   const props = Object.hasOwn(options, "props") ? options.props : PROPS;
@@ -98,7 +112,11 @@ function call(
       ...options.env,
     },
     organizations: options.organizations ?? directory(),
+    caps: options.caps,
+    onCap: options.onCap,
+    waitUntil: options.waitUntil,
     fetchUpstream,
+    ...(options.events ? { events: options.events } : {}),
   });
 }
 
@@ -948,5 +966,292 @@ describe("AppGateway and the email capability", () => {
       expect(refused.headers.get("x-everyapp-error")).toBe(code);
     }
     expect(send).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the app emit route (events.app-emit-attributed-and-bounded)", () => {
+  const EMIT = "https://gateway.internal/api/events/emit";
+
+  function fakeEvents(overrides: Partial<AppEmitDeps> = {}): AppEmitDeps & {
+    emit: ReturnType<typeof vi.fn>;
+    countEmit: ReturnType<typeof vi.fn>;
+  } {
+    return {
+      countEmit: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+      emit: vi.fn(async () => ({ id: "evt_01TEST", deliveryIds: [] })),
+      ...overrides,
+    } as never;
+  }
+
+  function emitRequest(
+    body: unknown,
+    headers: HeadersInit = {},
+    method = "POST",
+  ) {
+    return new Request(EMIT, {
+      method,
+      headers: { "content-type": "application/json", ...headers },
+      body:
+        method === "GET"
+          ? undefined
+          : typeof body === "string"
+            ? body
+            : JSON.stringify(body),
+    });
+  }
+
+  function emitCall(
+    body: unknown,
+    options: {
+      events?: AppEmitDeps;
+      headers?: HeadersInit;
+      registeredApps?: RegisteredApp[];
+      props?: AppCallerProps;
+      method?: string;
+      env?: Record<string, string>;
+    } = {},
+  ) {
+    return call({
+      inbound: emitRequest(body, options.headers, options.method),
+      events: async () => options.events ?? fakeEvents(),
+      registeredApps: options.registeredApps,
+      ...(options.props ? { props: options.props } : {}),
+      ...(options.env ? { env: options.env } : {}),
+    });
+  }
+
+  it("answers 202 with the event's id and the prefixed type, attributed to the identity", async () => {
+    const events = fakeEvents();
+    const response = await emitCall(
+      { event: "invoice.paid", data: { invoiceId: "inv_42", total: 1200 } },
+      {
+        events,
+        headers: { "x-everyapp-identity": await identity("org-1", "user-7") },
+        registeredApps: [app({ rowId: "row-chef" })],
+      },
+    );
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      id: "evt_01TEST",
+      type: "app.chef.invoice.paid",
+    });
+    expect(events.emit).toHaveBeenCalledTimes(1);
+    expect(events.emit.mock.calls[0]![0]).toMatchObject({
+      organizationId: "org-1",
+      type: "app.chef.invoice.paid",
+      version: 1,
+      actor: { kind: "user", id: "user-7", email: "user-7@example.com" },
+      data: { invoiceId: "inv_42", total: 1200 },
+      appRowId: "row-chef",
+    });
+    expect(events.countEmit).toHaveBeenCalledWith("row-chef", expect.any(Date));
+  });
+
+  it("attributes an app's own call without an identity to the app itself", async () => {
+    const events = fakeEvents();
+    await emitCall({ event: "todo.completed", data: {} }, { events });
+    expect(events.emit.mock.calls[0]![0]).toMatchObject({
+      actor: { kind: "app", id: "chef" },
+      type: "app.chef.todo.completed",
+    });
+  });
+
+  it("refuses a bad name, bad data, data too large and a credential-named key, and emits nothing", async () => {
+    const events = fakeEvents();
+    await expectError(
+      emitCall({ event: "Invoice Paid", data: {} }, { events }),
+      400,
+      "event_name_invalid",
+    );
+    await expectError(
+      emitCall({ event: "invoice.paid", data: [1, 2] }, { events }),
+      400,
+      "event_data_invalid",
+    );
+    await expectError(
+      emitCall("not json", { events }),
+      400,
+      "event_data_invalid",
+    );
+    await expectError(
+      emitCall(
+        { event: "invoice.paid", data: { blob: "x".repeat(9000) } },
+        { events },
+      ),
+      413,
+      "event_data_too_large",
+    );
+    const refused = await emitCall(
+      { event: "invoice.paid", data: { customer: { apiKey: "sk-live" } } },
+      { events },
+    );
+    expect(refused.status).toBe(400);
+    await expect(refused.json()).resolves.toMatchObject({
+      code: "event_data_refused",
+      message: expect.stringContaining("apiKey"),
+    });
+    expect(events.emit).not.toHaveBeenCalled();
+    expect(events.countEmit).not.toHaveBeenCalled();
+  });
+
+  it("takes absent or null data as an empty object, the same value the bus gets", async () => {
+    for (const body of [
+      { event: "todo.done" },
+      { event: "todo.done", data: null },
+    ]) {
+      const events = fakeEvents();
+      const response = await emitCall(body, { events });
+      expect(response.status).toBe(202);
+      expect(events.emit.mock.calls[0]![0]).toMatchObject({
+        type: "app.chef.todo.done",
+        data: {},
+      });
+    }
+  });
+
+  it("refuses a body past the cap before parsing or counting it, declared or streamed", async () => {
+    const events = fakeEvents();
+    await expectError(
+      emitCall(
+        { event: "invoice.paid", data: {} },
+        { events, headers: { "content-length": "999999" } },
+      ),
+      413,
+      "event_data_too_large",
+    );
+    await expectError(
+      emitCall(
+        `{"event":"invoice.paid","data":{"blob":"${"x".repeat(40_000)}"}}`,
+        {
+          events,
+        },
+      ),
+      413,
+      "event_data_too_large",
+    );
+    expect(events.countEmit).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it("answers 429 with Retry-After past the hourly rate, and emits nothing", async () => {
+    const events = fakeEvents({
+      countEmit: vi.fn(async () => ({
+        allowed: false,
+        retryAfterSeconds: 1234,
+      })),
+    });
+    const response = await emitCall(
+      { event: "invoice.paid", data: {} },
+      { events },
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("1234");
+    await expect(response.json()).resolves.toMatchObject({
+      code: "event_rate_limited",
+    });
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it("a shared app must say whom the event is for, as every capability call must", async () => {
+    const events = fakeEvents();
+    const hosted = { GATEWAY_DEPLOYMENT_MODE: "hosted" };
+    await expectError(
+      emitCall(
+        { event: "invoice.paid", data: {} },
+        { events, registeredApps: [app({ scope: "shared" })], env: hosted },
+      ),
+      403,
+      "caller_identity_required",
+    );
+    expect(events.emit).not.toHaveBeenCalled();
+    const response = await emitCall(
+      { event: "invoice.paid", data: {} },
+      {
+        events,
+        registeredApps: [app({ scope: "shared" })],
+        headers: { "x-everyapp-org": "org-acme" },
+        env: hosted,
+      },
+    );
+    expect(response.status).toBe(202);
+    expect(events.emit.mock.calls[0]![0]).toMatchObject({
+      organizationId: "org-acme",
+      actor: { kind: "app", id: "chef" },
+    });
+  });
+
+  it("refuses an unregistered caller before anything is read", async () => {
+    const events = fakeEvents();
+    await expectError(
+      emitCall(
+        { event: "invoice.paid", data: {} },
+        { events, registeredApps: [] },
+      ),
+      403,
+      "caller_not_registered",
+    );
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it("takes POST only", async () => {
+    const events = fakeEvents();
+    await expectError(
+      emitCall(undefined, { events, method: "GET" }),
+      405,
+      "method_not_allowed",
+    );
+  });
+});
+
+describe("the cap standing reaches the bus after the answer", () => {
+  it("reports a standing near and at the cap to onCap under waitUntil, never waiting on it", async () => {
+    clearAppCapCache();
+    const tasks: Promise<unknown>[] = [];
+    // Never resolves: a handler that awaited it would hang this test.
+    const onCap = vi.fn(() => new Promise<void>(() => undefined));
+    let calls = 8;
+    const caps: AppCapSources = {
+      monthlyCallCap: async () => 10,
+      monthlyCalls: async () => calls,
+    };
+    const options = {
+      registeredApps: [app({ rowId: "row-chef" })],
+      caps,
+      onCap,
+      waitUntil: (task: Promise<unknown>) => {
+        tasks.push(task);
+      },
+    };
+    const near = await call(options);
+    expect(near.status).toBe(200);
+    expect(onCap).toHaveBeenCalledWith(
+      "org-1",
+      "row-chef",
+      expect.objectContaining({ exceeded: false, cap: 10, calls: 8 }),
+    );
+    expect(tasks).toHaveLength(1);
+
+    calls = 10;
+    const capped = await call(options);
+    expect(capped.status).toBe(429);
+    expect(onCap).toHaveBeenLastCalledWith(
+      "org-1",
+      "row-chef",
+      expect.objectContaining({ exceeded: true, cap: 10, calls: 10 }),
+    );
+    expect(tasks).toHaveLength(2);
+  });
+
+  it("reports nothing without a cap", async () => {
+    clearAppCapCache();
+    const onCap = vi.fn(async () => undefined);
+    const response = await call({
+      registeredApps: [app({ rowId: "row-chef" })],
+      caps: { monthlyCallCap: async () => null, monthlyCalls: async () => 0 },
+      onCap,
+      waitUntil: () => undefined,
+    });
+    expect(response.status).toBe(200);
+    expect(onCap).not.toHaveBeenCalled();
   });
 });

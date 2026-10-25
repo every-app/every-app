@@ -28,6 +28,9 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
 import { accounts, invitations, members, users } from "@/db/schema";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { actorOf } from "@/server/events/subjects";
 import { forgetOrgContext } from "@/server/organization/orgContext";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { isUserBanned } from "@/server/user-ban";
@@ -163,7 +166,9 @@ export async function assertAccessUserMayBeCreated(
 async function acceptPendingInvitations(
   userId: string,
   email: string,
+  name: string | null,
 ): Promise<number> {
+  const joined = { id: userId, email, name };
   let accepted = 0;
   for (const invitation of await pendingInvitationsFor(email)) {
     const claimed = await db
@@ -193,6 +198,15 @@ async function acceptPendingInvitations(
       organizationId: invitation.organizationId,
       userId,
       via: "cloudflare_access",
+    });
+    await emit({
+      organizationId: invitation.organizationId,
+      actor: actorOf(joined),
+      ...catalogue.memberJoined({
+        user: joined,
+        role: invitation.role ?? "member",
+        via: "access",
+      }),
     });
     accepted += 1;
   }
@@ -225,7 +239,7 @@ export async function ensureAccessMembership(
   if (!user.emailVerified) refuse("NOT_INVITED");
   const email = user.email.trim().toLowerCase();
 
-  if ((await acceptPendingInvitations(user.id, email)) > 0) {
+  if ((await acceptPendingInvitations(user.id, email, user.name || null)) > 0) {
     forgetOrgContext(user.id);
     return;
   }
@@ -249,6 +263,12 @@ export async function ensureAccessMembership(
     userId: user.id,
     via: route === "domain" ? "auto_join_domain" : "outer_ring_everyone",
     mode,
+  });
+  const joined = { id: user.id, email, name: user.name || null };
+  await emit({
+    organizationId: ownerOrganizationId,
+    actor: actorOf(joined),
+    ...catalogue.memberJoined({ user: joined, role: "member", via: "access" }),
   });
 }
 

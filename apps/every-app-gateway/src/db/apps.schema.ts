@@ -56,6 +56,12 @@ export const apps = sqliteTable(
     // a required secret of the app's own is set; null (never recorded)
     // counts as unknown and never blocks.
     secretNames: text("secret_names"),
+    // Whether the app had every required setting the last time its
+    // readiness was evaluated (server/app-setup.ts; the CLI after
+    // configure, secret set|unset and deploy): "ready" | "needs_setup",
+    // or null when never evaluated. The event bus emits app.ready and
+    // app.needs_setup on a transition (docs/design/2026-10-events-out.md).
+    setupState: text("setup_state"),
     // The app's deploy state:
     //  - 'pending': registered, its Worker not uploaded yet (not bound);
     //  - 'binding': uploaded; the first request that reaches it over the

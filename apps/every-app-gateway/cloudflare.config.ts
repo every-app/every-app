@@ -111,6 +111,9 @@ export const OPTIONAL_SECRETS = [
   "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",
+  // "true" lets event webhooks target http: and private hosts (self-host
+  // only; src/server/events/target.ts). The gateway's own hosts never.
+  "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const;
 
 /**
@@ -211,8 +214,13 @@ export default defineConfig(({ mode }) => {
       // docs/runbooks/hosted-install.md).
       // Hourly MCP housekeeping (src/server/mcp-auth/maintenance.ts): prune
       // the tool-call audit table, expire idle connections, sweep OAuth
-      // storage. The deploy keeps it next to the domains it publishes.
-      triggers: [triggers.scheduled({ schedule: "17 * * * *" })],
+      // storage, prune events; and every minute the event bus's delivery
+      // sweep (src/server/events/deliver.ts), which retries what is due.
+      // The deploy keeps both next to the domains it publishes.
+      triggers: [
+        triggers.scheduled({ schedule: "17 * * * *" }),
+        triggers.scheduled({ schedule: "* * * * *" }),
+      ],
       observability: {
         ...EVERYAPP_OBSERVABILITY,
         logs: { ...EVERYAPP_OBSERVABILITY.logs },

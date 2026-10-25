@@ -56,6 +56,7 @@ import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import {
   apps,
   appToolCatalogs,
+  events,
   mcpToolCalls,
   orgAppSettings,
   usageDaily,
@@ -690,6 +691,27 @@ describe("a provider app on the gateway's /mcp", () => {
     expect(upstream).toHaveLength(1);
     const [usage] = await db.select().from(usageDaily);
     expect(usage).toMatchObject({ calls: 1 });
+    // The standing went to the bus after the answer: cap.reached and
+    // app.paused_cap, once (docs/design/2026-10-events-out.md, section 5).
+    await settle();
+    const emitted = (await db.select().from(events)).filter((event) =>
+      ["cap.reached", "app.paused_cap"].includes(event.type),
+    );
+    expect(
+      emitted.map((event) => ({
+        type: event.type,
+        data: JSON.parse(event.data) as Record<string, unknown>,
+      })),
+    ).toEqual([
+      {
+        type: "cap.reached",
+        data: expect.objectContaining({ cap: 1, calls: 1, source: "app" }),
+      },
+      {
+        type: "app.paused_cap",
+        data: expect.objectContaining({ cap: 1, calls: 1 }),
+      },
+    ]);
   });
 });
 

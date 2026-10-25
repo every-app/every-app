@@ -25,6 +25,10 @@ import {
   verificationEmail,
 } from "@/server/email/templates";
 import { findPendingInvitationByToken } from "@/server/invitation-token";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { announcePasswordReset } from "@/server/events/password-reset";
+import { actorOf } from "@/server/events/subjects";
 import { appBaseDomain } from "@/server/app-hosts";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { UserRepository } from "@/server/repositories/UserRepository";
@@ -410,6 +414,15 @@ export function createAuth() {
           ...passwordResetEmail(url),
         });
       },
+      // Once the new password is set: the event bus hears it, with who
+      // started the reset (server/events/password-reset.ts).
+      onPasswordReset: async ({ user }) => {
+        await announcePasswordReset({
+          id: user.id,
+          email: user.email,
+          name: user.name || null,
+        });
+      },
     },
     // Verification mail exists only where the policy needs it: without
     // this, Better Auth sends none and its resend endpoint refuses.
@@ -471,13 +484,45 @@ export function createAuth() {
         invitationLimit: INVITATION_LIMIT,
         schema: organizationSchema,
         organizationHooks: {
-          afterAcceptInvitation: async ({ user, organization }) => {
+          afterAcceptInvitation: async ({ user, member, organization }) => {
             await grantDefaultAppsForMembership(user.id, organization.id);
+            const joined = {
+              id: user.id,
+              email: user.email,
+              name: user.name || null,
+            };
+            await emit({
+              organizationId: organization.id,
+              actor: actorOf(joined),
+              ...catalogue.memberJoined({
+                user: joined,
+                role: member.role,
+                via: "invitation",
+              }),
+            });
           },
-          afterAddMember: async ({ user, organization }) => {
+          afterAddMember: async ({ user, member, organization }) => {
             // Keep both hooks: members can join via invitation acceptance or
             // direct add-member paths, and each path should receive defaults.
             await grantDefaultAppsForMembership(user.id, organization.id);
+            // An owner's membership is the organization being created (the
+            // setup claim announces its owner itself; a personal
+            // organization's is not news); anyone else was added.
+            if (member.role === "owner") return;
+            const joined = {
+              id: user.id,
+              email: user.email,
+              name: user.name || null,
+            };
+            await emit({
+              organizationId: organization.id,
+              actor: { kind: "gateway" },
+              ...catalogue.memberJoined({
+                user: joined,
+                role: member.role,
+                via: "member_add",
+              }),
+            });
           },
           afterRemoveMember: async ({ user, organization }) => {
             await AppAccessRepository.deleteByOrganizationAndUser(

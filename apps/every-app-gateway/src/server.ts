@@ -41,8 +41,13 @@
  * is empty. Once an active app exists, requests fail closed until the gateway
  * host can be identified again.
  *
- * The hourly cron trigger runs the MCP housekeeping: audit retention,
- * idle connections, and the OAuth storage sweep (server/mcp-auth/maintenance.ts).
+ * Two cron triggers (cloudflare.config.ts): every minute, the event bus's
+ * delivery sweep retries what is due (server/events/deliver.ts); hourly,
+ * the sweep again and then the MCP housekeeping: audit retention, idle
+ * connections, the OAuth storage sweep, event retention
+ * (server/mcp-auth/maintenance.ts). The hourly one sweeps too so a
+ * gateway whose per-minute trigger was never published (an install that
+ * predates it) still delivers.
  */
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import {
@@ -80,6 +85,9 @@ import { platformPolicy } from "./server/platform-policy";
 import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
 import { OrgAppSettingsRepository } from "./server/repositories/OrgAppSettingsRepository";
 import { UsageRepository } from "./server/repositories/UsageRepository";
+
+/** The per-minute trigger: the delivery sweep alone (cloudflare.config.ts). */
+const EVENTS_SWEEP_CRON = "* * * * *";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
 const HOST_CACHE_HIT_TTL_MS = 30_000;
@@ -485,10 +493,21 @@ export default {
     }
   },
 
-  async scheduled(
-    _controller: ScheduledController,
-    runtimeEnv: Cloudflare.Env,
-  ) {
+  async scheduled(controller: ScheduledController, runtimeEnv: Cloudflare.Env) {
+    // A sweep that fails (a D1 error, a Worker updated ahead of its
+    // migration) is logged; the hour's housekeeping still runs.
+    try {
+      const { sweep } = await import("./server/events/deliver");
+      const swept = await sweep();
+      if (swept.due > 0) logEvent("events.sweep", swept);
+    } catch (error) {
+      logEvent(
+        "events.sweep_failed",
+        { message: error instanceof Error ? error.message : String(error) },
+        "error",
+      );
+    }
+    if (controller.cron === EVENTS_SWEEP_CRON) return;
     const { runMcpMaintenance } = await import("./server/mcp-auth/maintenance");
     await runMcpMaintenance(runtimeEnv);
   },

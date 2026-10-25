@@ -29,6 +29,7 @@ import {
   providerBaseUrl,
   providerCatalogVersion,
 } from "@/server/provider-apps";
+import { announceToolsChanged } from "@/server/events/tool-events";
 import {
   remoteMcpAppFetcher,
   remoteMcpRouteOf,
@@ -234,6 +235,12 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
     };
   }
 
+  // The names before, so a changed catalog is an event (never the
+  // schemas: names only, capped in the catalogue).
+  const previousNames = await AppToolRepository.toolNames(
+    app.rowId,
+    app.organizationId,
+  );
   // A remote MCP app's list can change under the gateway: say what did.
   const remote = app.tier === PROVIDER_APP_TIER && remoteMcpRouteOf(app);
   const before = remote
@@ -251,13 +258,20 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
     lastError: null,
     tools: snapshot.tools,
   });
+  // The event for every kind (docs/design/2026-10-events-out.md, section
+  // 5): a remote MCP app's is kind "remote".
+  await announceToolsChanged({
+    app,
+    kind: remote ? "remote" : undefined,
+    previous: previousNames,
+    current: snapshot.tools.map((tool) => tool.name),
+  });
   if (remote && before && before.catalogHash !== snapshot.hash) {
     const was = new Set(before.tools.map((tool) => tool.name));
     const now = new Set(snapshot.tools.map((tool) => tool.name));
     const added = [...now].filter((name) => !was.has(name)).slice(0, 50);
     const removed = [...was].filter((name) => !now.has(name)).slice(0, 50);
     if (added.length > 0 || removed.length > 0) {
-      // events: app.tools_changed (kind "remote"): { app, toolCount, previousToolCount, added, removed }
       logEvent("mcp.remote.tools_changed", {
         app: app.appSlug,
         org: app.organizationId,

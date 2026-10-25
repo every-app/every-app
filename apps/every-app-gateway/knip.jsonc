@@ -15,6 +15,10 @@
     // deployer uses part of its surface, the CLI's fake-Cloudflare test
     // imports the rest by path.
     "src/server/deploy/cf-rest/index.ts",
+    // The event subscriptions' server functions (docs/design/
+    // 2026-10-events-out.md): their route is the Manage workspace Events
+    // tab, which lands after the gateway core. Drop this entry with it.
+    "src/serverFunctions/events.ts",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],

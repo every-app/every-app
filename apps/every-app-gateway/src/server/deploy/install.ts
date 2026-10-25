@@ -278,6 +278,8 @@ export function serveInstall(request: Request): Promise<Response> {
       tag: release.source.tag,
       kind: plan.kind,
     });
+    // The upload record announces app.installed (run.ts), so a release
+    // whose first deploy fails announces nothing.
     const jobId = await startDeploy({
       organizationId: caller.organizationId,
       userId: caller.userId,
@@ -286,6 +288,7 @@ export function serveInstall(request: Request): Promise<Response> {
       bundle: release.bundle,
       actor: caller.email,
       source: release.source,
+      via: "browser",
     });
     return jobAnswer(caller.organizationId, jobId, 202);
   });

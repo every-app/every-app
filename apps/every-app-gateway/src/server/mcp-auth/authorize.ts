@@ -300,6 +300,15 @@ export async function handleConsentDecision(
       "This connection request was already answered. If your AI app isn't connected, start connecting again from it.",
     );
   }
+  await McpConnectionService.announceCreated({
+    id: connectionId,
+    userId: user.id,
+    organizationId,
+    clientName: clientDisplayName(details.clientName),
+    clientDomain: details.clientDomain ?? null,
+    access: decision.access,
+    appScope: decision.app_mode,
+  });
 
   const props: McpGrantProps = {
     v: 1,
@@ -324,7 +333,7 @@ export async function handleConsentDecision(
       revokeExistingGrants: false,
     }));
   } catch (error) {
-    await McpConnectionRepository.revokeById(connectionId, "failed");
+    await McpConnectionService.revokeConnection(connectionId, "failed");
     const message = describeAuthorizationFailure(error);
     if (message) return errorPage(400, "Can't connect this app", message);
     throw error;

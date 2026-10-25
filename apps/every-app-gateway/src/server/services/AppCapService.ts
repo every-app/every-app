@@ -3,6 +3,10 @@ import { AppRepository } from "../repositories/AppRepository";
 import { OrgAppSettingsRepository } from "../repositories/OrgAppSettingsRepository";
 import { clearAppCapCache } from "@/server/app-cap";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { userActor } from "@/server/events/subjects";
+import { EventSubscriptionService } from "@/server/events/subscriptions";
 import type { OrgContext } from "@/server/organization/orgContext";
 
 /** Caps are whole provider calls per month, up to a billion. */
@@ -15,6 +19,9 @@ export const MONTHLY_CALL_CAP_MAX = 1_000_000_000;
  * shared app, which every organization caps on its own since the count is
  * per organization. Owners and admins only (the server function's gate).
  * The cap binds at once in this isolate and within seconds elsewhere.
+ * A cap raised or removed is announced on the event bus (`cap.raised`);
+ * the organization's first cap makes its built-in "Cap alerts" email
+ * subscription (docs/design/2026-10-events-out.md, section 6).
  */
 async function setMonthlyCap(
   ctx: OrgContext,
@@ -33,6 +40,10 @@ async function setMonthlyCap(
       `A monthly cap is a whole number from ${MONTHLY_CALL_CAP_MIN} to ${MONTHLY_CALL_CAP_MAX.toLocaleString("en-US")}.`,
     );
   }
+  const previousCap = await OrgAppSettingsRepository.getMonthlyCap(
+    ctx.orgId,
+    app.id,
+  );
   await OrgAppSettingsRepository.setMonthlyCap({
     organizationId: ctx.orgId,
     appRowId: app.id,
@@ -40,6 +51,38 @@ async function setMonthlyCap(
     updatedBy: ctx.userId,
   });
   clearAppCapCache(ctx.orgId, app.id);
+  if (input.cap !== null) {
+    // The cap is set either way; a row that can't be made is logged.
+    await EventSubscriptionService.ensureCapAlerts(ctx.orgId).catch(
+      (error: unknown) =>
+        logEvent(
+          "events.cap_alerts_failed",
+          {
+            organizationId: ctx.orgId,
+            message: error instanceof Error ? error.message : String(error),
+          },
+          "error",
+        ),
+    );
+  }
+  // Raised, or removed: what a person waiting on a paused app wants to
+  // hear. A lowered cap is not an event.
+  if (
+    input.cap === null
+      ? previousCap !== null
+      : previousCap === null || input.cap > previousCap
+  ) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await userActor(ctx.userId),
+      ...catalogue.capRaised({
+        app: { id: app.appSlug, rowId: app.id, name: app.name },
+        cap: input.cap,
+        previousCap,
+        source: "app",
+      }),
+    }));
+  }
   logEvent("usage.cap_set", {
     organizationId: ctx.orgId,
     appId: app.appSlug,

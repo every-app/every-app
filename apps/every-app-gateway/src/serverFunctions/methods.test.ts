@@ -41,6 +41,9 @@ vi.mock("@/server/services/UserPatService", () => ({ UserPatService: {} }));
 vi.mock("@/server/repositories/UsageRepository", () => ({
   UsageRepository: {},
 }));
+vi.mock("@/server/events/subscriptions", () => ({
+  EventSubscriptionService: {},
+}));
 
 /**
  * A GET server function runs on any GET that carries `?payload=`, including a
@@ -62,6 +65,9 @@ const READS = [
   "getOnboardingStatus",
   "getUsage",
   "hasOwner",
+  "listEventDeliveries",
+  "listEventSubscriptions",
+  "listEventTypes",
   "listGroups",
   "listMembers",
   "listToolCallApps",

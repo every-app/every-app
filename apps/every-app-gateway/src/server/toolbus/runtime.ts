@@ -16,6 +16,7 @@ import type {
   ToolBusHttpHandler,
   ToolCallAuditEvent,
 } from "@every-app/toolbus";
+import { announceToolCall, toolCallIsEvent } from "@/server/events/tool-events";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import {
   appFetcherFor,
@@ -78,6 +79,9 @@ function auditToolCall(event: ToolCallAuditEvent): void {
       ),
     ),
   );
+  // A blocked call or a failed one is an event too (tool.blocked,
+  // tool.error), on the same waitUntil; the bus never throws.
+  if (toolCallIsEvent(event)) waitUntil(announceToolCall(event));
 }
 
 export function toolBusHttp(): Promise<ToolBusHttpHandler> {

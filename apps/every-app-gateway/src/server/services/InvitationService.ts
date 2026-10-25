@@ -8,6 +8,9 @@ import { db } from "@/db";
 import { invitations, organizations } from "@/db/schema";
 import { PublicError } from "@/server/errors";
 import { invitationUrl } from "@/server/email/links";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { userActor } from "@/server/events/subjects";
 import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
 import { invitationEmail } from "@/server/email/templates";
 import {
@@ -93,7 +96,8 @@ async function requireVerifiedInviter(ctx: OrgContext): Promise<void> {
 
 /**
  * What follows a new invitation row, however it was made: its link token
- * (stored as a hash), the mail when the gateway can send one, the log line.
+ * (stored as a hash), the mail when the gateway can send one, the log line
+ * and the member.invited event.
  */
 async function deliver(
   ctx: OrgContext,
@@ -107,6 +111,20 @@ async function deliver(
     role,
     emailSent,
   });
+  // The event names the invitation and whether mail went; never the link.
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...catalogue.memberInvited({
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role,
+        expiresAt: invitation.expiresAt,
+      },
+      emailSent,
+    }),
+  }));
   return { url, emailSent };
 }
 

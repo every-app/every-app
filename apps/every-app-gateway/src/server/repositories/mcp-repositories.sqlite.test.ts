@@ -144,7 +144,7 @@ describe("McpConnectionRepository.supersedeEarlier", () => {
         },
         () => true,
       ),
-    ).resolves.toEqual(["mcpc_a1"]);
+    ).resolves.toEqual([expect.objectContaining({ id: "mcpc_a1" })]);
     const rows = await db
       .select({
         id: mcpConnections.id,

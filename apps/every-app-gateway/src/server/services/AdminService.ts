@@ -10,6 +10,9 @@ import { OrganizationMembersRepository } from "../repositories/OrganizationMembe
 import { McpConnectionService } from "./McpConnectionService";
 import { MembershipService } from "./MembershipService";
 import { accessWouldLetBackIn } from "@/server/access-rejoin";
+import { emit } from "@/server/events/bus";
+import { catalogue, type EventUser } from "@/server/events/catalogue";
+import { userActor, userSubject } from "@/server/events/subjects";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { mayDeleteMemberAccounts } from "@/server/tenant-user-actions";
 import {
@@ -124,9 +127,22 @@ async function deleteUser(
       by: ctx.userId,
       reason: "deleted_with_access_auto_join",
     });
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await userActor(ctx.userId),
+      ...catalogue.memberDeactivated({
+        user: await userSubject(targetUserId),
+        reason: "deleted_with_access_auto_join",
+      }),
+    }));
     return { deactivatedInstead: true };
   }
 
+  // Read before the account may go, so the event still names the person;
+  // a read that fails names the id alone rather than failing the removal.
+  const subject = await userSubject(targetUserId).catch(
+    (): EventUser => ({ id: targetUserId, email: null, name: null }),
+  );
   const removed = await OrganizationMembersRepository.removeMember(
     targetUserId,
     ctx.orgId,
@@ -140,9 +156,16 @@ async function deleteUser(
     .from(members)
     .where(eq(members.userId, targetUserId));
 
-  if ((orgCountResult?.value ?? 0) === 0 && mayDeleteMemberAccounts()) {
+  const accountDeleted =
+    (orgCountResult?.value ?? 0) === 0 && mayDeleteMemberAccounts();
+  if (accountDeleted) {
     await db.delete(users).where(eq(users.id, targetUserId));
   }
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...catalogue.memberRemoved({ user: subject, accountDeleted }),
+  }));
   return { deactivatedInstead: false };
 }
 

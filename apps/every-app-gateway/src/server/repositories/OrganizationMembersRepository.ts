@@ -169,6 +169,36 @@ async function listMembersForOrganization(organizationId: string) {
     .where(eq(members.organizationId, organizationId));
 }
 
+/**
+ * The organization's owners and admins who aren't deactivated, as the
+ * event bus's email sink mails them: never anyone outside the
+ * organization, never a member. The role is resolved from the column's
+ * list form, as every other reader resolves it.
+ */
+async function listLiveOwnersAndAdmins(
+  organizationId: string,
+  now = new Date(),
+): Promise<
+  { id: string; email: string; name: string; role: "owner" | "admin" }[]
+> {
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: members.role,
+    })
+    .from(members)
+    .innerJoin(users, eq(members.userId, users.id))
+    .where(and(eq(members.organizationId, organizationId), liveUser(now)));
+  return rows.flatMap((row) => {
+    const role = resolvePrimaryOrganizationRole(row.role);
+    return role === "owner" || role === "admin"
+      ? [{ id: row.id, email: row.email, name: row.name, role }]
+      : [];
+  });
+}
+
 async function findMembership(userId: string, organizationId: string) {
   return db.query.members.findFirst({
     columns: { id: true, role: true },
@@ -327,6 +357,7 @@ async function removeMember(
 export const OrganizationMembersRepository = {
   listMembersForOrganization,
   listAppMembers,
+  listLiveOwnersAndAdmins,
   findMembership,
   findMembershipWithUser,
   countOwners,

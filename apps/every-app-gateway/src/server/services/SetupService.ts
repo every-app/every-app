@@ -2,6 +2,9 @@ import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { actorOf } from "@/server/events/subjects";
 import { platformPolicy } from "@/server/platform-policy";
 import {
   claimOwnerBootstrap,
@@ -218,6 +221,16 @@ async function claimOwner(input: ClaimOwnerInput) {
       userId: result.user.id,
       organizationId,
       adopted,
+    });
+    const owner = {
+      id: result.user.id,
+      email: result.user.email,
+      name: result.user.name || null,
+    };
+    await emit({
+      organizationId,
+      actor: actorOf(owner),
+      ...catalogue.memberJoined({ user: owner, role: "owner", via: "setup" }),
     });
     return { userId: result.user.id, organizationId };
   } catch (error) {

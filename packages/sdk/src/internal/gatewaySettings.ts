@@ -93,6 +93,8 @@ export const GATEWAY_OWN_SETTINGS = [
   "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",
+  // "true" lets event webhooks target http: and private hosts (self-host only).
+  "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const;
 
 export type SettableGatewaySetting =

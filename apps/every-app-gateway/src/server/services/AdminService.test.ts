@@ -42,6 +42,14 @@ vi.mock("@/db", () => ({
   },
 }));
 
+// The member events ride the bus, which reads D1 this test doesn't have;
+// what deleteUser emits is covered by the event bus's SQLite test.
+vi.mock("@/server/events/bus", () => ({ emit: vi.fn() }));
+vi.mock("@/server/events/subjects", () => ({
+  userActor: vi.fn(async (id: string) => ({ kind: "user", id })),
+  userSubject: vi.fn(async (id: string) => ({ id, email: null, name: null })),
+}));
+
 vi.mock("@/db/schema", () => ({
   invitations: {
     id: "id",

@@ -9,8 +9,13 @@ import { apps } from "@/db/schema";
  * never created by hand.
  */
 type AppRow = InferSelectModel<typeof apps>;
-// Deploy bookkeeping (uploaded version and time) stays server-side.
-type App = Omit<AppRow, "appSlug" | "versionId" | "deployedAt"> & {
+// Deploy bookkeeping (uploaded version and time) and the readiness the
+// event bus last recorded (`setup_state`) stay server-side; the lists carry
+// `setup` (the evaluated report) instead.
+type App = Omit<
+  AppRow,
+  "appSlug" | "versionId" | "deployedAt" | "setupState"
+> & {
   appId: AppRow["appSlug"];
 };
 

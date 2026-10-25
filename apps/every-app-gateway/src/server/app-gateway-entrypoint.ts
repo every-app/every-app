@@ -1,4 +1,5 @@
 import {
+  EVENTS_EMIT_PATH,
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
   ORG_HEADER,
@@ -13,8 +14,14 @@ import {
   checkMonthlyCap,
   clearAppCapCache,
   type AppCapSources,
+  type MonthlyCapCheck,
 } from "./app-cap";
 import type { GatewayMail } from "./capabilities/email";
+import {
+  handleAppEmit,
+  loadAppEmitDeps,
+  type AppEmitDeps,
+} from "./events/app-emit";
 import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
@@ -69,6 +76,12 @@ interface HandleAppGatewayRequestOptions {
   /** The gateway's mail for the `email` capability; its own module by default. */
   mail?: () => Promise<GatewayMail>;
   /**
+   * The event bus and the emit counter for `POST /api/events/emit`
+   * (events/app-emit.ts); the gateway's own, loaded on first use, by
+   * default. Tests pass fakes.
+   */
+  events?: () => Promise<AppEmitDeps>;
+  /**
    * Where answered calls are counted (UsageRepository in the Worker). Only
    * an app with a registry row (`rowId`) is counted; nothing is without one.
    */
@@ -82,6 +95,17 @@ interface HandleAppGatewayRequestOptions {
    * a registry row, since only those are counted.
    */
   caps?: AppCapSources;
+  /**
+   * What a cap check's standing is reported to, after the answer
+   * (events/cap-events.ts: cap.warning at 80%, cap.reached and
+   * app.paused_cap at the cap); the event bus by default, loaded on first
+   * use. Tests pass a fake.
+   */
+  onCap?: (
+    organizationId: string,
+    appRowId: string,
+    check: MonthlyCapCheck,
+  ) => Promise<void>;
 }
 
 type AppGatewayErrorCode =
@@ -136,9 +160,11 @@ export async function handleAppGatewayRequest({
   organizations,
   fetchUpstream,
   mail,
+  events,
   usage,
   waitUntil,
   caps,
+  onCap = noteCapCheckLater,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
@@ -223,6 +249,20 @@ export async function handleAppGatewayRequest({
     const enforceCap = async (organizationId: string) => {
       if (!caps || !appRowId) return;
       const check = await checkMonthlyCap(caps, organizationId, appRowId);
+      // The standing goes to the event bus after the answer: a warning
+      // near the cap, and the cap being reached, each announced once.
+      if (check.cap !== undefined) {
+        const task = onCap(organizationId, appRowId, check).catch(
+          (error: unknown) => {
+            console.error("App gateway cap event failed", {
+              event: "events.cap_failed",
+              appId: props.appId,
+              message: error instanceof Error ? error.message : "Unknown error",
+            });
+          },
+        );
+        if (waitUntil) waitUntil(task);
+      }
       if (!check.exceeded) return;
       console.warn("App gateway monthly cap reached", {
         event: "usage.cap_exceeded",
@@ -240,6 +280,21 @@ export async function handleAppGatewayRequest({
         { "retry-after": String(check.retryAfterSeconds) },
       );
     };
+
+    if (route.kind === "events") {
+      // An app's own event: attributed like a capability call, never
+      // counted or capped (not a provider call). The bus and the counter
+      // load with the first emit on an isolate.
+      const { organizationId, user } = await attributeCall(
+        request,
+        app,
+        props,
+        env,
+        organizations,
+      );
+      const deps = await (events ?? loadAppEmitDeps)();
+      return handleAppEmit({ request, app, organizationId, user }, deps);
+    }
 
     if (route.kind === "integration") {
       const url = new URL(request.url);
@@ -421,18 +476,32 @@ function missingCallerIdentity(): AppGatewayError {
   );
 }
 
-type GatewayRoute = { kind: "ai"; provider: string } | { kind: "integration" };
+/** The bus's cap events, loaded with the first cap that is set on an isolate. */
+async function noteCapCheckLater(
+  organizationId: string,
+  appRowId: string,
+  check: MonthlyCapCheck,
+): Promise<void> {
+  const { noteCapCheck } = await import("./events/cap-events");
+  await noteCapCheck(organizationId, appRowId, check);
+}
 
-/** AI providers under /api/ai/<provider>, capabilities under /api/integrations/. */
+type GatewayRoute =
+  | { kind: "ai"; provider: string }
+  | { kind: "integration" }
+  | { kind: "events" };
+
+/** AI providers under /api/ai/<provider>, capabilities under /api/integrations/, the app's own events at /api/events/emit. */
 function routeFromPath(request: Request): GatewayRoute {
   const { pathname } = new URL(request.url);
   const ai = pathname.match(/^\/api\/ai\/([a-z][a-z0-9-]*)(?:\/|$)/);
   if (ai?.[1]) return { kind: "ai", provider: ai[1] };
   if (pathname.startsWith("/api/integrations/")) return { kind: "integration" };
+  if (pathname === EVENTS_EMIT_PATH) return { kind: "events" };
   throw new AppGatewayError(
     "invalid_gateway_route",
     404,
-    "The named gateway entrypoint only serves AI provider and capability proxy paths.",
+    "The named gateway entrypoint only serves AI provider, capability proxy and event emit paths.",
   );
 }
 

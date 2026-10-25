@@ -114,9 +114,9 @@ async function supersedeEarlier(
     createdAt: Date;
   },
   sameInstallation: (redirectUri: string) => boolean,
-): Promise<string[]> {
+): Promise<RevokedConnection[]> {
   const earlier = await db
-    .select({ id: mcpConnections.id, redirectUri: mcpConnections.redirectUri })
+    .select({ ...revokedColumns(), redirectUri: mcpConnections.redirectUri })
     .from(mcpConnections)
     .where(
       and(
@@ -127,10 +127,13 @@ async function supersedeEarlier(
         isNull(mcpConnections.revokedAt),
       ),
     );
-  const ids = earlier
+  const superseded = earlier
     .filter((row) => sameInstallation(row.redirectUri))
-    .map((row) => row.id);
-  for (const batch of chunk(ids, IDS_PER_STATEMENT)) {
+    .map(({ redirectUri: _redirectUri, ...row }) => row);
+  for (const batch of chunk(
+    superseded.map((row) => row.id),
+    IDS_PER_STATEMENT,
+  )) {
     await db
       .update(mcpConnections)
       .set({ revokedAt: new Date(), revokedReason: "superseded" })
@@ -141,7 +144,7 @@ async function supersedeEarlier(
         ),
       );
   }
-  return ids;
+  return superseded;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -326,13 +329,29 @@ async function listActiveForUser(userId: string) {
   }));
 }
 
-/** Revoke one of a user's connections; false when it isn't theirs or active. */
+/** What every revoke returns about each row it revoked: enough for the event. */
+export type RevokedConnection = {
+  id: string;
+  userId: string;
+  organizationId: string;
+  clientName: string;
+};
+
+/** Built per call: tests that stub the schema never load these columns. */
+const revokedColumns = () => ({
+  id: mcpConnections.id,
+  userId: mcpConnections.userId,
+  organizationId: mcpConnections.organizationId,
+  clientName: mcpConnections.clientName,
+});
+
+/** Revoke one of a user's connections; null when it isn't theirs or active. */
 async function revokeForUser(
   id: string,
   userId: string,
   reason: RevokedReason,
-): Promise<boolean> {
-  const revoked = await db
+): Promise<RevokedConnection | null> {
+  const [revoked] = await db
     .update(mcpConnections)
     .set({ revokedAt: new Date(), revokedBy: userId, revokedReason: reason })
     .where(
@@ -342,31 +361,37 @@ async function revokeForUser(
         isNull(mcpConnections.revokedAt),
       ),
     )
-    .returning({ id: mcpConnections.id });
-  return revoked.length > 0;
+    .returning(revokedColumns());
+  return revoked ?? null;
 }
 
 /**
  * Revoke a connection that can't work any more: its member is gone, its
- * grant ended, or its authorization never completed.
+ * grant ended, or its authorization never completed. The row, or null
+ * when it was revoked already.
  */
-async function revokeById(id: string, reason: RevokedReason): Promise<void> {
-  await db
+async function revokeById(
+  id: string,
+  reason: RevokedReason,
+): Promise<RevokedConnection | null> {
+  const [revoked] = await db
     .update(mcpConnections)
     .set({ revokedAt: new Date(), revokedReason: reason })
-    .where(and(eq(mcpConnections.id, id), isNull(mcpConnections.revokedAt)));
+    .where(and(eq(mcpConnections.id, id), isNull(mcpConnections.revokedAt)))
+    .returning(revokedColumns());
+  return revoked ?? null;
 }
 
 /**
  * Revoke a user's active connections, in one organization or all of them
- * (member removal, deactivation).
+ * (member removal, deactivation); the rows revoked.
  */
 async function revokeAllForUser(
   userId: string,
   reason: RevokedReason,
   organizationId?: string,
-): Promise<void> {
-  await db
+): Promise<RevokedConnection[]> {
+  return db
     .update(mcpConnections)
     .set({ revokedAt: new Date(), revokedReason: reason })
     .where(
@@ -377,16 +402,17 @@ async function revokeAllForUser(
           ? [eq(mcpConnections.organizationId, organizationId)]
           : []),
       ),
-    );
+    )
+    .returning(revokedColumns());
 }
 
 /**
  * Expire active connections unused since `cutoff` (never-used ones count
  * from their creation). Their grants have lapsed in the authorization server
- * by then; this keeps the list of connections honest.
+ * by then; this keeps the list of connections honest. The rows expired.
  */
-async function expireUnusedSince(cutoff: Date): Promise<number> {
-  const expired = await db
+async function expireUnusedSince(cutoff: Date): Promise<RevokedConnection[]> {
+  return db
     .update(mcpConnections)
     .set({ revokedAt: new Date(), revokedReason: "expired" })
     .where(
@@ -398,8 +424,7 @@ async function expireUnusedSince(cutoff: Date): Promise<number> {
         ),
       ),
     )
-    .returning({ id: mcpConnections.id });
-  return expired.length;
+    .returning(revokedColumns());
 }
 
 export const McpConnectionRepository = {

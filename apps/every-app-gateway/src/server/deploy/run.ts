@@ -6,7 +6,11 @@
  * policy, registration, one job at a time per app, and the
  * pipeline (./pipeline.ts) inside the request and `waitUntil` after it.
  * A deploy that went live takes the new version's tool snapshot, since
- * only here does the gateway itself learn of a new `apps.version_id`.
+ * only here does the gateway itself learn of a new `apps.version_id`, and
+ * announces it (docs/design/2026-10-events-out.md, section 5): the first
+ * recorded upload of a pending row is `app.installed`, a later one with a
+ * new version `app.updated`; a registration whose first deploy fails
+ * announces nothing.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -17,6 +21,9 @@ import {
 } from "@every-app/perimeter/manifest";
 import type { AppRow } from "@every-app/perimeter/registry";
 import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { userActor } from "@/server/events/subjects";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { scheduleCatalogResync } from "@/server/toolbus/catalog-sync";
@@ -212,6 +219,44 @@ interface StartDeployInput extends Deployer {
   actor: string;
   /** Where the bundle came from, when not from an upload. */
   source?: DeployJobSource;
+  /** How the deploy came in, for the event: a deploy key or the browser. */
+  via: "cli" | "browser";
+}
+
+/**
+ * The upload record is the event: `app.installed` for the first recorded
+ * upload of a pending (new or revived) row, `app.updated` for a later
+ * upload with a new version. Never throws (the bus swallows).
+ */
+async function announceUpload(
+  input: StartDeployInput,
+  before: AppRow,
+  deployed: AppRow,
+): Promise<void> {
+  const app = { id: deployed.appSlug, rowId: deployed.id, name: deployed.name };
+  if (before.status === "pending") {
+    await emit(async () => ({
+      organizationId: input.organizationId,
+      actor: await userActor(input.userId),
+      ...catalogue.appInstalled({
+        app,
+        version: deployed.versionId,
+        hostname: deployed.hostname,
+        scope: deployed.scope === "shared" ? "shared" : "org",
+        source: input.via,
+      }),
+    }));
+  } else if (deployed.versionId && deployed.versionId !== before.versionId) {
+    await emit(async () => ({
+      organizationId: input.organizationId,
+      actor: await userActor(input.userId),
+      ...catalogue.appUpdated({
+        app,
+        version: deployed.versionId,
+        previousVersion: before.versionId,
+      }),
+    }));
+  }
 }
 
 /**
@@ -302,7 +347,7 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
       })
     : execute(deployer);
   const run = deploy.then(
-    (deployed) => {
+    async (deployed) => {
       if (deployed.hostname && deployed.workerName) {
         scheduleCatalogResync(
           {
@@ -317,7 +362,8 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
           "new_version",
         );
       }
-      return finishJob(job.id, { status: "succeeded" }, fields);
+      await finishJob(job.id, { status: "succeeded" }, fields);
+      await announceUpload(input, app, deployed);
     },
     (error: unknown) => {
       // Only the job records this error; the request answers with the job.

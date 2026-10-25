@@ -3,6 +3,9 @@ import { AppRepository } from "../repositories/AppRepository";
 import { UserPatRepository } from "../repositories/UserPatRepository";
 import { hashUserPat } from "../user-pat-hash";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { userActor, userSubject } from "@/server/events/subjects";
 import { platformPolicy } from "@/server/platform-policy";
 import { DEPLOY_SCOPE } from "@/server/user-pat-scopes";
 
@@ -149,6 +152,19 @@ async function create(data: CreateUserPatInput) {
   if (!row) {
     throw new PublicError("TOKEN_NOT_FOUND", "Created token not found");
   }
+  // The row's id, name, scopes, app and expiry: never the value or its hash.
+  await emit(async () => ({
+    organizationId: data.organizationId,
+    actor: await userActor(data.userId),
+    ...catalogue.tokenCreated({
+      id,
+      name: data.name,
+      scopes,
+      appId: appSlug,
+      expiresAt,
+      user: await userSubject(data.userId),
+    }),
+  }));
 
   return {
     plaintext,
@@ -180,6 +196,15 @@ async function revoke(id: string, userId: string) {
   }
 
   await UserPatRepository.revoke(id, userId);
+  await emit(async () => ({
+    organizationId: existing.organizationId,
+    actor: await userActor(userId),
+    ...catalogue.tokenRevoked({
+      id: existing.id,
+      name: existing.name,
+      user: await userSubject(userId),
+    }),
+  }));
   return { alreadyRevoked: false };
 }
 

@@ -55,6 +55,13 @@ const PUBLIC_ERROR_CODES = [
   "DEPLOY_KEYS_UNAVAILABLE",
   "GROUP_NOT_FOUND",
   "GROUP_NAME_TAKEN",
+  "EVENT_TARGET_REFUSED",
+  "EVENT_SUBSCRIPTIONS_LIMIT",
+  "EVENT_SUBSCRIPTION_NOT_FOUND",
+  "EVENT_DELIVERY_NOT_FOUND",
+  "EVENT_TYPE_UNKNOWN",
+  "EVENT_SECRET_INVALID",
+  "EVENT_SINK_CONFLICT",
   // The MCP app registry rules (@every-app/perimeter/registry
   // remoteMcpApps.ts): their messages are the rules' own sentences.
   "REMOTE_MCP_INVALID",

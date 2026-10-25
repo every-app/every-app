@@ -93,13 +93,19 @@ interface PlatformPolicy {
 
 /**
  * The mail the gateway sends, each kind with its own daily budgets: its own
- * account mail, and `app`, what apps send through the `email` capability
- * (server/capabilities/email.ts).
+ * account mail, `notice` (the event bus's email sink, to an organization's
+ * owners and admins: server/events/email-sink.ts), and `app`, what apps
+ * send through the `email` capability (server/capabilities/email.ts).
  */
-export type MailKind = "verification" | "reset" | "invitation" | "app";
+export type MailKind =
+  | "verification"
+  | "reset"
+  | "invitation"
+  | "notice"
+  | "app";
 
 /** The gateway's own account mail. */
-type AccountMailKind = Exclude<MailKind, "app">;
+type AccountMailKind = Exclude<MailKind, "app" | "notice">;
 
 interface MailBudget {
   readonly perAddress: number;
@@ -125,12 +131,14 @@ function hostedOpenSignUp(raw: string | undefined): boolean {
 function mailBudgets(
   perAddress: number,
   perGateway: Record<AccountMailKind, number>,
+  notice: MailBudget,
   app: MailBudget,
 ): Record<MailKind, MailBudget> {
   return {
     verification: { perAddress, perGateway: perGateway.verification },
     reset: { perAddress, perGateway: perGateway.reset },
     invitation: { perAddress, perGateway: perGateway.invitation },
+    notice: { ...notice },
     app: { ...app },
   };
 }
@@ -175,12 +183,14 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         bindingActivation: true,
         dcr: { perAddress: 20, perGateway: 200 },
         // An operator's own members: far above what an install sends, so
-        // only a loop or a script ever meets them. Apps write to the same
-        // customer many times a day (an inbox's thread), so their mail gets
-        // more per address.
+        // only a loop or a script ever meets them. Event notices go to
+        // owners and admins only, a few an hour at the busiest. Apps write
+        // to the same customer many times a day (an inbox's thread), so
+        // their mail gets more per address.
         mailDaily: mailBudgets(
           10,
           { verification: 1_000, reset: 1_000, invitation: 1_000 },
+          { perAddress: 50, perGateway: 2_000 },
           { perAddress: 100, perGateway: 5_000 },
         ),
       });
@@ -208,6 +218,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         mailDaily: mailBudgets(
           5,
           { verification: 2_000, reset: 1_000, invitation: 2_000 },
+          { perAddress: 20, perGateway: 2_000 },
           { perAddress: 20, perGateway: 5_000 },
         ),
       });
@@ -230,6 +241,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         mailDaily: mailBudgets(
           0,
           { verification: 0, reset: 0, invitation: 0 },
+          { perAddress: 0, perGateway: 0 },
           { perAddress: 0, perGateway: 0 },
         ),
       });

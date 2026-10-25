@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   controlPlaneFetch: vi.fn(),
   serveAppHostMcp: vi.fn(),
   runMcpMaintenance: vi.fn(),
+  sweep: vi.fn(),
   activateApp: vi.fn(),
   followAppVersion: vi.fn(),
   refuseUnreadyApp: vi.fn(),
@@ -45,6 +46,10 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 
 vi.mock("./server/mcp-auth/maintenance", () => ({
   runMcpMaintenance: mocks.runMcpMaintenance,
+}));
+
+vi.mock("./server/events/deliver", () => ({
+  sweep: mocks.sweep,
 }));
 
 vi.mock("./perimeter/drizzleAppRegistry", () => ({
@@ -1206,13 +1211,62 @@ describe("the setup gate on both classes of host", () => {
 });
 
 describe("scheduled", () => {
-  it("runs the MCP housekeeping with the cron's env", async () => {
-    mocks.runMcpMaintenance.mockResolvedValue(undefined);
+  beforeEach(() => {
+    mocks.sweep.mockReset().mockResolvedValue({
+      due: 0,
+      delivered: 0,
+      failed: 0,
+      dead: 0,
+      skipped: 0,
+    });
+    mocks.runMcpMaintenance.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("the hourly cron sweeps the event deliveries, then runs the MCP housekeeping with the cron's env", async () => {
     const runtimeEnv = { GATEWAY_URL: "https://example.com" };
     await server.scheduled(
       { cron: "17 * * * *" } as ScheduledController,
       runtimeEnv as unknown as Cloudflare.Env,
     );
+    expect(mocks.sweep).toHaveBeenCalledTimes(1);
     expect(mocks.runMcpMaintenance).toHaveBeenCalledWith(runtimeEnv);
+    expect(mocks.sweep.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.runMcpMaintenance.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("a sweep that fails is logged and the hourly housekeeping still runs", async () => {
+    mocks.sweep.mockRejectedValue(new Error("no such table: event_deliveries"));
+    const errors = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const runtimeEnv = { GATEWAY_URL: "https://example.com" };
+    await expect(
+      server.scheduled(
+        { cron: "17 * * * *" } as ScheduledController,
+        runtimeEnv as unknown as Cloudflare.Env,
+      ),
+    ).resolves.toBeUndefined();
+    expect(mocks.runMcpMaintenance).toHaveBeenCalledWith(runtimeEnv);
+    expect(
+      errors.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.includes('"evt":"events.sweep_failed"')),
+    ).toHaveLength(1);
+    await expect(
+      server.scheduled(
+        { cron: "* * * * *" } as ScheduledController,
+        runtimeEnv as unknown as Cloudflare.Env,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("the per-minute cron sweeps the event deliveries and nothing else", async () => {
+    await server.scheduled(
+      { cron: "* * * * *" } as ScheduledController,
+      { GATEWAY_URL: "https://example.com" } as unknown as Cloudflare.Env,
+    );
+    expect(mocks.sweep).toHaveBeenCalledTimes(1);
+    expect(mocks.runMcpMaintenance).not.toHaveBeenCalled();
   });
 });
