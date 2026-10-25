@@ -2,7 +2,11 @@ import { logEvent } from "@every-app/perimeter";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrgAppSettingsRepository } from "../repositories/OrgAppSettingsRepository";
 import { OrgSettingsRepository } from "../repositories/OrgSettingsRepository";
-import { clearAppCapCache } from "@/server/app-cap";
+import {
+  clearAppCapCache,
+  microsToUsd,
+  type EffectiveCaps,
+} from "@/server/app-cap";
 import type { AppCapState } from "@/types/usage";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
@@ -14,10 +18,18 @@ import type { OrgContext } from "@/server/organization/orgContext";
 /** Caps are whole provider calls per month, up to a billion. */
 export const MONTHLY_CALL_CAP_MIN = 1;
 export const MONTHLY_CALL_CAP_MAX = 1_000_000_000;
+/**
+ * Dollar caps are US dollars of provider-reported cost per month, in
+ * whole cents, from a cent to a million dollars; stored in micro-dollars,
+ * the unit `usage_monthly.cost_micros` counts in.
+ */
+export const MONTHLY_COST_CAP_MIN_USD = 0.01;
+export const MONTHLY_COST_CAP_MAX_USD = 1_000_000;
 
-function assertCap(cap: number | null): void {
+function assertCap(cap: number | null | undefined): void {
   if (
     cap !== null &&
+    cap !== undefined &&
     (!Number.isInteger(cap) ||
       cap < MONTHLY_CALL_CAP_MIN ||
       cap > MONTHLY_CALL_CAP_MAX)
@@ -28,6 +40,33 @@ function assertCap(cap: number | null): void {
     );
   }
 }
+
+/**
+ * A dollar cap as stored: whole cents to micro-dollars, null for none,
+ * undefined left as it is. Refused out of range or finer than a cent.
+ */
+function costCapMicros(
+  usd: number | null | undefined,
+): number | null | undefined {
+  if (usd === null || usd === undefined) return usd;
+  const cents = Math.round(usd * 100);
+  if (
+    !Number.isFinite(usd) ||
+    Math.abs(usd * 100 - cents) > 1e-6 ||
+    usd < MONTHLY_COST_CAP_MIN_USD ||
+    usd > MONTHLY_COST_CAP_MAX_USD
+  ) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      `A monthly dollar cap is from $${MONTHLY_COST_CAP_MIN_USD} to $${MONTHLY_COST_CAP_MAX_USD.toLocaleString("en-US")}, in whole cents.`,
+    );
+  }
+  return cents * 10_000;
+}
+
+/** Dollars, or null, as the events carry a dollar cap. */
+const usd = (micros: number | null): number | null =>
+  micros === null ? null : microsToUsd(micros);
 
 /**
  * The organization's built-in "Cap alerts" email subscription, made with
@@ -53,7 +92,7 @@ async function ensureCapAlerts(organizationId: string): Promise<void> {
  * hear. A lowered cap is not an event. For an app the two caps are the ones
  * that bound it before and after (its own, else the default), so a cap set
  * under the default is no raise, and `unlimited` under a default is a
- * removal.
+ * removal. Each kind is judged on its own.
  */
 function raised(cap: number | null, previousCap: number | null): boolean {
   return cap === null
@@ -62,56 +101,117 @@ function raised(cap: number | null, previousCap: number | null): boolean {
 }
 
 /**
- * Set the organization's cap on an app's provider calls (Manage workspace
- * → Usage), say the app has none whatever the default (`unlimited`), or
- * neither, so the default applies (and without one the app is unlimited).
- * The app must be one the organization calls: its own, or a shared app,
- * which every organization caps on its own since the count is per
- * organization. Owners and admins only (the server function's gate). The
- * cap binds at once in this isolate and within seconds elsewhere. When the
- * cap that binds the app ends higher or gone, that is announced on the
- * event bus (`cap.raised`, with the caps that bound it before and after);
- * the organization's first cap makes its "Cap alerts" subscription.
+ * The fields of `cap.raised` for a change from `before` to `after`, or
+ * null when neither kind ended higher or gone. The call cap is always
+ * there, as before dollar caps; the dollar cap (in dollars) only when it
+ * changed.
+ */
+function raisedCaps(
+  after: { calls: number | null; cost: number | null },
+  before: { calls: number | null; cost: number | null },
+): {
+  cap: number | null;
+  previousCap: number | null;
+  costCap?: number | null;
+  previousCostCap?: number | null;
+} | null {
+  if (!raised(after.calls, before.calls) && !raised(after.cost, before.cost)) {
+    return null;
+  }
+  return {
+    cap: after.calls,
+    previousCap: before.calls,
+    ...(after.cost !== before.cost && {
+      costCap: usd(after.cost),
+      previousCostCap: usd(before.cost),
+    }),
+  };
+}
+
+const bound = (caps: EffectiveCaps) => ({
+  calls: caps.calls.cap,
+  cost: caps.cost.cap,
+});
+
+/**
+ * Set the organization's caps on an app's provider calls (Manage workspace
+ * → Usage): a number of calls (`cap`) and dollars of provider-reported
+ * cost (`costUsd`), each a number, null for none of its own, or left out
+ * to keep what the app has; or say the app has none whatever the defaults
+ * (`unlimited`); or neither cap, so the defaults apply (and without them
+ * the app is unlimited). A cap of either kind ends `unlimited`, and the
+ * kind not set then follows its default. The app must be one the
+ * organization calls: its own, or a shared app, which every organization
+ * caps on its own since the count is per organization. Owners and admins
+ * only (the server function's gate). The caps bind at once in this
+ * isolate and within seconds elsewhere. When a cap that binds the app
+ * ends higher or gone, that is announced on the event bus (`cap.raised`,
+ * with the caps that bound it before and after); the organization's first
+ * cap makes its "Cap alerts" subscription.
  */
 async function setMonthlyCap(
   ctx: OrgContext,
-  input: { appRowId: string; cap: number | null; unlimited?: boolean },
+  input: {
+    appRowId: string;
+    cap?: number | null;
+    costUsd?: number | null;
+    unlimited?: boolean;
+  },
 ): Promise<AppCapState> {
   const app = await AppRepository.findCallableById(input.appRowId, ctx.orgId);
   if (!app) throw new PublicError("APP_NOT_FOUND", "App not found");
   const unlimited = input.unlimited ?? false;
-  if (input.cap !== null && unlimited) {
+  if (unlimited && (input.cap != null || input.costUsd != null)) {
     throw new PublicError(
       "INVALID_INPUT",
       "An app has a cap or no cap, not both.",
     );
   }
+  if (!unlimited && input.cap === undefined && input.costUsd === undefined) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      "Give a cap in calls, a cap in dollars, or unlimited.",
+    );
+  }
   assertCap(input.cap);
-  const before = await OrgAppSettingsRepository.getEffectiveMonthlyCap(
+  const costCap = costCapMicros(input.costUsd);
+  const row = await OrgAppSettingsRepository.getAppCapRow(ctx.orgId, app.id);
+  const cap = unlimited
+    ? null
+    : input.cap === undefined
+      ? row.monthlyCallCap
+      : input.cap;
+  const cost = unlimited
+    ? null
+    : costCap === undefined
+      ? row.monthlyCostCapMicros
+      : costCap;
+  const before = await OrgAppSettingsRepository.getEffectiveMonthlyCaps(
     ctx.orgId,
     app.id,
   );
   await OrgAppSettingsRepository.setMonthlyCap({
     organizationId: ctx.orgId,
     appRowId: app.id,
-    cap: input.cap,
+    cap,
+    costCapMicros: cost,
     unlimited,
     updatedBy: ctx.userId,
   });
   clearAppCapCache(ctx.orgId, app.id);
-  const effective = await OrgAppSettingsRepository.getEffectiveMonthlyCap(
+  const effective = await OrgAppSettingsRepository.getEffectiveMonthlyCaps(
     ctx.orgId,
     app.id,
   );
-  if (input.cap !== null) await ensureCapAlerts(ctx.orgId);
-  if (raised(effective.cap, before.cap)) {
+  if (cap !== null || cost !== null) await ensureCapAlerts(ctx.orgId);
+  const change = raisedCaps(bound(effective), bound(before));
+  if (change) {
     await emit(async () => ({
       organizationId: ctx.orgId,
       actor: await userActor(ctx.userId),
       ...catalogue.capRaised({
         app: { id: app.appSlug, rowId: app.id, name: app.name },
-        cap: effective.cap,
-        previousCap: before.cap,
+        ...change,
         source: "app",
       }),
     }));
@@ -120,59 +220,76 @@ async function setMonthlyCap(
     organizationId: ctx.orgId,
     appId: app.appSlug,
     appRowId: app.id,
-    cap: input.cap,
+    cap,
+    costCapMicros: cost,
     unlimited,
     userId: ctx.userId,
   });
   return {
     appRowId: app.id,
-    monthlyCallCap: input.cap,
+    monthlyCallCap: cap,
+    monthlyCostCapMicros: cost,
     capUnlimited: unlimited,
-    effectiveMonthlyCallCap: effective.cap,
-    capSource: effective.source,
+    effectiveMonthlyCallCap: effective.calls.cap,
+    capSource: effective.calls.source,
+    effectiveMonthlyCostCapMicros: effective.cost.cap,
+    costCapSource: effective.cost.source,
   };
 }
 
 /**
- * Set or clear the organization's default cap: what binds every app
- * without a row of its own. Every cached cap is forgotten, since any app
- * may have been reading the default. Raised or removed, it is announced
- * as `cap.raised` with `source: "default"` and no app; the first cap,
+ * Set or clear the organization's default caps: what binds every app
+ * without a cap of that kind (or `unlimited`) of its own. `cap` in calls
+ * and `costUsd` in dollars, each a number, null for no default, or left
+ * out to keep it. Every cached cap is forgotten, since any app may have
+ * been reading the defaults. Raised or removed, either is announced as
+ * `cap.raised` with `source: "default"` and no app; the first cap,
  * default or an app's, makes the "Cap alerts" subscription.
  */
 async function setDefaultMonthlyCap(
   ctx: OrgContext,
-  input: { cap: number | null },
-): Promise<{ defaultMonthlyCallCap: number | null }> {
+  input: { cap?: number | null; costUsd?: number | null },
+): Promise<{
+  defaultMonthlyCallCap: number | null;
+  defaultMonthlyCostCapMicros: number | null;
+}> {
+  if (input.cap === undefined && input.costUsd === undefined) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      "Give a default cap in calls, in dollars, or both.",
+    );
+  }
   assertCap(input.cap);
-  const previousCap = await OrgSettingsRepository.getDefaultMonthlyCap(
-    ctx.orgId,
-  );
-  await OrgSettingsRepository.setDefaultMonthlyCap({
+  const costCap = costCapMicros(input.costUsd);
+  const previous = await OrgSettingsRepository.getDefaultMonthlyCaps(ctx.orgId);
+  const cap = input.cap === undefined ? previous.cap : input.cap;
+  const cost = costCap === undefined ? previous.costCapMicros : costCap;
+  await OrgSettingsRepository.setDefaultMonthlyCaps({
     organizationId: ctx.orgId,
-    cap: input.cap,
+    cap,
+    costCapMicros: cost,
     updatedBy: ctx.userId,
   });
   clearAppCapCache();
-  if (input.cap !== null) await ensureCapAlerts(ctx.orgId);
-  if (raised(input.cap, previousCap)) {
+  if (cap !== null || cost !== null) await ensureCapAlerts(ctx.orgId);
+  const change = raisedCaps(
+    { calls: cap, cost },
+    { calls: previous.cap, cost: previous.costCapMicros },
+  );
+  if (change) {
     await emit(async () => ({
       organizationId: ctx.orgId,
       actor: await userActor(ctx.userId),
-      ...catalogue.capRaised({
-        app: null,
-        cap: input.cap,
-        previousCap,
-        source: "default",
-      }),
+      ...catalogue.capRaised({ app: null, ...change, source: "default" }),
     }));
   }
   logEvent("usage.default_cap_set", {
     organizationId: ctx.orgId,
-    cap: input.cap,
+    cap,
+    costCapMicros: cost,
     userId: ctx.userId,
   });
-  return { defaultMonthlyCallCap: input.cap };
+  return { defaultMonthlyCallCap: cap, defaultMonthlyCostCapMicros: cost };
 }
 
 export const AppCapService = { setMonthlyCap, setDefaultMonthlyCap } as const;

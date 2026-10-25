@@ -2,41 +2,49 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orgSettings } from "@/db/schema";
 
-/** The organization's default monthly cap on every app's provider calls, or null. */
-async function getDefaultMonthlyCap(
+/** The organization's default monthly caps on every app: calls, and micro-dollars of reported cost. */
+interface DefaultCaps {
+  cap: number | null;
+  costCapMicros: number | null;
+}
+
+/** The organization's default monthly caps on every app's provider calls, null for none. */
+async function getDefaultMonthlyCaps(
   organizationId: string,
-): Promise<number | null> {
+): Promise<DefaultCaps> {
   const [row] = await db
-    .select({ cap: orgSettings.defaultMonthlyCallCap })
+    .select({
+      cap: orgSettings.defaultMonthlyCallCap,
+      costCapMicros: orgSettings.defaultMonthlyCostCapMicros,
+    })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
     .limit(1);
-  return row?.cap ?? null;
+  return { cap: row?.cap ?? null, costCapMicros: row?.costCapMicros ?? null };
 }
 
 /**
- * Set or clear the default cap. The row stays when it still holds the
+ * Set or clear both default caps. The row stays when it still holds the
  * default model provider; with nothing left in it, it is deleted.
  */
-async function setDefaultMonthlyCap(input: {
+async function setDefaultMonthlyCaps(input: {
   organizationId: string;
   cap: number | null;
+  costCapMicros: number | null;
   updatedBy: string;
 }): Promise<void> {
-  const { organizationId, cap, updatedBy } = input;
+  const { organizationId, cap, costCapMicros, updatedBy } = input;
   const updatedAt = new Date();
+  const set = {
+    defaultMonthlyCallCap: cap,
+    defaultMonthlyCostCapMicros: costCapMicros,
+    updatedAt,
+    updatedBy,
+  };
   await db
     .insert(orgSettings)
-    .values({
-      organizationId,
-      defaultMonthlyCallCap: cap,
-      updatedAt,
-      updatedBy,
-    })
-    .onConflictDoUpdate({
-      target: orgSettings.organizationId,
-      set: { defaultMonthlyCallCap: cap, updatedAt, updatedBy },
-    });
+    .values({ organizationId, ...set })
+    .onConflictDoUpdate({ target: orgSettings.organizationId, set });
   await dropEmptyRow(organizationId);
 }
 
@@ -71,17 +79,23 @@ async function setAiDefault(input: {
   await dropEmptyRow(organizationId);
 }
 
-/** No default of either kind needs no row. */
+/** No default of any kind needs no row. */
 async function dropEmptyRow(organizationId: string): Promise<void> {
   const [row] = await db
     .select({
       cap: orgSettings.defaultMonthlyCallCap,
+      costCap: orgSettings.defaultMonthlyCostCapMicros,
       aiDefault: orgSettings.aiDefault,
     })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
     .limit(1);
-  if (row && row.cap === null && row.aiDefault === null) {
+  if (
+    row &&
+    row.cap === null &&
+    row.costCap === null &&
+    row.aiDefault === null
+  ) {
     await db
       .delete(orgSettings)
       .where(eq(orgSettings.organizationId, organizationId));
@@ -89,8 +103,8 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
 }
 
 export const OrgSettingsRepository = {
-  getDefaultMonthlyCap,
-  setDefaultMonthlyCap,
+  getDefaultMonthlyCaps,
+  setDefaultMonthlyCaps,
   getAiDefault,
   setAiDefault,
 } as const;

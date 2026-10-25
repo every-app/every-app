@@ -39,6 +39,7 @@ import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
 import { hasAiDefault } from "./aiDefault";
+import { costCapMicros, emptyOrgSettingsSql, hasCostCaps, microsToUsd, requireCostCaps } from "./costCaps";
 import { capAlertsStatement, operatorActor, queueEventFromCli, requireAuditColumns } from "./events";
 import { anotherLiveOwnerSql } from "./members";
 import { installOrganization, registryCall, text, type Deployer, type Organization } from "./registry";
@@ -1479,178 +1480,274 @@ const invalidCap = (): EveryAppError =>
     `A monthly cap is a whole number from 1 to ${MONTHLY_CALL_CAP_MAX.toLocaleString("en-US")}, or off`,
   );
 
+const capOrNull = (value: unknown): number | null => (value == null ? null : Number(value));
+
+/**
+ * The fields of `cap.raised` for a change from `before` to `after`, or
+ * null when neither kind ended higher or gone (AppCapService's
+ * `raisedCaps`): the call cap always, the dollar cap in dollars only when
+ * it changed.
+ */
+function raisedCaps(
+  after: { calls: number | null; cost: number | null },
+  before: { calls: number | null; cost: number | null },
+): Record<string, number | null> | null {
+  if (!raised(after.calls, before.calls) && !raised(after.cost, before.cost)) return null;
+  return {
+    cap: after.calls,
+    previousCap: before.calls,
+    ...(after.cost !== before.cost && { costCap: microsToUsd(after.cost), previousCostCap: microsToUsd(before.cost) }),
+  };
+}
+
 /** What `setMonthlyCap` answers: the app's row before and after, and what binds it. */
 interface AppCapChange {
   app: WorkspaceApp;
-  /** The app's own cap now, or null. */
+  /** The app's own call cap now, or null. */
   cap: number | null;
-  /** The app has no cap whatever the default (the row's `unlimited`). */
+  /** The app's own dollar cap now, in micro-dollars, or null. */
+  costCapMicros: number | null;
+  /** The app has no cap whatever the defaults (the row's `unlimited`). */
   unlimited: boolean;
-  /** The app's own cap before, or null. */
+  /** The app's own call cap before, or null. */
   was: number | null;
+  /** The app's own dollar cap before, in micro-dollars, or null. */
+  wasCostCapMicros: number | null;
   wasUnlimited: boolean;
-  /** The cap that binds the app now, and where it comes from. */
+  /** The call cap that binds the app now, and where it comes from. */
   effective: EffectiveCap;
-  /** The cap that bound it before. */
+  /** The call cap that bound it before. */
   before: EffectiveCap;
+  /** The dollar cap (micro-dollars) that binds the app now, and before. */
+  effectiveCost: EffectiveCap;
+  beforeCost: EffectiveCap;
   /** The Cap alerts subscription's id when this write made it, else null. */
   capAlertsId: string | null;
 }
 
 /**
- * Set the organization's cap on an app's provider calls (a whole number of
- * calls per UTC month), say the app has none whatever the default
- * (`unlimited`), or neither (`off`: the row goes, so the default applies,
- * and without one the app is unlimited), as AppCapService.setMonthlyCap
- * does. The row holds exactly one of a cap or `unlimited`, both columns
- * written in one statement (the Gateway reads "a cap wins", so a row with
- * both would be capped). The app must be one the organization calls: its
- * own, or a shared one. In the write's own batch, as the Gateway does: a
- * number set makes the organization's built-in Cap alerts subscription
- * when it has none (`capAlertsId`, the new row's id, else null), and
- * `cap.raised` is queued when the cap that binds the app ends higher or
- * gone, judged on the effective cap before and after (its own, else the
- * default): a cap set under the default is no raise, `unlimited` under a
- * default is a removal, `off` under a default raises to it. Neither on a
- * Gateway from before the event tables. On a Gateway from before the
- * default cap (migration 0014) a number and `off` still write the cap
- * alone; `unlimited` is refused (GATEWAY_PREDATES_DEFAULT_CAPS).
+ * Set the organization's caps on an app's provider calls, as
+ * AppCapService.setMonthlyCap does: a whole number of calls per UTC month
+ * (`cap`) and dollars of provider-reported cost (`costUsd`), each a
+ * number, null (`off`) for none of its own, or undefined to keep what the
+ * app has; or say the app has none whatever the defaults (`unlimited`);
+ * with both caps null and no `unlimited` the row goes, so the defaults
+ * apply (and without them the app is unlimited). A cap of either kind
+ * ends `unlimited`, and the kind not given then follows its default. The
+ * row holds a cap of either kind or `unlimited`, every column written in
+ * one statement (the Gateway reads "a cap wins", so a row with both would
+ * be capped). The app must be one the organization calls: its own, or a
+ * shared one. In the write's own batch, as the Gateway does: a number set
+ * makes the organization's built-in Cap alerts subscription when it has
+ * none (`capAlertsId`, the new row's id, else null), and `cap.raised` is
+ * queued when a cap that binds the app ends higher or gone, judged per
+ * kind on the effective cap before and after (its own, else the default):
+ * a cap set under the default is no raise, `unlimited` under a default is
+ * a removal, `off` under a default raises to it. Neither on a Gateway
+ * from before the event tables. On a Gateway from before the default cap
+ * (migration 0014) a number and `off` still write the call cap alone;
+ * `unlimited` is refused (GATEWAY_PREDATES_DEFAULT_CAPS); a dollar cap is
+ * refused on a Gateway from before migration 0018
+ * (GATEWAY_PREDATES_COST_CAPS).
  */
 export async function setMonthlyCap(
   ws: Workspace,
   identifier: string,
-  cap: number | null,
-  options: { unlimited?: boolean } = {},
+  cap: number | null | undefined,
+  options: { unlimited?: boolean; costUsd?: number | null } = {},
 ): Promise<AppCapChange> {
   const unlimited = options.unlimited ?? false;
   const app = await findApp(ws, identifier, { callable: true });
-  if (!validCap(cap)) throw invalidCap();
-  if (cap !== null && unlimited) {
-    throw new EveryAppError("INVALID_CAP", "An app has a cap or no cap, not both\nGive a number, off, or --unlimited.");
+  if (cap !== undefined && !validCap(cap)) throw invalidCap();
+  const costCap = costCapMicros(options.costUsd);
+  if (unlimited && (cap != null || costCap != null)) {
+    throw new EveryAppError("INVALID_CAP", "An app has a cap or no cap, not both\nGive a number, --usd, off, or --unlimited.");
+  }
+  if (!unlimited && cap === undefined && costCap === undefined) {
+    throw new EveryAppError("INVALID_CAP", "Missing the cap\nGive a number of calls, --usd, off, or --unlimited.");
   }
   const modern = await hasDefaultCaps(ws.db);
   if (unlimited) await requireDefaultCaps(ws.db);
+  if (costCap !== undefined) await requireCostCaps(ws.db);
+  const costs = modern && (await hasCostCaps(ws.db));
   const org = ws.organization.id;
   const [rows = [], defaults = []] = await ws.db.run([
     {
-      sql: `SELECT monthly_call_cap${modern ? ", unlimited" : ""} FROM org_app_settings WHERE organization_id = ? AND app_row_id = ?`,
+      sql: `SELECT monthly_call_cap${modern ? ", unlimited" : ""}${costs ? ", monthly_cost_cap_micros" : ""} FROM org_app_settings WHERE organization_id = ? AND app_row_id = ?`,
       params: [org, app.id],
     },
     ...(modern
-      ? [{ sql: "SELECT default_monthly_call_cap AS cap FROM org_settings WHERE organization_id = ?", params: [org] }]
+      ? [
+          {
+            sql: `SELECT default_monthly_call_cap AS cap${costs ? ", default_monthly_cost_cap_micros AS cost_cap" : ""} FROM org_settings WHERE organization_id = ?`,
+            params: [org],
+          },
+        ]
       : []),
   ]);
-  const was = rows[0]?.["monthly_call_cap"] == null ? null : Number(rows[0]["monthly_call_cap"]);
+  const was = capOrNull(rows[0]?.["monthly_call_cap"]);
+  const wasCostCapMicros = capOrNull(rows[0]?.["monthly_cost_cap_micros"]);
   const wasUnlimited = Number(rows[0]?.["unlimited"] ?? 0) === 1;
-  const defaultCap = defaults[0]?.["cap"] == null ? null : Number(defaults[0]["cap"]);
+  const defaultCap = capOrNull(defaults[0]?.["cap"]);
+  const defaultCostCap = capOrNull(defaults[0]?.["cost_cap"]);
+  // A kind not given keeps the app's own; `unlimited` clears both.
+  const newCap = unlimited ? null : cap === undefined ? was : cap;
+  const newCost = unlimited ? null : costCap === undefined ? wasCostCapMicros : costCap;
   const before = effectiveMonthlyCap({ appCap: was, unlimited: wasUnlimited, defaultCap });
-  const effective = effectiveMonthlyCap({ appCap: cap, unlimited, defaultCap });
+  const beforeCost = effectiveMonthlyCap({ appCap: wasCostCapMicros, unlimited: wasUnlimited, defaultCap: defaultCostCap });
+  const effective = effectiveMonthlyCap({ appCap: newCap, unlimited, defaultCap });
+  const effectiveCost = effectiveMonthlyCap({ appCap: newCost, unlimited, defaultCap: defaultCostCap });
   const capAlerts =
-    cap === null ? null : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
-  const event = raised(effective.cap, before.cap)
+    cap == null && costCap == null
+      ? null
+      : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
+  const change = raisedCaps({ calls: effective.cap, cost: effectiveCost.cap }, { calls: before.cap, cost: beforeCost.cap });
+  const event = change
     ? await queueEventFromCli(ws.db, {
         organizationId: org,
         type: "cap.raised",
         actor: operatorActor(ws.operator),
-        data: {
-          app: { id: app.appSlug, rowId: app.id, name: app.name },
-          cap: effective.cap,
-          previousCap: before.cap,
-          source: "app",
-        },
+        data: { app: { id: app.appSlug, rowId: app.id, name: app.name }, ...change, source: "app" },
         appRowId: app.id,
         now: ws.now,
       })
     : [];
   const write: D1Statement =
-    cap === null && !unlimited
+    newCap === null && newCost === null && !unlimited
       ? { sql: "DELETE FROM org_app_settings WHERE organization_id = ? AND app_row_id = ?", params: [org, app.id] }
-      : modern
+      : costs
         ? {
-            // Both columns in the one statement: a cap or unlimited, never both.
-            sql: `INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, unlimited, updated_at, updated_by)
+            // Every column in the one statement: caps or unlimited, never both.
+            sql: `INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, monthly_cost_cap_micros, unlimited, updated_at, updated_by)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+ON CONFLICT (organization_id, app_row_id) DO UPDATE SET monthly_call_cap = ?3, monthly_cost_cap_micros = ?4, unlimited = ?5, updated_at = ?6, updated_by = ?7`,
+            params: [org, app.id, newCap, newCost, unlimited ? 1 : 0, ws.now, ws.operator.userId],
+          }
+        : modern
+          ? {
+              sql: `INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, unlimited, updated_at, updated_by)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 ON CONFLICT (organization_id, app_row_id) DO UPDATE SET monthly_call_cap = ?3, unlimited = ?4, updated_at = ?5, updated_by = ?6`,
-            params: [org, app.id, cap, unlimited ? 1 : 0, ws.now, ws.operator.userId],
-          }
-        : {
-            sql: `INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at, updated_by)
+              params: [org, app.id, newCap, unlimited ? 1 : 0, ws.now, ws.operator.userId],
+            }
+          : {
+              sql: `INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at, updated_by)
 VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT (organization_id, app_row_id) DO UPDATE SET monthly_call_cap = ?3, updated_at = ?4, updated_by = ?5`,
-            params: [org, app.id, cap, ws.now, ws.operator.userId],
-          };
+              params: [org, app.id, newCap, ws.now, ws.operator.userId],
+            };
   const results = await ws.db.run([write, ...(capAlerts ? [capAlerts] : []), ...event]);
   const capAlertsId = capAlerts ? text(results[1]?.[0]?.["id"]) : null;
-  return { app, cap, unlimited, was, wasUnlimited, effective, before, capAlertsId };
+  return {
+    app,
+    cap: newCap,
+    costCapMicros: newCost,
+    unlimited,
+    was,
+    wasCostCapMicros,
+    wasUnlimited,
+    effective,
+    before,
+    effectiveCost,
+    beforeCost,
+    capAlertsId,
+  };
 }
 
-/** What `setDefaultMonthlyCap` answers. */
+/** What `setDefaultMonthlyCap` answers: both defaults now and before. */
 interface DefaultCapChange {
   cap: number | null;
   was: number | null;
+  /** Micro-dollars. */
+  costCapMicros: number | null;
+  wasCostCapMicros: number | null;
   /** The Cap alerts subscription's id when this write made it, else null. */
   capAlertsId: string | null;
 }
 
 /**
- * Set or clear the organization's default cap
+ * Set or clear the organization's default caps
  * (AppCapService.setDefaultMonthlyCap): what binds every app without a
- * cap or `unlimited` of its own. `off` deletes the `org_settings` row, as
- * the Gateway does (the table holds nothing else yet); `updated_by` is
+ * cap of that kind or `unlimited` of its own. `cap` in calls and
+ * `costUsd` in dollars, each a number, null (`off`) for no default, or
+ * undefined to keep it. The `org_settings` row also holds the default
+ * model provider (`ai_default`): the write sets the columns it names, and
+ * the row goes only when it holds no default of any kind. `updated_by` is
  * the operator's Gateway user, or null for an API token. In the write's
  * own batch: a number set makes the Cap alerts subscription when the
- * organization has none, and the default first set, raised or removed
+ * organization has none, and a default first set, raised or removed
  * queues `cap.raised` with no app and `source: "default"` (a lowered one
  * is not an event). Refused on a Gateway from before migration 0014
- * (GATEWAY_PREDATES_DEFAULT_CAPS).
+ * (GATEWAY_PREDATES_DEFAULT_CAPS), and a dollar default on one from
+ * before migration 0018 (GATEWAY_PREDATES_COST_CAPS).
  */
-export async function setDefaultMonthlyCap(ws: Workspace, cap: number | null): Promise<DefaultCapChange> {
-  if (!validCap(cap)) throw invalidCap();
+export async function setDefaultMonthlyCap(
+  ws: Workspace,
+  cap: number | null | undefined,
+  costUsd?: number | null,
+): Promise<DefaultCapChange> {
+  if (cap !== undefined && !validCap(cap)) throw invalidCap();
+  const costCap = costCapMicros(costUsd);
+  if (cap === undefined && costCap === undefined) {
+    throw new EveryAppError("INVALID_CAP", "Missing the default\nGive a number of calls, --usd, or off.");
+  }
   await requireDefaultCaps(ws.db);
+  if (costCap !== undefined) await requireCostCaps(ws.db);
+  const costs = await hasCostCaps(ws.db);
   const org = ws.organization.id;
   const [rows = []] = await ws.db.run([
-    { sql: "SELECT default_monthly_call_cap AS cap FROM org_settings WHERE organization_id = ?", params: [org] },
+    {
+      sql: `SELECT default_monthly_call_cap AS cap${costs ? ", default_monthly_cost_cap_micros AS cost_cap" : ""} FROM org_settings WHERE organization_id = ?`,
+      params: [org],
+    },
   ]);
-  const was = rows[0]?.["cap"] == null ? null : Number(rows[0]["cap"]);
+  const was = capOrNull(rows[0]?.["cap"]);
+  const wasCostCapMicros = capOrNull(rows[0]?.["cost_cap"]);
+  const newCap = cap === undefined ? was : cap;
+  const newCost = costCap === undefined ? wasCostCapMicros : costCap;
   const capAlerts =
-    cap === null ? null : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
-  const event = raised(cap, was)
+    cap == null && costCap == null
+      ? null
+      : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
+  const change = raisedCaps({ calls: newCap, cost: newCost }, { calls: was, cost: wasCostCapMicros });
+  const event = change
     ? await queueEventFromCli(ws.db, {
         organizationId: org,
         type: "cap.raised",
         actor: operatorActor(ws.operator),
-        data: { app: null, cap, previousCap: was, source: "default" },
+        data: { app: null, ...change, source: "default" },
         now: ws.now,
       })
     : [];
-  // The row also holds the default model provider (ai_default, migration
-  // 0017): clearing the cap keeps the row while that is set, and the row
-  // goes only when it holds nothing else.
-  const write =
-    cap === null
-      ? (await hasAiDefault(ws.db))
-        ? [
-            {
-              sql: "UPDATE org_settings SET default_monthly_call_cap = NULL, updated_at = ?, updated_by = ? WHERE organization_id = ?",
-              params: [ws.now, ws.operator.userId, org],
-            },
-            {
-              sql: "DELETE FROM org_settings WHERE organization_id = ? AND ai_default IS NULL AND default_monthly_call_cap IS NULL",
-              params: [org],
-            },
-          ]
-        : [{ sql: "DELETE FROM org_settings WHERE organization_id = ?", params: [org] }]
-      : [
-          {
-            sql: `INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by)
+  // Upsert the columns this Gateway has, then drop the row when nothing is
+  // left in it: the default model provider (migration 0017) keeps it.
+  const write: D1Statement[] = [
+    costs
+      ? {
+          sql: `INSERT INTO org_settings (organization_id, default_monthly_call_cap, default_monthly_cost_cap_micros, updated_at, updated_by)
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT (organization_id) DO UPDATE SET default_monthly_call_cap = ?2, default_monthly_cost_cap_micros = ?3, updated_at = ?4, updated_by = ?5`,
+          params: [org, newCap, newCost, ws.now, ws.operator.userId],
+        }
+      : {
+          sql: `INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT (organization_id) DO UPDATE SET default_monthly_call_cap = ?2, updated_at = ?3, updated_by = ?4`,
-            params: [org, cap, ws.now, ws.operator.userId],
+          params: [org, newCap, ws.now, ws.operator.userId],
+        },
+    // Only a clear can empty the row.
+    ...(cap === null || costCap === null
+      ? [
+          {
+            sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: costs, ai: await hasAiDefault(ws.db) })}`,
+            params: [org],
           },
-        ];
+        ]
+      : []),
+  ];
   const results = await ws.db.run([...write, ...(capAlerts ? [capAlerts] : []), ...event]);
   const capAlertsId = capAlerts ? text(results[write.length]?.[0]?.["id"]) : null;
-  return { cap, was, capAlertsId };
+  return { cap: newCap, was, costCapMicros: newCost, wasCostCapMicros, capAlertsId };
 }
 
 /** The provider totals every usage row carries (UsageTotals). */
@@ -1675,8 +1772,15 @@ interface UsageAppRow extends UsageTotals {
   /** The cap that binds the app this month (its own, else the default unless unlimited), and which. */
   effectiveMonthlyCallCap: number | null;
   capSource: CapSource | null;
-  /** The app has reached its effective cap in the current UTC month; always false for a past month. */
+  /** The organization's own dollar cap on the app in micro-dollars, or null; null on a Gateway from before dollar caps. */
+  monthlyCostCapMicros: number | null;
+  /** The dollar cap that binds the app this month (micro-dollars), by the same rule, and which. */
+  effectiveMonthlyCostCapMicros: number | null;
+  costCapSource: CapSource | null;
+  /** The app has reached an effective cap in the current UTC month; always false for a past month. */
   paused: boolean;
+  /** Which cap paused it: `calls` when both are reached; null when not paused. */
+  pausedBy: "calls" | "cost" | null;
   callable: boolean;
 }
 
@@ -1697,6 +1801,8 @@ interface UsageSummary {
   month: string;
   /** The organization's default cap on every app without its own, or null. */
   defaultMonthlyCallCap: number | null;
+  /** The organization's default dollar cap in micro-dollars, or null. */
+  defaultMonthlyCostCapMicros: number | null;
   byApp: UsageAppRow[];
   byMember: UsageMemberRow[];
   byTarget: UsageTargetRow[];
@@ -1731,22 +1837,43 @@ const NONE: UsageTotals = { calls: 0, failures: 0, inputTokens: 0, outputTokens:
 /** An app row's cap fields before the organization's row on it is read. */
 const UNCAPPED: Pick<
   UsageAppRow,
-  "monthlyCallCap" | "capUnlimited" | "effectiveMonthlyCallCap" | "capSource" | "paused"
-> = { monthlyCallCap: null, capUnlimited: false, effectiveMonthlyCallCap: null, capSource: null, paused: false };
+  | "monthlyCallCap"
+  | "capUnlimited"
+  | "effectiveMonthlyCallCap"
+  | "capSource"
+  | "monthlyCostCapMicros"
+  | "effectiveMonthlyCostCapMicros"
+  | "costCapSource"
+  | "paused"
+  | "pausedBy"
+> = {
+  monthlyCallCap: null,
+  capUnlimited: false,
+  effectiveMonthlyCallCap: null,
+  capSource: null,
+  monthlyCostCapMicros: null,
+  effectiveMonthlyCostCapMicros: null,
+  costCapSource: null,
+  paused: false,
+  pausedBy: null,
+};
 
 /**
  * What the organization's apps spent in a UTC month, three ways
  * (UsageRepository.summarize): per app (every callable app listed, with
- * its own cap, the cap that binds it and where it comes from, whether it
- * is paused this month, zeros in a month it made no call), per member (a
- * '' row for the apps' own calls; a former member by id) and per provider
- * or capability, with the organization's default cap. Allowed MCP tool
- * calls come from the audit trail. Refused on a Gateway from before the
- * default cap's rows (GATEWAY_PREDATES_DEFAULT_CAPS).
+ * its own caps in calls and dollars, the caps that bind it and where they
+ * come from, whether it is paused this month and by which, zeros in a
+ * month it made no call), per member (a '' row for the apps' own calls; a
+ * former member by id) and per provider or capability, with the
+ * organization's default caps. Allowed MCP tool calls come from the audit
+ * trail. Refused on a Gateway from before the default cap's rows
+ * (GATEWAY_PREDATES_DEFAULT_CAPS); on one from before dollar caps the
+ * dollar fields are null.
  */
 export async function usage(ws: Workspace, month: string): Promise<UsageSummary> {
   if (!MONTH.test(month)) throw new EveryAppError("INVALID_MONTH", `--month ${month} isn't a month: use YYYY-MM`);
   await requireDefaultCaps(ws.db);
+  const costs = await hasCostCaps(ws.db);
   const org = ws.organization.id;
   const from = `${month}-01`;
   const to = `${addMonths(month, 1)}-01`;
@@ -1792,14 +1919,18 @@ WHERE ${callsInMonth} GROUP BY c.user_id, u.name, u.email`,
         params: [org, fromMs, toMs],
       },
       {
-        sql: `SELECT a.id AS app_row_id, a.name, a.app_slug, s.monthly_call_cap, s.unlimited FROM apps a
+        sql: `SELECT a.id AS app_row_id, a.name, a.app_slug, s.monthly_call_cap, s.unlimited${costs ? ", s.monthly_cost_cap_micros" : ""} FROM apps a
 LEFT JOIN org_app_settings s ON s.app_row_id = a.id AND s.organization_id = ?1
 WHERE (a.organization_id = ?1 OR a.scope = 'shared') AND a.status != '${DELETED_APP_STATUS}'`,
         params: [org],
       },
-      { sql: "SELECT default_monthly_call_cap AS cap FROM org_settings WHERE organization_id = ?", params: [org] },
+      {
+        sql: `SELECT default_monthly_call_cap AS cap${costs ? ", default_monthly_cost_cap_micros AS cost_cap" : ""} FROM org_settings WHERE organization_id = ?`,
+        params: [org],
+      },
     ]);
-  const defaultMonthlyCallCap = defaults[0]?.["cap"] == null ? null : Number(defaults[0]["cap"]);
+  const defaultMonthlyCallCap = capOrNull(defaults[0]?.["cap"]);
+  const defaultMonthlyCostCapMicros = capOrNull(defaults[0]?.["cost_cap"]);
   const apps = new Map<string, UsageAppRow>();
   for (const row of byApp) {
     apps.set(String(row["app_row_id"]), {
@@ -1851,7 +1982,24 @@ WHERE (a.organization_id = ?1 OR a.scope = 'shared') AND a.status != '${DELETED_
     existing.capUnlimited = capUnlimited;
     existing.effectiveMonthlyCallCap = effective.cap;
     existing.capSource = effective.source;
-    existing.paused = current && effective.cap !== null && existing.calls >= effective.cap;
+    const costCap = capOrNull(row["monthly_cost_cap_micros"]);
+    const effectiveCost = effectiveMonthlyCap({
+      appCap: costCap,
+      unlimited: capUnlimited,
+      defaultCap: defaultMonthlyCostCapMicros,
+    });
+    existing.monthlyCostCapMicros = costCap;
+    existing.effectiveMonthlyCostCapMicros = effectiveCost.cap;
+    existing.costCapSource = effectiveCost.source;
+    // The call cap first when both are reached, as the Gateway's refusal says.
+    existing.pausedBy = !current
+      ? null
+      : effective.cap !== null && existing.calls >= effective.cap
+        ? "calls"
+        : effectiveCost.cap !== null && existing.costMicros >= effectiveCost.cap
+          ? "cost"
+          : null;
+    existing.paused = existing.pausedBy !== null;
     apps.set(id, existing);
   }
   const members = new Map<string, UsageMemberRow>();
@@ -1883,6 +2031,8 @@ WHERE (a.organization_id = ?1 OR a.scope = 'shared') AND a.status != '${DELETED_
   return {
     month,
     defaultMonthlyCallCap,
+    defaultMonthlyCostCapMicros,
+
     byApp: [...apps.values()].sort(
       (a, b) => byCalls(a, b) || (a.name ?? a.appRowId).localeCompare(b.name ?? b.appRowId),
     ),

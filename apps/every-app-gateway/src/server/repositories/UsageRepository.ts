@@ -19,7 +19,13 @@ import {
   type UsageEvent,
   type UsageRecorder,
 } from "@/server/usage-event";
-import { effectiveMonthlyCap, type MonthlyCallCounter } from "@/server/app-cap";
+import {
+  capStandings,
+  effectiveMonthlyCaps,
+  reachedCap,
+  type MonthlyUsage,
+  type MonthlyUsageCounter,
+} from "@/server/app-cap";
 import type {
   UsageAppRow,
   UsageModelRow,
@@ -155,16 +161,17 @@ function whole(value: number | undefined): number {
 }
 
 /**
- * Provider calls counted for (organization, app) in the UTC month: the one
- * `usage_monthly` row a monthly cap reads; 0 without one.
+ * Provider calls counted for (organization, app) in the UTC month, and the
+ * cost the providers reported for them: the one `usage_monthly` row the
+ * monthly caps read; zeros without one.
  */
-async function monthlyCalls(
+async function monthlyUsage(
   organizationId: string,
   appRowId: string,
   month: string,
-): Promise<number> {
+): Promise<MonthlyUsage> {
   const [row] = await db
-    .select({ calls: usageMonthly.calls })
+    .select({ calls: usageMonthly.calls, costMicros: usageMonthly.costMicros })
     .from(usageMonthly)
     .where(
       and(
@@ -174,13 +181,14 @@ async function monthlyCalls(
       ),
     )
     .limit(1);
-  return row?.calls ?? 0;
+  return { calls: row?.calls ?? 0, costMicros: row?.costMicros ?? 0 };
 }
 
 /**
  * Which of these apps the organization has paused in the month `now` is
- * in: those whose counted calls have reached the cap that binds them (the
- * app's own, else the organization's default unless the app is unlimited).
+ * in: those whose counted calls, or reported cost, have reached the cap of
+ * that kind that binds them (the app's own, else the organization's
+ * default unless the app is unlimited).
  * One batch: the organization's cap rows, its default, and the month's
  * rows, all of them. The app ids are matched in memory, not bound into
  * the statements: D1 allows 100 bound parameters per statement (each
@@ -204,17 +212,25 @@ async function pausedApps(
       .select({
         appRowId: orgAppSettings.appRowId,
         appCap: orgAppSettings.monthlyCallCap,
+        appCostCap: orgAppSettings.monthlyCostCapMicros,
         unlimited: orgAppSettings.unlimited,
       })
       .from(orgAppSettings)
       .where(eq(orgAppSettings.organizationId, organizationId)),
     db
-      .select({ defaultCap: orgSettings.defaultMonthlyCallCap })
+      .select({
+        defaultCap: orgSettings.defaultMonthlyCallCap,
+        defaultCostCap: orgSettings.defaultMonthlyCostCapMicros,
+      })
       .from(orgSettings)
       .where(eq(orgSettings.organizationId, organizationId))
       .limit(1),
     db
-      .select({ appRowId: usageMonthly.appRowId, calls: usageMonthly.calls })
+      .select({
+        appRowId: usageMonthly.appRowId,
+        calls: usageMonthly.calls,
+        costMicros: usageMonthly.costMicros,
+      })
       .from(usageMonthly)
       .where(
         and(
@@ -224,16 +240,19 @@ async function pausedApps(
       ),
   ]);
   const defaultCap = defaults[0]?.defaultCap ?? null;
+  const defaultCostCap = defaults[0]?.defaultCostCap ?? null;
   const rows = new Map(settings.map((row) => [row.appRowId, row]));
-  for (const { appRowId, calls } of counts) {
+  for (const { appRowId, ...usage } of counts) {
     if (!wanted.has(appRowId)) continue;
     const row = rows.get(appRowId);
-    const { cap } = effectiveMonthlyCap({
+    const caps = effectiveMonthlyCaps({
       appCap: row?.appCap ?? null,
+      appCostCap: row?.appCostCap ?? null,
       unlimited: row?.unlimited ?? false,
       defaultCap,
+      defaultCostCap,
     });
-    if (cap !== null && calls >= cap) paused.add(appRowId);
+    if (reachedCap(capStandings(caps, usage))) paused.add(appRowId);
   }
   return paused;
 }
@@ -387,6 +406,7 @@ async function summarize({
         name: apps.name,
         appSlug: apps.appSlug,
         monthlyCallCap: orgAppSettings.monthlyCallCap,
+        monthlyCostCapMicros: orgAppSettings.monthlyCostCapMicros,
         capUnlimited: orgAppSettings.unlimited,
       })
       .from(apps)
@@ -404,7 +424,10 @@ async function summarize({
         ),
       ),
     db
-      .select({ cap: orgSettings.defaultMonthlyCallCap })
+      .select({
+        cap: orgSettings.defaultMonthlyCallCap,
+        costCap: orgSettings.defaultMonthlyCostCapMicros,
+      })
       .from(orgSettings)
       .where(eq(orgSettings.organizationId, organizationId))
       .limit(1),
@@ -443,6 +466,7 @@ async function summarize({
   ]);
 
   const defaultMonthlyCallCap = defaults[0]?.cap ?? null;
+  const defaultMonthlyCostCapMicros = defaults[0]?.costCap ?? null;
   const none: UsageTotals = {
     calls: 0,
     failures: 0,
@@ -458,7 +482,11 @@ async function summarize({
     capUnlimited: false,
     effectiveMonthlyCallCap: null as number | null,
     capSource: null as UsageAppRow["capSource"],
+    monthlyCostCapMicros: null as number | null,
+    effectiveMonthlyCostCapMicros: null as number | null,
+    costCapSource: null as UsageAppRow["costCapSource"],
     paused: false,
+    pausedBy: null as UsageAppRow["pausedBy"],
   };
   const appRows = new Map<string, UsageAppRow>(
     byApp.map((row) => [
@@ -485,11 +513,14 @@ async function summarize({
   // today's cap says nothing.
   const current = month === utcMonth(now);
   for (const row of callable) {
-    const { monthlyCallCap, capUnlimited, ...listed } = row;
-    const effective = effectiveMonthlyCap({
+    const { monthlyCallCap, monthlyCostCapMicros, capUnlimited, ...listed } =
+      row;
+    const effective = effectiveMonthlyCaps({
       appCap: monthlyCallCap,
+      appCostCap: monthlyCostCapMicros,
       unlimited: capUnlimited ?? false,
       defaultCap: defaultMonthlyCallCap,
+      defaultCostCap: defaultMonthlyCostCapMicros,
     });
     const existing = appRows.get(row.appRowId) ?? {
       ...none,
@@ -501,10 +532,17 @@ async function summarize({
     existing.callable = true;
     existing.monthlyCallCap = monthlyCallCap;
     existing.capUnlimited = capUnlimited ?? false;
-    existing.effectiveMonthlyCallCap = effective.cap;
-    existing.capSource = effective.source;
-    existing.paused =
-      current && effective.cap !== null && existing.calls >= effective.cap;
+    existing.effectiveMonthlyCallCap = effective.calls.cap;
+    existing.capSource = effective.calls.source;
+    existing.monthlyCostCapMicros = monthlyCostCapMicros;
+    existing.effectiveMonthlyCostCapMicros = effective.cost.cap;
+    existing.costCapSource = effective.cost.source;
+    // The call cap first when both are reached, as the refusal says.
+    const reached = current
+      ? reachedCap(capStandings(effective, existing))
+      : undefined;
+    existing.paused = reached !== undefined;
+    existing.pausedBy = reached?.kind ?? null;
     appRows.set(row.appRowId, existing);
   }
   const memberRows = new Map(
@@ -525,6 +563,7 @@ async function summarize({
   return {
     month,
     defaultMonthlyCallCap,
+    defaultMonthlyCostCapMicros,
     byApp: [...appRows.values()].sort(byCallsThenName),
     byMember: [...memberRows.values()].sort(byCalls),
     byTarget: byTarget.sort((a, b) => b.calls - a.calls),
@@ -600,13 +639,13 @@ async function deleteOlderThan(
 }
 
 export const UsageRepository: UsageRecorder &
-  MonthlyCallCounter & {
+  MonthlyUsageCounter & {
     pausedApps: typeof pausedApps;
     summarize: typeof summarize;
     deleteOlderThan: typeof deleteOlderThan;
   } = {
   record,
-  monthlyCalls,
+  monthlyUsage,
   pausedApps,
   summarize,
   deleteOlderThan,

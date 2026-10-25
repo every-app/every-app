@@ -725,10 +725,23 @@ describe("running a workspace tool", () => {
     expect(
       await problem("everyapp_workspace_app_cap", { app: "crm", cap: null }),
     ).toContain('"cap":null');
-    expect(calls).toHaveLength(1);
+    // A dollar cap is from a cent, a number, and may stand alone.
+    expect(
+      await problem("everyapp_workspace_app_cap", { app: "crm", costUsd: 0 }),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_app_cap: /);
+    expect(
+      await problem("everyapp_workspace_cap_default", { costUsd: "20" }),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_cap_default: /);
+    expect(
+      await problem("everyapp_workspace_app_cap", {
+        app: "crm",
+        costUsd: 12.5,
+      }),
+    ).toContain('"costUsd":12.5');
+    expect(calls).toHaveLength(2);
     expect(
       events.filter((event) => event.outcome === "invalid_arguments"),
-    ).toHaveLength(5);
+    ).toHaveLength(7);
     for (const event of events) {
       expect(event).toMatchObject({ appId: "everyapp", decision: "allowed" });
     }

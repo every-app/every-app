@@ -45,7 +45,11 @@ function row(name: string, overrides: Partial<UsageAppRow> = {}): UsageAppRow {
     capUnlimited: false,
     effectiveMonthlyCallCap: null,
     capSource: null,
+    monthlyCostCapMicros: null,
+    effectiveMonthlyCostCapMicros: null,
+    costCapSource: null,
     paused: false,
+    pausedBy: null,
     callable: true,
     ...overrides,
   };
@@ -147,9 +151,10 @@ it("says Paused in red with a red bar and offers Raise, which opens the dialog f
     effectiveMonthlyCallCap: 1000,
     capSource: "default",
     paused: true,
+    pausedBy: "calls",
   });
   render([paused], { hasDefault: true });
-  expect(capCells()).toEqual(["Paused · 1,000 of 1,000Raise"]);
+  expect(capCells()).toEqual(["Paused by calls · 1,000 of 1,000Raise"]);
   const line = container.querySelector("tbody td:last-child span");
   expect(line?.className).toContain("text-destructive");
   expect(
@@ -178,6 +183,72 @@ it("shows a past month's cap alone, its source kept, with no bar", () => {
   );
   expect(capCells()).toEqual(["1,000 · defaultEdit", "5,000Edit"]);
   expect(container.querySelector('[data-slot="progress"]')).toBeNull();
+});
+
+it("shows the dollar cap beside the call cap, each with its bar", () => {
+  render(
+    [
+      row("Notes", {
+        costMicros: 4_200_000,
+        effectiveMonthlyCallCap: 1000,
+        capSource: "app",
+        monthlyCallCap: 1000,
+        effectiveMonthlyCostCapMicros: 20_000_000,
+        costCapSource: "default",
+      }),
+    ],
+    { hasDefault: true },
+  );
+  expect(capCells()).toEqual(["240 of 1,000$4.20 of $20.00 · defaultEdit"]);
+  expect(
+    [
+      ...container.querySelectorAll('tbody [data-slot="progress"][aria-label]'),
+    ].map((bar) => bar.getAttribute("aria-label")),
+  ).toEqual([
+    "Notes: 240 of 1,000 provider calls this month",
+    "Notes: $4.20 of $20.00 of provider-reported cost this month",
+  ]);
+});
+
+it("says which cap paused the app: Paused by dollars on the dollar line alone", () => {
+  render(
+    [
+      row("Notes", {
+        costMicros: 20_500_000,
+        effectiveMonthlyCallCap: 1000,
+        capSource: "app",
+        monthlyCallCap: 1000,
+        monthlyCostCapMicros: 20_000_000,
+        effectiveMonthlyCostCapMicros: 20_000_000,
+        costCapSource: "app",
+        paused: true,
+        pausedBy: "cost",
+      }),
+    ],
+    { hasDefault: false },
+  );
+  expect(capCells()).toEqual([
+    "240 of 1,000Paused by dollars · $20.50 of $20.00Raise",
+  ]);
+  const indicators = [
+    ...container.querySelectorAll('[data-slot="progress-indicator"]'),
+  ];
+  expect(indicators[0]?.className).not.toContain("bg-destructive");
+  expect(indicators[1]?.className).toContain("bg-destructive");
+});
+
+it("shows a past month's dollar cap alone", () => {
+  render(
+    [
+      row("Notes", {
+        monthlyCostCapMicros: 12_500_000,
+        effectiveMonthlyCostCapMicros: 12_500_000,
+        costCapSource: "app",
+      }),
+    ],
+    { isCurrentMonth: false },
+  );
+  expect(capCells()).toEqual(["$12.50Edit"]);
 });
 
 it("gives a deleted app neither a cap nor a button", () => {

@@ -1,23 +1,26 @@
 /**
  * The cap events (docs/design/2026-10-events-out.md, section 5): from a
- * monthly cap check's standing (app-cap.ts), `cap.warning` once the
- * month's calls reach 80% of the cap, and `cap.reached` with
- * `app.paused_cap` once they reach it. The AppGateway entrypoint and the
- * provider-app call path both check the cap, so both call this under
- * `waitUntil`, after their answer. Each event's dedupe key is per
- * organization, app row, month and cap, so a cap that is hit a thousand
- * times in a month is announced once, from whichever isolate gets there
- * first; a raised cap starts the count over, as its key changes. The keys
- * this isolate emitted lately are remembered, so a paused app an agent
- * keeps retrying costs no subscriptions read and no no-op batch per 429.
+ * monthly cap check's standing (app-cap.ts), for each cap that binds (the
+ * call cap and the dollar cap, each on its own), `cap.warning` once the
+ * month's use reaches 80% of it, and `cap.reached` with `app.paused_cap`
+ * once it reaches it; `data.kind` says which (`calls` or `cost`). The
+ * AppGateway entrypoint and the provider-app call path both check the
+ * caps, so both call this under `waitUntil`, after their answer. Each
+ * event's dedupe key is per organization, app row, month, kind and cap,
+ * so a cap that is hit a thousand times in a month is announced once,
+ * from whichever isolate gets there first; a raised cap starts the count
+ * over, as its key changes. The keys this isolate emitted lately are
+ * remembered, so a paused app an agent keeps retrying costs no
+ * subscriptions read and no no-op batch per 429.
  */
-import type { MonthlyCapCheck } from "@/server/app-cap";
+import type { CapStanding, MonthlyCapCheck } from "@/server/app-cap";
 import { emit } from "./bus";
 import {
   CAP_WARNING_THRESHOLD,
   capKey,
   catalogue,
   type BuiltEvent,
+  type CapInput,
 } from "./catalogue";
 import { appSubject, GATEWAY_ACTOR } from "./subjects";
 
@@ -46,58 +49,66 @@ function remember(key: string, now: number): void {
   }
 }
 
+/** The events one cap's standing calls for: none below 80%. */
+function dueFor(
+  organizationId: string,
+  appRowId: string,
+  month: string,
+  standing: CapStanding,
+): Array<{ key: string; build: (input: CapInput) => BuiltEvent }> {
+  const { kind, cap, used } = standing;
+  const key = (type: string, threshold?: number) =>
+    capKey(type, organizationId, appRowId, month, kind, cap, threshold);
+  if (used >= cap) {
+    return [
+      {
+        key: key("cap.reached"),
+        build: (input) => catalogue.capReached(input),
+      },
+      {
+        key: key("app.paused_cap"),
+        build: (input) => catalogue.appPausedCap(input),
+      },
+    ];
+  }
+  if (used < Math.ceil((cap * CAP_WARNING_THRESHOLD) / 100)) return [];
+  return [
+    {
+      key: key("cap.warning", CAP_WARNING_THRESHOLD),
+      build: (input) => catalogue.capWarning(input),
+    },
+  ];
+}
+
 /** Emit whatever this check's standing calls for; nothing without a cap. */
 export async function noteCapCheck(
   organizationId: string,
   appRowId: string,
   check: MonthlyCapCheck,
 ): Promise<void> {
-  if (check.cap === undefined) return;
-  const warningAt = Math.ceil((check.cap * CAP_WARNING_THRESHOLD) / 100);
-  if (!check.exceeded && check.calls < warningAt) return;
-  const { cap, month } = check;
-  const standing = async () => ({
-    organizationId,
-    app: await appSubject(appRowId),
-    cap,
-    calls: check.calls,
-    month,
-    source: check.source,
-  });
-  type Standing = Awaited<ReturnType<typeof standing>>;
-  const due: Array<{ key: string; build: (input: Standing) => BuiltEvent }> =
-    check.exceeded
-      ? [
-          {
-            key: capKey("cap.reached", organizationId, appRowId, month, cap),
-            build: (input) => catalogue.capReached(input),
-          },
-          {
-            key: capKey("app.paused_cap", organizationId, appRowId, month, cap),
-            build: (input) => catalogue.appPausedCap(input),
-          },
-        ]
-      : [
-          {
-            key: capKey(
-              "cap.warning",
-              organizationId,
-              appRowId,
-              month,
-              cap,
-              CAP_WARNING_THRESHOLD,
-            ),
-            build: (input) => catalogue.capWarning(input),
-          },
-        ];
+  if (check.caps === undefined) return;
+  const { month, calls, costMicros } = check;
   const now = Date.now();
-  for (const { key, build } of due) {
-    if (remembered(key, now)) continue;
-    await emit(async () => ({
-      organizationId,
-      actor: GATEWAY_ACTOR,
-      ...build(await standing()),
-    }));
-    remember(key, now);
+  for (const standing of check.caps) {
+    const due = dueFor(organizationId, appRowId, month, standing).filter(
+      ({ key }) => !remembered(key, now),
+    );
+    for (const { key, build } of due) {
+      await emit(async () => ({
+        organizationId,
+        actor: GATEWAY_ACTOR,
+        ...build({
+          organizationId,
+          app: await appSubject(appRowId),
+          kind: standing.kind,
+          cap: standing.cap,
+          source: standing.source,
+          calls,
+          costMicros,
+          month,
+        }),
+      }));
+      remember(key, now);
+    }
   }
 }

@@ -49,6 +49,8 @@ vi.mock("@/server/services/AppCapService", () => ({
   },
   MONTHLY_CALL_CAP_MIN: 1,
   MONTHLY_CALL_CAP_MAX: 1_000_000_000,
+  MONTHLY_COST_CAP_MIN_USD: 0.01,
+  MONTHLY_COST_CAP_MAX_USD: 1_000_000,
 }));
 
 import { getUsage, setAppMonthlyCap, setDefaultMonthlyCap } from "./usage";
@@ -159,9 +161,25 @@ describe("setAppMonthlyCap server function", () => {
       cap: 5,
       unlimited: false,
     });
-    for (const cap of [0, -1, 1.5, 1_000_000_001, "5000", undefined, NaN]) {
+    for (const cap of [0, -1, 1.5, 1_000_000_001, "5000", NaN]) {
       expect(() => validate({ appRowId: "app-1", cap })).toThrow();
     }
+    // Dollars beside it, or alone: a cent to a million, or null.
+    expect(validate({ appRowId: "app-1", costUsd: 12.5 })).toEqual({
+      appRowId: "app-1",
+      costUsd: 12.5,
+    });
+    expect(validate({ appRowId: "app-1", cap: 100, costUsd: null })).toEqual({
+      appRowId: "app-1",
+      cap: 100,
+      costUsd: null,
+    });
+    for (const costUsd of [0, -1, 0.001, 1_000_000.5, "20", NaN]) {
+      expect(() => validate({ appRowId: "app-1", costUsd })).toThrow();
+    }
+    expect(() =>
+      validate({ appRowId: "app-1", costUsd: 5, unlimited: true }),
+    ).toThrow("An app has a cap or no cap, not both");
     expect(() => validate({ appRowId: "", cap: 10 })).toThrow(
       "App is required",
     );
@@ -211,8 +229,16 @@ describe("setDefaultMonthlyCap server function", () => {
     const validate = setDefaultMonthlyCapServerFn.validatorFn;
     expect(validate({ cap: 1_000 })).toEqual({ cap: 1_000 });
     expect(validate({ cap: null })).toEqual({ cap: null });
-    for (const cap of [0, -1, 1.5, 1_000_000_001, "1000", undefined, NaN]) {
+    for (const cap of [0, -1, 1.5, 1_000_000_001, "1000", NaN]) {
       expect(() => validate({ cap })).toThrow();
+    }
+    expect(validate({ costUsd: 20 })).toEqual({ costUsd: 20 });
+    expect(validate({ cap: null, costUsd: null })).toEqual({
+      cap: null,
+      costUsd: null,
+    });
+    for (const costUsd of [0, 0.001, 2_000_000, "20"]) {
+      expect(() => validate({ costUsd })).toThrow();
     }
   });
 

@@ -72,8 +72,8 @@ Agentic Inbox and OpenCRM each get a pull request in their repository: the manif
 
 ## 8. Pull requests
 
-- Platform: this note, the `ai` entry fields and the eight entries, the default route, AI Gateway in front, `usage_models` and `org_settings.ai_default` (migration 0017), `ai.default_changed`, the SDK's `ai()` and dev fallback, `everyapp ai …`, the MCP tools, the Usage page, the agent page, the setups, the user page, the drift tests, TODO.
-- Caps in dollars (a follow-up pull request): a monthly dollar cap beside the call cap, read where a provider reports cost.
+- Platform: this note, the `ai` entry fields and the eight entries, the default route, AI Gateway in front, `usage_models` and `org_settings.ai_default` (migration 0015), `ai.default_changed`, the SDK's `ai()` and dev fallback, `everyapp ai …`, the MCP tools, the Usage page, the agent page, the setups, the user page, the drift tests, TODO.
+- Caps in dollars (a follow-up pull request, stacked on this one): a monthly dollar cap beside the call cap, read where a provider reports cost (`org_app_settings.monthly_cost_cap_micros`, `org_settings.default_monthly_cost_cap_micros`, migration 0018; over at either cap; `kind` on the cap events; `--usd` on the two CLI verbs and `costUsd` on the two tools; the defaults taken are in TODO.md "Model providers (2026-10-25)").
 - agentic-inbox-everyapp and open-crm: section 7.
 
 ## 9. Decisions taken (defaults), and Ben's

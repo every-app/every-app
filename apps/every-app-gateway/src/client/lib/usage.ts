@@ -40,6 +40,21 @@ export function formatCapProgress(calls: number, cap: number): string {
   return `${formatCount(calls)} of ${formatCount(cap)}`;
 }
 
+const dollars = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
+/** A dollar cap kept in USD millionths, in dollars and cents: "$1,250.00". */
+export function formatCostCap(micros: number): string {
+  return dollars.format(micros / 1_000_000);
+}
+
+/** How far into a monthly dollar cap an app is: "$4.20 of $20.00". */
+export function formatCostCapProgress(micros: number, cap: number): string {
+  return `${formatCostCap(micros)} of ${formatCostCap(cap)}`;
+}
+
 const MONTH = /^(\d{4})-(\d{2})$/;
 
 /** "October 2026" for "2026-10". */

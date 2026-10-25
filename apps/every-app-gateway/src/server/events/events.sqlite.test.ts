@@ -63,6 +63,7 @@ import { loadAppEmitDeps } from "@/server/events/app-emit";
 import { emit, emitAndWait, queueEvent } from "@/server/events/bus";
 import {
   catalogue,
+  eventEmailFields,
   summarize,
   type EventActor,
 } from "@/server/events/catalogue";
@@ -105,7 +106,7 @@ import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { SetupService } from "@/server/services/SetupService";
 import { UserPatService } from "@/server/services/UserPatService";
-import { clearAppCapCache } from "@/server/app-cap";
+import { clearAppCapCache, type MonthlyCapCheck } from "@/server/app-cap";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import { createAuth } from "@/auth";
 import {
@@ -311,8 +312,10 @@ describe("the event bus (SQLite)", () => {
         ...catalogue.capWarning({
           organizationId: acme,
           app: { id: "crm", rowId: "app-row-1", name: "CRM" },
+          kind: "calls",
           cap: 1000,
           calls: 800,
+          costMicros: 0,
           month: "2026-10",
           source: "app",
         }),
@@ -1142,8 +1145,10 @@ describe("the event bus (SQLite)", () => {
     const cap = {
       organizationId: "org",
       app,
+      kind: "calls" as const,
       cap: 1000,
       calls: 800,
+      costMicros: 0,
       month: "2026-10",
       source: "app" as const,
     };
@@ -1437,17 +1442,81 @@ describe("the event bus (SQLite)", () => {
       );
     });
 
-    it("keeps the dedupe keys per organization, app row, month and cap", () => {
+    it("keeps the dedupe keys per organization, app row, month, kind and cap", () => {
       expect(samples["cap.warning"]!.dedupeKey).toBe(
-        "cap.warning:org:row-1:2026-10:1000:80",
+        "cap.warning:org:row-1:2026-10:calls:1000:80",
       );
       expect(samples["cap.reached"]!.dedupeKey).toBe(
-        "cap.reached:org:row-1:2026-10:1000",
+        "cap.reached:org:row-1:2026-10:calls:1000",
       );
       expect(samples["app.paused_cap"]!.dedupeKey).toBe(
-        "app.paused_cap:org:row-1:2026-10:1000",
+        "app.paused_cap:org:row-1:2026-10:calls:1000",
+      );
+      // The dollar cap is announced on its own, under its own key.
+      const dollars = { ...cap, kind: "cost" as const, cap: 20_000_000 };
+      expect(catalogue.capReached(dollars).dedupeKey).toBe(
+        "cap.reached:org:row-1:2026-10:cost:20000000",
       );
       expect(samples["member.joined"]!.dedupeKey).toBeUndefined();
+    });
+
+    it("writes the dollar cap's lines and mail fields in dollars", () => {
+      const dollars = {
+        ...cap,
+        kind: "cost" as const,
+        cap: 20_000_000,
+        costMicros: 16_250_000,
+      };
+      const warning = catalogue.capWarning(dollars);
+      expect(warning.data).toEqual({
+        app,
+        kind: "cost",
+        costCap: 20,
+        cost: 16.25,
+        calls: 800,
+        month: "2026-10",
+        threshold: 80,
+        source: "app",
+      });
+      expect(summarize("cap.warning", warning.data, null)).toBe(
+        "CRM is at 80% of its monthly dollar cap ($16.25 of $20.00)",
+      );
+      expect(
+        summarize("cap.reached", catalogue.capReached(dollars).data, null),
+      ).toBe("CRM reached its monthly dollar cap ($20.00)");
+      expect(
+        summarize("app.paused_cap", catalogue.appPausedCap(dollars).data, null),
+      ).toBe("CRM is paused: monthly dollar cap of $20.00 reached");
+      expect(eventEmailFields("cap.warning", warning.data)).toEqual(
+        expect.arrayContaining([
+          { label: "Dollar cap", value: "$20.00" },
+          { label: "Cost this month", value: "$16.25" },
+        ]),
+      );
+      const raised = (data: Parameters<typeof catalogue.capRaised>[0]) =>
+        summarize("cap.raised", catalogue.capRaised(data).data, null);
+      expect(
+        raised({
+          app: null,
+          cap: 1000,
+          previousCap: 1000,
+          costCap: 50,
+          previousCostCap: 20,
+          source: "default",
+        }),
+      ).toBe("The default dollar cap raised from $20.00 to $50.00");
+      expect(
+        raised({
+          app,
+          cap: 2000,
+          previousCap: 1000,
+          costCap: null,
+          previousCostCap: 20,
+          source: "app",
+        }),
+      ).toBe(
+        "CRM's cap raised from 1,000 to 2,000; its dollar cap was removed (was $20.00)",
+      );
     });
 
     it("keeps token.created and token.revoked flat: a key named token is one the credential rule refuses", () => {
@@ -1798,14 +1867,25 @@ describe("the event bus (SQLite)", () => {
         { type: "cap.raised", cap: 10, previousCap: 8 },
       ]);
 
-      const standing = (calls: number) => ({
-        exceeded: calls >= 10,
-        cap: 10,
-        calls,
-        month: "2026-10",
-        source: "app" as const,
-        retryAfterSeconds: 1,
-      });
+      const standing = (calls: number): MonthlyCapCheck => {
+        const caps = [
+          {
+            kind: "calls" as const,
+            cap: 10,
+            used: calls,
+            source: "app" as const,
+          },
+        ];
+        const month = { month: "2026-10", calls, costMicros: 0, caps };
+        return calls >= 10
+          ? {
+              exceeded: true,
+              ...month,
+              reached: caps[0]!,
+              retryAfterSeconds: 1,
+            }
+          : { exceeded: false, ...month };
+      };
       // Once a key was emitted from this isolate, the next standing with
       // the same key costs no D1 work: three batches for five checks.
       const batches = vi.spyOn(EventRepository, "insertWithDeliveries");
@@ -1830,7 +1910,9 @@ describe("the event bus (SQLite)", () => {
       ]);
       expect(emitted[0]!.data).toEqual({
         app: { id: "crm", rowId: app.id, name: "CRM" },
+        kind: "calls",
         cap: 10,
+
         calls: 8,
         month: "2026-10",
         threshold: 80,
@@ -1856,6 +1938,124 @@ describe("the event bus (SQLite)", () => {
         type: "cap.raised",
         data: { cap: null, previousCap: 10 },
       });
+    });
+
+    it("the dollar cap: cap.warning, cap.reached and app.paused_cap by kind with dollars, and cap.raised with costCap", async () => {
+      clearAppCapCache();
+      const { app } = await registerApp(db, {
+        organizationId: acme,
+        appSlug: "crm",
+        name: "CRM",
+      });
+      // A dollar cap alone keeps no call cap, and is announced in dollars.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        costUsd: 20,
+      });
+      // The call cap set beside it keeps the dollar cap: no costCap fields.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 100,
+      });
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        costUsd: 25.5,
+      });
+      expect(
+        (await typesEmitted()).map((e) => ({ type: e.type, data: e.data })),
+      ).toEqual([
+        {
+          type: "cap.raised",
+          data: {
+            app: { id: "crm", rowId: app.id, name: "CRM" },
+            cap: null,
+            previousCap: null,
+            costCap: 20,
+            previousCostCap: null,
+            source: "app",
+          },
+        },
+        {
+          type: "cap.raised",
+          data: {
+            app: { id: "crm", rowId: app.id, name: "CRM" },
+            cap: 100,
+            previousCap: null,
+            source: "app",
+          },
+        },
+        {
+          type: "cap.raised",
+          data: {
+            app: { id: "crm", rowId: app.id, name: "CRM" },
+            cap: 100,
+            previousCap: 100,
+            costCap: 25.5,
+            previousCostCap: 20,
+            source: "app",
+          },
+        },
+      ]);
+
+      // Calls at half their cap, dollars at 80% then at the cap: the
+      // dollar cap's events alone, each once.
+      const costCap = 25_500_000;
+      const standing = (costMicros: number): MonthlyCapCheck => {
+        const caps = [
+          {
+            kind: "calls" as const,
+            cap: 100,
+            used: 50,
+            source: "app" as const,
+          },
+          {
+            kind: "cost" as const,
+            cap: costCap,
+            used: costMicros,
+            source: "app" as const,
+          },
+        ];
+        const month = { month: "2026-10", calls: 50, costMicros, caps };
+        return costMicros >= costCap
+          ? {
+              exceeded: true,
+              ...month,
+              reached: caps[1]!,
+              retryAfterSeconds: 1,
+            }
+          : { exceeded: false, ...month };
+      };
+      await noteCapCheck(acme, app.id, standing(20_400_000));
+      await noteCapCheck(acme, app.id, standing(26_000_000));
+      clearCapEventMemoryForTests();
+      await noteCapCheck(acme, app.id, standing(27_000_000));
+      const emitted = (await typesEmitted()).filter(
+        (e) => e.type !== "cap.raised",
+      );
+      expect(emitted.map((e) => [e.type, e.data.kind])).toEqual([
+        ["cap.warning", "cost"],
+        ["cap.reached", "cost"],
+        ["app.paused_cap", "cost"],
+      ]);
+      expect(emitted[0]!.data).toEqual({
+        app: { id: "crm", rowId: app.id, name: "CRM" },
+        kind: "cost",
+        costCap: 25.5,
+        cost: 20.4,
+        calls: 50,
+        month: "2026-10",
+        threshold: 80,
+        source: "app",
+      });
+      await settleBackground();
+      expect(sendMock.mock.calls.map((call) => call[0].subject).sort()).toEqual(
+        [
+          "[acme] CRM is at 80% of its monthly dollar cap ($20.40 of $25.50)",
+          "[acme] CRM is at 80% of its monthly dollar cap ($20.40 of $25.50)",
+          "[acme] CRM reached its monthly dollar cap ($25.50)",
+          "[acme] CRM reached its monthly dollar cap ($25.50)",
+        ],
+      );
     });
 
     it("cap.raised with source default and no app, and the Cap alerts row, from the workspace default too", async () => {

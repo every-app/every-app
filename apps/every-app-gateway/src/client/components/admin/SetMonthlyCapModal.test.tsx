@@ -58,7 +58,11 @@ function app(overrides: Partial<UsageAppRow> = {}): UsageAppRow {
     capUnlimited: false,
     effectiveMonthlyCallCap: null,
     capSource: null,
+    monthlyCostCapMicros: null,
+    effectiveMonthlyCostCapMicros: null,
+    costCapSource: null,
     paused: false,
+    pausedBy: null,
     callable: true,
     ...overrides,
   };
@@ -68,6 +72,7 @@ function render(
   row: UsageAppRow,
   options: {
     defaultCap?: number | null;
+    defaultCostCapMicros?: number | null;
     isCurrentMonth?: boolean;
   } = {},
 ) {
@@ -76,6 +81,7 @@ function render(
       <SetMonthlyCapModal
         app={row}
         defaultCap={options.defaultCap ?? null}
+        defaultCostCapMicros={options.defaultCostCapMicros ?? null}
         isCurrentMonth={options.isCurrentMonth ?? true}
         onClose={onClose}
         onSaved={onSaved}
@@ -122,6 +128,10 @@ function radio(label: string): HTMLElement {
 
 function capInput(): HTMLInputElement | null {
   return document.body.querySelector<HTMLInputElement>('input[name="cap"]');
+}
+
+function costInput(): HTMLInputElement | null {
+  return document.body.querySelector<HTMLInputElement>('input[name="costUsd"]');
 }
 
 async function type(input: HTMLInputElement, value: string) {
@@ -189,7 +199,7 @@ describe("with a workspace default", () => {
     expect(radios()[1]).toEqual({ label: "No cap", checked: true });
     await save();
     expect(sent()).toEqual([
-      { appRowId: "row-notes", cap: null, unlimited: true },
+      { appRowId: "row-notes", cap: null, costUsd: null, unlimited: true },
     ]);
     expect(onSaved).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
@@ -200,7 +210,9 @@ describe("with a workspace default", () => {
     expect(radios()[1]).toEqual({ label: "No cap", checked: true });
     await press(radio("Workspace default"));
     await save();
-    expect(sent()).toEqual([{ appRowId: "row-notes", cap: null }]);
+    expect(sent()).toEqual([
+      { appRowId: "row-notes", cap: null, costUsd: null },
+    ]);
   });
 
   it("sends the number for a custom cap, and refuses an empty one", async () => {
@@ -214,10 +226,54 @@ describe("with a workspace default", () => {
     expect(text()).toContain("240 so far this month.");
     await save();
     expect(sent()).toEqual([]);
-    expect(text()).toContain("Enter a whole number of calls.");
+    expect(text()).toContain("Enter a number of calls, dollars, or both.");
     await type(input!, "2500");
     await save();
-    expect(sent()).toEqual([{ appRowId: "row-notes", cap: 2500 }]);
+    expect(sent()).toEqual([
+      { appRowId: "row-notes", cap: 2500, costUsd: null },
+    ]);
+  });
+
+  it("sends dollars alone for a custom dollar cap, says which calls count, and refuses a fraction of a cent", async () => {
+    render(app({ effectiveMonthlyCallCap: 1000, capSource: "default" }), {
+      defaultCap: 1000,
+      defaultCostCapMicros: 20_000_000,
+    });
+    expect(radios()[0]).toEqual({
+      label: "Workspace default (1,000 calls or $20.00)",
+      checked: true,
+    });
+    await press(radio("Custom cap"));
+    expect(text()).toContain("or dollars per month");
+    expect(text()).toContain(
+      "Counted only where the provider reports a price: OpenRouter, DataForSEO. Other calls count toward the call cap alone.",
+    );
+    expect(text()).toContain(
+      "A field left empty follows the workspace default.",
+    );
+    await type(costInput()!, "12.345");
+    await save();
+    expect(sent()).toEqual([]);
+    expect(text()).toContain("Enter dollars, with at most two decimals.");
+    await type(costInput()!, "12.5");
+    await save();
+    expect(sent()).toEqual([
+      { appRowId: "row-notes", cap: null, costUsd: 12.5 },
+    ]);
+  });
+
+  it("starts on the app's own dollar cap when it has one", () => {
+    render(
+      app({
+        monthlyCostCapMicros: 7_250_000,
+        effectiveMonthlyCostCapMicros: 7_250_000,
+        costCapSource: "app",
+      }),
+      { defaultCap: 1000 },
+    );
+    expect(radios()[2]).toEqual({ label: "Custom cap", checked: true });
+    expect(capInput()?.value).toBe("");
+    expect(costInput()?.value).toBe("7.25");
   });
 
   it("starts on the app's own cap when it has one", () => {
@@ -285,7 +341,9 @@ describe("without a workspace default", () => {
     expect(text()).toContain("240 so far this month.");
     await press(button("Remove cap"));
     await settle();
-    expect(sent()).toEqual([{ appRowId: "row-notes", cap: null }]);
+    expect(sent()).toEqual([
+      { appRowId: "row-notes", cap: null, costUsd: null },
+    ]);
   });
 
   it("shows the count before any cap exists, and no Remove cap", () => {

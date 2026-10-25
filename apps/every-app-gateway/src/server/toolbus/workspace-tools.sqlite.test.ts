@@ -1099,6 +1099,9 @@ describe("an admin administering the workspace over /mcp", () => {
       capUnlimited: false,
       effectiveMonthlyCallCap: 1000,
       capSource: "app",
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: null,
+      costCapSource: null,
     });
     const usage = await data("everyapp_workspace_usage", {}, admin());
     expect(usage).toMatchObject({
@@ -1141,6 +1144,68 @@ describe("an admin administering the workspace over /mcp", () => {
     ).toEqual([]);
   });
 
+  it("sets dollar caps beside call caps: costUsd alone keeps the call cap, null clears it, and usage carries both", async () => {
+    await data("everyapp_workspace_app_cap", { app: "crm", cap: 500 }, admin());
+    expect(
+      await data(
+        "everyapp_workspace_app_cap",
+        { app: "crm", costUsd: 12.5 },
+        admin(),
+      ),
+    ).toEqual({
+      app: { id: crmRowId, appId: "crm", name: "CRM" },
+      monthlyCallCap: 500,
+      monthlyCostCapMicros: 12_500_000,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 500,
+      capSource: "app",
+      effectiveMonthlyCostCapMicros: 12_500_000,
+      costCapSource: "app",
+    });
+    expect(
+      await data("everyapp_workspace_cap_default", { costUsd: 20 }, admin()),
+    ).toEqual({
+      defaultMonthlyCallCap: null,
+      defaultMonthlyCostCapMicros: 20_000_000,
+    });
+    expect(
+      await data(
+        "everyapp_workspace_app_cap",
+        { app: "crm", costUsd: null },
+        admin(),
+      ),
+    ).toMatchObject({
+      monthlyCallCap: 500,
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: 20_000_000,
+      costCapSource: "default",
+    });
+    expect(await data("everyapp_workspace_usage", {}, admin())).toMatchObject({
+      defaultMonthlyCostCapMicros: 20_000_000,
+      byApp: [
+        expect.objectContaining({
+          appRowId: crmRowId,
+          effectiveMonthlyCostCapMicros: 20_000_000,
+          costCapSource: "default",
+          pausedBy: null,
+        }),
+      ],
+    });
+    // Finer than a cent: the service refuses; nothing named: refused too.
+    expect(
+      await refusal(
+        "everyapp_workspace_app_cap",
+        { app: "crm", costUsd: 1.234 },
+        admin(),
+      ),
+    ).toMatch(/^INVALID_INPUT: A monthly dollar cap is from/);
+    expect(
+      await refusal("everyapp_workspace_app_cap", { app: "crm" }, admin()),
+    ).toBe(
+      "INVALID_INPUT: Give a cap in calls, a cap in dollars, or unlimited.",
+    );
+  });
+
   it("sets the workspace default cap, caps an app under it, exempts it (unlimited), lets it inherit again, and usage shows the cap that binds each app and its source; a member sees neither cap tool, a read-only admin cannot set", async () => {
     const crm = { id: crmRowId, appId: "crm", name: "CRM" };
     // Nothing set: the app has no cap and nothing binds it.
@@ -1161,7 +1226,10 @@ describe("an admin administering the workspace over /mcp", () => {
     // The default binds every app without a row of its own.
     expect(
       await data("everyapp_workspace_cap_default", { cap: 1000 }, admin()),
-    ).toEqual({ defaultMonthlyCallCap: 1000 });
+    ).toEqual({
+      defaultMonthlyCallCap: 1000,
+      defaultMonthlyCostCapMicros: null,
+    });
     // Inherit: cap null alone keeps the app on the default.
     expect(
       await data(
@@ -1175,6 +1243,9 @@ describe("an admin administering the workspace over /mcp", () => {
       capUnlimited: false,
       effectiveMonthlyCallCap: 1000,
       capSource: "default",
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: null,
+      costCapSource: null,
     });
     // Set: the app's own cap wins over the default.
     expect(
@@ -1189,6 +1260,9 @@ describe("an admin administering the workspace over /mcp", () => {
       capUnlimited: false,
       effectiveMonthlyCallCap: 500,
       capSource: "app",
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: null,
+      costCapSource: null,
     });
     // Unlimited: no cap at all, whatever the default.
     expect(
@@ -1203,6 +1277,9 @@ describe("an admin administering the workspace over /mcp", () => {
       capUnlimited: true,
       effectiveMonthlyCallCap: null,
       capSource: null,
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: null,
+      costCapSource: null,
     });
     // A cap and unlimited together: the service refuses.
     expect(
@@ -1242,11 +1319,17 @@ describe("an admin administering the workspace over /mcp", () => {
       capUnlimited: false,
       effectiveMonthlyCallCap: 1000,
       capSource: "default",
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: null,
+      costCapSource: null,
     });
     // Clear the default: nothing binds the app again.
     expect(
       await data("everyapp_workspace_cap_default", { cap: null }, admin()),
-    ).toEqual({ defaultMonthlyCallCap: null });
+    ).toEqual({
+      defaultMonthlyCallCap: null,
+      defaultMonthlyCostCapMicros: null,
+    });
     expect(
       (
         (await data("everyapp_workspace_usage", {}, admin()))[

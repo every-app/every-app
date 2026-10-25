@@ -41,11 +41,15 @@ afterEach(() => {
   container.remove();
 });
 
-function render(defaultCap: number | null) {
+function render(
+  defaultCap: number | null,
+  defaultCostCapMicros: number | null = null,
+) {
   act(() =>
     root.render(
       <SetDefaultCapModal
         defaultCap={defaultCap}
+        defaultCostCapMicros={defaultCostCapMicros}
         onClose={onClose}
         onSaved={onSaved}
       />,
@@ -63,10 +67,11 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-function capInput(): HTMLInputElement {
-  const input =
-    document.body.querySelector<HTMLInputElement>('input[name="cap"]');
-  if (!input) throw new Error("no cap input");
+function capInput(name = "cap"): HTMLInputElement {
+  const input = document.body.querySelector<HTMLInputElement>(
+    `input[name="${name}"]`,
+  );
+  if (!input) throw new Error(`no ${name} input`);
   return input;
 }
 
@@ -111,10 +116,10 @@ it("sets a default from an empty field, with no Remove default yet", async () =>
   expect(text()).not.toContain("Remove default");
   await save();
   expect(sent()).toEqual([]);
-  expect(text()).toContain("Enter a whole number of calls.");
+  expect(text()).toContain("Enter a number of calls, dollars, or both.");
   await type(capInput(), "1000");
   await save();
-  expect(sent()).toEqual([{ cap: 1000 }]);
+  expect(sent()).toEqual([{ cap: 1000, costUsd: null }]);
   expect(onSaved).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
 });
@@ -126,7 +131,26 @@ it("starts on the default it has and removes it with a null cap", async () => {
     button("Remove default").click();
   });
   await settle();
-  expect(sent()).toEqual([{ cap: null }]);
+  expect(sent()).toEqual([{ cap: null, costUsd: null }]);
+});
+
+it("sets a dollar default beside the call default, and offers Remove default for a dollar default alone", async () => {
+  render(null, 20_000_000);
+  expect(capInput().value).toBe("");
+  expect(capInput("costUsd").value).toBe("20");
+  expect(text()).toContain("or dollars per month");
+  expect(text()).toContain(
+    "Counted only where the provider reports a price: OpenRouter, DataForSEO.",
+  );
+  expect(text()).toContain("Remove default");
+  await type(capInput("costUsd"), "0");
+  await save();
+  expect(sent()).toEqual([]);
+  expect(text()).toContain("Enter an amount from $0.01 to $1,000,000.");
+  await type(capInput("costUsd"), "25.50");
+  await type(capInput(), "500");
+  await save();
+  expect(sent()).toEqual([{ cap: 500, costUsd: 25.5 }]);
 });
 
 it("shares the cap description, says who is emailed, and links the docs", () => {

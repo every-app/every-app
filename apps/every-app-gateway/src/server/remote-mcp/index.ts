@@ -66,7 +66,11 @@ import {
   RemoteMcpError,
   type NormalizedRemoteCatalog,
 } from "@every-app/toolbus/remote";
-import { capRefusalMessage, checkMonthlyCap } from "@/server/app-cap";
+import {
+  capExceededFields,
+  capRefusalMessage,
+  checkMonthlyCap,
+} from "@/server/app-cap";
 import { noteCapCheck } from "@/server/events/cap-events";
 import {
   providerAudience,
@@ -550,15 +554,15 @@ async function callTool(
   // upstream, as for a built-in provider app.
   const cap = await checkMonthlyCap(
     {
-      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-      monthlyCalls: UsageRepository.monthlyCalls,
+      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
+      monthlyUsage: UsageRepository.monthlyUsage,
     },
     route.organizationId,
     route.rowId,
   );
   // The standing goes to the event bus after the answer (cap.warning,
   // cap.reached, app.paused_cap), as for a built-in provider app.
-  if (cap.cap !== undefined) {
+  if (cap.caps !== undefined) {
     waitUntil(
       noteCapCheck(route.organizationId, route.rowId, cap).catch(
         (error: unknown) =>
@@ -580,10 +584,7 @@ async function callTool(
         organizationId: route.organizationId,
         appId: route.appSlug,
         appRowId: route.rowId,
-        cap: cap.cap,
-        calls: cap.calls,
-        month: cap.month,
-        source: cap.source,
+        ...capExceededFields(cap),
       },
       "warn",
     );

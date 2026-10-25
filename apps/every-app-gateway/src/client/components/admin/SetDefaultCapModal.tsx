@@ -14,42 +14,65 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { getServerErrorMessage } from "@/client/errors";
-import { formatCount } from "@/client/lib/usage";
+import { formatCostCap, formatCount } from "@/client/lib/usage";
 import { setDefaultMonthlyCap } from "@/serverFunctions/usage";
 import { CapDialogDescription } from "./CapDialogDescription";
-import { CAP_MAX, CAP_MIN, capFieldSchema } from "./capField";
+import {
+  CAP_MAX,
+  CAP_MIN,
+  COST_CAP_HELP,
+  COST_CAP_MAX_USD,
+  COST_CAP_MIN_USD,
+  checkCapFields,
+  costCapFieldValue,
+  fieldNumber,
+} from "./capField";
 
-const setDefaultCapSchema = z.object({ cap: capFieldSchema });
+const setDefaultCapSchema = z
+  .object({ cap: z.string(), costUsd: z.string() })
+  .superRefine(checkCapFields);
 
 interface SetDefaultCapModalProps {
-  /** The workspace default today, or null for none. */
+  /** The workspace default call cap today, or null for none. */
   defaultCap: number | null;
+  /** The workspace default dollar cap today in micro-dollars, or null for none. */
+  defaultCostCapMicros: number | null;
   onClose: () => void;
-  /** After the default was set or removed: the usage view reloads. */
+  /** After the defaults were set or removed: the usage view reloads. */
   onSaved: () => void;
 }
 
 /**
- * Sets or removes the organization's default monthly cap, which binds
- * every app without a cap or "no cap" of its own. Render it only while it
- * is open.
+ * Sets or removes the organization's default monthly caps (a number of
+ * calls, dollars of provider-reported cost, or both), which bind every
+ * app without a cap of that kind or "no cap" of its own. A field left
+ * empty is no default of that kind. Render it only while it is open.
  */
 export function SetDefaultCapModal({
   defaultCap,
+  defaultCostCapMicros,
   onClose,
   onSaved,
 }: SetDefaultCapModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
-  const save = async (cap: number | null) => {
+  const save = async (caps: { cap: number | null; costUsd: number | null }) => {
     setError(null);
     try {
-      await setDefaultMonthlyCap({ data: { cap } });
+      await setDefaultMonthlyCap({ data: caps });
+      const words = [
+        caps.cap === null ? null : `${formatCount(caps.cap)} provider calls`,
+        caps.costUsd === null
+          ? null
+          : formatCostCap(Math.round(caps.costUsd * 1_000_000)),
+      ]
+        .filter(Boolean)
+        .join(" or ");
       toast.success(
-        cap === null
-          ? "No default monthly cap"
-          : `Every app without its own cap is capped at ${formatCount(cap)} provider calls a month`,
+        words
+          ? `Every app without its own cap is capped at ${words} a month`
+          : "No default monthly cap",
       );
       onSaved();
       onClose();
@@ -59,18 +82,24 @@ export function SetDefaultCapModal({
   };
 
   const form = useAppForm({
-    defaultValues: { cap: defaultCap === null ? "" : String(defaultCap) },
+    defaultValues: {
+      cap: defaultCap === null ? "" : String(defaultCap),
+      costUsd: costCapFieldValue(defaultCostCapMicros),
+    },
     validationLogic: revalidateLogic(),
     validators: { onDynamic: setDefaultCapSchema },
     onSubmit: async ({ value }) => {
-      await save(Number(value.cap.trim()));
+      await save({
+        cap: fieldNumber(value.cap),
+        costUsd: fieldNumber(value.costUsd),
+      });
     },
   });
 
   const remove = async () => {
     setIsRemoving(true);
     try {
-      await save(null);
+      await save({ cap: null, costUsd: null });
     } finally {
       setIsRemoving(false);
     }
@@ -104,6 +133,20 @@ export function SetDefaultCapModal({
                 />
               )}
             </form.AppField>
+            <form.AppField name="costUsd">
+              {(field) => (
+                <field.TextField
+                  label="or dollars per month"
+                  description={COST_CAP_HELP}
+                  type="number"
+                  inputMode="decimal"
+                  min={COST_CAP_MIN_USD}
+                  max={COST_CAP_MAX_USD}
+                  step={0.01}
+                  placeholder="20"
+                />
+              )}
+            </form.AppField>
             {error ? (
               <Alert variant="destructive">
                 <CircleAlert aria-hidden />
@@ -114,7 +157,7 @@ export function SetDefaultCapModal({
               <form.Subscribe selector={(state) => state.isSubmitting}>
                 {(isSubmitting) => (
                   <>
-                    {defaultCap !== null ? (
+                    {defaultCap !== null || defaultCostCapMicros !== null ? (
                       <Button
                         type="button"
                         variant="outline"

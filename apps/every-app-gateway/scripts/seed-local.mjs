@@ -1398,6 +1398,7 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
       gateway,
       {
         app: inbox,
+        kind: "calls",
         cap: 1000,
         calls: 800,
         month,
@@ -1410,14 +1411,28 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
       "cap.reached",
       ago(2 * HOUR),
       gateway,
-      { app: inbox, cap: 1000, calls: 1000, month, source: "app" },
+      {
+        app: inbox,
+        kind: "calls",
+        cap: 1000,
+        calls: 1000,
+        month,
+        source: "app",
+      },
     ],
     [
       "paused",
       "app.paused_cap",
       ago(2 * HOUR),
       gateway,
-      { app: inbox, cap: 1000, calls: 1000, month, source: "app" },
+      {
+        app: inbox,
+        kind: "calls",
+        cap: 1000,
+        calls: 1000,
+        month,
+        source: "app",
+      },
     ],
     [
       "deal-won",

@@ -14,6 +14,7 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import * as lib from "@/lib/gateway/workspace";
+import { setAiDefault } from "@/lib/gateway/aiDefault";
 import { applyGateway } from "@/lib/gateway/apply";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -1424,8 +1425,8 @@ describe("workspace cap default and workspace app cap --unlimited", () => {
     await setDefaultCap(opts(), null);
     expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
     expect(takeCapEvents()).toEqual([{ app: null, cap: null, previousCap: 2000, source: "default", app_row_id: null }]);
-    // Off clears the cap column and drops the row only when it holds no default model provider either.
-    expect(writeBatches()).toEqual([["UPDATE org_settings", "DELETE FROM org_settings", "INSERT INTO events"]]);
+    // Off clears the cap column and drops the row only when it holds no other default (dollars, model provider).
+    expect(writeBatches()).toEqual([["INSERT INTO org_settings", "DELETE FROM org_settings", "INSERT INTO events"]]);
     expect(data()).toMatchObject({ cap: null, was: 2000, capAlerts: null });
     expect(done()!["message"]).toContain("on the Gateway within 30 seconds");
 
@@ -1515,7 +1516,156 @@ describe("workspace cap default and workspace app cap --unlimited", () => {
   });
 });
 
+describe("workspace app cap --usd and workspace cap default --usd", () => {
+  const CRM = { id: "crm", rowId: "app-crm", name: "CRM" };
+  const takeCapEvents = () => {
+    const taken = rows("SELECT data FROM events WHERE type = 'cap.raised'").map(
+      (row) => JSON.parse(String(row["data"])) as Record<string, unknown>,
+    );
+    sqlite().sqlite.exec("DELETE FROM event_deliveries; DELETE FROM events");
+    return taken;
+  };
+  const crmCaps = () =>
+    rows(
+      "SELECT monthly_call_cap, monthly_cost_cap_micros, unlimited FROM org_app_settings WHERE app_row_id = 'app-crm'",
+    );
+
+  it("writes both columns in one statement with the events, --usd alone keeps the call cap, and off clears one kind only", async () => {
+    await setCap(opts(), "crm", 5000);
+    takeCapEvents();
+
+    events = [];
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", undefined, false, 20);
+    expect(crmCaps()).toEqual([{ monthly_call_cap: 5000, monthly_cost_cap_micros: 20_000_000, unlimited: 0 }]);
+    // One batch: the row (both caps and unlimited in one statement), Cap alerts, cap.raised.
+    expect(writeBatches()).toEqual([["INSERT INTO org_app_settings", "INSERT INTO event_subscriptions", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({
+      cap: 5000,
+      costCapMicros: 20_000_000,
+      was: 5000,
+      wasCostCapMicros: null,
+      effectiveCap: 5000,
+      capSource: "app",
+      effectiveCostCapMicros: 20_000_000,
+      costCapSource: "app",
+    });
+    expect(takeCapEvents()).toEqual([
+      { app: CRM, cap: 5000, previousCap: 5000, costCap: 20, previousCostCap: null, source: "app" },
+    ]);
+    expect(done()!["message"]).toContain("crm: 5,000 calls a month or $20.00 a month for Acme");
+    expect(done()!["message"]).toContain("A dollar cap counts only the cost a provider reports (OpenRouter, DataForSEO)");
+
+    // off clears the call cap alone; the dollar cap keeps the row.
+    events = [];
+    await setCap(opts(), "crm", null);
+    expect(crmCaps()).toEqual([{ monthly_call_cap: null, monthly_cost_cap_micros: 20_000_000, unlimited: 0 }]);
+    expect(takeCapEvents()).toEqual([{ app: CRM, cap: null, previousCap: 5000, source: "app" }]);
+
+    // --usd off with nothing else left: the row goes.
+    events = [];
+    await setCap(opts(), "crm", undefined, false, "off");
+    expect(crmCaps()).toEqual([]);
+    expect(takeCapEvents()).toEqual([{ app: CRM, cap: null, previousCap: null, costCap: null, previousCostCap: 20, source: "app" }]);
+
+    // --unlimited with --usd: refused before anything connects.
+    createCf.mockClear();
+    await expect(setCap(opts(), "crm", undefined, true, 5)).rejects.toMatchObject({ code: "INVALID_VALUE" });
+    expect(createCf).not.toHaveBeenCalled();
+    // A fraction of a cent: refused by the lib.
+    await expect(setCap(opts(), "crm", undefined, false, 1.234)).rejects.toMatchObject({ code: "INVALID_CAP" });
+  });
+
+  it("cap default --usd keeps the call default and the AI default; clearing one keeps the others, and the row goes only when empty", async () => {
+    await setDefaultCap(opts(), 1000);
+    sqlite().sqlite.exec(`UPDATE org_settings SET ai_default = 'openrouter' WHERE organization_id = '${ORG}'`);
+    takeCapEvents();
+
+    events = [];
+    account.cf.calls.length = 0;
+    await setDefaultCap(opts(), undefined, 20);
+    const settings = () =>
+      rows("SELECT default_monthly_call_cap, default_monthly_cost_cap_micros, ai_default FROM org_settings WHERE organization_id = ?", ORG);
+    expect(settings()).toEqual([
+      { default_monthly_call_cap: 1000, default_monthly_cost_cap_micros: 20_000_000, ai_default: "openrouter" },
+    ]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_settings", "INSERT INTO event_subscriptions", "INSERT INTO events"]]);
+    expect(takeCapEvents()).toEqual([{ app: null, cap: 1000, previousCap: 1000, costCap: 20, previousCostCap: null, source: "default" }]);
+    expect(data()).toMatchObject({ cap: 1000, was: 1000, costCapMicros: 20_000_000, wasCostCapMicros: null });
+
+    // Both cleared: the AI default keeps the row.
+    events = [];
+    await setDefaultCap(opts(), null, "off");
+    expect(settings()).toEqual([{ default_monthly_call_cap: null, default_monthly_cost_cap_micros: null, ai_default: "openrouter" }]);
+    expect(done()!["message"]).toContain("no default cap (was a default cap of 1,000 calls a month or $20.00 a month)");
+
+    // The dollar default alone keeps the row through ai default off, and the row goes with it.
+    await setDefaultCap(opts(), undefined, 5);
+    const ws = await lib.openWorkspace(gatewayD1(), { actor: `api-token:${ACCOUNT_ID}`, email: null }, { now: NOW });
+    await setAiDefault(ws, null);
+    expect(settings()).toEqual([{ default_monthly_call_cap: null, default_monthly_cost_cap_micros: 5_000_000, ai_default: null }]);
+    await setDefaultCap(opts(), undefined, "off");
+    expect(settings()).toEqual([]);
+
+    // Neither given: refused before anything connects.
+    createCf.mockClear();
+    await expect(setDefaultCap(opts(), undefined)).rejects.toMatchObject({ code: "MISSING_ARGUMENT" });
+    expect(createCf).not.toHaveBeenCalled();
+  });
+
+  it("usage carries the dollar caps, the default's, and which cap paused an app", async () => {
+    // todo's DataForSEO call reported $0.0015 in the seed: make it $0.015,
+    // past a default of a cent, while its own call cap (500) is far off.
+    sqlite().sqlite.exec("UPDATE usage_daily SET cost_micros = 15000 WHERE app_row_id = 'app-todo'");
+    await setDefaultCap(opts(), undefined, 0.01);
+    events = [];
+    await reportUsage(opts({ month: "2026-10" }));
+    expect(data()["defaultMonthlyCostCapMicros"]).toBe(10_000);
+    expect(data()["byApp"].find((row: any) => row.appSlug === "todo")).toMatchObject({
+      monthlyCostCapMicros: null,
+      effectiveMonthlyCostCapMicros: 10_000,
+      costCapSource: "default",
+      paused: true,
+      pausedBy: "cost",
+    });
+    expect(data()["byApp"].find((row: any) => row.appSlug === "crm")).toMatchObject({ paused: false, pausedBy: null });
+  });
+});
+
+describe("a Gateway from before the dollar caps (migration 0018)", () => {
+  beforeEach(() => {
+    sqlite().sqlite.exec(
+      "ALTER TABLE org_app_settings DROP COLUMN monthly_cost_cap_micros; ALTER TABLE org_settings DROP COLUMN default_monthly_cost_cap_micros",
+    );
+  });
+
+  it("refuses --usd with GATEWAY_PREDATES_COST_CAPS, nothing written, and still writes calls and reads usage", async () => {
+    await expect(setCap(opts(), "crm", undefined, false, 20)).rejects.toMatchObject({
+      code: "GATEWAY_PREDATES_COST_CAPS",
+      message: expect.stringContaining("The Gateway predates dollar caps"),
+      rerun: expect.stringContaining("everyapp update"),
+    });
+    await expect(setDefaultCap(opts(), undefined, 20)).rejects.toMatchObject({ code: "GATEWAY_PREDATES_COST_CAPS" });
+    expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
+    expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
+
+    await setCap(opts(), "crm", 500);
+    await setDefaultCap(opts(), 1000);
+    await setDefaultCap(opts(), null);
+    expect(rows("SELECT monthly_call_cap FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 500 }]);
+    expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
+    events = [];
+    await reportUsage(opts({ month: "2026-10" }));
+    expect(data()["defaultMonthlyCostCapMicros"]).toBeNull();
+    expect(data()["byApp"].find((row: any) => row.appSlug === "crm")).toMatchObject({
+      effectiveMonthlyCallCap: 500,
+      effectiveMonthlyCostCapMicros: null,
+    });
+  });
+});
+
 describe("a Gateway from before org_settings and org_app_settings.unlimited (migration 0014)", () => {
+
   // The live Gateway's D1 until `update` runs its migrations.
   beforeEach(() => {
     sqlite().sqlite.exec("DROP TABLE org_settings; ALTER TABLE org_app_settings DROP COLUMN unlimited");

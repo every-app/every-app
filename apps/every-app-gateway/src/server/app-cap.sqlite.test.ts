@@ -7,7 +7,9 @@
  * new month starts over; one organization's cap on a shared app never
  * binds another's use of it; the gateway's own services are not capped; a
  * default binds every app without a cap of its own; the owners and admins
- * hear of a cap reached, once, off the call's path.
+ * hear of a cap reached, once, off the call's path. The dollar cap the
+ * same way, on the cost a provider reports (DataForSEO here), never moved
+ * by one that reports none.
  */
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -172,8 +174,8 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
   }
 
   const caps = {
-    effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-    monthlyCalls: UsageRepository.monthlyCalls,
+    effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
+    monthlyUsage: UsageRepository.monthlyUsage,
   };
 
   async function call(
@@ -255,7 +257,7 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
 
   async function countedCalls(orgId: string, appRowId: string) {
     const month = new Date().toISOString().slice(0, 7);
-    return UsageRepository.monthlyCalls(orgId, appRowId, month);
+    return (await UsageRepository.monthlyUsage(orgId, appRowId, month)).calls;
   }
 
   it("refuses an AI call at the cap with 429, the seconds left in the month, and no count", async () => {
@@ -372,20 +374,20 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
 
   it("never reads the counter when no cap is set", async () => {
     const app = chef();
-    const monthlyCalls = vi.fn(UsageRepository.monthlyCalls);
+    const monthlyUsage = vi.fn(UsageRepository.monthlyUsage);
     const counter = {
-      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-      monthlyCalls,
+      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
+      monthlyUsage,
     };
     expect((await call(app, aiRequest(), { counter })).status).toBe(200);
     expect((await call(app, serpRequest(), { counter })).status).toBe(200);
-    expect(monthlyCalls).not.toHaveBeenCalled();
+    expect(monthlyUsage).not.toHaveBeenCalled();
     await expect(countedCalls(acme, app.rowId!)).resolves.toBe(2);
 
     await setCap(acme, app.rowId!, 5);
     expect((await call(app, aiRequest(), { counter })).status).toBe(200);
-    expect(monthlyCalls).toHaveBeenCalledTimes(1);
-    expect(monthlyCalls).toHaveBeenCalledWith(
+    expect(monthlyUsage).toHaveBeenCalledTimes(1);
+    expect(monthlyUsage).toHaveBeenCalledWith(
       acme,
       app.rowId,
       new Date().toISOString().slice(0, 7),
@@ -423,11 +425,11 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
     vi.setSystemTime(new Date("2026-11-01T00:00:01.000Z"));
     expect((await call(app, aiRequest())).status).toBe(200);
     await expect(
-      UsageRepository.monthlyCalls(acme, app.rowId!, "2026-10"),
-    ).resolves.toBe(1);
+      UsageRepository.monthlyUsage(acme, app.rowId!, "2026-10"),
+    ).resolves.toMatchObject({ calls: 1 });
     await expect(
-      UsageRepository.monthlyCalls(acme, app.rowId!, "2026-11"),
-    ).resolves.toBe(1);
+      UsageRepository.monthlyUsage(acme, app.rowId!, "2026-11"),
+    ).resolves.toMatchObject({ calls: 1 });
     expect((await call(app, aiRequest())).status).toBe(429);
   });
 
@@ -540,22 +542,22 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
 
   it("skips the cap for an app with no registry row, which is never counted", async () => {
     const app = { ...chef(), rowId: undefined } as RegisteredApp;
-    const effectiveMonthlyCap = vi.fn(async () => ({
-      cap: 1,
-      source: "app" as const,
+    const effectiveMonthlyCaps = vi.fn(async () => ({
+      calls: { cap: 1, source: "app" as const },
+      cost: { cap: null, source: null },
     }));
-    const monthlyCalls = vi.fn(async () => 99);
+    const monthlyUsage = vi.fn(async () => ({ calls: 99, costMicros: 0 }));
     for (let i = 0; i < 3; i += 1) {
       expect(
         (
           await call(app, aiRequest(), {
-            counter: { effectiveMonthlyCap, monthlyCalls },
+            counter: { effectiveMonthlyCaps, monthlyUsage },
           })
         ).status,
       ).toBe(200);
     }
-    expect(effectiveMonthlyCap).not.toHaveBeenCalled();
-    expect(monthlyCalls).not.toHaveBeenCalled();
+    expect(effectiveMonthlyCaps).not.toHaveBeenCalled();
+    expect(monthlyUsage).not.toHaveBeenCalled();
   });
 
   it("binds the workspace default to an app without a cap of its own, and says so", async () => {
@@ -587,4 +589,91 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
     expect((await call(app, aiRequest())).status).toBe(429);
     await expect(countedCalls(acme, app.rowId!)).resolves.toBe(4);
   });
+
+  describe("the dollar cap", () => {
+    // DataForSEO reports $0.002 a call; a cap of a cent holds five.
+    const pricedSerp = () =>
+      upstream.mockImplementation(async () =>
+        Response.json({ status_code: 20000, cost: 0.002, tasks: [] }),
+      );
+
+    it("refuses once the reported cost reaches it, saying dollars, and leaves the call cap alone", async () => {
+      const app = chef();
+      pricedSerp();
+      await AppCapService.setMonthlyCap(
+        { orgId: acme, userId: acmeAdmin, role: "admin" },
+        { appRowId: app.rowId!, costUsd: 0.01 },
+      );
+      for (let i = 0; i < 5; i += 1) {
+        expect((await call(app, serpRequest())).status).toBe(200);
+      }
+      const refused = await call(app, serpRequest());
+      expect(refused.status).toBe(429);
+      expect(refused.headers.get("x-everyapp-error")).toBe(
+        "app_monthly_cap_exceeded",
+      );
+      expect(await refused.json()).toMatchObject({
+        code: "app_monthly_cap_exceeded",
+        message:
+          "chef has reached its monthly cap of $0.01 of provider-reported cost for this organization. Its AI and provider calls are refused until the month ends (UTC) or an owner or admin raises the cap under Manage workspace → Usage.",
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "App gateway monthly cap reached",
+        expect.objectContaining({
+          kind: "cost",
+          cap: 10_000,
+          costMicros: 10_000,
+          calls: 5,
+          source: "app",
+        }),
+      );
+      // Paused is paused: an AI call is refused too.
+      expect((await call(app, aiRequest())).status).toBe(429);
+      expect(upstream).toHaveBeenCalledTimes(5);
+      await expect(
+        UsageRepository.pausedApps(acme, [app.rowId!]),
+      ).resolves.toEqual(new Set([app.rowId]));
+    });
+
+    it("is never moved by a provider that reports no cost", async () => {
+      const app = chef();
+      await setDefaultCost(acme, 0.01);
+      // OpenAI's answers carry tokens, no price.
+      for (let i = 0; i < 8; i += 1) {
+        expect((await call(app, aiRequest())).status).toBe(200);
+      }
+      await expect(
+        UsageRepository.monthlyUsage(
+          acme,
+          app.rowId!,
+          new Date().toISOString().slice(0, 7),
+        ),
+      ).resolves.toEqual({ calls: 8, costMicros: 0 });
+    });
+
+    it("binds the workspace default dollar cap beside an app's own call cap, and says it is the default", async () => {
+      const app = chef();
+      pricedSerp();
+      await setCap(acme, app.rowId!, 100);
+      await setDefaultCost(acme, 0.01);
+      for (let i = 0; i < 5; i += 1) {
+        expect((await call(app, serpRequest())).status).toBe(200);
+      }
+      const refused = await call(app, serpRequest());
+      expect(refused.status).toBe(429);
+      expect(((await refused.json()) as { message: string }).message).toContain(
+        "monthly cap of $0.01 of provider-reported cost for this organization (the workspace default)",
+      );
+      // Unlimited lifts both defaults.
+      await setCap(acme, app.rowId!, null, true);
+      expect((await call(app, serpRequest())).status).toBe(200);
+    });
+  });
+
+  async function setDefaultCost(orgId: string, costUsd: number | null) {
+    await AppCapService.setDefaultMonthlyCap(
+      { orgId, userId: acmeAdmin, role: "admin" },
+      { costUsd },
+    );
+  }
 });

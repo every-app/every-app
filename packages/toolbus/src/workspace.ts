@@ -115,6 +115,17 @@ const GROUP_DESCRIPTION_MAX = 500;
 const APP_NAME_MAX = 255;
 const APP_DESCRIPTION_MAX = 1000;
 const MONTHLY_CAP_MAX = 1_000_000_000;
+/** A dollar cap is a cent to a million dollars (AppCapService refuses a fraction of a cent). */
+const COST_CAP_MIN_USD = 0.01;
+const COST_CAP_MAX_USD = 1_000_000;
+
+/** The `costUsd` field of the two cap tools. */
+const COST_USD = (description: string) => ({
+  type: ["number", "null"],
+  description,
+  minimum: COST_CAP_MIN_USD,
+  maximum: COST_CAP_MAX_USD,
+});
 
 const NO_INPUT: JsonObject = {
   type: "object",
@@ -489,46 +500,49 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
   {
     ...ADMIN_WRITE,
     name: "workspace_app_cap",
-    title: "Cap an app's monthly calls",
+    title: "Cap an app's monthly calls or dollars",
     description:
-      "Set the organization's monthly cap on an app's provider calls (Admin → Usage), say the app has no cap whatever the workspace default (`cap: null, unlimited: true`), or neither (`cap: null` alone): the app inherits the workspace default, and without one it is uncapped. Answers the app's own cap, `capUnlimited`, and the cap that binds it now with its source (`app`, `default`, or null). Owners and admins.",
+      "Set the organization's monthly caps on an app's provider calls (Manage workspace → Usage): `cap` in calls and `costUsd` in dollars of provider-reported cost (counted only where the provider reports a price: OpenRouter, DataForSEO), each a number, null for none of its own (the workspace default for that kind applies), or left out to keep it; or say the app has no cap of either kind whatever the workspace defaults (`unlimited: true` alone). A cap of either kind ends `unlimited`. The app is paused once either cap is reached. Answers the app's own caps (`monthlyCallCap`, `monthlyCostCapMicros`), `capUnlimited`, and the caps that bind it now with their sources (`effectiveMonthlyCallCap`/`capSource`, `effectiveMonthlyCostCapMicros`/`costCapSource`: `app`, `default`, or null). Owners and admins.",
     inputSchema: objectWith(
       {
         app: APP,
         cap: {
           type: ["integer", "null"],
           description:
-            "Calls per month, 1 to 1,000,000,000; null for no cap of its own (the workspace default applies unless `unlimited`).",
+            "Calls per month, 1 to 1,000,000,000; null for no call cap of its own (the workspace default applies unless `unlimited`); leave it out to keep the app's call cap.",
           minimum: 1,
           maximum: MONTHLY_CAP_MAX,
         },
+        costUsd: COST_USD(
+          "US dollars of provider-reported cost per month, 0.01 to 1,000,000 in whole cents; null for no dollar cap of its own (the workspace default applies unless `unlimited`); leave it out to keep the app's dollar cap.",
+        ),
         unlimited: {
           type: "boolean",
           description:
-            "No cap at all, even with a workspace default. Only with cap null: a cap and unlimited together are refused.",
+            "No cap at all, of either kind, even with workspace defaults. Alone: a cap and unlimited together are refused.",
         },
       },
-      ["app", "cap"],
+      ["app"],
     ),
   },
   {
     ...ADMIN_WRITE,
     name: "workspace_cap_default",
-    title: "The workspace default cap",
+    title: "The workspace default caps",
     description:
-      "Set or clear the organization's default monthly cap on provider calls (Admin → Usage → Default monthly cap): what binds every app without a cap or `unlimited` of its own. A whole number of calls, or null for no default. Owners and admins.",
-    inputSchema: objectWith(
-      {
-        cap: {
-          type: ["integer", "null"],
-          description:
-            "Calls per month for every app without its own cap, 1 to 1,000,000,000; null for no default.",
-          minimum: 1,
-          maximum: MONTHLY_CAP_MAX,
-        },
+      "Set or clear the organization's default monthly caps on provider calls (Manage workspace → Usage → Default monthly cap): what binds every app without a cap of that kind or `unlimited` of its own. `cap` in calls and `costUsd` in dollars of provider-reported cost (counted only where the provider reports a price: OpenRouter, DataForSEO), each a number, null for no default, or left out to keep it; give at least one. Owners and admins.",
+    inputSchema: objectWith({
+      cap: {
+        type: ["integer", "null"],
+        description:
+          "Calls per month for every app without its own call cap, 1 to 1,000,000,000; null for no default; leave it out to keep it.",
+        minimum: 1,
+        maximum: MONTHLY_CAP_MAX,
       },
-      ["cap"],
-    ),
+      costUsd: COST_USD(
+        "US dollars of provider-reported cost per month for every app without its own dollar cap, 0.01 to 1,000,000 in whole cents; null for no default; leave it out to keep it.",
+      ),
+    }),
   },
   {
     risk: "read",
@@ -581,7 +595,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_usage",
     title: "Usage for a month",
     description:
-      "What the organization's apps spent in a UTC month: per app, per member and per provider or capability, with the workspace default cap (`defaultMonthlyCallCap`) and for each app its own cap, `capUnlimited`, the cap that binds it (`effectiveMonthlyCallCap`, `capSource`: app or default) and whether it is `paused` this month. Owners and admins.",
+      "What the organization's apps spent in a UTC month: per app, per member and per provider or capability, with the workspace default caps (`defaultMonthlyCallCap`, `defaultMonthlyCostCapMicros` in millionths of a dollar) and for each app its own caps (`monthlyCallCap`, `monthlyCostCapMicros`), `capUnlimited`, the caps that bind it (`effectiveMonthlyCallCap` with `capSource`, `effectiveMonthlyCostCapMicros` with `costCapSource`: app or default), whether it is `paused` this month and by which cap (`pausedBy`: calls or cost). Owners and admins.",
     inputSchema: objectWith({
       month: {
         type: "string",

@@ -74,6 +74,7 @@ export interface BuiltEvent {
 }
 
 type CapSource = "app" | "default";
+type CapKind = "calls" | "cost";
 type McpAppKind = "builtin" | "remote";
 type ToolClientKind = "pat" | "session" | "dev" | "oauth" | "access";
 
@@ -134,27 +135,78 @@ function compact<T extends Record<string, unknown>>(value: T): T {
   ) as T;
 }
 
-/** `cap.<kind>:<org>:<app row>:<month>:<cap>`, with the threshold for a warning. */
+/**
+ * `<type>:<org>:<app row>:<month>:<kind>:<cap>`, with the threshold for a
+ * warning: the call cap and the dollar cap are announced each on its own.
+ */
 export function capKey(
   type: string,
   organizationId: string,
   appRowId: string,
   month: string,
+  kind: CapKind,
   cap: number,
   threshold?: number,
 ): string {
-  const base = `${type}:${organizationId}:${appRowId}:${month}:${cap}`;
+  const base = `${type}:${organizationId}:${appRowId}:${month}:${kind}:${cap}`;
   return threshold === undefined ? base : `${base}:${threshold}`;
 }
 
-interface CapInput {
+/** Micro-dollars as the events carry dollars: a number with cents. */
+function dollars(micros: number): number {
+  return Math.round(micros / 10_000) / 100;
+}
+
+/** One cap's standing, as cap-events.ts hands it over. */
+export interface CapInput {
   organizationId: string;
   app: EventApp;
+  kind: CapKind;
+  /** Calls, or micro-dollars for `cost`. */
   cap: number;
+  source: CapSource;
+  /** The month's counted calls. */
   calls: number;
+  /** The month's provider-reported cost, micro-dollars. */
+  costMicros: number;
   /** "YYYY-MM" */
   month: string;
-  source: CapSource;
+}
+
+/**
+ * What `data` says of a cap: `kind`, then for the call cap `cap` and
+ * `calls` as before, for the dollar cap `costCap` and `cost` in dollars
+ * (with the month's `calls` beside them).
+ */
+function capData(input: CapInput): Record<string, unknown> {
+  return input.kind === "cost"
+    ? {
+        app: app(input.app),
+        kind: "cost",
+        costCap: dollars(input.cap),
+        cost: dollars(input.costMicros),
+        calls: input.calls,
+        month: input.month,
+      }
+    : {
+        app: app(input.app),
+        kind: "calls",
+        cap: input.cap,
+        calls: input.calls,
+        month: input.month,
+      };
+}
+
+function capEventKey(type: string, input: CapInput, threshold?: number) {
+  return capKey(
+    type,
+    input.organizationId,
+    input.app.rowId,
+    input.month,
+    input.kind,
+    input.cap,
+    threshold,
+  );
 }
 
 export const catalogue = {
@@ -292,22 +344,10 @@ export const catalogue = {
   appPausedCap(input: CapInput): BuiltEvent {
     return built(
       "app.paused_cap",
-      {
-        app: app(input.app),
-        cap: input.cap,
-        calls: input.calls,
-        month: input.month,
-        source: input.source,
-      },
+      { ...capData(input), source: input.source },
       {
         appRowId: input.app.rowId,
-        dedupeKey: capKey(
-          "app.paused_cap",
-          input.organizationId,
-          input.app.rowId,
-          input.month,
-          input.cap,
-        ),
+        dedupeKey: capEventKey("app.paused_cap", input),
       },
     );
   },
@@ -338,23 +378,13 @@ export const catalogue = {
     return built(
       "cap.warning",
       {
-        app: app(input.app),
-        cap: input.cap,
-        calls: input.calls,
-        month: input.month,
+        ...capData(input),
         threshold: CAP_WARNING_THRESHOLD,
         source: input.source,
       },
       {
         appRowId: input.app.rowId,
-        dedupeKey: capKey(
-          "cap.warning",
-          input.organizationId,
-          input.app.rowId,
-          input.month,
-          input.cap,
-          CAP_WARNING_THRESHOLD,
-        ),
+        dedupeKey: capEventKey("cap.warning", input, CAP_WARNING_THRESHOLD),
       },
     );
   },
@@ -362,22 +392,10 @@ export const catalogue = {
   capReached(input: CapInput): BuiltEvent {
     return built(
       "cap.reached",
-      {
-        app: app(input.app),
-        cap: input.cap,
-        calls: input.calls,
-        month: input.month,
-        source: input.source,
-      },
+      { ...capData(input), source: input.source },
       {
         appRowId: input.app.rowId,
-        dedupeKey: capKey(
-          "cap.reached",
-          input.organizationId,
-          input.app.rowId,
-          input.month,
-          input.cap,
-        ),
+        dedupeKey: capEventKey("cap.reached", input),
       },
     );
   },
@@ -386,23 +404,32 @@ export const catalogue = {
     /** The app whose own setting changed; null for the workspace default (`source: "default"`). */
     app: EventApp | null;
     /**
-     * For an app, the cap that binds it after and before the change (its
-     * own, else the default; null = none), not the row's own column: a cap
-     * set under the default is no raise, `unlimited` under a default is a
-     * removal. For the default, the default itself.
+     * For an app, the call cap that binds it after and before the change
+     * (its own, else the default; null = none), not the row's own column:
+     * a cap set under the default is no raise, `unlimited` under a default
+     * is a removal. For the default, the default itself.
      */
     cap: number | null;
     previousCap: number | null;
+    /**
+     * The dollar cap after and before, in dollars by the same rule; given
+     * only when it changed (the event fires when either cap ended higher
+     * or gone).
+     */
+    costCap?: number | null;
+    previousCostCap?: number | null;
     source: CapSource;
   }): BuiltEvent {
     return built(
       "cap.raised",
-      {
+      compact({
         app: input.app ? app(input.app) : null,
         cap: input.cap,
         previousCap: input.previousCap,
+        costCap: input.costCap,
+        previousCostCap: input.previousCostCap,
         source: input.source,
-      },
+      }),
       input.app ? { appRowId: input.app.rowId } : {},
     );
   },
@@ -759,6 +786,43 @@ function appLabel(value: unknown): string {
 const n = (value: number | null): string =>
   value === null ? "?" : value.toLocaleString("en-US");
 
+/** Dollars as a person reads them: "$1,250.00". */
+const usd = (value: number | null): string =>
+  value === null
+    ? "?"
+    : `$${value.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+
+/** A cap event's dollar cap was the one: `kind: "cost"`. */
+const isCost = (d: Data): boolean => str(d.kind) === "cost";
+
+/**
+ * What `cap.raised` says changed: the call cap, then the dollar cap when
+ * it is in the event (each "set to", "raised from … to" or "removed").
+ */
+function raisedLine(whose: string, d: Data): string {
+  const change = (
+    now: number | null,
+    was: number | null,
+    say: (value: number | null) => string,
+  ): string | null => {
+    if (now === was) return null;
+    if (now === null) return `was removed (was ${say(was)})`;
+    if (was === null) return `set to ${say(now)}`;
+    return now > was
+      ? `raised from ${say(was)} to ${say(now)}`
+      : `lowered from ${say(was)} to ${say(now)}`;
+  };
+  const calls = change(num(d.cap), num(d.previousCap), n);
+  const cost =
+    "costCap" in d ? change(num(d.costCap), num(d.previousCostCap), usd) : null;
+  if (calls && cost) return `${whose} ${calls}; its dollar cap ${cost}`;
+  if (cost) return `${whose.replace(/cap$/, "dollar cap")} ${cost}`;
+  return `${whose} ${calls ?? `is ${n(num(d.cap))}`}`;
+}
+
 /**
  * The one line a person reads for an event, from its stored data and
  * actor: what the email sink puts in the subject, the envelope carries as
@@ -804,24 +868,28 @@ export function summarize(
     case "app.ready":
       return `${appLabel(d.app)} is ready`;
     case "app.paused_cap":
-      return `${appLabel(d.app)} is paused: monthly cap of ${n(num(d.cap))} reached`;
+      return isCost(d)
+        ? `${appLabel(d.app)} is paused: monthly dollar cap of ${usd(num(d.costCap))} reached`
+        : `${appLabel(d.app)} is paused: monthly cap of ${n(num(d.cap))} reached`;
     case "app.tools_changed":
       return `${appLabel(d.app)}'s tools changed: ${n(num(d.toolCount))} tools (was ${n(num(d.previousToolCount))})`;
-    case "cap.warning":
-      return `${appLabel(d.app)} is at ${num(d.threshold) ?? CAP_WARNING_THRESHOLD}% of its monthly cap (${n(num(d.calls))} of ${n(num(d.cap))})`;
+    case "cap.warning": {
+      const share = `${num(d.threshold) ?? CAP_WARNING_THRESHOLD}%`;
+      return isCost(d)
+        ? `${appLabel(d.app)} is at ${share} of its monthly dollar cap (${usd(num(d.cost))} of ${usd(num(d.costCap))})`
+        : `${appLabel(d.app)} is at ${share} of its monthly cap (${n(num(d.calls))} of ${n(num(d.cap))})`;
+    }
     case "cap.reached":
-      return `${appLabel(d.app)} reached its monthly cap (${n(num(d.cap))})`;
+      return isCost(d)
+        ? `${appLabel(d.app)} reached its monthly dollar cap (${usd(num(d.costCap))})`
+        : `${appLabel(d.app)} reached its monthly cap (${n(num(d.cap))})`;
     case "cap.raised": {
       // The workspace default names no app.
       const whose =
         str(d.source) === "default" && !obj(d.app).id
           ? "The default cap"
           : `${appLabel(d.app)}'s cap`;
-      return num(d.cap) === null
-        ? `${whose} was removed (was ${n(num(d.previousCap))})`
-        : num(d.previousCap) === null
-          ? `${whose} set to ${n(num(d.cap))}`
-          : `${whose} raised from ${n(num(d.previousCap))} to ${n(num(d.cap))}`;
+      return raisedLine(whose, d);
     }
     case "tool.blocked": {
       const client = str(obj(d.client).name) ?? userLabel(d.user);
@@ -958,6 +1026,12 @@ export function eventEmailFields(type: string, data: Data): EmailField[] {
   if (list(d.unmet).length) add("Needs", list(d.unmet).join(", "));
   add("Cap", d.cap);
   add("Previous cap", d.previousCap);
+  const dollarsField = (label: string, value: unknown) => {
+    if (num(value) !== null) add(label, usd(num(value)));
+  };
+  dollarsField("Dollar cap", d.costCap);
+  dollarsField("Previous dollar cap", d.previousCostCap);
+  dollarsField("Cost this month", d.cost);
   add("Calls this month", d.calls);
   add("Month", d.month);
   add("Tool", d.tool);

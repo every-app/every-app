@@ -40,17 +40,17 @@ export async function appAccess(flags: ChangeFlags, app: string): Promise<void> 
 const capOf = (cap: number | "off"): number | null => (cap === "off" ? null : cap);
 
 export async function appCap(
-  flags: WorkspaceFlags & { unlimited?: boolean },
+  flags: WorkspaceFlags & { unlimited?: boolean; usd?: number | "off" },
   app: string,
   cap?: number | "off",
 ): Promise<void> {
   await runCommand(flags, (out) =>
-    setCap({ flags, out }, app, cap === undefined ? undefined : capOf(cap), flags.unlimited ?? false),
+    setCap({ flags, out }, app, cap === undefined ? undefined : capOf(cap), flags.unlimited ?? false, flags.usd),
   );
 }
 
-export async function capDefault(flags: WorkspaceFlags, cap: number | "off"): Promise<void> {
-  await runCommand(flags, (out) => setDefaultCap({ flags, out }, capOf(cap)));
+export async function capDefault(flags: WorkspaceFlags & { usd?: number | "off" }, cap?: number | "off"): Promise<void> {
+  await runCommand(flags, (out) => setDefaultCap({ flags, out }, cap === undefined ? undefined : capOf(cap), flags.usd));
 }
 
 /** The stored manifest's JSON as an object, or null when it isn't one. */
@@ -233,10 +233,22 @@ export async function appAccessCommand(
 /** A cap as a person reads it: "5,000 calls a month". */
 const calls = (value: number) => `${value.toLocaleString("en-US")} calls a month`;
 
+/** A dollar cap as a person reads it: "$20.00 a month". */
+const dollars = (micros: number) =>
+  `$${(micros / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} a month`;
+
+/** Both caps of one setting as a person reads them: "5,000 calls a month or $20.00 a month"; null for neither. */
+function capsWords(cap: number | null, costMicros: number | null): string | null {
+  const parts = [cap === null ? null : calls(cap), costMicros === null ? null : dollars(costMicros)].filter(
+    (part): part is string => part !== null,
+  );
+  return parts.length ? parts.join(" or ") : null;
+}
+
 /** An app's own setting as a person reads it. */
-function ownCap(cap: number | null, unlimited: boolean): string {
-  if (cap !== null) return calls(cap);
-  return unlimited ? "no cap at all" : "no cap of its own";
+function ownCap(cap: number | null, unlimited: boolean, costMicros: number | null = null): string {
+  if (unlimited) return "no cap at all";
+  return capsWords(cap, costMicros) ?? "no cap of its own";
 }
 
 /** The Cap alerts line and data, when a cap write made the organization's built-in email subscription. */
@@ -252,62 +264,96 @@ function capAlertsOf(capAlertsId: string | null): { subscriptionId: string; mess
 const PAST_THE_CAP =
   "a provider tool answers a tool error naming the cap, and an app's brokered call gets 429 app_monthly_cap_exceeded until the next UTC month.";
 
+/** Said wherever a dollar cap binds: which calls move it at all. */
+const DOLLARS_COUNTED =
+  "A dollar cap counts only the cost a provider reports (OpenRouter, DataForSEO); other calls count toward the call cap alone.";
+
+/** Parse `--usd`: dollars with cents, or off. */
+type Usd = number | "off";
+const usdOf = (usd: Usd | undefined): number | null | undefined => (usd === undefined ? undefined : usd === "off" ? null : usd);
+
 /**
- * `workspace app cap <app> [<n|off>] [--unlimited]`: a number, `off` or
- * `--unlimited`, exactly one of them, checked before anything connects.
+ * `workspace app cap <app> [<n|off>] [--usd <dollars|off>] [--unlimited]`:
+ * a number or `off`, `--usd`, or both; or `--unlimited` alone. A kind
+ * left out keeps the app's own. Checked before anything connects.
  */
 export async function setCap(
   options: WorkspaceOptions,
   identifier: string,
   cap: number | null | undefined,
   unlimited = false,
+  usd?: Usd,
 ): Promise<void> {
   const { out } = options;
-  if (unlimited && cap !== undefined) {
+  const costUsd = usdOf(usd);
+  if (unlimited && (cap !== undefined || costUsd !== undefined)) {
     throw new EveryAppError(
       "INVALID_VALUE",
-      "--unlimited takes no number and no off\nAn app has a cap (a number), no cap whatever the workspace default (--unlimited), or neither (off).",
+      "--unlimited takes no number, no off and no --usd\nAn app has caps of its own (a number of calls, --usd, or both), no cap whatever the workspace defaults (--unlimited), or neither (off).",
       { fix: `give --unlimited alone: ${CLI} workspace app cap ${identifier} --unlimited` },
     );
   }
-  if (!unlimited && cap === undefined) {
+  if (!unlimited && cap === undefined && costUsd === undefined) {
     throw new EveryAppError(
       "MISSING_ARGUMENT",
-      "Missing the cap\nGive a number of calls per month, off for no cap of its own, or --unlimited.",
-      { data: { usage: `${CLI} workspace app cap <app> [<n|off>] [--unlimited] [flags]` } },
+      "Missing the cap\nGive a number of calls per month, --usd with dollars per month, off for no cap of its own, or --unlimited.",
+      { data: { usage: `${CLI} workspace app cap <app> [<n|off>] [--usd <dollars|off>] [--unlimited] [flags]` } },
     );
   }
   const { ws } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: `Setting ${identifier}'s cap...` });
-  const result = await workspace.setMonthlyCap(ws, identifier, cap ?? null, { unlimited });
-  const { app, was, wasUnlimited, effective, before, capAlertsId } = result;
-  const same = result.cap === was && unlimited === wasUnlimited;
+  const result = await workspace.setMonthlyCap(ws, identifier, cap, { unlimited, costUsd });
+  const { app, was, wasUnlimited, wasCostCapMicros, effective, before, effectiveCost, beforeCost, capAlertsId } = result;
+  const same = result.cap === was && result.costCapMicros === wasCostCapMicros && unlimited === wasUnlimited;
+  const own = ownCap(result.cap, unlimited, result.costCapMicros);
+  const fields = {
+    cap: result.cap,
+    costCapMicros: result.costCapMicros,
+    unlimited,
+    was,
+    wasCostCapMicros,
+    wasUnlimited,
+    effectiveCap: effective.cap,
+    capSource: effective.source,
+    effectiveCostCapMicros: effectiveCost.cap,
+    costCapSource: effectiveCost.source,
+  };
   out.emit({
     type: "step",
     step: STEP,
     status: "ok",
-    message: `${app.appSlug}: ${ownCap(result.cap, unlimited)}`,
-    data: {
-      appRowId: app.id,
-      cap: result.cap,
-      unlimited,
-      was,
-      wasUnlimited,
-      effectiveCap: effective.cap,
-      capSource: effective.source,
-    },
+    message: `${app.appSlug}: ${own}`,
+    data: { appRowId: app.id, ...fields },
   });
-  const lines = [
-    same
-      ? `${app.appSlug} had ${ownCap(result.cap, unlimited)} already. Nothing changed.`
-      : `${app.appSlug}: ${ownCap(result.cap, unlimited)} for ${ws.organization.name} (was ${ownCap(was, wasUnlimited)}).`,
+  // What binds the app now, each kind with where it comes from.
+  const binding = [
     effective.cap === null
-      ? before.cap === null
+      ? null
+      : effective.source === "default"
+        ? `The workspace default of ${calls(effective.cap)}`
+        : calls(effective.cap),
+    effectiveCost.cap === null
+      ? null
+      : effectiveCost.source === "default"
+        ? `the workspace default of ${dollars(effectiveCost.cap)}`
+        : dollars(effectiveCost.cap),
+  ].filter((part): part is string => part !== null);
+  const bindsLine =
+    binding.length === 0
+      ? before.cap === null && beforeCost.cap === null
         ? "Its provider calls are not capped."
         : "Its provider calls are no longer capped."
-      : effective.source === "default"
-        ? `The workspace default of ${calls(effective.cap)} binds it; past it, ${PAST_THE_CAP}`
-        : `Past it, ${PAST_THE_CAP}`,
+      : effectiveCost.cap === null
+        ? effective.source === "default"
+          ? `The workspace default of ${calls(effective.cap!)} binds it; past it, ${PAST_THE_CAP}`
+          : `Past it, ${PAST_THE_CAP}`
+        : `${binding.join(" and ")} ${binding.length > 1 ? "bind" : "binds"} it; past ${binding.length > 1 ? "either" : "it"}, ${PAST_THE_CAP}`;
+  const lines = [
+    same
+      ? `${app.appSlug} had ${own} already. Nothing changed.`
+      : `${app.appSlug}: ${own} for ${ws.organization.name} (was ${ownCap(was, wasUnlimited, wasCostCapMicros)}).`,
+    bindsLine.charAt(0).toUpperCase() + bindsLine.slice(1),
+    ...(effectiveCost.cap === null ? [] : [DOLLARS_COUNTED]),
   ];
   const capAlerts = capAlertsOf(capAlertsId);
   if (capAlerts) lines.push(capAlerts.message);
@@ -315,39 +361,53 @@ export async function setCap(
     type: "done",
     message: lines.join("\n"),
     display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: {
-      organization: ws.organization,
-      app: appData(app),
-      cap: result.cap,
-      unlimited,
-      was,
-      wasUnlimited,
-      effectiveCap: effective.cap,
-      capSource: effective.source,
-      capAlerts,
-    },
+    data: { organization: ws.organization, app: appData(app), ...fields, capAlerts },
   });
 }
 
 /**
- * `workspace cap default <n|off>`: the organization's default cap, as
- * Manage workspace → Usage sets it. The Gateway reads it within 30
- * seconds (its cap cache).
+ * `workspace cap default [<n|off>] [--usd <dollars|off>]`: the
+ * organization's default caps, as Manage workspace → Usage sets them; a
+ * kind left out is kept. The Gateway reads them within 30 seconds (its
+ * cap cache).
  */
-export async function setDefaultCap(options: WorkspaceOptions, cap: number | null): Promise<void> {
+export async function setDefaultCap(options: WorkspaceOptions, cap: number | null | undefined, usd?: Usd): Promise<void> {
   const { out } = options;
+  const costUsd = usdOf(usd);
+  if (cap === undefined && costUsd === undefined) {
+    throw new EveryAppError(
+      "MISSING_ARGUMENT",
+      "Missing the default\nGive a number of calls per month, --usd with dollars per month, or off.",
+      { data: { usage: `${CLI} workspace cap default [<n|off>] [--usd <dollars|off>] [flags]` } },
+    );
+  }
   const { ws } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: "Setting the workspace default cap..." });
-  const { was, capAlertsId } = await workspace.setDefaultMonthlyCap(ws, cap);
-  const says = (value: number | null) => (value === null ? "no default cap" : `a default cap of ${calls(value)}`);
-  out.emit({ type: "step", step: STEP, status: "ok", message: `${ws.organization.name}: ${says(cap)}`, data: { cap, was } });
+  const result = await workspace.setDefaultMonthlyCap(ws, cap, costUsd);
+  const { was, wasCostCapMicros, capAlertsId } = result;
+  const now = { cap: result.cap, costCapMicros: result.costCapMicros };
+  const says = (value: number | null, cost: number | null) => {
+    const words = capsWords(value, cost);
+    return words === null ? "no default cap" : `a default cap of ${words}`;
+  };
+  const fields = { cap: now.cap, was, costCapMicros: now.costCapMicros, wasCostCapMicros };
+  out.emit({
+    type: "step",
+    step: STEP,
+    status: "ok",
+    message: `${ws.organization.name}: ${says(now.cap, now.costCapMicros)}`,
+    data: fields,
+  });
+  const none = now.cap === null && now.costCapMicros === null;
+  const both = now.cap !== null && now.costCapMicros !== null;
   const lines = [
-    cap === was
-      ? `${ws.organization.name} had ${says(cap)} already. Nothing changed.`
-      : `${ws.organization.name}: ${says(cap)} (was ${says(was)}).`,
-    cap === null
+    now.cap === was && now.costCapMicros === wasCostCapMicros
+      ? `${ws.organization.name} had ${says(now.cap, now.costCapMicros)} already. Nothing changed.`
+      : `${ws.organization.name}: ${says(now.cap, now.costCapMicros)} (was ${says(was, wasCostCapMicros)}).`,
+    none
       ? "Every app without a cap of its own is uncapped on the Gateway within 30 seconds; an app's own cap or --unlimited stays."
-      : `Every app without a cap or --unlimited of its own is held to it on the Gateway within 30 seconds; past it, ${PAST_THE_CAP}`,
+      : `Every app without a cap or --unlimited of its own is held to ${both ? "them" : "it"} on the Gateway within 30 seconds; past ${both ? "either" : "it"}, ${PAST_THE_CAP}`,
+    ...(now.costCapMicros === null ? [] : [DOLLARS_COUNTED]),
   ];
   const capAlerts = capAlertsOf(capAlertsId);
   if (capAlerts) lines.push(capAlerts.message);
@@ -355,6 +415,6 @@ export async function setDefaultCap(options: WorkspaceOptions, cap: number | nul
     type: "done",
     message: lines.join("\n"),
     display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: { organization: ws.organization, cap, was, capAlerts },
+    data: { organization: ws.organization, ...fields, capAlerts },
   });
 }

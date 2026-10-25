@@ -18,6 +18,7 @@ import {
   type AiDefaultChoice,
 } from "@every-app/sdk/internal";
 import {
+  capExceededFields,
   capRefusalMessage,
   checkMonthlyCap,
   clearAppCapCache,
@@ -267,16 +268,19 @@ export async function handleAppGatewayRequest({
       if (waitUntil) waitUntil(task);
     };
     const appRowId = app.rowId;
-    // The organization's monthly cap on this app's provider calls, once
-    // the call is attributed and before a provider is called. Only calls
-    // that are counted are capped: the gateway's own services (email,
-    // members) are neither. A refused call is not counted.
+    // The organization's monthly caps on this app's provider calls (a
+    // number of calls, dollars of provider-reported cost), once the call
+    // is attributed and before a provider is called. Only calls that are
+    // counted are capped: the gateway's own services (email, members) are
+    // neither. A refused call is not counted. The dollar cap reads the
+    // cost already reported this month, so the call that crosses it is
+    // answered and the next one refused.
     const enforceCap = async (organizationId: string) => {
       if (!caps || !appRowId) return;
       const check = await checkMonthlyCap(caps, organizationId, appRowId);
       // The standing goes to the event bus after the answer: a warning
-      // near the cap, and the cap being reached, each announced once.
-      if (check.cap !== undefined) {
+      // near a cap, and a cap being reached, each announced once per kind.
+      if (check.caps !== undefined) {
         const task = onCap(organizationId, appRowId, check).catch(
           (error: unknown) => {
             console.error("App gateway cap event failed", {
@@ -294,10 +298,7 @@ export async function handleAppGatewayRequest({
         organizationId,
         appId: props.appId,
         appRowId,
-        cap: check.cap,
-        calls: check.calls,
-        month: check.month,
-        source: check.source,
+        ...capExceededFields(check),
       });
       throw new AppGatewayError(
         "app_monthly_cap_exceeded",

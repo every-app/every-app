@@ -7,6 +7,7 @@ import {
   MONTHLY_CALL_CAP_MAX,
   appName,
 } from "@/lib/gateway/workspace";
+import { MONTHLY_COST_CAP_MAX_USD, MONTHLY_COST_CAP_MIN_USD } from "@/lib/gateway/costCaps";
 import { CLI } from "@/lib/output/command";
 import { accountFlag, gatewayFlag, jsonFlag, orgFlag, verboseFlag } from "../flags";
 
@@ -445,6 +446,29 @@ function parseCap(input: string): number | "off" {
   return cap;
 }
 
+/**
+ * `--usd <dollars|off>`: US dollars of provider-reported cost per month,
+ * in whole cents from 0.01 to 1,000,000, or `off`.
+ */
+function parseUsd(input: string): number | "off" {
+  const value = input.trim().toLowerCase().replace(/^\$/, "");
+  if (value === "off" || value === "none") return "off";
+  if (!/^\d+(\.\d{1,2})?$/.test(value)) {
+    throw new Error(`a dollar cap is dollars with at most two decimals, or off (not ${input})`);
+  }
+  const usd = Number(value);
+  if (usd < MONTHLY_COST_CAP_MIN_USD || usd > MONTHLY_COST_CAP_MAX_USD) {
+    throw new Error(
+      `a dollar cap is from $${MONTHLY_COST_CAP_MIN_USD} to $${MONTHLY_COST_CAP_MAX_USD.toLocaleString("en-US")} a month`,
+    );
+  }
+  return usd;
+}
+
+const usdFlag = (brief: string) => ({
+  usd: { kind: "parsed" as const, parse: parseUsd, optional: true as const, placeholder: "dollars|off", brief },
+});
+
 const appCapCommand = buildCommand({
   loader: async () => (await import("./apps")).appCap,
   parameters: {
@@ -454,35 +478,44 @@ const appCapCommand = buildCommand({
         { ...appParameter, brief: "The app, by id or row id: the organization's own, or a shared one" },
         {
           placeholder: "n|off",
-          brief: "Provider calls per UTC month (1 to 1,000,000,000), or off for no cap of its own (the workspace default applies); left out with --unlimited",
+          brief: "Provider calls per UTC month (1 to 1,000,000,000), or off for no call cap of its own (the workspace default applies); left out to keep it, and with --unlimited",
           parse: parseCap,
           optional: true,
         },
       ],
     },
     flags: {
+      ...usdFlag(
+        "Dollars of provider-reported cost per UTC month (0.01 to 1,000,000), or off for no dollar cap of its own; counted only where the provider reports a price (OpenRouter, DataForSEO)",
+      ),
       unlimited: {
         kind: "boolean",
         optional: true,
-        brief: "No cap at all, even with a workspace default (instead of a number or off)",
+        brief: "No cap at all, of either kind, even with workspace defaults (instead of a number, off or --usd)",
       },
       ...workspaceFlags,
     },
   },
   docs: {
-    brief: "Cap an app's provider calls per month, lift its own cap, or exempt it from the workspace default",
+    brief: "Cap an app's provider calls or dollars per month, lift its own caps, or exempt it from the workspace defaults",
     fullDescription: [
-      "An app has a cap of its own (a number), no cap whatever the workspace default",
-      "(--unlimited), or neither (off): the default set with workspace cap default binds it,",
-      "and without one it is uncapped. Past the cap that binds it, a provider tool answers a",
-      "tool error naming it and an app's brokered call gets 429 app_monthly_cap_exceeded until",
-      "the next UTC month. Binds within seconds. --unlimited and a number or off together are",
-      "refused (INVALID_VALUE); on a Gateway from before the workspace default, --unlimited is",
-      "refused (GATEWAY_PREDATES_DEFAULT_CAPS) and a number or off still work.",
+      "An app has caps of its own (a number of calls, --usd dollars, or both), no cap whatever",
+      "the workspace defaults (--unlimited), or neither (off, and --usd off): the defaults set",
+      "with workspace cap default bind it, and without them it is uncapped. A kind left out",
+      "keeps the app's own, so --usd alone keeps the call cap; a cap of either kind ends",
+      "--unlimited, the other kind then following its default. The dollar cap counts the cost",
+      "a provider reports (OpenRouter, DataForSEO); other calls count toward the call cap",
+      "alone. Past either cap that binds it, a provider tool answers a tool error naming it and",
+      "an app's brokered call gets 429 app_monthly_cap_exceeded until the next UTC month. Binds",
+      "within seconds. --unlimited with a number, off or --usd is refused (INVALID_VALUE); on a",
+      "Gateway from before the workspace default, --unlimited is refused",
+      "(GATEWAY_PREDATES_DEFAULT_CAPS) and a number or off still work; on one from before dollar",
+      "caps, --usd is refused (GATEWAY_PREDATES_COST_CAPS).",
       "",
       "Examples:",
       `  ${CLI} workspace app cap crm 5000`,
-      `  ${CLI} workspace app cap crm off`,
+      `  ${CLI} workspace app cap crm --usd 20`,
+      `  ${CLI} workspace app cap crm off --usd off`,
       `  ${CLI} workspace app cap crm --unlimited`,
     ].join("\n"),
   },
@@ -494,25 +527,41 @@ const capDefaultCommand = buildCommand({
     positional: {
       kind: "tuple",
       parameters: [
-        { placeholder: "n|off", brief: "Provider calls per UTC month (1 to 1,000,000,000) for every app without its own cap, or off for no default", parse: parseCap },
+        {
+          placeholder: "n|off",
+          brief: "Provider calls per UTC month (1 to 1,000,000,000) for every app without its own call cap, or off for no default; left out to keep it",
+          parse: parseCap,
+          optional: true,
+        },
       ],
     },
-    flags: workspaceFlags,
+    flags: {
+      ...usdFlag(
+        "Dollars of provider-reported cost per UTC month (0.01 to 1,000,000) for every app without its own dollar cap, or off for no dollar default",
+      ),
+      ...workspaceFlags,
+    },
   },
   docs: {
-    brief: "Set or clear the workspace default cap: what binds every app without a cap or --unlimited of its own",
+    brief: "Set or clear the workspace default caps: what binds every app without a cap or --unlimited of its own",
     fullDescription: [
-      "The same setting as Manage workspace → Usage → Default monthly cap. An app's own cap, or",
-      "its --unlimited, stays. The Gateway holds every app without one to it within 30 seconds;",
-      "past it, a provider tool answers a tool error naming the cap and an app's brokered call",
-      "gets 429 app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the",
-      "workspace's first cap makes the built-in Cap alerts subscription, and a default set,",
-      "raised or removed queues cap.raised (a lowered one doesn't). Refused on a Gateway from",
-      "before the workspace default (GATEWAY_PREDATES_DEFAULT_CAPS): run update first.",
+      "The same setting as Manage workspace → Usage → Default monthly cap: a number of calls,",
+      "--usd dollars of provider-reported cost, or both; a kind left out is kept. An app's own",
+      "cap of that kind, or its --unlimited, stays. The dollar cap counts the cost a provider",
+      "reports (OpenRouter, DataForSEO); other calls count toward the call cap alone. The",
+      "Gateway holds every app without its own to them within 30 seconds; past either, a",
+      "provider tool answers a tool error naming the cap and an app's brokered call gets 429",
+      "app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the workspace's",
+      "first cap makes the built-in Cap alerts subscription, and a default set, raised or",
+      "removed queues cap.raised (a lowered one doesn't). The default model provider in the",
+      "same row stays. Refused on a Gateway from before the workspace default",
+      "(GATEWAY_PREDATES_DEFAULT_CAPS), and --usd on one from before dollar caps",
+      "(GATEWAY_PREDATES_COST_CAPS): run update first.",
       "",
       "Examples:",
       `  ${CLI} workspace cap default 1000`,
-      `  ${CLI} workspace cap default off --json`,
+      `  ${CLI} workspace cap default --usd 20`,
+      `  ${CLI} workspace cap default off --usd off --json`,
     ].join("\n"),
   },
 });
@@ -544,9 +593,11 @@ const usageCommand = buildCommand({
     fullDescription: [
       "Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a",
       "provider answered, and allowed MCP tool calls from the audit trail. Every callable app is",
-      "listed, with zeros in a month it made no call, its own cap, the cap that binds it and where",
-      "it comes from (its own, or the workspace default), whether it is exempt (--unlimited) and",
-      "whether it is paused this month; the workspace default cap comes with it. Nothing is",
+      "listed, with zeros in a month it made no call, its own caps (calls and dollars), the caps",
+      "that bind it and where they come from (its own, or the workspace default), whether it is",
+      "exempt (--unlimited) and whether it is paused this month and by which cap; the workspace",
+      "default caps come with it. Nothing is",
+
       "changed. Refused on a Gateway from before the workspace default",
       "(GATEWAY_PREDATES_DEFAULT_CAPS): run update first.",
       "",

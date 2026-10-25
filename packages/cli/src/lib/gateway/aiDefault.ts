@@ -30,6 +30,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { listGatewaySecretNames } from "@/lib/app/settings";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
+import { emptyOrgSettingsSql, hasCostCaps } from "./costCaps";
 import { operatorActor, queueEventFromCli } from "./events";
 import type { Workspace } from "./workspace";
 
@@ -84,7 +85,7 @@ const eventChoice = (choice: AiDefaultChoice | null) =>
  * an id the catalog doesn't have, an API provider, an entry without a
  * chat route, AI Gateway) before anything is written; accepts a provider
  * whose key isn't set (the caller warns). In the write's own batch: the
- * `org_settings` upsert (the cap column untouched; the row deleted only
+ * `org_settings` upsert (the cap columns untouched; the row deleted only
  * when it holds nothing else) and `ai.default_changed` when the choice
  * changed.
  */
@@ -118,9 +119,10 @@ VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT (organization_id) DO UPDATE SET ai_default = ?2, updated_at = ?3, updated_by = ?4`,
       params: [org, stored, ws.now, ws.operator.userId],
     },
-    // A row with no default of either kind needs no row.
+    // A row with no default of any kind needs no row (the dollar cap's
+    // column counts on a Gateway that has it).
     {
-      sql: "DELETE FROM org_settings WHERE organization_id = ? AND ai_default IS NULL AND default_monthly_call_cap IS NULL",
+      sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: await hasCostCaps(ws.db), ai: true })}`,
       params: [org],
     },
     ...event,

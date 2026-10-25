@@ -320,8 +320,8 @@ export class AppGateway extends WorkerEntrypoint<
       usage: UsageRepository,
       waitUntil: (task) => this.ctx.waitUntil(task),
       caps: {
-        effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-        monthlyCalls: UsageRepository.monthlyCalls,
+        effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
+        monthlyUsage: UsageRepository.monthlyUsage,
       },
       // The catalog and this gateway's registered providers.
       providers: gatewayProviders,

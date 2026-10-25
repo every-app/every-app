@@ -91,6 +91,24 @@ function strings(value: unknown): string[] | undefined {
     : undefined;
 }
 
+/**
+ * The two caps of a cap tool as the service takes them: a number, null
+ * for none, or left out (absent, or not a number or null) to keep it.
+ */
+function capArgs(args: JsonObject): {
+  cap?: number | null;
+  costUsd?: number | null;
+} {
+  const kept = (value: unknown) =>
+    typeof value === "number" || value === null ? value : undefined;
+  const cap = kept(args["cap"]);
+  const costUsd = kept(args["costUsd"]);
+  return {
+    ...(cap !== undefined && { cap }),
+    ...(costUsd !== undefined && { costUsd }),
+  };
+}
+
 /** `confirm: true`, checked here too: the action cannot be undone. */
 function requireConfirm(args: JsonObject): void {
   if (args["confirm"] !== true) {
@@ -794,30 +812,34 @@ const HANDLERS: Record<string, Handler> = {
     const app = await resolveApp(ctx, requireText(args, "app"), {
       callable: true,
     });
-    const cap = args["cap"];
     const unlimited = args["unlimited"];
-    // The service refuses a cap and unlimited together, and answers the
-    // app's own setting with the cap that binds it now (AppCapState).
+    // A cap left out keeps what the app has; the service refuses a cap
+    // and unlimited together, and a call that names neither cap nor
+    // unlimited, and answers the app's own settings with the caps that
+    // bind it now (AppCapState).
     const set = await AppCapService.setMonthlyCap(ctx, {
       appRowId: app.id,
-      cap: typeof cap === "number" ? cap : null,
+      ...capArgs(args),
       ...(typeof unlimited === "boolean" ? { unlimited } : {}),
     });
     return {
       app: { id: app.id, appId: app.appSlug, name: app.name },
       monthlyCallCap: set.monthlyCallCap,
+      monthlyCostCapMicros: set.monthlyCostCapMicros,
       capUnlimited: set.capUnlimited,
       effectiveMonthlyCallCap: set.effectiveMonthlyCallCap,
       capSource: set.capSource,
+      effectiveMonthlyCostCapMicros: set.effectiveMonthlyCostCapMicros,
+      costCapSource: set.costCapSource,
     };
   },
 
   async workspace_cap_default(ctx, args) {
-    const cap = args["cap"];
-    const set = await AppCapService.setDefaultMonthlyCap(ctx, {
-      cap: typeof cap === "number" ? cap : null,
-    });
-    return { defaultMonthlyCallCap: set.defaultMonthlyCallCap };
+    const set = await AppCapService.setDefaultMonthlyCap(ctx, capArgs(args));
+    return {
+      defaultMonthlyCallCap: set.defaultMonthlyCallCap,
+      defaultMonthlyCostCapMicros: set.defaultMonthlyCostCapMicros,
+    };
   },
 
   async workspace_app_delete(ctx, args) {

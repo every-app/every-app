@@ -21,7 +21,11 @@ import {
   providerAppManifest,
 } from "@every-app/sdk/internal";
 import { ToolError, type ToolContext } from "@every-app/sdk/server";
-import { capRefusalMessage, checkMonthlyCap } from "@/server/app-cap";
+import {
+  capExceededFields,
+  capRefusalMessage,
+  checkMonthlyCap,
+} from "@/server/app-cap";
 import { noteCapCheck } from "@/server/events/cap-events";
 import {
   handleIntegrationProxyRequest,
@@ -87,15 +91,15 @@ export async function providerCall(
   // is not counted.
   const cap = await checkMonthlyCap(
     {
-      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
-      monthlyCalls: UsageRepository.monthlyCalls,
+      effectiveMonthlyCaps: OrgAppSettingsRepository.getEffectiveMonthlyCaps,
+      monthlyUsage: UsageRepository.monthlyUsage,
     },
     app.organizationId,
     app.rowId,
   );
   // The standing goes to the event bus after the answer (cap.warning,
   // cap.reached, app.paused_cap), as the AppGateway entrypoint reports it.
-  if (cap.cap !== undefined) {
+  if (cap.caps !== undefined) {
     waitUntil(
       noteCapCheck(app.organizationId, app.rowId, cap).catch((error: unknown) =>
         logEvent(
@@ -116,10 +120,7 @@ export async function providerCall(
         organizationId: app.organizationId,
         appId: app.id,
         appRowId: app.rowId,
-        cap: cap.cap,
-        calls: cap.calls,
-        month: cap.month,
-        source: cap.source,
+        ...capExceededFields(cap),
       },
       "warn",
     );
