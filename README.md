@@ -65,8 +65,8 @@ git clone https://github.com/every-app/every-app.git
 cd every-app
 pnpm install
 pnpm everyapp setup --domain apps.yourcompany.com   # installs your Gateway, about 15 minutes; run again to resume or repair
-pnpm everyapp create my-app                          # copies starter/, a simple todo app, to apps/my-app
-cd apps/my-app
+pnpm everyapp create ../my-app                      # copies starter/, a simple todo app, into ../my-app, a repository of its own
+cd ../my-app
 pnpm dev                                             # http://my-app.localhost:8787, signed in as the dev user
 pnpm run deploy                                      # the same as pnpm everyapp deploy
 ```
@@ -76,7 +76,7 @@ Live          https://my-app.apps.yourcompany.com
 Who can open  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
 ```
 
-Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. Every app you create carries two skills for your coding agent: `everyapp`, which drives the CLI, and `build-every-app`, which shows how the four apps and the starter do things. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.
+Open `../my-app` in Claude Code, Codex or Cursor and say what you want. Every app you create carries two skills for your coding agent: `everyapp`, which drives the CLI, and `build-every-app`, which shows how the four apps and the starter do things. `my-app` sits beside `every-app` as a git repository of its own, linked to it: keep the two side by side. To keep apps inside the checkout instead, `pnpm everyapp create my-app` makes `apps/my-app`; git there neither tracks nor ignores it, and `git pull` leaves it alone.
 
 ### Or let your agent set it up
 

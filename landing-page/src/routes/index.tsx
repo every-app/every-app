@@ -418,8 +418,8 @@ function Home() {
 cd every-app
 pnpm install
 pnpm everyapp setup --domain apps.yourcompany.com   # about 15 minutes
-pnpm everyapp create my-app                         # a simple todo app
-cd apps/my-app
+pnpm everyapp create ../my-app                      # a simple todo app
+cd ../my-app
 pnpm run deploy`}</code>
           </pre>
           <ul className="max-w-xl space-y-3 text-base text-stone-300">
@@ -428,7 +428,7 @@ pnpm run deploy`}</code>
               public routes.
             </li>
             <li>
-              Open <Code>apps/my-app</Code> in Claude Code, Codex or Cursor and
+              Open <Code>../my-app</Code> in Claude Code, Codex or Cursor and
               say what you want.
             </li>
             <li>
