@@ -213,3 +213,24 @@ export const HyperdriveConfigOutput = z.looseObject({
 });
 export type HyperdriveConfig = z.infer<typeof HyperdriveConfigOutput>;
 export const HyperdriveConfigListOutput = z.array(HyperdriveConfigOutput);
+
+/**
+ * `cf vectorize get`, `create`, and each entry of `cf vectorize list`: the
+ * index by its name (it has no other id) and its shape, which can't
+ * change once created. An index made from a preset reports the preset's
+ * dimensions and metric beside it. Checked against cf@1.0.0-beta.14 on
+ * 2026-10-24: `{ created_on, modified_on, name, description, config }`.
+ */
+export const VectorizeIndexOutput = z.looseObject({
+  name: z.string(),
+  config: z
+    .looseObject({
+      dimensions: z.number().nullish(),
+      metric: z.string().nullish(),
+      preset: z.string().nullish(),
+    })
+    .nullish(),
+  created_on: z.string().nullish(),
+});
+export type VectorizeIndex = z.infer<typeof VectorizeIndexOutput>;
+export const VectorizeIndexListOutput = z.array(VectorizeIndexOutput);

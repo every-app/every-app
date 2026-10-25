@@ -9,7 +9,7 @@ import { RESOURCE_LABELS } from "@/lib/app/ownership";
 import { formatFacts } from "@/lib/output/table";
 import { plural } from "@/lib/output/text";
 
-/** Every Worker, database, namespace, bucket and config Every App makes is named so. */
+/** Every Worker, database, namespace, bucket, config and index Every App makes is named so. */
 export const EVERY_APP_PREFIX = "every-";
 
 export const isEveryAppName = (name: string): boolean => name.startsWith(EVERY_APP_PREFIX);
@@ -82,6 +82,8 @@ export interface TeardownPlan {
   kv: Array<{ title: string; id: string }>;
   r2: string[];
   hyperdrive: Array<{ name: string; id: string }>;
+  /** Vectorize indexes, by name (an index has no other id). */
+  vectorize: string[];
   access: {
     applications: Array<{ id: string; name: string }>;
     policy: { id: string; name: string } | null;
@@ -104,6 +106,7 @@ export const KINDS = [
   ["kv", "KV namespace", "KV namespaces"],
   ["r2", "R2 bucket", "R2 buckets"],
   ["hyperdrive", "Hyperdrive config", "Hyperdrive configs"],
+  ["vectorize", "Vectorize index", "Vectorize indexes"],
   ["dns", "DNS record", "DNS records"],
 ] as const;
 export type Kind = (typeof KINDS)[number][0];
@@ -119,6 +122,7 @@ export const PLACES: Readonly<Record<Kind, string>> = {
   kv: "Storage & Databases → KV",
   r2: "Storage & Databases → R2 Object Storage",
   hyperdrive: "Storage & Databases → Hyperdrive",
+  vectorize: "AI → Vectorize",
   dns: "the zone → DNS → Records",
 };
 
@@ -145,6 +149,7 @@ export function planCounts(plan: TeardownPlan): Record<Kind, number> {
     kv: plan.kv.length,
     r2: plan.r2.length,
     hyperdrive: plan.hyperdrive.length,
+    vectorize: plan.vectorize.length,
     dns: dnsRecordCount(plan.dns),
   };
 }
@@ -161,6 +166,7 @@ export const describe = {
   kv: (title: string) => `${RESOURCE_LABELS.kv} "${title}"`,
   r2: (name: string) => `${RESOURCE_LABELS.r2} "${name}"`,
   hyperdrive: (name: string) => `${RESOURCE_LABELS.hyperdrive} "${name}"`,
+  vectorize: (name: string) => `${RESOURCE_LABELS.vectorize} "${name}"`,
   application: (name: string) => `Access application "${name}"`,
   policy: (name: string) => `Access policy "${name}"`,
   rule: (address: string | null, zoneName: string) =>
@@ -193,6 +199,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
     kv: plan.kv.map((namespace) => namespace.title),
     r2: plan.r2,
     hyperdrive: plan.hyperdrive.map((config) => config.name),
+    vectorize: plan.vectorize,
     dns: plan.dns.flatMap((name) => name.records.map((record) => `${record.type} at ${name.name}`)),
   };
   return KINDS.flatMap(([kind, , many]) =>
@@ -231,6 +238,7 @@ export function planData(plan: TeardownPlan): Record<string, unknown> {
     kv: plan.kv,
     r2: plan.r2,
     hyperdrive: plan.hyperdrive,
+    vectorize: plan.vectorize,
     access: plan.access,
     email: plan.email,
     certificates: plan.certificates,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import chalk from "chalk";
+import { vectorizeNameFor } from "@every-app/perimeter/manifest";
 import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
@@ -17,6 +18,7 @@ import {
   findKv,
 } from "@/lib/cf/resources";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
+import { deleteVectorizeIndex, getVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
 import { deleteWorkflowIfExists, listWorkflows } from "@/lib/cf/workflows";
@@ -239,7 +241,15 @@ export function deletionSummary(
 }
 
 /** What a purge deleted, by kind, in the order a person reads them. */
-const KINDS = ["Worker", "Workflow", "D1 database", "KV namespace", "Hyperdrive config", "mail route"] as const;
+const KINDS = [
+  "Worker",
+  "Workflow",
+  "D1 database",
+  "KV namespace",
+  "Hyperdrive config",
+  "Vectorize index",
+  "mail route",
+] as const;
 type Kind = (typeof KINDS)[number];
 
 /** Something that has the app's name but isn't recorded as its own, and where to delete it by hand. */
@@ -257,6 +267,7 @@ const PLACES = {
   d1: "Storage & Databases → D1",
   kv: "Storage & Databases → KV",
   workflow: "Compute (Workers) → Workflows",
+  vectorize: "AI → Vectorize",
 } as const;
 
 async function purgeApp(
@@ -317,8 +328,9 @@ async function purgeApp(
     }
   }
   // The Workers next, the app's before its helpers (it binds their
-  // classes): they bind the databases, namespaces and Hyperdrive configs
-  // (a config goes; the Postgres database it connects to is never touched).
+  // classes): they bind the databases, namespaces, Hyperdrive configs and
+  // Vectorize indexes (a config goes; the Postgres database it connects to
+  // is never touched).
   const order = (resource: (typeof owned)[number]) =>
     resource.kind !== "worker" ? 2 : resource.binding === "" ? 0 : 1;
   for (const resource of owned.sort((a, b) => order(a) - order(b))) {
@@ -331,6 +343,8 @@ async function purgeApp(
         await deleteD1(cf, resource.resourceId);
       } else if (resource.kind === "hyperdrive") {
         await deleteHyperdrive(cf, resource.resourceId);
+      } else if (resource.kind === "vectorize") {
+        await deleteVectorizeIndex(cf, resource.resourceId);
       } else {
         await deleteKv(cf, resource.resourceId);
       }
@@ -390,7 +404,7 @@ async function unrecordedResources(
     owned.filter((r) => r.resourceId).map((r) => `${r.kind}:${r.name}`),
   );
   const kept: Kept[] = [];
-  const keep = (kind: "worker" | "d1" | "kv", name: string) =>
+  const keep = (kind: "worker" | "d1" | "kv" | "vectorize", name: string) =>
     kept.push({
       described: describeResource({ kind, name }),
       shown: `the ${RESOURCE_LABELS[kind]} ${name}`,
@@ -408,7 +422,23 @@ async function unrecordedResources(
       if (await (kind === "d1" ? findD1 : findKv)(cf, name)) keep(kind, name);
     }
   }
+  // The indexes the last deployed manifest declares, by their names.
+  for (const binding of storedVectorizeBindings(deleted.manifest)) {
+    const name = vectorizeNameFor(deleted.workerName, binding);
+    if (recorded.has(`vectorize:${name}`)) continue;
+    if (await getVectorizeIndex(cf, name)) keep("vectorize", name);
+  }
   return kept;
+}
+
+/** The bindings of `resources.vectorize` in a stored manifest, read as JSON parsed it. */
+function storedVectorizeBindings(manifest: RegisteredAppInfo["manifest"]): string[] {
+  const resources = (manifest as { resources?: { vectorize?: unknown } } | null)?.resources;
+  const entries = Array.isArray(resources?.vectorize) ? (resources.vectorize as unknown[]) : [];
+  return entries.flatMap((entry) => {
+    const name = (entry as { name?: unknown } | null)?.name;
+    return typeof name === "string" ? [name] : [];
+  });
 }
 
 async function confirmDelete({

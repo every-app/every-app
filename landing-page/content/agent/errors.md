@@ -195,6 +195,8 @@ The app's Build Output (`.cloudflare/output/v0`) fails the app policy, checked b
 - ``The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).``
 - `The app's Build Output has no default Worker. Build it from everyAppWorker() in cloudflare.config.ts.`
 - `The built Worker can't be deployed as an Every App app:` followed by one `  - <problem>` line each, then `Build it from everyAppWorker() in cloudflare.config.ts.` The problems a Worker can have: its `name` isn't the Worker name the registry assigned; `workersDev` or `previewUrls` isn't `false`; it declares `domains`, routes (a `fetch` trigger) or any trigger other than `scheduled`; `EVERYAPP_DEV` is set; `EVERYAPP_IDENTITY_PUBLIC_KEYS` or `EVERYAPP_IDENTITY_ISSUER` isn't a built-in `text` binding; `EVERYAPP_AUDIENCE` isn't the Worker's name; a binding type outside `text`, `json`, `secret`, `version-metadata`, `assets`, `d1`, `kv`, `r2`, `durable-object`, `workflow`, `worker`, `hyperdrive`, `ai`, `browser` and `images`; an `ai` (Workers AI) binding under a name `resources.ai` doesn't declare; a `browser` (Browser Rendering) binding under a name `resources.browser` doesn't declare; an `images` (Images) binding under a name `resources.images` doesn't declare; a `worker` binding to anything but the Gateway's `AppGateway` (binding `EVERY_APP_GATEWAY`) or, from the app's own Worker, its helper Workers; a `durable-object` or `workflow` binding to another Worker's; a `d1`, `kv` or `hyperdrive` binding the deploy didn't provision; an `r2` bucket outside the manifest's `resources.r2` (or, with none declared, not named after the Worker); a Workflow not named `<worker>--<name>`; a Durable Object export that is `transferred`, `expecting-transfer`, container-backed, or `deleted` without `--allow-delete-durable-object-data`; an export that isn't a Worker, Workflow or Durable Object; a built Worker `workers` doesn't declare, or a declared helper the build lacks.
+- `The built Worker can't be deployed as an Every App app:` followed by one `  - <problem>` line each, then `Build it from everyAppWorker() in cloudflare.config.ts.` The problems a Worker can have: its `name` isn't the Worker name the registry assigned; `workersDev` or `previewUrls` isn't `false`; it declares `domains`, routes (a `fetch` trigger) or any trigger other than `scheduled`; `EVERYAPP_DEV` is set; `EVERYAPP_IDENTITY_PUBLIC_KEYS` or `EVERYAPP_IDENTITY_ISSUER` isn't a built-in `text` binding; `EVERYAPP_AUDIENCE` isn't the Worker's name; a binding type outside `text`, `json`, `secret`, `version-metadata`, `assets`, `d1`, `kv`, `r2`, `durable-object`, `workflow`, `worker`, `hyperdrive`, `ai` and `browser`; an `ai` (Workers AI) binding under a name `resources.ai` doesn't declare; a `browser` (Browser Rendering) binding under a name `resources.browser` doesn't declare; a `worker` binding to anything but the Gateway's `AppGateway` (binding `EVERY_APP_GATEWAY`) or, from the app's own Worker, its helper Workers; a `durable-object` or `workflow` binding to another Worker's; a `d1`, `kv` or `hyperdrive` binding the deploy didn't provision; an `r2` bucket outside the manifest's `resources.r2` (or, with none declared, not named after the Worker); a Workflow not named `<worker>--<name>`; a Durable Object export that is `transferred`, `expecting-transfer`, container-backed, or `deleted` without `--allow-delete-durable-object-data`; an export that isn't a Worker, Workflow or Durable Object; a built Worker `workers` doesn't declare, or a declared helper the build lacks.
+- `The built Worker can't be deployed as an Every App app:` followed by one `  - <problem>` line each, then `Build it from everyAppWorker() in cloudflare.config.ts.` The problems a Worker can have: its `name` isn't the Worker name the registry assigned; `workersDev` or `previewUrls` isn't `false`; it declares `domains`, routes (a `fetch` trigger) or any trigger other than `scheduled`; `EVERYAPP_DEV` is set; `EVERYAPP_IDENTITY_PUBLIC_KEYS` or `EVERYAPP_IDENTITY_ISSUER` isn't a built-in `text` binding; `EVERYAPP_AUDIENCE` isn't the Worker's name; a binding type outside `text`, `json`, `secret`, `version-metadata`, `assets`, `d1`, `kv`, `r2`, `durable-object`, `workflow`, `worker`, `hyperdrive`, `ai`, `vectorize`; an `ai` (Workers AI) binding under a name `resources.ai` doesn't declare; a `worker` binding to anything but the Gateway's `AppGateway` (binding `EVERY_APP_GATEWAY`) or, from the app's own Worker, its helper Workers; a `durable-object` or `workflow` binding to another Worker's; a `d1`, `kv` or `hyperdrive` binding the deploy didn't provision; a `vectorize` binding whose `name` isn't an index the deploy provisioned (`<BINDING> is Vectorize index "<name>", which isn't one the deploy provisioned`); an `r2` bucket outside the manifest's `resources.r2` (or, with none declared, not named after the Worker); a Workflow not named `<worker>--<name>`; a Durable Object export that is `transferred`, `expecting-transfer`, container-backed, or `deleted` without `--allow-delete-durable-object-data`; an export that isn't a Worker, Workflow or Durable Object; a built Worker `workers` doesn't declare, or a declared helper the build lacks.
 
 The install step raises the same code when a Durable Object class the deploy would tombstone is still exported by the build: `Durable Object class <name> is both exported by the build and being deleted; declare it in everyapp.config.ts, or stop exporting it.`
 
@@ -1182,7 +1184,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/manifes
 
 ### RESOURCE_NAME_TAKEN
 
-Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1 or KV: `A <D1 database|KV namespace> named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it`. Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
+Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1 or KV: `A <D1 database|KV namespace|Vectorize index> named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it` (a Vectorize index is refused whatever its shape: its vectors are whoever wrote them's). Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
 
 **Fix:** as above; each sets `data.rerun` to this same command. Not retryable.
 
@@ -1198,7 +1200,7 @@ Source: `packages/cli/src/lib/app/buckets.ts`
 
 ### RESOURCE_OWNED
 
-Recording a resource as the app's in `_everyapp_app_resources` hit one of its unique indexes: another app already records that resource id, or that name, under the same kind (Worker, D1, KV, Hyperdrive). Raised while claiming the Worker and provisioning resources in a self-host `deploy` (step `app.resources`). Message `<Kind> "<name>" is recorded as another app's` then `<workerName> can't use it.` For an Email Routing address the same violation is reported as `EMAIL_ADDRESS_TAKEN`.
+Recording a resource as the app's in `_everyapp_app_resources` hit one of its unique indexes: another app already records that resource id, or that name, under the same kind (Worker, D1, KV, Hyperdrive, Vectorize). Raised while claiming the Worker and provisioning resources in a self-host `deploy` (step `app.resources`). Message `<Kind> "<name>" is recorded as another app's` then `<workerName> can't use it.` For an Email Routing address the same violation is reported as `EMAIL_ADDRESS_TAKEN`.
 
 **Fix:** `data.fix`: `rename the binding in everyapp.config.ts`. No rerun, not retryable.
 
@@ -1206,7 +1208,7 @@ Source: `packages/cli/src/lib/app/ownership.ts`, `packages/cli/src/lib/app/email
 
 ### RESOURCE_REPLACED
 
-Self-host `deploy` (step `app.resources`): the app's record names a D1, KV or Hyperdrive resource by id, that id no longer exists, and a different resource now has the name. (When nothing has the name, the deploy recreates it empty with a `RESOURCE_RECREATED` warning.) Message `<Kind> "<name>" isn't the one this app created` then `That one (<recorded id>) was deleted, and this one was created by someone else since.`
+Self-host `deploy` (step `app.resources`): the app's record names a D1, KV or Hyperdrive resource by id, that id no longer exists, and a different resource now has the name. A Vectorize index's id is its name, so it never reads as replaced: one of the name is the app's while the record stands. (When nothing has the name, the deploy recreates it empty with a `RESOURCE_RECREATED` warning.) Message `<Kind> "<name>" isn't the one this app created` then `That one (<recorded id>) was deleted, and this one was created by someone else since.`
 
 **Fix:** `data.fix`: `delete or rename it`; `data.rerun` is this same command. Not retryable.
 
@@ -1536,6 +1538,22 @@ A value typed on the command line where everyapp never takes one: it lands in th
 
 Source: `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/argumentErrors.ts`, `packages/cli/src/commands/events/add.ts`
 
+### VECTORIZE_CONFIG_MISMATCH
+
+`deploy`, step `app.resources`: the Vectorize index the app recorded for a `resources.vectorize` binding has another shape than the manifest now declares (other dimensions or metric, or not the declared preset; a preset's dimensions and metric are Cloudflare's, so a preset is compared by name). An index can't be reshaped, and the deploy never deletes one to make it again. Checked before the build is installed: nothing is uploaded. Message `Vectorize index "<name>" has <768 dimensions, cosine|the preset <preset>>, but everyapp.config.ts declares <its shape> for <BINDING>` then `An index can't be reshaped once it is created.`
+
+**Fix:** `data.fix`: `rename the binding in everyapp.config.ts to make a new one, or change <BINDING> back to <the index's shape>`; `data.rerun` is this same command. Not retryable. Renaming makes a new, empty index; the old one stays the app's until `delete --purge` (or delete it in the dashboard, AI → Vectorize).
+
+Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/cf/vectorize.ts`
+
+### VECTORIZE_NAME_TOO_LONG
+
+`deploy`, step `app.resources`, before any index is looked up or made: a `resources.vectorize` binding's index name (`<worker>--<binding>`, the binding lowercased with `_` as `-`) is longer than Cloudflare's 64 characters: `<BINDING> would be the Vectorize index "<name>", longer than Cloudflare's 64 characters`.
+
+**Fix:** `data.fix`: `shorten its binding name in everyapp.config.ts`. No rerun, not retryable.
+
+Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/manifest/manifest.ts` (`vectorizeNameFor`, `MAX_VECTORIZE_NAME_LENGTH`)
+
 ### VERSION_UNKNOWN
 
 `deploy`, step `app.upload`: cf uploaded the Worker but reported no version id: `Cloudflare reports no version for <app> after the upload`, `data.workerName`; nothing to run.
@@ -1696,7 +1714,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`, `packages/cli/src/lib/output/report
 
 ### CF_NOT_FOUND
 
-`not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database) or `10200` (Workflow), or the text `not found` or `does not exist`. Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
+`not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database) or `10200` (Workflow), Vectorize's `vectorize.index.not_found` (`[3000]`, 404) or `vectorize.index.deleted` (`[3005]`, 410: an index deleted a moment ago, whose name a create takes at once), or the text `not found` or `does not exist`. Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
 
 **Fix:** none; not retryable.
 
@@ -1704,7 +1722,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 
 ### CF_ALREADY_EXISTS
 
-`already_exists`: API code `7502` (D1) or `10014` (KV), or the text `already exists`: a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
+`already_exists`: API code `7502` (D1) or `10014` (KV), Vectorize's `vectorize.index.duplicate_name` (`[3002]`, 409), or the text `already exists`: a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
 
 **Fix:** none; not retryable.
 
@@ -2414,13 +2432,13 @@ Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### RESOURCES_KEPT
 
-`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept; `data.kept`, `data.fix` (delete them in the dashboard if they are the app's).
+`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept (its Worker, the D1 databases and KV namespaces the registry names, the Vectorize indexes the last deployed manifest declares, Workflows another Worker runs); `data.kept`, `data.fix` (delete them in the dashboard if they are the app's; a Vectorize index under AI → Vectorize).
 
 Source: `packages/cli/src/commands/delete/index.ts`
 
 ### RESOURCE_RECREATED
 
-`deploy`, step `app.resources`: a recorded database, namespace or bucket no longer exists in the account; a new, empty one is created.
+`deploy`, step `app.resources`: a recorded database, namespace, Hyperdrive config or Vectorize index no longer exists in the account; a new, empty one is created.
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`
 

@@ -32,6 +32,7 @@ import {
   type ServiceBinding,
   type WorkflowBinding,
   type WorkflowExport,
+  type VectorizeBinding,
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
@@ -1863,6 +1864,130 @@ describe("Images (resources.images)", () => {
     expect(
       Object.values(config.env as Record<string, { type: string }>).filter(
         (binding) => binding.type === "images",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("Vectorize indexes (resources.vectorize)", () => {
+  const notes = {
+    id: "notes",
+    resources: {
+      d1: ["DB"],
+      vectorize: [
+        { name: "VECTORS", dimensions: 768, metric: "cosine" },
+        { name: "DOC_CHUNKS", preset: "@cf/baai/bge-small-en-v1.5" },
+      ],
+    },
+    workers: [{ name: "indexer" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: notes,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _helper, ...helper } = everyAppAuxiliaryWorker({
+      manifest: notes,
+      worker: "indexer",
+      entrypoint: "/app/src/indexer.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, helper };
+  };
+
+  it("binds each index's placeholder on the app's Worker and every helper, as sentinelDeployTarget says", () => {
+    const { app, helper } = build("production");
+    const target = sentinelDeployTarget(notes);
+    expect(target.resources.vectorize).toEqual({
+      VECTORS: { name: resourceSentinel("VECTORS") },
+      DOC_CHUNKS: { name: resourceSentinel("DOC_CHUNKS") },
+    });
+    for (const env of [app.env, helper.env] as Record<string, unknown>[]) {
+      expect(env["VECTORS"]).toEqual({
+        type: "vectorize",
+        name: resourceSentinel("VECTORS"),
+      });
+      expect(env["DOC_CHUNKS"]).toEqual({
+        type: "vectorize",
+        name: resourceSentinel("DOC_CHUNKS"),
+      });
+    }
+  });
+
+  it("binds the account's index of the dev Worker's name in development, remotely (Cloudflare has no local Vectorize)", () => {
+    const { app, helper } = build("development");
+    expect(app.env).toMatchObject({
+      VECTORS: {
+        type: "vectorize",
+        name: "every-notes--vectors",
+        dev: { remote: true },
+      },
+      DOC_CHUNKS: {
+        type: "vectorize",
+        name: "every-notes--doc-chunks",
+        dev: { remote: true },
+      },
+    });
+    expect((helper.env as Record<string, unknown>)["VECTORS"]).toEqual(
+      (app.env as Record<string, unknown>)["VECTORS"],
+    );
+  });
+
+  it("types each index under its own binding name", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.VECTORS).toEqualTypeOf<VectorizeBinding>();
+    expectTypeOf(app.env.DOC_CHUNKS).toEqualTypeOf<VectorizeBinding>();
+    type Dev = EveryAppDevEnv<typeof notes>;
+    expectTypeOf<Dev["VECTORS"]>().toEqualTypeOf<VectorizeBinding>();
+  });
+
+  it("refuses a binding name the Worker has, and a dev index name over Cloudflare's 64 characters", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "notes",
+          resources: {
+            d1: ["DB"],
+            vectorize: [{ name: "DB", dimensions: 768, metric: "cosine" }],
+          },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow("vectorize: DB reuses a binding name the Worker already has.");
+    const binding = "V".repeat(64 - "every-notes--".length + 1);
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "notes",
+          resources: {
+            vectorize: [{ name: binding, dimensions: 768, metric: "cosine" }],
+          },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(
+      /longer than Cloudflare's 64 characters; shorten the binding name/,
+    );
+  });
+
+  it("leaves a manifest without indexes with none", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "vectorize",
       ),
     ).toEqual([]);
   });

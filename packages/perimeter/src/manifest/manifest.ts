@@ -78,6 +78,42 @@ const HyperdriveResourceSchema = z.object({
   caching: z.enum(["off", "default"]).optional(),
 });
 
+/** The distance metrics a Vectorize index can be created with. */
+export const VECTORIZE_METRICS = [
+  "cosine",
+  "euclidean",
+  "dot-product",
+] as const;
+
+/**
+ * The embedding models Cloudflare creates a Vectorize index for by name,
+ * with their dimensions and metric (`cf vectorize create --help`'s choices).
+ */
+export const VECTORIZE_PRESETS = [
+  "@cf/baai/bge-small-en-v1.5",
+  "@cf/baai/bge-base-en-v1.5",
+  "@cf/baai/bge-large-en-v1.5",
+  "openai/text-embedding-ada-002",
+  "cohere/embed-multilingual-v2.0",
+] as const;
+
+/** Cloudflare's range for a Vectorize index's dimensions. */
+export const VECTORIZE_DIMENSIONS = { min: 32, max: 1536 } as const;
+
+/**
+ * A Vectorize index every one of the app's Workers binds, named after the
+ * app's Worker in the account (`<worker>--<binding>`,
+ * {@link vectorizeNameFor}): either `dimensions` and `metric`, or a
+ * `preset` (one form only; the strict schema says which is missing).
+ * Tolerant here: values a newer CLI accepts don't brick registration.
+ */
+const VectorizeResourceSchema = z.object({
+  name: z.string(),
+  dimensions: z.number().optional(),
+  metric: z.string().optional(),
+  preset: z.string().optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -115,6 +151,8 @@ export const ResourcesSchema = z
      * Worker, nothing to create.
      */
     images: z.array(z.string()).optional(),
+    /** Vectorize indexes, by binding, which every one of the app's Workers binds. */
+    vectorize: z.array(VectorizeResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -882,6 +920,47 @@ function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
 
 const AppSecretsSchemaStrict = appSecretsSchemaStrict();
 
+/**
+ * A Vectorize index as an author writes it: `{ name, dimensions, metric }`
+ * or `{ name, preset }`, never both. An index can't be reshaped once
+ * created, so the deploy compares the two (`VECTORIZE_CONFIG_MISMATCH`).
+ */
+const VectorizeResourceSchemaStrict = VectorizeResourceSchema.extend({
+  name: BindingNameSchema,
+  dimensions: z
+    .number()
+    .int(`a Vectorize index's dimensions are a whole number`)
+    .min(
+      VECTORIZE_DIMENSIONS.min,
+      `a Vectorize index has ${VECTORIZE_DIMENSIONS.min} to ${VECTORIZE_DIMENSIONS.max} dimensions`,
+    )
+    .max(
+      VECTORIZE_DIMENSIONS.max,
+      `a Vectorize index has ${VECTORIZE_DIMENSIONS.min} to ${VECTORIZE_DIMENSIONS.max} dimensions`,
+    )
+    .optional(),
+  metric: z.enum(VECTORIZE_METRICS).optional(),
+  preset: z.enum(VECTORIZE_PRESETS).optional(),
+})
+  .strict()
+  .superRefine((entry, ctx) => {
+    const sized = entry.dimensions !== undefined || entry.metric !== undefined;
+    if (entry.preset !== undefined && sized) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${entry.name}: a preset sets the index's dimensions and metric itself; give either preset, or dimensions and metric`,
+      });
+    } else if (
+      entry.preset === undefined &&
+      (entry.dimensions === undefined || entry.metric === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${entry.name} needs dimensions and metric (e.g. 768 and "cosine"), or a preset (e.g. "@cf/baai/bge-base-en-v1.5")`,
+      });
+    }
+  });
+
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
@@ -898,6 +977,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
       HyperdriveResourceSchema.extend({ name: BindingNameSchema }).strict(),
     )
     .optional(),
+  vectorize: z.array(VectorizeResourceSchemaStrict).optional(),
 }).strict();
 /** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
 export interface StrictManifestOptions {
@@ -1153,6 +1233,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
+    ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1181,6 +1262,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
+    ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1197,6 +1279,9 @@ export function bindingNamesOf(
  * `workers-ai` provider is the brokered path). Nor Browser Rendering: the
  * browser time bills the platform's account the same way, nor Images, whose
  * transformations do too. Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets
+ * browser time bills the platform's account the same way. Nor Vectorize
+ * indexes: the hosted deployer makes none. Nor inbound
+ * mail: the platform's zones aren't an organization's to route. Nor secrets
  * of its own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID
  * only, and nothing sets another.
  */
@@ -1230,6 +1315,11 @@ export function manifestTierProblems(
   if (manifest.resources?.images?.length) {
     problems.push(
       "resources.images: the Images binding isn't available to apps in a dispatch namespace (it bills the platform's account)",
+    );
+  }
+  if (manifest.resources?.vectorize?.length) {
+    problems.push(
+      "resources.vectorize: Vectorize indexes aren't available to apps in a dispatch namespace yet",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
@@ -1342,6 +1432,21 @@ export const MAX_BUCKET_NAME_LENGTH = 63;
  */
 export function bucketNameFor(workerName: string, binding: string): string {
   return binding === "R2" ? workerName : suffixedName(workerName, binding);
+}
+
+/** Cloudflare's limit on a Vectorize index's name. */
+export const MAX_VECTORIZE_NAME_LENGTH = 64;
+
+/**
+ * The Vectorize index an app Worker's binding uses: always
+ * `<worker>--<binding>` (`every-acme-notes--vectors`), the binding
+ * lowercased with `_` as `-`, so lowercase letters, digits and hyphens,
+ * which is what Cloudflare accepts. At most
+ * {@link MAX_VECTORIZE_NAME_LENGTH} characters, which the deploy checks
+ * once the Worker's name is known (`VECTORIZE_NAME_TOO_LONG`).
+ */
+export function vectorizeNameFor(workerName: string, binding: string): string {
+  return suffixedName(workerName, binding);
 }
 
 function suffixedName(workerName: string, binding: string): string {

@@ -6,12 +6,13 @@
  * each deleted with its references, since they bind each other), the
  * hostnames' certificate packs (Cloudflare removes a hostname's pack with
  * its Custom Domain, so a refusal for one it no longer lists is counted as
- * removed), the apps' D1, KV, R2, Hyperdrive, the DNS records left at our
- * names once the Custom Domains went with their Workers, and last of all
- * the Gateway's D1: it is where the inventory reads the hostnames, so
- * while a DNS record of theirs is kept it stays too, and a second run
- * finds the record again. A failure on one item is a warning and the item
- * goes to `kept`, with where to delete it by hand; the run goes on.
+ * removed), the apps' D1, KV, R2, Hyperdrive, Vectorize, the DNS records
+ * left at our names once the Custom Domains went with their Workers, and
+ * last of all the Gateway's D1: it is where the inventory reads the
+ * hostnames, so while a DNS record of theirs is kept it stays too, and a
+ * second run finds the record again. A failure on one item is a warning
+ * and the item goes to `kept`, with where to delete it by hand; the run
+ * goes on.
  */
 import { deleteAccessApplication, deleteAccessPolicy } from "@/lib/cf/access";
 import {
@@ -24,6 +25,7 @@ import { isCfError } from "@/lib/cf/errors";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import { deleteR2Bucket } from "@/lib/cf/r2";
 import { deleteD1, deleteKv } from "@/lib/cf/resources";
+import { deleteVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker } from "@/lib/cf/workers";
 import { deleteWorkflowIfExists } from "@/lib/cf/workflows";
@@ -262,6 +264,13 @@ export async function executeTeardown({
   await kindStep("hyperdrive", plan.hyperdrive.length, async () => {
     for (const config of plan.hyperdrive) {
       await attempt("hyperdrive", describe.hyperdrive(config.name), () => deleteHyperdrive(cf, config.id));
+    }
+  });
+
+  // 9b. Vectorize indexes and their vectors (one gone already reads as not found).
+  await kindStep("vectorize", plan.vectorize.length, async () => {
+    for (const name of plan.vectorize) {
+      await attempt("vectorize", describe.vectorize(name), () => deleteVectorizeIndex(cf, name));
     }
   });
 

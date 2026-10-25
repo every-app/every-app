@@ -10,6 +10,8 @@ import {
   registryWorkerNameFor,
   resourceNameFor,
   bucketNameFor,
+  vectorizeNameFor,
+  MAX_VECTORIZE_NAME_LENGTH,
   isReservedAppId,
   manifestTierProblems,
   DISPATCH_INBOUND_PROBLEM,
@@ -1444,6 +1446,134 @@ describe("Workers AI (resources.ai)", () => {
     expect(manifestTierProblems({ resources: { ai: [] } }, "dispatch")).toEqual(
       [],
     );
+  });
+});
+
+describe("Vectorize indexes (resources.vectorize)", () => {
+  const sized = { name: "VECTORS", dimensions: 768, metric: "cosine" };
+  const preset = { name: "DOCS", preset: "@cf/baai/bge-small-en-v1.5" };
+
+  it("takes { name, dimensions, metric } or { name, preset }", () => {
+    const manifest = { id: "notes", resources: { vectorize: [sized, preset] } };
+    expect(validateManifestStrict(manifest)).toEqual(manifest);
+    expect(validateManifest(manifest)).toEqual(manifest);
+    for (const metric of ["cosine", "euclidean", "dot-product"]) {
+      expect(() =>
+        validateManifestStrict({
+          id: "notes",
+          resources: { vectorize: [{ ...sized, metric }] },
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it.each([
+    [
+      "both forms",
+      [{ ...sized, preset: preset.preset }],
+      /VECTORS: a preset sets the index's dimensions and metric itself/,
+    ],
+    [
+      "a preset with a metric",
+      [{ ...preset, metric: "cosine" }],
+      /DOCS: a preset sets the index's dimensions and metric itself/,
+    ],
+    [
+      "neither form",
+      [{ name: "VECTORS" }],
+      /VECTORS needs dimensions and metric \(e\.g\. 768 and "cosine"\), or a preset/,
+    ],
+    [
+      "dimensions without a metric",
+      [{ name: "VECTORS", dimensions: 768 }],
+      /VECTORS needs dimensions and metric/,
+    ],
+    [
+      "dimensions below Cloudflare's range",
+      [{ ...sized, dimensions: 16 }],
+      /resources\.vectorize\.0\.dimensions: a Vectorize index has 32 to 1536 dimensions/,
+    ],
+    [
+      "dimensions above Cloudflare's range",
+      [{ ...sized, dimensions: 1537 }],
+      /a Vectorize index has 32 to 1536 dimensions/,
+    ],
+    [
+      "fractional dimensions",
+      [{ ...sized, dimensions: 76.8 }],
+      /resources\.vectorize\.0\.dimensions/,
+    ],
+    [
+      "a metric Vectorize doesn't have",
+      [{ ...sized, metric: "manhattan" }],
+      /resources\.vectorize\.0\.metric/,
+    ],
+    [
+      "a preset Vectorize doesn't have",
+      [{ name: "DOCS", preset: "@cf/baai/bge-m3" }],
+      /resources\.vectorize\.0\.preset/,
+    ],
+    [
+      "a binding that isn't an identifier",
+      [{ ...sized, name: "my-vectors" }],
+      /resources\.vectorize\.0\.name: binding names must be JavaScript identifiers/,
+    ],
+    ["an unknown key", [{ ...sized, worker: "crawler" }], /Unrecognized key/],
+  ])("refuses %s", (_case, vectorize, problem) => {
+    expect(() =>
+      validateManifestStrict({ id: "notes", resources: { vectorize } }),
+    ).toThrow(problem);
+  });
+
+  it("refuses a binding declared twice, and a secret named like one", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "notes",
+        resources: { d1: ["VECTORS"], vectorize: [sized] },
+      }),
+    ).toThrow(/the binding VECTORS is declared twice/);
+    expect(() =>
+      validateManifestStrict({
+        id: "notes",
+        resources: { vectorize: [sized] },
+        secrets: ["VECTORS"],
+      }),
+    ).toThrow(/secrets: VECTORS is one of the app's bindings/);
+  });
+
+  it("stays tolerant of entries a newer CLI writes, at registration", () => {
+    const newer = {
+      id: "notes",
+      resources: { vectorize: [{ name: "VECTORS", preset: "@cf/new-model" }] },
+    };
+    expect(validateManifest(newer).resources?.vectorize).toEqual(
+      newer.resources.vectorize,
+    );
+  });
+
+  it("is refused on the dispatch tier", () => {
+    const manifest = { resources: { vectorize: [sized] } };
+    expect(manifestTierProblems(manifest, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(manifest, "dispatch")).toEqual([
+      "resources.vectorize: Vectorize indexes aren't available to apps in a dispatch namespace yet",
+    ]);
+  });
+
+  it("names an index <worker>--<binding>, in Cloudflare's characters, within 64", () => {
+    expect(vectorizeNameFor("every-acme-notes", "VECTORS")).toBe(
+      "every-acme-notes--vectors",
+    );
+    expect(vectorizeNameFor("every-acme-notes", "DOC_CHUNKS")).toBe(
+      "every-acme-notes--doc-chunks",
+    );
+    // Never the Worker's own name, unlike DB, KV and R2.
+    expect(vectorizeNameFor("every-acme-notes", "DB")).toBe(
+      "every-acme-notes--db",
+    );
+    expect(vectorizeNameFor("every-acme-notes", "Doc_Chunks_2")).toMatch(
+      /^[a-z][a-z0-9-]*$/,
+    );
+    expect(MAX_VECTORIZE_NAME_LENGTH).toBe(64);
   });
 });
 

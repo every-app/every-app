@@ -611,11 +611,11 @@ USAGE
   pnpm everyapp teardown --help
 
 For the accounts the onboarding loop installs into, over and over: removes every Worker,
-Workflow, D1 database, KV namespace, R2 bucket and Hyperdrive config named every-*, the
-Gateway's own included, the two Cloudflare Access applications and the allow policy, the
-Email Routing rules that send mail to those Workers (a catch-all drops mail again, and
-routing is turned off once no rule and no catch-all of anyone else's needs it), the
-certificate packs of the hostnames the Gateway published, and the Custom Domain records
+Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config and Vectorize index named
+every-*, the Gateway's own included, the two Cloudflare Access applications and the allow
+policy, the Email Routing rules that send mail to those Workers (a catch-all drops mail
+again, and routing is turned off once no rule and no catch-all of anyone else's needs it),
+the certificate packs of the hostnames the Gateway published, and the Custom Domain records
 (A, AAAA, CNAME) left at exactly those names. Never the zone, the Workers Paid subscription,
 the workers.dev subdomain, the Zero Trust team and its identity providers, any other DNS
 record (MX, TXT, CAA...) even at those names, R2 buckets outside the default jurisdiction,

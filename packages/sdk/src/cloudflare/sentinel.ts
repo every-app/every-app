@@ -25,7 +25,8 @@ export const BUILD_SENTINEL = Object.freeze({
 
 /**
  * A manifest binding's placeholder: a D1 database's name and id, an R2
- * bucket's name, a KV namespace's or Hyperdrive config's id. The installer
+ * bucket's or Vectorize index's name, a KV namespace's or Hyperdrive
+ * config's id. The installer
  * rewrites each by its binding name; the value only has to be recognizable.
  */
 export function resourceSentinel(binding: string): string {
@@ -39,6 +40,7 @@ interface SentinelManifest {
     kv?: readonly string[];
     r2?: readonly string[];
     hyperdrive?: readonly { readonly name: string }[];
+    vectorize?: readonly { readonly name: string }[];
   };
 }
 
@@ -59,6 +61,8 @@ export interface EveryAppDeployTarget {
     hyperdrive?: Record<string, { id: string }>;
     /** R2 buckets by binding, under the names the registry assigned. */
     r2?: Record<string, { name: string }>;
+    /** Vectorize indexes by binding, under the names the deploy provisioned. */
+    vectorize?: Record<string, { name: string }>;
   };
 }
 
@@ -90,6 +94,10 @@ export function sentinelDeployTarget(
         (id) => ({ id }),
       ),
       r2: byBinding(resources?.r2, (name) => ({ name })),
+      vectorize: byBinding(
+        resources?.vectorize?.map((index) => index.name),
+        (name) => ({ name }),
+      ),
     },
   };
 }

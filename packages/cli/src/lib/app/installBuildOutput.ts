@@ -6,8 +6,9 @@
  * organization, gateway, identity keys and resources belong. Installing it
  * rewrites each Worker's `worker.config.json` in place for one install:
  *
- *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs and R2
- *     buckets get the names and ids the deploy provisioned, by binding name;
+ *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs, R2
+ *     buckets and Vectorize indexes get the names and ids the deploy
+ *     provisioned, by binding name;
  *   - then every remaining placeholder string: the gateway URL (the
  *     identity issuer), the organization, the identity keys, and the
  *     Worker name wherever it appears (the Worker's own name, its audience,
@@ -64,7 +65,7 @@ interface WorkerConfig extends Record<string, unknown> {
 }
 
 /** The kinds of placeholder resource. */
-const RESOURCE_KINDS = ["d1", "kv", "hyperdrive", "r2"] as const;
+const RESOURCE_KINDS = ["d1", "kv", "hyperdrive", "r2", "vectorize"] as const;
 type PlaceholderKind = (typeof RESOURCE_KINDS)[number];
 
 function isPlaceholderKind(kind: string): kind is PlaceholderKind {
@@ -162,7 +163,7 @@ function installResource(
   const kind = String(binding.type);
   if (!isPlaceholderKind(kind)) return;
   const placeholder = resourceSentinel(name);
-  const field = kind === "d1" || kind === "r2" ? "name" : "id";
+  const field = kind === "kv" || kind === "hyperdrive" ? "id" : "name";
   if (binding[field] !== placeholder) return;
   const resource = target.resources[kind]?.[name];
   if (!resource) {

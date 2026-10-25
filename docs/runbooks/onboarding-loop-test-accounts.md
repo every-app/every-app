@@ -48,6 +48,7 @@ Permissions (the least that lets `setup`, `create` then `deploy`, `access on`, `
 | Account | Workers KV Storage                                       | Edit   | the OAuth KV namespace and each app's                                           |
 | Account | Workers R2 Storage                                       | Edit   | app buckets (and listing them for teardown)                                     |
 | Account | Hyperdrive                                               | Edit   | Postgres apps; teardown lists and deletes configs                               |
+| Account | Vectorize                                                | Edit   | apps' Vectorize indexes (`resources.vectorize`); teardown lists and deletes them; the live test `packages/cli/test/provisioners/vectorize.live.test.ts` passed with loop-1's token on 2026-10-24 |
 | Account | Access: Apps and Policies                                | Edit   | `access on` / `access off`, teardown                                            |
 | Account | Access: Organizations, Identity Providers, and Groups    | Edit   | the Zero Trust team and the one-time PIN provider                               |
 | Account | Email Routing Addresses                                  | Edit   | `email set --inbound`                                                           |

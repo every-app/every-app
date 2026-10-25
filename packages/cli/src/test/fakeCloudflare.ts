@@ -17,7 +17,9 @@
  * settings, rules and catch-all (`emailRouting`), enabled on a domain by
  * adding Cloudflare's MX records there, with rules that may send mail only
  * to a Worker that exists. R2 buckets exist by name, each with a count of
- * objects (a bucket with any is refused on delete, as R2 does). `api.fetch` is the account's REST API, for the hosted
+ * objects (a bucket with any is refused on delete, as R2 does). Vectorize
+ * indexes exist by name with their config, and a deploy binding one that
+ * doesn't exist is refused before anything is uploaded, as cf's is. `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
  * or sent.
@@ -101,6 +103,24 @@ interface FakeHyperdrive {
   /** As the API keeps it: absent until a body sets it (Cloudflare caches by default). */
   caching?: { disabled?: boolean };
 }
+
+/** A Vectorize index as the API keeps it: its shape, fixed at creation. */
+interface FakeVectorizeIndex {
+  config: { dimensions: number; metric: string; preset?: string };
+  created_on: string;
+}
+
+/**
+ * What Cloudflare makes an index from each preset: the model's dimensions,
+ * and cosine.
+ */
+const VECTORIZE_PRESET_SHAPES: Record<string, { dimensions: number; metric: string }> = {
+  "@cf/baai/bge-small-en-v1.5": { dimensions: 384, metric: "cosine" },
+  "@cf/baai/bge-base-en-v1.5": { dimensions: 768, metric: "cosine" },
+  "@cf/baai/bge-large-en-v1.5": { dimensions: 1024, metric: "cosine" },
+  "openai/text-embedding-ada-002": { dimensions: 1536, metric: "cosine" },
+  "cohere/embed-multilingual-v2.0": { dimensions: 768, metric: "cosine" },
+};
 
 /** A routing rule or a zone's catch-all, as Email Routing keeps it. */
 interface FakeEmailRule {
@@ -295,6 +315,8 @@ export class FakeCloudflare {
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
   /** R2 buckets by name, each with how many objects it holds. */
   readonly buckets = new Map<string, { objects: number }>();
+  /** Vectorize indexes by name. */
+  readonly vectorizeIndexes = new Map<string, FakeVectorizeIndex>();
   readonly deploys: RecordedDeploy[] = [];
   /** `cf d1 time-travel restore`s, in order (the data isn't rewound). */
   readonly restores: Array<{ databaseId: string; bookmark: string }> = [];
@@ -665,6 +687,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["vectorize"], (call) => this.vectorizeCommand(call))
       .on(["email-routing"], (call) => this.emailRoutingCommand(call))
       .on(["zero-trust"], (call) => this.zeroTrustCommand(call))
       .on(["build"], (call) => this.build(call))
@@ -1182,6 +1205,77 @@ export class FakeCloudflare {
   }
 
   /**
+   * `cf vectorize get|list|create|delete`, by index name: a create reads its
+   * body from the `--body @<file>` cf is handed (`{ name, config }`, with
+   * dimensions and metric or a preset), and refuses a name that is taken;
+   * a get or delete of a missing index answers 404. The texts and codes are
+   * cf 1.0.0-beta.14's, seen live on 2026-10-24 (a deleted index answers
+   * `[3005] vectorize.index.deleted` 410 for a while there, which tests
+   * script with `cf.override`).
+   */
+  private vectorizeCommand(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[1];
+    const shown = (name: string, index: FakeVectorizeIndex) => ({
+      created_on: index.created_on,
+      modified_on: index.created_on,
+      name,
+      description: "",
+      config: index.config,
+    });
+    const indexPath = (name: string) => `vectorize/v2/indexes/${name}`;
+    const notFound = (name: string) =>
+      apiError(3000, `vectorize.index.not_found - Index name "${name}"`, "404 Not Found", indexPath(name));
+    if (action === "list") {
+      return {
+        stdout: JSON.stringify(
+          [...this.vectorizeIndexes].sort(([a], [b]) => a.localeCompare(b)).map(([name, index]) => shown(name, index)),
+        ),
+      };
+    }
+    if (action === "create") {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return cfError("A body is required");
+      const request = JSON.parse(call.files[path.basename(file.slice(1))]!) as {
+        name?: string;
+        config?: { dimensions?: number; metric?: string; preset?: string };
+      };
+      const name = request.name ?? "";
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(name)) {
+        return apiError(3001, `vectorize.index.invalid_name - Index name "${name}"`, "400 Bad Request", "vectorize/v2/indexes");
+      }
+      if (this.vectorizeIndexes.has(name)) {
+        return apiError(3002, `vectorize.index.duplicate_name - Index name "${name}"`, "409 Conflict", "vectorize/v2/indexes");
+      }
+      const preset = request.config?.preset;
+      const shape = preset
+        ? VECTORIZE_PRESET_SHAPES[preset]
+        : { dimensions: request.config?.dimensions ?? 0, metric: request.config?.metric ?? "" };
+      if (!shape || shape.dimensions < 32 || shape.dimensions > 1536) {
+        return apiError(3003, "vectorize.index.invalid_config - Dimensions must be in range: [32, 1536]", "400 Bad Request", "vectorize/v2/indexes");
+      }
+      const index: FakeVectorizeIndex = {
+        config: { ...shape, ...(preset ? { preset } : {}) },
+        created_on: this.clock(),
+      };
+      this.vectorizeIndexes.set(name, index);
+      return { stdout: JSON.stringify(shown(name, index)) };
+    }
+    const name = call.args[2]!;
+    const index = this.vectorizeIndexes.get(name);
+    if (action === "get") {
+      return index ? { stdout: JSON.stringify(shown(name, index)) } : notFound(name);
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the Vectorize index.");
+      if (declined) return declined;
+      if (!index) return notFound(name);
+      this.vectorizeIndexes.delete(name);
+      return { stdout: "" };
+    }
+    return cfError(`unknown command vectorize ${action}`);
+  }
+
+  /**
    * `cf hyperdrive list|create|update|delete`: a create or update reads its
    * body from the `--body @<file>` cf is handed, which holds the password.
    */
@@ -1450,6 +1544,18 @@ export class FakeCloudflare {
       const [name, binding] = unexported[0]!;
       return cfError(
         `Durable Object binding '${name}' refers to class '${binding.exportName}' of script '${binding.worker}', which doesn't export it. [code: 10061]`,
+      );
+    }
+    // cf's deploy makes no Vectorize index: binding a missing one is refused, nothing uploaded.
+    const missingIndex = Object.entries(config["env"] ?? {}).find(
+      ([, binding]) =>
+        (binding as { type: string }).type === "vectorize" &&
+        !this.vectorizeIndexes.has((binding as { name: string }).name),
+    );
+    if (missingIndex && !call.args.includes("--dry-run")) {
+      const [name, binding] = missingIndex as [string, { name: string }];
+      return cfError(
+        `[10159] Vectorize binding '${name}' references index '${binding.name}' which was not found. Verify the index exists in your account and that the index_name in your configuration is correct. [code: 10159]`,
       );
     }
     if (call.args.includes("--dry-run")) {

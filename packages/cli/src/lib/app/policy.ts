@@ -42,8 +42,8 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * rate-limit counters, …), or account-wide capabilities the gateway is
  * meant to broker (email). Buckets and Workflows are allowed only under the
  * app's own names (buckets only as the manifest's `resources.r2`, when it
- * declares any), and Hyperdrive configs only as the ones the deploy
- * provisioned. Workers AI is account-wide inference billed to the account,
+ * declares any), and Hyperdrive configs and Vectorize indexes only as the
+ * ones the deploy provisioned. Workers AI is account-wide inference billed to the account,
  * outside the Gateway's budgets, caps and usage tap (its `workers-ai`
  * provider is the brokered path), and the deploy provisions nothing to
  * check it against: so only under a binding name the manifest declares in
@@ -65,6 +65,7 @@ const ALLOWED_BINDINGS = new Set([
   "workflow",
   "worker",
   "hyperdrive",
+  "vectorize",
   "ai",
   "browser",
   "images",
@@ -213,6 +214,9 @@ function bindingProblems(
   const hyperdriveIds = new Set(
     Object.values(resources.hyperdrive ?? {}).map((config) => config.id),
   );
+  const vectorizeIndexes = new Set(
+    Object.values(resources.vectorize ?? {}).map((index) => index.name),
+  );
   // The manifest's buckets, when it declares any; otherwise any bucket
   // named after the app's Worker (one bound by hand in cloudflare.config.ts).
   const buckets = Object.values(resources.r2 ?? {}).map((bucket) => bucket.name);
@@ -258,6 +262,14 @@ function bindingProblems(
       case "hyperdrive":
         if (!hyperdriveIds.has(String(binding["id"]))) {
           problems.push(`${name} isn't a Hyperdrive config the deploy provisioned`);
+        }
+        break;
+      // An index holds the vectors of whoever wrote them: only the app's own.
+      case "vectorize":
+        if (!vectorizeIndexes.has(String(binding["name"]))) {
+          problems.push(
+            `${name} is Vectorize index "${String(binding["name"])}", which isn't one the deploy provisioned`,
+          );
         }
         break;
       case "ai":

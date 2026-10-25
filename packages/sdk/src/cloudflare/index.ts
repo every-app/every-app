@@ -50,6 +50,7 @@ export {
   type SecretBinding,
   type ServiceBinding,
   type TextBinding,
+  type VectorizeBinding,
   type VersionMetadataBinding,
   type WorkflowBinding,
   type WorkflowExport,

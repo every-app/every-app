@@ -29,6 +29,16 @@ const WORKFLOW_NOT_FOUND = `
 └
 `;
 
+// Vectorize's API errors as cf 1.0.0-beta.14 printed them live (2026-10-24,
+// account id shortened): a duplicate name, a missing index, and one deleted
+// a moment ago (410 for a while; a create of the name works at once).
+const vectorizeError = (code: number, slug: string, status: string) => `
+┌ APIError
+│ [${code}] vectorize.index.${slug} - Index name "every-acme-notes--vectors"
+│ ${status} · HTTP /accounts/0123/vectorize/v2/indexes/every-acme-notes--vectors
+└
+`;
+
 // Message text from cf's source; the API renders codes as "[code: N]".
 const box = (message: string) => `┌ Error\n│ ${message}\n└\n`;
 
@@ -105,6 +115,19 @@ describe("parseCfOutput", () => {
         "[10200] workflows.api.error.workflow.not_found 404 Not Found · HTTP /accounts/0123/workflows/every-acme-todo--rank-check",
       apiCodes: [10200],
       kind: "not_found",
+    });
+  });
+
+  it.each([
+    [3002, "duplicate_name", "409 Conflict", "already_exists"],
+    [3000, "not_found", "404 Not Found", "not_found"],
+    // Cloudflare sends 410 with no status text.
+    [3005, "deleted", "410 ", "not_found"],
+    [3001, "invalid_name", "400 Bad Request", "unknown"],
+  ] as const)("reads Vectorize's [%i] vectorize.index.%s as %s", (code, slug, status, kind) => {
+    expect(parseCfOutput(vectorizeError(code, slug, status))).toMatchObject({
+      apiCodes: [code],
+      kind,
     });
   });
 

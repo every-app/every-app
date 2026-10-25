@@ -151,8 +151,9 @@ async function deploy(manifest: EveryAppCliManifest): Promise<string> {
  * Everything the loop's run leaves behind, and what isn't Every App's:
  * the app, Access on, mail routed to the app (and a rule of someone
  * else's), the zone's Universal certificate, R2 buckets (one not empty), a
- * Hyperdrive config, DNS left at our names, and a Worker, database,
- * namespace, bucket, config and record that are someone else's.
+ * Hyperdrive config, a Vectorize index, DNS left at our names, and a
+ * Worker, database, namespace, bucket, config, index and record that are
+ * someone else's.
  */
 async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean } = {}): Promise<void> {
   await deploy(TODO);
@@ -190,6 +191,14 @@ async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean 
     name: "warehouse",
     origin: { scheme: "postgres", host: "db.example.net", port: 5432, database: "wh", user: "wh" },
     password: "secret",
+  });
+  account.vectorizeIndexes.set(`${TODO_WORKER}--vectors`, {
+    config: { dimensions: 768, metric: "cosine" },
+    created_on: "2026-10-24T00:00:00.000Z",
+  });
+  account.vectorizeIndexes.set("product-search", {
+    config: { dimensions: 384, metric: "cosine" },
+    created_on: "2026-10-24T00:00:00.000Z",
   });
   // At the app's host: a record a Custom Domain's kind (ours to clear once
   // the domain is gone) and a TXT that isn't; a wildcard and www that are
@@ -395,6 +404,7 @@ describe("teardown --dry-run", () => {
       namespaces: kvTitles(),
       buckets: [...account.buckets.keys()].sort(),
       hyperdrive: [...account.hyperdrive.keys()].sort(),
+      vectorize: [...account.vectorizeIndexes.keys()].sort(),
       workflows: [...account.workflows.keys()].sort(),
       packs: account.certificatePacks.map((pack) => pack.id),
       dns: account.dnsRecords.map((record) => `${record.type} ${record.name}`),
@@ -412,6 +422,7 @@ describe("teardown --dry-run", () => {
       namespaces: kvTitles(),
       buckets: [...account.buckets.keys()].sort(),
       hyperdrive: [...account.hyperdrive.keys()].sort(),
+      vectorize: [...account.vectorizeIndexes.keys()].sort(),
       workflows: [...account.workflows.keys()].sort(),
       packs: account.certificatePacks.map((pack) => pack.id),
       dns: account.dnsRecords.map((record) => `${record.type} ${record.name}`),
@@ -433,6 +444,7 @@ describe("teardown --dry-run", () => {
       kv: [{ title: TODO_WORKER }, { title: `${GATEWAY}-OAUTH_KV` }],
       r2: [`${TODO_WORKER}--media`, `${TODO_WORKER}--uploads`],
       hyperdrive: [{ name: `${TODO_WORKER}--pg`, id: "hd-ours" }],
+      vectorize: [`${TODO_WORKER}--vectors`],
       access: {
         applications: expect.arrayContaining([
           expect.objectContaining({ name: "Every App gateway" }),
@@ -468,9 +480,9 @@ describe("teardown --dry-run", () => {
       [`AAAA ${HOST}`, `AAAA todo.${HOST}`, `A todo.${HOST}`],
     );
     expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which Every App never created`);
-    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, access: 3, email: 2, dns: 3 });
+    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, access: 3, email: 2, dns: 3 });
     // Nothing of what isn't ours.
-    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|www\.|\*\./);
+    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|product-search|www\.|\*\./);
   });
 });
 
@@ -489,6 +501,7 @@ describe("teardown", () => {
     expect(dbNames()).toEqual(["customer-data"]);
     expect(kvTitles()).toEqual(["customer-cache"]);
     expect([...account.hyperdrive.keys()]).toEqual(["hd-theirs"]);
+    expect([...account.vectorizeIndexes.keys()]).toEqual(["product-search"]);
     // R2: the empty bucket went; the one with objects is kept, and said.
     expect([...account.buckets.keys()].sort()).toEqual(["customer-backups", `${TODO_WORKER}--uploads`]);
     expect(warnings("TEARDOWN_DELETE_FAILED")).toEqual([
@@ -953,6 +966,7 @@ describe("teardown review: what it must leave alone", () => {
       /^kv namespaces list/,
       /^r2 buckets list/,
       /^hyperdrive list/,
+      /^vectorize list/,
       /^zero-trust organization get/,
       /^zero-trust access applications list/,
       /^zero-trust access policies list/,

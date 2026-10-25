@@ -34,6 +34,7 @@ import {
 } from "@/lib/cf/emailRouting";
 import { listHyperdrive } from "@/lib/cf/hyperdrive";
 import { listR2Buckets } from "@/lib/cf/r2";
+import { listVectorizeIndexes } from "@/lib/cf/vectorize";
 import { listAll, type CfRunner } from "@/lib/cf/runner";
 import { D1DatabaseListOutput, KvNamespaceListOutput } from "@/lib/cf/schemas";
 import { listWorkers } from "@/lib/cf/workers";
@@ -204,6 +205,13 @@ export async function inventoryAccount({
     .sort((a, b) => a.name.localeCompare(b.name));
   found("hyperdrive", hyperdrive.length, hyperdrive.map((config) => config.name));
 
+  // 7b. Vectorize indexes, by name (an app's are `<worker>--<binding>`).
+  const vectorize = (await read("the Vectorize indexes", [], () => listVectorizeIndexes(cf)))
+    .map((index) => index.name)
+    .filter((name) => ours("vectorize", name))
+    .sort();
+  found("vectorize", vectorize.length, vectorize);
+
   // 8. Access: the applications by what they cover (with an install row to
   // say what that is) and by name, and the policy by name. The team and
   // its identity providers are kept: Cloudflare has no API to delete a team.
@@ -371,6 +379,7 @@ export async function inventoryAccount({
     kv,
     r2,
     hyperdrive,
+    vectorize,
     access,
     email,
     certificates,

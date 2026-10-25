@@ -1,11 +1,11 @@
 /**
  * An app's Worker, D1 databases and KV namespaces, under the names its
  * registration assigned (`every-<orgKey>-<appId>[--<binding>]`), and its
- * Hyperdrive configs, named `<worker>--<binding>` after its Worker. Its R2
- * buckets (`resources.r2`) only get their assigned names here: the ones
- * the built Workers bind are made after the Build Output is installed
- * (./buckets.ts; cf's prebuilt deploy creates none), never recorded, and
- * purging them is a later change.
+ * Hyperdrive configs and Vectorize indexes, named `<worker>--<binding>`
+ * after its Worker. Its R2 buckets (`resources.r2`) only get their
+ * assigned names here: the ones the built Workers bind are made after the
+ * Build Output is installed (./buckets.ts; cf's prebuilt deploy creates
+ * none), never recorded, and purging them is a later change.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -15,7 +15,9 @@
  */
 import {
   isReservedName,
+  MAX_VECTORIZE_NAME_LENGTH,
   RESOURCE_SEPARATOR,
+  vectorizeNameFor,
 } from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
 import type { D1Database } from "@/lib/cf/d1";
@@ -35,7 +37,14 @@ import {
   type HyperdriveCaching,
 } from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
-import type { HyperdriveConfig } from "@/lib/cf/schemas";
+import type { HyperdriveConfig, VectorizeIndex } from "@/lib/cf/schemas";
+import {
+  createVectorizeIndex,
+  describeVectorizeShape,
+  getVectorizeIndex,
+  hasVectorizeShape,
+  type VectorizeShape,
+} from "@/lib/cf/vectorize";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -161,7 +170,9 @@ export async function provisionAppResources(
       }
     : {};
   const configs = manifest.resources?.hyperdrive ?? [];
-  if (configs.length === 0) return { d1, kv, ...r2 };
+  const vectorize = async () =>
+    provisionVectorizeIndexes({ ...options, owned });
+  if (configs.length === 0) return { d1, kv, ...r2, ...(await vectorize()) };
   // Every origin is checked before any config is created or changed.
   const origins = new Map(
     configs.map(({ name: binding }) => {
@@ -186,7 +197,82 @@ export async function provisionAppResources(
       }),
     };
   }
-  return { d1, kv, ...r2, hyperdrive };
+  return { d1, kv, ...r2, hyperdrive, ...(await vectorize()) };
+}
+
+/**
+ * The app's Vectorize indexes, named `<worker>--<binding>`, through the
+ * ledger as its D1 databases are ({@link provisionOne}; an index's id is
+ * its name). Every name is checked against Cloudflare's limit before any
+ * index is made. One the app recorded is used only while it has the shape
+ * the manifest declares: an index can't be reshaped, so a different one is
+ * VECTORIZE_CONFIG_MISMATCH, never a silent delete. Nothing when the
+ * manifest declares none, so its install target is as before.
+ */
+async function provisionVectorizeIndexes(
+  options: ProvisionOptions & {
+    manifest: EveryAppCliManifest;
+    owned: OwnedResource[];
+  },
+): Promise<Pick<InstallTarget["resources"], "vectorize">> {
+  const { cf, registration, manifest } = options;
+  const entries = manifest.resources?.vectorize ?? [];
+  if (entries.length === 0) return {};
+  const indexes = entries.map((entry) => ({
+    binding: entry.name,
+    name: vectorizeNameFor(registration.workerName, entry.name),
+    shape: vectorizeShape(entry),
+  }));
+  for (const { binding, name } of indexes) {
+    if (name.length > MAX_VECTORIZE_NAME_LENGTH) {
+      throw new EveryAppError(
+        "VECTORIZE_NAME_TOO_LONG",
+        `${binding} would be the Vectorize index "${name}", longer than Cloudflare's ${MAX_VECTORIZE_NAME_LENGTH} characters`,
+        { fix: "shorten its binding name in everyapp.config.ts" },
+      );
+    }
+  }
+  const vectorize: NonNullable<InstallTarget["resources"]["vectorize"]> = {};
+  for (const { binding, name, shape } of indexes) {
+    let existing: VectorizeIndex | null = null;
+    await provisionOne({
+      ...options,
+      kind: "vectorize",
+      binding,
+      name,
+      find: async (index) => {
+        existing = await getVectorizeIndex(cf, index);
+        return existing?.name ?? null;
+      },
+      create: async (index) =>
+        (await createVectorizeIndex(cf, index, shape)).name,
+    });
+    // Created just now: it has the shape it was made with.
+    const found = existing as VectorizeIndex | null;
+    if (found && !hasVectorizeShape(found, shape)) {
+      throw new EveryAppError(
+        "VECTORIZE_CONFIG_MISMATCH",
+        `Vectorize index "${name}" has ${describeVectorizeShape(found.config ?? {})}, but everyapp.config.ts declares ${describeVectorizeShape(shape)} for ${binding}\nAn index can't be reshaped once it is created.`,
+        {
+          fix: `rename the binding in everyapp.config.ts to make a new one, or change ${binding} back to ${describeVectorizeShape(found.config ?? {})}`,
+          rerun: thisCommand(),
+        },
+      );
+    }
+    vectorize[binding] = { name };
+  }
+  return { vectorize };
+}
+
+/** A manifest entry's shape: its preset, else its dimensions and metric. */
+function vectorizeShape(entry: {
+  dimensions?: number;
+  metric?: string;
+  preset?: string;
+}): VectorizeShape {
+  if (entry.preset !== undefined) return { preset: entry.preset };
+  // The strict schema holds one of the two forms.
+  return { dimensions: entry.dimensions!, metric: entry.metric! };
 }
 
 /**
@@ -327,7 +413,7 @@ function assignedName(
 async function provisionOne(
   options: ProvisionOptions & {
     owned: OwnedResource[];
-    kind: "d1" | "kv";
+    kind: "d1" | "kv" | "vectorize";
     binding: string;
     name: string;
     find: (name: string) => Promise<string | null>;

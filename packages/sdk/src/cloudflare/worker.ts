@@ -22,6 +22,17 @@ interface HyperdriveResource {
   readonly caching?: "off" | "default";
 }
 
+/**
+ * A Vectorize index: `dimensions` and `metric`, or a `preset` (the
+ * deploy's concern; the Worker only binds it by name).
+ */
+interface VectorizeResource {
+  readonly name: string;
+  readonly dimensions?: number;
+  readonly metric?: string;
+  readonly preset?: string;
+}
+
 /** Cloudflare's limits for one of the app's Workers. */
 interface WorkerLimits {
   readonly cpuMs?: number;
@@ -62,6 +73,13 @@ export interface EveryAppWorkerManifest {
      * {@link ImagesBinding}).
      */
     images?: readonly string[];
+    /**
+     * Vectorize indexes every one of the app's Workers binds, named
+     * `<app worker>--<binding>`. Cloudflare has no local Vectorize: in
+     * development each binding reaches the account's index (`dev.remote`),
+     * once the Vite plugin's `remoteBindings` is on and `cf auth login` ran.
+     */
+    vectorize?: readonly VectorizeResource[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -216,6 +234,15 @@ export interface ImagesBinding {
   type: "images";
 }
 /**
+ * A Vectorize index, by name. `dev.remote` sends development calls to the
+ * account's index: Cloudflare has no local Vectorize.
+ */
+export interface VectorizeBinding {
+  type: "vectorize";
+  name: string;
+  dev?: { remote?: boolean };
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -271,6 +298,7 @@ export type EveryAppBinding =
   | AiBinding
   | BrowserBinding
   | ImagesBinding
+  | VectorizeBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -308,6 +336,13 @@ type ImagesNames<M> = M extends {
   resources: { images: readonly (infer B)[] };
 }
   ? B & string
+  : never;
+type VectorizeNames<M> = M extends {
+  resources: { vectorize: readonly (infer V)[] };
+}
+  ? V extends { name: infer N extends string }
+    ? N
+    : never
   : never;
 type DurableObjects<M> = M extends {
   resources: { durableObjects: readonly (infer D)[] };
@@ -502,6 +537,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in BrowserNames<M>]: BrowserBinding;
 } & {
   [B in ImagesNames<M>]: ImagesBinding;
+} & {
+  [B in VectorizeNames<M>]: VectorizeBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -770,6 +807,8 @@ function devProviderKeys(
 }
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
+/** Cloudflare's limit on a Vectorize index's name. */
+const MAX_VECTORIZE_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
 const MAX_WORKER_NAME_LENGTH = 63;
 /**
@@ -927,6 +966,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
  * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering and Images, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering and Vectorize indexes, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -1064,15 +1104,18 @@ function gatewayBinding(
 }
 
 /**
- * The app's D1 databases, KV namespaces and R2 buckets, which all its
- * Workers share.
+ * The app's D1 databases, KV namespaces, R2 buckets and Vectorize indexes,
+ * which all its Workers share.
  */
 function storageBindings(
   manifest: EveryAppWorkerManifest,
   appWorker: string,
   deploy: EveryAppDeployTarget | undefined,
-): Record<string, D1Binding | KvBinding | R2Binding> {
-  const env: Record<string, D1Binding | KvBinding | R2Binding> = {};
+): Record<string, D1Binding | KvBinding | R2Binding | VectorizeBinding> {
+  const env: Record<
+    string,
+    D1Binding | KvBinding | R2Binding | VectorizeBinding
+  > = {};
   for (const binding of manifest.resources?.d1 ?? []) {
     if (deploy) {
       const d1 = provisioned(deploy.resources.d1, binding);
@@ -1116,6 +1159,31 @@ function storageBindings(
     } else {
       env[binding] = { type: "r2", name: bucketNameFor(appWorker, binding) };
     }
+  }
+  // Deployed, the index the deploy provisioned (a placeholder until
+  // installed); in development the account's index of the dev Worker's
+  // name, reached remotely: Cloudflare has no local Vectorize, so calls
+  // throw until the Vite plugin's remoteBindings is on.
+  for (const { name: binding } of manifest.resources?.vectorize ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `vectorize: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    if (deploy) {
+      env[binding] = {
+        type: "vectorize",
+        name: provisioned(deploy.resources.vectorize, binding).name,
+      };
+      continue;
+    }
+    const index = suffixedName(appWorker, binding);
+    if (index.length > MAX_VECTORIZE_NAME_LENGTH) {
+      throw new Error(
+        `vectorize: ${binding} would be the Vectorize index "${index}", longer than Cloudflare's ${MAX_VECTORIZE_NAME_LENGTH} characters; shorten the binding name.`,
+      );
+    }
+    env[binding] = { type: "vectorize", name: index, dev: { remote: true } };
   }
   return env;
 }
@@ -1517,8 +1585,9 @@ function workerNameFor(appId: string): string {
 
 /**
  * Copies of the gateway's naming rules (@every-app/perimeter/manifest's
- * resourceNameFor and bucketNameFor): `DB` and `KV` (`R2` for a bucket) take
- * the Worker's name, any other binding `<worker>--<binding>`.
+ * resourceNameFor, bucketNameFor and vectorizeNameFor): `DB` and `KV` (`R2`
+ * for a bucket) take the Worker's name, any other binding (and every
+ * Vectorize index) `<worker>--<binding>`.
  */
 function resourceNameFor(workerName: string, binding: string): string {
   return binding === "DB" || binding === "KV"
