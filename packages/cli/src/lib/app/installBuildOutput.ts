@@ -7,10 +7,10 @@
  * rewrites each Worker's `worker.config.json` in place for one install:
  *
  *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs, R2
- *     buckets and Vectorize indexes get the names and ids the deploy
- *     provisioned, by binding name;
- *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs and R2
- *     buckets get the names and ids the deploy provisioned, by binding name;
+ *     buckets, queues and Vectorize indexes get the names and ids the
+ *     deploy provisioned, by binding name, and each queue consumer trigger
+ *     (and its dead-letter queue) the name of the queue its placeholder
+ *     stands for;
  *   - its AI Gateways' `json` bindings get the gateway's `{ id, accountId,
  *     url }`: only a json binding whose `value.id` is its own binding's
  *     placeholder, never any other json binding;
@@ -66,6 +66,7 @@ type Binding = Record<string, unknown> & { type?: unknown };
 interface WorkerConfig extends Record<string, unknown> {
   name?: unknown;
   env?: Record<string, Binding>;
+  triggers?: Array<Record<string, unknown>>;
   exports?: Record<string, Record<string, unknown>>;
 }
 
@@ -92,6 +93,9 @@ export function installWorkerConfig<T extends Record<string, unknown>>(
   const env = installed.env ?? {};
   for (const [name, binding] of Object.entries(env)) {
     installResource(name, binding, target);
+  }
+  for (const trigger of installed.triggers ?? []) {
+    if (trigger["type"] === "queue") installQueueTrigger(trigger, target);
   }
   if (target.shared && env["EVERY_APP_ORG_ID"]) {
     delete env["EVERY_APP_ORG_ID"];
@@ -172,6 +176,11 @@ function installResource(
     return;
   }
   const kind = String(binding.type);
+  if (kind === "queue") {
+    if (binding["name"] !== resourceSentinel(name)) return;
+    binding["name"] = provisionedQueue(name, target, `The build binds Queue ${name}`);
+    return;
+  }
   if (!isPlaceholderKind(kind)) return;
   const placeholder = resourceSentinel(name);
   const field = kind === "kv" || kind === "hyperdrive" ? "id" : "name";
@@ -185,6 +194,44 @@ function installResource(
     );
   }
   Object.assign(binding, resource);
+}
+
+/** What a queue placeholder holds before its binding: `every-hosted--sentinel--`. */
+const QUEUE_PLACEHOLDER_PREFIX = resourceSentinel("");
+
+/**
+ * A queue consumer trigger gets the name of the queue its placeholder
+ * stands for (the placeholder holds the binding), and so does its
+ * dead-letter queue. A name that isn't a placeholder was written by hand
+ * in cloudflare.config.ts: it stays for the policy to judge.
+ */
+function installQueueTrigger(
+  trigger: Record<string, unknown>,
+  target: InstallTarget,
+): void {
+  for (const field of ["name", "deadLetterQueue"] as const) {
+    const value = trigger[field];
+    if (typeof value !== "string" || !value.startsWith(QUEUE_PLACEHOLDER_PREFIX)) continue;
+    const binding = value.slice(QUEUE_PLACEHOLDER_PREFIX.length);
+    trigger[field] = provisionedQueue(
+      binding,
+      target,
+      `The build ${field === "name" ? "consumes" : "sends failed messages to"} Queue ${binding}`,
+    );
+  }
+}
+
+/** The name of the queue the deploy provisioned for a binding. */
+function provisionedQueue(binding: string, target: InstallTarget, what: string): string {
+  const queue = target.resources.queues?.[binding];
+  if (!queue) {
+    throw new EveryAppError(
+      "INSTALL_INPUTS_MISSING",
+      `${what}, which the deploy didn't provision`,
+      { fix: "declare it in everyapp.config.ts's resources.queues" },
+    );
+  }
+  return queue.name;
 }
 
 /**

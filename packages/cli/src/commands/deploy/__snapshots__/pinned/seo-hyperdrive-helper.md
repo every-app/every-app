@@ -686,12 +686,12 @@ account json cf workers deployments list --worker every-acme-seo--audit --per-pa
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-seo--audit --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 seo audit --worker every-acme-seo--audit --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 seo audit --worker every-acme-seo--audit --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
 account json cf workers deployments list --worker every-acme-seo--audit --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-seo --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 seo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 seo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
 account json cf workers deployments list --worker every-acme-seo --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers secrets list --worker every-acme-seo
@@ -719,7 +719,7 @@ account json cf dns records list -z zone-1 --name-exact seo.example.com --per-pa
 account json cf dns records list -z zone-1 --name-exact *.example.com --per-page 100
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-app-gateway --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile) cwd=<home>/.everyapp/cf/tmp/gateway-deploy-<tmp>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile) cwd=<home>/.everyapp/cf/tmp/gateway-deploy-<tmp>
 account json cf workers deployments list --worker every-app-gateway --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -757,12 +757,12 @@ account json cf workers deployments list --worker every-acme-seo--audit --per-pa
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-seo--audit --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 seo audit --worker every-acme-seo--audit --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 seo audit --worker every-acme-seo--audit --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
 account json cf workers deployments list --worker every-acme-seo--audit --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-seo --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 seo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 seo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
 account json cf workers deployments list --worker every-acme-seo --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers secrets list --worker every-acme-seo
@@ -801,7 +801,7 @@ account json cf workers deployments list --worker every-app-gateway --per-page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-app-gateway --per-page 10
-project text cf deploy --prebuilt --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile) cwd=<home>/.everyapp/cf/tmp/gateway-deploy-<tmp>
+project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile) cwd=<home>/.everyapp/cf/tmp/gateway-deploy-<tmp>
 account json cf workers deployments list --worker every-app-gateway --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json

@@ -43,6 +43,7 @@ type ResourceKind =
   | "d1"
   | "kv"
   | "hyperdrive"
+  | "queue"
   | "vectorize"
   | "ai-gateway"
   | "email-route";
@@ -53,6 +54,7 @@ export const RESOURCE_LABELS: Readonly<Record<ResourceKind | "r2", string>> = {
   d1: "D1 database",
   kv: "KV namespace",
   hyperdrive: "Hyperdrive config",
+  queue: "Queue",
   vectorize: "Vectorize index",
   "ai-gateway": "AI Gateway",
   r2: "R2 bucket",
@@ -67,11 +69,12 @@ export interface OwnedResource {
    * route, its address in the app's inbound list (`apps.email_inbound`).
    */
   binding: string;
-  /** D1 name, KV title, Hyperdrive config, Vectorize index or AI Gateway name, Worker name or the route's address. */
+  /** D1 name, KV title, Hyperdrive config, queue, Vectorize index or AI Gateway name, Worker name or the route's address. */
   name: string;
   /**
-   * D1 uuid, KV id, Hyperdrive config id, Vectorize index name (an index
-   * has no other id), AI Gateway id or Worker name; for a route, its
+   * D1 uuid, KV id, Hyperdrive config id, queue id (`queue_id`), Vectorize
+   * index name (an index has no other id), AI Gateway id or Worker name; for
+   * a route, its
    * rule as `<zone id>/<rule id>`, or `catch_all:<zone id>` for a zone's
    * catch-all (lib/app/emailRoutes.ts). Null while a create is in flight: the
    * name was free when the claim was written, so a resource that has the

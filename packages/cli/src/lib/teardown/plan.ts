@@ -82,6 +82,10 @@ export interface TeardownPlan {
   kv: Array<{ title: string; id: string }>;
   r2: string[];
   hyperdrive: Array<{ name: string; id: string }>;
+  /** Queues named `every-*` (or recorded as an app's). */
+  queues: Array<{ name: string; id: string }>;
+  /** The consumers that are our Workers, on any queue: detached before the Workers, which Cloudflare won't delete while they consume. */
+  queueConsumers: Array<{ queueId: string; queueName: string; consumerId: string; script: string }>;
   /** Vectorize indexes, by name (an index has no other id). */
   vectorize: string[];
   /** AI Gateways, by id. */
@@ -102,12 +106,14 @@ export const KINDS = [
   ["access", "Access application or policy", "Access applications and policy"],
   ["email", "Email Routing change", "Email Routing changes"],
   ["workflows", "Workflow", "Workflows"],
+  ["queueConsumers", "queue consumer", "queue consumers"],
   ["workers", "Worker", "Workers"],
   ["certificates", "certificate pack", "certificate packs"],
   ["d1", "D1 database", "D1 databases"],
   ["kv", "KV namespace", "KV namespaces"],
   ["r2", "R2 bucket", "R2 buckets"],
   ["hyperdrive", "Hyperdrive config", "Hyperdrive configs"],
+  ["queues", "Queue", "Queues"],
   ["vectorize", "Vectorize index", "Vectorize indexes"],
   ["aiGateway", "AI Gateway", "AI Gateways"],
   ["dns", "DNS record", "DNS records"],
@@ -119,12 +125,14 @@ export const PLACES: Readonly<Record<Kind, string>> = {
   access: "Zero Trust → Access → Applications and Policies",
   email: "the zone → Email → Email Routing",
   workflows: "Compute (Workers) → Workflows",
+  queueConsumers: "Compute (Workers) → Queues → the queue's Settings",
   workers: "Compute (Workers) → Workers & Pages",
   certificates: "the zone → SSL/TLS → Edge Certificates",
   d1: "Storage & Databases → D1",
   kv: "Storage & Databases → KV",
   r2: "Storage & Databases → R2 Object Storage",
   hyperdrive: "Storage & Databases → Hyperdrive",
+  queues: "Compute (Workers) → Queues",
   vectorize: "AI → Vectorize",
   aiGateway: "AI → AI Gateway",
   dns: "the zone → DNS → Records",
@@ -147,12 +155,14 @@ export function planCounts(plan: TeardownPlan): Record<Kind, number> {
     access: plan.access.applications.length + (plan.access.policy ? 1 : 0),
     email: emailChanges(plan.email),
     workflows: plan.workflows.length,
+    queueConsumers: plan.queueConsumers.length,
     workers: plan.workers.length,
     certificates: plan.certificates.length,
     d1: plan.d1.length,
     kv: plan.kv.length,
     r2: plan.r2.length,
     hyperdrive: plan.hyperdrive.length,
+    queues: plan.queues.length,
     vectorize: plan.vectorize.length,
     aiGateway: plan.aiGateway.length,
     dns: dnsRecordCount(plan.dns),
@@ -171,6 +181,8 @@ export const describe = {
   kv: (title: string) => `${RESOURCE_LABELS.kv} "${title}"`,
   r2: (name: string) => `${RESOURCE_LABELS.r2} "${name}"`,
   hyperdrive: (name: string) => `${RESOURCE_LABELS.hyperdrive} "${name}"`,
+  queue: (name: string) => `${RESOURCE_LABELS.queue} "${name}"`,
+  consumer: (script: string, queueName: string) => `consumer ${script} of Queue "${queueName}"`,
   vectorize: (name: string) => `${RESOURCE_LABELS.vectorize} "${name}"`,
   aiGateway: (id: string) => `${RESOURCE_LABELS["ai-gateway"]} "${id}"`,
   application: (name: string) => `Access application "${name}"`,
@@ -197,6 +209,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
       ...(zone.disable ? [`Email Routing off for ${zone.zoneName}`] : []),
     ]),
     workflows: plan.workflows,
+    queueConsumers: plan.queueConsumers.map((consumer) => `${consumer.script} on ${consumer.queueName}`),
     workers: plan.workers.map((worker) =>
       worker.domains.length > 0 ? `${worker.name} (${worker.domains.join(", ")})` : worker.name,
     ),
@@ -205,6 +218,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
     kv: plan.kv.map((namespace) => namespace.title),
     r2: plan.r2,
     hyperdrive: plan.hyperdrive.map((config) => config.name),
+    queues: plan.queues.map((queue) => queue.name),
     vectorize: plan.vectorize,
     aiGateway: plan.aiGateway,
     dns: plan.dns.flatMap((name) => name.records.map((record) => `${record.type} at ${name.name}`)),
@@ -245,6 +259,8 @@ export function planData(plan: TeardownPlan): Record<string, unknown> {
     kv: plan.kv,
     r2: plan.r2,
     hyperdrive: plan.hyperdrive,
+    queues: plan.queues,
+    queueConsumers: plan.queueConsumers,
     vectorize: plan.vectorize,
     aiGateway: plan.aiGateway,
     access: plan.access,

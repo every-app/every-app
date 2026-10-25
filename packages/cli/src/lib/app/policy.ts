@@ -37,20 +37,20 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
 
 /**
  * The binding types an app may use. Everything else is refused until the
- * model covers it: most reach account-wide resources by id or name (another
- * app's queue, dispatch namespace, private network, secrets store,
- * rate-limit counters, …), or account-wide capabilities the gateway is
- * meant to broker (email). Buckets and Workflows are allowed only under the
- * app's own names (buckets only as the manifest's `resources.r2`, when it
- * declares any), and Hyperdrive configs and Vectorize indexes only as the
- * ones the deploy provisioned. Workers AI is account-wide inference billed to the account,
- * outside the Gateway's budgets, caps and usage tap (its `workers-ai`
- * provider is the brokered path), and the deploy provisions nothing to
- * check it against: so only under a binding name the manifest declares in
- * `resources.ai`, never one cloudflare.config.ts adds on its own. Browser
- * Rendering is the same: account-wide browser time billed to the account,
- * so only under a name `resources.browser` declares. Images the same, under
- * `resources.images`: transformations bill the account.
+ * model covers it: most reach account-wide resources by id or name (a
+ * dispatch namespace, private network, secrets store, rate-limit counters,
+ * …), or account-wide capabilities the gateway is meant to broker (email).
+ * Buckets and Workflows are allowed only under the app's own names (buckets
+ * only as the manifest's `resources.r2`, when it declares any), and
+ * Hyperdrive configs, queues and Vectorize indexes only as the ones the
+ * deploy provisioned. Workers AI is account-wide inference billed to the
+ * account, outside the Gateway's budgets, caps and usage tap (its
+ * `workers-ai` provider is the brokered path), and the deploy provisions
+ * nothing to check it against: so only under a binding name the manifest
+ * declares in `resources.ai`, never one cloudflare.config.ts adds on its
+ * own. Browser Rendering is the same: account-wide browser time billed to
+ * the account, so only under a name `resources.browser` declares. Images
+ * the same, under `resources.images`: transformations bill the account.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -65,6 +65,7 @@ const ALLOWED_BINDINGS = new Set([
   "workflow",
   "worker",
   "hyperdrive",
+  "queue",
   "vectorize",
   "ai",
   "browser",
@@ -97,7 +98,7 @@ interface BuiltWorkerConfig extends Record<string, unknown> {
   workersDev?: boolean;
   previewUrls?: boolean;
   domains?: string[];
-  triggers?: Array<{ type?: string }>;
+  triggers?: Array<Record<string, unknown> & { type?: string }>;
   env?: Record<string, Binding>;
   exports?: Record<string, Export>;
   manifest?: {
@@ -126,7 +127,7 @@ export function appPolicyProblems(
   if (config.name !== workerName) {
     problems.push(`its name is "${config.name}", not "${workerName}"`);
   }
-  problems.push(...privacyProblems(config));
+  problems.push(...privacyProblems(config), ...queueTriggerProblems(config, inputs));
 
   const env = config.env ?? {};
   for (const name of ["EVERYAPP_IDENTITY_PUBLIC_KEYS", "EVERYAPP_IDENTITY_ISSUER"]) {
@@ -169,6 +170,7 @@ export function helperPolicyProblems(
   }
   problems.push(
     ...privacyProblems(config),
+    ...queueTriggerProblems(config, inputs),
     ...bindingProblems(config.env ?? {}, inputs, isGatewayBinding),
     // No tombstones on a helper yet: its classes stay while it does.
     ...exportProblems(config.exports ?? {}, [], inputs.workerName),
@@ -184,19 +186,50 @@ function privacyProblems(config: BuiltWorkerConfig): string[] {
   if (config.domains?.length) {
     problems.push("it declares domains (apps are served through the gateway)");
   }
-  // Only cron schedules: routes would serve the app around the gateway, a
-  // queue consumer could take another app's queue by name, and an email
-  // trigger could claim the account's Email Routing addresses.
+  // Only cron schedules and the app's own queues' consumers
+  // (queueTriggerProblems): routes would serve the app around the gateway,
+  // and an email trigger could claim the account's Email Routing addresses.
   for (const trigger of config.triggers ?? []) {
-    if (trigger.type === "scheduled") continue;
+    if (trigger.type === "scheduled" || trigger.type === "queue") continue;
     problems.push(
       trigger.type === "fetch"
         ? "it declares routes (apps are served through the gateway)"
-        : `it declares a trigger of type "${String(trigger.type)}" (apps may only declare cron schedules)`,
+        : `it declares a trigger of type "${String(trigger.type)}" (apps may only declare cron schedules and consumers of their own queues)`,
     );
   }
   if (config.env?.["EVERYAPP_DEV"]) {
     problems.push("EVERYAPP_DEV is set, which only `everyapp dev` may do");
+  }
+  return problems;
+}
+
+/**
+ * A queue consumer may take only the app's own queues, the ones the deploy
+ * provisioned: one named otherwise could take another app's messages by
+ * name. Its dead-letter queue too, since Cloudflare creates a dead-letter
+ * queue that doesn't exist, which no deploy would record.
+ */
+function queueTriggerProblems(
+  config: BuiltWorkerConfig,
+  { resources }: PolicyInputs,
+): string[] {
+  const queues = Object.values(resources.queues ?? {}).map((queue) => queue.name);
+  const own = queues.length
+    ? `which isn't one of the app's queues in resources.queues (${queues.join(", ")})`
+    : "but an app consumes only its own queues, declared in resources.queues";
+  const problems: string[] = [];
+  for (const trigger of config.triggers ?? []) {
+    if (trigger.type !== "queue") continue;
+    const name = String(trigger["name"] ?? "");
+    if (!queues.includes(name)) {
+      problems.push(`it consumes queue "${name}", ${own}`);
+    }
+    const deadLetterQueue = trigger["deadLetterQueue"];
+    if (deadLetterQueue !== undefined && !queues.includes(String(deadLetterQueue))) {
+      problems.push(
+        `its consumer of queue "${name}" sends failed messages to "${String(deadLetterQueue)}", ${own}`,
+      );
+    }
   }
   return problems;
 }
@@ -213,6 +246,9 @@ function bindingProblems(
   const kvIds = new Set(Object.values(resources.kv ?? {}).map((kv) => kv.id));
   const hyperdriveIds = new Set(
     Object.values(resources.hyperdrive ?? {}).map((config) => config.id),
+  );
+  const queueNames = new Set(
+    Object.values(resources.queues ?? {}).map((queue) => queue.name),
   );
   const vectorizeIndexes = new Set(
     Object.values(resources.vectorize ?? {}).map((index) => index.name),
@@ -262,6 +298,14 @@ function bindingProblems(
       case "hyperdrive":
         if (!hyperdriveIds.has(String(binding["id"]))) {
           problems.push(`${name} isn't a Hyperdrive config the deploy provisioned`);
+        }
+        break;
+      // A queue holds messages: only the app's own, as the deploy provisioned.
+      case "queue":
+        if (!queueNames.has(String(binding["name"]))) {
+          problems.push(
+            `${name} is queue "${String(binding["name"])}", which isn't a queue the deploy provisioned (declare it in resources.queues)`,
+          );
         }
         break;
       // An index holds the vectors of whoever wrote them: only the app's own.

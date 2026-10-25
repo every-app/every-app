@@ -2,23 +2,18 @@
  * Carrying a teardown plan out, kind by kind, in an order that never
  * deletes what something still binds: Access first (the applications,
  * then the policy they used), Email Routing (no rule names a Worker that
- * is gone), Workflows, the Workers (apps and helpers, the Gateway's last;
+ * is gone), Workflows, our Workers' queue consumers (Cloudflare won't
+ * delete a Worker that consumes), the Workers (apps and helpers, the Gateway's last;
  * each deleted with its references, since they bind each other), the
  * hostnames' certificate packs (Cloudflare removes a hostname's pack with
  * its Custom Domain, so a refusal for one it no longer lists is counted as
- * removed), the apps' D1, KV, R2, Hyperdrive, Vectorize, the DNS records
- * left at our names once the Custom Domains went with their Workers, and
- * last of all the Gateway's D1: it is where the inventory reads the
- * hostnames, so while a DNS record of theirs is kept it stays too, and a
- * second run finds the record again. A failure on one item is a warning
- * and the item goes to `kept`, with where to delete it by hand; the run
- * goes on.
- * removed), the apps' D1, KV, R2, Hyperdrive, AI Gateways, the DNS records left at our
- * names once the Custom Domains went with their Workers, and last of all
- * the Gateway's D1: it is where the inventory reads the hostnames, so
- * while a DNS record of theirs is kept it stays too, and a second run
- * finds the record again. A failure on one item is a warning and the item
- * goes to `kept`, with where to delete it by hand; the run goes on.
+ * removed), the apps' D1, KV, R2, Hyperdrive, queues (once no Worker binds
+ * them), Vectorize, AI Gateways, the DNS records left at our names once the
+ * Custom Domains went with their Workers, and last of all the Gateway's D1:
+ * it is where the inventory reads the hostnames, so while a DNS record of
+ * theirs is kept it stays too, and a second run finds the record again. A
+ * failure on one item is a warning and the item goes to `kept`, with where
+ * to delete it by hand; the run goes on.
  */
 import { deleteAccessApplication, deleteAccessPolicy } from "@/lib/cf/access";
 import {
@@ -29,6 +24,7 @@ import {
 } from "@/lib/cf/emailRouting";
 import { isCfError } from "@/lib/cf/errors";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
+import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
 import { deleteAiGateway } from "@/lib/cf/aiGateway";
 import { deleteR2Bucket } from "@/lib/cf/r2";
 import { deleteD1, deleteKv } from "@/lib/cf/resources";
@@ -196,13 +192,36 @@ export async function executeTeardown({
     }
   });
 
+  // 3b. Our Workers' queue consumers, before the Workers: Cloudflare
+  // refuses to delete a Worker that consumes a queue, references or not.
+  await kindStep("queueConsumers", plan.queueConsumers.length, async () => {
+    for (const consumer of plan.queueConsumers) {
+      await attempt("queueConsumers", describe.consumer(consumer.script, consumer.queueName), () =>
+        deleteQueueConsumer(cf, consumer.queueId, consumer.consumerId),
+      );
+    }
+  });
+
   // 4. Workers: apps, their helpers, the Gateway's last, each with its
   // references (the Gateway binds every app and every app the Gateway, and
   // all of them go). Custom Domains go with each.
   await kindStep("workers", plan.workers.length, async () => {
     for (const worker of plan.workers) {
       await attempt("workers", describe.worker(worker.name), () =>
-        deleteWorker(cf, worker.name, { withReferences: true }),
+        deleteWorker(cf, worker.name, { withReferences: true }).catch(async (error: unknown) => {
+          // A consumer the inventory didn't list (Cloudflare's listing lags
+          // a deploy by seconds): detached, then the Worker again.
+          if (!isCfError(error, "queue_consumer_worker")) throw error;
+          for (const queue of await listQueues(cf)) {
+            for (const consumer of queue.consumers ?? []) {
+              if (consumer.script === worker.name && consumer.consumer_id) {
+                await deleteQueueConsumer(cf, queue.queue_id, consumer.consumer_id);
+                removed.push(describe.consumer(worker.name, queue.queue_name));
+              }
+            }
+          }
+          await deleteWorker(cf, worker.name, { withReferences: true });
+        }),
       );
     }
   });
@@ -274,14 +293,21 @@ export async function executeTeardown({
     }
   });
 
-  // 9b. Vectorize indexes and their vectors (one gone already reads as not found).
+  // 9b. Queues and their messages, now that no Worker of ours binds them.
+  await kindStep("queues", plan.queues.length, async () => {
+    for (const queue of plan.queues) {
+      await attempt("queues", describe.queue(queue.name), () => deleteQueue(cf, queue.id));
+    }
+  });
+
+  // 9c. Vectorize indexes and their vectors (one gone already reads as not found).
   await kindStep("vectorize", plan.vectorize.length, async () => {
     for (const name of plan.vectorize) {
       await attempt("vectorize", describe.vectorize(name), () => deleteVectorizeIndex(cf, name));
     }
   });
 
-  // 9c. AI Gateways, and the logs they hold.
+  // 9d. AI Gateways, and the logs they hold.
   await kindStep("aiGateway", plan.aiGateway.length, async () => {
     for (const id of plan.aiGateway) {
       await attempt("aiGateway", describe.aiGateway(id), () => deleteAiGateway(cf, id));

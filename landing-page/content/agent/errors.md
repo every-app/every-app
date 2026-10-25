@@ -1148,6 +1148,22 @@ Source: `packages/cli/src/commands/provider/index.ts` (`readSpecSource`), `packa
 
 Source: `packages/cli/src/commands/db/index.ts`, `packages/cli/src/lib/cf/d1.ts`
 
+### QUEUE_HANDLER_MISSING
+
+Self-host `deploy` and `install` (step `app.upload` or `app.helper`): the Worker's new version went live, then Cloudflare refused to make it the consumer its `queue` trigger declares (`resources.queues[].consumer`), because its bundle exports no `queue()` handler. cf exits 1 after the upload with `Trigger configuration for "<worker>" was only partially updated: Queue consumers: … Queue handler is missing. [code: 11001] … Successful trigger changes were not rolled back.` (seen live on 2026-10-24). Headline: `<worker>'s new version is live without its queue consumers`, then `Its bundle exports no queue() handler, which Cloudflare needs before it delivers a message.` `data.workerName` is the Worker, `data.cloudflare` cf's message. The version is recorded as everyapp's upload (so the next deploy replaces it unattended); the registry keeps the manifest it had.
+
+**Fix:** `fix`: `export async queue(batch, env) from the Worker's entry beside everyApp()'s fetch, then deploy again`; `rerun`: this same command. Not retryable until the handler is exported: `export default { ...everyApp(handler, { tools }), async queue(batch, env) { … } }` ([the manifest's Queues](/docs/agent/manifest#queues)).
+
+Source: `packages/cli/src/lib/cf/deploy.ts` (`explainDeployFailure`)
+
+### QUEUE_NAME_INVALID
+
+Self-host `deploy` and `install` (step `app.resources`, before anything is created): a queue's name, the Worker's name plus `--` and the binding lowercased with `_` as `-` (`queueNameFor()`), is one Cloudflare refuses: longer than 63 characters, or not lowercase letters, digits and hyphens starting and ending with a letter or digit (`isValidQueueName()`). The strict manifest already refuses a binding ending in `_`, so in practice the name is too long. Headline: `<BINDING> would be the queue "<name>", which Cloudflare refuses`, then `A queue's name is at most 63 lowercase letters, digits and hyphens, starting and ending with a letter or digit.`
+
+**Fix:** `fix`: `shorten its binding name in everyapp.config.ts`; `rerun`: this same command. Not retryable.
+
+Source: `packages/cli/src/lib/app/resources.ts` (`assertQueueNames`), `packages/perimeter/src/manifest/manifest.ts` (`queueNameFor`, `MAX_QUEUE_NAME_LENGTH`)
+
 ### RELEASE_CORRUPT
 
 Opening a release (`extractRelease()`): the SHA-256 over the extracted tree (every file except `release.json`: each path and the hash of its contents, in path order) isn't the `sha256` its `release.json` records. Gateway releases (the build from the checkout that every Gateway deploy opens, kept under the checkout's `node_modules/.cache/everyapp/<tree>.tar.gz`; `lib/gateway/checkoutRelease.ts`) and app releases (`install <url|tarball>`) alike. Message `<Gateway|App> release <version> doesn't match its checksum` then `The download may be damaged. Download it again.`
@@ -1768,7 +1784,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`, `packages/cli/src/lib/output/report
 
 ### CF_NOT_FOUND
 
-`not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database) or `10200` (Workflow), Vectorize's `vectorize.index.not_found` (`[3000]`, 404) or `vectorize.index.deleted` (`[3005]`, 410: an index deleted a moment ago, whose name a create takes at once), or the text `not found` or `does not exist` (an AI Gateway's `[7002] Not Found`). Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
+`not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database), `10200` (Workflow) or `11000` (queue), Vectorize's `vectorize.index.not_found` (`[3000]`, 404) or `vectorize.index.deleted` (`[3005]`, 410: an index deleted a moment ago, whose name a create takes at once), or the text `not found` or `does not exist` (an AI Gateway's `[7002] Not Found`). Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
 
 **Fix:** none; not retryable.
 
@@ -1776,7 +1792,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 
 ### CF_ALREADY_EXISTS
 
-`already_exists`: API code `7502` (D1) or `10014` (KV), Vectorize's `vectorize.index.duplicate_name` (`[3002]`, 409), or the text `already exists`: a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
+`already_exists`: API code `7502` (D1), `10014` (KV) or `11009` (a queue: `Queue name '<name>' is already taken.`), Vectorize's `vectorize.index.duplicate_name` (`[3002]`, 409), or the text `already exists`: a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
 `already_exists`: API code `7502` (D1) or `10014` (KV), or the text `already exists` (an AI Gateway's `[7001] An object with this id already exists`): a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
 
 **Fix:** none; not retryable.
@@ -1844,6 +1860,22 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 `d1_id_rejected`: the text `Expected a D1 database ID`: cf was given a database name or binding where it wanted an id.
 
 **Fix:** none; not retryable (a CLI bug if it happens).
+
+Source: `packages/cli/src/lib/cf/errors.ts`
+
+### CF_QUEUE_CONSUMER_WORKER
+
+`queue_consumer_worker`: API code `10064`, `Cannot delete this Worker as it is a consumer for a Queue. Remove it from the Queue's consumers first, then retry.` (403; cf adds "Check your API token permissions", which is not the cause). Cloudflare refuses to delete a Worker that consumes a queue, even with `--delete-with-references`. `delete --purge` and `teardown` detach the app's Workers' consumers first (`cf queues consumers delete <consumer-id> --queue-id <queue-id> --force`), so it is reported only for a consumer added outside everyapp to a queue the app never recorded.
+
+**Fix:** none offered; not retryable. Remove the Worker from the queue's consumers (dashboard: Compute (Workers) → Queues → the queue's Settings), then run the command again.
+
+Source: `packages/cli/src/lib/cf/errors.ts`
+
+### CF_QUEUE_IN_USE
+
+`queue_in_use`: API code `11005`, `Cannot delete queue '<name>' that is still referenced by a binding in a Worker.` A queue a Worker binds can't be deleted. `delete --purge` deletes the app's queues after its Workers and keeps one that a Worker outside the app still binds (`RESOURCES_KEPT`); `teardown` keeps it with a warning.
+
+**Fix:** none offered; not retryable. Remove the binding from that Worker, or delete the Worker, then delete the queue.
 
 Source: `packages/cli/src/lib/cf/errors.ts`
 
@@ -2487,7 +2519,7 @@ Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### RESOURCES_KEPT
 
-`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept (its Worker, the D1 databases and KV namespaces the registry names, the Vectorize indexes the last deployed manifest declares, Workflows another Worker runs); `data.kept`, `data.fix` (delete them in the dashboard if they are the app's; a Vectorize index under AI → Vectorize).
+`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept (its Worker, the D1 databases and KV namespaces the registry names, the queues and Vectorize indexes the last deployed manifest declares, Workflows another Worker runs), and any recorded queue a Worker outside the app still binds (`<Queue "name"> (a Worker that isn't <app>'s binds it)`); `data.kept`, `data.fix` (delete them in the dashboard if they are the app's; a Vectorize index under AI → Vectorize).
 
 Source: `packages/cli/src/commands/delete/index.ts`
 

@@ -145,6 +145,11 @@ export function manifestProblems(
       "it declares R2 or Hyperdrive, which the browser deployer can't provision; use the CLI",
     );
   }
+  if (manifest.resources?.queues?.length) {
+    problems.push(
+      "it declares Queues, which the browser deployer can't provision; use the CLI",
+    );
+  }
   if (
     (manifest.migrations?.dialect &&
       manifest.migrations.dialect !== "sqlite") ||

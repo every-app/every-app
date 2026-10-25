@@ -2,7 +2,7 @@
  * What Every App created in one Cloudflare account, read and never
  * written: the Gateway's D1 (its install row, `apps` rows and the
  * resources each app recorded), then every kind of resource by name
- * (`every-*`), the Access applications and policy, the Email Routing rules
+ * (`every-*`), our Workers' queue consumers, the Access applications and policy, the Email Routing rules
  * that send mail to our Workers, the certificate packs of our hostnames
  * and the Custom Domain records (A, AAAA, CNAME) at exactly those names.
  * A missing Gateway D1 or table is fine: the name scan still runs, so a
@@ -33,6 +33,7 @@ import {
   ruleWorker,
 } from "@/lib/cf/emailRouting";
 import { listHyperdrive } from "@/lib/cf/hyperdrive";
+import { listQueues } from "@/lib/cf/queues";
 import { listAiGateways } from "@/lib/cf/aiGateway";
 import { listR2Buckets } from "@/lib/cf/r2";
 import { listVectorizeIndexes } from "@/lib/cf/vectorize";
@@ -206,13 +207,37 @@ export async function inventoryAccount({
     .sort((a, b) => a.name.localeCompare(b.name));
   found("hyperdrive", hyperdrive.length, hyperdrive.map((config) => config.name));
 
-  // 7b. Vectorize indexes, by name (an app's are `<worker>--<binding>`).
+  // 7b. Queues (by `queue_name`), and the consumers on any queue that are
+  // our Workers: Cloudflare won't delete a Worker while it consumes.
+  const listedQueues = await read("the queues", [], () => listQueues(cf));
+  const queues = listedQueues
+    .filter((queue) => ours("queue", queue.queue_name))
+    .map((queue) => ({ name: queue.queue_name, id: queue.queue_id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const plannedWorkers = new Set(workers.map((worker) => worker.name));
+  const queueConsumers = listedQueues
+    .flatMap((queue) =>
+      (queue.consumers ?? []).flatMap((consumer) =>
+        consumer.consumer_id && plannedWorkers.has(consumer.script ?? "")
+          ? [{ queueId: queue.queue_id, queueName: queue.queue_name, consumerId: consumer.consumer_id, script: consumer.script! }]
+          : [],
+      ),
+    )
+    .sort((a, b) => a.queueName.localeCompare(b.queueName) || a.script.localeCompare(b.script));
+  found(
+    "queueConsumers",
+    queueConsumers.length,
+    queueConsumers.map((consumer) => `${consumer.script} on ${consumer.queueName}`),
+  );
+  found("queues", queues.length, queues.map((queue) => queue.name));
+
+  // 7c. Vectorize indexes, by name (an app's are `<worker>--<binding>`).
   const vectorize = (await read("the Vectorize indexes", [], () => listVectorizeIndexes(cf)))
     .map((index) => index.name)
     .filter((name) => ours("vectorize", name))
     .sort();
   found("vectorize", vectorize.length, vectorize);
-  // 7b. AI Gateways, by id (`<worker>-<binding>`: one hyphen, still every-*).
+  // 7d. AI Gateways, by id (`<worker>-<binding>`: one hyphen, still every-*).
   const aiGateway = (await read("the AI Gateways", [], () => listAiGateways(cf, EVERY_APP_PREFIX)))
     .map((gateway) => gateway.id)
     .filter((id) => ours("ai-gateway", id))
@@ -386,6 +411,8 @@ export async function inventoryAccount({
     kv,
     r2,
     hyperdrive,
+    queues,
+    queueConsumers,
     vectorize,
     aiGateway,
     access,

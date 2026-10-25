@@ -10,6 +10,9 @@ import {
   registryWorkerNameFor,
   resourceNameFor,
   bucketNameFor,
+  queueNameFor,
+  isValidQueueName,
+  MAX_QUEUE_NAME_LENGTH,
   vectorizeNameFor,
   MAX_VECTORIZE_NAME_LENGTH,
   isReservedAppId,
@@ -1577,6 +1580,140 @@ describe("Vectorize indexes (resources.vectorize)", () => {
       /^[a-z][a-z0-9-]*$/,
     );
     expect(MAX_VECTORIZE_NAME_LENGTH).toBe(64);
+  });
+});
+
+describe("Queues (resources.queues)", () => {
+  const crawl = {
+    id: "crawl",
+    resources: {
+      queues: [
+        { name: "EMAILS" },
+        { name: "JOBS", consumer: true as const },
+        {
+          name: "CRAWLS",
+          consumer: {
+            worker: "crawler",
+            maxBatchSize: 5,
+            maxBatchTimeout: 2,
+            maxRetries: 4,
+            maxConcurrency: null,
+            retryDelay: 30,
+            visibilityTimeoutMs: 1000,
+            deadLetterQueue: "FAILED_CRAWLS",
+          },
+        },
+        { name: "FAILED_CRAWLS", consumer: { maxConcurrency: 2 } },
+      ],
+    },
+    workers: [{ name: "crawler" }],
+  };
+
+  it("accepts producers, a consumer on the app's Worker and one on a helper with a dead-letter queue", () => {
+    expect(validateManifestStrict(crawl)).toEqual(crawl);
+    expect(validateManifest(crawl)).toEqual(crawl);
+  });
+
+  it.each([
+    [
+      "a consumer helper workers doesn't declare",
+      {
+        resources: {
+          queues: [{ name: "JOBS", consumer: { worker: "ghost" } }],
+        },
+      },
+      'Invalid everyapp.config: Queue JOBS is consumed by Worker "ghost", which workers doesn\'t declare.',
+    ],
+    [
+      "a dead-letter queue resources.queues doesn't declare",
+      {
+        resources: {
+          queues: [
+            {
+              name: "JOBS",
+              consumer: { deadLetterQueue: "every-acme-other--dlq" },
+            },
+          ],
+        },
+      },
+      "Invalid everyapp.config: Queue JOBS's deadLetterQueue \"every-acme-other--dlq\" isn't one of resources.queues; declare it there and name its binding.",
+    ],
+    [
+      "a queue that is its own dead-letter queue",
+      {
+        resources: {
+          queues: [{ name: "JOBS", consumer: { deadLetterQueue: "JOBS" } }],
+        },
+      },
+      "Invalid everyapp.config: Queue JOBS can't be its own dead-letter queue; name another of resources.queues.",
+    ],
+    [
+      "a queue binding that isn't an identifier",
+      { resources: { queues: [{ name: "job-queue" }] } },
+      /resources\.queues\.0\.name: binding names must be JavaScript identifiers/,
+    ],
+    [
+      "a queue binding ending in _",
+      { resources: { queues: [{ name: "JOBS_" }] } },
+      /resources\.queues\.0\.name: a queue's binding can't end with _/,
+    ],
+    [
+      "a queue binding named like a D1 database",
+      { resources: { d1: ["JOBS"], queues: [{ name: "JOBS" }] } },
+      /the binding JOBS is declared twice/,
+    ],
+    [
+      "consumer: false",
+      { resources: { queues: [{ name: "JOBS", consumer: false }] } },
+      /resources\.queues\.0\.consumer/,
+    ],
+    [
+      "a setting Cloudflare doesn't have",
+      { resources: { queues: [{ name: "JOBS", consumer: { batchSize: 5 } }] } },
+      /Unrecognized key: "batchSize"/,
+    ],
+    [
+      "a batch of no messages",
+      {
+        resources: {
+          queues: [{ name: "JOBS", consumer: { maxBatchSize: 0 } }],
+        },
+      },
+      /resources\.queues\.0\.consumer/,
+    ],
+    [
+      "an unknown key on a queue",
+      { resources: { queues: [{ name: "JOBS", deliveryDelay: 5 }] } },
+      /Unrecognized key: "deliveryDelay"/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...crawl, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("keeps a secret off a queue's binding name", () => {
+    expect(() =>
+      validateManifestStrict({ ...crawl, secrets: ["JOBS"] }),
+    ).toThrow("secrets: JOBS is one of the app's bindings");
+  });
+
+  it("names each queue after the app's Worker, within Cloudflare's rule", () => {
+    expect(queueNameFor("every-acme-crawl", "FAILED_CRAWLS")).toBe(
+      "every-acme-crawl--failed-crawls",
+    );
+    expect(MAX_QUEUE_NAME_LENGTH).toBe(63);
+    expect(isValidQueueName(`every-acme--${"q".repeat(51)}`)).toBe(true);
+    expect(isValidQueueName(`every-acme--${"q".repeat(52)}`)).toBe(false);
+    expect(isValidQueueName("every-acme-crawl--jobs-")).toBe(false);
+    expect(isValidQueueName("every-acme-crawl--JOBS")).toBe(false);
+  });
+
+  it("refuses Queues on the dispatch tier", () => {
+    expect(manifestTierProblems(crawl, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(crawl, "dispatch")).toEqual([
+      "resources.queues: Queues aren't available to apps in a dispatch namespace yet",
+    ]);
   });
 });
 

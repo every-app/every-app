@@ -1,18 +1,13 @@
 /**
  * An app's Worker, D1 databases and KV namespaces, under the names its
  * registration assigned (`every-<orgKey>-<appId>[--<binding>]`), and its
- * Hyperdrive configs and Vectorize indexes, named `<worker>--<binding>`
- * after its Worker. Its R2 buckets (`resources.r2`) only get their
- * assigned names here: the ones the built Workers bind are made after the
- * Build Output is installed (./buckets.ts; cf's prebuilt deploy creates
- * none), never recorded, and purging them is a later change.
- * Hyperdrive configs, named `<worker>--<binding>` after its Worker. Its R2
- * buckets (`resources.r2`) only get their assigned names here: the ones
- * the built Workers bind are made after the Build Output is installed
- * (./buckets.ts; cf's prebuilt deploy creates none), never recorded, and
- * purging them is a later change. Its AI Gateways are `<worker>-<binding>`
- * (one hyphen: an id can't hold `--`), with their logging and caching kept
- * as the manifest says.
+ * Hyperdrive configs, queues and Vectorize indexes, named
+ * `<worker>--<binding>` after its Worker. Its R2 buckets (`resources.r2`)
+ * only get their assigned names here: the ones the built Workers bind are
+ * made after the Build Output is installed (./buckets.ts; cf's prebuilt
+ * deploy creates none), never recorded, and purging them is a later change.
+ * Its AI Gateways are `<worker>-<binding>` (one hyphen: an id can't hold
+ * `--`), with their logging and caching kept as the manifest says.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -24,6 +19,9 @@ import {
   aiGatewayIdFor,
   isAiGatewayId,
   isReservedName,
+  isValidQueueName,
+  MAX_QUEUE_NAME_LENGTH,
+  queueNameFor,
   MAX_VECTORIZE_NAME_LENGTH,
   MAX_AI_GATEWAY_ID_LENGTH,
   RESOURCE_SEPARATOR,
@@ -54,8 +52,9 @@ import {
   updateHyperdrive,
   type HyperdriveCaching,
 } from "@/lib/cf/hyperdrive";
+import { createQueue, getQueue, listQueues } from "@/lib/cf/queues";
 import type { CfRunner } from "@/lib/cf/runner";
-import type { AiGateway, HyperdriveConfig, VectorizeIndex } from "@/lib/cf/schemas";
+import type { AiGateway, HyperdriveConfig, Queue, VectorizeIndex } from "@/lib/cf/schemas";
 import {
   createVectorizeIndex,
   describeVectorizeShape,
@@ -104,6 +103,8 @@ interface ProvisionOptions {
   onRecreated?: (description: string, kind: OwnedResource["kind"]) => void;
   /** Said when an existing Hyperdrive config is adopted or pointed at a new origin, or an AI Gateway's settings change. */
   onChanged?: (message: string) => void;
+  /** How a lookup waits before asking Cloudflare again (tests answer at once). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -151,6 +152,8 @@ export async function provisionAppResources(
   },
 ): Promise<InstallTarget["resources"]> {
   const { cf, registration, manifest } = options;
+  // Every queue's name is checked before anything is created.
+  assertQueueNames(registration.workerName, manifest);
   const owned = await readOwnedResources(
     options.gatewayDb,
     registration.workerName,
@@ -208,7 +211,14 @@ export async function provisionAppResources(
   const vectorize = async () =>
     provisionVectorizeIndexes({ ...options, owned });
   if (configs.length === 0) {
-    return { d1, kv, ...r2, ...(await vectorize()), ...(await withGateways()) };
+    return {
+      d1,
+      kv,
+      ...r2,
+      ...(await provisionQueues(options, owned)),
+      ...(await vectorize()),
+      ...(await withGateways()),
+    };
   }
   // Every origin is checked before any config is created or changed.
   const origins = new Map(
@@ -234,7 +244,101 @@ export async function provisionAppResources(
       }),
     };
   }
-  return { d1, kv, ...r2, hyperdrive, ...(await vectorize()), ...(await withGateways()) };
+  return {
+    d1,
+    kv,
+    ...r2,
+    hyperdrive,
+    ...(await provisionQueues(options, owned)),
+    ...(await vectorize()),
+    ...(await withGateways()),
+  };
+}
+
+/**
+ * The app's queues (`resources.queues`), as for its D1 databases: one under
+ * the app's name is used only when recorded as the app's (a queue holds
+ * messages, and binding someone else's would hand the app them), and a new
+ * one is recorded before it is created. Absent when the manifest declares
+ * none, so a deploy without queues asks Cloudflare nothing about them.
+ */
+async function provisionQueues(
+  options: ProvisionOptions & { manifest: EveryAppCliManifest },
+  owned: OwnedResource[],
+): Promise<Pick<InstallTarget["resources"], "queues">> {
+  const declared = options.manifest.resources?.queues ?? [];
+  if (declared.length === 0) return {};
+  const { cf, registration } = options;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  // One listing for every binding: cf answers with the whole account.
+  let listed: Promise<Queue[]> | undefined;
+  const listedId = async (name: string) =>
+    (await (listed ??= listQueues(cf))).find((queue) => queue.queue_name === name)?.queue_id ?? null;
+  const queues: NonNullable<InstallTarget["resources"]["queues"]> = {};
+  for (const { name: binding } of declared) {
+    const name = queueNameFor(registration.workerName, binding);
+    const recordedId = owned.find(
+      (entry) => entry.kind === "queue" && entry.binding === binding && entry.name === name,
+    )?.resourceId;
+    const id = await provisionOne({
+      ...options,
+      owned,
+      kind: "queue",
+      binding,
+      name,
+      // The one the ledger records is asked for by id, and again while
+      // Cloudflare catches up with a create (a retry seconds after one):
+      // the listing alone could miss it and make the deploy create it again.
+      find: async (queueName) => {
+        if (recordedId) {
+          for (let attempt = 0; attempt < QUEUE_LOOKUPS; attempt += 1) {
+            if (attempt > 0) await sleep(QUEUE_LOOKUP_WAIT_MS);
+            const queue = await getQueue(cf, recordedId).catch((error: unknown) => {
+              if (isCfError(error, "unknown")) return null;
+              throw error;
+            });
+            if (queue?.queue_name === queueName) return queue.queue_id;
+          }
+        }
+        return listedId(queueName);
+      },
+      create: async (queueName) => {
+        const queueId = await createQueue(cf, queueName);
+        // Listed before the upload, whose --no-provision check reads it.
+        for (let attempt = 0; attempt < QUEUE_SETTLE_LOOKUPS; attempt += 1) {
+          if ((await listQueues(cf)).some((queue) => queue.queue_id === queueId)) break;
+          await sleep(QUEUE_LOOKUP_WAIT_MS);
+        }
+        return queueId;
+      },
+    });
+    queues[binding] = { name, id };
+  }
+  return { queues };
+}
+
+/** How many times a recorded queue is asked for by id before it counts as gone. */
+const QUEUE_LOOKUPS = 3;
+/** How many listings wait for a queue just created to show. */
+const QUEUE_SETTLE_LOOKUPS = 15;
+const QUEUE_LOOKUP_WAIT_MS = 1_500;
+
+/**
+ * Every queue's name fits Cloudflare's rule once the Worker's name is in
+ * it: only a deploy knows the Worker's name, so the manifest's own check
+ * can't say.
+ */
+function assertQueueNames(workerName: string, manifest: EveryAppCliManifest): void {
+  for (const { name: binding } of manifest.resources?.queues ?? []) {
+    const name = queueNameFor(workerName, binding);
+    if (!isValidQueueName(name)) {
+      throw new EveryAppError(
+        "QUEUE_NAME_INVALID",
+        `${binding} would be the queue "${name}", which Cloudflare refuses\nA queue's name is at most ${MAX_QUEUE_NAME_LENGTH} lowercase letters, digits and hyphens, starting and ending with a letter or digit.`,
+        { fix: "shorten its binding name in everyapp.config.ts", rerun: thisCommand() },
+      );
+    }
+  }
 }
 
 /**
@@ -508,7 +612,7 @@ function assignedName(
 async function provisionOne(
   options: ProvisionOptions & {
     owned: OwnedResource[];
-    kind: "d1" | "kv" | "vectorize" | "ai-gateway";
+    kind: "d1" | "kv" | "queue" | "vectorize" | "ai-gateway";
     binding: string;
     name: string;
     find: (name: string) => Promise<string | null>;

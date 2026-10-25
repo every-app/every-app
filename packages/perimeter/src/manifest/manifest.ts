@@ -78,6 +78,40 @@ const HyperdriveResourceSchema = z.object({
   caching: z.enum(["off", "default"]).optional(),
 });
 
+/**
+ * How a queue's consumer takes its messages: Cloudflare's consumer
+ * settings (`@cloudflare/config`'s `QueueConsumerTriggerOptions`), and
+ * the helper Worker (`workers`) that consumes, when not the app's own.
+ */
+const QueueConsumerSchema = z.object({
+  worker: z.string().optional(),
+  /** The most messages one batch holds. */
+  maxBatchSize: z.number().optional(),
+  /** The most seconds to wait to fill a batch. */
+  maxBatchTimeout: z.number().optional(),
+  /** How many times a message is retried before it goes to `deadLetterQueue` (or is dropped). */
+  maxRetries: z.number().optional(),
+  /** The most consumer invocations at once; null (or unset) scales with the backlog. */
+  maxConcurrency: z.number().nullable().optional(),
+  /** The seconds to wait before a message is retried. */
+  retryDelay: z.number().optional(),
+  /** The milliseconds a pulled message stays hidden (Cloudflare's setting, kept as given). */
+  visibilityTimeoutMs: z.number().optional(),
+  /** Another of the app's queue bindings, which takes the messages that ran out of retries. */
+  deadLetterQueue: z.string().optional(),
+});
+
+/**
+ * A Cloudflare Queue the app's Workers produce to (every one of them binds
+ * it), consumed by the app's own Worker (`consumer: true`) or by the
+ * helper Worker `consumer.worker` names. Each is named after the app's
+ * Worker in the account, `<worker>--<binding>` ({@link queueNameFor}).
+ */
+const QueueResourceSchema = z.object({
+  name: z.string(),
+  consumer: z.union([z.literal(true), QueueConsumerSchema]).optional(),
+});
+
 /** The distance metrics a Vectorize index can be created with. */
 export const VECTORIZE_METRICS = [
   "cosine",
@@ -146,6 +180,8 @@ export const ResourcesSchema = z
      * `<worker>--<binding>` ({@link bucketNameFor}).
      */
     r2: z.array(z.string()).optional(),
+    /** Cloudflare Queues, by binding, with their consumers. */
+    queues: z.array(QueueResourceSchema).optional(),
     /**
      * Workers AI, by binding (`["AI"]`), which every one of the app's
      * Workers binds: account-wide inference billed to the account, nothing
@@ -860,6 +896,16 @@ const BindingNameSchema = z
   );
 
 /**
+ * A queue's binding, which names its queue (`<worker>--<binding>`,
+ * lowercased with `_` as `-`): an identifier that doesn't end in `_`,
+ * since Cloudflare refuses a queue name ending in a hyphen.
+ */
+const QueueBindingNameSchema = BindingNameSchema.refine(
+  (name) => !name.endsWith("_"),
+  "a queue's binding can't end with _ (its queue's name would end with a hyphen, which Cloudflare refuses)",
+);
+
+/**
  * An AI Gateway's binding: a JavaScript identifier whose underscores each
  * sit between letters or digits, since it becomes the end of the gateway's
  * id, where Cloudflare allows single hyphens only ({@link aiGatewayIdFor}).
@@ -1026,6 +1072,26 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
       HyperdriveResourceSchema.extend({ name: BindingNameSchema }).strict(),
     )
     .optional(),
+  queues: z
+    .array(
+      QueueResourceSchema.extend({
+        name: QueueBindingNameSchema,
+        consumer: z
+          .union([
+            z.literal(true),
+            QueueConsumerSchema.extend({
+              maxBatchSize: z.number().int().positive().optional(),
+              maxBatchTimeout: z.number().nonnegative().optional(),
+              maxRetries: z.number().int().nonnegative().optional(),
+              maxConcurrency: z.number().int().positive().nullable().optional(),
+              retryDelay: z.number().int().nonnegative().optional(),
+              visibilityTimeoutMs: z.number().int().nonnegative().optional(),
+            }).strict(),
+          ])
+          .optional(),
+      }).strict(),
+    )
+    .optional(),
   vectorize: z.array(VectorizeResourceSchemaStrict).optional(),
   aiGateway: z
     .array(
@@ -1188,6 +1254,7 @@ export function validateManifestStrict(
     }
   }
   assertHelperWorkersAreDeclared(manifest);
+  assertQueuesAreConsistent(manifest);
   assertDatabaseIsConsistent(manifest);
   assertAiGatewayIdsFit(manifest);
   assertSettingNeedsAreConsistent(manifest);
@@ -1290,6 +1357,38 @@ function assertHelperWorkersAreDeclared(manifest: EveryAppManifest): void {
 }
 
 /**
+ * Each queue's consumer is a Worker the app has, and its dead-letter
+ * queue another of the app's queues: Cloudflare creates a dead-letter
+ * queue that doesn't exist, so naming anything else would make a queue
+ * no deploy records.
+ */
+function assertQueuesAreConsistent(manifest: EveryAppManifest): void {
+  const queues = manifest.resources?.queues ?? [];
+  const helpers = new Set((manifest.workers ?? []).map(({ name }) => name));
+  const bindings = new Set(queues.map(({ name }) => name));
+  for (const queue of queues) {
+    if (queue.consumer === undefined || queue.consumer === true) continue;
+    const { worker, deadLetterQueue } = queue.consumer;
+    if (worker !== undefined && !helpers.has(worker)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: Queue ${queue.name} is consumed by Worker "${worker}", which workers doesn't declare.`,
+      );
+    }
+    if (deadLetterQueue === undefined) continue;
+    if (deadLetterQueue === queue.name) {
+      throw new ManifestError(
+        `Invalid everyapp.config: Queue ${queue.name} can't be its own dead-letter queue; name another of resources.queues.`,
+      );
+    }
+    if (!bindings.has(deadLetterQueue)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: Queue ${queue.name}'s deadLetterQueue "${deadLetterQueue}" isn't one of resources.queues; declare it there and name its binding.`,
+      );
+    }
+  }
+}
+
+/**
  * Postgres migrations and the database the code talks to agree, and each
  * binding name is used once among the app's storage bindings.
  */
@@ -1308,6 +1407,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.kv ?? []),
     ...(manifest.resources?.r2 ?? []),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.resources?.queues ?? []).map((q) => q.name),
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
@@ -1338,6 +1438,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.resources?.queues ?? []).map((q) => q.name),
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
@@ -1378,6 +1479,11 @@ export function manifestTierProblems(
   if (manifest.resources?.r2?.length) {
     problems.push(
       "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  if (manifest.resources?.queues?.length) {
+    problems.push(
+      "resources.queues: Queues aren't available to apps in a dispatch namespace yet",
     );
   }
   if (manifest.resources?.ai?.length) {
@@ -1515,6 +1621,31 @@ export const MAX_BUCKET_NAME_LENGTH = 63;
  */
 export function bucketNameFor(workerName: string, binding: string): string {
   return binding === "R2" ? workerName : suffixedName(workerName, binding);
+}
+
+/** Cloudflare's limit on a queue's name. */
+export const MAX_QUEUE_NAME_LENGTH = 63;
+
+/**
+ * Cloudflare's rule for a queue's name: lowercase letters, digits and
+ * hyphens, starting and ending with a letter or digit, at most
+ * {@link MAX_QUEUE_NAME_LENGTH} characters.
+ */
+const QUEUE_NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * The queue an app Worker's binding produces to and consumes from, named
+ * after the Worker: `every-acme-seo` and `JOBS` → `every-acme-seo--jobs`.
+ * Queue names are unique in the account, and new app ids can't contain
+ * `--`, so one app's queue is never named like another app's.
+ */
+export function queueNameFor(workerName: string, binding: string): string {
+  return suffixedName(workerName, binding);
+}
+
+/** Whether Cloudflare takes `name` for a queue ({@link MAX_QUEUE_NAME_LENGTH}). */
+export function isValidQueueName(name: string): boolean {
+  return name.length <= MAX_QUEUE_NAME_LENGTH && QUEUE_NAME.test(name);
 }
 
 /** Cloudflare's limit on a Vectorize index's name. */

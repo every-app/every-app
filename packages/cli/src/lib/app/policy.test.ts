@@ -109,9 +109,9 @@ describe("appPolicyProblems", () => {
       /declares routes/,
     ],
     [
-      "a queue consumer",
-      (c: any) => (c.triggers = [{ type: "queue", queue: "every-acme-billing-jobs" }]),
-      /declares a trigger of type "queue"/,
+      "another app's queue consumer",
+      (c: any) => (c.triggers = [{ type: "queue", name: "every-acme-billing--jobs" }]),
+      /it consumes queue "every-acme-billing--jobs", but an app consumes only its own queues/,
     ],
     [
       "an email trigger",
@@ -275,6 +275,69 @@ describe("appPolicyProblems", () => {
         resources: { ...INPUTS.resources, hyperdrive: { HYPERDRIVE: { id: "hd-1" } } },
       }),
     ).toEqual([]);
+  });
+
+  describe("with resources.queues", () => {
+    const JOBS = "every-acme-todo--jobs";
+    const FAILED = "every-acme-todo--failed-jobs";
+    const WITH_QUEUES: InstallTarget = {
+      ...INPUTS,
+      resources: {
+        ...INPUTS.resources,
+        queues: {
+          JOBS: { name: JOBS, id: "queue-jobs" },
+          FAILED_JOBS: { name: FAILED, id: "queue-failed" },
+        },
+      },
+    };
+
+    it("allows a producer to, and a consumer of, the queues the deploy provisioned, with one of them as dead-letter queue", async () => {
+      const config = await builtConfig();
+      config["env"].JOBS = { type: "queue", name: JOBS };
+      config["triggers"] = [
+        { type: "scheduled", schedule: "0 6 * * *" },
+        { type: "queue", name: JOBS, deadLetterQueue: FAILED, maxBatchSize: 5 },
+      ];
+      expect(appPolicyProblems(config, WITH_QUEUES)).toEqual([]);
+      expect(
+        helperPolicyProblems(
+          { ...config, name: "every-acme-todo--crawler", env: { JOBS: config["env"].JOBS } },
+          "every-acme-todo--crawler",
+          WITH_QUEUES,
+        ),
+      ).toEqual([]);
+    });
+
+    it("refuses a producer to a queue the deploy didn't provision, even one named after the app", async () => {
+      const config = await builtConfig();
+      config["env"].OTHER = { type: "queue", name: "every-acme-billing--jobs" };
+      config["env"].MINE = { type: "queue", name: "every-acme-todo--other" };
+      const problems = appPolicyProblems(config, WITH_QUEUES).join("\n");
+      expect(problems).toContain(
+        'OTHER is queue "every-acme-billing--jobs", which isn\'t a queue the deploy provisioned',
+      );
+      expect(problems).toContain('MINE is queue "every-acme-todo--other"');
+    });
+
+    it("refuses a consumer of a queue the deploy didn't provision, and a dead-letter queue that isn't one of the app's", async () => {
+      const config = await builtConfig();
+      config["triggers"] = [
+        { type: "queue", name: "every-acme-billing--jobs" },
+        { type: "queue", name: JOBS, deadLetterQueue: "every-acme-billing--dlq" },
+      ];
+      expect(appPolicyProblems(config, WITH_QUEUES)).toEqual([
+        `it consumes queue "every-acme-billing--jobs", which isn't one of the app's queues in resources.queues (${JOBS}, ${FAILED})`,
+        `its consumer of queue "${JOBS}" sends failed messages to "every-acme-billing--dlq", which isn't one of the app's queues in resources.queues (${JOBS}, ${FAILED})`,
+      ]);
+      // A helper is held to the same rule.
+      expect(
+        helperPolicyProblems(
+          { ...config, name: "every-acme-todo--crawler", env: {} },
+          "every-acme-todo--crawler",
+          WITH_QUEUES,
+        ).join("\n"),
+      ).toContain('it consumes queue "every-acme-billing--jobs"');
+    });
   });
 
   it("allows buckets named after the app's Worker", async () => {

@@ -31,7 +31,7 @@ export const BUILD_SENTINEL = Object.freeze({
 
 /**
  * A manifest binding's placeholder: a D1 database's name and id, an R2
- * bucket's or Vectorize index's name, a KV namespace's or Hyperdrive
+ * bucket's, queue's or Vectorize index's name, a KV namespace's or Hyperdrive
  * config's id. The installer
  * rewrites each by its binding name; the value only has to be recognizable.
  * bucket's name, a KV namespace's, Hyperdrive config's or AI Gateway's id.
@@ -49,6 +49,7 @@ interface SentinelManifest {
     kv?: readonly string[];
     r2?: readonly string[];
     hyperdrive?: readonly { readonly name: string }[];
+    queues?: readonly { readonly name: string }[];
     vectorize?: readonly { readonly name: string }[];
     aiGateway?: readonly { readonly name: string }[];
   };
@@ -87,6 +88,8 @@ export interface EveryAppDeployTarget {
     hyperdrive?: Record<string, { id: string }>;
     /** R2 buckets by binding, under the names the registry assigned. */
     r2?: Record<string, { name: string }>;
+    /** Queues by binding: each one's name (which its bindings and triggers use) and id. */
+    queues?: Record<string, { name: string; id: string }>;
     /** Vectorize indexes by binding, under the names the deploy provisioned. */
     vectorize?: Record<string, { name: string }>;
     /** AI Gateways by binding: each binding's whole value. */
@@ -123,6 +126,14 @@ export function sentinelDeployTarget(
         (id) => ({ id }),
       ),
       r2: byBinding(resources?.r2, (name) => ({ name })),
+      ...(resources?.queues?.length
+        ? {
+            queues: byBinding(
+              resources.queues.map((queue) => queue.name),
+              (name) => ({ name, id: name }),
+            ),
+          }
+        : {}),
       vectorize: byBinding(
         resources?.vectorize?.map((index) => index.name),
         (name) => ({ name }),

@@ -29,6 +29,7 @@ import {
   type EveryAppWorkerReference,
   type HyperdriveBinding,
   type KvBinding,
+  type QueueBinding,
   type ServiceBinding,
   type WorkflowBinding,
   type WorkflowExport,
@@ -2114,5 +2115,173 @@ describe("AI Gateways (resources.aiGateway)", () => {
       ),
     ).toEqual([]);
     expect(sentinelDeployTarget(manifest).resources.aiGateway).toEqual({});
+  });
+});
+
+describe("Queues (resources.queues)", () => {
+  const jobs = {
+    id: "jobs",
+    resources: {
+      d1: ["DB"],
+      queues: [
+        { name: "EMAILS" },
+        { name: "JOBS", consumer: true },
+        {
+          name: "CRAWLS",
+          consumer: {
+            worker: "crawler",
+            maxBatchSize: 5,
+            maxBatchTimeout: 2,
+            maxRetries: 4,
+            maxConcurrency: null,
+            retryDelay: 30,
+            deadLetterQueue: "FAILED_CRAWLS",
+          },
+        },
+        { name: "FAILED_CRAWLS" },
+      ],
+    },
+    workers: [{ name: "crawler" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: jobs,
+      entrypoint,
+      ctx: { mode },
+      root,
+      crons: ["0 6 * * *"],
+    });
+    const { entrypoint: _crawler, ...crawler } = everyAppAuxiliaryWorker({
+      manifest: jobs,
+      worker: "crawler",
+      entrypoint: "/app/src/crawler.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, crawler };
+  };
+
+  it("binds every queue's placeholder on the app's Worker and every helper", () => {
+    const { app, crawler } = build("production");
+    for (const env of [app.env, crawler.env] as Record<string, unknown>[]) {
+      for (const binding of ["EMAILS", "JOBS", "CRAWLS", "FAILED_CRAWLS"]) {
+        expect(env[binding]).toEqual({
+          type: "queue",
+          name: resourceSentinel(binding),
+        });
+      }
+    }
+    expect(sentinelDeployTarget(jobs).resources.queues).toEqual({
+      EMAILS: {
+        name: resourceSentinel("EMAILS"),
+        id: resourceSentinel("EMAILS"),
+      },
+      JOBS: { name: resourceSentinel("JOBS"), id: resourceSentinel("JOBS") },
+      CRAWLS: {
+        name: resourceSentinel("CRAWLS"),
+        id: resourceSentinel("CRAWLS"),
+      },
+      FAILED_CRAWLS: {
+        name: resourceSentinel("FAILED_CRAWLS"),
+        id: resourceSentinel("FAILED_CRAWLS"),
+      },
+    });
+  });
+
+  it("gives each consumer trigger to its own Worker only, after the crons, its dead-letter queue by placeholder", () => {
+    const { app, crawler } = build("production");
+    expect(app.triggers).toEqual([
+      { type: "scheduled", schedule: "0 6 * * *" },
+      { type: "queue", name: resourceSentinel("JOBS") },
+    ]);
+    expect(crawler.triggers).toEqual([
+      {
+        type: "queue",
+        name: resourceSentinel("CRAWLS"),
+        deadLetterQueue: resourceSentinel("FAILED_CRAWLS"),
+        maxBatchSize: 5,
+        maxBatchTimeout: 2,
+        maxRetries: 4,
+        maxConcurrency: null,
+        retryDelay: 30,
+      },
+    ]);
+  });
+
+  it("names dev queues by the deploy's rule, <worker>--<binding>, for Miniflare to make", () => {
+    const { app, crawler } = build("development");
+    expect(app.env).toMatchObject({
+      EMAILS: { type: "queue", name: "every-jobs--emails" },
+      FAILED_CRAWLS: { type: "queue", name: "every-jobs--failed-crawls" },
+    });
+    expect((crawler.env as Record<string, unknown>)["JOBS"]).toEqual({
+      type: "queue",
+      name: "every-jobs--jobs",
+    });
+    expect(app.triggers).toContainEqual({
+      type: "queue",
+      name: "every-jobs--jobs",
+    });
+    expect(crawler.triggers).toEqual([
+      expect.objectContaining({
+        type: "queue",
+        name: "every-jobs--crawls",
+        deadLetterQueue: "every-jobs--failed-crawls",
+      }),
+    ]);
+  });
+
+  it("types each queue under its own binding name", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.JOBS).toEqualTypeOf<QueueBinding>();
+    expectTypeOf(app.env.FAILED_CRAWLS).toEqualTypeOf<QueueBinding>();
+  });
+
+  it("leaves a manifest without queues with no queue binding, trigger or placeholder", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "queue",
+      ),
+    ).toEqual([]);
+    expect(config.triggers).toBeUndefined();
+    expect(sentinelDeployTarget(manifest).resources).not.toHaveProperty(
+      "queues",
+    );
+  });
+
+  it("refuses a queue binding the Worker already has, and a dead-letter queue the manifest doesn't declare", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "jobs",
+          resources: { d1: ["JOBS"], queues: [{ name: "JOBS" }] },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow("queues: JOBS reuses a binding name the Worker already has.");
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "jobs",
+          resources: {
+            queues: [{ name: "JOBS", consumer: { deadLetterQueue: "LOST" } }],
+          },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(
+      `queues: JOBS's deadLetterQueue "LOST" isn't one of resources.queues.`,
+    );
   });
 });

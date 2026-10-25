@@ -215,6 +215,42 @@ export type HyperdriveConfig = z.infer<typeof HyperdriveConfigOutput>;
 export const HyperdriveConfigListOutput = z.array(HyperdriveConfigOutput);
 
 /**
+ * `cf queues create`, and each entry of `cf queues list` (one unpaged list
+ * of the account's queues, each with the Workers that produce to and
+ * consume it). Checked against cf@1.0.0-beta.14 on loop-1, 2026-10-24.
+ */
+export const QueueOutput = z.looseObject({
+  queue_id: z.string(),
+  queue_name: z.string(),
+  consumers: z
+    .array(
+      z.looseObject({
+        consumer_id: z.string().nullish(),
+        script: z.string().nullish(),
+        type: z.string().nullish(),
+      }),
+    )
+    .nullish(),
+});
+export type Queue = z.infer<typeof QueueOutput>;
+export const QueueListOutput = z.array(QueueOutput);
+
+/**
+ * Each entry of `cf queues consumers list --queue-id <id>`: the Worker
+ * (`script`), its settings as the API keeps them (`maxBatchTimeout: 2` is
+ * `max_wait_time_ms: 2000`) and its dead-letter queue's name.
+ */
+const QueueConsumerOutput = z.looseObject({
+  consumer_id: z.string(),
+  script: z.string().nullish(),
+  type: z.string().nullish(),
+  dead_letter_queue: z.string().nullish(),
+  settings: z.record(z.string(), z.unknown()).nullish(),
+});
+export type QueueConsumer = z.infer<typeof QueueConsumerOutput>;
+export const QueueConsumerListOutput = z.array(QueueConsumerOutput);
+
+/**
  * `cf vectorize get`, `create`, and each entry of `cf vectorize list`: the
  * index by its name (it has no other id) and its shape, which can't
  * change once created. An index made from a preset reports the preset's

@@ -157,7 +157,7 @@ describe("applyGateway", () => {
       "d1 query", // the lease (and its table)
       "d1 migrations list",
       "d1 migrations apply",
-      "deploy --prebuilt --mode",
+      "deploy --prebuilt --no-provision",
     ].map((command) => commands.findIndex((c) => c.startsWith(command)));
     expect(order.every((index, i) => i === 0 || index > order[i - 1]!)).toBe(true);
     expect(commands.some((command) => command.startsWith("kv keys"))).toBe(false);

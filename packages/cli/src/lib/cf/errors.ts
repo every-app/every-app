@@ -27,6 +27,8 @@ type CfErrorKind =
   | "r2_not_enabled"
   | "access_not_enabled"
   | "d1_id_rejected"
+  | "queue_consumer_worker"
+  | "queue_in_use"
   | "unknown";
 
 interface ParsedCfError {
@@ -109,6 +111,12 @@ const KIND_RULES: Array<
   // An account that never opened Zero Trust: `[9999] access.api.error.not_enabled`,
   // 403, on every Access endpoint (seen live on a fresh account, 2026-10-24).
   ["access_not_enabled", (text) => /access\.api\.error\.not_enabled/.test(text)],
+  // A Worker that consumes a queue can't be deleted, even with its
+  // references, until its consumer is (cf adds "Check your API token
+  // permissions" to it, which it isn't: seen live 2026-10-24).
+  ["queue_consumer_worker", (_text, codes) => codes.includes(10064)],
+  // A queue a Worker still binds can't be deleted.
+  ["queue_in_use", (_text, codes) => codes.includes(11005)],
   ["free_plan", (text) => /Workers Paid|paid plan/i.test(text)],
   [
     "auth",
@@ -121,27 +129,30 @@ const KIND_RULES: Array<
   ],
   [
     "already_exists",
-    // D1 (7502) and KV (10014) refuse a second resource with the same name;
-    // Vectorize says `[3002] vectorize.index.duplicate_name` (409), matched
-    // by its slug: its codes are small numbers another API could reuse.
+    // D1 (7502), KV (10014) and Queues (11009, "is already taken") refuse
+    // a second resource with the same name; Vectorize says `[3002]
+    // vectorize.index.duplicate_name` (409), matched by its slug: its codes
+    // are small numbers another API could reuse.
     (text, codes) =>
       codes.includes(7502) ||
       codes.includes(10014) ||
+      codes.includes(11009) ||
       /\bvectorize\.index\.duplicate_name\b/.test(text) ||
       /\balready exists\b/i.test(text),
   ],
   [
     "not_found",
-    // 10007: Worker, 10009: KV key, 7404: D1 database, 10200: Workflow.
-    // Vectorize: `[3000] vectorize.index.not_found` (404), and for a while
-    // after a delete `[3005] vectorize.index.deleted` (410), which is gone
-    // all the same: a create of the name succeeds at once (seen live
-    // 2026-10-24).
+    // 10007: Worker, 10009: KV key, 7404: D1 database, 10200: Workflow,
+    // 11000: queue. Vectorize: `[3000] vectorize.index.not_found` (404), and
+    // for a while after a delete `[3005] vectorize.index.deleted` (410),
+    // which is gone all the same: a create of the name succeeds at once
+    // (seen live 2026-10-24).
     (text, codes) =>
       codes.includes(10007) ||
       codes.includes(10009) ||
       codes.includes(7404) ||
       codes.includes(10200) ||
+      codes.includes(11000) ||
       /\bvectorize\.index\.(not_found|deleted)\b/.test(text) ||
       /\bnot found\b|does not exist/i.test(text),
   ],

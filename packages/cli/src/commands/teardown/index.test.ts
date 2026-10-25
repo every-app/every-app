@@ -628,6 +628,41 @@ describe("teardown", () => {
     expect(done()!["data"]["plan"]["email"][0]).toMatchObject({ disable: true });
   });
 
+  it("detaches our Workers' queue consumers before the Workers, deletes our queues after them, and leaves the rest", async () => {
+    await populate();
+    const jobs = account.createQueue(`${TODO_WORKER}--jobs`);
+    account.queues.get(jobs)!.consumers.set("consumer-ours", { script: TODO_WORKER, settings: {} });
+    // Someone else's queue our Worker consumes, and one only theirs consumes.
+    const customerEvents = account.createQueue("customer-events");
+    account.queues.get(customerEvents)!.consumers.set("consumer-on-theirs", { script: TODO_WORKER, settings: {} });
+    const theirs = account.createQueue("customer-queue");
+    account.queues.get(theirs)!.consumers.set("consumer-theirs", { script: "other-worker", settings: {} });
+
+    await run({ dryRun: true });
+    expect(done()!["data"]["plan"]).toMatchObject({
+      queues: [{ name: `${TODO_WORKER}--jobs`, id: jobs }],
+      queueConsumers: [
+        { queueId: customerEvents, queueName: "customer-events", consumerId: "consumer-on-theirs", script: TODO_WORKER },
+        { queueId: jobs, queueName: `${TODO_WORKER}--jobs`, consumerId: "consumer-ours", script: TODO_WORKER },
+      ],
+      counts: expect.objectContaining({ queues: 1, queueConsumers: 2 }),
+    });
+
+    await run({ confirm: ACCOUNT_ID });
+    expect([...account.queues.values()].map((queue) => queue.name).sort()).toEqual(["customer-events", "customer-queue"]);
+    expect(account.queues.get(customerEvents)!.consumers.size).toBe(0);
+    expect([...account.queues.get(theirs)!.consumers.keys()]).toEqual(["consumer-theirs"]);
+    const removed: string[] = done()!["data"]["removed"];
+    const order = (item: string) => removed.indexOf(item);
+    expect(order(`consumer ${TODO_WORKER} of Queue "${TODO_WORKER}--jobs"`)).toBeGreaterThanOrEqual(0);
+    expect(order(`consumer ${TODO_WORKER} of Queue "customer-events"`)).toBeLessThan(order(`Worker "${TODO_WORKER}"`));
+    expect(order(`Worker "${GATEWAY}"`)).toBeLessThan(order(`Queue "${TODO_WORKER}--jobs"`));
+    expect(order(`Hyperdrive config "${TODO_WORKER}--pg"`)).toBeLessThan(order(`Queue "${TODO_WORKER}--jobs"`));
+    expect(warnings("TEARDOWN_DELETE_FAILED").map((warning) => warning["message"])).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("Queue")]),
+    );
+  });
+
   it("goes on past a failure, keeps the item, and says where it is", async () => {
     await populate();
     account.cf.override(["hyperdrive", "delete"], {
@@ -981,6 +1016,7 @@ describe("teardown review: what it must leave alone", () => {
       /^kv namespaces list/,
       /^r2 buckets list/,
       /^hyperdrive list/,
+      /^queues list/,
       /^vectorize list/,
       /^ai-gateway gateways list/,
       /^zero-trust organization get/,

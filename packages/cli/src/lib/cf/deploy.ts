@@ -1,6 +1,13 @@
 /**
  * Uploading a prebuilt Build Output with `cf deploy --prebuilt`.
  *
+ * Always with `--no-provision`: cf otherwise creates a missing D1
+ * database, KV namespace, R2 bucket or queue a binding names (seen live
+ * for a queue, 2026-10-24), which no deploy would record as the app's.
+ * Everything an app binds is provisioned and recorded before the upload
+ * (lib/app/resources.ts), and the Gateway's resources always exist; with
+ * the flag, a binding to something missing is refused before the upload.
+ *
  * Secrets travel only in `--secrets-file` (a private temp file), so they ship
  * in the same Worker version as the code. cf's output stays in memory (a
  * failure carries its message) unless --verbose attaches cf to a person's
@@ -147,6 +154,7 @@ async function deployAndRecord(
       args: (files) => [
         "deploy",
         "--prebuilt",
+        "--no-provision",
         "--mode",
         "production",
         "--message",
@@ -285,6 +293,19 @@ function explainDeployFailure(
       "Choose a workers.dev subdomain for this Cloudflare account\nCloudflare needs one before an account's first Worker. Apps never use it.",
       error.message.match(/https:\/\/dash\.cloudflare\.com\/\S+/)?.[0] ??
         `https://dash.cloudflare.com/${accountId}/workers/onboarding`,
+    );
+  }
+  // The version went live, then Cloudflare refused its queue consumers:
+  // the bundle exports no queue() handler (code 11001, seen live).
+  if (/Queue handler is missing/i.test(error.message)) {
+    return new EveryAppError(
+      "QUEUE_HANDLER_MISSING",
+      `${workerName}'s new version is live without its queue consumers\nIts bundle exports no queue() handler, which Cloudflare needs before it delivers a message.`,
+      {
+        fix: "export async queue(batch, env) from the Worker's entry beside everyApp()'s fetch, then deploy again",
+        rerun: thisCommand(),
+        data: { workerName, cloudflare: error.message },
+      },
     );
   }
   if (error.kind === "free_plan") {

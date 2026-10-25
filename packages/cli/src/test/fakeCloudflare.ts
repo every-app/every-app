@@ -17,13 +17,18 @@
  * settings, rules and catch-all (`emailRouting`), enabled on a domain by
  * adding Cloudflare's MX records there, with rules that may send mail only
  * to a Worker that exists. R2 buckets exist by name, each with a count of
- * objects (a bucket with any is refused on delete, as R2 does). Vectorize
- * indexes exist by name with their config, and a deploy binding one that
- * doesn't exist is refused before anything is uploaded, as cf's is. `api.fetch` is the account's REST API, for the hosted
- * objects (a bucket with any is refused on delete, as R2 does). AI Gateways
- * exist by id with their settings, created and updated (a PUT: what an
- * update leaves out goes back to its default) from a body file, refusing
- * an id Cloudflare refuses, as cf 1.0.0-beta.14 showed live on 2026-10-24.
+ * objects (a bucket with any is refused on delete, as R2 does). Queues
+ * exist by id with their consumers, which a deploy publishes from the
+ * Worker's `queue` triggers once its version is live; `--no-provision`
+ * refuses a producer to a missing queue (without it cf creates the queue),
+ * a missing dead-letter queue is created all the same, a Worker that
+ * consumes a queue can't be deleted and a queue a Worker binds can't be
+ * either (all as seen live on 2026-10-24). Vectorize indexes exist by name
+ * with their config, and a deploy binding one that doesn't exist is refused
+ * before anything is uploaded, as cf's is. AI Gateways exist by id with
+ * their settings, created and updated (a PUT: what an update leaves out
+ * goes back to its default) from a body file, refusing an id Cloudflare
+ * refuses, as cf 1.0.0-beta.14 showed live on 2026-10-24.
  * `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
@@ -92,6 +97,19 @@ interface FakeWorkflow {
   scriptName: string;
   className: string;
   instances: Map<string, { status: string; params?: unknown }>;
+}
+
+/** A queue's consumer: the Worker, its settings as the API keeps them, its dead-letter queue. */
+interface FakeQueueConsumer {
+  script: string;
+  settings: Record<string, number | null>;
+  deadLetterQueue?: string;
+}
+
+interface FakeQueue {
+  name: string;
+  /** By consumer id. */
+  consumers: Map<string, FakeQueueConsumer>;
 }
 
 interface FakeHyperdrive {
@@ -364,6 +382,13 @@ export class FakeCloudflare {
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
   /** R2 buckets by name, each with how many objects it holds. */
   readonly buckets = new Map<string, { objects: number }>();
+  /** Queues by id. */
+  readonly queues = new Map<string, FakeQueue>();
+  /**
+   * Workers whose bundle exports no `queue()` handler: their upload goes
+   * live, then cf stops publishing their consumers (code 11001, seen live).
+   */
+  readonly queueHandlerMissing = new Set<string>();
   /** Vectorize indexes by name. */
   readonly vectorizeIndexes = new Map<string, FakeVectorizeIndex>();
   /** AI Gateways by id, as `cf ai-gateway gateways get` prints each. */
@@ -683,6 +708,15 @@ export class FakeCloudflare {
         if (!this.workers.has(name)) {
           return cfError("This Worker does not exist on your account. [code: 10007]");
         }
+        // As the API: a Worker that consumes a queue stays, references or not.
+        if (this.consumedBy(name).length > 0) {
+          return apiError(
+            10064,
+            "Cannot delete this Worker as it is a consumer for a Queue. Remove it from the Queue's consumers first, then retry.",
+            "403 Forbidden",
+            `workers/scripts/${name}`,
+          );
+        }
         // As the API: a Worker another Worker binds (a service binding or
         // one of its Durable Objects) stays unless `--delete-with-references`.
         const referencedBy = this.workersBinding(name);
@@ -738,6 +772,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["queues"], (call) => this.queuesCommand(call))
       .on(["vectorize"], (call) => this.vectorizeCommand(call))
       .on(["ai-gateway", "gateways"], (call) => this.aiGatewayCommand(call))
       .on(["email-routing"], (call) => this.emailRoutingCommand(call))
@@ -1256,6 +1291,134 @@ export class FakeCloudflare {
     return cfError(`unknown command r2 buckets ${action}`);
   }
 
+  /** The queue named `name`, with its id. */
+  queue(name: string): (FakeQueue & { id: string }) | undefined {
+    const entry = [...this.queues].find(([, queue]) => queue.name === name);
+    return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /** Create a queue, as `cf queues create` (or cf's own provisioning) does. */
+  createQueue(name: string): string {
+    const id = `queue-${(this.counter += 1).toString(16).padStart(8, "0")}`;
+    this.queues.set(id, { name, consumers: new Map() });
+    return id;
+  }
+
+  /** The queues whose consumer is this Worker. */
+  private consumedBy(workerName: string): string[] {
+    return [...this.queues.values()]
+      .filter((queue) => [...queue.consumers.values()].some((consumer) => consumer.script === workerName))
+      .map((queue) => queue.name);
+  }
+
+  /** The Workers whose live version binds the queue `name`. */
+  private queueProducers(name: string): string[] {
+    return [...this.workers]
+      .filter(([, worker]) =>
+        Object.values(worker.config["env"] ?? {}).some(
+          (binding: any) => binding.type === "queue" && binding.name === name,
+        ),
+      )
+      .map(([workerName]) => workerName);
+  }
+
+  /**
+   * `cf queues list|create|get|delete` and `cf queues consumers
+   * list|delete`, in the shapes cf 1.0.0-beta.14 printed on loop-1.
+   */
+  private queuesCommand(call: RecordedCfCall): FakeCfResponse {
+    const listed = (id: string, queue: FakeQueue) => ({
+      queue_id: id,
+      queue_name: queue.name,
+      settings: { delivery_delay: 0, message_retention_period: 345600 },
+      created_on: "2026-10-24T00:00:00.000Z",
+      modified_on: "2026-10-24T00:00:00.000Z",
+      producers_total_count: this.queueProducers(queue.name).length,
+      producers: this.queueProducers(queue.name).map((script) => ({ script, type: "worker" })),
+      consumers_total_count: queue.consumers.size,
+      consumers: [...queue.consumers].map(([consumerId, consumer]) => ({
+        script: consumer.script,
+        settings: consumer.settings,
+        consumer_id: consumerId,
+        type: "worker",
+      })),
+    });
+    const notFound = (id: string) =>
+      apiError(11000, `Queue '${id}' not found.`, "404 Not Found", `queues/${id}`);
+    if (call.args[1] === "consumers") {
+      const action = call.args[2];
+      const queueId = flag(call.args, "--queue-id") ?? "";
+      const queue = this.queues.get(queueId);
+      if (!queue) return notFound(queueId);
+      if (action === "list") {
+        return {
+          stdout: JSON.stringify(
+            [...queue.consumers].map(([consumerId, consumer]) => ({
+              script: consumer.script,
+              ...(consumer.deadLetterQueue ? { dead_letter_queue: consumer.deadLetterQueue } : {}),
+              settings: consumer.settings,
+              type: "worker",
+              queue_name: queue.name,
+              queue_id: queueId,
+              consumer_id: consumerId,
+              created_on: "2026-10-24T00:00:00.000Z",
+            })),
+          ),
+        };
+      }
+      if (action === "delete") {
+        const declined = unconfirmed(call, "This deletes the consumer.");
+        if (declined) return declined;
+        if (!queue.consumers.delete(call.args[3]!)) {
+          return apiError(11000, `Consumer '${call.args[3]}' not found.`, "404 Not Found", `queues/${queueId}/consumers`);
+        }
+        return { stdout: "{}" };
+      }
+      return cfError(`unknown command queues consumers ${action}`);
+    }
+    const action = call.args[1];
+    if (action === "list") {
+      return { stdout: JSON.stringify([...this.queues].map(([id, queue]) => listed(id, queue))) };
+    }
+    if (action === "create") {
+      const name = flag(call.args, "--queue-name") ?? "";
+      if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) {
+        return apiError(11003, `Queue name '${name}' is invalid: invalid queue name`, "400 Bad Request", "queues");
+      }
+      if (this.queue(name)) {
+        return apiError(
+          11009,
+          `Queue name '${name}' is already taken. Please use a different name and try again.`,
+          "409 Conflict",
+          "queues",
+        );
+      }
+      const id = this.createQueue(name);
+      const { producers: _p, producers_total_count: _pc, consumers: _c, consumers_total_count: _cc, ...created } =
+        listed(id, this.queues.get(id)!);
+      return { stdout: JSON.stringify(created) };
+    }
+    const id = call.args[2]!;
+    const queue = this.queues.get(id);
+    if (!queue) return notFound(id);
+    if (action === "get") return { stdout: JSON.stringify(listed(id, queue)) };
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the queue and its messages.");
+      if (declined) return declined;
+      if (this.queueProducers(queue.name).length > 0) {
+        return apiError(
+          11005,
+          `Cannot delete queue '${queue.name}' that is still referenced by a binding in a Worker.`,
+          "400 Bad Request",
+          `queues/${id}`,
+        );
+      }
+      this.queues.delete(id);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command queues ${action}`);
+  }
+
   /**
    * `cf vectorize get|list|create|delete`, by index name: a create reads its
    * body from the `--body @<file>` cf is handed (`{ name, config }`, with
@@ -1710,6 +1873,25 @@ export class FakeCloudflare {
     if (missingSecrets.length > 0) {
       return cfError(`Missing required secrets: ${missingSecrets.join(", ")}`);
     }
+    // cf provisions a missing queue a producer binds, unless told not to;
+    // a consumer of a missing queue is refused either way.
+    const provision = !call.args.includes("--no-provision");
+    const queueNames = [
+      ...Object.values(config["env"] ?? {})
+        .filter((binding: any) => binding.type === "queue")
+        .map((binding: any) => ({ name: String(binding.name), consumer: false })),
+      ...((config["triggers"] ?? []) as Array<Record<string, any>>)
+        .filter((trigger) => trigger["type"] === "queue")
+        .map((trigger) => ({ name: String(trigger["name"]), consumer: true })),
+    ];
+    for (const { name, consumer } of queueNames) {
+      if (this.queue(name)) continue;
+      if (provision && !consumer) {
+        this.createQueue(name);
+        continue;
+      }
+      return cfError(`Queue "${name}" does not exist. To create it, run: wrangler queues create ${name}`);
+    }
     const versionId = `${workerName}-version-${(this.counter += 1)}`;
     this.workers.set(workerName, {
       versions: [...(existing?.versions ?? []), versionId],
@@ -1723,6 +1905,8 @@ export class FakeCloudflare {
     if (answer) return answer;
     this.publishDomains(workerName, config["domains"]);
     this.putWorkflows(workerName, config);
+    const unpublished = this.publishQueueConsumers(workerName, config);
+    if (unpublished) return unpublished;
     // Last, the workers.dev route: an account without a subdomain stops
     // here, its version and Custom Domains live.
     if (!this.workersDevSubdomain) return workersDevSubdomainMissing();
@@ -1736,6 +1920,52 @@ export class FakeCloudflare {
       const record = this.dnsRecords[i]!;
       if (record.name === host && isPlaceholderRecord(record)) this.dnsRecords.splice(i, 1);
     }
+  }
+
+  /**
+   * Publish the Worker's queue consumers from its `queue` triggers, as cf
+   * does after the version is live: one consumer per queue and Worker,
+   * updated in place on a redeploy, its dead-letter queue created when
+   * missing (Cloudflare does, even with `--no-provision`). A Worker with
+   * no `queue()` handler (`queueHandlerMissing`) stops it, its version live.
+   */
+  private publishQueueConsumers(workerName: string, config: Record<string, any>): FakeCfResponse | null {
+    const triggers = ((config["triggers"] ?? []) as Array<Record<string, any>>).filter(
+      (trigger) => trigger["type"] === "queue",
+    );
+    if (triggers.length === 0) return null;
+    if (this.queueHandlerMissing.has(workerName)) {
+      const queue = this.queue(String(triggers[0]!["name"]))!;
+      return cfError(
+        [
+          `Trigger configuration for "${workerName}" was only partially updated:`,
+          "",
+          "  Queue consumers:",
+          `    - A request to the Cloudflare API (/accounts/${ACCOUNT_ID}/queues/${queue.id}/consumers) failed. - Queue handler is missing. [code: 11001]`,
+          "",
+          "Successful trigger changes were not rolled back.",
+        ].join("\n"),
+      );
+    }
+    for (const trigger of triggers) {
+      const queue = this.queue(String(trigger["name"]))!;
+      const deadLetterQueue = trigger["deadLetterQueue"] as string | undefined;
+      if (deadLetterQueue && !this.queue(deadLetterQueue)) this.createQueue(deadLetterQueue);
+      const settings: Record<string, number | null> = {
+        batch_size: trigger["maxBatchSize"] ?? 10,
+        max_retries: trigger["maxRetries"] ?? 3,
+        max_wait_time_ms: (trigger["maxBatchTimeout"] ?? 5) * 1000,
+        ...(trigger["retryDelay"] !== undefined ? { retry_delay: trigger["retryDelay"] } : {}),
+        ...(trigger["maxConcurrency"] !== undefined ? { max_concurrency: trigger["maxConcurrency"] } : {}),
+      };
+      const existing = [...queue.consumers].find(([, consumer]) => consumer.script === workerName)?.[0];
+      queue.consumers.set(existing ?? `consumer-${(this.counter += 1)}`, {
+        script: workerName,
+        settings,
+        ...(deadLetterQueue ? { deadLetterQueue } : {}),
+      });
+    }
+    return null;
   }
 
   /**

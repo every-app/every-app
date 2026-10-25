@@ -27,6 +27,31 @@ interface HyperdriveResource {
 }
 
 /**
+ * How a queue's consumer takes its messages (`@cloudflare/config`'s
+ * `QueueConsumerTriggerOptions` but the name), and the helper Worker that
+ * consumes, when not the app's own.
+ */
+interface QueueConsumerSettings {
+  /** A helper Worker (`workers`) that consumes; the app's own when unset. */
+  readonly worker?: string;
+  readonly maxBatchSize?: number;
+  readonly maxBatchTimeout?: number;
+  readonly maxRetries?: number;
+  readonly maxConcurrency?: number | null;
+  readonly retryDelay?: number;
+  readonly visibilityTimeoutMs?: number;
+  /** Another of the manifest's queue bindings, which takes the messages that ran out of retries. */
+  readonly deadLetterQueue?: string;
+}
+
+/** A queue every Worker of the app produces to, and the Worker that consumes it. */
+interface QueueResource {
+  readonly name: string;
+  /** `true`: the app's own Worker consumes; settings, maybe naming a helper Worker. */
+  readonly consumer?: true | QueueConsumerSettings;
+}
+
+/**
  * A Vectorize index: `dimensions` and `metric`, or a `preset` (the
  * deploy's concern; the Worker only binds it by name).
  */
@@ -66,6 +91,12 @@ export interface EveryAppWorkerManifest {
     workflows?: readonly ClassResource[];
     /** Hyperdrive configs, named `<app worker>--<binding>` by the deploy. */
     hyperdrive?: readonly HyperdriveResource[];
+    /**
+     * Cloudflare Queues, named `<app worker>--<binding>`: every Worker of
+     * the app binds each one to produce, and the consumer's Worker gets
+     * its trigger.
+     */
+    queues?: readonly QueueResource[];
     /**
      * Workers AI, by binding (`["AI"]`), which every one of the app's
      * Workers binds: nothing to create, billed to the account. In
@@ -218,6 +249,11 @@ export interface HyperdriveBinding {
   id: string;
   dev?: { connectionString?: string };
 }
+/** A producer binding to one of the app's queues. */
+export interface QueueBinding {
+  type: "queue";
+  name: string;
+}
 /** A JSON value the Worker reads as it is: `env.<NAME>` is `value`. */
 export interface JsonBinding<T = unknown> {
   type: "json";
@@ -322,6 +358,7 @@ export type EveryAppBinding =
   | KvBinding
   | R2Binding
   | HyperdriveBinding
+  | QueueBinding
   | AiBinding
   | BrowserBinding
   | ImagesBinding
@@ -388,6 +425,14 @@ type Workflows<M> = M extends {
   resources: { workflows: readonly (infer W)[] };
 }
   ? W
+  : never;
+
+type QueueNames<M> = M extends {
+  resources: { queues: readonly (infer Q)[] };
+}
+  ? Q extends { name: infer N extends string }
+    ? N
+    : never
   : never;
 
 type HelperWorkers<M> = M extends { workers: readonly (infer H)[] } ? H : never;
@@ -569,6 +614,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
 } & {
   [B in R2Names<M>]: R2Binding;
 } & {
+  [B in QueueNames<M>]: QueueBinding;
+} & {
   [B in AiNames<M>]: AiBinding;
 } & {
   [B in BrowserNames<M>]: BrowserBinding;
@@ -688,6 +735,25 @@ export interface ScheduledTrigger {
   schedule: string;
 }
 
+/**
+ * Structural copy of cf's queue consumer trigger: the Worker consumes the
+ * named queue (its `queue(batch, env)` handler), with these settings.
+ */
+export interface QueueConsumerTrigger {
+  type: "queue";
+  name: string;
+  deadLetterQueue?: string;
+  maxBatchSize?: number;
+  maxBatchTimeout?: number;
+  maxConcurrency?: number | null;
+  maxRetries?: number;
+  retryDelay?: number;
+  visibilityTimeoutMs?: number;
+}
+
+/** A trigger one of the app's Workers may have: its crons, the queues it consumes. */
+export type EveryAppTrigger = ScheduledTrigger | QueueConsumerTrigger;
+
 export interface EveryAppWorkerConfig<M, TEntrypoint> {
   name: string;
   entrypoint: TEntrypoint;
@@ -695,8 +761,8 @@ export interface EveryAppWorkerConfig<M, TEntrypoint> {
   compatibilityFlags: string[];
   workersDev: false;
   previewUrls: false;
-  /** The `crons` option's schedules; absent without any. */
-  triggers?: ScheduledTrigger[];
+  /** The `crons` option's schedules and the queues it consumes; absent without any. */
+  triggers?: EveryAppTrigger[];
   /** Near the manifest's `database.region`, once deployed. */
   placement?: EveryAppPlacement;
   /** The manifest's `limits`. */
@@ -913,6 +979,7 @@ export function everyAppWorker<
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
+  addQueueBindings(env, manifest, name, deploy);
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);
   addImagesBindings(env, manifest);
@@ -935,7 +1002,10 @@ export function everyAppWorker<
     };
   }
   addSecrets(env, options, deploy);
-  const triggers = cronTriggers(options.crons);
+  const triggers = [
+    ...cronTriggers(options.crons),
+    ...queueTriggers(manifest, name, undefined, deploy),
+  ];
   const compatibilityDate =
     manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
 
@@ -993,7 +1063,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
   compatibilityFlags: string[];
   workersDev: false;
   previewUrls: false;
-  triggers?: ScheduledTrigger[];
+  triggers?: EveryAppTrigger[];
   placement?: EveryAppPlacement;
   limits?: { cpuMs?: number };
   observability: EveryAppObservability;
@@ -1038,6 +1108,7 @@ export function everyAppAuxiliaryWorker<
     EVERYAPP_APP_ID: { type: "text", value: manifest.id },
     ...storageBindings(manifest, appWorker, deploy),
   };
+  addQueueBindings(env, manifest, appWorker, deploy);
   if (deploy) {
     // The app's identity: the gateway treats its helper Workers as the app.
     env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, appWorker);
@@ -1058,7 +1129,10 @@ export function everyAppAuxiliaryWorker<
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
   addSecrets(env, options, deploy);
-  const triggers = cronTriggers(options.crons);
+  const triggers = [
+    ...cronTriggers(options.crons),
+    ...queueTriggers(manifest, appWorker, worker, deploy),
+  ];
 
   return {
     name,
@@ -1229,6 +1303,31 @@ function storageBindings(
 }
 
 /**
+ * A producer binding to each of the app's queues, which every one of its
+ * Workers gets. Deployed, each names the queue the deploy provisioned (a
+ * placeholder until installed); in development, the queue its rule gives
+ * (Miniflare makes it, shared by the Workers of one `cf dev`).
+ */
+function addQueueBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  deploy: EveryAppDeployTarget | undefined,
+): void {
+  for (const { name: binding } of manifest.resources?.queues ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `queues: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    env[binding] = {
+      type: "queue",
+      name: queueName(appWorker, binding, deploy),
+    };
+  }
+}
+
+/**
  * The manifest's Workers AI bindings, which every one of the app's Workers
  * gets: `{ type: "ai" }` deployed (account-wide, nothing to provision), and
  * marked remote in development, where Miniflare has no Workers AI. The
@@ -1250,6 +1349,71 @@ function addAiBindings(
       ? { type: "ai" }
       : { type: "ai", dev: { remote: true } };
   }
+}
+
+/**
+ * The consumer triggers of one of the app's Workers: each queue whose
+ * `consumer` is this Worker (`true`, or no `worker`, for the app's own;
+ * `forWorker` for a helper), with its settings and its dead-letter queue,
+ * another of the app's queues, by name.
+ */
+function queueTriggers(
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  forWorker: string | undefined,
+  deploy: EveryAppDeployTarget | undefined,
+): QueueConsumerTrigger[] {
+  const triggers: QueueConsumerTrigger[] = [];
+  for (const queue of manifest.resources?.queues ?? []) {
+    if (queue.consumer === undefined) continue;
+    const settings = queue.consumer === true ? {} : queue.consumer;
+    if (settings.worker !== forWorker) continue;
+    const { deadLetterQueue } = settings;
+    if (
+      deadLetterQueue !== undefined &&
+      !manifest.resources?.queues?.some(
+        (other) => other.name === deadLetterQueue,
+      )
+    ) {
+      throw new Error(
+        `queues: ${queue.name}'s deadLetterQueue "${deadLetterQueue}" isn't one of resources.queues.`,
+      );
+    }
+    triggers.push({
+      type: "queue",
+      name: queueName(appWorker, queue.name, deploy),
+      ...(deadLetterQueue !== undefined
+        ? { deadLetterQueue: queueName(appWorker, deadLetterQueue, deploy) }
+        : {}),
+      ...Object.fromEntries(
+        QUEUE_CONSUMER_SETTINGS.flatMap((key) =>
+          settings[key] === undefined ? [] : [[key, settings[key]]],
+        ),
+      ),
+    });
+  }
+  return triggers;
+}
+
+/** The consumer settings a queue trigger carries, in the order it lists them. */
+const QUEUE_CONSUMER_SETTINGS = [
+  "maxBatchSize",
+  "maxBatchTimeout",
+  "maxRetries",
+  "maxConcurrency",
+  "retryDelay",
+  "visibilityTimeoutMs",
+] as const;
+
+/** A queue binding's queue: the deploy's placeholder, or in development its rule. */
+function queueName(
+  appWorker: string,
+  binding: string,
+  deploy: EveryAppDeployTarget | undefined,
+): string {
+  return deploy
+    ? provisioned(deploy.resources.queues, binding).name
+    : queueNameFor(appWorker, binding);
 }
 
 /**
@@ -1663,6 +1827,11 @@ function resourceNameFor(workerName: string, binding: string): string {
 
 function bucketNameFor(workerName: string, binding: string): string {
   return binding === "R2" ? workerName : suffixedName(workerName, binding);
+}
+
+/** A copy of @every-app/perimeter/manifest's queueNameFor: `<worker>--<binding>`. */
+function queueNameFor(workerName: string, binding: string): string {
+  return suffixedName(workerName, binding);
 }
 
 function suffixedName(workerName: string, binding: string): string {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import chalk from "chalk";
-import { vectorizeNameFor } from "@every-app/perimeter/manifest";
+import { queueNameFor, vectorizeNameFor } from "@every-app/perimeter/manifest";
 import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
@@ -19,6 +19,7 @@ import {
   findKv,
 } from "@/lib/cf/resources";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
+import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
 import { deleteVectorizeIndex, getVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
@@ -248,6 +249,7 @@ const KINDS = [
   "D1 database",
   "KV namespace",
   "Hyperdrive config",
+  "Queue",
   "Vectorize index",
   "AI Gateway",
   "mail route",
@@ -269,6 +271,7 @@ const PLACES = {
   d1: "Storage & Databases → D1",
   kv: "Storage & Databases → KV",
   workflow: "Compute (Workers) → Workflows",
+  queue: "Compute (Workers) → Queues",
   vectorize: "AI → Vectorize",
 } as const;
 
@@ -301,6 +304,7 @@ async function purgeApp(
   if (removed.length > 0) counts.set("mail route", removed.length);
   const owned = recorded.filter((resource) => resource.kind !== "email-route");
   const workflowsKept: Kept[] = [];
+  const queuesKept: Kept[] = [];
   // The app's Worker and its helper Workers (`<worker>--<name>`), as recorded.
   const ownWorkers = new Set(
     owned.flatMap((resource) =>
@@ -329,10 +333,16 @@ async function purgeApp(
       }
     }
   }
+  // Its Workers' queue consumers before the Workers: Cloudflare refuses to
+  // delete a Worker that consumes a queue, its references or not (10064).
+  if (owned.some((resource) => resource.kind === "queue" && resource.resourceId)) {
+    await detachQueueConsumers(cf, ownWorkers);
+  }
   // The Workers next, the app's before its helpers (it binds their
   // classes): they bind the databases, namespaces, Hyperdrive configs and
-  // Vectorize indexes (a config goes; the Postgres database it connects to
-  // is never touched).
+  // queues and Vectorize indexes (a config goes; the Postgres database it
+  // connects to is never touched), and a queue a Worker binds can't be
+  // deleted (11005).
   const order = (resource: (typeof owned)[number]) =>
     resource.kind !== "worker" ? 2 : resource.binding === "" ? 0 : 1;
   for (const resource of owned.sort((a, b) => order(a) - order(b))) {
@@ -340,11 +350,20 @@ async function purgeApp(
     try {
       if (resource.kind === "worker") {
         if (!(await getWorkerDeployment(cf, resource.resourceId))) continue;
-        await deleteWorker(cf, resource.resourceId);
+        const workerName = resource.resourceId;
+        await deleteWorker(cf, workerName).catch(async (error: unknown) => {
+          // A consumer the listing above missed (it lags a deploy by
+          // seconds), or one added outside everyapp: detached, then again.
+          if (!isCfError(error, "queue_consumer_worker")) throw error;
+          await detachQueueConsumers(cf, new Set([workerName]));
+          await deleteWorker(cf, workerName);
+        });
       } else if (resource.kind === "d1") {
         await deleteD1(cf, resource.resourceId);
       } else if (resource.kind === "hyperdrive") {
         await deleteHyperdrive(cf, resource.resourceId);
+      } else if (resource.kind === "queue") {
+        await deleteQueue(cf, resource.resourceId);
       } else if (resource.kind === "vectorize") {
         await deleteVectorizeIndex(cf, resource.resourceId);
       } else if (resource.kind === "ai-gateway") {
@@ -356,13 +375,22 @@ async function purgeApp(
       removed.push(describeResource(resource));
       count(RESOURCE_LABELS[resource.kind] as Kind);
     } catch (error) {
+      // A queue another Worker (not the app's) still binds stays, said kept.
+      if (resource.kind === "queue" && isCfError(error, "queue_in_use")) {
+        queuesKept.push({
+          described: `${describeResource(resource)} (a Worker that isn't ${appId}'s binds it)`,
+          shown: `the Queue ${resource.name}, which a Worker that isn't ${appId}'s binds`,
+          place: PLACES.queue,
+        });
+        continue;
+      }
       // Deleted already, by an earlier purge that stopped or by hand.
       if (!isCfError(error, "not_found")) throw error;
     }
   }
   await forgetOwnedResources(registry, deleted.workerName);
 
-  const kept = [...(await unrecordedResources(cf, deleted, owned)), ...workflowsKept];
+  const kept = [...(await unrecordedResources(cf, deleted, owned)), ...workflowsKept, ...queuesKept];
   const kinds = KINDS.flatMap((kind) => {
     const n = counts.get(kind) ?? 0;
     return n === 0 ? [] : [n === 1 ? kind : plural(n, kind)];
@@ -409,7 +437,7 @@ async function unrecordedResources(
     owned.filter((r) => r.resourceId).map((r) => `${r.kind}:${r.name}`),
   );
   const kept: Kept[] = [];
-  const keep = (kind: "worker" | "d1" | "kv" | "vectorize", name: string) =>
+  const keep = (kind: "worker" | "d1" | "kv" | "queue" | "vectorize", name: string) =>
     kept.push({
       described: describeResource({ kind, name }),
       shown: `the ${RESOURCE_LABELS[kind]} ${name}`,
@@ -427,6 +455,14 @@ async function unrecordedResources(
       if (await (kind === "d1" ? findD1 : findKv)(cf, name)) keep(kind, name);
     }
   }
+  // The queues its last manifest named, asked about only when it named any.
+  const queueNames = storedQueueBindings(deleted.manifest)
+    .map((binding) => queueNameFor(deleted.workerName, binding))
+    .filter((name) => !recorded.has(`queue:${name}`));
+  if (queueNames.length > 0) {
+    const existing = new Set((await listQueues(cf)).map((queue) => queue.queue_name));
+    for (const name of queueNames) if (existing.has(name)) keep("queue", name);
+  }
   // The indexes the last deployed manifest declares, by their names.
   for (const binding of storedVectorizeBindings(deleted.manifest)) {
     const name = vectorizeNameFor(deleted.workerName, binding);
@@ -434,6 +470,34 @@ async function unrecordedResources(
     if (await getVectorizeIndex(cf, name)) keep("vectorize", name);
   }
   return kept;
+}
+
+/**
+ * Detach every queue consumer that is one of these Workers, on any queue,
+ * so Cloudflare lets the Workers be deleted; the queues and their messages
+ * stay.
+ */
+async function detachQueueConsumers(cf: CfRunner, workers: ReadonlySet<string>): Promise<void> {
+  for (const queue of await listQueues(cf)) {
+    for (const consumer of queue.consumers ?? []) {
+      if (!consumer.consumer_id || !workers.has(consumer.script ?? "")) continue;
+      try {
+        await deleteQueueConsumer(cf, queue.queue_id, consumer.consumer_id);
+      } catch (error) {
+        if (!isCfError(error, "not_found")) throw error;
+      }
+    }
+  }
+}
+
+/** The queue bindings of a stored manifest (`resources.queues[].name`), read loosely. */
+function storedQueueBindings(manifest: unknown): string[] {
+  const queues = (manifest as { resources?: { queues?: unknown } } | null)?.resources?.queues;
+  if (!Array.isArray(queues)) return [];
+  return queues.flatMap((queue: unknown) => {
+    const name = (queue as { name?: unknown } | null)?.name;
+    return typeof name === "string" ? [name] : [];
+  });
 }
 
 /** The bindings of `resources.vectorize` in a stored manifest, read as JSON parsed it. */
