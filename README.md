@@ -6,7 +6,7 @@ Own your tools. Customize your tools. Pay as you go.
 
 > Build personal software with peace of mind.
 
-It's easy to build something now, but hard to get it off of localhost and host it securely.
+It's easy to build now, but hard to get it off localhost and host it securely.
 
 --
 
