@@ -99,11 +99,23 @@ describe("integrationFetch", () => {
     expect(forwarded?.headers.get("x-everyapp-identity")).toBeNull();
   });
 
-  it("refuses a capability the gateway doesn't offer", () => {
-    const { env } = bindingEnv();
+  it("sends a provider outside the catalog over the binding for the gateway to resolve, and has no local fallback for it", async () => {
+    const { env, bindingFetch } = bindingEnv();
+    const call = integrationFetch({ env, provider: "stripe" });
+    await call("https://api.stripe.com/v1/customers?limit=1", {
+      headers: { authorization: "Bearer app-key" },
+    });
+    const forwarded = bindingFetch.mock.calls[0]?.[0] as Request;
+    expect(forwarded.url).toBe(
+      "http://every-app-gateway.internal/api/integrations/stripe/api.stripe.com/v1/customers?limit=1",
+    );
+    expect(forwarded.headers.get("authorization")).toBeNull();
+    await expect(
+      call("http://api.stripe.com/v1/customers"),
+    ).rejects.toThrowError(/https URLs only/);
     expect(() =>
-      integrationFetch({ env, provider: "toString" as "dataforseo" }),
-    ).toThrowError(/Unknown capability "toString"/);
+      integrationFetch({ env: { EVERYAPP_DEV: "1" }, provider: "stripe" }),
+    ).toThrowError(/isn't in the built-in provider catalog/);
   });
 
   it("builds Context.dev's path and keys it as a bearer token in local dev", async () => {
@@ -185,17 +197,27 @@ describe("integrationStatus", () => {
     ).resolves.toEqual({ requested: false, configured: false, ready: false });
   });
 
-  it("refuses a capability the gateway doesn't offer, deployed or in local dev", async () => {
-    const bindingFetch = vi.fn(async () => Response.json({}));
-    for (const env of [
-      { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-      { EVERYAPP_DEV: "1" },
-    ]) {
-      await expect(
-        integrationStatus({ env, provider: "toString" as "dataforseo" }),
-      ).rejects.toThrowError(ConfigurationError);
-    }
-    expect(bindingFetch).not.toHaveBeenCalled();
+  it("asks the gateway about a provider outside the catalog, and refuses one in local dev", async () => {
+    // Deployed: the gateway's registry may have it; a refusal reads as unavailable.
+    const bindingFetch = vi.fn(async () =>
+      Response.json({ error: "not found" }, { status: 400 }),
+    );
+    await expect(
+      integrationStatus({
+        env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+        provider: "stripe",
+      }),
+    ).resolves.toEqual({ requested: false, configured: false, ready: false });
+    expect(bindingFetch).toHaveBeenCalledWith(
+      "http://every-app-gateway.internal/api/integrations/stripe",
+    );
+    // Local dev knows the catalog only.
+    await expect(
+      integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "stripe" }),
+    ).rejects.toThrowError(ConfigurationError);
+    await expect(
+      integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "openai" }),
+    ).rejects.toThrowError(/is an AI provider/);
   });
 
   it("is ready in local dev once .dev.vars sets the key", async () => {
@@ -262,7 +284,7 @@ describe("the email capability", () => {
     expect(() =>
       integrationFetch({
         env,
-        // @ts-expect-error email is a service, not a provider with a key.
+        // email is a service, not a provider with a key.
         provider: "email",
       }),
     ).toThrow(

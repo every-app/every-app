@@ -637,7 +637,7 @@ app sending as a domain the operator didn't allow, or reading the
 directory of people who can't open it. Provider cookies and credentials
 leaking either way.
 
-**Invariants.** The register has 40.
+**Invariants.** The register has 42: the two the provider registry added (`providers.query-key-never-echoed`, `providers.account-data-self-host-only`, docs/design/2026-10-provider-registry.md) are in the register only.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|

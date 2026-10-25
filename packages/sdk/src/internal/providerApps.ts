@@ -18,7 +18,11 @@
  * `@every-app/perimeter/registry` (providerApps.ts); the Gateway serves it
  * from `apps/every-app-gateway/src/server/provider-apps/`.
  */
-import { CAPABILITIES, type ApiKeyCapabilityId } from "./capabilities.js";
+import {
+  CAPABILITIES,
+  authSettingNames,
+  type ApiKeyCapabilityId,
+} from "./capabilities.js";
 
 /** The `apps.tier` of a provider app: no Worker, served by the Gateway itself. */
 export const PROVIDER_APP_TIER = "provider";
@@ -69,7 +73,7 @@ export function isProviderAppId(id: string): id is ProviderAppId {
 
 /** The Gateway setting that holds a provider app's key (`DATAFORSEO_API_KEY`). */
 export function providerAppKeySetting(id: ProviderAppId): string {
-  return CAPABILITIES[PROVIDER_APPS[id].capability].secret;
+  return authSettingNames(CAPABILITIES[PROVIDER_APPS[id].capability].auth)[0]!;
 }
 
 /**

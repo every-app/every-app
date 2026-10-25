@@ -23,14 +23,13 @@
  * the app Worker's secret names.
  */
 import {
-  aiProviderSettings,
-  devAiProvider,
-  type DevAiProviderSpec,
-} from "./aiProviders.js";
-import {
-  CAPABILITIES,
-  isCapabilityId,
+  CATALOG,
+  authSettingNames,
+  capabilitySettings,
+  type AiProviderCapability,
+  type ApiKeyCapability,
   type Capability,
+  type CapabilityLookup,
 } from "./capabilities.js";
 import {
   isInstallOwnedGatewaySetting,
@@ -125,6 +124,14 @@ export interface AppSetting {
    * capabilities; from the manifest entry for an app's own secret.
    */
   setup?: string;
+  /**
+   * What the key is and where it comes from, in a sentence or three, from
+   * the provider's entry (its `hint`, and each secret's own after it):
+   * what the "Needs setup" dialog, `everyapp status` and `everyapp
+   * configure` show beside `why`. A provider registered on the gateway
+   * has no guide, so this is what an agent reads for it.
+   */
+  hint?: string;
 }
 
 /** A setting with whether it is set, and whether that keeps the app closed. */
@@ -155,12 +162,6 @@ export interface AppSettingsReport {
   /** The settings that keep the app closed, in manifest order. */
   unmet: EvaluatedSetting[];
 }
-
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  "workers-ai": "Workers AI",
-};
 
 /** The need an entry declares; required unless it says otherwise. */
 export function needOf(entry: SettingNeedFields | undefined): SettingNeed {
@@ -226,11 +227,14 @@ export function secretNames(
   return secretEntries(manifest).map((entry) => entry.name);
 }
 
-/** The Gateway settings a provider needs, the install's left out (set already). */
-function providerNames(spec: DevAiProviderSpec): string[] {
-  return aiProviderSettings(spec).filter(
-    (name) =>
-      isSettableGatewaySetting(name) && !isInstallOwnedGatewaySetting(name),
+/**
+ * The Gateway settings an AI provider needs, the install's left out (set
+ * already). A catalog provider's names are settable by definition; a
+ * registered row's are its own, so they count too.
+ */
+function providerNames(capability: AiProviderCapability): string[] {
+  return capabilitySettings(capability).filter(
+    (name) => !isInstallOwnedGatewaySetting(name),
   );
 }
 
@@ -246,7 +250,9 @@ function capabilityNames(capability: Capability): {
     );
   switch (capability.mode) {
     case "api_key":
-      return { names: [capability.secret], alsoReads: [] };
+      return { names: [...capabilitySettings(capability)], alsoReads: [] };
+    case "ai":
+      return { names: providerNames(capability), alsoReads: [] };
     case "service":
       return {
         names: settable(capability.settings),
@@ -277,6 +283,7 @@ function capabilityNames(capability: Capability): {
 function capabilityDocs(capability: Capability): string | undefined {
   switch (capability.mode) {
     case "api_key":
+    case "ai":
       return capability.docs;
     case "oauth_client":
       if (capability.console.startsWith("https://")) return capability.console;
@@ -288,10 +295,30 @@ function capabilityDocs(capability: Capability): string | undefined {
   }
 }
 
+/** What a provider's entry says about getting its key: its hint, then each setting's own, named when there are several. */
+function providerHint(
+  capability: Capability,
+  names: readonly string[],
+): { hint?: string } {
+  if (capability.mode === "service" || capability.mode === "oauth_client") {
+    return {};
+  }
+  const details = capability.secrets ?? [];
+  const lines = [
+    ...(capability.hint ? [capability.hint] : []),
+    ...details
+      .filter((detail) => detail.hint && names.includes(detail.name))
+      .map((detail) =>
+        names.length > 1 ? `${detail.name}: ${detail.hint}` : detail.hint!,
+      ),
+  ];
+  return lines.length > 0 ? { hint: lines.join(" ") } : {};
+}
+
 function withNeed(
   setting: Omit<AppSetting, "need" | "why" | "docs" | "setup">,
   entry: SettingNeedFields | undefined,
-  defaults: { docs?: string; setup?: string } = {},
+  defaults: { docs?: string; setup?: string; hint?: string } = {},
 ): AppSetting {
   const docs = entry?.docs ?? defaults.docs;
   // The registry's guide for a Gateway setting; the manifest's for the app's own secret.
@@ -302,6 +329,7 @@ function withNeed(
     ...(entry?.why ? { why: entry.why } : {}),
     ...(docs ? { docs } : {}),
     ...(setup ? { setup } : {}),
+    ...(defaults.hint ? { hint: defaults.hint } : {}),
   };
 }
 
@@ -311,31 +339,41 @@ function withNeed(
  * asks for any, then the app's own secrets. A provider or capability the
  * gateway doesn't offer contributes nothing (the manifest validator refuses
  * it elsewhere); so does a capability with nothing to set (`members`),
- * which is always set.
+ * which is always set. `lookup` is where ids are found: the catalog alone
+ * by default, or a gateway's registry with its registered rows.
  */
-export function appSettings(manifest: SettingsManifestLike): AppSetting[] {
+export function appSettings(
+  manifest: SettingsManifestLike,
+  lookup: CapabilityLookup = CATALOG,
+): AppSetting[] {
   const settings: AppSetting[] = [];
   for (const entry of providerEntries(manifest)) {
-    const spec = devAiProvider(entry.id);
-    if (!spec) continue;
+    const capability = lookup.get(entry.id);
+    if (capability?.mode !== "ai") continue;
+    const names = providerNames(capability);
     settings.push(
       withNeed(
         {
           kind: "provider",
           id: entry.id,
-          label: PROVIDER_LABELS[entry.id] ?? entry.id,
+          label: capability.label,
           holder: "gateway",
-          names: providerNames(spec),
+          names,
           alsoReads: [],
         },
         entry,
-        { docs: spec.docs, setup: spec.setup },
+        {
+          docs: capability.docs,
+          setup: capability.setup,
+          ...providerHint(capability, names),
+        },
       ),
     );
   }
   for (const [id, entry] of Object.entries(manifest.capabilities ?? {})) {
-    if (!isCapabilityId(id)) continue;
-    const capability: Capability = CAPABILITIES[id];
+    const capability = lookup.get(id);
+    // An AI provider under `capabilities` is the validator's to refuse.
+    if (!capability || capability.mode === "ai") continue;
     const { names, alsoReads } = capabilityNames(capability);
     settings.push(
       withNeed(
@@ -348,7 +386,11 @@ export function appSettings(manifest: SettingsManifestLike): AppSetting[] {
           alsoReads,
         },
         needFields(entry),
-        { docs: capabilityDocs(capability), setup: capability.setup },
+        {
+          docs: capabilityDocs(capability),
+          setup: capability.setup,
+          ...providerHint(capability, names),
+        },
       ),
     );
   }
@@ -569,6 +611,18 @@ export function appSetupOf(
 }
 
 /** The provider registry's labels, for anything that names a provider to a person. */
-export function providerLabel(id: string): string {
-  return PROVIDER_LABELS[id] ?? id;
+export function providerLabel(
+  id: string,
+  lookup: CapabilityLookup = CATALOG,
+): string {
+  return lookup.get(id)?.label ?? id;
+}
+
+/** The capability `id` names in `lookup`, as an API-key provider, or undefined. */
+export function apiKeyCapabilityOf(
+  id: string,
+  lookup: CapabilityLookup = CATALOG,
+): ApiKeyCapability | undefined {
+  const capability = lookup.get(id);
+  return capability?.mode === "api_key" ? capability : undefined;
 }

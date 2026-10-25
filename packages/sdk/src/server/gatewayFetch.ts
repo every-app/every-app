@@ -1,5 +1,6 @@
 import {
   aiProviderSettings,
+  authorizationOf,
   ConfigurationError,
   DEV_AI_PROVIDERS,
   devAiProvider,
@@ -99,7 +100,15 @@ export function createGatewayFetch({
     const url = joinProviderUrl(`${spec.origin}${dev.basePath}`, path, search);
     if (!url) throw new ConfigurationError("Invalid provider proxy path.");
     applyAttribution(headers, undefined);
-    headers.set("authorization", `Bearer ${dev.key}`);
+    // The developer's key, put where the provider's entry says (a bearer
+    // token for the three today), as the gateway would put its own.
+    const auth = authorizationOf(spec.auth, { [spec.keyEnv]: dev.key });
+    for (const [name, value] of Object.entries(auth?.headers ?? {})) {
+      headers.set(name, value);
+    }
+    for (const [name, value] of Object.entries(auth?.query ?? {})) {
+      url.searchParams.set(name, value);
+    }
     const response = await fetch(
       streamingRequest(url.toString(), outbound, headers),
     );

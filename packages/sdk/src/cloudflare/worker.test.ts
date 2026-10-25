@@ -606,11 +606,13 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     const everything = {
       ...manifest,
       providers: Object.keys(DEV_AI_PROVIDERS),
+      // Every capability; the AI providers are listed under `providers`.
       capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES).map(([id, { access }]) => [
-          id,
-          { access: access[0] },
-        ]),
+        Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
+          capability.mode === "ai"
+            ? []
+            : [[id, { access: capability.access[0] }]],
+        ),
       ),
     };
     const env = everyAppWorker({

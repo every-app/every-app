@@ -10,56 +10,58 @@
  * `capabilities`) and the Gateway's dev config, which a test keeps
  * declaring every settable one.
  */
-import { aiProviderSettings, DEV_AI_PROVIDERS } from "./aiProviders.js";
-import { CAPABILITIES, capabilitySettings } from "./capabilities.js";
+import {
+  CAPABILITIES,
+  CAPABILITY_IDS,
+  capabilitySettings,
+  type CapabilitySecret,
+} from "./capabilities.js";
 
-/** The Gateway's optional settings `everyapp secret set` changes. */
-export const SETTABLE_GATEWAY_SETTINGS = [
-  "OPENAI_API_KEY",
-  "OPENROUTER_API_KEY",
-  // Workers AI's API token; its account is the install's CLOUDFLARE_ACCOUNT_ID.
-  "WORKERS_AI_API_TOKEN",
-  "DATAFORSEO_API_KEY",
-  "CONTEXT_API_KEY",
-  // Social networks' OAuth clients, and the Mastodon instance's URL.
-  "LINKEDIN_CLIENT_ID",
-  "LINKEDIN_CLIENT_SECRET",
-  "FACEBOOK_APP_ID",
-  "FACEBOOK_APP_SECRET",
-  "INSTAGRAM_APP_ID",
-  "INSTAGRAM_APP_SECRET",
-  "THREADS_APP_ID",
-  "THREADS_APP_SECRET",
-  "YOUTUBE_CLIENT_ID",
-  "YOUTUBE_CLIENT_SECRET",
-  "TIKTOK_CLIENT_ID",
-  "TIKTOK_CLIENT_SECRET",
-  "TIKTOK_BUSINESS_CLIENT_ID",
-  "TIKTOK_BUSINESS_CLIENT_SECRET",
-  "REDDIT_CLIENT_ID",
-  "REDDIT_CLIENT_SECRET",
-  "PINTEREST_CLIENT_ID",
-  "PINTEREST_CLIENT_SECRET",
-  "DISCORD_CLIENT_ID",
-  "DISCORD_CLIENT_SECRET",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "MASTODON_CLIENT_ID",
-  "MASTODON_CLIENT_SECRET",
-  "MASTODON_URL",
-  "KICK_CLIENT_ID",
-  "KICK_CLIENT_SECRET",
-  "TWITCH_CLIENT_ID",
-  "TWITCH_CLIENT_SECRET",
-  "TUMBLR_CLIENT_ID",
-  "TUMBLR_CLIENT_SECRET",
-  "DRIBBBLE_CLIENT_ID",
-  "DRIBBBLE_CLIENT_SECRET",
-  // Mail and calendar clients.
-  "GOOGLE_WORKSPACE_CLIENT_ID",
-  "GOOGLE_WORKSPACE_CLIENT_SECRET",
-  "MICROSOFT_365_CLIENT_ID",
-  "MICROSOFT_365_CLIENT_SECRET",
+/**
+ * The Gateway's own settings: the install writes them once (`everyapp
+ * setup`), or an operator by hand (THIRD_PARTY_DEPLOYS), and `everyapp
+ * secret set` never changes them. An app's own Worker may still have a
+ * secret of the same name (OpenSEO's BETTER_AUTH_SECRET): the two never meet.
+ */
+export const INSTALL_OWNED_GATEWAY_SETTINGS = [
+  "GATEWAY_URL",
+  "APP_BASE_DOMAIN",
+  "BETTER_AUTH_SECRET",
+  "JWT_PRIVATE_KEY",
+  "JWT_PUBLIC_KEY",
+  "GATEWAY_DEPLOYMENT_MODE",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "THIRD_PARTY_DEPLOYS",
+] as const;
+
+const INSTALL_OWNED: ReadonlySet<string> = new Set(
+  INSTALL_OWNED_GATEWAY_SETTINGS,
+);
+
+export function isInstallOwnedGatewaySetting(name: string): boolean {
+  return INSTALL_OWNED.has(name);
+}
+
+/**
+ * The settings the catalog's providers read (the AI providers' keys, the
+ * API-key providers' keys, the OAuth clients and the Mastodon instance's
+ * URL), in catalog order, the install's own left out: what `everyapp
+ * secret set` accepts because a provider reads it. A gateway's registered
+ * rows add theirs at run time (providerRegistry.settingNames()).
+ */
+const PROVIDER_GATEWAY_SETTINGS: readonly string[] = [
+  ...new Set(
+    CAPABILITY_IDS.flatMap((id) => {
+      const capability = CAPABILITIES[id];
+      return capability.mode === "service"
+        ? []
+        : capabilitySettings(capability);
+    }),
+  ),
+].filter((name) => !INSTALL_OWNED.has(name));
+
+/** The Gateway's own optional settings `everyapp secret set` changes: nothing a provider reads. */
+export const GATEWAY_OWN_SETTINGS = [
   "AI_PROXY_EXTRA_ROUTES",
   // Email's providers: Cloudflare's REST token, Resend's key, the choice.
   "EMAIL_REST_API_TOKEN",
@@ -93,7 +95,18 @@ export const SETTABLE_GATEWAY_SETTINGS = [
   "THIRD_PARTY_DOMAIN",
 ] as const;
 
-export type SettableGatewaySetting = (typeof SETTABLE_GATEWAY_SETTINGS)[number];
+export type SettableGatewaySetting =
+  | Exclude<CapabilitySecret, (typeof INSTALL_OWNED_GATEWAY_SETTINGS)[number]>
+  | (typeof GATEWAY_OWN_SETTINGS)[number];
+
+/**
+ * The Gateway's optional settings `everyapp secret set` changes: every
+ * setting a catalog provider reads, then the Gateway's own.
+ */
+export const SETTABLE_GATEWAY_SETTINGS: readonly SettableGatewaySetting[] = [
+  ...(PROVIDER_GATEWAY_SETTINGS as readonly SettableGatewaySetting[]),
+  ...GATEWAY_OWN_SETTINGS,
+];
 
 const SETTABLE: ReadonlySet<string> = new Set(SETTABLE_GATEWAY_SETTINGS);
 
@@ -176,31 +189,6 @@ export function isHostedOnlyGatewaySetting(name: string): boolean {
   return HOSTED_ONLY.has(name);
 }
 
-/**
- * The Gateway's own settings: the install writes them once (`everyapp
- * setup`), or an operator by hand (THIRD_PARTY_DEPLOYS), and `everyapp
- * secret set` never changes them. An app's own Worker may still have a
- * secret of the same name (OpenSEO's BETTER_AUTH_SECRET): the two never meet.
- */
-export const INSTALL_OWNED_GATEWAY_SETTINGS = [
-  "GATEWAY_URL",
-  "APP_BASE_DOMAIN",
-  "BETTER_AUTH_SECRET",
-  "JWT_PRIVATE_KEY",
-  "JWT_PUBLIC_KEY",
-  "GATEWAY_DEPLOYMENT_MODE",
-  "CLOUDFLARE_ACCOUNT_ID",
-  "THIRD_PARTY_DEPLOYS",
-] as const;
-
-const INSTALL_OWNED: ReadonlySet<string> = new Set(
-  INSTALL_OWNED_GATEWAY_SETTINGS,
-);
-
-export function isInstallOwnedGatewaySetting(name: string): boolean {
-  return INSTALL_OWNED.has(name);
-}
-
 /** Gateway settings for local testing only, set in the gateway's `.dev.vars`, never deployed. */
 export const DEV_ONLY_GATEWAY_SETTINGS = [
   "MCP_ACCESS_TOKEN_TTL",
@@ -251,13 +239,10 @@ export type GatewaySettingOwner =
  * in a manifest instead of holding the key as the app's own.
  */
 export function gatewaySettingOwner(name: string): GatewaySettingOwner | null {
-  for (const [id, spec] of Object.entries(DEV_AI_PROVIDERS)) {
-    if (aiProviderSettings(spec).includes(name))
-      return { kind: "provider", id };
-  }
-  for (const [id, capability] of Object.entries(CAPABILITIES)) {
+  for (const id of CAPABILITY_IDS) {
+    const capability = CAPABILITIES[id];
     if (capabilitySettings(capability).includes(name)) {
-      return { kind: "capability", id };
+      return { kind: capability.mode === "ai" ? "provider" : "capability", id };
     }
   }
   return null;

@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
+  authorizationFor,
   capabilitySettings,
   describeTokenEndpoints,
   integrationProxyPath,
@@ -12,6 +13,8 @@ import {
   parseIntegrationProxyPath,
   serviceRoutePath,
   tokenEndpointFor,
+  type ApiKeyAuth,
+  type ApiKeyCapability,
   type ApiKeyCapabilityId,
   type Capability,
   type CapabilitySecret,
@@ -36,6 +39,7 @@ describe("integration proxy paths", () => {
     expect(parseIntegrationProxyPath(url.pathname, url.search)).toEqual({
       kind: "api_key",
       id: "dataforseo",
+      capability: CAPABILITIES.dataforseo,
       upstream,
     });
   });
@@ -44,13 +48,78 @@ describe("integration proxy paths", () => {
     expect(serviceRoutePath("email", "send")).toBe(
       "/api/integrations/email/send",
     );
+    const route = {
+      kind: "service",
+      id: "email",
+      capability: CAPABILITIES.email,
+      route: "send",
+    };
     expect(
       parseIntegrationProxyPath("/api/integrations/email/send", ""),
-    ).toEqual({ kind: "service", id: "email", route: "send" });
+    ).toEqual(route);
     // A query string doesn't change the route.
     expect(
       parseIntegrationProxyPath("/api/integrations/email/send", "?x=1"),
-    ).toEqual({ kind: "service", id: "email", route: "send" });
+    ).toEqual(route);
+  });
+
+  it("never routes an AI provider: its route is /api/ai, and a key that reached its host would reach the account", () => {
+    expect(
+      parseIntegrationProxyPath(
+        "/api/integrations/openrouter/openrouter.ai/api/v1/credits",
+        "",
+      ),
+    ).toBeNull();
+  });
+
+  it("takes the host a provider's hostSetting names, when it is one host", () => {
+    const shopify: ApiKeyCapability = {
+      mode: "api_key",
+      label: "Shopify",
+      auth: {
+        kind: "header",
+        secret: "SHOPIFY_API_KEY",
+        header: "X-Shopify-Access-Token",
+      },
+      docs: "https://shopify.dev/",
+      hosts: [],
+      hostSetting: "SHOPIFY_HOST",
+      access: ["read"],
+      readMethods: ["GET"],
+      accountWidePaths: [],
+    };
+    const lookup = {
+      get: (id: string) => (id === "shopify" ? shopify : undefined),
+      ids: () => ["shopify"],
+    };
+    const path =
+      "/api/integrations/shopify/acme.myshopify.com/admin/api/2024-10/orders.json";
+    const hostFor = (setting: string | undefined) => {
+      const route = parseIntegrationProxyPath(
+        path,
+        "",
+        { SHOPIFY_HOST: setting },
+        lookup,
+      );
+      return route?.kind === "api_key" ? route.upstream.host : null;
+    };
+    expect(hostFor("https://acme.myshopify.com")).toBe("acme.myshopify.com");
+    expect(hostFor("ACME.myshopify.com")).toBe("acme.myshopify.com");
+    for (const bad of [
+      undefined,
+      "",
+      "https://acme.myshopify.com/admin",
+      "https://acme.myshopify.com:8443",
+      "http://acme.myshopify.com",
+      "https://user@acme.myshopify.com",
+      "other.myshopify.com",
+    ]) {
+      expect(hostFor(bad)).toBeNull();
+    }
+    expect(capabilitySettings(shopify)).toEqual([
+      "SHOPIFY_API_KEY",
+      "SHOPIFY_HOST",
+    ]);
   });
 
   it.each([
@@ -148,7 +217,9 @@ describe("DataForSEO's account-wide paths", () => {
 });
 
 describe("DataForSEO credentials", () => {
-  const { authorization } = CAPABILITIES.dataforseo;
+  const authorization = (key: string) =>
+    authorizationFor(CAPABILITIES.dataforseo, { DATAFORSEO_API_KEY: key })
+      ?.headers["authorization"];
 
   it("encodes a login:password key", () => {
     expect(authorization("me@example.com:secret")).toBe(
@@ -161,13 +232,130 @@ describe("DataForSEO credentials", () => {
       `Basic ${btoa("me@example.com:secret")}`,
     );
   });
+
+  it("is unset while the setting is blank", () => {
+    expect(authorization("  ")).toBeUndefined();
+  });
 });
 
 describe("Context.dev credentials", () => {
   it("sends the key as a bearer token", () => {
-    expect(CAPABILITIES.context.authorization(" ctx_key ")).toBe(
-      "Bearer ctx_key",
-    );
+    expect(
+      authorizationFor(CAPABILITIES.context, { CONTEXT_API_KEY: " ctx_key " }),
+    ).toEqual({ headers: { authorization: "Bearer ctx_key" }, query: {} });
+  });
+});
+
+describe("the auth kinds", () => {
+  const provider = (auth: ApiKeyAuth): ApiKeyCapability => ({
+    mode: "api_key",
+    label: "Example",
+    auth,
+    docs: "https://example.com/keys",
+    hosts: ["api.example.com"],
+    access: ["read"],
+    readMethods: ["GET"],
+    accountWidePaths: [],
+  });
+
+  it("bearer takes a scheme", () => {
+    expect(
+      authorizationFor(
+        provider({
+          kind: "bearer",
+          secret: "EXAMPLE_API_KEY",
+          scheme: "Token",
+        }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({ headers: { authorization: "Token k" }, query: {} });
+  });
+
+  it("header puts the key in a named header, with its prefix, lower-cased", () => {
+    expect(
+      authorizationFor(
+        provider({
+          kind: "header",
+          secret: "EXAMPLE_API_KEY",
+          header: "X-Api-Key",
+        }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({ headers: { "x-api-key": "k" }, query: {} });
+    expect(
+      authorizationFor(
+        provider({
+          kind: "header",
+          secret: "EXAMPLE_API_KEY",
+          header: "Authorization",
+          prefix: "Klaviyo-API-Key ",
+        }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({ headers: { authorization: "Klaviyo-API-Key k" }, query: {} });
+  });
+
+  it("query puts the key in a query parameter", () => {
+    expect(
+      authorizationFor(
+        provider({ kind: "query", secret: "EXAMPLE_API_KEY", param: "appid" }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({ headers: {}, query: { appid: "k" } });
+  });
+
+  it("basic says where the key goes: the password beside a user, the username, or the pair", () => {
+    expect(
+      authorizationFor(
+        provider({
+          kind: "basic",
+          secret: "EXAMPLE_API_KEY",
+          as: "password",
+          user: "api",
+        }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({
+      headers: { authorization: `Basic ${btoa("api:k")}` },
+      query: {},
+    });
+    expect(
+      authorizationFor(
+        provider({ kind: "basic", secret: "EXAMPLE_API_KEY", as: "username" }),
+        { EXAMPLE_API_KEY: "k" },
+      ),
+    ).toEqual({ headers: { authorization: `Basic ${btoa("k:")}` }, query: {} });
+    // A bare key under `pair` is taken as already encoded: the catalog's rule for DataForSEO alone.
+    expect(
+      authorizationFor(
+        provider({ kind: "basic", secret: "EXAMPLE_API_KEY", as: "pair" }),
+        { EXAMPLE_API_KEY: "a:b" },
+      ),
+    ).toEqual({
+      headers: { authorization: `Basic ${btoa("a:b")}` },
+      query: {},
+    });
+    const twilio = provider({
+      kind: "basic",
+      secret: "EXAMPLE_AUTH_TOKEN",
+      as: "password",
+      user: { secret: "EXAMPLE_ACCOUNT_SID" },
+    });
+    expect(
+      authorizationFor(twilio, {
+        EXAMPLE_AUTH_TOKEN: "t",
+        EXAMPLE_ACCOUNT_SID: "AC1",
+      }),
+    ).toEqual({
+      headers: { authorization: `Basic ${btoa("AC1:t")}` },
+      query: {},
+    });
+    // Both settings are needed.
+    expect(authorizationFor(twilio, { EXAMPLE_AUTH_TOKEN: "t" })).toBeNull();
+    expect(capabilitySettings(twilio)).toEqual([
+      "EXAMPLE_AUTH_TOKEN",
+      "EXAMPLE_ACCOUNT_SID",
+    ]);
   });
 });
 
@@ -220,10 +408,11 @@ describe("the capability registry", () => {
     expectTypeOf<"DATAFORSEO_API_KEY">().toExtend<CapabilitySecret>();
   });
 
-  it("knows only its own ids", () => {
+  it("knows only its own ids, the AI providers among them", () => {
     expect(isCapabilityId("dataforseo")).toBe(true);
     expect(isCapabilityId("toString")).toBe(false);
-    expect(isCapabilityId("openai")).toBe(false);
+    expect(isCapabilityId("openai")).toBe(true);
+    expect(CAPABILITIES.openai.mode).toBe("ai");
   });
 });
 

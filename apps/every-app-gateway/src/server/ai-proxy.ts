@@ -1,10 +1,16 @@
 import {
+  CATALOG,
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
+  aiBaseUrl,
+  authorizationFor,
   joinProviderUrl,
   normalizeWorkersAiResponse,
   PUBLIC_HEADER,
-  workersAiBasePath,
+  type AiProviderCapability,
+  type Authorization,
+  type CapabilityLookup,
+  type CapabilitySecret,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { AiPolicy } from "@every-app/perimeter/manifest";
@@ -42,17 +48,24 @@ const STRIPPED_PROXY_HEADERS = [
 // an app pick a gateway's cache, logging or metadata.
 const STRIPPED_PROXY_HEADER_PREFIXES = ["x-everyapp-", "cf-aig-"];
 
+/**
+ * An AI provider as the proxy reads it, from its catalog entry (an `ai`
+ * capability in `@every-app/sdk/internal`, where the table lived before
+ * the provider registry).
+ */
 interface AiProvider {
   /**
    * Where the provider's API lives. App paths are joined onto its path,
-   * never replace it. A function when it depends on a gateway setting
-   * (null while that is unset).
+   * never replace it; null while a gateway setting the path needs is
+   * unset.
    */
-  upstreamBaseUrl: string | ((env: AiProxyEnv) => string | null);
+  upstreamBaseUrl: (env: AiProxyEnv) => string | null;
   /** The gateway secret holding the provider key. */
-  keyEnv: "OPENAI_API_KEY" | "OPENROUTER_API_KEY" | "WORKERS_AI_API_TOKEN";
+  keyEnv: string;
+  /** The key on the request as the entry's `auth` puts it; null while unset. */
+  authorization: (env: AiProxyEnv) => Authorization | null;
   /** Gateway settings the provider needs besides its key. */
-  alsoNeeds?: readonly (keyof AiProxyEnv)[];
+  alsoNeeds: readonly string[];
   /**
    * The one key is shared by every app in every organization, and providers
    * keep files, batches, fine-tunes and stored completions per account, so
@@ -72,74 +85,41 @@ interface AiProvider {
   normalizeResponse?: (path: string, response: Response) => Response;
 }
 
-const AI_PROVIDERS: Record<string, AiProvider> = {
-  openai: {
-    upstreamBaseUrl: "https://api.openai.com",
-    keyEnv: "OPENAI_API_KEY",
-    inferenceRoutes: new Set([
-      "/v1/responses",
-      "/v1/chat/completions",
-      "/v1/embeddings",
-      "/v1/audio/speech",
-      "/v1/audio/transcriptions",
-      "/v1/audio/translations",
-      "/v1/images/generations",
-      "/v1/images/edits",
-      "/v1/images/variations",
-    ]),
-    unstoredRoutes: new Set(["/v1/responses", "/v1/chat/completions"]),
-    extraRoutes: true,
-  },
-  // OpenAI-compatible, in front of many model providers. Usage (with cost)
-  // comes back in the response, so apps can meter their own spend.
-  openrouter: {
-    upstreamBaseUrl: "https://openrouter.ai",
-    keyEnv: "OPENROUTER_API_KEY",
-    inferenceRoutes: new Set([
-      "/api/v1/chat/completions",
-      "/api/v1/completions",
-      "/api/v1/responses",
-      "/api/v1/embeddings",
-    ]),
-    unstoredRoutes: new Set(),
-    extraRoutes: false,
-  },
-  // Workers AI's OpenAI-compatible REST API, in the gateway's own account
-  // (`/v1/run/...` and the native `/run/<model>` stay closed). Its chat
-  // streams send all-digit tokens as JSON numbers, which the gateway turns
-  // back into strings (normalizeWorkersAiResponse).
-  "workers-ai": {
-    upstreamBaseUrl: (env) =>
-      env.CLOUDFLARE_ACCOUNT_ID?.trim()
-        ? `https://api.cloudflare.com${workersAiBasePath(env.CLOUDFLARE_ACCOUNT_ID)}`
-        : null,
-    keyEnv: "WORKERS_AI_API_TOKEN",
-    alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID"],
-    inferenceRoutes: new Set([
-      "/v1/chat/completions",
-      "/v1/embeddings",
-      "/v1/responses",
-    ]),
-    unstoredRoutes: new Set(),
-    extraRoutes: false,
-    normalizeResponse: normalizeWorkersAiResponse,
-  },
-};
-
-interface AiProxyEnv {
-  OPENAI_API_KEY?: string;
-  OPENROUTER_API_KEY?: string;
-  /** A Cloudflare API token with Workers AI Read and Edit, for `workers-ai`. */
-  WORKERS_AI_API_TOKEN?: string;
-  /** The account Workers AI runs (and bills) in: the gateway's own. */
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  /**
-   * OpenAI paths beyond inference that apps may use, set by the operator
-   * (comma or space separated, e.g. "/v1/files"). Each also covers its
-   * sub-paths. An app still has to list a path in its manifest's `ai.routes`.
-   */
-  AI_PROXY_EXTRA_ROUTES?: string;
+/** The proxy's view of an `ai` catalog entry. */
+function aiProviderOf(capability: AiProviderCapability): AiProvider {
+  return {
+    upstreamBaseUrl: (env) => aiBaseUrl(capability, env),
+    keyEnv: capability.auth.secret,
+    authorization: (env) => authorizationFor(capability, env),
+    alsoNeeds: capability.alsoNeeds ?? [],
+    inferenceRoutes: new Set(capability.inferenceRoutes),
+    unstoredRoutes: new Set(capability.unstoredRoutes ?? []),
+    extraRoutes: capability.extraRoutes ?? false,
+    ...(capability.normalize === "workers-ai"
+      ? { normalizeResponse: normalizeWorkersAiResponse }
+      : {}),
+  };
 }
+
+/** The AI provider `id` names in `lookup`, or undefined. */
+function aiProviderFor(
+  id: string,
+  lookup: CapabilityLookup = CATALOG,
+): AiProvider | undefined {
+  const capability = lookup.get(id);
+  return capability?.mode === "ai" ? aiProviderOf(capability) : undefined;
+}
+
+/**
+ * The Gateway's settings by name: the providers' keys (and Workers AI's
+ * account, `CLOUDFLARE_ACCOUNT_ID`), and `AI_PROXY_EXTRA_ROUTES`: OpenAI
+ * paths beyond inference that apps may use, set by the operator (comma or
+ * space separated, e.g. "/v1/files"). Each also covers its sub-paths. An
+ * app still has to list a path in its manifest's `ai.routes`.
+ */
+type AiProxyEnv = Partial<Record<CapabilitySecret, string>> & {
+  AI_PROXY_EXTRA_ROUTES?: string;
+};
 
 // The same shape the manifest accepts for `ai.routes`.
 const AI_ROUTE_PATTERN = /^\/v1(\/[a-z0-9_-]+)+$/;
@@ -148,6 +128,8 @@ interface HandleAuthenticatedAiProxyRequestOptions {
   request: Request;
   provider: string;
   env: AiProxyEnv;
+  /** Where the provider id is found: the catalog alone, or the gateway's registry. */
+  lookup?: CapabilityLookup;
   /** The calling app's manifest `ai` policy. */
   policy?: AiPolicy;
   /** Who is calling, for the usage log line. */
@@ -193,15 +175,14 @@ export async function handleAuthenticatedAiProxyRequest({
   request,
   provider,
   env,
+  lookup = CATALOG,
   policy,
   caller,
   fetchUpstream = fetch,
   onAnswer,
   onUsage,
 }: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
-  const aiProvider = Object.hasOwn(AI_PROVIDERS, provider)
-    ? AI_PROVIDERS[provider]
-    : undefined;
+  const aiProvider = aiProviderFor(provider, lookup);
   if (!aiProvider) {
     return aiRefusal(
       "ai_provider_not_supported",
@@ -210,13 +191,10 @@ export async function handleAuthenticatedAiProxyRequest({
     );
   }
 
-  const providerKey = env[aiProvider.keyEnv]?.trim();
-  const baseUrl =
-    typeof aiProvider.upstreamBaseUrl === "function"
-      ? aiProvider.upstreamBaseUrl(env)
-      : aiProvider.upstreamBaseUrl;
-  if (!providerKey || !baseUrl) {
-    const settings = [aiProvider.keyEnv, ...(aiProvider.alsoNeeds ?? [])];
+  const authorization = aiProvider.authorization(env);
+  const baseUrl = aiProvider.upstreamBaseUrl(env);
+  if (!authorization || !baseUrl) {
+    const settings = [aiProvider.keyEnv, ...aiProvider.alsoNeeds];
     return aiRefusal(
       "ai_provider_not_configured",
       503,
@@ -228,7 +206,15 @@ export async function handleAuthenticatedAiProxyRequest({
   if (!upstream) {
     return aiRefusal("ai_request_invalid", 400, "Invalid proxy request path");
   }
-  const { url: upstreamUrl, path: upstreamPath } = upstream;
+  const { path: upstreamPath } = upstream;
+  let upstreamUrl = upstream.url;
+  if (Object.keys(authorization.query).length > 0) {
+    const target = new URL(upstreamUrl);
+    for (const [name, value] of Object.entries(authorization.query)) {
+      target.searchParams.set(name, value);
+    }
+    upstreamUrl = target.toString();
+  }
 
   if (
     !isAllowedRoute(
@@ -248,7 +234,9 @@ export async function handleAuthenticatedAiProxyRequest({
 
   const requestHeaders = new Headers(request.headers);
   stripProxyHeaders(requestHeaders);
-  requestHeaders.set("authorization", `Bearer ${providerKey}`);
+  for (const [name, value] of Object.entries(authorization.headers)) {
+    requestHeaders.set(name, value);
+  }
 
   const prepared = await prepareBody(
     aiProvider,

@@ -1,10 +1,11 @@
 import {
-  CAPABILITIES,
+  CATALOG,
   ConfigurationError,
   GATEWAY_ERROR_HEADER,
   INTEGRATION_PROXY_PREFIX,
   OAUTH_TOKEN_BODY_LIMIT,
   allowedScopes,
+  authorizationFor,
   capabilitySettings,
   carriesToken,
   declaredScopeSets,
@@ -55,10 +56,12 @@ export interface IntegrationFetchOptions {
   /**
    * A provider the app lists in its manifest's `capabilities`: one whose
    * key the gateway holds, or one whose OAuth client it holds (its token
-   * endpoints only). The `email` capability is sent with `sendEmail()`
-   * instead.
+   * endpoints only). The built-in catalog's ids complete; a provider
+   * registered on the gateway (`everyapp provider add`) is any other id,
+   * reached through the binding, which checks it. The `email` capability
+   * is sent with `sendEmail()` instead.
    */
-  provider: ApiKeyCapabilityId | OAuthClientCapabilityId;
+  provider: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {});
   /**
    * Whom the call is for: the inbound request (its user), or
    * `{ background: true, organizationId }` for work no person started
@@ -85,7 +88,8 @@ export interface IntegrationFetchOptions {
  * token directly.
  *
  * In local dev only, with no binding, the developer's own key or client
- * from `.dev.vars` reaches the provider directly, under the gateway's names.
+ * from `.dev.vars` reaches the provider directly, under the gateway's names;
+ * that fallback knows the built-in catalog, not a gateway's registered rows.
  */
 export function integrationFetch({
   env,
@@ -104,8 +108,14 @@ export function integrationFetch({
       "EVERY_APP_GATEWAY is configured but is not a valid service binding.",
     );
   }
-  const local = binding ? null : localCredentials(integration, values);
-  if (!binding && !local) {
+  if (!integration && !binding) {
+    throw new ConfigurationError(
+      `"${provider}" isn't in the built-in provider catalog. A provider registered on the gateway (everyapp provider add) is reached through the EVERY_APP_GATEWAY binding and has no local-development fallback yet.`,
+    );
+  }
+  const local =
+    binding || !integration ? null : localCredentials(integration, values);
+  if (!binding && !local && integration) {
     throw new ConfigurationError(
       `${integration.label} is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set ${capabilitySettings(integration).join(", ")} in .dev.vars for local development.`,
     );
@@ -117,6 +127,24 @@ export function integrationFetch({
     const headers = new Headers(outbound.headers);
     headers.delete("authorization");
     headers.delete("cookie");
+
+    if (!integration) {
+      // A gateway-registered provider: the gateway holds its spec, so the
+      // gateway checks the host; here only that it is https at all.
+      if (upstream.protocol !== "https:") {
+        throw new TypeError(
+          `integrationFetch("${provider}") reaches https URLs only, not ${upstream.protocol}//${upstream.host}.`,
+        );
+      }
+      applyAttribution(headers, target);
+      return binding!.fetch(
+        streamingRequest(
+          `${BINDING_ORIGIN}${integrationProxyPath(provider, upstream)}`,
+          outbound,
+          headers,
+        ),
+      );
+    }
 
     if (integration.mode === "oauth_client") {
       return oauthClientCall({
@@ -152,10 +180,20 @@ export function integrationFetch({
     }
 
     applyAttribution(headers, undefined);
-    headers.set("authorization", integration.authorization(local as string));
+    // The developer's own key, put where the provider's entry says, as the
+    // gateway would put its own.
+    const auth = local as DevAuthorization;
+    for (const [name, value] of Object.entries(auth.headers)) {
+      headers.set(name, value);
+    }
+    for (const [name, value] of Object.entries(auth.query)) {
+      upstream.searchParams.set(name, value);
+    }
     return fetch(streamingRequest(upstream.toString(), outbound, headers));
   };
 }
+
+type DevAuthorization = NonNullable<ReturnType<typeof authorizationFor>>;
 
 /**
  * The developer's own key or client from `.dev.vars` (with EVERYAPP_DEV
@@ -164,12 +202,12 @@ export function integrationFetch({
 function localCredentials(
   integration: ApiKeyCapability | OAuthClientCapability,
   values: Record<string, unknown>,
-): string | OAuthClientCredentials | null {
+): DevAuthorization | OAuthClientCredentials | null {
   if (!values["EVERYAPP_DEV"]) return null;
   if (integration.mode === "oauth_client") {
     return oauthClientCredentials(integration, values);
   }
-  return stringValue(values[integration.secret]) ?? null;
+  return authorizationFor(integration, values);
 }
 
 /**
@@ -489,22 +527,33 @@ async function checkTokenResponse(
   return forward();
 }
 
-/** The capability `provider` names, from plain JavaScript or a stale type too. */
-function capability(provider: CapabilityId): Capability {
-  if (!Object.hasOwn(CAPABILITIES, provider)) {
+/** The catalog entry `provider` names, from plain JavaScript or a stale type too; throws for an id the catalog doesn't have. */
+function capability(provider: string): Capability {
+  const found = CATALOG.get(String(provider));
+  if (!found) {
     throw new ConfigurationError(`Unknown capability "${String(provider)}".`);
   }
-  return CAPABILITIES[provider];
+  return found;
 }
 
-/** The provider `integrationFetch()` calls: one whose key or OAuth client the gateway holds. */
+/**
+ * The provider `integrationFetch()` calls: one whose key or OAuth client
+ * the gateway holds, or undefined for an id outside the built-in catalog
+ * (a provider registered on the gateway, which the binding resolves).
+ */
 function fetchableCapability(
-  provider: ApiKeyCapabilityId | OAuthClientCapabilityId,
-): ApiKeyCapability | OAuthClientCapability {
-  const found = capability(provider);
+  provider: string,
+): ApiKeyCapability | OAuthClientCapability | undefined {
+  const found = CATALOG.get(String(provider));
+  if (!found) return undefined;
   if (found.mode === "service") {
     throw new ConfigurationError(
       `${String(provider)} is a gateway service: call its helper from @every-app/sdk/server (sendEmail(), listMembers()), not integrationFetch().`,
+    );
+  }
+  if (found.mode === "ai") {
+    throw new ConfigurationError(
+      `${String(provider)} is an AI provider: list it under providers and call it with createGatewayFetch(), not integrationFetch().`,
     );
   }
   return found;
@@ -564,7 +613,7 @@ export interface OAuthClientIntegrationStatus extends IntegrationStatus {
 }
 
 /** The status of a capability: email's carries its senders, an OAuth client's its id. */
-export type IntegrationStatusOf<P extends CapabilityId> = P extends "email"
+export type IntegrationStatusOf<P extends string> = P extends "email"
   ? EmailIntegrationStatus
   : P extends OAuthClientCapabilityId
     ? OAuthClientIntegrationStatus
@@ -576,18 +625,30 @@ export type IntegrationStatusOf<P extends CapabilityId> = P extends "email"
  * set up") up front instead of failing mid-task. An OAuth client's status
  * carries its public `clientId` for the authorize URL.
  */
-export async function integrationStatus<P extends CapabilityId>({
+export async function integrationStatus<
+  P extends CapabilityId | (string & {}),
+>({
   env,
   provider,
 }: {
   env: object;
   provider: P;
 }): Promise<IntegrationStatusOf<P>> {
-  const integration = capability(provider);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
     | undefined;
+  // A provider registered on the gateway is the gateway's to answer for;
+  // without one, only the catalog is known here.
+  const integration =
+    binding && typeof binding.fetch === "function"
+      ? CATALOG.get(String(provider))
+      : capability(provider);
+  if (integration?.mode === "ai") {
+    throw new ConfigurationError(
+      `${String(provider)} is an AI provider: it has no integration status (createGatewayFetch() answers ai_provider_not_configured when its key is unset).`,
+    );
+  }
   const unavailable = (): IntegrationStatusOf<P> =>
     (provider === "email"
       ? {
@@ -610,6 +671,7 @@ export async function integrationStatus<P extends CapabilityId>({
     if (!response.ok) return unavailable();
     return (await response.json()) as IntegrationStatusOf<P>;
   }
+  if (!integration) return unavailable();
   if (integration.mode === "service") {
     if (provider === "email") {
       return devEmailStatus(values) as IntegrationStatusOf<P>;
@@ -630,7 +692,7 @@ export async function integrationStatus<P extends CapabilityId>({
     ) as IntegrationStatusOf<P>;
   }
   const configured = Boolean(
-    values["EVERYAPP_DEV"] && stringValue(values[integration.secret]),
+    values["EVERYAPP_DEV"] && authorizationFor(integration, values),
   );
   return {
     requested: true,

@@ -18,7 +18,7 @@
  *   GET      /api/integrations/<id>                            { capability, requested, configured, ready, clientId?, origin?, scopeSets?, scopes?, userScopes? }
  */
 import {
-  CAPABILITIES,
+  CATALOG,
   OAUTH_TOKEN_BODY_LIMIT,
   allowedScopes,
   carriesToken,
@@ -38,9 +38,9 @@ import {
   scopeExcess,
   tokenGrantType,
   USER_BOUND_GRANT_TYPES,
+  type CapabilityLookup,
   type CapabilitySettings,
   type OAuthClientCapability,
-  type OAuthClientCapabilityId,
   type OAuthScopePolicy,
   type TokenRequest,
 } from "@every-app/sdk/internal";
@@ -66,14 +66,16 @@ function requested(entry: CapabilityRequest | undefined): boolean {
  */
 export function oauthClientStatus({
   id,
+  capability,
   entry,
   env,
 }: {
-  id: OAuthClientCapabilityId;
+  id: string;
+  /** The client `id` names in the gateway's registry. */
+  capability: OAuthClientCapability;
   entry: CapabilityRequest | undefined;
   env: CapabilitySettings;
 }): Response {
-  const capability: OAuthClientCapability = CAPABILITIES[id];
   const isRequested = requested(entry);
   const client = isRequested ? oauthClientCredentials(capability, env) : null;
   const origin = client ? oauthClientOrigin(capability, env) : null;
@@ -123,26 +125,28 @@ export function oauthClientStatus({
 export async function handleOAuthClientCall({
   request,
   id,
+  capability,
   entry,
   env,
+  lookup = CATALOG,
   admit,
   fetchUpstream,
   onCall,
 }: {
   request: Request;
-  id: OAuthClientCapabilityId;
+  id: string;
+  /** The client `id` names in the gateway's registry. */
+  capability: OAuthClientCapability;
   /** The calling app's manifest entry for `id`, if it lists one. */
   entry: CapabilityRequest | undefined;
   env: CapabilitySettings;
+  /** Where ids are found, for the route parse: the registry the caller used. */
+  lookup?: CapabilityLookup;
   admit: () => Promise<IntegrationCallAdmission>;
   fetchUpstream: (request: Request) => Promise<Response>;
   /** Told of each call the provider answered (integration-proxy.ts). */
-  onCall?: (report: {
-    capability: OAuthClientCapabilityId;
-    status: number;
-  }) => void;
+  onCall?: (report: { capability: string; status: number }) => void;
 }): Promise<Response> {
-  const capability: OAuthClientCapability = CAPABILITIES[id];
   const notConfigured = () =>
     capabilityRefusal(
       503,
@@ -156,7 +160,12 @@ export async function handleOAuthClientCall({
 
   // 1. Token endpoints only, each with its methods.
   const url = new URL(request.url);
-  const route = parseIntegrationProxyPath(url.pathname, url.search, env);
+  const route = parseIntegrationProxyPath(
+    url.pathname,
+    url.search,
+    env,
+    lookup,
+  );
   const method = request.method.toUpperCase();
   if (
     route?.kind !== "oauth_client" ||
@@ -482,7 +491,7 @@ function describeGrantTypes(policy: OAuthScopePolicy): string {
 function undeclaredScopesMessage(
   capability: OAuthClientCapability,
   policy: OAuthScopePolicy,
-  id: OAuthClientCapabilityId,
+  id: string,
   entry: CapabilityRequest | undefined,
 ): string {
   const offered = Object.keys(policy.sets).join(", ");

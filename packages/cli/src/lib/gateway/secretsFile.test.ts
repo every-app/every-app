@@ -34,8 +34,8 @@ describe("gateway settings `secret set` changes", () => {
       }
     }
     for (const capability of Object.values(CAPABILITIES)) {
-      if (capability.mode === "api_key") {
-        expect(isSettableGatewaySetting(capability.secret)).toBe(true);
+      if (capability.mode === "api_key" || capability.mode === "ai") {
+        expect(isSettableGatewaySetting(capability.auth.secret)).toBe(true);
         continue;
       }
       // An OAuth client's id, secret and instance are all the operator's.

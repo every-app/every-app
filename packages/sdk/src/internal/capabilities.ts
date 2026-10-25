@@ -1,11 +1,21 @@
 /**
- * Capabilities the gateway holds for apps (docs/capabilities.md), of three
- * kinds:
+ * The built-in provider catalog: everything the gateway holds a credential
+ * for on apps' behalf (docs/capabilities.md,
+ * docs/design/2026-10-provider-registry.md), of four kinds, each an entry
+ * of data and nothing else, so a provider the catalog doesn't have can be
+ * registered on one gateway as a row of the same shape (./providerSpec.ts,
+ * ./providerRegistry.ts):
  *
  *  - `api_key`: a provider whose key the gateway holds. The operator sets
  *    the key once on the gateway (`everyapp secret set <secret>`), an app lists the provider in its manifest's `capabilities`,
  *    and the app calls the provider through the AppGateway binding
- *    (`integrationFetch()`), so no app ever holds the key.
+ *    (`integrationFetch()`), so no app ever holds the key. `auth` says
+ *    where the key goes on the request ({@link ApiKeyAuth}).
+ *  - `ai`: an AI provider, reached under `providers` in the manifest and
+ *    `/api/ai/<id>` on the binding (`createGatewayFetch()`), with the AI
+ *    proxy's rules: inference routes only, the model allowlist, the usage
+ *    tap. Never a capability: its key would reach the account's credits
+ *    and keys on the same host.
  *  - `oauth_client`: a provider's OAuth client (a social network's), held
  *    the same way. The gateway completes the token endpoint calls only,
  *    putting the client on them; the app builds the authorize URL from the
@@ -30,22 +40,135 @@
 /** What an app may ask to do with a capability. */
 export type CapabilityAccess = "read" | "write";
 
-export interface ApiKeyCapability {
+/**
+ * Where an API-key provider's key goes on a request, as data: the same
+ * four kinds a remote MCP app's credential takes. `secret` is always the
+ * name of a Gateway setting (in local dev, the `.dev.vars` name), never a
+ * value. {@link authorizationFor} turns one into headers or a query
+ * parameter from the settings.
+ */
+export type ApiKeyAuth =
+  /** `Authorization: Bearer <key>`; `scheme` for a provider that spells it `Token` or `Api-Key`. */
+  | { kind: "bearer"; secret: string; scheme?: string }
+  /** `<header>: <prefix><key>` (`x-api-key: <key>`, `Authorization: Klaviyo-API-Key <key>`). */
+  | { kind: "header"; secret: string; header: string; prefix?: string }
+  /** `?<param>=<key>` on the query string. */
+  | { kind: "query"; secret: string; param: string }
+  /**
+   * `Authorization: Basic base64(user:password)`, the placement said
+   * outright, never guessed from the value: the secret is the password
+   * beside `user` (a literal, Mailgun's `api`; or `{ secret }`, a second
+   * Gateway setting, Twilio's SID), the username with an empty password
+   * (Segment, Mixpanel, Crisp), or the whole `login:password` pair, which
+   * may already be base64-encoded (DataForSEO's rule: a base64 string
+   * never holds a colon).
+   */
+  | {
+      kind: "basic";
+      secret: string;
+      as: "password";
+      user: string | { secret: string };
+    }
+  | { kind: "basic"; secret: string; as: "username" }
+  | { kind: "basic"; secret: string; as: "pair" };
+
+/** What a provider says about one of its Gateway settings, for whoever sets it. */
+export interface ProviderSecretDetail {
+  name: string;
+  /** What kind of key, in one sentence: "A restricted key with read access to Customers is enough." */
+  hint?: string;
+}
+
+/** What a call costs, for the usage counters and the setup text. */
+export interface ProviderCost {
+  unit: "call" | "result" | "token";
+  usd?: number;
+  note?: string;
+  /**
+   * A top-level field of the provider's JSON answer that reports the
+   * call's cost in US dollars (DataForSEO's `cost`); read off the head of
+   * every answer and added to the usage counters. Absent: nothing is read.
+   */
+  responseField?: string;
+}
+
+/** The provider's rate limits, as hints beside the counters. */
+export interface ProviderRate {
+  perSecond?: number;
+  perMinute?: number;
+  perDay?: number;
+  note?: string;
+}
+
+/** One request that costs nothing, for a setup guide's Verify step. */
+export interface SmokeRequest {
+  method: "GET" | "HEAD" | "POST";
+  /** One of the provider's hosts; the first when absent. */
+  host?: string;
+  path: string;
+  /** The statuses that mean the key works. */
+  expect: readonly number[];
+  free: boolean;
+  note?: string;
+}
+
+/** Whether somebody checked the entry against the provider's docs, and how. */
+export type ProviderVerification = { on: string; how: "docs" | "live" } | false;
+
+/** What every provider may say about itself beyond what the gateway enforces. */
+export interface ProviderDetails {
+  /** What it is for, in one line, for lists and agents. */
+  description?: string;
+  /** The API reference, when it isn't the `docs` page. */
+  api?: string;
+  /**
+   * The setup sentence the "Needs setup" dialog and `everyapp status` show
+   * when there is no guide, or beside one: what the key is and where it
+   * comes from, 1 to 3 sentences.
+   */
+  hint?: string;
+  /** Detail per Gateway setting `auth` names. */
+  secrets?: readonly ProviderSecretDetail[];
+  /** What to say to an agent to try it, after "Use <name> to". */
+  example?: string;
+  cost?: ProviderCost;
+  rate?: ProviderRate;
+  verified?: ProviderVerification;
+  tags?: readonly string[];
+}
+
+export interface ApiKeyCapability extends ProviderDetails {
   mode: "api_key";
   /** The provider's name in errors and logs. */
   label: string;
-  /** The gateway secret holding the key; in local dev, the `.dev.vars` name. */
-  secret: string;
+  /** Where the key goes, and which Gateway setting holds it. */
+  auth: ApiKeyAuth;
   /** Where an operator gets the key: the provider's API access page. */
   docs: string;
-  /** The everyapp skill's setup guide for it, relative to the skill (`setup/dataforseo.md`). */
-  setup: string;
-  /** The only hosts the key is ever sent to, always over https. */
+  /** The everyapp skill's setup guide for it, relative to the skill (`setup/dataforseo.md`); a row has none. */
+  setup?: string;
+  /** The only hosts the key is ever sent to, always over https; may be empty when `hostSetting` names the host. */
   hosts: readonly string[];
+  /**
+   * A Gateway setting naming the provider's host, for a provider whose host
+   * is the operator's (Shopify's `<shop>.myshopify.com`): a bare host or an
+   * https origin with no path, held to the host rules when read
+   * ({@link apiKeyHosts}). Named after the provider like its key.
+   */
+  hostSetting?: string;
+  /**
+   * Whose data the key reaches: `per-call` (search, scrape, inference:
+   * each call is its own) or `account` (every list is the whole account).
+   * A hosted gateway, where one key would be every tenant's, serves
+   * `account` providers to nobody until it holds per-organization keys.
+   */
+  data?: "per-call" | "account";
   /** The access levels the provider offers; the manifest may ask for these only. */
   access: readonly CapabilityAccess[];
   /** Methods an app asking for `access: "read"` may use. */
   readMethods: readonly string[];
+  /** Methods an app asking for `access: "write"` may use besides, when the provider offers write; {@link DEFAULT_WRITE_METHODS} when absent. */
+  writeMethods?: readonly string[];
   /**
    * Paths no app may reach, each as its run of path segments, refused
    * wherever those segments appear together in the upstream path however
@@ -54,9 +177,44 @@ export interface ApiKeyCapability {
    * provider account would show one app another's work.
    */
   accountWidePaths: readonly (readonly string[])[];
-  /** The Authorization header value for a configured key. */
-  authorization(key: string): string;
+  smoke?: SmokeRequest;
 }
+
+/**
+ * An AI provider (OpenAI, OpenRouter, Workers AI): the AI proxy's table as
+ * a catalog entry. The app's path is joined onto `origin` and `basePath`
+ * (with `{SETTING}` placeholders filled from the Gateway's settings, each
+ * URL-encoded) and must be one of `inferenceRoutes` (a POST), unless both
+ * the operator (`AI_PROXY_EXTRA_ROUTES`) and the app's manifest (`ai.routes`)
+ * allow more (`extraRoutes`). `unstoredRoutes` get `store: false`.
+ * `normalize` names the one response rewrite the gateway has.
+ */
+export interface AiProviderCapability extends ProviderDetails {
+  mode: "ai";
+  label: string;
+  /** Where the key goes: bearer for the three today; Anthropic's `x-api-key` header is a `header` kind. */
+  auth: ApiKeyAuth;
+  docs: string;
+  setup?: string;
+  /** `https://api.openai.com`. */
+  origin: string;
+  /** Gateway settings the URL needs besides the key (`CLOUDFLARE_ACCOUNT_ID`). */
+  alsoNeeds?: readonly string[];
+  /** Joined onto the origin before every path: `/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai`. */
+  basePath?: string;
+  inferenceRoutes: readonly string[];
+  unstoredRoutes?: readonly string[];
+  extraRoutes?: boolean;
+  normalize?: "workers-ai";
+}
+
+/** What `access: "write"` adds to a provider's read methods when its entry doesn't say. */
+export const DEFAULT_WRITE_METHODS: readonly string[] = [
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+];
 
 /**
  * A capability the gateway performs itself, with no upstream host:
@@ -236,15 +394,94 @@ export interface OAuthClientCapability {
 
 export type Capability =
   | ApiKeyCapability
+  | AiProviderCapability
   | OAuthClientCapability
   | GatewayServiceCapability;
 
 export const CAPABILITIES = {
+  // The AI providers, in the order the AI proxy's table had them.
+  openai: {
+    mode: "ai",
+    label: "OpenAI",
+    description: "OpenAI's models: responses, chat, embeddings, audio, images.",
+    auth: { kind: "bearer", secret: "OPENAI_API_KEY" },
+    docs: "https://platform.openai.com/api-keys",
+    api: "https://platform.openai.com/docs/api-reference",
+    setup: "setup/openai.md",
+    origin: "https://api.openai.com",
+    inferenceRoutes: [
+      "/v1/responses",
+      "/v1/chat/completions",
+      "/v1/embeddings",
+      "/v1/audio/speech",
+      "/v1/audio/transcriptions",
+      "/v1/audio/translations",
+      "/v1/images/generations",
+      "/v1/images/edits",
+      "/v1/images/variations",
+    ],
+    unstoredRoutes: ["/v1/responses", "/v1/chat/completions"],
+    // More than inference needs both the operator (AI_PROXY_EXTRA_ROUTES)
+    // and the app's manifest (`ai.routes`): OpenAI paths only.
+    extraRoutes: true,
+    hint: "A secret key from the API keys page; the Gateway puts it on every call as a bearer token.",
+    verified: { on: "2026-10-25", how: "live" },
+  },
+  // OpenAI-compatible, in front of many model providers. Usage (with cost)
+  // comes back in the response, so apps can meter their own spend.
+  openrouter: {
+    mode: "ai",
+    label: "OpenRouter",
+    description: "One key for many models, through OpenAI's API shape.",
+    auth: { kind: "bearer", secret: "OPENROUTER_API_KEY" },
+    docs: "https://openrouter.ai/settings/keys",
+    api: "https://openrouter.ai/docs",
+    setup: "setup/openrouter.md",
+    origin: "https://openrouter.ai",
+    inferenceRoutes: [
+      "/api/v1/chat/completions",
+      "/api/v1/completions",
+      "/api/v1/responses",
+      "/api/v1/embeddings",
+    ],
+    hint: "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.",
+    verified: { on: "2026-10-25", how: "live" },
+  },
+  // Workers AI's OpenAI-compatible REST API, in the gateway's own account
+  // (`/v1/run/...` and the native `/run/<model>` stay closed). Its chat
+  // streams send all-digit tokens as JSON numbers, which the gateway turns
+  // back into strings (normalizeWorkersAiResponse).
+  "workers-ai": {
+    mode: "ai",
+    label: "Workers AI",
+    description: "Cloudflare's models, in the Gateway's own account.",
+    auth: { kind: "bearer", secret: "WORKERS_AI_API_TOKEN" },
+    // A token from the "Workers AI" template (Read and Edit).
+    docs: "https://dash.cloudflare.com/profile/api-tokens",
+    api: "https://developers.cloudflare.com/workers-ai/",
+    setup: "setup/workers-ai.md",
+    origin: "https://api.cloudflare.com",
+    alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID"],
+    basePath: "/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+    inferenceRoutes: [
+      "/v1/chat/completions",
+      "/v1/embeddings",
+      "/v1/responses",
+    ],
+    normalize: "workers-ai",
+    hint: "A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.",
+    verified: { on: "2026-10-25", how: "live" },
+  },
   dataforseo: {
     mode: "api_key",
     label: "DataForSEO",
-    secret: "DATAFORSEO_API_KEY",
+    description:
+      "SEO data: keyword metrics, live search results, domain rankings, backlinks.",
+    // The key is `login:password` as the dashboard shows them, or that pair
+    // already base64-encoded (what OpenSEO's DATAFORSEO_API_KEY has always held).
+    auth: { kind: "basic", secret: "DATAFORSEO_API_KEY", as: "pair" },
     docs: "https://app.dataforseo.com/api-access",
+    api: "https://docs.dataforseo.com/v3/",
     setup: "setup/dataforseo.md",
     // The sandbox answers like production, with made-up data and no charge.
     hosts: ["api.dataforseo.com", "sandbox.dataforseo.com"],
@@ -263,12 +500,34 @@ export const CAPABILITIES = {
       ["appendix", "user_data"],
       ["appendix", "webhook_resend"],
     ],
-    authorization: (key) => `Basic ${dataForSeoCredentials(key)}`,
+    hint: "The API login and password from API Access, as login:password (or that pair base64-encoded); the Gateway sends them as HTTP Basic.",
+    secrets: [
+      {
+        name: "DATAFORSEO_API_KEY",
+        hint: "login:password, or its base64; never the dashboard sign-in password.",
+      },
+    ],
+    // DataForSEO's envelope starts with the call's cost in USD.
+    cost: {
+      unit: "call",
+      responseField: "cost",
+      note: "A Google SERP $0.002 per 10 results; a Labs task $0.012 plus $0.00012 per item.",
+    },
+    smoke: {
+      method: "GET",
+      path: "/v3/appendix/user_data",
+      expect: [200],
+      free: true,
+      note: "Account-wide, so the Gateway refuses it for apps; run it from the person's terminal.",
+    },
+    example: "find keyword ideas for a page about running shoes",
+    verified: { on: "2026-10-25", how: "live" },
   },
   context: {
     mode: "api_key",
     label: "Context.dev",
-    secret: "CONTEXT_API_KEY",
+    description: "Scrapes and renders web pages, JavaScript included.",
+    auth: { kind: "bearer", secret: "CONTEXT_API_KEY" },
     docs: "https://context.dev/",
     setup: "setup/context.md",
     hosts: ["api.context.dev"],
@@ -276,7 +535,8 @@ export const CAPABILITIES = {
     // Scraping and rendering pages reads the web; nothing it owns changes.
     readMethods: ["GET", "POST"],
     accountWidePaths: [],
-    authorization: (key) => `Bearer ${key.trim()}`,
+    hint: "An API key from the Context.dev dashboard; the Gateway puts it on every call as a bearer token.",
+    verified: { on: "2026-10-25", how: "live" },
   },
   // Outbound mail through the gateway's own sender and transport
   // (apps/every-app-gateway/src/server/capabilities/email.ts): one sending
@@ -1274,6 +1534,9 @@ type CapabilityIdOf<Mode extends Capability["mode"]> = {
 /** Capabilities an app calls with `integrationFetch()`: providers whose key the gateway holds. */
 export type ApiKeyCapabilityId = CapabilityIdOf<"api_key">;
 
+/** The AI providers an app lists under `providers` and calls with `createGatewayFetch()`. */
+export type AiProviderId = CapabilityIdOf<"ai">;
+
 /** Capabilities the gateway performs itself, each with its SDK helper. */
 export type ServiceCapabilityId = CapabilityIdOf<"service">;
 
@@ -1292,27 +1555,54 @@ export type OAuthScopeSetName<Id extends OAuthClientCapabilityId> =
       : never
     : never;
 
-type SettingsOf<C> = C extends { secret: infer S extends string }
-  ? S
-  : C extends {
-        settings: readonly (infer S extends string)[];
-        optionalSettings: readonly (infer O extends string)[];
-      }
-    ? S | O
-    : C extends { secrets: infer S }
+/** The Gateway settings an `auth` block names: the key, and a Basic username held as a setting. */
+type AuthSettingsOf<A> =
+  | (A extends { secret: infer S extends string } ? S : never)
+  | (A extends { username: { secret: infer U extends string } } ? U : never);
+
+type SettingsOf<C> = C extends {
+  settings: readonly (infer S extends string)[];
+  optionalSettings: readonly (infer O extends string)[];
+}
+  ? S | O
+  : C extends { secrets: infer S; token: unknown }
+    ?
+        | (S[keyof S] & string)
+        | (C extends { hostSetting: infer H extends string } ? H : never)
+    : C extends { auth: infer A }
       ?
-          | (S[keyof S] & string)
-          | (C extends { hostSetting: infer H extends string } ? H : never)
+          | AuthSettingsOf<A>
+          | (C extends { alsoNeeds: readonly (infer N extends string)[] }
+              ? N
+              : never)
       : never;
 
 /** The gateway settings capabilities read: keys, clients, senders, transports. */
 export type CapabilitySecret = SettingsOf<(typeof CAPABILITIES)[CapabilityId]>;
 
+/** The Gateway settings an API-key or AI provider's `auth` names: the key first, then a Basic username held as a setting. */
+export function authSettingNames(auth: ApiKeyAuth): string[] {
+  const names = [auth.secret];
+  if (
+    auth.kind === "basic" &&
+    auth.as === "password" &&
+    typeof auth.user === "object"
+  ) {
+    names.push(auth.user.secret);
+  }
+  return names;
+}
+
 /** Every gateway setting `capability` reads, the ones it needs first. */
 export function capabilitySettings(capability: Capability): readonly string[] {
   switch (capability.mode) {
     case "api_key":
-      return [capability.secret];
+      return [
+        ...authSettingNames(capability.auth),
+        ...(capability.hostSetting ? [capability.hostSetting] : []),
+      ];
+    case "ai":
+      return [capability.auth.secret, ...(capability.alsoNeeds ?? [])];
     case "service":
       return [...capability.settings, ...capability.optionalSettings];
     case "oauth_client":
@@ -1332,6 +1622,134 @@ export function isCapabilityId(value: unknown): value is CapabilityId {
   return typeof value === "string" && Object.hasOwn(CAPABILITIES, value);
 }
 
+/**
+ * Where a provider id is looked up: the built-in catalog alone
+ * ({@link CATALOG}), or the catalog and one gateway's registered rows
+ * (`providerRegistry()` in ./providerRegistry.ts). Everything that brokers,
+ * validates or describes a provider takes one, so a registered row is a
+ * provider wherever a catalog entry is.
+ */
+export interface CapabilityLookup {
+  get(id: string): Capability | undefined;
+  /** Every id, in order: the catalog's, then a gateway's rows. */
+  ids(): readonly string[];
+}
+
+/** The built-in catalog as a lookup: what every surface reads without a gateway's rows. */
+export const CATALOG: CapabilityLookup = {
+  get: (id) => (isCapabilityId(id) ? CAPABILITIES[id] : undefined),
+  ids: () => CAPABILITY_IDS,
+};
+
+/** The ids an app may list under `capabilities`: every provider but the AI ones, which go under `providers`. */
+export function capabilityIdsOf(lookup: CapabilityLookup): string[] {
+  return lookup.ids().filter((id) => lookup.get(id)?.mode !== "ai");
+}
+
+/**
+ * The settings `capability` needs on a request, read from the Gateway's
+ * settings (or `.dev.vars`): the headers to set and the query parameters
+ * to add, or null while any setting its `auth` names is unset or blank.
+ * Values are trimmed. A Basic key without a username is `login:password`
+ * to encode, or taken as already encoded when it holds no colon.
+ */
+export function authorizationFor(
+  capability: ApiKeyCapability | AiProviderCapability,
+  settings: CapabilitySettings,
+): Authorization | null {
+  return authorizationOf(capability.auth, settings);
+}
+
+/** What {@link authorizationFor} puts on a request. */
+export interface Authorization {
+  headers: Record<string, string>;
+  query: Record<string, string>;
+}
+
+/** {@link authorizationFor} for an `auth` block alone (the SDK's AI fallback holds the block, not the entry). */
+export function authorizationOf(
+  auth: ApiKeyAuth,
+  settings: CapabilitySettings,
+): Authorization | null {
+  const key = settingValue(settings[auth.secret]);
+  if (!key) return null;
+  switch (auth.kind) {
+    case "bearer":
+      return {
+        headers: { authorization: `${auth.scheme ?? "Bearer"} ${key}` },
+        query: {},
+      };
+    case "header":
+      return {
+        headers: { [auth.header.toLowerCase()]: `${auth.prefix ?? ""}${key}` },
+        query: {},
+      };
+    case "query":
+      return { headers: {}, query: { [auth.param]: key } };
+    case "basic": {
+      const basic = (credentials: string) => ({
+        headers: { authorization: `Basic ${credentials}` },
+        query: {},
+      });
+      if (auth.as === "pair") return basic(basicCredentials(key));
+      if (auth.as === "username") return basic(base64Utf8(`${key}:`));
+      const user =
+        typeof auth.user === "string"
+          ? auth.user
+          : settingValue(settings[auth.user.secret]);
+      if (!user) return null;
+      return basic(base64Utf8(`${user}:${key}`));
+    }
+  }
+}
+
+function settingValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * The host a provider's `hostSetting` names, from its value: a bare host
+ * or an https origin with nothing else (no path, port, query, userinfo),
+ * lowercased; null when unset or not of that shape. The host rules a row
+ * must pass apply to it when the registry reads the row.
+ */
+export function hostSettingValue(value: unknown): string | null {
+  const text = settingValue(value);
+  if (!text) return null;
+  let url: URL;
+  try {
+    url = new URL(
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`,
+    );
+  } catch {
+    return null;
+  }
+  const bare =
+    url.protocol === "https:" &&
+    url.pathname === "/" &&
+    !url.search &&
+    !url.hash &&
+    !url.username &&
+    !url.password &&
+    !url.port &&
+    !text.endsWith("/");
+  return bare ? url.hostname.toLowerCase() : null;
+}
+
+/**
+ * The hosts an API-key provider's key may be sent to: the entry's own,
+ * and the one its `hostSetting` names when that is set and well-formed.
+ */
+export function apiKeyHosts(
+  capability: ApiKeyCapability,
+  settings?: CapabilitySettings,
+): string[] {
+  const named = capability.hostSetting
+    ? hostSettingValue(settings?.[capability.hostSetting])
+    : null;
+  return [...capability.hosts, ...(named ? [named] : [])];
+}
+
 /** Where AppGateway serves capability calls. */
 export const INTEGRATION_PROXY_PREFIX = "/api/integrations";
 
@@ -1341,7 +1759,7 @@ export const INTEGRATION_PROXY_PREFIX = "/api/integrations";
  * a provider with several API hosts needs no other channel.
  */
 export function integrationProxyPath(
-  id: ApiKeyCapabilityId | OAuthClientCapabilityId,
+  id: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {}),
   upstream: URL,
 ): string {
   return `${INTEGRATION_PROXY_PREFIX}/${id}/${upstream.host}${upstream.pathname}${upstream.search}`;
@@ -1358,45 +1776,59 @@ export function serviceRoutePath(
 /** What an AppGateway capability path names. */
 export type IntegrationProxyRoute =
   /** A call the gateway forwards to the provider's `upstream` with its key. */
-  | { kind: "api_key"; id: ApiKeyCapabilityId; upstream: URL }
+  | { kind: "api_key"; id: string; capability: ApiKeyCapability; upstream: URL }
   /** A call to one of an OAuth client's token endpoints, with its rule. */
   | {
       kind: "oauth_client";
-      id: OAuthClientCapabilityId;
+      id: string;
+      capability: OAuthClientCapability;
       upstream: URL;
       endpoint: OAuthTokenEndpoint;
     }
   /** A call to one of the routes a service capability declares. */
-  | { kind: "service"; id: ServiceCapabilityId; route: string };
+  | {
+      kind: "service";
+      id: ServiceCapabilityId;
+      capability: GatewayServiceCapability;
+      route: string;
+    };
 
 /** Gateway settings by name: the gateway's env, or `.dev.vars` in dev. */
 export type CapabilitySettings = Readonly<Record<string, unknown>>;
 
 /**
  * The capability call an AppGateway path names, or null when the path names
- * an unknown capability, a host outside the provider's, a path that could
- * leave that host, a path that isn't one of an OAuth client's token
- * endpoints, or a route a service capability doesn't declare. `settings`
- * resolves an OAuth client's `hostSetting` (Mastodon's instance).
+ * an unknown capability (or an AI provider, which has its own route), a
+ * host outside the provider's, a path that could leave that host, a path
+ * that isn't one of an OAuth client's token endpoints, or a route a service
+ * capability doesn't declare. `settings` resolves an OAuth client's
+ * `hostSetting` (Mastodon's instance); `lookup` is where the id is found,
+ * the catalog alone by default.
  */
 export function parseIntegrationProxyPath(
   pathname: string,
   search: string,
   settings?: CapabilitySettings,
+  lookup: CapabilityLookup = CATALOG,
 ): IntegrationProxyRoute | null {
   const match = /^\/api\/integrations\/([a-z][a-z0-9-]*)\/([^/]+)(\/.*)?$/.exec(
     pathname,
   );
   if (!match) return null;
-  const [, id, host = "", path] = match;
-  if (!isCapabilityId(id)) return null;
-  const capability: Capability = CAPABILITIES[id];
+  const [, id = "", host = "", path] = match;
+  const capability = lookup.get(id);
+  if (!capability) return null;
   if (capability.mode === "service") {
     // A route is one segment; nothing may follow it.
     if (path !== undefined || !Object.hasOwn(capability.routes, host)) {
       return null;
     }
-    return { kind: "service", id: id as ServiceCapabilityId, route: host };
+    return {
+      kind: "service",
+      id: id as ServiceCapabilityId,
+      capability,
+      route: host,
+    };
   }
   if (capability.mode === "oauth_client") {
     const upstream = oauthClientHosts(capability, settings).includes(host)
@@ -1405,18 +1837,14 @@ export function parseIntegrationProxyPath(
     const endpoint =
       upstream && tokenEndpointFor(capability, upstream, settings);
     if (!upstream || !endpoint) return null;
-    return {
-      kind: "oauth_client",
-      id: id as OAuthClientCapabilityId,
-      upstream,
-      endpoint,
-    };
+    return { kind: "oauth_client", id, capability, upstream, endpoint };
   }
-  const upstream = (capability.hosts as readonly string[]).includes(host)
+  if (capability.mode !== "api_key") return null;
+  const upstream = apiKeyHosts(capability, settings).includes(host)
     ? httpsUpstream(host, path ?? "/", search)
     : null;
   if (!upstream) return null;
-  return { kind: "api_key", id: id as ApiKeyCapabilityId, upstream };
+  return { kind: "api_key", id, capability, upstream };
 }
 
 /** `https://<host><path><search>`, or null for a path that could leave `host`. */
@@ -1603,11 +2031,12 @@ function decodePath(pathname: string): string | null {
 }
 
 /**
- * DataForSEO uses Basic auth with the API login and password. The key may be
- * `login:password` as the dashboard shows them, or already base64-encoded
- * (what OpenSEO's DATAFORSEO_API_KEY has always held).
+ * A Basic credential held as one setting: `login:password` as a dashboard
+ * shows them, or the pair already base64-encoded (DataForSEO's rule, and
+ * what OpenSEO's DATAFORSEO_API_KEY has always held). A base64 string never
+ * holds a colon, so the colon decides.
  */
-function dataForSeoCredentials(key: string): string {
+function basicCredentials(key: string): string {
   const trimmed = key.trim();
   return trimmed.includes(":") ? base64Utf8(trimmed) : trimmed;
 }

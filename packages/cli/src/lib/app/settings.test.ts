@@ -256,8 +256,11 @@ describe("the setup guides the registries name", () => {
     const skill = path.resolve(__dirname, "../../../skills/everyapp");
     const everything = {
       providers: Object.keys(DEV_AI_PROVIDERS),
+      // Every capability; the AI providers are listed under `providers`.
       capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES).map(([id, capability]) => [id, { access: capability.access[0] }]),
+        Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
+          capability.mode === "ai" ? [] : [[id, { access: capability.access[0] }]],
+        ),
       ),
       ai: { routes: ["/v1/files"] },
     };

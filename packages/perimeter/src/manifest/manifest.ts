@@ -14,10 +14,10 @@
  */
 import { z } from "zod";
 import {
-  CAPABILITIES,
+  CATALOG,
+  capabilityIdsOf,
   EMAIL_SET_COMMAND,
   gatewaySettingOwner,
-  isCapabilityId,
   isReservedAppSecretName,
   isRemoteMcpSecretName,
   isSettableGatewaySetting,
@@ -25,7 +25,7 @@ import {
   RESERVED_APP_SECRET_NAMES_TEXT,
   secretEntries,
   secretNames,
-  type CapabilityId,
+  type CapabilityLookup,
   type SettingNeedFields,
 } from "@every-app/sdk/internal";
 import { matchPublicRoute } from "../publicRoutes";
@@ -336,14 +336,23 @@ export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
  * What one capability's manifest entry takes: `access`, and its need
  * (`why`, `docs`, `optional`, `anyOf`). Strict:
  * anything else is unknown here; an installation's email senders aren't
- * the manifest's (`everyapp email set`), and `CapabilitiesSchemaStrict`
- * names the command for a manifest that still lists them.
+ * the manifest's (`everyapp email set`), and the strict capabilities
+ * schema names the command for a manifest that still lists them.
  *
  * An OAuth client with a scope policy also takes `scopes`, one or more of
  * its set names, each once; every other capability refuses the field.
+ * `lookup` is where `id` is found: the catalog, or a gateway's registry;
+ * an id it doesn't have, or an AI provider's, is a programming error here
+ * (the capabilities schema checks ids first).
  */
-export function capabilityEntrySchema(id: CapabilityId) {
-  const capability = CAPABILITIES[id];
+export function capabilityEntrySchema(
+  id: string,
+  lookup: CapabilityLookup = CATALOG,
+) {
+  const capability = lookup.get(id);
+  if (!capability || capability.mode === "ai") {
+    throw new Error(`capabilityEntrySchema: ${id} is not a capability`);
+  }
   const access = z
     .enum(["read", "write"])
     .refine(
@@ -390,40 +399,85 @@ const CapabilitiesSchema = z
     for (const id of Object.keys(capabilities)) addProviderNameIssue(id, ctx);
   }, everyKey);
 
-const CapabilitiesSchemaStrict = z
-  .record(z.string(), z.unknown())
-  .superRefine((capabilities, ctx) => {
-    for (const [id, entry] of Object.entries(capabilities)) {
-      if (addProviderNameIssue(id, ctx)) continue;
-      if (!isCapabilityId(id)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [id],
-          message: `unknown capability (the gateway offers: ${Object.keys(CAPABILITIES).join(", ")})`,
-        });
-        continue;
+/**
+ * The entry of a capability this validator can't look up (a provider
+ * registered on a gateway the CLI hasn't asked yet): `access` and its
+ * need, no scope sets, nothing else. `everyapp deploy` checks the id
+ * against the gateway's registry once it is connected.
+ */
+const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
+  scopes: z
+    .undefined({
+      error:
+        "a provider registered on the gateway takes no scopes; list it as { access: ..., why }",
+    })
+    .optional(),
+}).strict();
+
+/** What the strict validator does with a capability id its lookup doesn't have. */
+export type UnknownCapabilities = "refuse" | "accept";
+
+/** The strict `capabilities` schema against a lookup: every id a capability it has, or (`accept`) a well-formed id it doesn't. */
+function capabilitiesSchemaStrict(
+  lookup: CapabilityLookup,
+  unknown: UnknownCapabilities,
+) {
+  return z
+    .record(z.string(), z.unknown())
+    .superRefine((capabilities, ctx) => {
+      for (const [id, entry] of Object.entries(capabilities)) {
+        if (addProviderNameIssue(id, ctx)) continue;
+        const capability = lookup.get(id);
+        if (capability?.mode === "ai") {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [id],
+            message: `${id} is an AI provider: list it under providers, not capabilities`,
+          });
+          continue;
+        }
+        if (!capability) {
+          if (unknown === "refuse") {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [id],
+              message: `unknown capability (the gateway offers: ${capabilityIdsOf(lookup).join(", ")})`,
+            });
+            continue;
+          }
+          const parsed = UnknownCapabilityEntrySchema.safeParse(entry);
+          if (parsed.success) continue;
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ ...issue, path: [id, ...issue.path] });
+          }
+          continue;
+        }
+        if (
+          id === "email" &&
+          entry !== null &&
+          typeof entry === "object" &&
+          "senders" in entry
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [id, "senders"],
+            message: `senders moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --sender <pattern>\` in the app's directory after its first deploy`,
+          });
+          continue;
+        }
+        const parsed = capabilityEntrySchema(id, lookup).safeParse(entry);
+        if (parsed.success) continue;
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({ ...issue, path: [id, ...issue.path] });
+        }
       }
-      if (
-        id === "email" &&
-        entry !== null &&
-        typeof entry === "object" &&
-        "senders" in entry
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [id, "senders"],
-          message: `senders moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --sender <pattern>\` in the app's directory after its first deploy`,
-        });
-        continue;
-      }
-      const parsed = capabilityEntrySchema(id).safeParse(entry);
-      if (parsed.success) continue;
-      for (const issue of parsed.error.issues) {
-        ctx.addIssue({ ...issue, path: [id, ...issue.path] });
-      }
-    }
-  }, everyKey)
-  .transform((capabilities) => capabilities as Record<string, CapabilityEntry>);
+    }, everyKey)
+    .transform(
+      (capabilities) => capabilities as Record<string, CapabilityEntry>,
+    );
+}
+
+const CapabilitiesSchemaStrict = capabilitiesSchemaStrict(CATALOG, "refuse");
 
 const INBOUND_MOVED = `inbound is true (the Worker exports an email() handler) or left out; the addresses moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --inbound <address>\` in the app's directory after its first deploy`;
 
@@ -768,27 +822,47 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
     )
     .optional(),
 }).strict();
-export const ManifestSchemaStrict = ManifestSchema.extend({
-  resources: ResourcesSchemaStrict.optional(),
-  providers: ProvidersSchemaStrict.optional(),
-  workers: z
-    .array(
-      HelperWorkerSchema.extend({
-        binding: BindingNameSchema.optional(),
-        limits: WorkerLimitsSchema.strict().optional(),
-      }).strict(),
-    )
-    .optional(),
-  public: z.array(PublicRouteSchemaStrict).optional(),
-  scopes: ScopesSchemaStrict.optional(),
-  ai: AiPolicySchema.strict().optional(),
-  capabilities: CapabilitiesSchemaStrict.optional(),
-  secrets: AppSecretsSchemaStrict.optional(),
-  email: EmailSchemaStrict.optional(),
-  database: DatabaseSchema.strict().optional(),
-  limits: WorkerLimitsSchema.strict().optional(),
-  mcp: McpSchema.strict().optional(),
-}).strict();
+/** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
+export interface StrictManifestOptions {
+  /** Where capability ids are found: the catalog alone by default, or a gateway's registry. */
+  capabilities?: CapabilityLookup;
+  /** What to do with an id the lookup doesn't have: refuse it (the default), or accept a well-formed entry for the gateway to check. */
+  unknownCapabilities?: UnknownCapabilities;
+}
+
+function manifestSchemaStrict(options: StrictManifestOptions = {}) {
+  const capabilities =
+    options.capabilities === undefined &&
+    (options.unknownCapabilities ?? "refuse") === "refuse"
+      ? CapabilitiesSchemaStrict
+      : capabilitiesSchemaStrict(
+          options.capabilities ?? CATALOG,
+          options.unknownCapabilities ?? "refuse",
+        );
+  return ManifestSchema.extend({
+    resources: ResourcesSchemaStrict.optional(),
+    providers: ProvidersSchemaStrict.optional(),
+    workers: z
+      .array(
+        HelperWorkerSchema.extend({
+          binding: BindingNameSchema.optional(),
+          limits: WorkerLimitsSchema.strict().optional(),
+        }).strict(),
+      )
+      .optional(),
+    public: z.array(PublicRouteSchemaStrict).optional(),
+    scopes: ScopesSchemaStrict.optional(),
+    ai: AiPolicySchema.strict().optional(),
+    capabilities: capabilities.optional(),
+    secrets: AppSecretsSchemaStrict.optional(),
+    email: EmailSchemaStrict.optional(),
+    database: DatabaseSchema.strict().optional(),
+    limits: WorkerLimitsSchema.strict().optional(),
+    mcp: McpSchema.strict().optional(),
+  }).strict();
+}
+
+export const ManifestSchemaStrict = manifestSchemaStrict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 
 /** Reserved internal namespace. Nothing under it may ever be public. */
@@ -851,8 +925,11 @@ export function validateManifest(input: unknown): Manifest {
  * while gateway registration uses {@link validateManifest} and remains
  * tolerant of additive fields from newer CLIs.
  */
-export function validateManifestStrict(input: unknown): EveryAppManifest {
-  const parsed = ManifestSchemaStrict.safeParse(input);
+export function validateManifestStrict(
+  input: unknown,
+  options: StrictManifestOptions = {},
+): EveryAppManifest {
+  const parsed = manifestSchemaStrict(options).safeParse(input);
   if (!parsed.success) {
     throw new ManifestError(
       `Invalid everyapp.config: ${describeIssues(parsed.error.issues)}`,

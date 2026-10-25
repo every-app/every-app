@@ -2,16 +2,30 @@
  * The gateway's AI providers as the SDK's local-dev fallback reaches them:
  * with no gateway binding, a developer's own key, under the name of the
  * gateway secret that holds it, goes to the provider directly. Deployed
- * apps always go through the gateway, which holds the real keys.
+ * apps always go through the gateway, which holds the real keys. The
+ * providers themselves are the catalog's `ai` entries (./capabilities.ts);
+ * this derives the fallback's view of each, and holds the one response
+ * rewrite the gateway has (Workers AI's numeric tokens).
  */
+import {
+  CAPABILITIES,
+  CAPABILITY_IDS,
+  type AiProviderCapability,
+  type AiProviderId,
+  type ApiKeyAuth,
+  type CapabilitySettings,
+} from "./capabilities.js";
+
 export interface DevAiProviderSpec {
   origin: string;
   /** The gateway secret holding the provider key; in local dev, the `.dev.vars` name. */
   keyEnv: string;
+  /** Where the key goes on a request (`authorizationOf`). */
+  auth: ApiKeyAuth;
   /** Where an operator gets the key: the provider's API keys page. */
   docs: string;
   /** The everyapp skill's setup guide for it, relative to the skill (`setup/openai.md`). */
-  setup: string;
+  setup?: string;
   /** Gateway settings the provider's URL needs besides the key, under the same names. */
   alsoNeeds?: readonly string[];
   /** The path every provider path is joined onto, from those settings. */
@@ -20,36 +34,41 @@ export interface DevAiProviderSpec {
   normalizeResponse?: (path: string, response: Response) => Response;
 }
 
-export type DevAiProvider = "openai" | "openrouter" | "workers-ai";
+export type DevAiProvider = AiProviderId;
+
+/** The fallback's view of one `ai` catalog entry. */
+export function devAiProviderSpec(
+  capability: AiProviderCapability,
+): DevAiProviderSpec {
+  const { basePath, normalize } = capability;
+  return {
+    origin: capability.origin,
+    keyEnv: capability.auth.secret,
+    auth: capability.auth,
+    docs: capability.docs,
+    ...(capability.setup === undefined ? {} : { setup: capability.setup }),
+    ...(capability.alsoNeeds === undefined
+      ? {}
+      : { alsoNeeds: capability.alsoNeeds }),
+    ...(basePath === undefined
+      ? {}
+      : { basePath: (settings) => fillBasePath(basePath, settings) ?? "" }),
+    ...(normalize === "workers-ai"
+      ? { normalizeResponse: normalizeWorkersAiResponse }
+      : {}),
+  };
+}
 
 export const DEV_AI_PROVIDERS: Readonly<
   Record<DevAiProvider, DevAiProviderSpec>
-> = {
-  openai: {
-    origin: "https://api.openai.com",
-    keyEnv: "OPENAI_API_KEY",
-    docs: "https://platform.openai.com/api-keys",
-    setup: "setup/openai.md",
-  },
-  openrouter: {
-    origin: "https://openrouter.ai",
-    keyEnv: "OPENROUTER_API_KEY",
-    docs: "https://openrouter.ai/settings/keys",
-    setup: "setup/openrouter.md",
-  },
-  // Workers AI's OpenAI-compatible endpoints, under the account's path.
-  "workers-ai": {
-    origin: "https://api.cloudflare.com",
-    keyEnv: "WORKERS_AI_API_TOKEN",
-    // A token from the "Workers AI" template (Read and Edit).
-    docs: "https://dash.cloudflare.com/profile/api-tokens",
-    setup: "setup/workers-ai.md",
-    alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID"],
-    basePath: (settings) =>
-      workersAiBasePath(settings["CLOUDFLARE_ACCOUNT_ID"] ?? ""),
-    normalizeResponse: normalizeWorkersAiResponse,
-  },
-};
+> = Object.fromEntries(
+  CAPABILITY_IDS.flatMap((id) => {
+    const capability = CAPABILITIES[id];
+    return capability.mode === "ai"
+      ? [[id, devAiProviderSpec(capability)] as const]
+      : [];
+  }),
+) as Record<DevAiProvider, DevAiProviderSpec>;
 
 export function devAiProvider(name: string): DevAiProviderSpec | undefined {
   return Object.hasOwn(DEV_AI_PROVIDERS, name)
@@ -60,6 +79,45 @@ export function devAiProvider(name: string): DevAiProviderSpec | undefined {
 /** Every setting a provider needs, its key first: the names `.dev.vars` and the gateway use. */
 export function aiProviderSettings(spec: DevAiProviderSpec): string[] {
   return [spec.keyEnv, ...(spec.alsoNeeds ?? [])];
+}
+
+/**
+ * An `ai` entry's `basePath` with each `{SETTING}` filled from the
+ * settings, URL-encoded (`/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai`
+ * with `acc 1` makes `/client/v4/accounts/acc%201/ai`), or null while a
+ * named setting is unset or blank.
+ */
+export function fillBasePath(
+  template: string,
+  settings: CapabilitySettings,
+): string | null {
+  let missing = false;
+  const filled = template.replace(
+    /\{([A-Z][A-Z0-9_]*)\}/g,
+    (_, name: string) => {
+      const value = settings[name];
+      if (typeof value !== "string" || !value.trim()) {
+        missing = true;
+        return "";
+      }
+      return encodeURIComponent(value.trim());
+    },
+  );
+  return missing ? null : filled;
+}
+
+/**
+ * The base URL an `ai` entry's calls are joined onto, from the Gateway's
+ * settings: its origin and filled `basePath`, or null while a setting the
+ * path needs is unset.
+ */
+export function aiBaseUrl(
+  capability: AiProviderCapability,
+  settings: CapabilitySettings,
+): string | null {
+  if (capability.basePath === undefined) return capability.origin;
+  const path = fillBasePath(capability.basePath, settings);
+  return path === null ? null : `${capability.origin}${path}`;
 }
 
 /** The account-scoped base path of Workers AI's REST API. */
