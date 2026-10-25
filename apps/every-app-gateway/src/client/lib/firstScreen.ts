@@ -30,7 +30,7 @@ export const FIRST_SCREEN = {
   buildDialog: {
     title: "Build your own app",
     description:
-      "Paste this into Claude Code, Codex or Cursor, opened where you keep your projects.",
+      "Paste this into Claude Code, Codex or Cursor, opened in your every-app folder.",
     copyButton: "Copy prompt",
     docsLinkLabel: "Create an app, in the docs",
   },

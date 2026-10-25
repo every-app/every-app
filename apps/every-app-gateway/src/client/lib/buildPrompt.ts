@@ -21,6 +21,6 @@ Read ${BUILD_DOCS.llms} first, then ${BUILD_DOCS.build} (the build-every-app ski
 
 Before any code, interview me one short question at a time: what the app is for, who uses it, what it stores, what runs on its own (a schedule, incoming email, an agent), and what stays private. Then describe the app back in a few sentences and wait for my yes.
 
-Then run \`pnpm everyapp create <name>\` from a folder of mine outside the every-app checkout, so the app is its own repository linked to the checkout; build it there, run \`pnpm dev\`, tell me the address, and change it as I try it.
+Then run \`pnpm everyapp create ../<name>\` from my every-app folder, so the app is its own repository beside the checkout; build it there, run \`pnpm dev\`, tell me the address, and change it as I try it.
 
 Never build a login page or accounts; the Gateway signs people in. Read who the person is through the SDK and scope every query by user.id. Deploy with \`pnpm everyapp deploy\` only when I say so. Always \`pnpm everyapp\`, never npx.`;
