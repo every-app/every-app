@@ -109,6 +109,12 @@ export const ResourcesSchema = z
      * create (Workers Paid).
      */
     browser: z.array(z.string()).optional(),
+    /**
+     * Cloudflare Images, by binding (`["IMAGES"]`), which every one of the
+     * app's Workers binds: resizing, transforming and reading images in the
+     * Worker, nothing to create.
+     */
+    images: z.array(z.string()).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -867,6 +873,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   r2: z.array(BindingNameSchema).optional(),
   ai: z.array(BindingNameSchema).optional(),
   browser: z.array(BindingNameSchema).optional(),
+  images: z.array(BindingNameSchema).optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -1130,6 +1137,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
+    ...(manifest.resources?.images ?? []),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1157,6 +1165,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
     ...(manifest.resources?.ai ?? []),
     ...(manifest.resources?.browser ?? []),
+    ...(manifest.resources?.images ?? []),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1171,8 +1180,8 @@ export function bindingNamesOf(
  * refuses R2 bindings. Nor Workers AI: the binding bills whatever account
  * the Worker runs in, the platform's here, with no Gateway budget (the
  * `workers-ai` provider is the brokered path). Nor Browser Rendering: the
- * browser time bills the platform's account the same way. Nor inbound
- * mail: the platform's zones aren't an organization's to route. Nor secrets
+ * browser time bills the platform's account the same way, nor Images, whose
+ * transformations do too. Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets
  * of its own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID
  * only, and nothing sets another.
  */
@@ -1201,6 +1210,11 @@ export function manifestTierProblems(
   if (manifest.resources?.browser?.length) {
     problems.push(
       "resources.browser: Browser Rendering isn't available to apps in a dispatch namespace (it bills the platform's account)",
+    );
+  }
+  if (manifest.resources?.images?.length) {
+    problems.push(
+      "resources.images: the Images binding isn't available to apps in a dispatch namespace (it bills the platform's account)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);

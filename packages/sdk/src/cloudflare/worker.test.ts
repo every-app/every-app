@@ -21,6 +21,7 @@ import {
   sentinelDeployTarget,
   type AiBinding,
   type BrowserBinding,
+  type ImagesBinding,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -1773,6 +1774,95 @@ describe("Browser Rendering (resources.browser)", () => {
     expect(
       Object.values(config.env as Record<string, { type: string }>).filter(
         (binding) => binding.type === "browser",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("Images (resources.images)", () => {
+  const gallery = {
+    id: "gallery",
+    resources: { d1: ["DB"], images: ["IMAGES"] },
+    workers: [{ name: "resize", binding: "RESIZE" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: gallery,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _resize, ...resize } = everyAppAuxiliaryWorker({
+      manifest: gallery,
+      worker: "resize",
+      entrypoint: "/app/src/resize.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, resize };
+  };
+
+  it("binds Images on the app's Worker and every helper, with nothing to install", () => {
+    const { app, resize } = build("production");
+    for (const env of [app.env, resize.env] as Record<string, unknown>[]) {
+      expect(env["IMAGES"]).toEqual({ type: "images" });
+    }
+    // Account-wide: no placeholder for the deploy to rewrite.
+    expect(sentinelDeployTarget(gallery).resources).not.toHaveProperty(
+      "images",
+    );
+  });
+
+  it("binds the same shape in development, where Miniflare answers it locally", () => {
+    const { app, resize } = build("development");
+    for (const env of [app.env, resize.env] as Record<string, unknown>[]) {
+      expect(env["IMAGES"]).toEqual({ type: "images" });
+    }
+  });
+
+  it("binds several names when the manifest lists several", () => {
+    const { env } = everyAppWorker({
+      manifest: { id: "gallery", resources: { images: ["IMAGES", "THUMBS"] } },
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(env).toMatchObject({
+      IMAGES: { type: "images" },
+      THUMBS: { type: "images" },
+    });
+  });
+
+  it("types each binding as Images, which cf turns into the runtime's ImagesBinding", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.IMAGES).toEqualTypeOf<ImagesBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "gallery",
+          resources: { kv: ["IMAGES"], images: ["IMAGES"] },
+        },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow("images: IMAGES reuses a binding name the Worker already has.");
+  });
+
+  it("leaves a manifest without resources.images with no images binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "images",
       ),
     ).toEqual([]);
   });

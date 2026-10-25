@@ -632,3 +632,67 @@ describe("with resources.browser", () => {
     ]);
   });
 });
+
+describe("with resources.images", () => {
+  const WITH_IMAGES: InstallTarget = { ...INPUTS, declared: { images: ["IMAGES"] } };
+
+  it("accepts the Images binding everyAppWorker() builds, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, images: ["IMAGES"] },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_IMAGES);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      expect(config["env"]["IMAGES"]).toEqual({ type: "images" });
+    }
+    const inputs = { ...WITH_IMAGES, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    // The same build, with the manifest's declaration gone: cloudflare.config.ts
+    // can't add Images transformations on its own.
+    const undeclared = { ...inputs, declared: undefined };
+    const problem =
+      "IMAGES is an Images binding, which everyapp.config.ts doesn't declare; list it in resources.images";
+    expect(appPolicyProblems(app, undeclared)).toEqual([problem]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", undeclared)).toEqual([problem]);
+  });
+
+  it("refuses Images the manifest doesn't declare", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "images" };
+    const problem =
+      "EXTRA is an Images binding, which everyapp.config.ts doesn't declare; list it in resources.images";
+    expect(appPolicyProblems(config, INPUTS)).toEqual([problem]);
+    expect(appPolicyProblems(config, { ...INPUTS, declared: { images: [] } })).toEqual([problem]);
+  });
+
+  it("refuses Images under a name resources.images doesn't list", async () => {
+    const config = await builtConfig();
+    config["env"].IMAGES = { type: "images" };
+    config["env"].MORE_IMAGES = { type: "images" };
+    expect(appPolicyProblems(config, WITH_IMAGES)).toEqual([
+      "MORE_IMAGES is an Images binding, which isn't one of the app's in resources.images (IMAGES)",
+    ]);
+  });
+});

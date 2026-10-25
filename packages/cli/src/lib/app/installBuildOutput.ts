@@ -48,7 +48,7 @@ export interface InstallTarget extends EveryAppDeployTarget {
   helperWorkers?: readonly string[];
   /**
    * The manifest's `resources` as everyapp.config.ts declares them. The
-   * policy lets a binding the deploy provisions nothing for (Workers AI, Browser Rendering)
+   * policy lets a binding the deploy provisions nothing for (Workers AI, Browser Rendering, Images)
    * through only under a name declared here: nothing else says the app
    * asked for it.
    */

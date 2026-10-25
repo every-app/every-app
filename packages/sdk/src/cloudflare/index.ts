@@ -45,6 +45,7 @@ export {
   type EveryAppWorkerReference,
   type GatewayBinding,
   type HyperdriveBinding,
+  type ImagesBinding,
   type KvBinding,
   type SecretBinding,
   type ServiceBinding,

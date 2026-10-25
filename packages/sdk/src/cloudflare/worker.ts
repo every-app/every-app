@@ -56,6 +56,12 @@ export interface EveryAppWorkerManifest {
      * development (see {@link BrowserBinding}).
      */
     browser?: readonly string[];
+    /**
+     * Cloudflare Images, by binding (`["IMAGES"]`), which every one of the
+     * app's Workers binds: nothing to create. Local in development (see
+     * {@link ImagesBinding}).
+     */
+    images?: readonly string[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -200,6 +206,16 @@ export interface BrowserBinding {
   type: "browser";
 }
 /**
+ * Cloudflare Images (`env.IMAGES.input(stream).transform(…).output(…)`,
+ * `env.IMAGES.info(stream)`), which cf types as the runtime's
+ * `ImagesBinding`. Deployed, it runs on Cloudflare and bills the account's
+ * Images transformations. In development Miniflare answers it locally with
+ * sharp, which ships with it.
+ */
+export interface ImagesBinding {
+  type: "images";
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -254,6 +270,7 @@ export type EveryAppBinding =
   | HyperdriveBinding
   | AiBinding
   | BrowserBinding
+  | ImagesBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -284,6 +301,11 @@ type AiNames<M> = M extends { resources: { ai: readonly (infer B)[] } }
   : never;
 type BrowserNames<M> = M extends {
   resources: { browser: readonly (infer B)[] };
+}
+  ? B & string
+  : never;
+type ImagesNames<M> = M extends {
+  resources: { images: readonly (infer B)[] };
 }
   ? B & string
   : never;
@@ -478,6 +500,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in AiNames<M>]: AiBinding;
 } & {
   [B in BrowserNames<M>]: BrowserBinding;
+} & {
+  [B in ImagesNames<M>]: ImagesBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -813,6 +837,7 @@ export function everyAppWorker<
   Object.assign(env, storageBindings(manifest, name, deploy));
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);
+  addImagesBindings(env, manifest);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -901,7 +926,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI and Browser Rendering, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering and Images, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -948,6 +973,7 @@ export function everyAppAuxiliaryWorker<
   }
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);
+  addImagesBindings(env, manifest);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1134,6 +1160,25 @@ function addBrowserBindings(
       );
     }
     env[binding] = { type: "browser" };
+  }
+}
+
+/**
+ * The manifest's Images bindings, which every one of the app's Workers
+ * gets: `{ type: "images" }` in both modes (account-wide, nothing to
+ * provision; Miniflare answers it locally in development).
+ */
+function addImagesBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+): void {
+  for (const binding of manifest.resources?.images ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `images: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    env[binding] = { type: "images" };
   }
 }
 

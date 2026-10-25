@@ -49,7 +49,8 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * check it against: so only under a binding name the manifest declares in
  * `resources.ai`, never one cloudflare.config.ts adds on its own. Browser
  * Rendering is the same: account-wide browser time billed to the account,
- * so only under a name `resources.browser` declares.
+ * so only under a name `resources.browser` declares. Images the same, under
+ * `resources.images`: transformations bill the account.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -66,6 +67,7 @@ const ALLOWED_BINDINGS = new Set([
   "hyperdrive",
   "ai",
   "browser",
+  "images",
 ]);
 
 /**
@@ -218,6 +220,8 @@ function bindingProblems(
   const aiBindings = declared?.ai ?? [];
   // Browser Rendering only under the names resources.browser declares.
   const browserBindings = declared?.browser ?? [];
+  // Images only under the names resources.images declares.
+  const imagesBindings = declared?.images ?? [];
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -271,6 +275,15 @@ function bindingProblems(
             browserBindings.length > 0
               ? `${name} is a Browser Rendering binding, which isn't one of the app's in resources.browser (${browserBindings.join(", ")})`
               : `${name} is a Browser Rendering binding, which everyapp.config.ts doesn't declare; list it in resources.browser`,
+          );
+        }
+        break;
+      case "images":
+        if (!imagesBindings.includes(name)) {
+          problems.push(
+            imagesBindings.length > 0
+              ? `${name} is an Images binding, which isn't one of the app's in resources.images (${imagesBindings.join(", ")})`
+              : `${name} is an Images binding, which everyapp.config.ts doesn't declare; list it in resources.images`,
           );
         }
         break;

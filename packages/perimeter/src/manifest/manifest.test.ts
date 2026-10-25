@@ -1700,3 +1700,63 @@ describe("Browser Rendering (resources.browser)", () => {
     ).toEqual([]);
   });
 });
+
+describe("Images (resources.images)", () => {
+  const gallery = {
+    id: "gallery",
+    resources: { d1: ["DB"], images: ["IMAGES"] },
+  };
+
+  it("accepts Images bindings in both schemas", () => {
+    expect(validateManifestStrict(gallery)).toEqual(gallery);
+    expect(validateManifest(gallery)).toEqual(gallery);
+    const two = { ...gallery, resources: { images: ["IMAGES", "THUMBS"] } };
+    expect(validateManifestStrict(two)).toEqual(two);
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { images: ["my-images"] } },
+      /resources\.images\.0/,
+    ],
+    [
+      "a binding named like a D1 database",
+      { resources: { d1: ["IMAGES"], images: ["IMAGES"] } },
+      /the binding IMAGES is declared twice/,
+    ],
+    [
+      "the same binding twice",
+      { resources: { images: ["IMAGES", "IMAGES"] } },
+      /the binding IMAGES is declared twice/,
+    ],
+    [
+      "a secret named like the binding",
+      { resources: { images: ["IMAGES"] }, secrets: ["IMAGES"] },
+      /secrets: IMAGES is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...gallery, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("stays tolerant of entries at registration", () => {
+    expect(
+      validateManifest({
+        id: "gallery",
+        resources: { images: ["my-images"] },
+      }).resources?.images,
+    ).toEqual(["my-images"]);
+  });
+
+  it("is refused on the dispatch tier, where it would bill the platform's account", () => {
+    expect(manifestTierProblems(gallery, "dispatch")).toEqual([
+      "resources.images: the Images binding isn't available to apps in a dispatch namespace (it bills the platform's account)",
+    ]);
+    expect(manifestTierProblems(gallery, "service_binding")).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { images: [] } }, "dispatch"),
+    ).toEqual([]);
+  });
+});
