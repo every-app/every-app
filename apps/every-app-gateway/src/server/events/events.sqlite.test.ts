@@ -41,6 +41,7 @@ vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 import { eq } from "drizzle-orm";
 import {
   APP_EVENT_RATE_PER_HOUR,
+  AUDIT_RETENTION_DAYS,
   PROVIDER_APP_TIER,
   EVENT_DELIVERY_MAX_ATTEMPTS,
   EVENT_HEADERS,
@@ -279,6 +280,8 @@ describe("the event bus (SQLite)", () => {
         dedupeKey: null,
       });
       expect(JSON.parse(stored[0]!.actor)).toEqual(actor);
+      // The actor's kind and id as columns too, for the audit log's filter.
+      expect(stored[0]).toMatchObject({ actorKind: "user", actorId: "user-x" });
       expect(await deliveriesOf(matching.subscription.id)).toHaveLength(1);
       expect(await deliveriesOf(everything.subscription.id)).toHaveLength(1);
       expect(await deliveriesOf(other.subscription.id)).toHaveLength(0);
@@ -1096,23 +1099,40 @@ describe("the event bus (SQLite)", () => {
   });
 
   describe("retention (events.retention)", () => {
-    it("the hourly maintenance deletes events and deliveries older than the retention and keeps newer ones", async () => {
+    it("the hourly maintenance deletes deliveries past 30 days and events past 90 (the audit log), and keeps newer ones", async () => {
       await addWebhook();
+      // Past both: gone with its delivery.
       await emitAndWait(joined());
-      const old = new Date(
+      const ancient = new Date(
+        clock.getTime() - (AUDIT_RETENTION_DAYS + 1) * 86_400_000,
+      );
+      await db.update(events).set({ time: ancient });
+      await db.update(eventDeliveries).set({ createdAt: ancient });
+      // Past the deliveries' 30 days only: the event stays for the audit log.
+      const aged = new Date(
         clock.getTime() - (EVENT_RETENTION_DAYS + 1) * 86_400_000,
       );
-      await db.update(events).set({ time: old });
-      await db.update(eventDeliveries).set({ createdAt: old });
-      await emitAndWait(joined());
-      expect(await db.select().from(events)).toHaveLength(2);
+      const middle = await emitAndWait(joined());
+      await db
+        .update(events)
+        .set({ time: aged })
+        .where(eq(events.id, middle!.id));
+      await db
+        .update(eventDeliveries)
+        .set({ createdAt: aged })
+        .where(eq(eventDeliveries.eventId, middle!.id));
+      const fresh = await emitAndWait(joined());
+      expect(await db.select().from(events)).toHaveLength(3);
       await runMcpMaintenance(
         { OAUTH_KV: { get: async () => null } } as unknown as Cloudflare.Env,
         clock,
       );
-      expect(await db.select().from(events)).toHaveLength(1);
-      expect(await db.select().from(eventDeliveries)).toHaveLength(1);
-      expect((await db.select().from(events))[0]!.time).toEqual(clock);
+      expect(
+        (await db.select().from(events)).map((row) => row.id).sort(),
+      ).toEqual([middle!.id, fresh!.id].sort());
+      expect(
+        (await db.select().from(eventDeliveries)).map((row) => row.eventId),
+      ).toEqual([fresh!.id]);
     });
   });
 

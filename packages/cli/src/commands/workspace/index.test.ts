@@ -23,6 +23,7 @@ import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
 import {
   listActivity,
+  listAudit,
   listConnections,
   listTokens,
   reportUsage,
@@ -259,6 +260,22 @@ VALUES ('app-gone', ?, 'gone', 'Gone', 'A tombstone', NULL, NULL, 'service_bindi
       id as string, at as number, ORG, user as string, app ? "app" : "gateway", app as string | null, slug as string | null, tool as string, risk as string, decision as string, reason as string | null,
     );
   }
+  // The audit log: events of every actor kind, one of them written by an
+  // older CLI without the actor columns, one in another organization.
+  for (const [id, at, org, type, actor, payload] of [
+    ["evt-1", NOW - 5 * HOUR, ORG, "member.invited", { kind: "user", id: "u-mia", email: "mia@acme.com", name: "Mia" }, { invitation: { id: "inv", email: "pat@acme.com", role: "member" } }],
+    ["evt-2", NOW - 4 * HOUR, ORG, "tool.blocked", { kind: "agent", id: "mcpc_x", name: "Claude" }, { tool: "delete_contact", reason: "read_only", user: { id: "u-mia", email: "mia@acme.com" } }],
+    ["evt-3", NOW - 3 * HOUR, ORG, "ping", { kind: "gateway" }, { message: "hi" }],
+    ["evt-4", NOW - 2 * HOUR, ORG, "app.crm.invoice.paid", { kind: "app", id: "crm" }, { amount: 12 }],
+    ["evt-5", NOW - HOUR, ORG, "app.updated", { kind: "operator", id: "ops@acme.com", email: "ops@acme.com" }, { app: { id: "crm", rowId: "app-crm", name: "CRM" }, version: "2" }],
+    ["evt-6", NOW - HOUR, OTHER_ORG, "member.joined", { kind: "user", id: "u-beta" }, { user: { id: "u-beta" }, role: "owner" }],
+  ] as const) {
+    exec(
+      "INSERT INTO events (id, organization_id, type, version, time, actor, actor_kind, actor_id, data, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+      id, org, type, at, JSON.stringify(actor), actor.kind, "id" in actor ? actor.id : null, JSON.stringify(payload), at,
+    );
+  }
+  exec("UPDATE events SET actor_kind = NULL, actor_id = NULL WHERE id = 'evt-5'");
 }
 
 describe("workspace show", () => {
@@ -1030,6 +1047,69 @@ describe("workspace activity", () => {
     await expect(listActivity(opts({ app: "gone" }))).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
   });
 
+});
+
+describe("workspace audit", () => {
+  it("lists the audit log newest first with the Audit view's columns and filters, pings and tool calls out unless asked for, one page at a time", async () => {
+    await listAudit(opts());
+    expect(data()["events"].map((event: any) => [event.id, event.type, event.actor.kind, event.actor.id, event.label])).toEqual([
+      ["evt-5", "app.updated", "operator", "ops@acme.com", "An app was redeployed"],
+      ["evt-4", "app.crm.invoice.paid", "app", "crm", "App event: invoice.paid"],
+      ["evt-1", "member.invited", "user", "u-mia", "Someone was invited to the workspace"],
+    ]);
+    expect(data()["nextBefore"]).toBeNull();
+    // The member by their current name and email, the subject from the data, never the data.
+    expect(data()["events"][2]).toMatchObject({
+      actor: { kind: "user", id: "u-mia", email: "mia@acme.com", name: "Mia" },
+      subject: { invitation: { email: "pat@acme.com", role: "member" } },
+      appEvent: false,
+      time: new Date(NOW - 5 * HOUR).toISOString(),
+    });
+    expect(data()["events"][1]).toMatchObject({ subject: { app: { id: "crm", name: null } }, appEvent: true });
+    expect(data()["events"][0]).toMatchObject({ subject: { app: { id: "crm", name: "CRM" } } });
+    expect(JSON.stringify(data())).not.toContain("amount");
+    expect(done()!["message"]).toBe("3 audit events in Acme");
+
+    events = [];
+    await listAudit(opts({ actor: "mia@acme.com" }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-1"]);
+    events = [];
+    await listAudit(opts({ actor: "ops@acme.com" }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual([]);
+    events = [];
+    await listAudit(opts({ actor: "crm" }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-4"]);
+    events = [];
+    await listAudit(opts({ type: "tool.*" }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-2"]);
+    events = [];
+    await listAudit(opts({ type: "*" }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-5", "evt-4", "evt-3", "evt-2", "evt-1"]);
+    events = [];
+    await listAudit(opts({ type: "app.*", since: NOW - 90 * 60_000 }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-5"]);
+
+    events = [];
+    await listAudit(opts({ limit: 2 }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-5", "evt-4"]);
+    const cursor = data()["nextBefore"] as string;
+    expect(cursor).toBe(`${NOW - 2 * HOUR}:evt-4`);
+    expect(data()["next"]).toEqual([{ command: `pnpm everyapp workspace audit --before ${cursor}`, note: "the next page" }]);
+    events = [];
+    const [time, id] = cursor.split(":");
+    await listAudit(opts({ limit: 2, before: { time: Number(time), id: id! } }));
+    expect(data()["events"].map((event: any) => event.id)).toEqual(["evt-1"]);
+    expect(data()["nextBefore"]).toBeNull();
+
+    await expect(listAudit(opts({ type: "Member.*" }))).rejects.toMatchObject({ code: "INVALID_EVENT_TYPE" });
+    // An email that is no member's is an operator's: taken as the actor id it is.
+    events = [];
+    await listAudit(opts({ actor: "nobody@acme.com" }));
+    expect(data()["events"]).toEqual([]);
+  });
+});
+
+describe("workspace activity, continued", () => {
   it("--user takes the id of someone who has left, whose calls the trail still lists by id; an unknown email is refused", async () => {
     await removeMember(opts({ yes: true }), "mia@acme.com");
     events = [];

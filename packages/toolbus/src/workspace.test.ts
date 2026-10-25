@@ -123,6 +123,7 @@ describe("the workspace tool definitions", () => {
       "workspace_app_delete",
       "workspace_usage",
       "workspace_activity",
+      "workspace_audit",
       "workspace_rename",
       "workspace_events",
       "workspace_events_add",

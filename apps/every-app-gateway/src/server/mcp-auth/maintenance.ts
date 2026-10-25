@@ -10,8 +10,9 @@
  *  - delete usage counters past their retention (daily rows after 13
  *    months, monthly after 25), up to 10,000 rows of each a run
  *    (repositories/UsageRepository.ts);
- *  - delete events and their deliveries older than EVENT_RETENTION_DAYS
- *    (docs/design/2026-10-events-out.md), up to 10,000 of each a run;
+ *  - delete event deliveries older than EVENT_RETENTION_DAYS (30) and
+ *    events older than AUDIT_RETENTION_DAYS (90: the audit log,
+ *    docs/design/2026-10-events-out.md), up to 10,000 of each a run;
  *  - sweep expired and orphaned OAuth grants and tokens from OAUTH_KV with
  *    the library's purgeExpiredData, resuming from a cursor kept in KV;
  *  - re-list the tools of every active remote MCP app whose snapshot is
@@ -19,7 +20,10 @@
  *
  * Each step runs even when another fails, and the run logs one summary line.
  */
-import { EVENT_RETENTION_DAYS } from "@every-app/sdk/internal";
+import {
+  AUDIT_RETENTION_DAYS,
+  EVENT_RETENTION_DAYS,
+} from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import { EventDeliveryRepository } from "@/server/repositories/EventDeliveryRepository";
 import { EventRepository } from "@/server/repositories/EventRepository";
@@ -151,12 +155,17 @@ export async function runMcpMaintenance(
     RateLimitCounterRepository.deleteExpired(now),
   );
   const usage = await step("usage", () => UsageRepository.deleteOlderThan(now));
-  const eventsCutoff = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS);
+  // Deliveries are the queue and its log; events are the audit log and
+  // stay three times as long.
   const eventsPruned = await step("events", () =>
-    EventRepository.deleteOlderThan(eventsCutoff),
+    EventRepository.deleteOlderThan(
+      new Date(now.getTime() - AUDIT_RETENTION_DAYS * DAY_MS),
+    ),
   );
   const deliveriesPruned = await step("event_deliveries", () =>
-    EventDeliveryRepository.deleteOlderThan(eventsCutoff),
+    EventDeliveryRepository.deleteOlderThan(
+      new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS),
+    ),
   );
   const purge = await step("oauth_purge", () => purgeOauthStorage(env));
   // Remote MCP apps: re-list each server's tools once an hour, so a

@@ -39,6 +39,7 @@ import {
 } from "@every-app/toolbus";
 import { isEmailConfigured } from "@/server/email/sendEmail";
 import { PublicError } from "@/server/errors";
+import { listAudit } from "@/server/events/audit";
 import { DELIVERY_ID_PATTERN } from "@/server/events/ids";
 import { EventSubscriptionService } from "@/server/events/subscriptions";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
@@ -288,6 +289,30 @@ function activityCursor(
     );
   }
   return { createdAt, id };
+}
+
+/** The audit log's cursor, bounded like the activity one: `{ time, id }`. */
+function auditCursor(value: unknown): { time: number; id: string } | undefined {
+  if (value === undefined) return undefined;
+  const cursor =
+    value && typeof value === "object"
+      ? (value as { time?: unknown; id?: unknown })
+      : {};
+  const { time, id } = cursor;
+  if (
+    typeof time !== "number" ||
+    !Number.isInteger(time) ||
+    time < 0 ||
+    time > ACTIVITY_TIME_MAX_MS ||
+    typeof id !== "string" ||
+    !id
+  ) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      "before must be the previous answer's nextBefore",
+    );
+  }
+  return { time, id };
 }
 
 /**
@@ -839,6 +864,33 @@ const HANDLERS: Record<string, Handler> = {
       userId,
       decision: text(args["decision"]) as "allowed" | "blocked" | undefined,
       risk: text(args["risk"]),
+      since,
+    });
+    return { ...page };
+  },
+
+  async workspace_audit(ctx, args) {
+    const actorRef = text(args["actor"]);
+    const sinceRef = text(args["since"]);
+    const since = sinceRef === undefined ? undefined : new Date(sinceRef);
+    if (since && Number.isNaN(since.getTime())) {
+      throw new PublicError("INVALID_INPUT", "since must be an ISO 8601 time");
+    }
+    // A member by email resolves to their user id; any other id (a
+    // connection's, a token's, an app's, an operator's, someone gone) is
+    // taken as given, and the rows are the organization's own anyway.
+    let actorId: string | undefined;
+    if (actorRef !== undefined) {
+      actorId = actorRef.includes("@")
+        ? (await resolveUser(ctx, actorRef)).id
+        : actorRef.trim();
+    }
+    const limit = args["limit"];
+    const page = await listAudit(ctx.orgId, {
+      limit: typeof limit === "number" ? limit : undefined,
+      before: auditCursor(args["before"]),
+      actorId,
+      type: text(args["type"]),
       since,
     });
     return { ...page };

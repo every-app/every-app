@@ -11,6 +11,7 @@ export * from "./oauthClient.js";
 export * from "./oauthScopes.js";
 export * from "./providerApps.js";
 export * from "./events.js";
+export * from "./audit.js";
 export * from "./providerSpec.js";
 export * from "./providerRegistry.js";
 export * from "./remoteMcp.js";

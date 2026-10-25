@@ -69,20 +69,46 @@ export interface EventApp {
   name: string;
 }
 
-const eventsTables = new WeakMap<D1Database, Promise<boolean>>();
+const eventsColumns = new WeakMap<D1Database, Promise<Set<string>>>();
+
+/** The `events` table's columns (none on a Gateway from before it), asked of each database once. */
+function eventsTableColumns(db: D1Database): Promise<Set<string>> {
+  let known = eventsColumns.get(db);
+  if (!known) {
+    known = db
+      .run([{ sql: "PRAGMA table_info(events)" }])
+      .then(([rows = []]) => new Set(rows.map((row) => String(row["name"]))));
+    eventsColumns.set(db, known);
+  }
+  return known;
+}
 
 /**
  * Whether the Gateway's D1 has the event bus's tables (migration 0012,
  * 2026-10-25, which also added `apps.setup_state`). Asked of each
  * database once, like `hasSecretNamesColumn`.
  */
-export function hasEventsTables(db: D1Database): Promise<boolean> {
-  let known = eventsTables.get(db);
-  if (!known) {
-    known = db.run([{ sql: "PRAGMA table_info(events)" }]).then(([rows = []]) => rows.length > 0);
-    eventsTables.set(db, known);
-  }
-  return known;
+export async function hasEventsTables(db: D1Database): Promise<boolean> {
+  return (await eventsTableColumns(db)).size > 0;
+}
+
+/**
+ * Whether `events` has the audit log's `actor_kind` and `actor_id` columns
+ * (migration 0015): a CLI write fills them when they are there, so the
+ * audit log's actor filter finds the operator's events too.
+ */
+async function hasAuditColumns(db: D1Database): Promise<boolean> {
+  return (await eventsTableColumns(db)).has("actor_id");
+}
+
+/** Refuse `workspace audit` on a Gateway from before the audit log's columns. */
+export async function requireAuditColumns(db: D1Database): Promise<void> {
+  if (await hasAuditColumns(db)) return;
+  throw new EveryAppError(
+    "GATEWAY_OUTDATED",
+    "The Gateway predates the audit log\nIts events table has no actor columns until the Gateway is updated to a release that has them.",
+    { rerun: `${CLI} update`, rerunNote: "then run this again" },
+  );
 }
 
 /** Refuse a command that needs the event tables on a Gateway from before them. */
@@ -144,11 +170,13 @@ export async function queueEventFromCli(db: D1Database, input: CliEventInput): P
     .filter((row) => eventSubscribed(patternsOf(row["events"]), input.type))
     .map((row) => String(row["id"]));
   const condition = input.onlyIf ? ` AND (${input.onlyIf.sql})` : "";
+  // The actor's kind and id as columns too, once the Gateway has them (0015).
+  const audit = await hasAuditColumns(db);
   return [
     {
       // A colliding dedupe key drops the row, and with it every delivery below.
-      sql: `INSERT INTO events (id, organization_id, type, version, time, actor, data, app_row_id, dedupe_key, created_at)
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE 1${condition}
+      sql: `INSERT INTO events (id, organization_id, type, version, time, actor, ${audit ? "actor_kind, actor_id, " : ""}data, app_row_id, dedupe_key, created_at)
+SELECT ?, ?, ?, ?, ?, ?, ${audit ? "?, ?, " : ""}?, ?, ?, ? WHERE 1${condition}
 ON CONFLICT DO NOTHING`,
       params: [
         id,
@@ -157,6 +185,7 @@ ON CONFLICT DO NOTHING`,
         info.version,
         now,
         JSON.stringify(input.actor),
+        ...(audit ? [input.actor.kind, input.actor.id] : []),
         JSON.stringify(input.data),
         input.appRowId ?? null,
         input.dedupeKey ?? null,

@@ -325,7 +325,7 @@ Seven attempts (`EVENT_DELIVERY_MAX_ATTEMPTS`) over about 35 hours. A target ans
 
 **Redeliver.** `events redeliver <delivery id>` (or **Redeliver** on a failed or dead row in the Deliveries sheet) takes a `pending` or `dead` delivery back to `pending`, due now, with `redelivered_at` stamped and its attempts reset to 0, so it gets the whole schedule again: the next try is attempt 1 (`X-EveryApp-Attempt: 1`), then up to six retries over about 35 hours. A `delivered` delivery is left alone, and so is one an attempt holds right now (the CLI answers `outcome` `delivered` or `attempting` and changes nothing). The delivery id and `X-EveryApp-Delivery` stay the same, and the receiver sees the same event `id` again. The Gateway attempts it at once from the UI; from the CLI the sweep sends it within a minute. The CLI refuses a delivery whose subscription was removed (`EVENT_SUBSCRIPTION_NOT_FOUND`) or is paused (`EVENT_SUBSCRIPTION_DISABLED`), since the Gateway would drop it.
 
-**Retention.** The hourly maintenance deletes `events` and `event_deliveries` rows older than 30 days (`EVENT_RETENTION_DAYS`, a constant, not a setting), 10,000 rows a run. Subscriptions are kept until removed and go with their organization.
+**Retention.** The hourly maintenance deletes `event_deliveries` rows older than 30 days (`EVENT_RETENTION_DAYS`) and `events` rows older than 90 days (`AUDIT_RETENTION_DAYS`: the events are the [audit log](#audit-log)), both constants, not settings, 10,000 rows of each a run. Subscriptions are kept until removed and go with their organization.
 
 ## Targets
 
@@ -592,6 +592,16 @@ Not on `/mcp` yet: once the twins PR lands, the Gateway connector's `everyapp` t
 
 When `url` is given without `secret`, `everyapp_workspace_events_add` generates one and returns it once in the result. It is the one credential a workspace tool returns, and only one it just made for a target the caller chose; no tool returns a credential that opens the Gateway.
 
+## Audit log
+
+The `events` table is also the workspace's audit log: every event the Gateway recorded for the organization, read back newest first as a trail, kept 90 days (`AUDIT_RETENTION_DAYS`, `packages/sdk/src/internal/events.ts`; the deliveries go after 30). Three surfaces read it, through the same rows and the same shaping (`packages/sdk/src/internal/audit.ts`; the Gateway's `apps/every-app-gateway/src/server/events/audit.ts` over `EventRepository.listForAudit`):
+
+- **Admin → Activity → Audit** (`/admin/activity?view=audit`; the toggle beside the heading, the tool calls stay the default view): server functions `listAuditEvents` and `listAuditActors` in `apps/every-app-gateway/src/serverFunctions/audit.ts`, behind `organizationAdminMiddleware`. Columns When, Who, What (the type in plain words and the catalogue's summary), Subject; filters Who (whom the trail names), Type (grouped by the catalogue's groups, or `*`), and the range the tool calls use; **Load more** pages by cursor at 50.
+- `pnpm everyapp workspace audit [--actor <who>] [--type <type>] [--since <time>] [--limit <n>] [--before <cursor>] [--json]` ([workspace](/docs/agent/workspace)): the same rows from D1 under the operator's login (`packages/cli/src/lib/gateway/workspace.ts`, `audit`). The CLI has no catalogue, so it prints the type's label and the subject, not the summary line. Refused on a Gateway from before migration `0015_audit_actor` ([`GATEWAY_OUTDATED`](/docs/agent/errors#gateway_outdated)).
+- `everyapp_workspace_audit` on `/mcp` ([mcp](/docs/agent/mcp)): `{ actor?, type?, since?, limit?, before? }`, admin, read; the row shape of the UI (`id`, `time`, `type`, `label`, `summary`, `actor { kind, id, email, name }`, `subject`, `appEvent`) and `nextBefore`.
+
+Each row: `time`; `type`; `label`, the type in plain words (the catalogue's description; `App event: <name>` for an app's own `app.<id>.<name>`); `summary`, the catalogue's one line (the Gateway surfaces only); `actor`, the stored actor with a member's current name and email from `users` (`kind` `user`, `agent`, `operator`, `app` or `gateway`; the UI shows a person by name, `agent · <AI app>`, `CLI · <operator>`, `app · <id>`, `Gateway`); `subject`, what it was about, picked from the data by the catalogue's keys (app, user, group, provider, MCP app, subscription, invitation, setting _names_, tool, client, token name); never the event's `data`. `ping` and `tool.*` rows stay out unless `type` names them (`tool.*`, `*`): Admin → Activity's default view lists every tool call. The filter by actor runs on the `actor_kind` and `actor_id` columns migration `0015_audit_actor` added and backfilled from the JSON (index `(organization_id, actor_id, time)`); a row an older CLI wrote without them still reads by its JSON. Owners and admins only; a member gets `UNAUTHORIZED` from the server function and does not see the tool.
+
 ## Limits
 
 | Limit                                | Value                                                         | Constant                                                     |
@@ -609,7 +619,9 @@ When `url` is given without `secret`, `everyapp_workspace_events_add` generates 
 | Attempts                             | 7, over about 35 hours                                        | `EVENT_DELIVERY_MAX_ATTEMPTS`                                |
 | Signature tolerance (the receiver's) | 300 seconds                                                   | `EVENT_SIGNATURE_TOLERANCE_SECONDS`                          |
 | Answer read on failure, kept         | 1 KiB, 200 characters                                         | `EVENT_RESPONSE_READ_MAX_BYTES`, `EVENT_RESPONSE_KEEP_CHARS` |
-| Events and deliveries kept           | 30 days                                                       | `EVENT_RETENTION_DAYS`                                       |
+| Deliveries kept                      | 30 days                                                       | `EVENT_RETENTION_DAYS`                                       |
+| Events kept (the audit log)          | 90 days                                                       | `AUDIT_RETENTION_DAYS`                                       |
+| `workspace audit --limit`            | 1 to 200, default 50                                          | `AUDIT_PAGE_MAX`                                             |
 | Event email                          | 50 per address, 2,000 per Gateway a day (hosted 20 and 2,000) |                                                              |
 | `events deliveries --limit`          | 1 to 200, default 20                                          |                                                              |
 | `events test` wait                   | 90 seconds                                                    |                                                              |
@@ -635,7 +647,7 @@ From `docs/design/2026-10-events-out.md`, "Defaults for Ben", taken without him 
 - The scheduler is D1 plus a per-minute cron, not a Durable Object or a Queue; a per-subscription Durable Object with alarms is the upgrade path, with the same tables.
 - The signing secret is stored as written in D1.
 - Cap alerts are a built-in email subscription created with the first cap, on by default.
-- 30 days of retention, 25 subscriptions per organization, 600 app emits an hour, 8 KiB per app event, seven attempts over about 35 hours.
+- 30 days of retention (since the audit log of 2026-10-25: 30 for deliveries, 90 for the events themselves), 25 subscriptions per organization, 600 app emits an hour, 8 KiB per app event, seven attempts over about 35 hours.
 - Apps declare nothing to emit; an `events` list in `everyapp.config.ts` the UI could show is the walk-back.
 - `everyapp events` is a top-level group, not `workspace events`.
 - Targets are `https:` to a public hostname; `EVENTS_ALLOW_PRIVATE_TARGETS` is the self-hosted escape.

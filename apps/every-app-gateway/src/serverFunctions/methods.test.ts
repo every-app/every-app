@@ -67,6 +67,8 @@ const READS = [
   "getOnboardingStatus",
   "getUsage",
   "hasOwner",
+  "listAuditActors",
+  "listAuditEvents",
   "listEventDeliveries",
   "listEventSubscriptions",
   "listEventTypes",

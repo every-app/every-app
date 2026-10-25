@@ -105,6 +105,9 @@ export async function queueEvent(
       version: input.version,
       time: now,
       actor: JSON.stringify(input.actor),
+      // The audit log filters by these; the JSON stays the record.
+      actorKind: input.actor.kind,
+      actorId: "id" in input.actor ? (input.actor.id ?? null) : null,
       data: JSON.stringify(input.data),
       appRowId: input.appRowId ?? null,
       dedupeKey: input.dedupeKey ?? null,

@@ -1,5 +1,12 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
-import { ACTIVITY_PAGE_MAX, MONTH, MONTHLY_CALL_CAP_MAX, appName } from "@/lib/gateway/workspace";
+import {
+  ACTIVITY_PAGE_MAX,
+  AUDIT_TYPE_FILTER,
+  AUDIT_TYPE_MAX,
+  MONTH,
+  MONTHLY_CALL_CAP_MAX,
+  appName,
+} from "@/lib/gateway/workspace";
 import { CLI } from "@/lib/output/command";
 import { accountFlag, gatewayFlag, jsonFlag, orgFlag, verboseFlag } from "../flags";
 
@@ -607,6 +614,65 @@ const userFlag = {
   brief: "One member's only, by email or user id",
 } as const;
 
+/** `--type <type>`: an event type, a prefix with `.*`, or `*`. */
+function parseEventTypeFilter(input: string): string {
+  const value = input.trim();
+  if (value.length === 0 || value.length > AUDIT_TYPE_MAX || !AUDIT_TYPE_FILTER.test(value)) {
+    throw new Error(`a type filter is an event type (member.joined), a prefix (member.*, app.crm.*) or * (not ${input})`);
+  }
+  return value;
+}
+
+/** `--before <cursor>` on `audit`: the previous page's `nextBefore`, as `<time>:<id>`. */
+function parseAuditCursor(input: string): { time: number; id: string } {
+  const match = /^(\d+):(.+)$/.exec(input.trim());
+  if (!match) throw new Error("a cursor is the previous page's nextBefore, written <time>:<id>");
+  return { time: Number(match[1]), id: match[2]! };
+}
+
+const auditCommand = buildCommand({
+  loader: async () => (await import("./activity")).audit,
+  parameters: {
+    positional: { kind: "tuple", parameters: [] },
+    flags: {
+      actor: {
+        kind: "parsed",
+        parse: String,
+        optional: true,
+        placeholder: "who",
+        brief: "Events this actor caused: a member by email or user id, an AI connection's or token's id, an app's id, or an operator's email",
+      },
+      type: {
+        kind: "parsed",
+        parse: parseEventTypeFilter,
+        optional: true,
+        placeholder: "type",
+        brief: "One event type (member.joined), every type under a prefix (member.*, app.crm.*), or * for everything, pings and tool calls included",
+      },
+      since: { kind: "parsed", parse: parseSince, optional: true, placeholder: "time", brief: "Events at or after this time (ISO 8601, UTC)" },
+      limit: { kind: "parsed", parse: parseLimit, optional: true, placeholder: "n", brief: `Rows per page, 1 to ${ACTIVITY_PAGE_MAX} (default 50)` },
+      before: { kind: "parsed", parse: parseAuditCursor, optional: true, placeholder: "cursor", brief: "The next page: the previous page's nextBefore, as <time>:<id>" },
+      ...workspaceFlags,
+    },
+  },
+  docs: {
+    brief: "The audit log, newest first: every event the Gateway recorded (members, apps, caps, connections, tokens, Access, MCP apps, providers, apps' own events), who did it and what it was about",
+    fullDescription: [
+      "The same rows as Admin → Activity → Audit and everyapp_workspace_audit, kept 90 days. Each",
+      "row is when, who (a member by name, agent · <AI app>, CLI · <operator>, app · <id>, or",
+      "Gateway), what (the type in plain words) and the subject; never an event's data, a",
+      "secret or a tool's arguments. Test pings and tool calls stay out unless --type names",
+      "them (tool.*, *): workspace activity lists the calls. One page at a time; --json carries",
+      "data.nextBefore for the next page. Refused on a Gateway from before the audit log",
+      "(GATEWAY_OUTDATED): run update first. Nothing is changed.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace audit --limit 20`,
+      `  ${CLI} workspace audit --actor mia@acme.com --type member.* --since 2026-10-24 --json`,
+    ].join("\n"),
+  },
+});
+
 const tokensCommand = buildCommand({
   loader: async () => (await import("./activity")).tokens,
   parameters: { positional: { kind: "tuple", parameters: [] }, flags: { user: userFlag, all: { kind: "boolean", optional: true, brief: "Revoked and expired tokens too" }, ...workspaceFlags } },
@@ -790,12 +856,13 @@ export const workspaceRoutes = buildRouteMap({
     cap: capRoutes,
     usage: usageCommand,
     activity: activityCommand,
+    audit: auditCommand,
     tokens: tokensCommand,
     token: tokenRoutes,
     connections: connectionsCommand,
     connection: connectionRoutes,
   },
   docs: {
-    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, tokens and AI connections",
+    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections",
   },
 });

@@ -24,11 +24,21 @@
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
+import {
+  AUDIT_PAGE_MAX,
+  auditActorOf,
+  auditSubjectOf,
+  auditTypeCondition,
+  auditTypeLabel,
+  isAppOwnEventType,
+  type AuditActor,
+  type AuditSubject,
+} from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
-import { capAlertsStatement, operatorActor, queueEventFromCli } from "./events";
+import { capAlertsStatement, operatorActor, queueEventFromCli, requireAuditColumns } from "./events";
 import { anotherLiveOwnerSql } from "./members";
 import { installOrganization, registryCall, text, type Deployer, type Organization } from "./registry";
 
@@ -1981,6 +1991,137 @@ ORDER BY c.created_at DESC, c.id DESC LIMIT ?`,
     }),
     nextBefore:
       rows.length > limit && last ? { createdAt: number(last["created_at"]), id: String(last["id"]) } : null,
+  };
+}
+
+/** Where a page of the audit log continues: its last row's time and id. */
+interface AuditCursor {
+  time: number;
+  id: string;
+}
+
+/** A type, a prefix with `.*`, or `*`: what `--type` accepts (the Gateway's AUDIT_TYPE_FILTER_PATTERN). */
+export const AUDIT_TYPE_FILTER = /^(\*|[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*(\.\*)?)$/;
+export const AUDIT_TYPE_MAX = 80;
+
+interface AuditFilters {
+  /** Rows per page, clamped to 1..200 like the Gateway. */
+  limit?: number;
+  before?: AuditCursor;
+  /** `actor_id`: a user id, a credential id, an app id, an operator's id. */
+  actorId?: string;
+  /** An exact type, a prefix (`member.*`) or `*`; absent, `ping` and `tool.*` stay out. */
+  type?: string;
+  /** Milliseconds: rows at or after this time only. */
+  since?: number;
+}
+
+/**
+ * One event as Admin → Activity → Audit lists it: when, who, what (the
+ * type in plain words) and what it was about. Never the event's data. The
+ * Gateway's one-line summary (the catalogue's `summarize`) lives in the
+ * Worker, so the CLI shows the type and the subject instead.
+ */
+interface AuditRow {
+  id: string;
+  time: number;
+  type: string;
+  /** The type in plain words (the SDK's catalogue; "App event: …" for an app's own). */
+  label: string;
+  actor: AuditActor;
+  subject: AuditSubject;
+  /** True for an app's own event (`app.<id>.<name>`). */
+  appEvent: boolean;
+}
+
+/**
+ * One page of the organization's audit log, newest first: the same rows,
+ * filters and cursor as `everyapp_workspace_audit` (the Gateway's
+ * `EventRepository.listForAudit`). Keyset on (time, id). A user actor
+ * shows by their current name and email from `users`, the stored JSON
+ * being the fallback; a row an older CLI wrote without the actor columns
+ * still reads by its JSON.
+ */
+export async function audit(
+  ws: Workspace,
+  filters: AuditFilters,
+): Promise<{ events: AuditRow[]; nextBefore: AuditCursor | null }> {
+  await requireAuditColumns(ws.db);
+  const limit = Math.min(Math.max(1, Math.trunc(filters.limit ?? 50) || 1), AUDIT_PAGE_MAX);
+  const conditions = ["e.organization_id = ?"];
+  const params: Array<string | number> = [ws.organization.id];
+  if (filters.before) {
+    conditions.push("(e.time < ? OR (e.time = ? AND e.id < ?))");
+    params.push(filters.before.time, filters.before.time, filters.before.id);
+  }
+  if (filters.actorId !== undefined) {
+    conditions.push("e.actor_id = ?");
+    params.push(filters.actorId);
+  }
+  if (filters.type === undefined) {
+    conditions.push("e.type <> 'ping' AND e.type NOT LIKE 'tool.%'");
+  } else {
+    const value = filters.type.trim();
+    if (value.length === 0 || value.length > AUDIT_TYPE_MAX || !AUDIT_TYPE_FILTER.test(value)) {
+      throw new EveryAppError(
+        "INVALID_EVENT_TYPE",
+        `--type is an event type (member.joined), a prefix (member.*, app.crm.*) or *${value ? ` (not ${value})` : ""}`,
+      );
+    }
+    const condition = auditTypeCondition(value);
+    if (condition?.op === "eq") {
+      conditions.push("e.type = ?");
+      params.push(condition.value);
+    } else if (condition) {
+      // substr, not LIKE: a type has underscores (mcp_app.), which LIKE takes as wildcards.
+      conditions.push("substr(e.type, 1, ?) = ?");
+      params.push(condition.value.length, condition.value);
+    }
+  }
+  if (filters.since !== undefined) {
+    conditions.push("e.time >= ?");
+    params.push(filters.since);
+  }
+  params.push(limit + 1);
+  const [rows = []] = await ws.db.run([
+    {
+      sql: `SELECT e.id, e.time, e.type, e.actor, e.actor_kind, e.actor_id, e.data, u.email AS user_email, u.name AS user_name
+FROM events e
+LEFT JOIN users u ON e.actor_kind = 'user' AND u.id = e.actor_id
+WHERE ${conditions.join(" AND ")}
+ORDER BY e.time DESC, e.id DESC LIMIT ?`,
+      params,
+    },
+  ]);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    events: page.map((row) => {
+      const stored = auditActorOf(row["actor"]);
+      const kind = text(row["actor_kind"]) ?? stored.kind;
+      const id = text(row["actor_id"]) ?? stored.id;
+      const actor: AuditActor =
+        kind === "user"
+          ? { kind, id, email: text(row["user_email"]) ?? stored.email, name: text(row["user_name"]) ?? stored.name }
+          : { kind, id, email: stored.email, name: stored.name };
+      let data: unknown = {};
+      try {
+        data = JSON.parse(String(row["data"]));
+      } catch {
+        data = {};
+      }
+      const type = String(row["type"]);
+      return {
+        id: String(row["id"]),
+        time: number(row["time"]),
+        type,
+        label: auditTypeLabel(type),
+        actor,
+        subject: auditSubjectOf(type, data),
+        appEvent: isAppOwnEventType(type),
+      };
+    }),
+    nextBefore: rows.length > limit && last ? { time: number(last["time"]), id: String(last["id"]) } : null,
   };
 }
 

@@ -642,11 +642,11 @@ Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway
 
 ### GATEWAY_OUTDATED
 
-An `events` command (every one but `events types`) against a Gateway whose D1 predates migration `0012_events` (2026-10-25): it has no `events`, `event_subscriptions` or `event_deliveries` table (`hasEventsTables`, one `PRAGMA table_info(events)` per run). Raised after connecting, before anything is read or written. The commands that only queue an event alongside their own change (`deploy`, `install`, `delete`, `access on|off`, `mcp on|off`, `configure`, `secret set|unset`) never raise it: on such a Gateway they queue nothing and go on. Headline: `The Gateway predates events`, then `Its database has no event tables until the Gateway is updated to a release that has them.`
+An `events` command (every one but `events types`) against a Gateway whose D1 predates migration `0012_events` (2026-10-25): it has no `events`, `event_subscriptions` or `event_deliveries` table (`hasEventsTables`, one `PRAGMA table_info(events)` per run). Also `workspace audit` against a Gateway whose D1 predates migration `0015_audit_actor`: its `events` table has no `actor_kind` and `actor_id` columns (`hasAuditColumns`, the same PRAGMA). Headline then: `The Gateway predates the audit log`, then `Its events table has no actor columns until the Gateway is updated to a release that has them.` Raised after connecting, before anything is read or written. The commands that only queue an event alongside their own change (`deploy`, `install`, `delete`, `access on|off`, `mcp on|off`, `configure`, `secret set|unset`) never raise it: on such a Gateway they queue nothing and go on. Headline: `The Gateway predates events`, then `Its database has no event tables until the Gateway is updated to a release that has them.`
 
 **Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`).
+Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`, `requireAuditColumns`).
 
 ### GATEWAY_PREDATES_DEFAULT_CAPS
 
@@ -817,6 +817,14 @@ Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/r
 **Fix:** none offered; no rerun; not retryable.
 
 Source: `packages/cli/src/lib/gateway/workspace.ts` (`usage`), `packages/cli/src/commands/workspace/command.ts` (`parseMonth`).
+
+### INVALID_EVENT_TYPE
+
+`workspace audit --type <type>`: the filter isn't an event type (`member.joined`), a prefix (`member.*`, `app.crm.*`) or `*`: lowercase letters, digits and underscores in dot-separated parts, at most 80 characters. The command line's parser refuses it first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `--type is an event type (member.joined), a prefix (member.*, app.crm.*) or *`. Nothing is read.
+
+**Fix:** `fix` is absent (an argument error). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`audit`).
 
 ### INVITATION_NOT_PENDING
 

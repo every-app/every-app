@@ -54,19 +54,23 @@ import {
 } from "@every-app/sdk/server";
 import {
   WORKSPACE_ACTIVITY_PAGE_MAX,
+  WORKSPACE_AUDIT_PAGE_MAX,
   WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
   WORKSPACE_TOOLS,
   type McpPrincipal,
 } from "@every-app/toolbus";
+import { AUDIT_PAGE_MAX } from "@every-app/sdk/internal";
 import { INVITATION_LIMIT } from "@/auth/config";
 import {
   eventDeliveries,
   eventSubscriptions,
+  events,
   invitations,
   organizations,
   users,
   verifications,
 } from "@/db/schema";
+import { EventRepository } from "@/server/repositories/EventRepository";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import {
   setDeliveryDepsForTests,
@@ -1511,6 +1515,197 @@ describe("an admin administering the workspace over /mcp", () => {
     expect(own).toContain("everyapp_workspace_app_delete");
     expect(own).toContain("everyapp_workspace_activity");
     expect(own).not.toContain("crm_list_deals");
+  });
+
+  it("reads the audit log back: who, the type in plain words, the summary and the subject; pings and tool calls out unless asked for; paged and filtered like the UI", async () => {
+    // Two events real actions emit: an invitation by the admin, a cap by
+    // the owner; then rows the gateway writes on its own, seeded directly.
+    await data(
+      "everyapp_workspace_invite",
+      { email: "pat@example.com" },
+      admin(),
+    );
+    await data("everyapp_workspace_app_cap", { app: "crm", cap: 500 }, owner());
+    await settle();
+    const seed = async (
+      type: string,
+      actor: Record<string, unknown>,
+      payload: Record<string, unknown>,
+      time: Date,
+    ) =>
+      EventRepository.insertWithDeliveries(
+        {
+          id: `evt_${type.replace(/\W/g, "")}${time.getTime()}`,
+          organizationId,
+          type,
+          version: 1,
+          time,
+          actor: JSON.stringify(actor),
+          actorKind: String(actor["kind"]),
+          actorId: typeof actor["id"] === "string" ? actor["id"] : null,
+          data: JSON.stringify(payload),
+          appRowId: null,
+          dedupeKey: null,
+          createdAt: time,
+        },
+        [],
+      );
+    const later = new Date(Date.now() + 60_000);
+    await seed(
+      "tool.blocked",
+      { kind: "agent", id: "mcpc_1", name: "Claude" },
+      {
+        tool: "crm_delete",
+        reason: "read_only_connection",
+        user: { id: adminId },
+      },
+      later,
+    );
+    await seed("ping", { kind: "gateway" }, { message: "hi" }, later);
+    await seed(
+      "app.crm.invoice.paid",
+      { kind: "app", id: "crm" },
+      { amount: 12 },
+      new Date(later.getTime() + 1000),
+    );
+    // A row an older CLI wrote without the columns still reads by its JSON.
+    await seed(
+      "app.updated",
+      { kind: "operator", id: "ops@example.com", email: "ops@example.com" },
+      { app: { id: "crm", rowId: crmRowId, name: "CRM" }, version: "2" },
+      new Date(later.getTime() + 2000),
+    );
+    await db
+      .update(events)
+      .set({ actorKind: null, actorId: null })
+      .where(eq(events.type, "app.updated"));
+
+    const page = await data("everyapp_workspace_audit", {}, admin());
+    const rows = page["events"] as Record<string, any>[];
+    // The oldest is the gateway's own: the crm deploy in beforeEach.
+    expect(rows.map((row) => row["type"])).toEqual([
+      "app.updated",
+      "app.crm.invoice.paid",
+      "cap.raised",
+      "member.invited",
+      "app.tools_changed",
+    ]);
+    expect(page["nextBefore"]).toBeNull();
+    expect(rows[4]).toMatchObject({
+      actor: { kind: "gateway", id: null, email: null, name: null },
+      subject: { app: { id: "crm", name: "CRM" } },
+    });
+    expect(rows[3]).toMatchObject({
+      label: "Someone was invited to the workspace",
+      // The actor as the catalogue names them (their current name, else email).
+      summary: expect.stringMatching(/ invited pat@example.com as member$/),
+      actor: {
+        kind: "user",
+        id: adminId,
+        email: "admin@example.com",
+      },
+      subject: { invitation: { email: "pat@example.com", role: "member" } },
+      appEvent: false,
+    });
+    expect(rows[2]).toMatchObject({
+      label: expect.stringContaining("cap"),
+      actor: { kind: "user", id: ownerId, email: "owner@example.com" },
+      subject: { app: { id: "crm", name: "CRM" } },
+    });
+    expect(rows[1]).toMatchObject({
+      label: "App event: invoice.paid",
+      summary: "crm: invoice.paid",
+      actor: { kind: "app", id: "crm", email: null, name: null },
+      subject: { app: { id: "crm", name: null } },
+      appEvent: true,
+    });
+    expect(rows[0]).toMatchObject({
+      actor: { kind: "operator", id: "ops@example.com" },
+      subject: { app: { id: "crm", name: "CRM" } },
+    });
+    // Never the event's data.
+    for (const row of rows) expect(row).not.toHaveProperty("data");
+    expect(JSON.stringify(page)).not.toContain("amount");
+
+    // The filters: an actor by email or id, a type, a prefix, everything.
+    const types = async (args: Record<string, unknown>) =>
+      (
+        (await data("everyapp_workspace_audit", args, owner()))["events"] as {
+          type: string;
+        }[]
+      ).map((row) => row.type);
+    expect(await types({ actor: "admin@example.com" })).toEqual([
+      "member.invited",
+    ]);
+    expect(await types({ actor: ownerId })).toEqual(["cap.raised"]);
+    expect(await types({ actor: "crm" })).toEqual(["app.crm.invoice.paid"]);
+    expect(await types({ type: "tool.*" })).toEqual(["tool.blocked"]);
+    expect(await types({ type: "member.invited" })).toEqual(["member.invited"]);
+    expect(await types({ type: "app.*" })).toEqual([
+      "app.updated",
+      "app.crm.invoice.paid",
+      "app.tools_changed",
+    ]);
+    expect(await types({ type: "*" })).toHaveLength(7);
+    expect(await types({ since: later.toISOString() })).toEqual([
+      "app.updated",
+      "app.crm.invoice.paid",
+    ]);
+
+    // Paged by (time, id), newest first.
+    const first = await data("everyapp_workspace_audit", { limit: 3 }, admin());
+    expect(
+      (first["events"] as { type: string }[]).map((row) => row.type),
+    ).toEqual(["app.updated", "app.crm.invoice.paid", "cap.raised"]);
+    expect(first["nextBefore"]).toEqual({
+      time: expect.any(Number),
+      id: expect.any(String),
+    });
+    const rest = await data(
+      "everyapp_workspace_audit",
+      { limit: 3, before: first["nextBefore"] },
+      admin(),
+    );
+    expect(
+      (rest["events"] as { type: string }[]).map((row) => row.type),
+    ).toEqual(["member.invited", "app.tools_changed"]);
+    expect(rest["nextBefore"]).toBeNull();
+
+    // Refusals, and who may read: owners and admins (a read-only
+    // connection too), never a member.
+    expect(
+      await refusal(
+        "everyapp_workspace_audit",
+        { since: "yesterday" },
+        owner(),
+      ),
+    ).toMatch(/INVALID_INPUT: since must be an ISO 8601 time/);
+    expect(
+      await refusal("everyapp_workspace_audit", { type: "Member.*" }, owner()),
+    ).toMatch(/INVALID_INPUT: type is an event type/);
+    expect(
+      await refusal(
+        "everyapp_workspace_audit",
+        { before: { time: 1, id: "" } },
+        owner(),
+      ),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_audit: /);
+    expect(
+      await refusal("everyapp_workspace_audit", { limit: 201 }, owner()),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_audit: /);
+    expect(
+      (
+        (await data("everyapp_workspace_audit", {}, admin({ access: "read" })))[
+          "events"
+        ] as unknown[]
+      ).length,
+    ).toBe(5);
+    expect(await call("everyapp_workspace_audit", {}, member())).toEqual({
+      ok: false,
+      unknown: true,
+      message: "Unknown tool: everyapp_workspace_audit",
+    });
+    expect(WORKSPACE_AUDIT_PAGE_MAX).toBe(AUDIT_PAGE_MAX);
   });
 
   it("writes one mcp_tool_calls row per call that Admin → Activity lists, and reads them back as activity", async () => {

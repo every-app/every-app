@@ -28,3 +28,9 @@ A cap is a soft stop. The Gateway counts a call once the provider has answered, 
 ## Cap alerts
 
 Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under **Manage workspace → Events**. The alerts come with your first cap, the default included; an admin switches them off there, or adds a webhook that gets the same events. [Email alerts](/docs/events#email-alerts), [Send email](/docs/people#send-email)
+
+## Audit log
+
+**Manage workspace → Activity → Audit** is the workspace's audit log: who did what, newest first. Someone joined or was invited, an app was installed or updated, a cap was set or reached, an AI app was connected or a token revoked, Access turned on, an MCP app or provider added, and what your apps report about themselves. Each row says when, who (a member, an AI app, the command line, an app, or the Gateway itself), what happened in plain words, and what it was about. Filter by who, by kind of event and by time; it never holds a secret, a tool's arguments or an event's payload.
+
+Owners and admins see it; it is kept for 90 days. The same from a terminal is `pnpm everyapp workspace audit`, and from your AI app the `everyapp_workspace_audit` tool. The default view, **Agent activity**, lists every tool call an AI app made. [Events](/docs/events)

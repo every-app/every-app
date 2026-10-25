@@ -82,6 +82,13 @@ const ACTIVITY_LIMIT_DEFAULT = 50;
  */
 export const ACTIVITY_TIME_MAX_MS = 8_640_000_000_000_000;
 /**
+ * The most rows `everyapp_workspace_audit` returns per page: the SDK's
+ * AUDIT_PAGE_MAX, which the gateway's test pins to this.
+ */
+export const WORKSPACE_AUDIT_PAGE_MAX = 200;
+/** A type filter's length: the longest app event type (app.<id>.<64>) and some. */
+const AUDIT_TYPE_MAX = 80;
+/**
  * The most deliveries `everyapp_workspace_event_deliveries` returns per
  * page: the gateway's `DELIVERIES_PAGE_MAX` (server/events/subscriptions.ts),
  * which its test pins to this.
@@ -602,6 +609,60 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
           },
         },
         required: ["createdAt", "id"],
+        additionalProperties: false,
+      },
+    }),
+  },
+  {
+    ...ADMIN_READ,
+    name: "workspace_audit",
+    title: "Audit log",
+    description:
+      "One page of the organization's audit log, newest first: every event the Gateway recorded (members, apps, caps, connections, tokens, Access, MCP apps, providers, apps' own events), with who did it, the type in plain words, a one-line summary and what it was about; never an event's data, a secret or a tool's arguments. Test pings and tool calls stay out unless `type` names them (`tool.*`, `*`): everyapp_workspace_activity lists the calls. Filter by actor, type or time; page with `before` from the previous answer's `nextBefore`. Kept 90 days. Owners and admins.",
+    inputSchema: objectWith({
+      actor: id(
+        "Only events this actor caused: a member's email or user id, an AI connection's or token's id, an app's id, or the operator's id from everyapp_workspace_audit's own `actor.id`.",
+      ),
+      type: {
+        type: "string",
+        description:
+          "Only this event type (member.joined), every type under a prefix (member.*, app.crm.*), or * for everything, pings and tool calls included.",
+        minLength: 1,
+        maxLength: AUDIT_TYPE_MAX,
+      },
+      since: {
+        type: "string",
+        description:
+          "Only events at or after this time, as an ISO 8601 date-time.",
+        minLength: 4,
+        maxLength: 40,
+      },
+      limit: {
+        type: "integer",
+        description: `Rows per page, 1 to ${WORKSPACE_AUDIT_PAGE_MAX}. Default ${ACTIVITY_LIMIT_DEFAULT}.`,
+        minimum: 1,
+        maximum: WORKSPACE_AUDIT_PAGE_MAX,
+        default: ACTIVITY_LIMIT_DEFAULT,
+      },
+      before: {
+        type: "object",
+        description:
+          "The previous page's `nextBefore`: the page continues before this row.",
+        properties: {
+          time: {
+            type: "integer",
+            description: "The row's time in milliseconds since the epoch.",
+            minimum: 0,
+            maximum: ACTIVITY_TIME_MAX_MS,
+          },
+          id: {
+            type: "string",
+            description: "The row's id.",
+            minLength: 1,
+            maxLength: 128,
+          },
+        },
+        required: ["time", "id"],
         additionalProperties: false,
       },
     }),

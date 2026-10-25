@@ -61,11 +61,16 @@ export const eventSubscriptions = sqliteTable(
 );
 
 /**
- * One row per event. No foreign keys: the trail outlives the app, the
- * user and the subscription, like `mcp_tool_calls`; the hourly
- * maintenance deletes rows past 30 days. `dedupe_key` makes an event that
- * must happen once (cap.warning per app, month and cap) happen once
- * across isolates: a colliding insert is dropped.
+ * One row per event: the audit log. No foreign keys: the trail outlives
+ * the app, the user and the subscription, like `mcp_tool_calls`; the
+ * hourly maintenance deletes rows past AUDIT_RETENTION_DAYS (90; the
+ * deliveries go after EVENT_RETENTION_DAYS, 30). `dedupe_key` makes an
+ * event that must happen once (cap.warning per app, month and cap) happen
+ * once across isolates: a colliding insert is dropped. `actor_kind` and
+ * `actor_id` are the actor JSON's `kind` and `id` as columns, so the
+ * audit log filters by who (migration 0015 backfilled them; a row written
+ * before it by an older CLI may still have them null, and the readers
+ * fall back to the JSON).
  */
 export const events = sqliteTable(
   "events",
@@ -78,6 +83,10 @@ export const events = sqliteTable(
     time: integer("time", { mode: "timestamp_ms" }).notNull(),
     // JSON: { kind, id?, email?, name? }
     actor: text("actor").notNull(),
+    // "user" | "agent" | "app" | "operator" | "gateway": actor.kind as a column.
+    actorKind: text("actor_kind"),
+    // actor.id as a column (null for the gateway), for the audit log's filter.
+    actorId: text("actor_id"),
     // JSON, at most 16 KiB (8 KiB for an app's own event).
     data: text("data").notNull(),
     appRowId: text("app_row_id"),
@@ -88,11 +97,17 @@ export const events = sqliteTable(
     uniqueIndex("events_dedupe_key_unique").on(table.dedupeKey),
     index("events_org_time_idx").on(table.organizationId, table.time),
     index("events_time_idx").on(table.time),
+    index("events_org_actor_time_idx").on(
+      table.organizationId,
+      table.actorId,
+      table.time,
+    ),
   ],
 );
 
 /**
- * One row per event and subscription: the queue and the 30-day log.
+ * One row per event and subscription: the queue and the 30-day log
+ * (EVENT_RETENTION_DAYS; the events themselves stay 90 days).
  * `pending` rows whose `next_attempt_at` has come are attempted by the
  * per-minute cron (and at once, after the event, under waitUntil);
  * `claimed_until` keeps two isolates off one row.

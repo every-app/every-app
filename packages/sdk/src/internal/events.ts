@@ -157,8 +157,19 @@ export const EVENT_SUBSCRIPTIONS_MAX = 25;
 /** A webhook signing secret's length. */
 export const EVENT_SECRET_MIN_LENGTH = 16;
 export const EVENT_SECRET_MAX_LENGTH = 128;
-/** Events and deliveries are kept this long. */
+/**
+ * Deliveries (the queue and its log) are kept this long. Events themselves
+ * are the audit log and live longer ({@link AUDIT_RETENTION_DAYS}).
+ */
 export const EVENT_RETENTION_DAYS = 30;
+/**
+ * Events are kept this long: Admin → Activity → Audit, `everyapp workspace
+ * audit` and `everyapp_workspace_audit` read them back. A constant, not a
+ * setting.
+ */
+export const AUDIT_RETENTION_DAYS = 90;
+/** The most audit rows one page carries, on every surface. */
+export const AUDIT_PAGE_MAX = 200;
 /** A subscription's URL. */
 export const EVENT_URL_MAX_LENGTH = 2048;
 /** A subscription's name. */

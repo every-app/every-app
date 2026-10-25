@@ -61,7 +61,7 @@ RUN A GATEWAY
   teardown   Delete everything Every App created in a dedicated test Cloudflare account
 
 MANAGE THE WORKSPACE
-  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, tokens and AI connections
+  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -220,7 +220,7 @@ Run pnpm everyapp email <command> --help for its flags.
 ### `everyapp workspace`
 
 ```text
-Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, tokens and AI connections.
+Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections.
 
 Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.
 Acts under your Cloudflare login (the operator is root in every organization of the Gateway),
@@ -251,6 +251,7 @@ COMMANDS
   cap          The workspace default cap on every app's provider calls
   usage        What the apps spent in a month: per app (with the cap that binds it), per member and per provider
   activity     The tool-call audit trail, newest first: who called which tool on which app, and what came of it
+  audit        The audit log, newest first: every event the Gateway recorded (members, apps, caps, connections, tokens, Access, MCP apps, providers, apps' own events), who did it and what it was about
   tokens       Every member's personal access tokens for the organization (never a token's value)
   token        Revoke a personal access token
   connections  Every member's AI connections to the organization: which AI app, which apps it may use, read or write
@@ -3491,6 +3492,55 @@ FLAGS
      [--since]                 Calls at or after this time (ISO 8601, UTC)
      [--limit]                 Rows per page, 1 to 200 (default 50)
      [--before]                The next page: the previous page's nextBefore, as <createdAt>:<id>
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp workspace audit`
+
+The audit log, newest first: every event the Gateway recorded (members, apps, caps, connections, tokens, Access, MCP apps, providers, apps' own events), who did it and what it was about.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--actor` | `<who>` | no |  | Events this actor caused: a member by email or user id, an AI connection's or token's id, an app's id, or an operator's email |
+| `--type` | `<type>` | no |  | One event type (member.joined), every type under a prefix (member.*, app.crm.*), or * for everything, pings and tool calls included |
+| `--since` | `<time>` | no |  | Events at or after this time (ISO 8601, UTC) |
+| `--limit` | `<n>` | no |  | Rows per page, 1 to 200 (default 50) |
+| `--before` | `<cursor>` | no |  | The next page: the previous page's nextBefore, as <time>:<id> |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace audit [--actor who] [--type type] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp workspace audit --help
+
+The same rows as Admin → Activity → Audit and everyapp_workspace_audit, kept 90 days. Each
+row is when, who (a member by name, agent · <AI app>, CLI · <operator>, app · <id>, or
+Gateway), what (the type in plain words) and the subject; never an event's data, a
+secret or a tool's arguments. Test pings and tool calls stay out unless --type names
+them (tool.*, *): workspace activity lists the calls. One page at a time; --json carries
+data.nextBefore for the next page. Refused on a Gateway from before the audit log
+(GATEWAY_OUTDATED): run update first. Nothing is changed.
+
+Examples:
+  pnpm everyapp workspace audit --limit 20
+  pnpm everyapp workspace audit --actor mia@acme.com --type member.* --since 2026-10-24 --json
+
+FLAGS
+     [--actor]                 Events this actor caused: a member by email or user id, an AI connection's or token's id, an app's id, or an operator's email
+     [--type]                  One event type (member.joined), every type under a prefix (member.*, app.crm.*), or * for everything, pings and tool calls included
+     [--since]                 Events at or after this time (ISO 8601, UTC)
+     [--limit]                 Rows per page, 1 to 200 (default 50)
+     [--before]                The next page: the previous page's nextBefore, as <time>:<id>
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)

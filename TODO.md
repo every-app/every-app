@@ -1115,6 +1115,18 @@ Follow-ups:
 - [ ] The email sink's mailed markers are best effort and kept three days (`events:mailed:<delivery>:<recipient hash>` in `rate_limit_counters`, `email-sink.ts`): a marker write that fails costs that recipient one duplicate on the retry, and a redeliver of a partial send more than three days later mails every owner and admin again (threat model B9's gaps; pinned by `events.sqlite.test.ts` :: a redeliver more than three days after a partial send mails every recipient again). Keep the marker as long as the delivery (30 days) or on the delivery row itself, and let a failed marker write fail that recipient's attempt.
 - [ ] Wrap the signing secret at rest once the Gateway is the only writer of subscriptions (the second default above; threat model B9's first gap and ranked gap 42).
 
+### Audit log (2026-10-25)
+
+The Admins-control-the-gateway swath's audit lane: Admin → Activity → **Audit** (`?view=audit`), `everyapp workspace audit`, `everyapp_workspace_audit`, over the `events` table (migration `0015_audit_actor`). Defaults taken for Ben:
+
+- [ ] **Events are kept 90 days, deliveries 30** (`AUDIT_RETENTION_DAYS`, `EVENT_RETENTION_DAYS`; both constants, not settings). Walk-back: one number again, or a setting.
+- [ ] **The audit log is a toggle on Activity, not its own tab**; the tool calls stay the default view, `?view=audit` opens the trail. Walk-back: an Audit tab.
+- [ ] **`ping` and `tool.*` stay out of the default view** (the tool-calls view lists every call); `--type tool.*` or `*` brings them in.
+- [ ] **A page is 1 to 200 rows, default 50** (`AUDIT_PAGE_MAX`), the activity page's numbers.
+- [ ] **`actor_kind` and `actor_id` are columns backfilled by the migration** from the actor JSON; the readers fall back to the JSON for a row an older CLI writes without them. An older CLI keeps working; `workspace audit` on a Gateway from before 0015 is `GATEWAY_OUTDATED`.
+- [ ] **A member actor shows by their current name and email** (joined from `users`), a gone one as "Former member" with the id; the JSON's name is the fallback.
+- [ ] **The CLI prints the type's label and the subject, not the summary line**: the catalogue's `summarize` lives in the gateway, and the CLI reads D1 directly. Walk-back: move `summarize` into the SDK.
+- [ ] **No new event types**: the labels come from `EVENT_TYPES`, so the sibling lane's new types show up by themselves.
 ### Sign-in providers (2026-10-25)
 
 Ben's mandate for the swath: "build the best thing we'll want long term, fully done, merged on green." Shipped: "Continue with Google, Microsoft, GitHub, Apple, Cloudflare or SSO" beside passwords, on Better Auth's providers under the invitation flow's rules, with the settings as Worker secrets in the `<ID>_SIGNIN_<FIELD>` family. The gateway core and threat model B10 #666 (`b42b1c3d`), the CLI's `everyapp signin add|list|show|remove`, the six setup guides and the Apple bypass and the `signin_provider.added`/`.removed` events #674, Manage workspace → Sign-in, the sign-in page's buttons, the account menu's Connect and the read-only MCP twins #677, the docs (`/docs/sign-in`, `/docs/agent/signin`, the Access runbook's pointer, this section) #671. The operator's runbook is `docs/runbooks/sign-in-providers.md`. The defaults it shipped with, each with its walk-back; yes keeps it:

@@ -1,12 +1,16 @@
 /**
- * `everyapp workspace usage|activity|tokens|connections` and `workspace
- * token revoke|connection revoke`: the trails an admin reads (Admin →
- * Usage, Activity, Tokens; the account menu's AI connections), every
+ * `everyapp workspace usage|activity|audit|tokens|connections` and
+ * `workspace token revoke|connection revoke`: the trails an admin reads
+ * (Admin → Usage, Activity and its Audit view, Tokens; the account menu's
+ * AI connections), every
  * member's at once for the operator, and the two revocations
  * (lib/gateway/workspace.ts does the reading and writing). Never a
  * token's hash or value.
  */
+import { auditActorLabel, auditSubjectLabel } from "@every-app/sdk/internal";
 import chalk from "chalk";
+import { EveryAppError } from "@/lib/errors";
+import { findMember } from "@/lib/gateway/workspace";
 import * as workspace from "@/lib/gateway/workspace";
 import { CLI } from "@/lib/output/command";
 import { runCommand } from "@/lib/output/run";
@@ -32,6 +36,18 @@ interface ActivityFlags extends WorkspaceFlags {
 
 export async function activity(flags: ActivityFlags): Promise<void> {
   await runCommand(flags, (out) => listActivity({ flags, out }));
+}
+
+interface AuditFlags extends WorkspaceFlags {
+  actor?: string;
+  type?: string;
+  since?: number;
+  limit?: number;
+  before?: { time: number; id: string };
+}
+
+export async function audit(flags: AuditFlags): Promise<void> {
+  await runCommand(flags, (out) => listAudit({ flags, out }));
 }
 
 export async function tokens(flags: WorkspaceFlags & { user?: string; all?: boolean }): Promise<void> {
@@ -174,6 +190,60 @@ export async function listActivity(options: WorkspaceOptions<ActivityFlags>): Pr
       calls: page.calls.map((call) => ({ ...call, createdAt: iso(call.createdAt) })),
       nextBefore: cursor,
       ...(cursor ? { next: [{ command: `${CLI} workspace activity --before ${cursor}`, note: "the next page" }] } : {}),
+    },
+  });
+}
+
+/**
+ * `--actor` on `audit`: a member by email or id resolves to their user id;
+ * anything else (a connection's or token's id, an app's id, an operator's
+ * email, someone who has left) is taken as the actor id it is.
+ */
+async function actorFilter(ws: workspace.Workspace, value: string): Promise<string> {
+  try {
+    return (await findMember(ws, value)).id;
+  } catch (error) {
+    if (!(error instanceof EveryAppError) || error.code !== "USER_NOT_FOUND") throw error;
+    return value.trim();
+  }
+}
+
+export async function listAudit(options: WorkspaceOptions<AuditFlags>): Promise<void> {
+  const { out, flags } = options;
+  const { ws } = await connect(options);
+  const actorId = flags.actor === undefined ? undefined : await actorFilter(ws, flags.actor);
+  const page = await workspace.audit(ws, {
+    limit: flags.limit,
+    before: flags.before,
+    actorId,
+    type: flags.type,
+    since: flags.since,
+  });
+  const table = formatTable(
+    ["WHEN (UTC)", "WHO", "WHAT", "SUBJECT", "TYPE"],
+    page.events.map((event) => [
+      when(event.time),
+      auditActorLabel(event.actor),
+      event.label,
+      auditSubjectLabel(event.subject) || chalk.dim("–"),
+      chalk.dim(event.type),
+    ]),
+  );
+  const cursor = page.nextBefore ? `${page.nextBefore.time}:${page.nextBefore.id}` : null;
+  const headline = `${plural(page.events.length, "audit event")} in ${ws.organization.name}${page.nextBefore ? " (more before this page)" : ""}`;
+  out.emit({
+    type: "done",
+    message: headline,
+    display: [
+      page.events.length > 0 ? table.join("\n") : chalk.dim("No audit events match."),
+      chalk.dim("Kept 90 days. Test pings and tool calls are left out unless --type names them (tool.*, *): workspace activity lists the calls."),
+      ...(cursor ? [chalk.dim(`Next page: ${CLI} workspace audit --before ${cursor}`)] : []),
+    ].join("\n"),
+    data: {
+      organization: ws.organization,
+      events: page.events.map((event) => ({ ...event, time: iso(event.time) })),
+      nextBefore: cursor,
+      ...(cursor ? { next: [{ command: `${CLI} workspace audit --before ${cursor}`, note: "the next page" }] } : {}),
     },
   });
 }

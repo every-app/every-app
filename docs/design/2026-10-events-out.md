@@ -158,7 +158,7 @@ Indexes: `(organization_id, time)`, `(time)` for pruning.
 
 Indexes: `(status, next_attempt_at)` for the sweep, `(subscription_id, created_at)` for the UI, `(organization_id, created_at)`, `(event_id)`.
 
-Retention: the hourly maintenance (`mcp-auth/maintenance.ts`) deletes `events` and `event_deliveries` rows older than 30 days (`EVENTS_RETENTION_DAYS` is a constant, not a setting, this week), 10,000 rows a run.
+Retention: the hourly maintenance (`mcp-auth/maintenance.ts`) deletes `event_deliveries` rows older than 30 days (`EVENT_RETENTION_DAYS`) and `events` rows older than 90 (`AUDIT_RETENTION_DAYS`, since the audit log of 2026-10-25 reads them back: Admin → Activity → Audit, `workspace audit`, `everyapp_workspace_audit`; both constants, not settings), 10,000 rows of each a run. Migration `0015_audit_actor` added `actor_kind` and `actor_id` columns (backfilled from the actor JSON) and the index `(organization_id, actor_id, time)` for the audit log's actor filter.
 
 ## 4. Delivery
 

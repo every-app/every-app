@@ -110,6 +110,7 @@ never the last owner, never yourself) apply on top and come back as errors.
 | `everyapp_workspace_app_delete` | write | owner | `app`, `confirm: true` | `AppService.delete` (the catalog row; the Worker stays until `everyapp delete`) |
 | `everyapp_workspace_usage` | read | admin | `month?` | `UsageRepository.summarize` |
 | `everyapp_workspace_activity` | read | admin | `app?`, `user?`, `decision?`, `risk?`, `since?` (ISO time), `limit?` (1–`TOOL_CALL_PAGE_MAX`, default 50), `before?` (the previous page's cursor) | `McpToolCallRepository.listForOrganization` |
+| `everyapp_workspace_audit` | read | admin | `actor?`, `type?` (a type, a prefix like `member.*`, or `*`), `since?` (ISO time), `limit?` (1–`AUDIT_PAGE_MAX`, default 50), `before?` (the previous page's cursor) | `listAudit` (`server/events/audit.ts`) over `EventRepository.listForAudit` |
 | `everyapp_workspace_rename` | write | admin | `name` | `OrganizationService.rename` (the UI review thread adds it; until it lands the tool is omitted and the matrix says so) |
 | `everyapp_my_tokens` | read | member | – | `UserPatService.listForUser`: the caller's own personal access tokens (never a value) |
 | `everyapp_revoke_token` | write | member | `token` (id or name) | `UserPatService.revoke` (own tokens only) |
@@ -181,6 +182,7 @@ skips the confirmation of `remove`, `group delete` and `app delete`.
 | `workspace cap default <n\|off>` | the workspace default for every app without its own cap (after the Caps thread's migration 0009) | `org_settings` |
 | `workspace usage [--month YYYY-MM]` | per app, member and provider; after 0009 also the effective cap, its source and whether the app is paused | – |
 | `workspace activity [--app] [--user] [--decision] [--risk] [--since] [--limit] [--before]` | the tool-call audit trail, with the Activity page's filters and its cursor (`done.data.nextBefore`) | – |
+| `workspace audit [--actor] [--type] [--since] [--limit] [--before]` | the audit log (the organization's events, 90 days), with the Audit view's filters and its cursor (`done.data.nextBefore`); the type's label and the subject, no summary line (the catalogue lives in the Gateway) | – |
 | `workspace tokens [--user <email>]` | personal access tokens (every member's for the operator; never a value) | – |
 | `workspace token revoke <id>` | | `user_access_tokens.revoked_at` |
 | `workspace connections [--user <email>]` | AI connections (every member's for the operator) | – |
@@ -238,6 +240,8 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Users → Cancel invitation | `admin.cancelInvitation` | `workspace uninvite` | `everyapp_workspace_uninvite` | |
 | Admin → Activity: the list | `activity.listToolCalls` | `workspace activity` | `everyapp_workspace_activity` | the UI's filters are app, decision (allowed, blocked), risk (read, write, destructive) and a time range, paged by cursor at 50; the CLI takes `--app`, `--user`, `--decision`, `--risk`, `--since`, `--limit`, `--before`; the tool the same fields |
 | Admin → Activity: the App filter's choices | `activity.listToolCallApps` | `workspace activity` | `everyapp_workspace_activity` | the CLI and the tool take `--app` / `app` directly |
+| Admin → Activity → Audit: the list | `audit.listAuditEvents` | `workspace audit` | `everyapp_workspace_audit` | the UI's filters are who (actor), type (one, a group's `member.*`, or `*`) and the same time range, paged by cursor at 50; the CLI takes `--actor`, `--type`, `--since`, `--limit`, `--before`; the tool the same fields; the CLI shows no summary line |
+| Admin → Activity → Audit: the Who filter's choices | `audit.listAuditActors` | `workspace audit` | `everyapp_workspace_audit` | the CLI and the tool take `--actor` / `actor` directly |
 | Admin → Apps: the list | `apps.getApps` | `workspace apps` | `everyapp_workspace_apps` | |
 | Admin → Apps → Edit (name, description, available to everyone) | `apps.updateApp` | `workspace app set` | `everyapp_workspace_app_set` | |
 | Admin → Apps → Delete | `apps.deleteApp` | `delete` | `everyapp_workspace_app_delete` | `everyapp delete` removes the Worker too; MCP asks `confirm: true`; owners and admins |
