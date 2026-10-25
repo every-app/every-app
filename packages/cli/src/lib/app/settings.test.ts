@@ -105,13 +105,13 @@ describe("the Gateway names an app needs, as secret list --json has always said 
       { name: "OPENROUTER_API_KEY", required: true, set: true },
       { name: "CONTEXT_API_KEY", required: false, set: false },
       { name: "EMAIL_FROM", required: true, set: false },
-      { name: "EMAIL_FROM_NAME", required: false, set: false },
+      { name: "EMAIL_FROM_NAME", required: true, set: false },
       { name: "EMAIL_REST_API_TOKEN", required: false, set: false },
       { name: "RESEND_API_KEY", required: false, set: false },
       { name: "EMAIL_PROVIDER", required: false, set: false },
     ]);
     // The AI model group is met: its other member isn't missing.
-    expect(gatewayMissing(report.settings, ["OPENROUTER_API_KEY"])).toEqual(["EMAIL_FROM"]);
+    expect(gatewayMissing(report.settings, ["OPENROUTER_API_KEY"])).toEqual(["EMAIL_FROM", "EMAIL_FROM_NAME"]);
 
     const none = appSetupFrom({ manifest: CRM, appId: "crm", gatewayNames: [], secretNames: [] });
     expect(gatewayMissing(none.report.settings, [])).toEqual(["OPENAI_API_KEY", "OPENROUTER_API_KEY"]);

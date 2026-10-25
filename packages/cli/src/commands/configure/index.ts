@@ -376,7 +376,7 @@ function introduction(target: Target, { report }: State): string[] {
 /**
  * The setting a name belongs to, whatever its state: one of its names, or
  * one it also reads when set (a capability's optional Gateway settings,
- * EMAIL_FROM_NAME), which a script may pipe in too.
+ * RESEND_API_KEY), which a script may pipe in too.
  */
 function settingOf({ report }: State, name: string): EvaluatedSetting | undefined {
   return (

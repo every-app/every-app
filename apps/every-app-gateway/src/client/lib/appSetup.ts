@@ -40,6 +40,12 @@ interface SetupDialogCommand {
    * <KEY>` (one hidden prompt): what the line under it may say.
    */
   configures: boolean;
+  /**
+   * What follows, said after what `configure` asks, for a reader who runs
+   * it; null for one who asks an admin, and under a provider's command,
+   * which has no line.
+   */
+  next: string | null;
 }
 
 interface SetupDialogModel {
@@ -69,6 +75,9 @@ const ASK_AN_ADMIN = "Ask an admin to run:";
 const INTRO_CAN_RUN = "Set these before anyone can open it.";
 // The command's heading says who; the intro doesn't say "admin" twice.
 const INTRO_ASK = "It opens once these are set.";
+// The dialog closes by itself once the list says the app is ready
+// (useSetupDialog); a ready app shows no chip, so never "turns Active".
+const NEXT_STEP = "Run it in a terminal, then come back here: the app opens.";
 
 function docsLink(docs: string | undefined): SetupDocsLink | null {
   if (!docs) return null;
@@ -123,6 +132,9 @@ export function setupDialogModel(
               metGroups.has(setting.need.group))),
       )
     : [];
+  const configures = setup.command
+    ? / configure /.test(setup.command.command)
+    : false;
   return {
     title: `${name} needs setup`,
     intro: canRun ? INTRO_CAN_RUN : INTRO_ASK,
@@ -132,7 +144,8 @@ export function setupDialogModel(
       ? {
           heading: canRun ? null : ASK_AN_ADMIN,
           command: setup.command.command,
-          configures: / configure /.test(setup.command.command),
+          configures,
+          next: canRun && configures ? NEXT_STEP : null,
         }
       : null,
     platformNote: setup.command ? null : PLATFORM_NOTE,

@@ -31,6 +31,7 @@ import {
 } from "@/client/components/ui/input-group";
 import { Kbd } from "@/client/components/ui/kbd";
 import { AppLibraryLayout, useAppLibrary } from "@/client/hooks/useAppLibrary";
+import { useSetupDialog } from "@/client/hooks/useSetupDialog";
 import { useMcpParam, useSetupParam } from "@/client/hooks/useSetupParam";
 import { useShortcutLabel } from "@/client/hooks/useShortcutLabel";
 import type { FeaturedApp } from "@/client/lib/featuredApps";
@@ -38,6 +39,7 @@ import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 import { authClient } from "@/client/auth-client";
 import { isMcpApp } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
+import { userAppsCollection } from "@/client/tanstack-db";
 
 /** What the "MCP apps" section says once, so its cards need only a chip. */
 const MCP_APPS_HINT =
@@ -67,11 +69,15 @@ export const Route = createFileRoute("/_app/")({
   component: App,
 });
 
+/** The launcher's list, from the server (not the query cache). */
+function refetchApps() {
+  return userAppsCollection.utils.refetch();
+}
+
 function App() {
   const session = useSession();
   const { pwa: pwaParam, setup: setupParam, mcp: mcpParam } = Route.useSearch();
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
-  const [setupApp, setSetupApp] = useState<UserAccessApp | null>(null);
   // The gallery's dialogs: one of the four apps, or Build your own.
   const [pickedApp, setPickedApp] = useState<FeaturedApp | null>(null);
   const [buildOpen, setBuildOpen] = useState(false);
@@ -87,6 +93,13 @@ function App() {
     activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
   const { apps, isLoading, isError, pinnedIds, layout, togglePin, setLayout } =
     useAppLibrary();
+  // The setup dialog's app, read from the live list: it closes by itself
+  // once the app is ready.
+  const {
+    app: setupApp,
+    open: openSetup,
+    close: closeSetup,
+  } = useSetupDialog(apps, refetchApps);
 
   useEffect(() => {
     if (
@@ -118,7 +131,7 @@ function App() {
     setupParam,
     apps,
     loaded: !isLoading && !isError,
-    open: setSetupApp,
+    open: openSetup,
     strip: () => void navigate({ to: "/", search: {}, replace: true }),
   });
 
@@ -168,7 +181,7 @@ function App() {
       app={app}
       pinned={pinnedIds.has(app.id)}
       onTogglePin={() => togglePin(app.id)}
-      onOpenSetup={() => setSetupApp(app)}
+      onOpenSetup={() => openSetup(app)}
       onUseMcp={() => setMcpApp(app)}
       layout={layout}
     />
@@ -374,7 +387,7 @@ function App() {
       {buildOpen ? (
         <BuildYourOwnDialog onClose={() => setBuildOpen(false)} />
       ) : null}
-      {setupApp?.setup ? (
+      {setupApp ? (
         <AppSetupDialog
           name={setupApp.name}
           setup={setupApp.setup}
@@ -386,7 +399,7 @@ function App() {
             setupApp.organizationId ===
               session.data?.session.activeOrganizationId
           }
-          onClose={() => setSetupApp(null)}
+          onClose={closeSetup}
         />
       ) : null}
       {mcpApp ? (

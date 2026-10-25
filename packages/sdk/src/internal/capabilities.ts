@@ -286,18 +286,20 @@ export const CAPABILITIES = {
     label: "Email",
     access: ["write"],
     routes: { send: ["POST"] },
-    // The sender is EMAIL_FROM. It needs a display name too, either
-    // EMAIL_FROM_NAME or the `Name <address>` form of EMAIL_FROM itself, so
-    // the name is "read when set" here and the gateway's own rule
-    // (isEmailConfigured: a sender that parses and a provider that is
-    // selectable) decides readiness where values can be read.
-    settings: ["EMAIL_FROM"],
+    // The sender is EMAIL_FROM with a display name: the gateway refuses to
+    // send without one. EMAIL_FROM_NAME is the plain way to give it, so the
+    // setup dialog and the CLI name both; EMAIL_FROM="Name <address>" stays
+    // accepted (parseEmailSender in internal/email.ts), and the gateway,
+    // which reads values, answers by its own rule (isEmailConfigured: a
+    // sender that parses and a provider that is selectable) rather than by
+    // these names. The CLI reads names alone, so it calls EMAIL_FROM_NAME
+    // unset until it is.
+    settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
     // The providers' settings (internal/email.ts chooseEmailProvider):
     // Cloudflare's REST pair, sent instead of the gateway's EMAIL binding
     // (a gateway outside Workers, local dev); Resend's key; and the choice
     // between them when both are set.
     optionalSettings: [
-      "EMAIL_FROM_NAME",
       "EMAIL_REST_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
       "RESEND_API_KEY",

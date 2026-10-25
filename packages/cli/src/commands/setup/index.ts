@@ -120,7 +120,7 @@ function nextAfterInstall(mode: DeploymentMode): Array<{ command: string; note: 
       { command: `${CLI} create my-app`, note: "start your first app" },
       { command: `${CLI} secret set OPENAI_API_KEY`, note: "turn on AI for apps" },
       {
-        command: `${CLI} secret set EMAIL_FROM`,
+        command: `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
         note: "email invites; needs Cloudflare Email Sending",
       },
     ];

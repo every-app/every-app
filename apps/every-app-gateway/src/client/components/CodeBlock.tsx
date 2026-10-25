@@ -13,8 +13,10 @@ export function CodeBlock({
 }: CodeBlockProps) {
   return (
     <div className="relative min-w-0">
-      {/* Long links and tokens wrap, so no text runs under the copy button. */}
-      <pre className="rounded-lg border border-border bg-muted px-3 py-2.5 pr-11 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+      {/* A command wraps at its spaces; only a lone over-long token (a link,
+          a token) breaks inside, so no text runs under the copy button and a
+          setting name is never split across lines. */}
+      <pre className="rounded-lg border border-border bg-muted px-3 py-2.5 pr-11 font-mono text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap">
         <code>{code}</code>
       </pre>
       <CopyButton

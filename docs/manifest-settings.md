@@ -23,7 +23,7 @@ two holders:
 | Kind         | Declared as                                        | Held on              | "Set" means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------ | -------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `provider`   | `providers: ["openrouter"]`                        | the Gateway Worker   | its key is set: `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or for Workers AI `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is the install's own, set by `everyapp setup`, and never asked for)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `capability` | `capabilities: { dataforseo: { access: "read" } }` | the Gateway Worker   | its required Gateway settings are set: an API-key capability's key; an OAuth client's id and secret, plus its host setting when the client has no default instance (Mastodon's `MASTODON_URL` is only read when set, since `mastodon.social` is the default); a service's `settings` (`members` has none, so it is always set). A capability's optional settings are read when set and never required. The gateway may answer by the capability's own rule instead of its names: email is configured once a sender parses and a provider is selectable (`isEmailConfigured()`). The model names `EMAIL_FROM` for it, and the sender needs a display name too, from `EMAIL_FROM_NAME` or `EMAIL_FROM="Name <address>"`; a bare address is not configured |
+| `capability` | `capabilities: { dataforseo: { access: "read" } }` | the Gateway Worker   | its required Gateway settings are set: an API-key capability's key; an OAuth client's id and secret, plus its host setting when the client has no default instance (Mastodon's `MASTODON_URL` is only read when set, since `mastodon.social` is the default); a service's `settings` (`members` has none, so it is always set). A capability's optional settings are read when set and never required. The gateway may answer by the capability's own rule instead of its names: email is configured once a sender parses and a provider is selectable (`isEmailConfigured()`). The model names `EMAIL_FROM` and `EMAIL_FROM_NAME` for it, since the sender needs a display name; `EMAIL_FROM="Name <address>"` carries the name too, which the gateway reads and the CLI, reading names alone, cannot; a bare address is not configured |
 | `secret`     | `secrets: ["MAIN_SECRET"]`                         | the app's own Worker | the name is set on the app's Worker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `ai-routes`  | `ai: { routes: ["/v1/files"] }`                    | the Gateway Worker   | `AI_PROXY_EXTRA_ROUTES` is set. Always required; it has no entry of its own to annotate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
@@ -245,13 +245,13 @@ export default {
 ```
 
 With nothing set, every member of "AI model" blocks; the command is
-`pnpm everyapp configure writer`, which asks for `EMAIL_FROM`, then
-"Which AI model? One is enough." and the value of the member chosen.
-With `WORKERS_AI_API_TOKEN` set the group is met,
+`pnpm everyapp configure writer`, which asks for `EMAIL_FROM` and
+`EMAIL_FROM_NAME`, then "Which AI model? One is enough." and the value of
+the member chosen. With `WORKERS_AI_API_TOKEN` set the group is met,
 `OPENROUTER_API_KEY` reads "not set (one of: AI model)", and only
-`EMAIL_FROM` is left. The validator refuses this manifest with one member
-removed ("an any-of group needs two or more"), and refuses `optional: true`
-on either member.
+`EMAIL_FROM` and `EMAIL_FROM_NAME` are left. The validator refuses this
+manifest with one member removed ("an any-of group needs two or more"), and
+refuses `optional: true` on either member.
 
 ## 4. Where it shows
 
@@ -528,7 +528,7 @@ app's names were recorded with none set:
       "id": "email",
       "label": "Email",
       "holder": "gateway",
-      "names": ["EMAIL_FROM"],
+      "names": ["EMAIL_FROM", "EMAIL_FROM_NAME"],
       "need": { "kind": "optional" },
       "why": "Emails the weekly report; without it the report is only in the app.",
       "setup": "setup/email.md",

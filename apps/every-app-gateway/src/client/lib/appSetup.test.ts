@@ -79,6 +79,8 @@ describe("setupDialogModel", () => {
       heading: null,
       command: "pnpm everyapp configure openseo",
       configures: true,
+      // What follows, for whoever runs it: the dialog closes on its own.
+      next: "Run it in a terminal, then come back here: the app opens.",
     });
     expect(model.platformNote).toBeNull();
     // What the admin could also set, for the feature that uses it.
@@ -136,6 +138,8 @@ describe("setupDialogModel", () => {
       heading: "Ask an admin to run:",
       command: "pnpm everyapp configure openseo",
       configures: true,
+      // "Run it" would address the admin, not this reader.
+      next: null,
     });
     expect(model.optional).toEqual([]);
   });
@@ -156,9 +160,11 @@ describe("setupDialogModel", () => {
       heading: null,
       command: "pnpm everyapp configure inbox",
       configures: true,
+      next: "Run it in a terminal, then come back here: the app opens.",
     });
 
-    // A provider app's command sets its key by name: nothing to explain.
+    // A provider app's command sets its key by name: nothing to explain,
+    // and no line under it for the next step either.
     const provider = setupDialogModel(
       {
         ...setupOf(INBOX, []),
@@ -170,6 +176,7 @@ describe("setupDialogModel", () => {
       heading: null,
       command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
       configures: false,
+      next: null,
     });
 
     // One set: the other is something the admin could still set.

@@ -151,13 +151,10 @@ describe("appSettings", () => {
         "capability",
         "email",
         "gateway",
-        ["EMAIL_FROM"],
-        [
-          "EMAIL_FROM_NAME",
-          "EMAIL_REST_API_TOKEN",
-          "RESEND_API_KEY",
-          "EMAIL_PROVIDER",
-        ],
+        // The sender needs a display name: both names, so every surface
+        // asks for both (the Name <address> form of EMAIL_FROM is read too).
+        ["EMAIL_FROM", "EMAIL_FROM_NAME"],
+        ["EMAIL_REST_API_TOKEN", "RESEND_API_KEY", "EMAIL_PROVIDER"],
         { kind: "required" },
       ],
       ["capability", "members", "gateway", [], [], { kind: "required" }],

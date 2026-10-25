@@ -654,17 +654,18 @@ describe("secret list", () => {
     // Then each app's settings, in manifest order, the Gateway's first.
     const table = lines.indexOf(lines.find((line) => /^APP +SETTING +WHERE +STATUS$/.test(line))!);
     expect(lines.slice(table)).toEqual([
-      "APP   SETTING               WHERE    STATUS",
-      "crm   OPENAI_API_KEY        Gateway  ✓ set",
-      "crm   OPENROUTER_API_KEY    Gateway  not set (one of: AI model)",
-      "crm   CONTEXT_API_KEY       Gateway  not set (optional)",
-      "crm   TOKEN_ENCRYPTION_KEY  crm      ! not set",
-      "crm   GITHUB_TOKEN          crm      not set (optional)",
-      "todo  OPENAI_API_KEY        Gateway  ✓ set",
-      "todo  DATAFORSEO_API_KEY    Gateway  ! not set",
-      "todo  EMAIL_FROM            Gateway  ! not set",
-      "todo  GITHUB_TOKEN          todo     ✓ set",
-      "todo  STRIPE_KEY            todo     ! not set",
+      // The sender's two names are one setting: one row, joined with +.
+      "APP   SETTING                     WHERE    STATUS",
+      "crm   OPENAI_API_KEY              Gateway  ✓ set",
+      "crm   OPENROUTER_API_KEY          Gateway  not set (one of: AI model)",
+      "crm   CONTEXT_API_KEY             Gateway  not set (optional)",
+      "crm   TOKEN_ENCRYPTION_KEY        crm      ! not set",
+      "crm   GITHUB_TOKEN                crm      not set (optional)",
+      "todo  OPENAI_API_KEY              Gateway  ✓ set",
+      "todo  DATAFORSEO_API_KEY          Gateway  ! not set",
+      "todo  EMAIL_FROM+EMAIL_FROM_NAME  Gateway  ! not set",
+      "todo  GITHUB_TOKEN                todo     ✓ set",
+      "todo  STRIPE_KEY                  todo     ! not set",
     ]);
     // The JSON keeps every settable name.
     expect(done()!["data"]).toMatchObject({
@@ -707,12 +708,12 @@ describe("secret list", () => {
     const lines = (done()!["message"] as string).split("\n");
     const table = lines.findIndex((line) => /^APP +SETTING +WHERE +STATUS$/.test(line));
     expect(lines.slice(table)).toEqual([
-      "APP   SETTING             WHERE    STATUS",
-      "todo  OPENAI_API_KEY      Gateway  ! not set",
-      "todo  DATAFORSEO_API_KEY  Gateway  ! not set",
-      "todo  EMAIL_FROM          Gateway  ! not set",
-      "todo  GITHUB_TOKEN        todo     ! not recorded",
-      "todo  STRIPE_KEY          todo     ! not recorded",
+      "APP   SETTING                     WHERE    STATUS",
+      "todo  OPENAI_API_KEY              Gateway  ! not set",
+      "todo  DATAFORSEO_API_KEY          Gateway  ! not set",
+      "todo  EMAIL_FROM+EMAIL_FROM_NAME  Gateway  ! not set",
+      "todo  GITHUB_TOKEN                todo     ! not recorded",
+      "todo  STRIPE_KEY                  todo     ! not recorded",
       "Couldn't list todo's secrets. Cloudflare said: This Worker does not exist on your account. [code: 10007]. They show as not recorded.",
     ]);
     // Its own names unknown, which never blocks: the command sets the Gateway's.
@@ -750,18 +751,18 @@ describe("secret list", () => {
     // everyapp's own names (EVERY_APP_ORG_ID, GATEWAY_URL) only with --verbose.
     expect(done()!["message"]).toBe(
       [
-        "SETTING             WHERE    STATUS",
-        "OPENAI_API_KEY      Gateway  ✓ set",
-        "DATAFORSEO_API_KEY  Gateway  ! not set",
-        "EMAIL_FROM          Gateway  ! not set",
-        "GITHUB_TOKEN        todo     ✓ set",
-        "STRIPE_KEY          todo     ! not set",
+        "SETTING                     WHERE    STATUS",
+        "OPENAI_API_KEY              Gateway  ✓ set",
+        "DATAFORSEO_API_KEY          Gateway  ! not set",
+        "EMAIL_FROM+EMAIL_FROM_NAME  Gateway  ! not set",
+        "GITHUB_TOKEN                todo     ✓ set",
+        "STRIPE_KEY                  todo     ! not set",
         "",
         // Each unmet setting as status describes it, with its guide once.
         "DataForSEO: DATAFORSEO_API_KEY",
         "Get it at https://app.dataforseo.com/api-access",
         "Guide: .claude/skills/everyapp/setup/dataforseo.md",
-        "Email: EMAIL_FROM",
+        "Email: EMAIL_FROM and EMAIL_FROM_NAME",
         "Guide: .claude/skills/everyapp/setup/email.md",
         "STRIPE_KEY",
       ].join("\n"),
@@ -799,12 +800,12 @@ describe("secret list", () => {
           { name: "OPENAI_API_KEY", required: true, set: true },
           { name: "DATAFORSEO_API_KEY", required: true, set: false },
           { name: "EMAIL_FROM", required: true, set: false },
-          { name: "EMAIL_FROM_NAME", required: false, set: false },
+          { name: "EMAIL_FROM_NAME", required: true, set: false },
           { name: "EMAIL_REST_API_TOKEN", required: false, set: false },
           { name: "RESEND_API_KEY", required: false, set: false },
           { name: "EMAIL_PROVIDER", required: false, set: false },
         ],
-        missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM"],
+        missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"],
       },
       next: ["pnpm everyapp configure todo"],
     });
@@ -812,7 +813,7 @@ describe("secret list", () => {
 
     events = [];
     await listSecrets({ flags: { ...flags, verbose: true }, out: out(), cwd: dir, createCf });
-    expect(done()!["message"]).toContain("EVERY_APP_ORG_ID    todo     ✓ set");
+    expect(done()!["message"]).toContain("EVERY_APP_ORG_ID            todo     ✓ set");
   });
 
   it("says which setting is optional, which is one of a group, and when a group is met, by name from anywhere", async () => {
@@ -959,12 +960,12 @@ describe("secret list", () => {
     await list(appDir(TODO));
     expect(done()!["message"]).toBe(
       [
-        "SETTING             WHERE    STATUS",
-        "OPENAI_API_KEY      Gateway  ! not set",
-        "DATAFORSEO_API_KEY  Gateway  ! not set",
-        "EMAIL_FROM          Gateway  ! not set",
-        "GITHUB_TOKEN        todo     after first deploy",
-        "STRIPE_KEY          todo     after first deploy",
+        "SETTING                     WHERE    STATUS",
+        "OPENAI_API_KEY              Gateway  ! not set",
+        "DATAFORSEO_API_KEY          Gateway  ! not set",
+        "EMAIL_FROM+EMAIL_FROM_NAME  Gateway  ! not set",
+        "GITHUB_TOKEN                todo     after first deploy",
+        "STRIPE_KEY                  todo     after first deploy",
         "",
         "OpenAI: OPENAI_API_KEY",
         "Get it at https://platform.openai.com/api-keys",
@@ -972,7 +973,7 @@ describe("secret list", () => {
         "DataForSEO: DATAFORSEO_API_KEY",
         "Get it at https://app.dataforseo.com/api-access",
         "Guide: .claude/skills/everyapp/setup/dataforseo.md",
-        "Email: EMAIL_FROM",
+        "Email: EMAIL_FROM and EMAIL_FROM_NAME",
         "Guide: .claude/skills/everyapp/setup/email.md",
         "",
         "todo isn't deployed yet; its own secrets can be set after that.",
@@ -981,7 +982,7 @@ describe("secret list", () => {
     // The app's own names wait for the deploy: `secret set STRIPE_KEY` would fail with APP_NOT_FOUND.
     expect(done()!["data"]).toMatchObject({
       app: { id: "todo", deployed: false, workerName: null, secretNames: null, workers: [] },
-      gateway: { missing: ["OPENAI_API_KEY", "DATAFORSEO_API_KEY", "EMAIL_FROM"] },
+      gateway: { missing: ["OPENAI_API_KEY", "DATAFORSEO_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"] },
       next: [
         // Configure sets the Gateway's names before the deploy, in the app's
         // directory (by name it is refused until then); the app's own wait.
@@ -1032,7 +1033,7 @@ describe("secret list", () => {
       organizationName: "Acme",
     });
     await list(emptyDir(), "todo");
-    expect(done()!["message"]).toContain("GITHUB_TOKEN        todo     after first deploy");
+    expect(done()!["message"]).toContain("GITHUB_TOKEN                todo     after first deploy");
     expect(done()!["data"]).toMatchObject({
       app: { deployed: false },
       next: [{ command: "pnpm everyapp configure", note: "in the app's directory" }, "pnpm everyapp deploy"],

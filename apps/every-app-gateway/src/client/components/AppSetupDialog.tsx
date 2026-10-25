@@ -32,8 +32,9 @@ interface AppSetupDialogProps {
 /**
  * What an app needs set before it opens, and the one command that asks
  * for it (`everyapp configure <app>`), for whoever can run it; a member is
- * told to ask an admin. Closes from the footer alone, like every other dialog.
- * Render it only while it is open.
+ * told to ask an admin. Closes from the footer alone, like every other
+ * dialog, and by itself once the app no longer needs setup: render it only
+ * while it is open, from the live list (useSetupDialog).
  */
 export function AppSetupDialog({
   name,
@@ -78,6 +79,7 @@ export function AppSetupDialog({
             {model.command.configures ? (
               <p className="text-xs text-muted-foreground">
                 It asks for each setting above, then offers the optional ones.
+                {model.command.next ? ` ${model.command.next}` : null}
               </p>
             ) : null}
           </div>

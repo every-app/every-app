@@ -265,10 +265,11 @@ describe("configure at a terminal", () => {
 
     // One line on where the values go, then the table, before the first prompt.
     expect(run.prompter.told[0]).toMatch(/^crm's settings are held as the Gateway's secrets/);
+    // The SETTING column is as wide as the two-name email row.
     expect(run.prompter.told.slice(2, 5)).toEqual([
-      "SETTING               WHERE    STATUS",
-      "OPENAI_API_KEY        Gateway  ! not set",
-      "OPENROUTER_API_KEY    Gateway  ! not set",
+      "SETTING                     WHERE    STATUS",
+      "OPENAI_API_KEY              Gateway  ! not set",
+      "OPENROUTER_API_KEY          Gateway  ! not set",
     ]);
     // Required first (manifest order), then the group's chosen member, never a set one twice.
     expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "OPENROUTER_API_KEY"]);
@@ -292,7 +293,7 @@ describe("configure at a terminal", () => {
     expect(run.prompter.questions.at(-1)).toEqual({
       kind: "confirm",
       question: "Set the 3 optional settings too?",
-      context: ["Context.dev: Renders JavaScript pages in audits.", "Email: EMAIL_FROM", "GITHUB_TOKEN: Raises the GitHub rate limit."],
+      context: ["Context.dev: Renders JavaScript pages in audits.", "Email: EMAIL_FROM and EMAIL_FROM_NAME", "GITHUB_TOKEN: Raises the GitHub rate limit."],
     });
 
     expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "login:password", OPENROUTER_API_KEY: "sk-or" });
@@ -326,18 +327,19 @@ describe("configure at a terminal", () => {
     gateway().secrets["OPENAI_API_KEY"] = "set";
     secretsOf(workerName)["TOKEN_ENCRYPTION_KEY"] = "set";
 
-    // Ready already: the menu. Pick the optional email sender, a plain
-    // setting, then the optional GitHub token, then leave.
+    // Ready already: the menu. Pick the optional email sender (two names,
+    // one menu entry; the name left blank is skipped), both plain settings,
+    // then the optional GitHub token, then leave.
     const run = configureAt(dir, {
       values: { EMAIL_FROM: "Acme <hello@example.com>", GITHUB_TOKEN: "ghp_x" },
-      picks: ["EMAIL_FROM", "GITHUB_TOKEN", "No, done"],
+      picks: ["EMAIL_FROM + EMAIL_FROM_NAME", "GITHUB_TOKEN", "No, done"],
     });
     await run;
 
     expect(run.prompter.questions[0]).toMatchObject({
       kind: "choose",
       question: "Everything crm needs is set. Change one?",
-      choices: ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "EMAIL_FROM", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN", "No, done"],
+      choices: ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "EMAIL_FROM + EMAIL_FROM_NAME", "TOKEN_ENCRYPTION_KEY", "GITHUB_TOKEN", "No, done"],
     });
     // A plain setting is asked visibly, with what it takes above it.
     expect(run.prompter.questions[1]).toMatchObject({
@@ -346,7 +348,13 @@ describe("configure at a terminal", () => {
       optional: true,
       context: expect.arrayContaining([expect.stringMatching(/^Takes an address/)]),
     });
+    expect(run.prompter.questions[2]).toMatchObject({
+      kind: "text",
+      question: "EMAIL_FROM_NAME (Enter to skip)",
+      optional: true,
+    });
     expect(gateway().secrets["EMAIL_FROM"]).toBe("Acme <hello@example.com>");
+    expect(gateway().secrets["EMAIL_FROM_NAME"]).toBeUndefined();
     expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBe("ghp_x");
     expect(done()).toMatchObject({
       message: "Set EMAIL_FROM and GITHUB_TOKEN. crm is ready",
@@ -373,6 +381,7 @@ describe("configure at a terminal", () => {
       "OPENAI_API_KEY",
       "CONTEXT_API_KEY",
       "EMAIL_FROM",
+      "EMAIL_FROM_NAME",
       "GITHUB_TOKEN",
     ]);
     expect(run.prompter.questions.find((question) => question["kind"] === "choose")).toBeUndefined();
@@ -382,6 +391,7 @@ describe("configure at a terminal", () => {
     expect(gateway().secrets["OPENAI_API_KEY"]).toBeUndefined();
     expect(gateway().secrets["CONTEXT_API_KEY"]).toBe("ctx");
     expect(gateway().secrets["EMAIL_FROM"]).toBeUndefined();
+    expect(gateway().secrets["EMAIL_FROM_NAME"]).toBeUndefined();
     expect(secretsOf(workerName)["GITHUB_TOKEN"]).toBeUndefined();
     expect(done()!["data"]["set"]).toEqual(["DATAFORSEO_API_KEY", "CONTEXT_API_KEY", "TOKEN_ENCRYPTION_KEY"]);
   });
@@ -416,7 +426,7 @@ describe("configure at a terminal", () => {
     await run;
 
     expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "OPENAI_API_KEY"]);
-    expect(run.prompter.told).toContain("TOKEN_ENCRYPTION_KEY  crm      after first deploy");
+    expect(run.prompter.told).toContain("TOKEN_ENCRYPTION_KEY        crm      after first deploy");
     expect(gateway().secrets).toMatchObject({ DATAFORSEO_API_KEY: "k", OPENAI_API_KEY: "sk" });
     // The app's own read as unknown until its Worker exists, which never
     // blocks: no warning, and the deploy is what comes next.
@@ -625,9 +635,11 @@ describe("configure from a script", () => {
   it("accepts on stdin a name a capability also reads, and never prompts for it", async () => {
     const dir = appDir(CRM);
     await deploy(dir, CRM);
-    await configureFrom({ appId: "crm", stdin: "EMAIL_FROM_NAME=Acme\nOPENROUTER_API_KEY=sk\n" });
-    expect(gateway().secrets["EMAIL_FROM_NAME"]).toBe("Acme");
-    expect(done()!["data"]["set"]).toEqual(["OPENROUTER_API_KEY", "EMAIL_FROM_NAME"]);
+    // RESEND_API_KEY is none of email's names (EMAIL_FROM, EMAIL_FROM_NAME):
+    // one it reads when set, never asked for.
+    await configureFrom({ appId: "crm", stdin: "RESEND_API_KEY=re_x\nOPENROUTER_API_KEY=sk\n" });
+    expect(gateway().secrets["RESEND_API_KEY"]).toBe("re_x");
+    expect(done()!["data"]["set"]).toEqual(["OPENROUTER_API_KEY", "RESEND_API_KEY"]);
   });
 
   it("asks only for the missing name of a setting with several, and --from-env never fills a set one", async () => {

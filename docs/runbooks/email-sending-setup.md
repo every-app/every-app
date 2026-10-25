@@ -72,7 +72,9 @@ EMAIL_FROM EMAIL_FROM_NAME`; a Gateway setting's name says where it goes):
 - `EMAIL_FROM_NAME`: the display name, for example `Every App`
 
 The previous combined format, `Every App <noreply@example.com>`, is also
-accepted in `EMAIL_FROM`; in that case `EMAIL_FROM_NAME` is optional.
+accepted in `EMAIL_FROM`; the gateway then sends without `EMAIL_FROM_NAME`,
+though the setup dialog and `secret list`, which read names rather than
+values, keep asking for it.
 
 To send through the REST API instead of the binding, create a Cloudflare API
 token for the account with **Email Sending** permission and set:

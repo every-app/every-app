@@ -14,6 +14,7 @@ import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessM
 import { AddAppDialog } from "@/client/components/onboarding/AddAppDialog";
 import { Button } from "@/client/components/ui/button";
 import { useAppInstallAvailable } from "@/client/app-install";
+import { useSetupDialog } from "@/client/hooks/useSetupDialog";
 import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 import type { AppWithAccessCount } from "@/types/app";
 import { authClient } from "@/client/auth-client";
@@ -21,6 +22,11 @@ import { authClient } from "@/client/auth-client";
 export const Route = createFileRoute("/_app/admin/apps")({
   component: AppsPage,
 });
+
+/** The admin list, from the server (not the query cache). */
+function refetchApps() {
+  return adminAppsCollection.utils.refetch();
+}
 
 function AppsPage() {
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
@@ -35,7 +41,6 @@ function AppsPage() {
     null,
   );
   const [accessApp, setAccessApp] = useState<AppWithAccessCount | null>(null);
-  const [setupApp, setSetupApp] = useState<AppWithAccessCount | null>(null);
   // The four apps and Build your own, once the home no longer shows them.
   const [addingApp, setAddingApp] = useState(false);
   const [mcpApp, setMcpApp] = useState<AppWithAccessCount | null>(null);
@@ -47,6 +52,13 @@ function AppsPage() {
   } = useLiveQuery((q) => q.from({ app: adminAppsCollection }));
   // A failed fetch leaves the collection "ready" and empty: ask the query.
   const isError = isCollectionError || useQueryFailed(["admin", "apps"]);
+  // The setup dialog's app, read from the live list: it closes by itself
+  // once the app is ready. `openSetup` is stable, like the setters.
+  const {
+    app: setupApp,
+    open: openSetup,
+    close: closeSetup,
+  } = useSetupDialog(apps, refetchApps);
 
   const confirmDelete = (app: AppWithAccessCount) => {
     adminAppsCollection.delete(app.id);
@@ -88,7 +100,7 @@ function AppsPage() {
             />
           ) : undefined
         }
-        onSetup={setSetupApp}
+        onSetup={openSetup}
         onUseMcp={setMcpApp}
         onManageAccess={setAccessApp}
         onEdit={setEditingApp}
@@ -101,14 +113,14 @@ function AppsPage() {
         <AddAppDialog canRun={isAdmin} onClose={() => setAddingApp(false)} />
       ) : null}
 
-      {setupApp?.setup ? (
+      {setupApp ? (
         <AppSetupDialog
           name={setupApp.name}
           setup={setupApp.setup}
           // Another organization's shared app is listed, never set up here:
           // the dialog says who does, and leaves out what else could be set.
           canRun={!setupApp.readOnly}
-          onClose={() => setSetupApp(null)}
+          onClose={closeSetup}
         />
       ) : null}
 

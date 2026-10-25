@@ -113,8 +113,9 @@ it("mounts with the unmet setting, its link, the command and the optional sectio
   expect(text).toContain("Keyword data.");
   expect(text).toContain("Get it at app.dataforseo.com/api-access");
   expect(text).toContain("pnpm everyapp configure openseo");
+  // One line under the command: what it asks, then what follows.
   expect(text).toContain(
-    "It asks for each setting above, then offers the optional ones.",
+    "It asks for each setting above, then offers the optional ones. Run it in a terminal, then come back here: the app opens.",
   );
   expect(text).not.toContain("Ask an admin to run:");
   expect(text).toContain("Optional (1)");
@@ -133,6 +134,8 @@ it("tells a member to ask an admin", () => {
   expect(text).toContain("It opens once these are set.");
   expect(text).toContain("Ask an admin to run:");
   expect(text).toContain("pnpm everyapp configure openseo");
+  expect(text).toContain("It asks for each setting above");
+  expect(text).not.toContain("Run it in a terminal");
   expect(text).not.toContain("Optional (");
   expect(text).not.toContain("pnpm everyapp status");
 });

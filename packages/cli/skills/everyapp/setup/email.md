@@ -27,11 +27,11 @@ the Gateway's `configuredSender()` uses it): a bare address with no name
 anywhere counts as no sender, so the Gateway says "Email is not configured"
 and an app's send gets `integration_not_configured` (503). `secret list`
 and `status` read names, not values: an app's `email` setting counts as set
-once `EMAIL_FROM` is on the Gateway (`EMAIL_FROM_NAME` is read when set:
-`required: false` in `data.gateway.needed`, never in `missing`), so a bare
-address with no name anywhere is `set: true` there while the Gateway, which
-reads the values (`isEmailConfigured`), still keeps the app closed as "Needs
-setup". Verify 2 is the check that counts.
+once `EMAIL_FROM` and `EMAIL_FROM_NAME` are both on the Gateway (both
+`required: true` in `data.gateway.needed`), so the combined form with no
+`EMAIL_FROM_NAME` reads as `! not set` there while the Gateway, which reads
+the values (`isEmailConfigured`), opens the app and sends. Verify 2 is the
+check that counts.
 
 How the provider is picked: `EMAIL_PROVIDER` when set (and it must be set up;
 it never falls back); else Cloudflare when `EMAIL_REST_API_TOKEN` is set, else
@@ -74,22 +74,23 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
   deployed, else `pnpm everyapp secret list --json` in its directory): this
   file applies when `data.app.setup.unmet`
   has the entry `id: "email"` (`kind: "capability"`, `holder: "gateway"`,
-  `names: ["EMAIL_FROM"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
+  `names: ["EMAIL_FROM", "EMAIL_FROM_NAME"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
   the path `status` (under "<app> needs setup") and `secret list <app id>`
   (under the unmet setting) print as `Guide:
   .claude/skills/everyapp/setup/email.md`, and `secret list --json` carries
   per unmet setting; how an agent lands here), and `data.app.setup.command`
-  is `pnpm everyapp configure <app id>`, which asks for `EMAIL_FROM` among
-  what the app still needs (a visible, checked prompt; step 8 says what to
-  type). An app
+  is `pnpm everyapp configure <app id>`, which asks for `EMAIL_FROM` and
+  `EMAIL_FROM_NAME` among what the app still needs (visible, checked
+  prompts; step 8 says what to type). An app
   that marks `email` `optional: true` (Open Analytics) has the entry in
   `settings` with `set: false`, never in `unmet`: it opens without a
   sender, and this file applies when they want its mail. The older
   `data.gateway.needed` (each `{ name, required, set }`) and
-  `data.gateway.missing` still say the same of `EMAIL_FROM`; `EMAIL_FROM_NAME`,
-  `RESEND_API_KEY`, `EMAIL_PROVIDER` and `EMAIL_REST_API_TOKEN` are read when
-  set (`required: false`), never in `unmet` or `missing`. The entry `set:
-  true`: `EMAIL_FROM` is on the Gateway already; ask before replacing it.
+  `data.gateway.missing` still say the same of `EMAIL_FROM` and
+  `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER` and
+  `EMAIL_REST_API_TOKEN` are read when set (`required: false`), never in
+  `unmet` or `missing`. The entry `set: true`: both are on the Gateway
+  already; ask before replacing them.
 - `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
   `data.gatewayUrl` gives `<gateway host>`, `data.accountId` is `<account id>`
   (the sending domain's zone must be in this account), `data.apps[].setup`
@@ -210,11 +211,11 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    `pnpm everyapp secret list --json`, both names in `data.gateway.names`
    (`EMAIL_FROM` alone with the combined form; and `RESEND_API_KEY` for
    Resend). Or, at the person's terminal, `pnpm everyapp configure <app id>`
-   (`agentic-inbox` or `analytics`) asks for `EMAIL_FROM` among the app's
-   other settings, at a visible prompt that says what it takes and checks
-   it (give the combined form there: `Acme <noreply@<your domain>>`;
-   `EMAIL_FROM_NAME` isn't among the names it asks for, so set it with the
-   pipe above when they want it separate).
+   (`agentic-inbox` or `analytics`) asks for `EMAIL_FROM` and then
+   `EMAIL_FROM_NAME` among the app's other settings, at visible prompts
+   that say what each takes and check it (the address, then the name, as
+   in the two pipes above; where `email` is required it wants both, so the
+   combined form alone is for the pipe).
 
    **An app that sends as its own addresses** (agentic-inbox)
 
@@ -256,14 +257,15 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 1. `pnpm everyapp secret list agentic-inbox --json` (or the app that brought
    you here, from anywhere): the `email` entry in `data.app.setup.settings` is
    `set: true` and out of `data.app.setup.unmet`, `data.app.setup.ready` true
-   once nothing else is missing, `EMAIL_FROM` out of `data.gateway.missing`
-   (`EMAIL_FROM_NAME` was never in it). From the checkout root with no app
-   named: `EMAIL_FROM` and `EMAIL_FROM_NAME` in `data.gateway.names`
+   once nothing else is missing, `EMAIL_FROM` and `EMAIL_FROM_NAME` out of
+   `data.gateway.missing` (with the combined form and no `EMAIL_FROM_NAME`,
+   that name stays in it: this reads names). From the checkout root with no
+   app named: `EMAIL_FROM` and `EMAIL_FROM_NAME` in `data.gateway.names`
    (`EMAIL_FROM` alone with the combined form; `RESEND_API_KEY` too for
    Resend). Then `pnpm everyapp status --json`: `data.apps[].setup.ready` true
    for that app and no `APP_NEEDS_SETUP` fix naming it. All of this reads
-   names: a bare address with no name passes here and fails Verify 2, which
-   is the check that counts.
+   names: the combined form with no `EMAIL_FROM_NAME` fails here while the
+   Gateway sends; Verify 2 is the check that counts.
 2. Smoke check, by the person (`GET /api/integrations/email` is for apps, not
    operators): on `https://<gateway host>/`, **Manage workspace** (bottom of
    the sidebar) > **Users** > **Invite user** > an address they control >
@@ -312,7 +314,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 | error or symptom                                                                  | meaning                                                                             | what to do                                                                                              |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `SECRET_VALUE_REQUIRED`                                                           | nothing was piped and there is no terminal                                          | one of README's three ways                                                                              |
-| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`           | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs (`EMAIL_FROM` among them while unset) | `NAME=value` lines on stdin (`EMAIL_FROM="Acme <noreply@<your domain>>"`, quoted), or the person's terminal (step 8) |
+| `SECRET_VALUE_REQUIRED` from `pnpm everyapp configure <app id> --json`           | nothing was piped (with `--from-env`, stdin isn't read), no variable of a missing name was found, and there is no terminal; the message names what the app still needs (`EMAIL_FROM` and `EMAIL_FROM_NAME` among them while unset) | `NAME=value` lines on stdin (`EMAIL_FROM="Acme <noreply@<your domain>>"`, quoted), or the person's terminal (step 8) |
 | `SECRET_SEVERAL_NAMES`                                                            | a pipe or `--from-env` with two names                                               | one `secret set` per name                                                                               |
 | `SECRET_EMPTY`                                                                    | the `--from-env` variable isn't set in the shell that ran the command (exported in theirs, not before you started) | they run it in their terminal, or the hidden prompt (step 6)                              |
 | `SETTING_VALUE_INVALID` with `data.name`                                          | `EMAIL_FROM`, `EMAIL_FROM_NAME` or `EMAIL_PROVIDER` got a value the Gateway wouldn't read (`EMAIL_FROM` takes an address or `Name <address>`; `EMAIL_PROVIDER` `cloudflare` or `resend`); nothing was written | pipe the value `data.fix` describes                                                                       |
@@ -361,4 +363,4 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 - Cloudflare: https://developers.cloudflare.com/email-service/ (beta, Workers Paid, verified destinations free), https://developers.cloudflare.com/email-service/configuration/domains/ (onboarding, the records it adds), https://developers.cloudflare.com/email-service/get-started/send-emails/ (the dashboard path and deep link, the `EMAIL` binding), https://developers.cloudflare.com/api/resources/email_sending/subresources/subdomains/ (the subdomain's `tag`), https://developers.cloudflare.com/email-service/api/send-emails/workers-api/ (the `E_*` codes), https://developers.cloudflare.com/email-service/api/send-emails/rest-api/ (the numeric codes), https://developers.cloudflare.com/email-service/platform/limits/ (quota, verified destination addresses, 50 recipients, 5 MiB), https://developers.cloudflare.com/email-service/platform/pricing/ (Workers Paid, 3,000 a month, $0.35 per 1,000), https://developers.cloudflare.com/workers/platform/pricing/ ($5 a month), https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Logs > Live), https://developers.cloudflare.com/workers/wrangler/commands/workers/ (`wrangler tail`)
 - Resend: https://resend.com/pricing, https://resend.com/docs/api-reference/rate-limit (10 a second per team), https://resend.com/docs/api-reference/errors (error names), https://resend.com/docs/add-a-domain, https://resend.com/docs/dashboard/domains/manage-domains (statuses), https://resend.com/docs/knowledge-base/cloudflare (Sign in to Cloudflare, record names, DNS only, Verify DNS Records), https://resend.com/docs/create-an-api-key, https://resend.com/docs/api-reference/api-keys/create-api-key (Sending access, domain restriction, shown once), https://resend.com/docs/dashboard/api-keys/introduction (permission and domain editable in the Dashboard)
-- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), `commands/configure/index.ts` (`configure <app>`: the visible prompt for `EMAIL_FROM`, `NAME=value` lines on stdin), the runbook's "Sender configuration" as of #389; `packages/sdk/src/internal/capabilities.ts` (the `email` entry: `settings: ["EMAIL_FROM"]`, the rest `optionalSettings`) and `appSettings.ts`, `packages/cli/src/lib/app/settings.ts` (`gatewayNeeds`, `gatewayMissing`) and `commands/secret/index.ts` (`secret list <app>`), the Gateway's `server/app-setup.ts` (readiness from `isEmailConfigured`) and `server/app-needs-setup.ts` (the closed app), after #383, #395, #396 and #397 merged
+- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), `commands/configure/index.ts` (`configure <app>`: the visible prompts for `EMAIL_FROM` and `EMAIL_FROM_NAME`, `NAME=value` lines on stdin), the runbook's "Sender configuration" as of #389; `packages/sdk/src/internal/capabilities.ts` (the `email` entry: `settings: ["EMAIL_FROM"]`, the rest `optionalSettings`; later on 2026-10-24 `EMAIL_FROM_NAME` moved into `settings`, the shape the top of this file describes) and `appSettings.ts`, `packages/cli/src/lib/app/settings.ts` (`gatewayNeeds`, `gatewayMissing`) and `commands/secret/index.ts` (`secret list <app>`), the Gateway's `server/app-setup.ts` (readiness from `isEmailConfigured`) and `server/app-needs-setup.ts` (the closed app), after #383, #395, #396 and #397 merged
