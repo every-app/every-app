@@ -15,3 +15,9 @@ dist/
 *.db-shm
 **/.pnpm-store/
 .env
+
+# Copies of the onboarding loop's secret files, which live in ~/.config/everyapp/onboarding-loop and
+# never belong in a checkout: a stray copy of accounts.json got committed once (#488, removed in #496).
+accounts.json
+providers.env
+providers.json
