@@ -1352,20 +1352,16 @@ export function bindingNamesOf(
 /**
  * What a manifest asks for that an app on `tier` can't have, as sentences.
  * The dispatch tier (customer code in a Workers for Platforms namespace)
- * gets no Hyperdrive: an account holds at most 25 configs, so they are
- * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
- * refuses R2 bindings. Nor Workers AI: the binding bills whatever account
- * the Worker runs in, the platform's here, with no Gateway budget (the
- * `workers-ai` provider is the brokered path). Nor Browser Rendering: the
- * browser time bills the platform's account the same way, nor Images, whose
- * transformations do too. Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets
- * browser time bills the platform's account the same way. Nor Vectorize
- * indexes: the hosted deployer makes none. Nor inbound
- * browser time bills the platform's account the same way. Nor AI
- * Gateways yet. Nor inbound
- * mail: the platform's zones aren't an organization's to route. Nor secrets
- * of its own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID
- * only, and nothing sets another.
+ * gets no Hyperdrive: an account holds at most 25 configs, so they are kept
+ * for first-party apps. Nor R2 buckets yet: the hosted deployer refuses R2
+ * bindings. Nor Workers AI: the binding bills whatever account the Worker
+ * runs in, the platform's here, with no Gateway budget (the `workers-ai`
+ * provider is the brokered path). Nor Browser Rendering: the browser time
+ * bills the platform's account the same way, nor Images, whose
+ * transformations do too. Nor Vectorize indexes: the hosted deployer makes
+ * none. Nor AI Gateways yet. Nor inbound mail: the platform's zones aren't
+ * an organization's to route. Nor secrets of its own: a third-party Worker
+ * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
  */
 export function manifestTierProblems(
   manifest: Pick<Manifest, "resources" | "email" | "secrets">,

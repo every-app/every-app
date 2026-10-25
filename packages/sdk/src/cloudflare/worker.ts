@@ -1005,8 +1005,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering and Images, the classes it defines, and
- * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering and Vectorize indexes, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering, Images, Vectorize indexes and AI Gateways, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
