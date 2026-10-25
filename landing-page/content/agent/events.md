@@ -376,7 +376,7 @@ Every type the Gateway emits, its version and its `data`. The list is `EVENT_TYP
 | Type                    | v   | Summary                             | `data`                                                                                          |
 | ----------------------- | --- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `member.invited`        | 1   | "Ada invited jo@acme.com as member" | `{ invitation: { id, email, role, expiresAt }, emailSent: boolean }`; never the invitation link |
-| `member.joined`         | 1   | "jo@acme.com joined as member"      | `{ user, role, via: "invitation" \| "access" \| "setup" \| "member_add" }`                      |
+| `member.joined`         | 1   | "jo@acme.com joined as member"      | `{ user, role, via: "invitation" \| "access" \| "sign_in" \| "setup" \| "member_add" }`         |
 | `member.role_changed`   | 1   | "jo@acme.com is now admin"          | `{ user, role, previousRole }`                                                                  |
 | `member.deactivated`    | 1   | "jo@acme.com was deactivated"       | `{ user, reason?: string }`                                                                     |
 | `member.reactivated`    | 1   | "jo@acme.com was reactivated"       | `{ user }`                                                                                      |

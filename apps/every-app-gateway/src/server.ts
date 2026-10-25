@@ -160,6 +160,18 @@ function isMcpAuthPath(pathname: string): boolean {
 }
 
 /**
+ * Sign in with Apple's return: a cross-site POST Access can't authenticate
+ * (the browser's Access cookie isn't sent on it), so `everyapp access on`
+ * leaves it public. Better Auth answers it with a redirect to the same
+ * URL as a GET, which is not bypassed, so the sign-in completes behind
+ * Access's login; the POST itself reads no session and creates nothing
+ * (server/control-plane-guard.ts exempts it from the Origin check for the
+ * same reason). Served exact-case to the control plane, before the
+ * refusal below, as /health is.
+ */
+const APPLE_CALLBACK_PATH = "/api/auth/callback/apple";
+
+/**
  * The paths Cloudflare Access lets through without a login
  * (packages/cli/src/lib/access/plan.ts), matched as Access matches them:
  * case-insensitively, `*` spanning segments. The health and MCP/OAuth
@@ -172,7 +184,9 @@ const ACCESS_BYPASSED_EXACT = [
   "/mcp",
   "/oauth/token",
   "/oauth/register",
+  APPLE_CALLBACK_PATH,
 ];
+
 const ACCESS_BYPASSED_PREFIXES = ["/mcp/", "/.well-known/"];
 
 function isAccessBypassedPath(pathname: string): boolean {
@@ -229,6 +243,7 @@ async function serveGatewayHost(request: Request): Promise<Response> {
     const served = await serveMcpAuthRoute(request);
     if (served) return served;
   }
+  if (pathname === APPLE_CALLBACK_PATH) return serveControlPlane(request, env);
   if (isAccessBypassedPath(pathname)) return refuseBypassedPath();
   return serveControlPlane(request, env);
 }

@@ -389,6 +389,7 @@ describe("createAuth Better Auth options", () => {
       "organization",
       "every-app-schema",
       "sign-in-methods",
+      "sign-in-providers",
       "cloudflare-access",
       "tanstack-start-cookies",
     ]);
@@ -475,16 +476,16 @@ describe("createAuth Better Auth options", () => {
       expect(hosted.databaseHooks.user).toBeDefined();
     });
 
-    it("registers neither open sign-up nor Access when the mode is invalid", () => {
+    it("registers neither open sign-up, Access nor the sign-in providers when the mode is invalid", () => {
       for (const mode of [undefined, "", "selfhosted"]) {
         workerEnv.GATEWAY_DEPLOYMENT_MODE = mode;
         expect(signInPolicy()).toEqual({
           signUp: "invitation",
           emailVerification: false,
         });
-        expect(
-          createAuthOptions().plugins.map((plugin) => plugin.id),
-        ).not.toContain("cloudflare-access");
+        const ids = createAuthOptions().plugins.map((plugin) => plugin.id);
+        expect(ids).not.toContain("cloudflare-access");
+        expect(ids).not.toContain("sign-in-providers");
       }
     });
   });

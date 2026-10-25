@@ -24,16 +24,21 @@
  * existing account follows Better Auth's own rules, not these (see plugin.ts).
  */
 import { APIError } from "better-auth/api";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { db } from "@/db";
-import { accounts, invitations, members, users } from "@/db/schema";
+import { accounts, members, users } from "@/db/schema";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorOf } from "@/server/events/subjects";
 import { forgetOrgContext } from "@/server/organization/orgContext";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { isUserBanned } from "@/server/user-ban";
+import {
+  acceptPendingInvitations,
+  findOwnerOrganizationId,
+  pendingInvitationsFor,
+} from "../identity-membership";
 import { ACCESS_PROVIDER_ID, type AccessConfig } from "./config";
 
 type AccessSignInMode = "oidc" | "outer-ring";
@@ -84,34 +89,6 @@ function emailDomain(email: string): string {
   return email.slice(email.lastIndexOf("@") + 1);
 }
 
-/** The organization of the gateway's first owner, or null before the claim. */
-async function findOwnerOrganizationId(): Promise<string | null> {
-  const [row] = await db
-    .select({ organizationId: members.organizationId })
-    .from(members)
-    .where(eq(members.role, "owner"))
-    .orderBy(asc(members.createdAt))
-    .limit(1);
-  return row?.organizationId ?? null;
-}
-
-function pendingInvitationsFor(email: string) {
-  return db
-    .select({
-      id: invitations.id,
-      organizationId: invitations.organizationId,
-      role: invitations.role,
-    })
-    .from(invitations)
-    .where(
-      and(
-        sql`lower(${invitations.email}) = ${email}`,
-        eq(invitations.status, "pending"),
-        gt(invitations.expiresAt, new Date()),
-      ),
-    );
-}
-
 /** How someone who isn't a member yet may join without an invitation. */
 function autoJoinRoute(
   email: string,
@@ -158,62 +135,6 @@ export async function assertAccessUserMayBeCreated(
 }
 
 /**
- * Accept every pending invitation for this verified email, as the accept
- * page would: the invited role, and the organization's default apps. Each
- * invitation is claimed by flipping its status first, so two sign-ins at
- * once can't both use it. Returns how many were accepted.
- */
-async function acceptPendingInvitations(
-  userId: string,
-  email: string,
-  name: string | null,
-): Promise<number> {
-  const joined = { id: userId, email, name };
-  let accepted = 0;
-  for (const invitation of await pendingInvitationsFor(email)) {
-    const claimed = await db
-      .update(invitations)
-      .set({ status: "accepted" })
-      .where(
-        and(
-          eq(invitations.id, invitation.id),
-          eq(invitations.status, "pending"),
-        ),
-      )
-      .returning({ id: invitations.id });
-    if (claimed.length === 0) continue;
-
-    await db.insert(members).values({
-      id: crypto.randomUUID(),
-      organizationId: invitation.organizationId,
-      userId,
-      role: invitation.role ?? "member",
-      createdAt: new Date(),
-    });
-    await AppAccessService.grantDefaultAppsToUser(
-      userId,
-      invitation.organizationId,
-    );
-    logEvent("invitation.accepted", {
-      organizationId: invitation.organizationId,
-      userId,
-      via: "cloudflare_access",
-    });
-    await emit({
-      organizationId: invitation.organizationId,
-      actor: actorOf(joined),
-      ...catalogue.memberJoined({
-        user: joined,
-        role: invitation.role ?? "member",
-        via: "access",
-      }),
-    });
-    accepted += 1;
-  }
-  return accepted;
-}
-
-/**
  * Before Better Auth creates a session for an Access identity: let members
  * in, make an invited or auto-joining person a member first, and refuse
  * everyone else, and anyone deactivated.
@@ -239,7 +160,12 @@ export async function ensureAccessMembership(
   if (!user.emailVerified) refuse("NOT_INVITED");
   const email = user.email.trim().toLowerCase();
 
-  if ((await acceptPendingInvitations(user.id, email, user.name || null)) > 0) {
+  if (
+    (await acceptPendingInvitations(
+      { id: user.id, email, name: user.name || null },
+      { log: "cloudflare_access", event: "access" },
+    )) > 0
+  ) {
     forgetOrgContext(user.id);
     return;
   }
@@ -273,20 +199,26 @@ export async function ensureAccessMembership(
 }
 
 /**
- * Whether some owner can sign in with Access (has an Access identity linked).
- * Until one can, EMAIL_PASSWORD_SIGN_IN=false doesn't take effect: an owner
- * always has a way in.
+ * Whether some owner can sign in without a password: an Access identity
+ * linked (where Access sign-in is configured), or an identity from a
+ * sign-in provider that is on. Until one can, EMAIL_PASSWORD_SIGN_IN=false
+ * doesn't take effect: an owner always has a way in.
  */
-async function ownerHasAccessSignIn(): Promise<boolean> {
+async function ownerHasOtherSignIn(
+  config: AccessConfig,
+  signInProviderIds: ReadonlySet<string>,
+): Promise<boolean> {
+  const providerIds = [
+    ...(config.oidc || config.outerRing ? [ACCESS_PROVIDER_ID] : []),
+    ...signInProviderIds,
+  ];
+  if (providerIds.length === 0) return false;
   const [row] = await db
     .select({ id: accounts.id })
     .from(accounts)
     .innerJoin(members, eq(members.userId, accounts.userId))
     .where(
-      and(
-        eq(accounts.providerId, ACCESS_PROVIDER_ID),
-        eq(members.role, "owner"),
-      ),
+      and(inArray(accounts.providerId, providerIds), eq(members.role, "owner")),
     )
     .limit(1);
   return Boolean(row);
@@ -294,11 +226,16 @@ async function ownerHasAccessSignIn(): Promise<boolean> {
 
 /**
  * Whether password sign-in is on right now. EMAIL_PASSWORD_SIGN_IN=false
- * (with Access sign-in configured) turns it off only once an owner has
- * connected an Access identity, so it can't lock the owner out.
+ * (with Access sign-in or a sign-in provider configured) turns it off only
+ * once an owner has connected such an identity, so it can't lock the owner
+ * out.
  */
 export async function isPasswordSignInOn(
   config: AccessConfig,
+  signInProviderIds: ReadonlySet<string> = new Set(),
 ): Promise<boolean> {
-  return config.passwordSignIn || !(await ownerHasAccessSignIn());
+  return (
+    config.passwordSignIn ||
+    !(await ownerHasOtherSignIn(config, signInProviderIds))
+  );
 }

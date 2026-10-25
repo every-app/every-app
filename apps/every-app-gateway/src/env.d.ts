@@ -72,8 +72,34 @@ declare namespace Cloudflare {
     // (comma separated), and "everyone" to let in all the outer ring admits.
     CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS?: string;
     CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN?: string;
-    // "false" turns password sign-in off, only while Access sign-in is set up.
+    // "false" turns password sign-in off, only while Access sign-in or a
+    // sign-in provider is set up and an owner can use it.
     EMAIL_PASSWORD_SIGN_IN?: string;
+
+    // Sign-in providers beside passwords ("Continue with Google"), each an
+    // OAuth app of the operator's: `<ID>_SIGNIN_<FIELD>` secrets, read by
+    // src/auth/sign-in-providers/ from the catalog in
+    // packages/sdk/src/internal/signInProviders.ts. Set with `everyapp
+    // signin add <id>`; docs/runbooks/sign-in-providers.md.
+    GOOGLE_SIGNIN_CLIENT_ID?: string;
+    GOOGLE_SIGNIN_CLIENT_SECRET?: string;
+    MICROSOFT_SIGNIN_CLIENT_ID?: string;
+    MICROSOFT_SIGNIN_CLIENT_SECRET?: string;
+    // The Directory (tenant) ID; unset means `common` (any Microsoft account).
+    MICROSOFT_SIGNIN_TENANT?: string;
+    GITHUB_SIGNIN_CLIENT_ID?: string;
+    GITHUB_SIGNIN_CLIENT_SECRET?: string;
+    APPLE_SIGNIN_CLIENT_ID?: string;
+    APPLE_SIGNIN_CLIENT_SECRET?: string;
+    // A Cloudflare OAuth client (Manage Account → OAuth clients), private
+    // to the account's members.
+    CLOUDFLARE_SIGNIN_CLIENT_ID?: string;
+    CLOUDFLARE_SIGNIN_CLIENT_SECRET?: string;
+    // A generic OpenID Connect issuer (Okta, Entra ID, Keycloak, Auth0…).
+    OIDC_SIGNIN_ISSUER?: string;
+    OIDC_SIGNIN_CLIENT_ID?: string;
+    OIDC_SIGNIN_CLIENT_SECRET?: string;
+    OIDC_SIGNIN_LABEL?: string;
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;

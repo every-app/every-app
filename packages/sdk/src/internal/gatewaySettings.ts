@@ -16,6 +16,10 @@ import {
   capabilitySettings,
   type CapabilitySecret,
 } from "./capabilities.js";
+import {
+  PLAIN_SIGN_IN_SETTINGS,
+  SIGN_IN_GATEWAY_SETTINGS,
+} from "./signInProviders.js";
 
 /**
  * The Gateway's own settings: the install writes them once (`everyapp
@@ -103,11 +107,13 @@ export type SettableGatewaySetting =
 
 /**
  * The Gateway's optional settings `everyapp secret set` changes: every
- * setting a catalog provider reads, then the Gateway's own.
+ * setting a catalog provider reads, the Gateway's own, then the sign-in
+ * providers' (`<ID>_SIGNIN_<FIELD>`, ./signInProviders.ts).
  */
 export const SETTABLE_GATEWAY_SETTINGS: readonly SettableGatewaySetting[] = [
   ...(PROVIDER_GATEWAY_SETTINGS as readonly SettableGatewaySetting[]),
   ...GATEWAY_OWN_SETTINGS,
+  ...(SIGN_IN_GATEWAY_SETTINGS as readonly SettableGatewaySetting[]),
 ];
 
 const SETTABLE: ReadonlySet<string> = new Set(SETTABLE_GATEWAY_SETTINGS);
@@ -169,7 +175,12 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const satisfies readonly SettableGatewaySetting[];
 
-const PLAIN: ReadonlySet<string> = new Set(PLAIN_GATEWAY_SETTINGS);
+const PLAIN: ReadonlySet<string> = new Set([
+  ...PLAIN_GATEWAY_SETTINGS,
+  // The sign-in providers' ids, issuer, label and tenant; their client
+  // secrets are credentials.
+  ...PLAIN_SIGN_IN_SETTINGS,
+]);
 
 /** Whether a settable Gateway setting's value is a plain value, not a credential. */
 export function isPlainGatewaySetting(name: string): boolean {

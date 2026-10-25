@@ -591,6 +591,44 @@ describe("gateway host (control plane)", () => {
     expect(cookielessPost.status).toBe(200);
   });
 
+  it("lets Apple's cross-site callback POST through to Better Auth, which only redirects it", async () => {
+    // Sign in with Apple returns with `response_mode=form_post` from
+    // appleid.apple.com; cookies another site set for the domain (Access's)
+    // may ride along. Better Auth answers the POST with a redirect to the
+    // same URL as a GET, reading no cookie and creating nothing, so the
+    // POST is exempt from the Origin check (and from Access's login).
+    const applePost = await server.fetch(
+      gatewayRequest("/api/auth/callback/apple", {
+        method: "POST",
+        headers: {
+          cookie: "CF_Authorization=abc",
+          origin: "https://appleid.apple.com",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: "code=c&state=s",
+      }),
+    );
+    expect(applePost.status).not.toBe(403);
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledTimes(1);
+
+    // Only that path, and only its POST: another provider's callback, or
+    // any other Better Auth POST, is checked as before.
+    mocks.controlPlaneFetch.mockClear();
+    const googlePost = await server.fetch(
+      gatewayRequest("/api/auth/callback/google", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          origin: "https://accounts.google.com",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: "code=c&state=s",
+      }),
+    );
+    expect(googlePost.status).toBe(403);
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
   it("exempts no deploy API or deploy-token route from the cookie check: there are none", async () => {
     for (const path of ["/api/deploy/register", "/api/setup/deploy-token"]) {
       const response = await server.fetch(
@@ -764,6 +802,8 @@ describe("gateway host (control plane)", () => {
       ["GET", "/.WELL-KNOWN/oauth-authorization-server"],
       ["GET", "/.well-known/foo"],
       ["GET", "/.well-known/jwks.json"],
+      ["POST", "/API/AUTH/CALLBACK/APPLE"],
+      ["GET", "/Api/Auth/Callback/Apple"],
     ] as const) {
       const response = await server.fetch(
         gatewayRequest(path, {

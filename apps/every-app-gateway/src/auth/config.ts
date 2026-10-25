@@ -16,6 +16,11 @@ import {
   isAccessSignInConfigured,
   isPasswordSignInOn,
 } from "./cloudflare-access";
+import {
+  configuredSignInProviderIds,
+  signInProviders,
+  signInProvidersFromEnv,
+} from "./sign-in-providers";
 import { logEvent } from "@every-app/perimeter";
 import { EMAIL_TRANSPORTS_TEXT } from "@/server/email/providers";
 import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
@@ -343,6 +348,10 @@ export function createAuth() {
   // Cloudflare Access sign-in (OIDC and the outer ring), from secrets; none
   // where the policy has no Access sign-in.
   const access = accessConfigFromEnv();
+  // The sign-in providers ("Continue with Google"), from secrets, in every
+  // mode: who they let in follows the policy (src/auth/sign-in-providers/).
+  const signIn = signInProvidersFromEnv();
+  const signInIds = configuredSignInProviderIds(signIn);
 
   return betterAuth({
     ...sharedAuthOptions,
@@ -352,6 +361,8 @@ export function createAuth() {
     // (requireLocalEmailVerified, on by default), so an account registered
     // with someone else's address is never handed to them. Accounts whose
     // email isn't verified link while signed in (see cloudflare-access/).
+    // The sign-in providers are not trusted by name: each link needs the
+    // provider's word that the email is verified (sign-in-providers/).
     ...(isAccessSignInConfigured(access)
       ? {
           account: {
@@ -535,9 +546,19 @@ export function createAuth() {
       gatewaySchema(),
       signInMethods({
         access,
+        signIn,
         gatewayUrl: env.GATEWAY_URL,
         policy: describePolicy(policy),
       }),
+      // The sign-in providers, in every valid mode (an invalid mode has
+      // every capability off), before the Access plugin and the user-level
+      // database hooks: their hooks make an invited person a member before
+      // the session hook below picks the session's organization.
+      ...(policy.mode === "invalid"
+        ? ([] as const)
+        : ([
+            signInProviders({ config: signIn, openSignUp: policy.openSignUp }),
+          ] as const)),
       // Only where the policy has Access sign-in (self-hosted): a hosted
       // gateway has no Access in front of it, nor OIDC through it.
       // Before the user-level database hooks: it makes an invited or
@@ -561,10 +582,13 @@ export function createAuth() {
           return;
         }
 
-        if (isPasswordPath(ctx.path) && !(await isPasswordSignInOn(access))) {
+        if (
+          isPasswordPath(ctx.path) &&
+          !(await isPasswordSignInOn(access, signInIds))
+        ) {
           throw new APIError("FORBIDDEN", {
             code: "PASSWORD_SIGN_IN_DISABLED",
-            message: `Password sign-in is turned off on this gateway. Sign in with ${access.oidc?.label ?? "Cloudflare Access"}.`,
+            message: `Password sign-in is turned off on this gateway. Sign in with ${access.oidc?.label ?? signIn.providers[0]?.label ?? "Cloudflare Access"}.`,
           });
         }
 

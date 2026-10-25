@@ -310,6 +310,7 @@ credentials:
 | `/health`                         | gateway                                            | Uptime monitors: `GET` answers 200 or 503 after a bounded `SELECT 1`, reading no session |
 | `/oauth/token`, `/oauth/register` | gateway                                            | The OAuth server's token, revocation and registration                   |
 | `/.well-known/*`                  | gateway                                            | OAuth discovery documents                                               |
+| `/api/auth/callback/apple`        | gateway                                            | Sign in with Apple's cross-site POST return, which only redirects to the same URL as a GET (`docs/runbooks/sign-in-providers.md`) |
 | Each app's public routes          | that app's host                                    | Whatever its `everyapp.config.ts` declares as `public` (not a health check: a monitor sends a personal access token) |
 
 With **Managed OAuth** on the gateway's application ("MCP through Access
@@ -343,7 +344,8 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/mcp/*", "behavior": "public"},
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
-      {"path_pattern": "/.well-known/*", "behavior": "public"}
+      {"path_pattern": "/.well-known/*", "behavior": "public"},
+      {"path_pattern": "/api/auth/callback/apple", "behavior": "public"}
     ]}
   ],
   "policies": ["<policy id>"],

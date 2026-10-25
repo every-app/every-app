@@ -14,6 +14,11 @@ import {
   isSettableGatewaySetting,
   SETTABLE_GATEWAY_SETTINGS,
 } from "./gatewaySettings";
+import { rowSecretProblem } from "./providerRegistry";
+import {
+  isSignInSettingName,
+  SIGN_IN_GATEWAY_SETTINGS,
+} from "./signInProviders";
 
 describe("the Gateway's settings", () => {
   it("are either settable or the install's, never both", () => {
@@ -44,6 +49,28 @@ describe("the Gateway's settings", () => {
         expect(known(setting), `${id}: ${setting}`).toBe(true);
       }
     }
+  });
+
+  it("makes every sign-in setting settable and keeps the family from apps and rows", () => {
+    for (const name of SIGN_IN_GATEWAY_SETTINGS) {
+      expect(isSettableGatewaySetting(name), name).toBe(true);
+      expect(isSignInSettingName(name), name).toBe(true);
+      expect(isInstallOwnedGatewaySetting(name), name).toBe(false);
+    }
+    expect(isPlainGatewaySetting("GOOGLE_SIGNIN_CLIENT_ID")).toBe(true);
+    expect(isPlainGatewaySetting("OIDC_SIGNIN_ISSUER")).toBe(true);
+    expect(isPlainGatewaySetting("GOOGLE_SIGNIN_CLIENT_SECRET")).toBe(false);
+    // The family covers names no catalog entry reads yet, so a registered
+    // row (rowSecretProblem) and a manifest can never take one.
+    expect(isSignInSettingName("OKTA_SIGNIN_CLIENT_ID")).toBe(true);
+    expect(isSignInSettingName("GOOGLE_WORKSPACE_CLIENT_ID")).toBe(false);
+    expect(isSignInSettingName("GOOGLE_SIGNIN_API_KEY")).toBe(false);
+    expect(
+      rowSecretProblem("google", "GOOGLE_SIGNIN_CLIENT_SECRET", () => false),
+    ).toContain("sign-in provider's setting name");
+    expect(
+      rowSecretProblem("okta", "OKTA_SIGNIN_CLIENT_ID", () => false),
+    ).toContain("sign-in provider's setting name");
   });
 
   it("never include a name an app's deploy sets", () => {

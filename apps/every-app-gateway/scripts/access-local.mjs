@@ -15,7 +15,8 @@
  *    /cdn-cgi/access/logout forgets you. The paths the runbook says to
  *    bypass pass without the header (the browser's CF_Authorization cookie
  *    still goes along): on the gateway's host /mcp, /mcp/*, /oauth/token,
- *    /oauth/register, /.well-known/* and /health; on app hosts
+ *    /oauth/register, /.well-known/*, /health and Apple's callback POST
+ *    /api/auth/callback/apple; on app hosts
  *    (<app>.localhost:<proxy port>) nothing, unless --mcp-app <id> names
  *    the app (as `access on` does for a manifest that sets `mcp`): then
  *    its /mcp and /mcp/*. With --apps-aud, app hosts are a separate Access
@@ -255,6 +256,9 @@ const GATEWAY_BYPASS = [
   /^\/oauth\/(token|register)$/,
   /^\/\.well-known\//,
   /^\/health$/,
+  // Sign in with Apple's cross-site POST return (it only redirects to the
+  // same URL as a GET, which goes through the ring).
+  /^\/api\/auth\/callback\/apple$/,
 ];
 const MCP_APP_BYPASS = [/^\/mcp(\/|$)/];
 const mcpApps = new Set(args["mcp-app"].map((id) => id.toLowerCase()));

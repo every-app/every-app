@@ -34,6 +34,7 @@ import {
   isReservedAppSecretName,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
+import { isSignInSettingName } from "./signInProviders.js";
 import {
   describeSpecProblems,
   parseProviderSpec,
@@ -229,6 +230,9 @@ export function rowSecretProblem(
   }
   if (isReservedAppSecretName(name)) {
     return `${name} is a name everyapp sets itself`;
+  }
+  if (isSignInSettingName(name)) {
+    return `${name} is a sign-in provider's setting name (every <ID>_SIGNIN_<FIELD> name is the Gateway's, set with \`everyapp signin add\`)`;
   }
   if (isSettableGatewaySetting(name)) {
     return `${name} is a Gateway setting another provider or the Gateway reads`;

@@ -12,6 +12,7 @@ import {
 } from "./config";
 import { readAccessAssertion } from "./jwt";
 import { verifyOuterRingAssertion } from "./outer-ring";
+import { readSignInProviders } from "../sign-in-providers/config";
 
 /**
  * The Access sign-in settings from this Worker's environment. Loopback URLs
@@ -20,7 +21,16 @@ import { verifyOuterRingAssertion } from "./outer-ring";
  * are none, whatever is set: passwords alone, and no outer ring.
  */
 export function accessConfigFromEnv(): AccessConfig {
-  const options = { allowLoopback: Boolean(import.meta.env.DEV) };
+  const allowLoopback = Boolean(import.meta.env.DEV);
+  const options = {
+    allowLoopback,
+    // A sign-in provider that is on lets EMAIL_PASSWORD_SIGN_IN=false take
+    // effect even without Access (the config's own problem message).
+    otherSignInConfigured:
+      readSignInProviders(env as unknown as Record<string, unknown>, {
+        allowLoopback,
+      }).providers.length > 0,
+  };
   if (!platformPolicy(env).accessSignIn) {
     const ignored = Object.keys(env).some(
       (name) =>

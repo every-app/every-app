@@ -9,6 +9,8 @@ import { cloudflareAccess } from "./cloudflare-access/plugin";
 import { gatewaySchema, organizationSchema } from "./schema";
 import { sharedAuthOptions } from "./shared";
 import { signInMethods } from "./sign-in-methods";
+import { readSignInProviders } from "./sign-in-providers/config";
+import { signInProviders } from "./sign-in-providers/plugin";
 
 /**
  * Necessary because cloudflare bindings don't work in when run as a cli.
@@ -26,8 +28,13 @@ export const auth = betterAuth({
     // adds to the schema).
     signInMethods({
       access: readAccessConfig({}, { allowLoopback: false }),
+      signIn: readSignInProviders({}, { allowLoopback: false }),
       gatewayUrl: undefined,
       policy: { signUp: "invitation", emailVerification: false },
+    }),
+    signInProviders({
+      config: readSignInProviders({}, { allowLoopback: false }),
+      openSignUp: false,
     }),
     cloudflareAccess({
       config: readAccessConfig({}, { allowLoopback: false }),

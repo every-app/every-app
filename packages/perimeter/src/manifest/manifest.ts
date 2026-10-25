@@ -22,6 +22,7 @@ import {
   isCapabilityId,
   isReservedAppSecretName,
   isRemoteMcpSecretName,
+  isSignInSettingName,
   isSettableGatewaySetting,
   providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
@@ -819,6 +820,12 @@ function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
           return;
         }
         const upper = name.toUpperCase();
+        if (isSignInSettingName(upper)) {
+          issue(
+            `${name} is a sign-in provider's setting name (every <ID>_SIGNIN_<FIELD> name is the Gateway's, set with \`everyapp signin add\`); give the app's secret another name`,
+          );
+          return;
+        }
         const registered = isSettableGatewaySetting(upper)
           ? null
           : registeredSettingOwner(lookup, upper);

@@ -817,6 +817,24 @@ describe("secrets manifest field", () => {
     );
   });
 
+  it("refuses an app secret in the sign-in family", () => {
+    // `<ID>_SIGNIN_<FIELD>` is the sign-in providers' family, catalog entry
+    // or not: an app can never hold the Gateway's Google client secret, nor
+    // reserve a name a future provider would read.
+    for (const name of [
+      "GOOGLE_SIGNIN_CLIENT_SECRET",
+      "okta_signin_client_id",
+    ]) {
+      expect(() =>
+        validateManifestStrict({ id: "repolens", secrets: [name] }),
+      ).toThrow(
+        new RegExp(
+          `secrets\\.0: ${name} is a sign-in provider's setting name \\(every <ID>_SIGNIN_<FIELD> name is the Gateway's, set with \`everyapp signin add\`\\); give the app's secret another name`,
+        ),
+      );
+    }
+  });
+
   it("refuses a secret named like one of the app's bindings", () => {
     const manifest = {
       id: "seo",

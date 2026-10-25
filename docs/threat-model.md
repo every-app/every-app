@@ -15,7 +15,7 @@ shape (our own install of the same code) comes second: its extra boundaries
 are built, mostly unverified against a live Workers for Platforms namespace,
 and switched off by default.
 
-Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit, except the public-surface rows (an app host's `/mcp` opt-in, the gateway's `/health`, the Access sign-in methods and bypass list), re-read on 2026-10-25 against `c2d04d85` (main after #606, #612 and #622), and the B9 rows (the event bus, outbound webhooks, the email sink, the app emit route), read on 2026-10-25 against `2083a662` (main after #628), with the CLI's side and the SDK's `packages/sdk/src/internal/events.ts` (#644, which added the private-name list and moved that file's lines) read against `bb644c05` (main after #644).
+Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit, except the public-surface rows (an app host's `/mcp` opt-in, the gateway's `/health`, the Access sign-in methods and bypass list), re-read on 2026-10-25 against `c2d04d85` (main after #606, #612 and #622), and the B9 rows (the event bus, outbound webhooks, the email sink, the app emit route), read on 2026-10-25 against `2083a662` (main after #628), with the CLI's side and the SDK's `packages/sdk/src/internal/events.ts` (#644, which added the private-name list and moved that file's lines) read against `bb644c05` (main after #644); the B10 rows (the sign-in providers) were written with the code on 2026-10-25 on the branch that added them, from main at `9b0e0fdc` (after #661).
 
 ## How to use this document
 
@@ -286,6 +286,7 @@ the Gateway as a caller, in both shapes.
 | B7 | Operator → Cloudflare | the CLI's deploys and registry writes; the browser install | `packages/cli/src/lib/app/policy.ts`, `packages/perimeter/src/registry/`, `apps/every-app-gateway/src/server/deploy/install.ts` |
 | B8 | The hosted tier | deploy keys, the dispatch namespace, egress, third-party hosts | `apps/every-app-gateway/src/server/deploy/`, `outbound.ts`, `host-session.ts` |
 | B9 | Gateway → subscriber | signed webhook deliveries, event mail to owners and admins, an app's own events | `apps/every-app-gateway/src/server/events/`, `src/serverFunctions/events.ts`, `packages/sdk/src/internal/events.ts` |
+| B10 | Sign-in provider → Gateway | the OAuth/OIDC code flow with Google, Microsoft, GitHub, Apple, Cloudflare or an OIDC issuer; membership rules | `apps/every-app-gateway/src/auth/sign-in-providers/`, `packages/sdk/src/internal/signInProviders.ts` |
 
 ### B1. Browser → app host: the perimeter
 
@@ -450,7 +451,7 @@ misconfigured deployment mode turning anything on.
 | `invite.peek-token-only` | The pre-sign-in lookup (`POST /api/invitations/lookup`) answers only to a live `einv_` link token, with the organization's name and the invited address masked to its first character and domain; unknown, used, canceled and expired tokens get one identical `404 INVITATION_NOT_VALID`; same-origin JSON only, counted per client address with the credential paths. | `apps/every-app-gateway/src/routes/api/invitations/lookup.ts:27-58`; `src/server/invitation-token.ts:64-78` (`peekInvitation`); `src/server/auth-rate-limit.ts:40` | `apps/every-app-gateway/src/server/invitation-peek.sqlite.test.ts` :: answers one identical 404 for unknown, used, canceled and expired links |
 | `ba.admin-plugin-closed` | Every endpoint of Better Auth's admin plugin (ban, impersonate, set password, set role, list and remove users) answers 404 over HTTP in every mode. | `apps/every-app-gateway/src/auth/config.ts:264-278, 455` | `apps/every-app-gateway/src/auth/config.test.ts` :: closes every one of the admin plugin's endpoints over HTTP |
 | `ba.org-creation-closed` | No HTTP client can create an organization: the endpoint is disabled, `allowUserToCreateOrganization` is false, and the before-hook refuses creation while no owner exists. | `apps/every-app-gateway/src/auth/config.ts:242, 469, 538-545` | `apps/every-app-gateway/src/auth/auth.sqlite.test.ts` :: closes organization creation over HTTP, before and after the claim |
-| `csrf.cookie-state-change-same-origin` | On the gateway host, any non-GET/HEAD/OPTIONS request carrying a cookie needs `Sec-Fetch-Site: same-origin` or an `Origin` on the gateway host, else `403 csrf_denied`; the only exemptions are the token-authenticated `/mcp`, `/oauth/token` and `/oauth/register`, none of which reads the cookie. | `apps/every-app-gateway/src/server/control-plane-guard.ts:26-50, 63-92` | `apps/every-app-gateway/src/server.test.ts` :: rejects a cookie-carrying cross-site POST to any control-plane route |
+| `csrf.cookie-state-change-same-origin` | On the gateway host, any non-GET/HEAD/OPTIONS request carrying a cookie needs `Sec-Fetch-Site: same-origin` or an `Origin` on the gateway host, else `403 csrf_denied`; the only exemptions are the token-authenticated `/mcp`, `/oauth/token` and `/oauth/register`, none of which reads the cookie, and `POST /api/auth/callback/apple` (Sign in with Apple's cross-site `form_post` return), which Better Auth answers with nothing but a redirect to the same URL as a GET: it reads no cookie and creates nothing. | `apps/every-app-gateway/src/server/control-plane-guard.ts:26-50, 63-92` (TOKEN_AUTHENTICATED_PATHS, APPLE_CALLBACK_PATH) | `apps/every-app-gateway/src/server.test.ts` :: rejects a cookie-carrying cross-site POST to any control-plane route; :: lets Apple's cross-site callback POST through to Better Auth, which only redirects it |
 | `csrf.serverfn-fetch-only` | `/_serverFn/*` is served only to same-origin fetches carrying TanStack's client header that are not navigations; every state-changing server function is a POST. | `apps/every-app-gateway/src/server/control-plane-guard.ts:69-74` | `apps/every-app-gateway/src/server.test.ts` :: rejects a server-function GET reached by navigation |
 | `session.duplicate-cookie-refused` | A control-plane request carrying the session cookie name twice is answered `401 duplicate_session_cookie`, `no-store`, before the guard, the rate limits or any handler run. | `apps/every-app-gateway/src/server.ts:184-197, 210-213` | `apps/every-app-gateway/src/server.test.ts` :: refuses a session cookie tossed in by a sibling subdomain, before anything else |
 | `setup.one-time-link` | A claim succeeds only with an `est_` token whose SHA-256 equals, in constant time, the hash of an unconsumed, unexpired claim row, consumed by a guarded `UPDATE` as the last step. | `apps/every-app-gateway/src/server/services/SetupService.ts:79-88, 111-115` | `apps/every-app-gateway/src/server/services/SetupService.test.ts` :: rejects a wrong token with 403 and creates nothing |
@@ -976,7 +977,13 @@ bypassed prefix that its MCP/OAuth router doesn't serve (an unclaimed
 shell. No control-plane route, server function or auth endpoint lives under
 `/health`, `/mcp`, `/oauth/token`, `/oauth/register` or `/.well-known/`;
 keep it so. `/health` is served before that refusal, exact-case, reads no
-session and says only whether D1 answers (`server/health.ts`).
+session and says only whether D1 answers (`server/health.ts`). The one
+auth endpoint on the bypass list is `/api/auth/callback/apple` (B10): Sign
+in with Apple returns with a cross-site POST the browser's Access cookie
+isn't sent on, which Better Auth answers with nothing but a redirect to
+the same URL as a GET, which is not bypassed; the POST reads no session
+and creates nothing, and is served exact-case before the refusal like
+`/health`, so every other spelling is the JSON 404.
 
 **Invariants.** The register has 37.
 
@@ -1437,6 +1444,95 @@ register under the boundary named.
 | Organization suspension | Until lifted | Honoured within 30 s per isolate everywhere | Nothing in the code sets it yet (the platform's lever) | |
 | Registry row (a disabled or deleted app, its senders) | Until changed | 30 s per isolate (5 s on a miss) | The CLI's writes, Admin → Apps | |
 
+### B10. Sign-in provider → the Gateway: Google, Microsoft, GitHub, Apple, Cloudflare and an OIDC issuer
+
+Since 2026-10-25 (the runbook is `docs/runbooks/sign-in-providers.md`, the
+catalog `packages/sdk/src/internal/signInProviders.ts`).
+
+**What crosses.** An OAuth 2.0 / OpenID Connect authorization-code flow
+between the browser, the provider and Better Auth's own `/sign-in/social`,
+`/callback/<id>` and `/link-social` endpoints: the gateway's client id and
+secret, state, a PKCE verifier and (OIDC) a nonce out; a code, then an ID
+token or the provider's user and emails APIs in. On the other side, Better
+Auth's users, accounts and sessions and the membership tables. The code is
+`apps/every-app-gateway/src/auth/sign-in-providers/` (the settings reader,
+the providers, the generic OIDC provider, the membership rules, the plugin)
+and the shared `src/auth/identity-membership.ts`.
+
+**What it stops.** A stranger with a Google account getting an account on
+an invite-only gateway. An identity whose email the provider hasn't
+verified being taken for that person. A provider identity being handed an
+existing password account by email coincidence. A forged or replayed ID
+token, one for another client or from another issuer, or one minted for
+another sign-in (nonce). A posted ID token as a sign-in. A deactivated
+member coming back through a provider. Anyone signing in before the setup
+claim. A sign-in method being added by a stolen admin session or agent
+token (the settings are Worker secrets, and the names are a family no row
+or manifest can take). A half-configured provider. The ring in front being
+bypassed: behind the outer ring a provider sign-in is still only the Access
+person's.
+
+**Invariants.** The register has 16. The gateway's tests are in
+`apps/every-app-gateway/src/auth/sign-in-providers/sign-in-providers.sqlite.test.ts`
+unless another file is named.
+
+| Id | Invariant | Enforced by | Pinned by |
+|---|---|---|---|
+| `signin.settings.secrets-only-family` | Every sign-in setting is read from the Worker's environment (`<ID>_SIGNIN_<FIELD>`); no server function, route or tool writes one; a registered provider row and an app manifest are refused any name in the family. | `apps/every-app-gateway/src/auth/sign-in-providers/config.ts:105`; `packages/sdk/src/internal/signInProviders.ts:270`; `packages/sdk/src/internal/providerRegistry.ts:234`; `packages/perimeter/src/manifest/manifest.ts:823` | `packages/sdk/src/internal/gatewaySettings.test.ts` :: makes every sign-in setting settable and keeps the family from apps and rows; `packages/perimeter/src/manifest/manifest.test.ts` :: refuses an app secret in the sign-in family (partial: nothing asserts the absence of a writer) |
+| `signin.settings.all-or-off` | A provider is on only with every required setting present and well-formed (an https issuer, a tenant id or word); otherwise it is off and the problem is logged once, so nothing is half-configured. | `config.ts:105-132` | `sign-in-providers.sqlite.test.ts` :: leaves a half-set provider off instead of half-configuring it; `config.test.ts` :: leaves a half-set provider off and says what is missing |
+| `signin.membership.nothing-before-claim` | Until some organization has an owner, no provider sign-in creates a user or session. | `membership.ts:102` | `sign-in-providers.sqlite.test.ts` :: signs nobody in before the gateway is claimed; :: still signs nobody in before the gateway is claimed |
+| `signin.membership.members-and-invitees-only` | A provider identity gets a session only as an existing member or a person with a live pending invitation for that exact email (claimed atomically, with the invited role and the default apps); on open sign-up (hosted) also anyone verified, with a personal organization; everyone else is refused and nothing is created. No auto-join by domain. | `membership.ts:97-140`; `apps/every-app-gateway/src/auth/identity-membership.ts:60` | `sign-in-providers.sqlite.test.ts` :: refuses a stranger and creates nothing for them; :: signs an invited person in, accepting the invitation with its role and default apps; :: lets a verified stranger make an account with a personal organization |
+| `signin.membership.verified-email-only` | An identity whose email the provider doesn't report verified creates no user and gets no session, invited or not, in both shapes. The `cloudflare` entry's address is trusted because only the operator's account members can authorize a private OAuth client (the footing of #622's Access rule "Restrict to account members"), never because Cloudflare asserts a verified email (its `/user` has no such flag); `cloudflare` is not in `trustedProviders`, so linking to an existing account by email needs the local email verified as for every provider. | `membership.ts:103`; `providers.ts:34` (Microsoft) | `sign-in-providers.sqlite.test.ts` :: refuses an email the issuer hasn't verified, invited or not; :: refuses an email Google hasn't verified; :: refuses an email GitHub hasn't verified |
+| `signin.membership.deactivated-refused` | A deactivated user is refused (Better Auth's ban check first, the membership policy after it). | `membership.ts:121` | `sign-in-providers.sqlite.test.ts` :: refuses a deactivated member |
+| `signin.linking.untrusted-provider-rules` | No sign-in provider is a trusted provider: an identity links to an existing account with the same email only when the provider reports the email verified and the account's own email is verified, or while signed in to the account (`/link-social`), which also refuses another email or an unverified one. | `apps/every-app-gateway/src/auth/config.ts:371` (Access alone is trusted); Better Auth 1.7.7 `oauth2/link-account.mjs` | `sign-in-providers.sqlite.test.ts` :: won't hand an unverified password account to the same email, until its owner connects the provider while signed in; :: won't connect an identity of another email to a signed-in account; :: won't connect an identity whose email the issuer hasn't verified |
+| `signin.account.keyed-by-subject` | Accounts are keyed by the provider's stable subject (`sub`, GitHub's `id`, Entra's `oid`), never the email, so a renamed person keeps their account and a recycled address inherits nothing. | `oidc-provider.ts` (accountSubject); Better Auth's providers | `sign-in-providers.sqlite.test.ts` :: keys the account by the issuer's subject, so a changed email still finds it; :: signs an invited person in, keyed by Google's subject |
+| `signin.flow.state-pkce-nonce` | Every sign-in runs through Better Auth's state and PKCE S256 (GitHub: state) and redeems the code with the client secret; the OIDC ID token must echo the nonce the sign-in started with. | `oidc-provider.ts:178`; Better Auth `api/routes/sign-in.mjs`, `callback.mjs` | `sign-in-providers.sqlite.test.ts` :: the ID token > must carry the nonce the sign-in started with; `src/test/mock-sign-in-providers.ts` (refuses a request without S256 or a nonce) |
+| `signin.oidc.id-token-verified` | The OIDC ID token is verified in full (RS256 by the issuer's JWKS through the Access verifier's fail-closed cache, issuer, audience = client id, expiry, `sub`) before any claim is used; a userinfo answer counts only for the same `sub`. | `oidc-provider.ts:145-178`, `:201` | `sign-in-providers.sqlite.test.ts` :: must be for this client; :: must be from the configured issuer; :: signs nobody in when the issuer's keys can't be fetched (fails closed) |
+| `signin.oidc.discovery-names-issuer` | Discovery is fetched when a sign-in starts (never at startup; cached an hour; 5 s timeout), must name the configured issuer and https endpoints, else the sign-in fails `SIGNIN_PROVIDER_UNAVAILABLE` and nothing is cached. | `oidc-provider.ts:88-102` | `sign-in-providers.sqlite.test.ts` :: discovery > refuses a document that names another issuer; :: answers clearly when the issuer is down, and tries again later |
+| `signin.no-posted-id-token` | None of the providers accept a client-posted ID token as a sign-in or a link (`disableIdTokenSignIn`). | `providers.ts:48`; `oidc-provider.ts:305` | `sign-in-providers.sqlite.test.ts` :: doesn't sign in with a posted ID token |
+| `signin.scopes.identity-only` | Every provider is asked for identity scopes only (`openid email profile`; GitHub `read:user user:email`; Apple `email name`; Microsoft with its default Graph and offline scopes removed), and no refresh token is kept by the OIDC provider. | `oidc-provider.ts:44`; `providers.ts:73` | `sign-in-providers.sqlite.test.ts` :: asks the issuer for identity scopes only; :: asks Google for identity scopes only |
+| `signin.microsoft.verified-address-rule` | A Microsoft email counts as verified only in the pinned tenant's own directory or, on the multi-tenant endpoints, with `xms_edov: true`, `email_verified: true`, a matching `verified_primary_email` or a personal account. | `providers.ts:34` | `config.test.ts` :: trusts the pinned tenant's own directory, and only it; :: on the multi-tenant endpoints needs the token's word for the address |
+| `signin.passwords-off.lockout-protection` | `EMAIL_PASSWORD_SIGN_IN=false` closes the password paths only while an Access sign-in or a sign-in provider is on and an owner holds such an identity. | `apps/every-app-gateway/src/auth/cloudflare-access/membership.ts:207`; `cloudflare-access/config.ts:307`; `apps/every-app-gateway/src/auth/config.ts:582` | `sign-in-providers.sqlite.test.ts` :: takes effect only once an owner has connected the provider; :: is ignored while no provider and no Access sign-in is configured |
+| `signin.access-ring-unchanged` | Behind the outer ring a provider sign-in creates a session only for the person Access vouches for on the request, and none without an assertion; the Access plugin's hooks run on the provider callback like on any other HTTP flow. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:334` | `sign-in-providers.sqlite.test.ts` :: signs in only the person Access vouches for on the request; :: makes no session for a sign-in that didn't come through Access |
+
+**Not this boundary's job.** The providers' own correctness (Google's,
+GitHub's, Microsoft's and Apple's token endpoints, their ID-token handling
+inside Better Auth's providers, GitHub's emails API). Whether the operator
+registered the right redirect URL and consent screen (the runbook and
+`everyapp signin show`). Personal tokens and OAuth tokens (never issued
+through a provider). Session cookies, CSRF and the Origin rules (B1, B2).
+
+**Gaps.**
+
+- *Google, Microsoft, GitHub and Apple are Better Auth's providers, run
+  against mocked endpoints only* (low, known; TODO "Sign-in providers
+  (2026-10-25)"). The gateway's tests answer their real endpoint URLs with a
+  mock; no live OAuth app was run in this pass (none exists in the loop's
+  account notes). Apple's `form_post` callback and its six-month client
+  secret are untested live.
+- *Apple's POST callback behind the outer ring needs a bypass* (low,
+  known). `everyapp access on` leaves `/api/auth/callback/apple` public (the
+  POST only redirects to the same URL as a GET, which Access then checks);
+  the gateway serves that exact path before its bypass refusal and exempts
+  the POST from the Origin check (`csrf.cookie-state-change-same-origin`,
+  `access.bypass-list.machine-endpoints-only`); a ring made by hand
+  without the override blocks Apple sign-in.
+- *Cloudflare's `/user` reports no email verification* (low, documented).
+  The `cloudflare` provider counts the address as verified because a
+  private OAuth client is only authorized by the operator's own account
+  members; an operator who makes the client public (permanent, DNS-verified)
+  lets any Cloudflare user, verified address or not, present an email. The
+  setup guide says to keep it private; `signin show cloudflare` repeats it.
+- *Microsoft on the multi-tenant endpoints refuses every sign-in until the
+  optional claims are configured* (info, documented). Without
+  `MICROSOFT_SIGNIN_TENANT` and without `xms_edov` in the app
+  registration's token configuration, no address counts as verified; the
+  setup guide says so.
+- *No MCP twin for `signin add` and `signin remove`* (info, by design). The
+  settings are Worker secrets the gateway can't write to itself, and a
+  twin would let a stolen agent token add a way in; `signin list` and
+  `signin show` have twins.
+
 ## Known gaps, ranked
 
 Everything this pass found that isn't closed, ranked for the self-hosted
@@ -1699,17 +1795,30 @@ means it is on main (every boundary fix from this pass merged on
     receiver's rate limit met with the retry schedule, and the CLI's
     target check without `THIRD_PARTY_DOMAIN` (low, known).
 
+43. **Google, Microsoft, GitHub and Apple sign-in run against mocked
+    endpoints only** (B10, low, known; TODO "Sign-in providers
+    (2026-10-25)"). Better Auth's providers, exercised through the gateway's
+    membership hooks with a fetch mock on their real URLs; the generic OIDC
+    provider is the gateway's own and is tested in full. A live run needs an
+    OAuth app in the loop's account.
+44. **Apple's POST callback needs `/api/auth/callback/apple` public behind
+    the outer ring** (B10, low, known). `everyapp access on` does it; a ring
+    made by hand without it blocks Apple sign-in. The POST creates nothing.
+45. **`signin add` and `signin remove` have no MCP twin** (B10, info, by
+    design). The settings are Worker secrets; a twin would let a stolen
+    agent token add a way in.
+
 **Hosted only** (nothing here reaches a self-hosted gateway)
 
-43. A dispatch-tier Worker sends mail from the platform's own sender and
+46. A dispatch-tier Worker sends mail from the platform's own sender and
     spends the platform's provider keys with no per-organization bound
     (B8, medium; the launch gate's "capability calls refused for
     dispatch-tier rows").
-44. With open sign-up, anyone with an invite link can plant an account for
+47. With open sign-up, anyone with an invite link can plant an account for
     someone else's email, which the victim's own verification click then
     hands over (B2, medium; `HOSTED_OPEN_SIGNUP=false` keeps the preview
     invite-only, where the invite link's email binding stops it).
-45. `connect()` from a dispatched Worker is unverified against the egress
+48. `connect()` from a dispatched Worker is unverified against the egress
     policy; the org key in a dispatched Worker's name isn't compared with
     the row's organization; `secret set` on a shared app skips the
     platform-admin check; the platform-domain refusal doesn't cover

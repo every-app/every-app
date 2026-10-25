@@ -645,7 +645,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   refused). So a person taken out of the Access policy loses browser access
   when their Access session ends. Access bypasses only machine endpoints
   (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`, apps'
-  public routes), never `/oauth/authorize` or
+  public routes) and Sign in with Apple's cross-site POST return
+  (`/api/auth/callback/apple`, which only redirects to the same URL as a
+  GET; "Sign-in providers" below), never `/oauth/authorize` or
   the consent pages. Bearer credentials (personal access and OAuth tokens)
   never pass through Access: offboarding is deactivation. The CLI's deploys never go
   through the gateway (it reads and writes D1 and Cloudflare's API), so
@@ -680,6 +682,73 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 - `EMAIL_PASSWORD_SIGN_IN=false` closes password sign-in, sign-up and resets
   over HTTP only while Access sign-in is configured and an owner can sign in
   with it; setting it back to `true` reopens them.
+
+## Sign-in providers
+
+"Continue with Google" (Microsoft, GitHub, Apple, Cloudflare, or any
+OpenID Connect issuer) beside passwords, in both shapes
+(`apps/every-app-gateway/src/auth/sign-in-providers/`, the catalog in
+`packages/sdk/src/internal/signInProviders.ts`, the runbook
+`docs/runbooks/sign-in-providers.md`). The same shape as Access sign-in:
+the provider only proves who someone is, Better Auth's own `/sign-in/social`
+and `/callback/<id>` run the flow with state and PKCE, and a gateway plugin
+applies the membership rules through database hooks, so everything after
+the session is the same as after a password.
+
+- Settings are Worker secrets only (`<ID>_SIGNIN_<FIELD>`, a family no
+  registered provider row or app manifest can take), set under the
+  Cloudflare login with `everyapp signin add` or `secret set`; nothing in
+  the admin UI, no server function and no MCP tool writes one, so a stolen
+  session or token can't add a way in. A half-set provider is off.
+- Identity scopes only (`openid email profile`; GitHub's `read:user
+  user:email`; Apple's `email name`): no provider token the gateway holds
+  can act on anyone's behalf, and no refresh token is kept.
+- The email must be verified by the provider: Google's and Apple's
+  `email_verified`, GitHub's verified primary address, the OIDC ID token's
+  (or userinfo's) `email_verified`, and for Microsoft the pinned tenant's
+  own word or, on the multi-tenant endpoints, `xms_edov`,
+  `email_verified`, `verified_primary_email` or a personal account (any
+  tenant's admin can put any address on their users). Cloudflare's `/user`
+  reports no verified flag: its address counts on the strength of the OAuth
+  client being private (only the operator's account members can authorize
+  it, and they joined that account by accepting an invitation sent to the
+  address), the same trust the Access "Sign in with Cloudflare" identity
+  provider rests on with "Restrict to account members" on; the setup guide
+  says to keep the client private. An unverified email signs nobody in and
+  creates nothing.
+- Who gets in is the invitation flow's rule: an existing member (never a
+  deactivated one), or a pending invitation for that exact email, accepted
+  with its role and the organization's default apps; on the hosted
+  gateway's open sign-up, anyone with a verified email, with a personal
+  organization as the sign-up form gives. Nothing before the setup claim:
+  the first owner is still made by `everyapp setup`. No auto-join by email
+  domain (TODO.md, "Sign-in providers (2026-10-25)").
+- Accounts are keyed by the provider's stable subject (`sub`, GitHub's
+  `id`, Entra's `oid`). Linking an identity to an existing account with the
+  same email follows Better Auth's rules for an untrusted provider: the
+  provider reports the email verified, and the account's own email is
+  verified too, else the link is made while signed in to it (the account
+  menu's "Connect <provider>", `/link-social`, which also refuses another
+  email). So an account registered with someone else's address is never
+  handed over, and a password owner from the setup link connects once.
+- The generic OIDC provider fetches discovery when a sign-in starts
+  (cached an hour, never at startup), requires the document to name the
+  configured issuer, verifies the ID token in full (RS256 by the issuer's
+  JWKS with the Access verifier's fail-closed cache, issuer, audience,
+  expiry, and the nonce the sign-in started with), takes a userinfo answer
+  only for the same `sub`, and offers no sign-in by posted ID token; none
+  of the providers do.
+- The Access ring is unchanged and still in front: behind the outer ring a
+  provider sign-in makes a session only for the person Access vouches for
+  on the request, and the Cloudflare Access settings keep their own family
+  (`CLOUDFLARE_ACCESS_OIDC_*` for Access for SaaS; `OIDC_SIGNIN_*` is for
+  another issuer).
+- `EMAIL_PASSWORD_SIGN_IN=false` now also takes effect with a sign-in
+  provider on, once an owner has connected one.
+- Apple returns with a POST (`response_mode=form_post`); Better Auth
+  answers it with a redirect to the same URL as a GET, which the outer ring
+  then checks, so `everyapp access on` leaves `/api/auth/callback/apple`
+  public. That POST creates nothing.
 
 ## Agent Tools (MCP)
 

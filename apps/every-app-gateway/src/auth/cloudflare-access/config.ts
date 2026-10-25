@@ -19,7 +19,8 @@
  *    email domains join without an invitation; CLOUDFLARE_ACCESS_OUTER_RING_
  *    AUTO_JOIN=everyone lets in everyone the outer ring admits.
  *  - EMAIL_PASSWORD_SIGN_IN=false turns password sign-in off, but only while
- *    an Access sign-in method is configured, so it can't lock everyone out.
+ *    an Access sign-in method or a sign-in provider (../sign-in-providers/)
+ *    is configured, so it can't lock everyone out.
  *
  * See docs/runbooks/cloudflare-access.md.
  */
@@ -77,7 +78,7 @@ export interface AccessConfig {
   outerRing: AccessOuterRingConfig | null;
   /** Email domains whose people join without an invitation. */
   autoJoinDomains: string[];
-  /** False only when the operator turned it off and Access sign-in works. */
+  /** False only when the operator turned it off and another sign-in works. */
   passwordSignIn: boolean;
   /** What was wrong with the settings, for the logs. */
   problems: string[];
@@ -89,6 +90,11 @@ interface ReadOptions {
    * development); production builds take *.cloudflareaccess.com only.
    */
   allowLoopback: boolean;
+  /**
+   * A sign-in provider (Google, Microsoft…) is on, so EMAIL_PASSWORD_SIGN_IN
+   * =false has a way in to fall back on even without Access.
+   */
+  otherSignInConfigured?: boolean;
 }
 
 const ON_VALUES = new Set(["true", "1", "on", "yes"]);
@@ -287,7 +293,7 @@ function readAutoJoinDomains(env: AccessEnv, problems: string[]): string[] {
 
 function readPasswordSignIn(
   env: AccessEnv,
-  accessConfigured: boolean,
+  signInConfigured: boolean,
   problems: string[],
 ): boolean {
   const value = setting(env.EMAIL_PASSWORD_SIGN_IN).toLowerCase();
@@ -298,9 +304,9 @@ function readPasswordSignIn(
     );
     return true;
   }
-  if (!accessConfigured) {
+  if (!signInConfigured) {
     problems.push(
-      "EMAIL_PASSWORD_SIGN_IN=false is ignored: no Cloudflare Access sign-in is configured, so turning passwords off would lock everyone out.",
+      "EMAIL_PASSWORD_SIGN_IN=false is ignored: no Cloudflare Access sign-in and no sign-in provider is configured, so turning passwords off would lock everyone out.",
     );
     return true;
   }
@@ -318,7 +324,7 @@ export function readAccessConfig(
   const autoJoinDomains = readAutoJoinDomains(env, problems);
   const passwordSignIn = readPasswordSignIn(
     env,
-    Boolean(oidc || outerRing),
+    Boolean(oidc || outerRing || options.otherSignInConfigured),
     problems,
   );
   return { oidc, outerRing, autoJoinDomains, passwordSignIn, problems };

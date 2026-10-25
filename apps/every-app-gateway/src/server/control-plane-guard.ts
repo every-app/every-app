@@ -29,6 +29,18 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // gateway page.
 const TOKEN_AUTHENTICATED_PATHS = ["/mcp", "/oauth/token", "/oauth/register"];
 
+/**
+ * Sign in with Apple returns to the gateway with a cross-site POST
+ * (`response_mode=form_post`, from appleid.apple.com) that may carry
+ * cookies another site set for the gateway's domain (Cloudflare Access's,
+ * say). Better Auth answers that POST with nothing but a redirect to the
+ * same URL as a GET, carrying the same code and state (its callback route
+ * reads no cookie and creates nothing on the POST), and the GET is checked
+ * like any other navigation, so the POST is exempt from the Origin check.
+ * The exact path and method only: a GET there is a safe method anyway.
+ */
+const APPLE_CALLBACK_PATH = "/api/auth/callback/apple";
+
 // Pages that show secrets, consent or setup state: never cached.
 const NO_STORE_PATHS = ["/admin", "/oauth", "/setup", "/reset-password"];
 
@@ -63,7 +75,9 @@ export function guardControlPlaneRequest(
   if (
     SAFE_METHODS.has(request.method.toUpperCase()) ||
     !request.headers.has("cookie") ||
-    isTokenAuthenticatedPath(pathname)
+    isTokenAuthenticatedPath(pathname) ||
+    (request.method.toUpperCase() === "POST" &&
+      pathname === APPLE_CALLBACK_PATH)
   ) {
     return null;
   }

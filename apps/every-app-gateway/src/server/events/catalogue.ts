@@ -134,7 +134,7 @@ export const catalogue = {
   memberJoined(input: {
     user: EventUser;
     role: string;
-    via: "invitation" | "access" | "setup" | "member_add";
+    via: "invitation" | "access" | "sign_in" | "setup" | "member_add";
   }): BuiltEvent {
     return built("member.joined", {
       user: user(input.user),
