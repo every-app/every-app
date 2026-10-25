@@ -268,7 +268,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Nine boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 350 invariants
+stop, the invariants to try first (the complete register, 351 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -1088,7 +1088,7 @@ version everyapp didn't record. A release that was tampered with, or a
 repository being built from its URL on the operator's machine. Two deploys
 racing.
 
-**Invariants.** The register has 38.
+**Invariants.** The register has 39.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1112,6 +1112,7 @@ racing.
 | `hyperdrive.own-origin-only` | A Hyperdrive config is created from, or adopted only when it connects to, the origin in the app's `.everyapp/secrets.env`, checked before anything is created. | `resources.ts:207-295` | `deployApp.hyperdrive.test.ts` :: adopts a config of its name that connects to the database, and refuses one that doesn't |
 | `secrets.values-never-on-argv` | A secret's value is read from a hidden prompt, stdin or `--from-env`, never the command line, and reaches cf only through a private temp file. | `packages/cli/src/lib/secretValue.ts:17-75` | `deployApp.hyperdrive.test.ts` :: never puts the database password on a command line (partial: the general `secret set` path has no such pin) |
 | `secrets.reserved-names-and-routing` | An app's own secret can never be `GATEWAY_URL`, `EVERYAPP_*`, `EVERY_APP_*`, `APP__*`, a Gateway setting or a binding name; `secret set` sets only names the manifest lists. | `packages/sdk/src/internal/gatewaySettings.ts:122-139`; `packages/cli/src/lib/app/secrets.ts` | `secrets.test.ts` :: refuses names the deploy sets, and the platform's namespaces |
+| `secrets.signin-family-one-version-never-argv` | `signin add` writes a sign-in provider's settings only under the Cloudflare login, in one Gateway version; the client secret only from `--client-secret-from-env` or a hidden prompt, never argv; issuer, tenant and label checked before anything is written; `signin remove` unsets the family in one version. | `packages/cli/src/commands/signin/index.ts` (addProvider, removeProvider); `packages/cli/src/lib/signinValues.ts` | `packages/cli/src/commands/signin/index.test.ts` :: writes the client id and the secret from the environment in one Gateway version, and says what to do next; :: refuses a malformed issuer or tenant, a flag of another provider and an unknown id before anything connects |
 | `deploy.never-replaces-unrecorded-version-unattended` | An unattended deploy or secret change stops when the Worker's serving version isn't one everyapp recorded. | `packages/cli/src/lib/cf/deploy.ts:189-230` | `deployApp.test.ts` :: stops unattended over an app Worker version it didn't record deploying |
 | `deploy.downgrade-guard` | Deploy, install and delete refuse a checkout or release older than the live Gateway, before the registry is touched. | `packages/cli/src/lib/gateway/apply.ts:182-215` | `deployApp.test.ts` :: refuses a checkout behind the live Gateway, before anything happens |
 | `deploy.lease-serializes-writes` | One run at a time holds the app's and the Gateway's lease, taken by insert-on-conflict only when expired. | `packages/cli/src/lib/gateway/lease.ts:111-131` | `lease.test.ts` :: lets one of two deploys hold it (partial) |

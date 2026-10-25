@@ -25,6 +25,17 @@ click when they have to do something themselves.
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
 | Every catalog provider, one section each (generated) | [providers.md](providers.md)    | each provider's own, named there                                                | apps listing the provider                                               |
+| Sign in with Google                           | [signin-google.md](signin-google.md)   | `GOOGLE_SIGNIN_CLIENT_ID`, `GOOGLE_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with Google)                       |
+| Sign in with Microsoft                        | [signin-microsoft.md](signin-microsoft.md) | `MICROSOFT_SIGNIN_CLIENT_ID`, `MICROSOFT_SIGNIN_CLIENT_SECRET` (optional: `MICROSOFT_SIGNIN_TENANT`) | the Gateway's sign-in page (Continue with Microsoft)          |
+| Sign in with GitHub                           | [signin-github.md](signin-github.md)   | `GITHUB_SIGNIN_CLIENT_ID`, `GITHUB_SIGNIN_CLIENT_SECRET`                        | the Gateway's sign-in page (Continue with GitHub)                       |
+| Sign in with Apple                            | [signin-apple.md](signin-apple.md)     | `APPLE_SIGNIN_CLIENT_ID`, `APPLE_SIGNIN_CLIENT_SECRET`                          | the Gateway's sign-in page (Continue with Apple)                        |
+| Sign in with Cloudflare                       | [signin-cloudflare.md](signin-cloudflare.md) | `CLOUDFLARE_SIGNIN_CLIENT_ID`, `CLOUDFLARE_SIGNIN_CLIENT_SECRET`          | the Gateway's sign-in page (Continue with Cloudflare)                   |
+| Sign in with any OpenID Connect issuer (SSO)  | [signin-oidc.md](signin-oidc.md)       | `OIDC_SIGNIN_ISSUER`, `OIDC_SIGNIN_CLIENT_ID`, `OIDC_SIGNIN_CLIENT_SECRET` (optional: `OIDC_SIGNIN_LABEL`) | the Gateway's sign-in page (Continue with SSO, or its label) |
+
+The six sign-in providers are set with `pnpm everyapp signin add <id>`
+rather than `secret set`: in the person's terminal it asks for each
+setting (the client secret at a hidden prompt), and unattended the secret
+comes from `--client-secret-from-env VAR`, never the command line.
 
 A provider of the built-in catalog without a file of its own above is a
 section of [providers.md](providers.md) under its id

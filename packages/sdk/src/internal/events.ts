@@ -18,6 +18,7 @@ export type EventGroup =
   | "connection"
   | "token"
   | "access"
+  | "signin_provider"
   | "mcp_app"
   | "provider"
   | "ping";
@@ -78,6 +79,16 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("token", "token.created", "A personal access token was created"),
   entry("token", "token.revoked", "A personal access token was revoked"),
   entry("access", "access.changed", "Cloudflare Access was turned on or off"),
+  entry(
+    "signin_provider",
+    "signin_provider.added",
+    "A sign-in provider (Continue with Google, …) was turned on",
+  ),
+  entry(
+    "signin_provider",
+    "signin_provider.removed",
+    "A sign-in provider was turned off",
+  ),
   entry("mcp_app", "mcp_app.added", "An MCP app was added"),
   entry("mcp_app", "mcp_app.removed", "An MCP app was removed"),
   entry("mcp_app", "mcp_app.enabled", "An MCP app is being served again"),

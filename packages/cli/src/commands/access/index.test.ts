@@ -270,7 +270,7 @@ describe("access on, from nothing", () => {
     const gateway = application(HOST)!;
     const apps = application(`*.${HOST}`)!;
     expect(gateway["id"]).not.toBe(apps["id"]);
-    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*", "/health"]);
+    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*", "/health", "/api/auth/callback/apple"]);
     expect(uris(apps)).toEqual([`*.${HOST}`]);
     expect(overrides(apps, `*.${HOST}`)).toEqual([]);
     for (const app of [gateway, apps]) {
@@ -606,7 +606,7 @@ describe("access on, from nothing", () => {
     expect(done()!["message"]).toContain("no app has public routes or /mcp");
   });
 
-  it("drops the MCP bypass everywhere once the Gateway's application has Managed OAuth, keeping /health", async () => {
+  it("drops the MCP bypass everywhere once the Gateway's application has Managed OAuth, keeping /health and Apple's sign-in POST", async () => {
     await seedPeople();
     await deploy(appDir(INBOX), INBOX);
     await on({ team: "acme" });
@@ -616,7 +616,7 @@ describe("access on, from nothing", () => {
 
     await on();
 
-    expect(overrides(application(HOST)!, HOST)).toEqual(["/health"]);
+    expect(overrides(application(HOST)!, HOST)).toEqual(["/health", "/api/auth/callback/apple"]);
     expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
     // An app that asked for /mcp alone loses its destination: nothing would be let through on it.
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);

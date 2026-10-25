@@ -40,10 +40,20 @@ export const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
 const HEALTH_PATH = "/health";
 
 /**
+ * Sign in with Apple returns to the Gateway with a cross-site POST
+ * (`response_mode=form_post`), which carries no Access login. The POST
+ * only redirects to the same URL as a GET, which Access then checks as
+ * usual; it creates nothing (docs/runbooks/sign-in-providers.md, "Apple").
+ * Public whatever Managed OAuth says: it has nothing to do with MCP.
+ */
+const APPLE_CALLBACK_PATH = "/api/auth/callback/apple";
+
+/**
  * The Gateway host's machine endpoints: MCP, the OAuth server's token,
- * revocation and registration endpoints, OAuth discovery, and `/health`.
- * Everything else on the host, `/oauth/authorize` and the consent page
- * included, is a page for people and stays behind Access.
+ * revocation and registration endpoints, OAuth discovery, `/health`, and
+ * Apple's sign-in POST. Everything else on the host, `/oauth/authorize`,
+ * the consent page and every other sign-in callback included, is a page
+ * for people and stays behind Access.
  */
 const GATEWAY_BYPASS_PATHS: readonly string[] = [
   ...MCP_PATHS,
@@ -51,6 +61,7 @@ const GATEWAY_BYPASS_PATHS: readonly string[] = [
   "/oauth/register",
   "/.well-known/*",
   HEALTH_PATH,
+  APPLE_CALLBACK_PATH,
 ];
 
 interface AccessOverride {
@@ -143,12 +154,12 @@ export function appDestination(
   };
 }
 
-/** The Gateway host's destination; with Managed OAuth on, only `/health` is bypassed. */
+/** The Gateway host's destination; with Managed OAuth on, only `/health` and Apple's sign-in POST are bypassed. */
 export function gatewayDestination(gatewayHost: string, managedOAuth: boolean): AccessPublicDestination {
   return {
     type: "public",
     uri: gatewayHost.toLowerCase(),
-    overrides: overridesFor(managedOAuth ? [HEALTH_PATH] : GATEWAY_BYPASS_PATHS),
+    overrides: overridesFor(managedOAuth ? [HEALTH_PATH, APPLE_CALLBACK_PATH] : GATEWAY_BYPASS_PATHS),
   };
 }
 

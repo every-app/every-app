@@ -256,7 +256,7 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
 }
 
 /** Where the everyapp skill's setup guides live in an app that has the skill. */
-const SKILL_DIR = ".claude/skills/everyapp";
+export const SKILL_DIR = ".claude/skills/everyapp";
 
 /**
  * Where an agent reads how to set `setting` up: the everyapp skill's guide

@@ -52,6 +52,7 @@ RUN A GATEWAY
   status     Show the Gateway, its apps and anything to fix
   delete     Remove an app from the Gateway
   access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  signin     Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
   secret     Set, remove and list secrets and Gateway settings
   provider   Register API providers for apps to call with the Gateway's key, beside the built-in ones
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
@@ -1084,6 +1085,191 @@ FLAGS
      [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
   -h  --help                   Print help information and exit
       --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp signin add`
+
+Turn a sign-in provider on: "Continue with Google" (or Microsoft, GitHub, Apple, Cloudflare, your SSO).
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The sign-in provider: google, microsoft, github, apple, cloudflare, oidc |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--client-id` | `<value>` | no |  | The OAuth app's client id (not a secret; for apple, the Services ID) |
+| `--client-secret-from-env` | `<VAR>` | no |  | Read the client secret from this environment variable (a secret never goes on the command line) |
+| `--issuer` | `<url>` | no |  | oidc: the issuer's https URL, which serves /.well-known/openid-configuration |
+| `--label` | `<text>` | no |  | oidc: the button text after "Continue with" (default SSO; 40 characters at most) |
+| `--tenant` | `<value>` | no |  | microsoft: the Directory (tenant) ID that pins sign-in to your own directory (recommended), or common, organizations, consumers |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp signin add [--client-id value] [--client-secret-from-env VAR] [--issuer url] [--label text] [--tenant value] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp signin add --help
+
+Says where to create the OAuth app and the redirect URL to register with it
+(https://<gateway>/api/auth/callback/<id>), then sets the provider's settings on the
+Gateway Worker, all in one new version under your Cloudflare login, live on the next
+request. At a terminal it asks for each setting: the client id shown as typed, the
+client secret hidden, an optional one (microsoft's tenant, oidc's label) left as it is
+when you press Enter. Unattended (--json, or no terminal) every required setting comes
+from a flag: --client-id, --client-secret-from-env VAR, and for oidc --issuer. The
+client secret is never taken from the command line.
+
+A provider says who someone is; the Gateway still decides who gets in: a member, or
+someone with a pending invitation for that exact, verified email. Nobody else.
+
+Safe to repeat: running it again replaces the values given (a rotated secret, a new
+client). An optional setting not given stays as it is; pnpm everyapp secret unset <NAME>
+removes one. The everyapp skill's setup/signin-<id>.md walks through each provider's
+console.
+
+Examples:
+  pnpm everyapp signin add google
+  pnpm everyapp signin add github --client-id Iv1.0123456789abcdef --client-secret-from-env GITHUB_SECRET --json
+  pnpm everyapp signin add microsoft --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47
+  pnpm everyapp signin add oidc --issuer https://acme.okta.com --label Okta
+
+FLAGS
+     [--client-id]               The OAuth app's client id (not a secret; for apple, the Services ID)
+     [--client-secret-from-env]  Read the client secret from this environment variable (a secret never goes on the command line)
+     [--issuer]                  oidc: the issuer's https URL, which serves /.well-known/openid-configuration
+     [--label]                   oidc: the button text after "Continue with" (default SSO; 40 characters at most)
+     [--tenant]                  microsoft: the Directory (tenant) ID that pins sign-in to your own directory (recommended), or common, organizations, consumers
+     [--gateway]                 The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]              The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]          Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]    Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                     Print help information and exit
+      --                         All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The sign-in provider: google, microsoft, github, apple, cloudflare, oidc
+```
+
+### `everyapp signin list`
+
+List the sign-in providers: on, needs setup (naming what is missing) or off.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp signin list [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp signin list --help
+
+Reads which of each provider's settings the Gateway Worker holds (names only: a value
+can't be read back) and says whether the provider is on (every required setting set),
+needs setup (some set, the rest named; the Gateway keeps it off rather than half
+configured) or off. A value that is set but malformed also keeps a provider off; the
+Gateway's log says so (signin.config_problem). Nothing is changed.
+
+Example:
+  pnpm everyapp signin list
+
+ALIASES
+  pnpm everyapp signin ls
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp signin show`
+
+Show a sign-in provider: where to make its OAuth app, the redirect URL, its settings and whether each is set.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The sign-in provider: google, microsoft, github, apple, cloudflare, oidc |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp signin show [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp signin show --help
+
+The provider's console and what the OAuth app is called there, the redirect URL to
+register for this Gateway, the scopes asked for (identity only), which claim becomes
+the email and when it counts as verified, every setting with what it holds and whether
+it is set, the provider's caveats and its setup guide. Nothing is changed.
+
+Example:
+  pnpm everyapp signin show apple
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The sign-in provider: google, microsoft, github, apple, cloudflare, oidc
+```
+
+### `everyapp signin remove`
+
+Turn a sign-in provider off: its settings leave the Gateway; accounts stay.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The sign-in provider: google, microsoft, github, apple, cloudflare, oidc |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--yes` | switch | no |  | Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp signin remove [--yes] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp signin remove --help
+
+Asks first (--yes doesn't), then removes every setting of the provider from the Gateway
+Worker in one new version: the button leaves the sign-in page on the next request.
+People who signed in with it keep their accounts and sign in another way (a password
+via Forgot password, another provider, Access). Delete the OAuth app at the provider
+too: a client the Gateway no longer holds is still a client.
+
+Example:
+  pnpm everyapp signin remove github
+
+FLAGS
+     [--yes/--no-yes]          Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The sign-in provider: google, microsoft, github, apple, cloudflare, oidc
 ```
 
 ### `everyapp secret set`

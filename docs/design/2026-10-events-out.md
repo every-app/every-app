@@ -44,6 +44,8 @@ Common objects, used by several types:
 | `token.created` | 1 | "Ada created the token ci-deploy" | `{ id, name, scopes, appId?, expiresAt?, user }` (flat, because `token` is a key the credential rule refuses; never the value or its hash) |
 | `token.revoked` | 1 | "Ada revoked the token ci-deploy" | `{ id, name, user }` |
 | `access.changed` | 1 | "Cloudflare Access was turned on" | `{ access: "on" \| "off", teamDomain?: string, emailDomains?: string[] }` |
+| `signin_provider.added` | 1 | "Google sign-in was added" | `{ provider, label }` (`everyapp signin add`, when the provider goes on; never a setting) |
+| `signin_provider.removed` | 1 | "Google sign-in was removed" | `{ provider, label }` (`everyapp signin remove`, when a provider that was on goes off) |
 | `mcp_app.added` | 1 | "DataForSEO was added as an MCP app" | `{ app, kind: "builtin" \| "remote" }` (`everyapp mcp add <url>`, or a built-in's first `mcp on`) |
 | `mcp_app.removed` | 1 | "DataForSEO was removed" | `{ app, kind }` (`everyapp mcp remove`, the tombstone) |
 | `mcp_app.enabled` | 1 | "DataForSEO is being served again" | `{ app, kind }` (`everyapp mcp on` on an existing row: status disabled → active) |
@@ -214,6 +216,7 @@ Server functions (`src/serverFunctions/events.ts`, admin middleware; the `method
 | `connection.created` / `revoked` | `McpConnectionRepository.create` (from `mcp-auth/authorize.ts`) / `McpConnectionService.markRevoked` (every reason) |
 | `token.created` / `revoked` | `UserPatService.create` / `revoke` |
 | `access.changed` | the CLI's `access on` / `access off`, outbox insert after the Gateway settings are written |
+| `signin_provider.added` / `removed` | the CLI's `signin add` / `signin remove` (`commands/signin/index.ts`), outbox insert after the Gateway settings are written, only on the off→on and on→off transitions |
 | `mcp_app.added` / `removed` / `enabled` / `disabled` | the CLI's `mcp on` (a new row → added with kind `builtin`; an existing disabled row → enabled), `mcp off` (disabled), `mcp remove` (removed) in `lib/gateway/providerApps.ts` and the MCP-by-URL thread's `remoteMcpApps.ts` (kind `remote`), outbox; `AppService.delete` of a `provider` row; the MCP-by-URL thread leaves `// events: mcp_app.…` comments at its write sites and the events thread wires them |
 | `ping` | `subscriptions.test` |
 

@@ -101,8 +101,4 @@ export function mirroredDocuments(): Map<string, string> {
  * it, repoDocs.test.ts fails until it is removed from here, so the list
  * never outlives the commands it waits for.
  */
-export const PENDING_ROUTES: ReadonlyMap<string, string> = new Map([
-  // `everyapp signin add|list|show|remove` (docs/runbooks/sign-in-providers.md):
-  // the gateway half of the work merged first; the CLI half follows.
-  ["signin", "sign-in providers"],
-]);
+export const PENDING_ROUTES: ReadonlyMap<string, string> = new Map([]);

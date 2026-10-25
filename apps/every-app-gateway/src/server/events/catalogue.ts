@@ -506,6 +506,27 @@ export const catalogue = {
     );
   },
 
+  /**
+   * `everyapp signin add|remove` (the CLI's outbox): which provider, and
+   * its button's label. Never a setting's name or value.
+   */
+  signInProviderAdded(input: { provider: string; label: string }): BuiltEvent {
+    return built("signin_provider.added", {
+      provider: input.provider,
+      label: input.label,
+    });
+  },
+
+  signInProviderRemoved(input: {
+    provider: string;
+    label: string;
+  }): BuiltEvent {
+    return built("signin_provider.removed", {
+      provider: input.provider,
+      label: input.label,
+    });
+  },
+
   mcpAppAdded(input: { app: EventApp; kind: McpAppKind }): BuiltEvent {
     return built(
       "mcp_app.added",
@@ -707,6 +728,10 @@ export function summarize(
       return `${actorLabel(actor)} revoked the token ${str(d.name) ?? ""}`.trim();
     case "access.changed":
       return `Cloudflare Access was turned ${str(d.access) ?? "off"}`;
+    case "signin_provider.added":
+      return `${str(d.label) ?? str(d.provider) ?? "A provider"} sign-in was added`;
+    case "signin_provider.removed":
+      return `${str(d.label) ?? str(d.provider) ?? "A provider"} sign-in was removed`;
     case "mcp_app.added":
       return `${appLabel(d.app)} was added as an MCP app`;
     case "mcp_app.removed":

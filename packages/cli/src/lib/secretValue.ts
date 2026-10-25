@@ -23,6 +23,7 @@ import {
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { askSecret, askText, canPromptInTerminal } from "@/lib/output/prompt";
+import { signInPlainSetting } from "@/lib/signinValues";
 
 /** Where `secret set` reads its values: never the command line. */
 enum SecretSource {
@@ -266,8 +267,9 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
   },
 };
 
+/** A plain setting's rule: the table above, else a sign-in provider's (lib/signinValues.ts). */
 function plainSetting(name: string): PlainSetting | undefined {
-  return (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name];
+  return (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name] ?? signInPlainSetting(name);
 }
 
 /** The lines above a plain setting's prompt: what it takes. */

@@ -148,7 +148,7 @@ describe("appsDestinations", () => {
 });
 
 describe("gatewayDestination", () => {
-  it("lets the machine endpoints and /health through, or /health alone under Managed OAuth", () => {
+  it("lets the machine endpoints, /health and Apple's sign-in POST through, or the last two alone under Managed OAuth", () => {
     expect(gatewayDestination("Apps.Acme.com", false).overrides.map((o) => o.path_pattern)).toEqual([
       "/mcp",
       "/mcp/*",
@@ -156,12 +156,22 @@ describe("gatewayDestination", () => {
       "/oauth/register",
       "/.well-known/*",
       "/health",
+      "/api/auth/callback/apple",
     ]);
     expect(gatewayDestination("apps.acme.com", true)).toEqual({
       type: "public",
       uri: "apps.acme.com",
-      overrides: [{ path_pattern: "/health", behavior: "public" }],
+      overrides: [
+        { path_pattern: "/health", behavior: "public" },
+        { path_pattern: "/api/auth/callback/apple", behavior: "public" },
+      ],
     });
+  });
+
+  it("bypasses only Apple's callback among the sign-in providers: the others return with a GET Access checks", () => {
+    const patterns = gatewayDestination("apps.acme.com", false).overrides.map((o) => o.path_pattern);
+    expect(patterns.filter((pattern) => pattern.startsWith("/api/"))).toEqual(["/api/auth/callback/apple"]);
+    expect(patterns.some((pattern) => pattern.includes("*") && pattern.startsWith("/api"))).toBe(false);
   });
 });
 

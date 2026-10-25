@@ -32,6 +32,7 @@ import { providerRoutes } from "./commands/provider/command";
 import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
+import { signinRoutes } from "./commands/signin/command";
 import { statusCommand } from "./commands/status/command";
 import { teardownCommand } from "./commands/teardown/command";
 import { updateCommand } from "./commands/update/command";
@@ -55,6 +56,7 @@ const routes = buildRouteMap({
     status: statusCommand,
     delete: deleteCommand,
     access: accessRoutes,
+    signin: signinRoutes,
     secret: secretRoutes,
     provider: providerRoutes,
     mcp: mcpRoutes,
@@ -109,6 +111,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "status",
       "delete",
       "access",
+      "signin",
       "secret",
       "provider",
       "mcp",
@@ -136,6 +139,13 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "events deliveries --dead",
   ],
   access: ["access on", "access on --email-domain example.com", "access off"],
+  signin: [
+    "signin list",
+    "signin show google",
+    "signin add google",
+    "signin add github --client-id Iv1.0123456789abcdef --client-secret-from-env GITHUB_SECRET --json",
+    "signin remove github",
+  ],
   provider: ["provider list", "provider add stripe.json", "provider show stripe"],
   mcp: [
     "mcp list",

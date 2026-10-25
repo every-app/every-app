@@ -260,6 +260,7 @@ A step needs a person's yes, `--yes` wasn't given, and nobody is at a terminal (
 | Command                                                 | Headline                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `access off`                                            | `Turning Access off needs confirmation at a terminal, or --yes` (raised after connecting and reading the Gateway's settings and the Access applications; with nothing to turn off the run ends with `Cloudflare Access isn't in front of <host>. Nothing changed.` instead. At a terminal: `Turn Cloudflare Access off for <host>?`, No is `Cancelled. Access stays on.`)                                                     |
+| `signin remove <id>`                                    | `Turning Sign in with <label> off needs confirmation at a terminal, or --yes` (raised after connecting and reading which of the provider's settings the Gateway holds; with none, the run ends with `Sign in with <label> isn't set up; nothing changed.` instead; `data.provider`, `data.names`. At a terminal: `Turn Sign in with <label> off?`, No is `Cancelled. Sign in with <label> stays as it was.`)                  |
 | `db query` against production, SQL that isn't read-only | `This SQL can change <app>'s production database` / `A person at a terminal confirms it first, or --yes does.`                                                                                                                                                                                                                                                                                                                |
 | `db restore`                                            | `Restoring <app>'s database needs a person at a terminal to confirm, or --yes` / `It undoes <n> migration(s) (<names>) applied <time> ago by <who>; anything written to it since is lost too.` (`the Gateway's database` instead of `<app>'s database` with `--gateway`; `<who>` is `an API token` for a restore point an API token saved; `data`: `appId`, `databaseId`, `bookmark`, `migrations`, `createdAt`, `createdBy`) |
 | `delete <app>`                                          | `Deleting an app needs confirmation at a terminal, or --yes`                                                                                                                                                                                                                                                                                                                                                                  |
@@ -1239,11 +1240,11 @@ Source: `packages/cli/src/commands/secret/index.ts`
 
 ### SECRET_EMPTY
 
-`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found. `mcp add <url> --from-env <VAR>` reads the credential the same way (`readSecretValue`), before it connects or writes anything, so an empty variable adds nothing. `events add <url> --secret-from-env <VAR>` raises the same, after the URL is checked, with `fix` `export <VAR> first, or name another variable with --secret-from-env`. From `configure <app>`, a `NAME=` line on stdin with nothing after it: `<NAME> is empty in the piped lines`, before anything is written (`configure --from-env` skips an unset or empty variable instead).
+`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found. `mcp add <url> --from-env <VAR>` reads the credential the same way (`readSecretValue`), before it connects or writes anything, so an empty variable adds nothing. `events add <url> --secret-from-env <VAR>` raises the same, after the URL is checked, with `fix` `export <VAR> first, or name another variable with --secret-from-env`. From `configure <app>`, a `NAME=` line on stdin with nothing after it: `<NAME> is empty in the piped lines`, before anything is written (`configure --from-env` skips an unset or empty variable instead). `signin add <id> --client-secret-from-env <VAR>` raises it too (the value trimmed), before it connects, with `fix` `export <VAR> first, or name another variable with --client-secret-from-env` and `data.name` the provider's `<ID>_SIGNIN_CLIENT_SECRET`.
 
 **Fix:** `fix`: `export <VAR> first, or name another variable with --from-env`; from `configure`: `give <NAME> a value, or leave the line out`.
 
-Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`, `packages/cli/src/commands/signin/index.ts`
 
 ### SECRET_NAME_INVALID
 
@@ -1275,9 +1276,9 @@ Source: `packages/cli/src/commands/secret/index.ts`
 
 ### SECRET_NOT_SETTABLE
 
-`secret set|unset` of a Gateway setting the command doesn't change. Outside an app directory, an install-owned setting (`GATEWAY_URL`, `APP_BASE_DOMAIN`, `BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`, `THIRD_PARTY_DEPLOYS`): `<name> can't be changed with secret <set|unset>` / `It's one of the Gateway's own keys, written once by setup.` (for `THIRD_PARTY_DEPLOYS`: `It's the hosted Gateway's launch gate, opened by hand.`), with no fix. A dev-only setting (`MCP_ACCESS_TOKEN_TTL`, `DATAFORSEO_SANDBOX`): `<name> only works in local development` / `A deployed Gateway doesn't read it.`
+`secret set|unset` of a Gateway setting the command doesn't change. Outside an app directory, an install-owned setting (`GATEWAY_URL`, `APP_BASE_DOMAIN`, `BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`, `THIRD_PARTY_DEPLOYS`): `<name> can't be changed with secret <set|unset>` / `It's one of the Gateway's own keys, written once by setup.` (for `THIRD_PARTY_DEPLOYS`: `It's the hosted Gateway's launch gate, opened by hand.`), with no fix. A dev-only setting (`MCP_ACCESS_TOKEN_TTL`, `DATAFORSEO_SANDBOX`): `<name> only works in local development` / `A deployed Gateway doesn't read it.` A name of the sign-in family (`<ID>_SIGNIN_<FIELD>`, `isSignInSettingName`) that no sign-in provider reads, checked after the `didYouMean` check: for an id that isn't a provider, `<ID> isn't a sign-in provider (google, microsoft, github, apple, cloudflare, oidc): pnpm everyapp signin list` (`data.providers`); for a provider's id with a field it doesn't read (`OIDC_SIGNIN_TENANT`), `<name> isn't a setting of Sign in with <label>` / `It reads <its settings>.` (`data.provider`, `data.names`). The family is reserved for the catalog, so it is never an app's secret either.
 
-**Fix:** dev-only: `fix`: `set it in the Gateway's .dev.vars`. Install-owned: none (run `setup`).
+**Fix:** dev-only: `fix`: `set it in the Gateway's .dev.vars`. Install-owned: none (run `setup`). Sign-in family, unknown id: `fix` `<set|unset> a provider's own settings, as pnpm everyapp signin show <id> names them`; known id: `rerun` `pnpm everyapp signin show <id>`.
 
 Source: `packages/cli/src/commands/secret/index.ts`, `packages/sdk/src/internal/gatewaySettings.ts`
 
@@ -1303,11 +1304,11 @@ Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/config
 
 ### SETTING_VALUE_INVALID
 
-`secret set <name>` of a plain Gateway setting (a name `isPlainGatewaySetting` knows, such as `EMAIL_FROM`, `EMAIL_PASSWORD_SIGN_IN` or `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`) with a `--from-env` or piped value the Gateway wouldn't read, checked after the value is trimmed and before anything is written. Message: `<name> can't be "<value>"` (the value as typed, on one line, at most 64 characters: a plain value is never hidden), then one line saying what is wrong, such as `Not one of true, false, 1, 0, on, off, yes or no.` or `"hello" isn't an address or Name <address>.`; `data.name` is the setting. At a terminal the same check re-asks the visible prompt with that line instead of failing; a credential (any other name) is never checked or trimmed. Each setting's rule, as the Gateway parses it, is listed in secrets.md under "Plain settings are shown and checked".
+`secret set <name>` of a plain Gateway setting (a name `isPlainGatewaySetting` knows, such as `EMAIL_FROM`, `EMAIL_PASSWORD_SIGN_IN` or `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`) with a `--from-env` or piped value the Gateway wouldn't read, checked after the value is trimmed and before anything is written. Message: `<name> can't be "<value>"` (the value as typed, on one line, at most 64 characters: a plain value is never hidden), then one line saying what is wrong, such as `Not one of true, false, 1, 0, on, off, yes or no.` or `"hello" isn't an address or Name <address>.`; `data.name` is the setting. At a terminal the same check re-asks the visible prompt with that line instead of failing; a credential (any other name) is never checked or trimmed. Each setting's rule, as the Gateway parses it, is listed in secrets.md under "Plain settings are shown and checked". The sign-in providers' plain settings are checked the same way (`lib/signinValues.ts`): `OIDC_SIGNIN_ISSUER` an https URL without a query, fragment, credentials or a loopback host; `MICROSOFT_SIGNIN_TENANT` a GUID or `common`, `organizations`, `consumers`; `OIDC_SIGNIN_LABEL` at most 40 characters. `signin add` raises this code for a `--label` over 40 characters (the issuer and the tenant have codes of their own there: [`SIGNIN_ISSUER_INVALID`](#signin_issuer_invalid), [`SIGNIN_TENANT_INVALID`](#signin_tenant_invalid)), before it connects.
 
 **Fix:** `fix`: `use <what the setting takes>`, the line the prompt shows as `Takes …`: e.g. `use true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)`, `use an address, or Name <address>`, `use email domains whose people join without an invitation, comma separated, e.g. example.com`. A validation error: no rerun.
 
-Source: `packages/cli/src/lib/secretValue.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/lib/signinValues.ts`, `packages/cli/src/commands/signin/index.ts`
 
 ### SHARED_APP_ACCESS
 
@@ -1324,6 +1325,46 @@ A Cloudflare login whose verified email isn't an owner or admin of the platform 
 **Fix:** `fix`: `ask an owner of <organization> to make you an admin, or to do it for you`.
 
 Source: `packages/cli/src/lib/gateway/registry.ts`
+
+### SIGNIN_FLAG_NOT_APPLICABLE
+
+`signin add <id>` with a flag for a setting the provider doesn't have: `--issuer` or `--label` for anything but `oidc`, `--tenant` for anything but `microsoft`. Checked first, before anything connects; nothing is written. Headline: `<flags> isn't a setting of Sign in with <label>` (or `aren't settings`), then which provider each flag belongs to and the settings this one reads; `data.provider`, `data.flags`.
+
+**Fix:** `fix`: `drop <flags>`. No rerun; not retryable. Check the id: `pnpm everyapp signin show <id>` lists the provider's settings.
+
+Source: `packages/cli/src/commands/signin/index.ts`
+
+### SIGNIN_ISSUER_INVALID
+
+`signin add oidc` with an issuer (`--issuer`, or typed at the prompt) the Gateway wouldn't read: not a URL, not `https:`, with a user name or password, a query or a fragment, or on `localhost`/`127.0.0.1` (a deployed Gateway can't reach it; the Gateway's loopback allowance is for local development only). The same rule as `normalizeIssuer` in `apps/every-app-gateway/src/auth/sign-in-providers/config.ts`, which keeps the provider off for such a value. Checked before anything connects (a flag) or before anything is written (a typed value). Headline: `OIDC_SIGNIN_ISSUER can't be "<value>"`, then what is wrong; `data.name`.
+
+**Fix:** `fix`: `use the issuer's https URL, which serves /.well-known/openid-configuration (no query, fragment or user:password@)`. No rerun. The issuer is the `issuer` value of the provider's discovery document (`curl -s <issuer>/.well-known/openid-configuration | jq -r .issuer`).
+
+Source: `packages/cli/src/lib/signinValues.ts`, `packages/cli/src/commands/signin/index.ts`
+
+### SIGNIN_TENANT_INVALID
+
+`signin add microsoft --tenant <x>` (or a typed tenant) that is neither a GUID nor `common`, `organizations` or `consumers`, the Gateway's `TENANT` rule; a domain such as `acme.onmicrosoft.com` is refused, since the Gateway would keep Microsoft sign-in off for it. Checked before anything connects or is written. Headline: `MICROSOFT_SIGNIN_TENANT can't be "<value>"`; `data.name`.
+
+**Fix:** `fix`: `use the Directory (tenant) ID, a GUID like 72f988bf-86f1-41af-91ab-2d7cd011db47, or common, organizations or consumers`. The Directory (tenant) ID is on the app registration's Overview page in the Entra admin center. No rerun.
+
+Source: `packages/cli/src/lib/signinValues.ts`, `packages/cli/src/commands/signin/index.ts`
+
+### SIGNIN_UNKNOWN_PROVIDER
+
+`signin add|show|remove <id>` with an id that isn't in the sign-in catalog (`packages/sdk/src/internal/signInProviders.ts`), compared lowercased: `<id> isn't a sign-in provider` / `The Gateway offers google, microsoft, github, apple, cloudflare and oidc; oidc is any OpenID Connect issuer (Okta, Entra ID, Keycloak, Auth0…).` Checked before anything connects; `data.providers` lists the ids.
+
+**Fix:** `rerun`: `pnpm everyapp signin list`. For an identity provider not in the list, use `oidc` with its issuer URL.
+
+Source: `packages/cli/src/commands/signin/index.ts`
+
+### SIGNIN_VALUE_REQUIRED
+
+`signin add <id>` with a required setting of the provider neither given by a flag nor set on the Gateway already, and no terminal to ask at (`--json`, `CI`, or stdin/stderr not a TTY); checked after connecting and reading which names the Gateway holds, before anything is written. Headline: `Sign in with <label> needs <names>, and there's no terminal to ask at` / `Give <flags> (the secret from an environment variable, never the command line), or run this at a terminal.`; `data.provider`, `data.missing` (the setting names), `data.flags` (the flags that give them), `data.callbackUrl` (the redirect URL to register). At a terminal, an empty answer to a required setting's prompt raises it too: `Sign in with <label> needs <name>` / `Nothing was changed.`
+
+**Fix:** `rerun`: the command with the flags, the values given kept and the missing ones as placeholders: `pnpm everyapp signin add github --client-id <client id> --client-secret-from-env <VAR> --json` (`--issuer <issuer url>` for oidc). The person exports the secret in hidden first (the setup file `setup/signin-<id>.md`), or runs `pnpm everyapp signin add <id>` in their own terminal.
+
+Source: `packages/cli/src/commands/signin/index.ts`
 
 ### SQL_FILE_NOT_FOUND
 

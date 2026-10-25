@@ -1241,6 +1241,14 @@ describe("the event bus (SQLite)", () => {
         access: "on",
         teamDomain: "acme.cloudflareaccess.com",
       }),
+      "signin_provider.added": catalogue.signInProviderAdded({
+        provider: "google",
+        label: "Google",
+      }),
+      "signin_provider.removed": catalogue.signInProviderRemoved({
+        provider: "google",
+        label: "Google",
+      }),
       "mcp_app.added": catalogue.mcpAppAdded({ app, kind: "builtin" }),
       "mcp_app.removed": catalogue.mcpAppRemoved({ app, kind: "builtin" }),
       "mcp_app.enabled": catalogue.mcpAppEnabled({ app, kind: "builtin" }),
@@ -1353,6 +1361,10 @@ describe("the event bus (SQLite)", () => {
       expect(line("token.created")).toBe("Ada created the token ci-deploy");
       expect(line("token.revoked")).toBe("Ada revoked the token ci-deploy");
       expect(line("access.changed")).toBe("Cloudflare Access was turned on");
+      expect(line("signin_provider.added")).toBe("Google sign-in was added");
+      expect(line("signin_provider.removed")).toBe(
+        "Google sign-in was removed",
+      );
       expect(line("mcp_app.added")).toBe("CRM was added as an MCP app");
       expect(line("ping")).toBe("Test event from Every App");
       expect(summarize("app.crm.invoice.paid", { total: 1 }, ada)).toBe(

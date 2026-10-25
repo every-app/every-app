@@ -439,6 +439,15 @@ From the same audit that writes Admin → Activity (`mcp_tool_calls`): `tool.blo
 
 From `everyapp access on` and `access off` ([/docs/agent/access](/docs/agent/access)), queued with the record of the Gateway settings it wrote, to the install organization.
 
+### Sign-in providers
+
+| Type                      | v   | Summary                      | `data`                                    |
+| ------------------------- | --- | ---------------------------- | ----------------------------------------- |
+| `signin_provider.added`   | 1   | "Google sign-in was added"   | `{ provider: "google", label: "Google" }` |
+| `signin_provider.removed` | 1   | "Google sign-in was removed" | `{ provider: "google", label: "Google" }` |
+
+From `everyapp signin add` and `signin remove` ([/docs/agent/secrets](/docs/agent/secrets), "Sign-in providers"), queued once the Gateway Worker holds the new settings, to the install organization, actor the operator. `added` only when the provider goes on (a rerun that rotates a secret queues nothing), `removed` only when one that was on goes off. `provider` is the catalog id (`google`, `microsoft`, `github`, `apple`, `cloudflare`, `oidc`) and `label` its button's (`SSO` for `oidc`); never a setting's name or value. There is no event per sign-in.
+
 ### MCP apps
 
 | Type               | v   | Summary                              | `data`                                 |

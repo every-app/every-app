@@ -51,11 +51,15 @@ import {
   isInstallOwnedGatewaySetting,
   isReservedAppSecretName,
   isSettableGatewaySetting,
+  isSignInProviderId,
+  isSignInSettingName,
   PROVIDER_APP_TIER,
   PROVIDER_SECRET_NAME,
   secretEntries,
   secretNames,
   SETTABLE_GATEWAY_SETTINGS,
+  SIGN_IN_PROVIDER_IDS,
+  SIGN_IN_PROVIDERS,
   type ApiKeyCapability,
   type AppSetup,
   type RegisteredProvider,
@@ -419,7 +423,10 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
       ...unset.filter((name) => read.has(name) || (hosted && isHostedOnlyGatewaySetting(name))),
       ...[...credentials.keys()].filter((name) => !gatewayNames.includes(name)),
     ];
-    const more = unset.filter((name) => !listed.includes(name)).length;
+    // The sign-in providers' settings no app reads: `signin list` shows them
+    // by provider, so they are named by that line rather than counted here
+    // (they stay in `data.gateway.settable`).
+    const more = unset.filter((name) => !listed.includes(name) && !isSignInSettingName(name)).length;
     const apps: Array<{ id: string; setup: AppSetup; rows: SettingsRow[] }> = [];
     // An app whose Worker's secrets can't be listed (deleted by hand, say)
     // keeps its rows, its own as not recorded, and is named once below:
@@ -470,6 +477,11 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
           ],
         ),
         ...(more > 0 ? [chalk.dim(`${more} more can be set; see docs/capabilities.md`)] : []),
+        chalk.dim(
+          `Sign-in providers (${Object.values(SIGN_IN_PROVIDERS)
+            .map((provider) => provider.label)
+            .join(", ")}): ${CLI} signin list`,
+        ),
         ...(rows.length > 0 ? ["", ...renderSettingsTable(rows)] : []),
         ...(unlisted.length > 0 ? [chalk.dim(unlistedNote(unlisted))] : []),
       ].join("\n"),
@@ -697,6 +709,10 @@ function notRoutable(
       },
     );
   }
+  // The sign-in family (`<ID>_SIGNIN_<FIELD>`) is reserved for the catalog's
+  // providers: a name in it that no provider reads is a typo or an id the
+  // Gateway doesn't have, never an app's secret.
+  if (isSignInSettingName(name)) return notASignInSetting(name, action);
   if (isInstallOwnedGatewaySetting(name) && !manifest) {
     return new EveryAppError(
       "SECRET_NOT_SETTABLE",
@@ -763,6 +779,28 @@ function secretsLine(manifest: SecretsManifest, name: string): string {
 }
 
 /** A known name that differs from `name` in case or underscores only. */
+/** Why a name in the sign-in family that no catalog provider reads goes nowhere. */
+function notASignInSetting(name: string, action: SecretAction): EveryAppError {
+  const id = (/^(.+)_SIGNIN_[A-Z_]+$/.exec(name)?.[1] ?? name).toLowerCase();
+  if (isSignInProviderId(id)) {
+    const provider = SIGN_IN_PROVIDERS[id];
+    const names = provider.settings.map((setting) => setting.name);
+    return new EveryAppError(
+      "SECRET_NOT_SETTABLE",
+      `${name} isn't a setting of Sign in with ${provider.label}\nIt reads ${listed(names)}.`,
+      { rerun: `${CLI} signin show ${id}`, data: { provider: id, names } },
+    );
+  }
+  return new EveryAppError(
+    "SECRET_NOT_SETTABLE",
+    `${id.toUpperCase()} isn't a sign-in provider (${SIGN_IN_PROVIDER_IDS.join(", ")}): ${CLI} signin list`,
+    {
+      fix: `${action} a provider's own settings, as ${CLI} signin show <id> names them`,
+      data: { providers: [...SIGN_IN_PROVIDER_IDS] },
+    },
+  );
+}
+
 function closeName(name: string, known: readonly string[]): string | undefined {
   const fold = (value: string) => value.toUpperCase().replace(/_/g, "");
   return known.find((candidate) => candidate !== name && fold(candidate) === fold(name));

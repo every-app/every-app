@@ -15,6 +15,7 @@ import {
   parseProviderSpec,
   providerBindingKey,
   SETTABLE_GATEWAY_SETTINGS,
+  SIGN_IN_GATEWAY_SETTINGS,
 } from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -765,11 +766,13 @@ describe("secret list", () => {
       "EMAIL_FROM_NAME",
     ]);
     // The rest (the OAuth clients nobody uses, the Gateway's own switches)
-    // are one line; the hosted Gateway's own don't count on this install.
+    // are one line; the hosted Gateway's own don't count on this install,
+    // and the sign-in providers' have a line of their own (signin list).
     const relevant = SETTABLE_GATEWAY_SETTINGS.filter(
-      (name) => !isHostedOnlyGatewaySetting(name) && name !== "OPENAI_API_KEY",
+      (name) => !isHostedOnlyGatewaySetting(name) && name !== "OPENAI_API_KEY" && !SIGN_IN_GATEWAY_SETTINGS.includes(name),
     );
     expect(lines).toContain(`${relevant.length - unset.length} more can be set; see docs/capabilities.md`);
+    expect(lines).toContain("Sign-in providers (Google, Microsoft, GitHub, Apple, Cloudflare, SSO): pnpm everyapp signin list");
     expect(lines).not.toContainEqual(expect.stringMatching(/^(LINKEDIN_CLIENT_ID|HOSTED_OPEN_SIGNUP|THIRD_PARTY_DOMAIN) /));
     // Then each app's settings, in manifest order, the Gateway's first.
     const table = lines.indexOf(lines.find((line) => /^APP +SETTING +WHERE +STATUS$/.test(line))!);
@@ -857,7 +860,9 @@ describe("secret list", () => {
     for (const name of ["HOSTED_OPEN_SIGNUP", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"]) {
       expect(lines).toContainEqual(expect.stringMatching(new RegExp(`^${name} +not set$`)));
     }
-    expect(lines).toContain(`${SETTABLE_GATEWAY_SETTINGS.length - 3} more can be set; see docs/capabilities.md`);
+    expect(lines).toContain(
+      `${SETTABLE_GATEWAY_SETTINGS.length - SIGN_IN_GATEWAY_SETTINGS.length - 3} more can be set; see docs/capabilities.md`,
+    );
   });
 
   it("in an app's directory, lists each setting with where it is held and whether it is set, and the one command that opens the app", async () => {
