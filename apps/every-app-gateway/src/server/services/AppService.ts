@@ -4,6 +4,8 @@ import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { AppRepository } from "../repositories/AppRepository";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
+import { activateBindingApps } from "@/server/app-activation";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
@@ -74,10 +76,19 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
       readOnly: true,
     })),
   ];
+  // A `binding` app this gateway reaches is listed active (app-activation.ts).
+  const activated = await activateBindingApps(
+    env,
+    () => new DrizzleAppRegistry(env.DB),
+    listed,
+  );
   const apps = await Promise.all(
     // The version only keys the evaluation's cache; it stays server-side.
     listed.map(async ({ versionId, ...app }) => ({
       ...app,
+      ...(activated.has(app.id)
+        ? { status: "active", updatedAt: new Date() }
+        : {}),
       setup: await listedAppSetup({ ...app, versionId }, !app.readOnly),
     })),
   );

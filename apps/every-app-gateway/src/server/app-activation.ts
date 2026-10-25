@@ -19,11 +19,19 @@
  * the gateway nothing, so each isolate follows the version from the app
  * host's requests ({@link followAppVersion}): the deploy's own live wait
  * is the first of them.
+ *
+ * Behind Cloudflare Access the deploy's own probe never reaches the
+ * gateway (ACCESS_IN_FRONT), so nobody makes that first request until a
+ * person opens the app. The launcher and Admin → Apps read their lists
+ * through {@link activateBindingApps}, which probes each `binding` app
+ * the same way: "Deploying" then means the gateway can't reach the Worker
+ * yet, not that nobody has visited.
  */
 import { waitUntil } from "cloudflare:workers";
 import {
   getAppFetcher,
   logEvent,
+  type AppRegistry,
   type RegisteredApp,
 } from "@every-app/perimeter";
 import { AppRepository } from "@/server/repositories/AppRepository";
@@ -85,6 +93,73 @@ export async function activateApp(
   const target = syncTarget(app);
   if (target) scheduleCatalogResync(target, "first_use");
   return true;
+}
+
+/** How many `binding` apps one list read probes; a list seldom has any. */
+const LIST_ACTIVATIONS_MAX = 5;
+
+/** What a listed row needs to say for {@link activateBindingApps} to look it up. */
+interface ListedAppRow {
+  id: string;
+  organizationId: string;
+  appId: string;
+  status: string;
+}
+
+/**
+ * Make the `binding` apps of a list live when this gateway reaches their
+ * Workers: the row ids now active, for the list to show as such. The same
+ * probe and transition as a request on the app's host, so a person
+ * reading the launcher completes a deploy that Cloudflare Access kept the
+ * CLI's own probe from completing. At most a few probes per read, one per
+ * app, nothing thrown: an app this gateway can't reach yet stays as
+ * listed, for the next read (the launcher polls while one is deploying).
+ */
+export async function activateBindingApps(
+  env: { GATEWAY_DEPLOYMENT_MODE?: string },
+  /** Opened only when the list has a `binding` app, inside its guard. */
+  openRegistry: () => Pick<AppRegistry, "findByOrgApp">,
+  listed: readonly ListedAppRow[],
+): Promise<Set<string>> {
+  const activated = new Set<string>();
+  const binding = listed
+    .filter((app) => app.status === "binding")
+    .slice(0, LIST_ACTIVATIONS_MAX);
+  if (binding.length === 0) return activated;
+  let registry: Pick<AppRegistry, "findByOrgApp">;
+  try {
+    registry = openRegistry();
+  } catch (error) {
+    logEvent(
+      "app.activate_failed",
+      {
+        trigger: "list",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+    return activated;
+  }
+  await Promise.all(
+    binding.map(async (row) => {
+      try {
+        const app = await registry.findByOrgApp(row.organizationId, row.appId);
+        if (!app || app.status !== "binding") return;
+        if (await activateApp(env, app)) activated.add(row.id);
+      } catch (error) {
+        logEvent(
+          "app.activate_failed",
+          {
+            app: row.appId,
+            trigger: "list",
+            message: error instanceof Error ? error.message : String(error),
+          },
+          "warn",
+        );
+      }
+    }),
+  );
+  return activated;
 }
 
 // Per isolate: the version of each app this isolate last checked the

@@ -6,6 +6,9 @@ import {
   appStatus,
   appStatusLabel,
   AppStatusLabel,
+  DEPLOY_STALL_MS,
+  deployStalled,
+  hasDeployingApp,
   isMcpApp,
   isRemoteMcpApp,
   mcpAppUsable,
@@ -29,7 +32,7 @@ const UNREADY: UserAccessApp["setup"] = {
 function app(
   overrides: Partial<
     Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier" | "paused">
-  >,
+  > & { updatedAt?: Date | number | string | null },
 ) {
   return {
     hostname: "seo.apps.example.com",
@@ -79,6 +82,63 @@ describe("appStatus", () => {
     expect(appNeedsSetup(app({ status: "disabled", setup: UNREADY }))).toBe(
       false,
     );
+  });
+});
+
+describe("appStatus for a deploying app", () => {
+  const uploadedAt = Date.UTC(2026, 9, 25, 5, 18);
+
+  it("shows Deploying, not opening, while the row is binding and recent", () => {
+    const status = appStatus(
+      app({ status: "binding", updatedAt: new Date(uploadedAt) }),
+      uploadedAt + DEPLOY_STALL_MS - 1,
+    );
+    expect(status).toEqual({
+      label: AppStatusLabel.Deploying,
+      variant: "info",
+      opens: false,
+    });
+    expect(
+      deployStalled(
+        { status: "binding", updatedAt: uploadedAt },
+        uploadedAt + DEPLOY_STALL_MS - 1,
+      ),
+    ).toBe(false);
+  });
+
+  it("shows Deploy stalled once the row has been binding for ten minutes", () => {
+    for (const updatedAt of [
+      new Date(uploadedAt),
+      uploadedAt,
+      new Date(uploadedAt).toISOString(),
+    ]) {
+      expect(
+        appStatus(
+          app({ status: "binding", updatedAt }),
+          uploadedAt + DEPLOY_STALL_MS,
+        ),
+      ).toEqual({
+        label: AppStatusLabel.Stalled,
+        variant: "warning",
+        opens: false,
+      });
+    }
+    // Nothing is stalled about an app that isn't deploying, or one with no date.
+    expect(deployStalled({ status: "active", updatedAt: 0 }, uploadedAt)).toBe(
+      false,
+    );
+    expect(
+      deployStalled({ status: "binding", updatedAt: null }, uploadedAt),
+    ).toBe(false);
+    expect(appStatus(app({ status: "binding", updatedAt: null })).label).toBe(
+      AppStatusLabel.Deploying,
+    );
+  });
+
+  it("says whether any listed app is deploying, for the launcher to poll", () => {
+    expect(hasDeployingApp([app({}), app({ status: "binding" })])).toBe(true);
+    expect(hasDeployingApp([app({}), app({ status: "pending" })])).toBe(false);
+    expect(hasDeployingApp([])).toBe(false);
   });
 });
 

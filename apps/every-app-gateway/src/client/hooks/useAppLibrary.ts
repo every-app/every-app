@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
+import { DEPLOYING_POLL_MS, hasDeployingApp } from "@/client/lib/appStatus";
 import {
   userAppsCollection,
   useQueryFailed,
@@ -100,6 +101,18 @@ export function useAppLibrary() {
           ),
     [isLoading, query.data, pinnedIds],
   );
+  // While an app is deploying, read the list again every few seconds: each
+  // read probes the app on the server, so the card turns into a link as
+  // soon as the Gateway reaches its Worker, and "Deploying" never outlives
+  // the deploy on a page left open.
+  const deploying = hasDeployingApp(apps);
+  useEffect(() => {
+    if (!deploying) return;
+    const timer = window.setInterval(() => {
+      void userAppsCollection.utils.refetch();
+    }, DEPLOYING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [deploying]);
 
   return {
     apps,

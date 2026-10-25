@@ -50,13 +50,27 @@ export const PAUSED_CARD_SENTENCE =
   "Monthly cap reached. An owner or admin can raise it under Manage workspace → Usage.";
 
 /**
+ * What a deploying card says in place of its description: what is
+ * happening and that nothing is asked of the person (the launcher polls,
+ * and the card becomes a link as soon as the Gateway reaches the Worker).
+ */
+export const DEPLOYING_CARD_SENTENCE =
+  "Deploying. This page checks every few seconds and opens the app as soon as the Gateway reaches it.";
+
+/** What a card says once a deploy has been binding for too long to finish on its own. */
+export const STALLED_CARD_SENTENCE =
+  "Still deploying after 10 minutes: the Gateway can't reach its Worker. In the app's folder, run everyapp status, then deploy again.";
+
+/**
  * The app is a normal link; pinning is a separate, keyboard-accessible
  * action. An app that needs setup is no link: the card (its badge
  * included) opens the setup dialog instead. An MCP app has no page: its
  * card carries an "MCP" chip where the open arrow would be and opens the
  * dialog that says how an agent uses it. A paused app (at its monthly
  * cap) opens as it did, since only its provider calls are refused: its
- * one chip says Paused and its description says who raises the cap.
+ * one chip says Paused and its description says who raises the cap. A
+ * deploying app is no link yet: its description says the page is
+ * checking, or after ten minutes that the deploy needs the CLI again.
  */
 export function AppListItem({
   app,
@@ -71,6 +85,14 @@ export function AppListItem({
   const needsSetup = appNeedsSetup(app);
   const mcp = mcpAppUsable(app);
   const paused = status.label === AppStatusLabel.Paused;
+  const sentence =
+    status.label === AppStatusLabel.Paused
+      ? PAUSED_CARD_SENTENCE
+      : status.label === AppStatusLabel.Deploying
+        ? DEPLOYING_CARD_SENTENCE
+        : status.label === AppStatusLabel.Stalled
+          ? STALLED_CARD_SENTENCE
+          : null;
   const list = layout === AppLibraryLayout.List;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
@@ -145,7 +167,7 @@ export function AppListItem({
             list && "md:mt-0 md:line-clamp-none md:truncate md:leading-5",
           )}
         >
-          {paused ? PAUSED_CARD_SENTENCE : app.description}
+          {sentence ?? app.description}
         </p>
       </div>
       <div

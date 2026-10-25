@@ -7,10 +7,26 @@ import {
 import type { Badge } from "@/client/components/ui/badge";
 import type { UserAccessApp } from "@/types/app";
 
+/**
+ * After this long `binding`, a deploy counts as stalled: the Gateway has
+ * had its binding for far longer than a rollout takes (the CLI's own live
+ * wait gives up at the same point), so a visit won't finish it either.
+ */
+export const DEPLOY_STALL_MS = 10 * 60_000;
+
+/**
+ * How often the launcher reads its list again while an app is deploying:
+ * each read probes the app (the server's activateBindingApps), so the
+ * card turns into a link within this of the Worker answering.
+ */
+export const DEPLOYING_POLL_MS = 5_000;
+
 /** An app's deploy state, as the launcher and Admin → Apps show it. */
 export enum AppStatusLabel {
   Active = "Active",
   Deploying = "Deploying",
+  /** `binding` for longer than {@link DEPLOY_STALL_MS}: the deploy needs the CLI again. */
+  Stalled = "Deploy stalled",
   Disabled = "Disabled",
   NeedsDeploy = "Needs deploy",
   NeedsSetup = "Needs setup",
@@ -33,7 +49,12 @@ export enum AppStatusLabel {
 type AppStatusInput = Pick<
   UserAccessApp,
   "hostname" | "status" | "setup" | "tier"
-> & { paused?: boolean; manifest?: string | null };
+> & {
+  paused?: boolean;
+  manifest?: string | null;
+  /** When the row last changed: for `binding`, when its Worker was uploaded. */
+  updatedAt?: Date | number | string | null;
+};
 
 /**
  * The deploy state in a word, as a chip. An app opens only once it has a
@@ -48,10 +69,16 @@ type AppStatusInput = Pick<
  * manifest (Admin → Apps). Either kind, at its monthly cap (`paused`),
  * shows "Paused" in place of Active and opens as it did: only its
  * provider calls are refused. The deploy and setup states come first,
- * since the person must act on them before a cap matters. A status this
- * gateway doesn't know (a newer CLI's) shows as it is, and doesn't open.
+ * since the person must act on them before a cap matters. An app
+ * `binding` for longer than {@link DEPLOY_STALL_MS} (by `updatedAt`, at
+ * `now`) reads "Deploy stalled" rather than "Deploying": waiting won't
+ * finish it. A status this gateway doesn't know (a newer CLI's) shows as
+ * it is, and doesn't open.
  */
-export function appStatus(app: AppStatusInput): {
+export function appStatus(
+  app: AppStatusInput,
+  now: number = Date.now(),
+): {
   label: AppStatusLabel | string;
   variant: ComponentProps<typeof Badge>["variant"];
   opens: boolean;
@@ -102,7 +129,9 @@ export function appStatus(app: AppStatusInput): {
       if (app.paused) return paused(true);
       return { label: AppStatusLabel.Active, variant: "success", opens: true };
     case "binding":
-      return { label: AppStatusLabel.Deploying, variant: "info", opens: false };
+      return deployStalled(app, now)
+        ? { label: AppStatusLabel.Stalled, variant: "warning", opens: false }
+        : { label: AppStatusLabel.Deploying, variant: "info", opens: false };
     case "disabled":
       return {
         label: AppStatusLabel.Disabled,
@@ -116,6 +145,23 @@ export function appStatus(app: AppStatusInput): {
 
 function paused(opens: boolean) {
   return { label: AppStatusLabel.Paused, variant: "warning" as const, opens };
+}
+
+/** Whether a `binding` app has been so for {@link DEPLOY_STALL_MS} or more at `now`. */
+export function deployStalled(
+  app: Pick<AppStatusInput, "status" | "updatedAt">,
+  now: number = Date.now(),
+): boolean {
+  if (app.status !== "binding" || app.updatedAt == null) return false;
+  const since = new Date(app.updatedAt).getTime();
+  return Number.isFinite(since) && now - since >= DEPLOY_STALL_MS;
+}
+
+/** Whether any listed app is still `binding`: the launcher polls while one is. */
+export function hasDeployingApp(
+  apps: readonly Pick<AppStatusInput, "status">[],
+): boolean {
+  return apps.some((app) => app.status === "binding");
 }
 
 /**

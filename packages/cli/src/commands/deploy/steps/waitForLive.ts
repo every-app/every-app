@@ -11,8 +11,9 @@
  * nothing answers or the gateway answers 503; the wait goes on. Two answers
  * end it early, without the app going live in this run, and say it goes
  * live on its first visit: Cloudflare Access in front of the gateway (the
- * gateway never sees this request), and running out of time with no
- * certificate yet. Running out of time while the gateway answers is an
+ * gateway never sees this request; the Gateway's home page, which probes
+ * a deploying app each time it lists it, counts as that visit too), and
+ * running out of time with no certificate yet. Running out of time while the gateway answers is an
  * error: it can't reach the app.
  *
  * The request resolves the hostname at its zone's nameservers, which serve
@@ -130,7 +131,7 @@ export async function waitForLive({
           type: "warning",
           code: "ACCESS_IN_FRONT",
           step: STEP,
-          message: `Cloudflare Access answers before the Gateway, so this run can't confirm ${appId} is live\nIt goes live on its first visit, once someone signs in through Access.`,
+          message: `Cloudflare Access answers before the Gateway, so this run can't confirm ${appId} is live\nIt goes live on its first visit: open https://${hostname}, or the Gateway's home page, signed in through Access.`,
           data: { hostname },
         });
         return { outcome: "first_visit" };

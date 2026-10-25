@@ -11,7 +11,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import type { UserAccessApp } from "@/types/app";
-import { AppListItem, PAUSED_CARD_SENTENCE } from "./AppListItem";
+import { DEPLOY_STALL_MS } from "@/client/lib/appStatus";
+import {
+  AppListItem,
+  DEPLOYING_CARD_SENTENCE,
+  PAUSED_CARD_SENTENCE,
+  STALLED_CARD_SENTENCE,
+} from "./AppListItem";
 
 // The card reads only the layout enum from the library hook, whose
 // collections reach the server's Worker bindings; keep the test in the DOM.
@@ -112,6 +118,28 @@ it("opens the setup dialog from the card of an app that needs setup, in both lay
     expect(onOpenSetup).toHaveBeenCalledOnce();
     onOpenSetup.mockClear();
   }
+});
+
+it("says what a deploying app is waiting on, and links to nothing yet", () => {
+  render(app({ status: "binding", updatedAt: new Date() }));
+  expect(text()).toContain("Deploying");
+  expect(text()).toContain(DEPLOYING_CARD_SENTENCE);
+  expect(text()).not.toContain("Keyword research.");
+  expect(openLink()).toBeNull();
+  expect(setupButton()).toBeNull();
+  expect(container.querySelector("a[href]")).toBeNull();
+});
+
+it("says a deploy stalled once it has been binding for ten minutes", () => {
+  render(
+    app({
+      status: "binding",
+      updatedAt: new Date(Date.now() - DEPLOY_STALL_MS - 1),
+    }),
+  );
+  expect(text()).toContain("Deploy stalled");
+  expect(text()).toContain(STALLED_CARD_SENTENCE);
+  expect(openLink()).toBeNull();
 });
 
 it("keeps the pin button pinning, not opening the dialog", () => {

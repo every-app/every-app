@@ -2234,7 +2234,7 @@ Source: `packages/cli/src/commands/access/index.ts`
 
 ### ACCESS_IN_FRONT
 
-The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's login (a `location` matching `cloudflareaccess.com` or `/cdn-cgi/access/`). From `deploy`, step `app.live`: `Cloudflare Access answers before the Gateway, so this run can't confirm <app> is live` / `It goes live on its first visit, once someone signs in through Access.`, `data.hostname`; the wait ends with outcome `first_visit`. From `setup`, step `setup.owner`, before the owner link is printed: `Cloudflare Access protects <host>` / `Whoever opens the setup link signs in to Access first.` Nothing to do.
+The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's login (a `location` matching `cloudflareaccess.com` or `/cdn-cgi/access/`). From `deploy`, step `app.live`: `Cloudflare Access answers before the Gateway, so this run can't confirm <app> is live` / `It goes live on its first visit: open https://<hostname>, or the Gateway's home page, signed in through Access.`, `data.hostname`; the wait ends with outcome `first_visit`. From `setup`, step `setup.owner`, before the owner link is printed: `Cloudflare Access protects <host>` / `Whoever opens the setup link signs in to Access first.` Nothing to do.
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/domains/https.ts`
 

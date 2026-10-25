@@ -15,7 +15,7 @@ vi.mock("@/server/toolbus/catalog-sync", () => ({
 
 import type { RegisteredApp } from "@every-app/perimeter";
 import { validateManifest } from "@every-app/perimeter/manifest";
-import { activateApp, probeApp } from "./app-activation";
+import { activateApp, activateBindingApps, probeApp } from "./app-activation";
 
 const TODO: RegisteredApp = {
   appId: "todo",
@@ -157,5 +157,111 @@ describe("activateApp", () => {
       activateApp(boundEnv("self_hosted").env, withoutRow),
     ).resolves.toBe(false);
     expect(mocks.activate).not.toHaveBeenCalled();
+  });
+});
+
+describe("activateBindingApps", () => {
+  beforeEach(() => {
+    mocks.activate.mockReset();
+    mocks.scheduleCatalogResync.mockReset();
+  });
+
+  const NOTES: RegisteredApp = {
+    ...TODO,
+    appId: "notes",
+    hostname: "notes-acme.gateway.example.com",
+    workerName: "every-acme-notes",
+    rowId: "row-2",
+  };
+  const row = (app: RegisteredApp, status = app.status) => ({
+    id: app.rowId!,
+    organizationId: app.organizationId,
+    appId: app.appId,
+    status,
+  });
+  const registry = (...known: RegisteredApp[]) => ({
+    findByOrgApp: vi.fn(
+      async (organizationId: string, appId: string) =>
+        known.find(
+          (app) => app.organizationId === organizationId && app.appId === appId,
+        ) ?? null,
+    ),
+  });
+
+  it("activates the binding apps of a list this gateway reaches, and only those", async () => {
+    mocks.activate.mockResolvedValue(true);
+    const { env, fetch } = boundEnv("self_hosted");
+    const found = registry(TODO, NOTES);
+
+    const activated = await activateBindingApps(env, () => found, [
+      row(TODO),
+      // Its binding isn't on this gateway version yet.
+      row(NOTES),
+      // Not deploying: never looked up.
+      row({ ...TODO, rowId: "row-3", appId: "wiki" }, "active"),
+    ]);
+
+    expect([...activated]).toEqual(["row-1"]);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(mocks.activate).toHaveBeenCalledExactlyOnceWith("row-1", "org-1");
+    expect(mocks.scheduleCatalogResync).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ rowId: "row-1", appSlug: "todo" }),
+      "first_use",
+    );
+    expect(found.findByOrgApp).toHaveBeenCalledTimes(2);
+    expect(found.findByOrgApp).not.toHaveBeenCalledWith("org-1", "wiki");
+  });
+
+  it("leaves an app the registry no longer says is binding, and one it can't find", async () => {
+    const { env } = boundEnv("self_hosted");
+    const activated = await activateBindingApps(
+      env,
+      () => registry({ ...TODO, status: "active" }),
+      [row(TODO, "binding"), row(NOTES, "binding")],
+    );
+    expect(activated.size).toBe(0);
+    expect(mocks.activate).not.toHaveBeenCalled();
+  });
+
+  it("never throws: a registry that fails leaves the list as it was", async () => {
+    const { env } = boundEnv("self_hosted");
+    const activated = await activateBindingApps(
+      env,
+      () => ({
+        findByOrgApp: async () => {
+          throw new Error("D1 is down");
+        },
+      }),
+      [row(TODO)],
+    );
+    expect(activated.size).toBe(0);
+    // Nor one that can't be opened; and a list with nothing binding opens none.
+    const open = vi.fn(() => {
+      throw new Error("no DB binding");
+    });
+    expect((await activateBindingApps(env, open, [row(TODO)])).size).toBe(0);
+    expect(open).toHaveBeenCalledOnce();
+    expect(
+      (await activateBindingApps(env, open, [row(TODO, "active")])).size,
+    ).toBe(0);
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it("probes at most five binding apps per read", async () => {
+    mocks.activate.mockResolvedValue(true);
+    const apps = Array.from({ length: 7 }, (_, index) => ({
+      ...TODO,
+      appId: `app-${index}`,
+      hostname: `app-${index}.gateway.example.com`,
+      rowId: `row-${index}`,
+    }));
+    const { env, fetch } = boundEnv("self_hosted");
+    const activated = await activateBindingApps(
+      env,
+      () => registry(...apps),
+      apps.map((app) => row(app)),
+    );
+    expect(activated.size).toBe(5);
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 });
