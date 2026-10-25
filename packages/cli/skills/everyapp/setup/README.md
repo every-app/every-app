@@ -107,7 +107,7 @@ https://everyapp.com/docs/agent/, each page also as Markdown at
 `errors`, `troubleshooting`, `manifest`, `identity`, `secrets`, `dev`,
 `email`, `mcp`, `deploy`, `providers`, `access`; an error code's fix is at
 `errors.md#<code>`, the code lower-cased). They go live with the launch on
-2026-10-27; until then each page is in the checkout at
+2026-10-26; until then each page is in the checkout at
 `landing-page/content/agent/<page>.md`; `docs/runbooks/`,
 `docs/threat-model.md` and `pnpm everyapp <command> --help` stay the
 deeper reference. An error code these files don't
