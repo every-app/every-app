@@ -129,7 +129,31 @@ Built-ins (Gateway connector only; always loaded in Claude Code):
          the write wrapper is hidden from read-only connections). A wrapped
          call is the same one call: same policy, checks and identity, and
          one audit row naming the inner tool with `via` set to the wrapper.
-Listing: full (the built-ins, then every tool) until a connection's full list
+Workspace tools (Gateway connector only; every admin action of the UI, listed
+         in full mode to a caller whose role reaches each; a read-only
+         connection never sees a write one; a token bound to one app or a
+         connection consented to some apps sees none of them; never a
+         credential; one audit row per call under app `everyapp`): owners
+         and admins get
+         `everyapp_workspace_show`, `everyapp_workspace_users`,
+         `everyapp_workspace_invite` (never the link), `everyapp_workspace_uninvite`,
+         `everyapp_workspace_role`, `everyapp_workspace_deactivate`,
+         `everyapp_workspace_reactivate`, `everyapp_workspace_reset_email`,
+         `everyapp_workspace_groups`, `everyapp_workspace_group_create`,
+         `everyapp_workspace_group_set`, `everyapp_workspace_group_delete`,
+         `everyapp_workspace_group_members`, `everyapp_workspace_group_members_set`,
+         `everyapp_workspace_group_apps`, `everyapp_workspace_group_apps_set`,
+         `everyapp_workspace_apps`, `everyapp_workspace_app_set`,
+         `everyapp_workspace_app_access`, `everyapp_workspace_app_access_set`,
+         `everyapp_workspace_app_cap`, `everyapp_workspace_usage`,
+         `everyapp_workspace_activity` and `everyapp_workspace_rename`; owners
+         alone get `everyapp_workspace_remove` and `everyapp_workspace_app_delete`
+         (both ask `confirm: true`); every member gets their own
+         `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`
+         and `everyapp_revoke_connection`. A user is an email or id, an app a
+         manifest id or row id, a group a name or `grp_` id. Full reference:
+         /docs/agent/mcp#workspace-tools.
+Listing: full (the built-ins, the workspace tools, then every tool) until a connection's full list
          would pass 256 tools or 1 MiB, then compact (the built-ins only:
          find tools with `everyapp_search_tools`, run them through the
          wrappers or by name); `X-EveryApp-Tools: full|compact` chooses

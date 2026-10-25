@@ -12,9 +12,13 @@
  * checks and are validated against their own schemas. Three are answered
  * here without calling any app and audited the same way. The two wrappers
  * (`everyapp_call_read`, `everyapp_call_write`) delegate exactly one inner
- * call down the app-tool path above, no fan-out and no recursion: the inner
- * call mints its own identity, leaves the one audit row (naming the inner
- * tool, with the wrapper as `via`), and the wrapper writes none of its own.
+ * call down the app-tool path above, or one workspace tool, no fan-out and
+ * no recursion: the inner call mints its own identity, leaves the one
+ * audit row (naming the inner tool, with the wrapper as `via`), and the
+ * wrapper writes none of its own. A workspace tool (kind `host`) is run by
+ * the host's handler (`ToolBusDeps.workspace`) as the caller, after the
+ * policy (its `minRole`, the caller's access) and its own schema, and is
+ * audited like any built-in; it mints no identity and calls no app.
  *
  * Raw arguments and results never reach the audit event, only a keyed
  * digest and a byte count.
@@ -261,13 +265,17 @@ function refusal(
 /**
  * A built-in: policy (the write wrapper is hidden from read-only callers
  * like any write tool), the shape checks, its own schema, then its answer
- * from the view or, for a wrapper, the one inner call it delegates.
+ * from the view or, for a wrapper, the one inner call it delegates. A
+ * workspace tool takes its own path, which a wrapper reaches too.
  */
 async function runBuiltin(
   ctx: CallContext,
   builtin: BuiltinTool,
 ): Promise<ToolCallResolution> {
   const { view, deps, call } = ctx;
+  if (builtin.kind === "host") {
+    return runHostTool(ctx, builtin, call.arguments);
+  }
   const audit = auditor(ctx);
   const name = namespacedToolName(BUILTIN_APP_ID, builtin.name);
   const about = { appId: BUILTIN_APP_ID, risk: builtin.risk };
@@ -311,7 +319,9 @@ async function runBuiltin(
   const digest = checked.argsDigest ? { argsDigest: checked.argsDigest } : {};
 
   if (builtin.kind === "answer") {
-    const answer = runBuiltinTool(builtin, view, checked.args);
+    const answer = runBuiltinTool(builtin, view, checked.args, {
+      workspace: deps.workspace !== undefined,
+    });
     if ("problem" in answer) return refuse(answer.problem, digest);
     audit(name, {
       ...about,
@@ -344,6 +354,98 @@ async function runBuiltin(
 }
 
 /**
+ * A workspace tool, called by name directly or through a wrapper: it is
+ * unknown without a host to run it, hidden below its role or above the
+ * caller's access, held to the read wrapper's ceiling, checked against its
+ * own schema whatever the value count, then run by the host as the caller.
+ * One audit row either way, naming the tool, with the wrapper as `via`.
+ */
+async function runHostTool(
+  ctx: CallContext,
+  builtin: Extract<BuiltinTool, { kind: "host" }>,
+  rawArgs: unknown,
+): Promise<ToolCallResolution> {
+  const { view, deps } = ctx;
+  const audit = auditor(ctx);
+  const name = namespacedToolName(BUILTIN_APP_ID, builtin.name);
+  const about = { appId: BUILTIN_APP_ID, risk: builtin.risk };
+  const called = ctx.via?.tool ?? builtin;
+  // Directly, an unknown tool is the protocol's error; through a wrapper it
+  // is the wrapper's answer, a tool error, like an app tool's.
+  const unknown = (reason: string): ToolCallResolution => {
+    audit(name, { ...about, decision: "blocked", reason, outcome: "not_run" });
+    return ctx.via
+      ? {
+          kind: "result",
+          result: errorResult(`Unknown tool: ${name}`),
+          tool: ctx.via.tool,
+        }
+      : { kind: "unknown_tool" };
+  };
+
+  const workspace = deps.workspace;
+  if (!workspace) return unknown("unknown_tool");
+  const policy = evaluateToolPolicy(builtin, view.principal);
+  if (policy.action !== "allow") return unknown(policy.reason);
+  if (ctx.via?.ceiling === "read" && builtin.risk !== "read") {
+    audit(name, {
+      ...about,
+      decision: "blocked",
+      reason: "write_via_read_wrapper",
+      outcome: "not_run",
+    });
+    return {
+      kind: "result",
+      result: errorResult(
+        `\`${name}\` changes data; call it through ${WRITE_WRAPPER_NAME}.`,
+      ),
+      tool: ctx.via.tool,
+    };
+  }
+
+  const checked = await checkArguments(
+    deps,
+    rawArgs,
+    `builtin\u0000${builtin.name}`,
+    builtin.inputSchema,
+    { ownSchema: true },
+  );
+  if (!checked.ok) {
+    audit(name, { ...about, decision: "allowed", ...refusal(checked) });
+    return {
+      kind: "result",
+      result: errorResult(`Invalid arguments for ${name}: ${checked.problem}`),
+      tool: called,
+    };
+  }
+  const allowed = {
+    ...about,
+    decision: "allowed" as const,
+    ...(checked.argsDigest ? { argsDigest: checked.argsDigest } : {}),
+  };
+
+  let result: ToolCallResultV1;
+  try {
+    result = await workspace.run(builtin.name, checked.args, view.principal);
+  } catch {
+    // Whatever broke in the host (its handler maps the errors it means
+    // the caller to see into tool errors), the client gets no detail.
+    audit(name, { ...allowed, outcome: "app_error", reason: "host_error" });
+    return {
+      kind: "result",
+      result: errorResult(`${name} failed.`),
+      tool: called,
+    };
+  }
+  audit(name, {
+    ...allowed,
+    outcome: result.isError ? "tool_error" : "ok",
+    resultBytes: resultBytes(result),
+  });
+  return { kind: "result", result, tool: called };
+}
+
+/**
  * An app tool, called by name directly or through a wrapper: resolve,
  * policy, the wrapper's ceiling, the arguments, one identity, one call.
  */
@@ -372,10 +474,17 @@ async function runAppTool(
   if (name.length > MAX_CALLED_NAME_LENGTH) {
     return unknown({ reason: "unknown_tool" });
   }
-  // A wrapper delegates one app call, never a built-in: no recursion, and
-  // nothing a wrapper answers that a direct call to it wouldn't.
-  if (ctx.via && splitNamespacedToolName(name)?.appId === BUILTIN_APP_ID) {
-    return unknown({ reason: "unknown_tool" });
+  // A wrapper delegates one app call or one workspace tool, never another
+  // built-in: no recursion, and nothing a wrapper answers that a direct
+  // call to it wouldn't.
+  if (ctx.via) {
+    const split = splitNamespacedToolName(name);
+    if (split?.appId === BUILTIN_APP_ID) {
+      const inner = findBuiltinTool(split.localName);
+      return inner?.kind === "host"
+        ? runHostTool(ctx, inner, rawArgs)
+        : unknown({ reason: "unknown_tool" });
+    }
   }
   const target = resolveToolName(view, name);
   if (!target) return unknown({ reason: "unknown_tool" });

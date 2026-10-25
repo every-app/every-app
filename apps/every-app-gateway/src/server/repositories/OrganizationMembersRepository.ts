@@ -159,6 +159,9 @@ async function listMembersForOrganization(organizationId: string) {
       role: members.role,
       status: users.status,
       createdAt: users.createdAt,
+      // When they joined this organization, which on a gateway where a
+      // person belongs to several differs from the account's creation.
+      joinedAt: members.createdAt,
       banned: users.banned,
     })
     .from(members)

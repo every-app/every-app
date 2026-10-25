@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_APP_ID,
+  builtinToolKind,
   findBuiltinTool,
   listBuiltinTools,
   runBuiltinTool,
@@ -12,20 +13,38 @@ import {
 } from "./names";
 import { PRINCIPAL, todoApp } from "./test-fixtures";
 import { gatewaySurfaceView } from "./view";
+import { WORKSPACE_TOOLS } from "./workspace";
 
 const READ_ONLY = { ...PRINCIPAL, access: "read" as const };
+
+/** The five core built-ins, in listing order. */
+const CORE = [
+  "everyapp_list_apps",
+  "everyapp_whoami",
+  "everyapp_search_tools",
+  "everyapp_call_read",
+  "everyapp_call_write",
+];
 
 describe("the built-in tools", () => {
   const every = listBuiltinTools().map((tool) => tool.name);
 
-  it("are five: three answered from the view and two wrappers", () => {
-    expect(every).toEqual([
-      "everyapp_list_apps",
-      "everyapp_whoami",
-      "everyapp_search_tools",
-      "everyapp_call_read",
-      "everyapp_call_write",
-    ]);
+  it("are the five core ones (three answered from the view, two wrappers), then every workspace tool", () => {
+    expect(every.slice(0, CORE.length)).toEqual(CORE);
+    expect(every.slice(CORE.length)).toEqual(
+      WORKSPACE_TOOLS.map((tool) => `everyapp_${tool.name}`),
+    );
+    for (const name of every) {
+      expect(builtinToolKind(name), name).toBe(
+        CORE.includes(name)
+          ? name.startsWith("everyapp_call_")
+            ? "wrapper"
+            : "answer"
+          : "host",
+      );
+    }
+    expect(builtinToolKind("todo_list_todos")).toBeNull();
+    expect(builtinToolKind("everyapp_nope")).toBeNull();
   });
 
   it("are listed per mode: the wrappers only in compact, the write wrapper only to write callers", () => {
@@ -40,7 +59,8 @@ describe("the built-in tools", () => {
     expect(names({ principal: PRINCIPAL })).toEqual(
       names({ principal: PRINCIPAL, listing: "full" }),
     );
-    expect(names({ principal: PRINCIPAL, listing: "compact" })).toEqual(every);
+    // The workspace tools are a host's to list (workspace.test.ts).
+    expect(names({ principal: PRINCIPAL, listing: "compact" })).toEqual(CORE);
     expect(names({ principal: READ_ONLY, listing: "compact" })).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
@@ -62,13 +82,16 @@ describe("the built-in tools", () => {
     }
   });
 
-  it("spell out their hints: read-only but the write wrapper, never destructive or open-world", () => {
+  it("spell out their hints: read-only but the write ones, destructive only for a workspace tool that asks confirm, never open-world", () => {
     for (const tool of listBuiltinTools()) {
+      const definition = WORKSPACE_TOOLS.find(
+        (candidate) => `everyapp_${candidate.name}` === tool.name,
+      );
       expect(tool.annotations, tool.name).toEqual(
-        tool.name === "everyapp_call_write"
+        tool.name === "everyapp_call_write" || definition?.risk === "write"
           ? {
               readOnlyHint: false,
-              destructiveHint: false,
+              destructiveHint: definition?.irreversible === true,
               idempotentHint: false,
               openWorldHint: false,
             }

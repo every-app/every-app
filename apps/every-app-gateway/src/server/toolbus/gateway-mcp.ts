@@ -185,7 +185,20 @@ export async function serveGatewayMcp(
       { status: 403 },
     );
   }
-  const { principal } = caller;
+  // A credential narrowed to apps (a personal token bound to one app, a
+  // connection consented to "Only these apps") reaches those apps' tools
+  // and nothing of the workspace's: the ToolBus hides every workspace tool
+  // from it (policy.ts, reason app_scoped_credential), whatever the
+  // person's role, so a crm-only token handed to a CI job cannot invite,
+  // deactivate or regrant.
+  const principal: McpPrincipal = {
+    ...caller.principal,
+    appScope:
+      caller.apps.appRowId !== undefined ||
+      caller.apps.connectionId !== undefined
+        ? "selected"
+        : "all",
+  };
   const scope = {
     organizationId: principal.organizationId,
     userId: principal.userId,
@@ -398,8 +411,10 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
       allowedOrigins: allowedOrigins(),
       unavailable,
       // The caller's own choice; without one the view decides from the
-      // size of the full listing, on this read and on every re-read.
+      // size of the full listing (the workspace tools this gateway lists
+      // the caller counted), on this read and on every re-read.
       ...(listing ? { listing } : {}),
+      workspace: true,
     }),
     refresh: async () => {
       await input.recheck();

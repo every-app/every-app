@@ -35,7 +35,15 @@ import { createPersonalOrganization } from "@/server/organization/personal-organ
 import { describePolicy, platformPolicy } from "@/server/platform-policy";
 
 // Invitation links work once, for this long (Better Auth's default is 48h).
-const INVITATION_TTL_SECONDS = 72 * 60 * 60;
+// The session-less invitation path (InvitationService.inviteWithoutSession)
+// writes the same expiry.
+export const INVITATION_TTL_SECONDS = 72 * 60 * 60;
+
+// How many pending, unexpired invitations an organization may hold at once
+// (Better Auth's default). The organization plugin refuses past it with
+// INVITATION_LIMIT_REACHED on the UI path; the session-less path reads the
+// same number.
+export const INVITATION_LIMIT = 100;
 
 // Email verification links work this long; the verify page resends one.
 const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
@@ -460,6 +468,7 @@ export function createAuth() {
         // Invitations are emailed (or handed to the admin as a link when
         // email isn't set up) by InvitationService, not by Better Auth.
         invitationExpiresIn: INVITATION_TTL_SECONDS,
+        invitationLimit: INVITATION_LIMIT,
         schema: organizationSchema,
         organizationHooks: {
           afterAcceptInvitation: async ({ user, organization }) => {

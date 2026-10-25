@@ -63,6 +63,7 @@ import { apps, appToolCatalogs } from "@/db/schema";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import type { McpCaller } from "@/server/mcp-auth/validate";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
+import { withoutWorkspaceTools } from "@/test/mcp-tools";
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { clearCatalogSyncClaimsForTests, syncAppTools } from "./catalog-sync";
@@ -240,7 +241,7 @@ async function toolNames(
   const body = (await response.json()) as {
     result: { tools: { name: string }[] };
   };
-  return body.result.tools.map((tool) => tool.name);
+  return withoutWorkspaceTools(body.result.tools.map((tool) => tool.name));
 }
 
 async function instructions(as?: McpCaller): Promise<string> {

@@ -34,6 +34,17 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This invitation is for a different email address. Sign in with the invited email to accept it.",
   INVITATION_REQUIRES_PENDING_USER:
     "This user is no longer pending and cannot be re-invited.",
+  INVITATION_NOT_FOUND:
+    "That invitation doesn't exist or is no longer pending.",
+  ALREADY_INVITED: "This email address already has a pending invitation.",
+  ALREADY_MEMBER: "This email address already belongs to a member.",
+  INVITATION_LIMIT_REACHED:
+    "This organization has too many pending invitations. Cancel some before inviting more.",
+  INVALID_ORGANIZATION_NAME: "Use 1 to 64 characters with no line breaks.",
+  EMAIL_NOT_CONFIGURED:
+    "This gateway can't send email. Copy a password-reset link instead.",
+  EMAIL_DELIVERY_FAILED:
+    "The email could not be sent. Copy a password-reset link instead.",
   RESET_TOKEN_INVALID:
     "Invalid reset link. Please request a new password reset.",
   RESET_TOKEN_EXPIRED:
@@ -70,7 +81,6 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
   GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
   GROUP_NAME_TAKEN: "A group with this name already exists.",
-  INVALID_ORGANIZATION_NAME: "Use 1 to 64 characters with no line breaks.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

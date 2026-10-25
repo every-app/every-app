@@ -3,9 +3,16 @@
  * the seams for reaching apps. Free of D1, Better Auth and MCP types, so the
  * gateway, `everyapp dev` and tests each supply their own.
  */
-import type { ToolRisk } from "@every-app/sdk/internal";
+import type { ToolCallResultV1, ToolRisk } from "@every-app/sdk/internal";
 
 export type JsonObject = Record<string, unknown>;
+
+/**
+ * An organization role as the workspace tools gate on it, lowest first:
+ * `member` < `admin` < `owner`. A tool's `minRole` names the lowest role
+ * that sees and runs it.
+ */
+export type WorkspaceRole = "member" | "admin" | "owner";
 
 /** One snapshotted tool (an `app_tools` row). */
 export interface ToolBusTool {
@@ -75,6 +82,15 @@ export interface McpPrincipal {
     clientName?: string;
   };
   access: McpAccess;
+  /**
+   * Which apps the credential reaches: every app the person can use
+   * (`all`, the default), or only some (`selected`: a personal token bound
+   * to one app, an OAuth connection consented to "Only these apps"). A
+   * credential narrowed to apps administers nothing: the workspace tools
+   * are hidden from it (policy.ts, reason `app_scoped_credential`), since
+   * whoever holds a crm-only token expects it to reach crm alone.
+   */
+  appScope?: "all" | "selected";
 }
 
 /**
@@ -194,10 +210,33 @@ export interface ToolBusSigning {
   keyId?: string;
 }
 
+/**
+ * The host's handlers for the workspace tools (`everyapp_workspace_*` and
+ * the member-level `everyapp_my_*` / `everyapp_revoke_*`): the gateway
+ * runs each against its own services as the caller. `name` is the tool's
+ * local name (after `everyapp_`), `args` has passed the tool's own schema,
+ * and `principal` is the caller as the host resolved it. The result is a
+ * tool result like an app's (`isError` for a refusal the caller can act
+ * on); a thrown error becomes a generic tool error, never a stack.
+ */
+export interface WorkspaceHost {
+  run(
+    name: string,
+    args: JsonObject,
+    principal: McpPrincipal,
+  ): Promise<ToolCallResultV1>;
+}
+
 export interface ToolBusDeps {
   signing: ToolBusSigning;
   /** Send a request to the app's Worker (service binding; vite in dev). */
   invokeApp(app: ToolBusApp, request: Request): Promise<Response>;
+  /**
+   * The workspace tools' handlers. Without them (an app host's `/mcp`,
+   * `everyapp dev`) no workspace tool is listed, and a call to one answers
+   * Unknown tool.
+   */
+  workspace?: WorkspaceHost;
   /** The app reported another catalog, or doesn't know a catalog tool. */
   onCatalogDrift?(app: ToolBusApp): void;
   audit?(event: ToolCallAuditEvent): void;

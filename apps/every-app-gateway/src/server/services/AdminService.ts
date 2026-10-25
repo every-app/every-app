@@ -3,6 +3,7 @@ import { createAuth } from "@/auth";
 import { db } from "@/db";
 import { invitations, members, users } from "@/db/schema";
 import { and, count, eq, ne } from "drizzle-orm";
+import { PublicError } from "@/server/errors";
 import type { AdminUser } from "@/types/admin-user";
 import { UserRepository } from "../repositories/UserRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
@@ -18,6 +19,10 @@ import {
 
 function invitationRow(invitation: any): AdminUser {
   const createdAt = new Date(invitation.createdAt ?? Date.now());
+  const expiresAt =
+    invitation.expiresAt === undefined || invitation.expiresAt === null
+      ? undefined
+      : new Date(invitation.expiresAt);
   return {
     id: `invitation:${String(invitation.id)}`,
     invitationId: String(invitation.id),
@@ -27,6 +32,7 @@ function invitationRow(invitation: any): AdminUser {
     status: "pending",
     createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
     banned: null,
+    ...(expiresAt && !Number.isNaN(expiresAt.getTime()) ? { expiresAt } : {}),
   };
 }
 
@@ -44,6 +50,7 @@ async function listMembers(ctx: OrgContext) {
         role: true,
         status: true,
         createdAt: true,
+        expiresAt: true,
       },
       where: and(
         eq(invitations.organizationId, ctx.orgId),
@@ -166,10 +173,47 @@ async function cancelInvitation(
   return { success: true };
 }
 
+/**
+ * Cancel a pending invitation without a browser session (the gateway's
+ * own /mcp acts for a resolved caller, not a session): the same row Better
+ * Auth's cancel writes, `status` canceled, for a pending invitation of
+ * this organization alone.
+ */
+async function cancelInvitationWithoutSession(
+  ctx: OrgContext,
+  invitationId: string,
+) {
+  const canceled = await db
+    .update(invitations)
+    .set({ status: "canceled" })
+    .where(
+      and(
+        eq(invitations.id, invitationId),
+        eq(invitations.organizationId, ctx.orgId),
+        eq(invitations.status, "pending"),
+      ),
+    )
+    .returning({ id: invitations.id, email: invitations.email });
+  const invitation = canceled[0];
+  if (!invitation) {
+    throw new PublicError(
+      "INVITATION_NOT_FOUND",
+      "Pending invitation not found",
+    );
+  }
+  logEvent("invitation.canceled", {
+    organizationId: ctx.orgId,
+    invitationId,
+    by: ctx.userId,
+  });
+  return { success: true, invitation };
+}
+
 // TODO: Split this service once the org migration settles and review overhead drops.
 export const AdminService = {
   hasOwner,
   listMembers,
   deleteUser,
   cancelInvitation,
+  cancelInvitationWithoutSession,
 } as const;

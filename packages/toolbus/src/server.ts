@@ -16,7 +16,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/server";
 import { canonicalJson } from "@every-app/sdk/internal";
-import { listBuiltinTools } from "./builtins";
+import { listBuiltinTools, type BuiltinHostOptions } from "./builtins";
 import { executeToolCall } from "./execute";
 import { isPlainObject } from "./io";
 import { displayedToolName, exposedToolName } from "./names";
@@ -107,14 +107,19 @@ function toMcpTool(
 
 /**
  * The tools this caller may see, in a stable order: on the gateway surface
- * the built-in `everyapp_*` tools its listing mode shows first, then by app
- * id, then name; in compact mode the built-ins alone, the apps' tools being
- * found with `everyapp_search_tools` and run through the wrappers. Reads
- * only the snapshot; never calls an app.
+ * the built-in `everyapp_*` tools its listing mode shows first (the
+ * workspace tools among them only when the host runs them, `host.workspace`,
+ * and only to a caller whose role reaches each), then by app id, then
+ * name; in compact mode the built-ins alone, the apps' tools being found
+ * with `everyapp_search_tools` and run through the wrappers. Reads only
+ * the snapshot; never calls an app.
  */
-export function listTools(view: ToolBusView): Tool[] {
+export function listTools(
+  view: ToolBusView,
+  host: BuiltinHostOptions = {},
+): Tool[] {
   const tools: Tool[] =
-    view.surface === "gateway" ? listBuiltinTools(view) : [];
+    view.surface === "gateway" ? listBuiltinTools(view, host) : [];
   if (view.surface === "gateway" && view.listing === "compact") return tools;
   for (const app of [...view.apps].sort(byKey((item) => item.appId))) {
     for (const tool of [...app.tools].sort(byKey((item) => item.name))) {
@@ -132,10 +137,13 @@ export function listTools(view: ToolBusView): Tool[] {
  * one is what `notifications/tools/list_changed` reports. Computed from the
  * listed tools, so a change of listing mode reads as a list change too.
  */
-export async function toolListHash(view: ToolBusView): Promise<string> {
+export async function toolListHash(
+  view: ToolBusView,
+  host: BuiltinHostOptions = {},
+): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(canonicalJson(listTools(view))),
+    new TextEncoder().encode(canonicalJson(listTools(view, host))),
   );
   let hex = "";
   for (const byte of new Uint8Array(digest).subarray(0, 8)) {
@@ -174,7 +182,7 @@ export function createToolBusServer(
   );
 
   server.setRequestHandler("tools/list", async () => ({
-    tools: listTools(view),
+    tools: listTools(view, { workspace: deps.workspace !== undefined }),
   }));
 
   server.setRequestHandler("tools/call", async (request) => {

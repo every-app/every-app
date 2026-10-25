@@ -120,6 +120,7 @@ import {
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { listenIntervalsForTests } from "@/server/toolbus/runtime";
 import { createKvFake } from "@/test/kv-fake";
+import { withoutWorkspaceTools } from "@/test/mcp-tools";
 import { deployLiveApp, markAppDeployed, registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { getMcpAuth } from "./config";
@@ -538,7 +539,7 @@ async function listedNames(response: Response): Promise<string[]> {
 async function toolNames(token: string): Promise<string[]> {
   const names = await listedNames(await mcp(token, "tools/list"));
   await settle();
-  return names;
+  return withoutWorkspaceTools(names);
 }
 
 async function callTool(

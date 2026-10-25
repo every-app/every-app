@@ -78,6 +78,7 @@ import {
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { listenIntervalsForTests } from "@/server/toolbus/runtime";
 import { createKvFake } from "@/test/kv-fake";
+import { withoutWorkspaceTools } from "@/test/mcp-tools";
 import {
   APPS_AUD,
   createMockAccess,
@@ -285,7 +286,7 @@ async function toolNames(headers: Record<string, string>): Promise<string[]> {
     result: { tools: { name: string }[] };
   };
   await settle();
-  return body.result.tools.map((tool) => tool.name);
+  return withoutWorkspaceTools(body.result.tools.map((tool) => tool.name));
 }
 
 async function callTool(

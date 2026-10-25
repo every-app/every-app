@@ -209,6 +209,36 @@ describe("gatewaySurfaceView", () => {
       ]);
     });
 
+    it("counts the workspace tools too where the host runs them, to the caller's role", () => {
+      // The gateway lists an owner every workspace tool in full mode, so
+      // they take their share of the 256 there; a member's four, theirs; a
+      // host without them (the dev ToolBus) counts none.
+      const owner = { ...acme, orgRole: "owner" };
+      const host = { workspace: true };
+      const builtins = listBuiltinTools(
+        { principal: owner, listing: "full" },
+        host,
+      );
+      expect(builtins.length).toBeGreaterThan(30);
+      const fits = gatewaySurfaceView(
+        owner,
+        [appOf(manyTools(FULL_LISTING_MAX_TOOLS - builtins.length))],
+        host,
+      );
+      expect(fits.listing).toBe("full");
+      expect(listTools(fits, host)).toHaveLength(FULL_LISTING_MAX_TOOLS);
+      const past = gatewaySurfaceView(
+        owner,
+        [appOf(manyTools(FULL_LISTING_MAX_TOOLS - builtins.length + 1))],
+        host,
+      );
+      expect(past.listing).toBe("compact");
+      // The same apps for a member, or on a host without the workspace
+      // tools, still fit.
+      expect(gatewaySurfaceView(acme, past.apps, host).listing).toBe("full");
+      expect(gatewaySurfaceView(owner, past.apps).listing).toBe("full");
+    });
+
     it("counts the tools the caller could see: hidden ones don't push it compact", () => {
       const tools = [
         ...manyTools(200),

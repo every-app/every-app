@@ -99,6 +99,17 @@ export function toolBusHttp(): Promise<ToolBusHttpHandler> {
           const app = servedApps.get(target);
           if (app) scheduleCatalogResync(app);
         },
+        // The workspace tools' handlers (every admin action of the UI on
+        // /mcp), loaded with the first call rather than the first request:
+        // they pull in every service the admin pages use.
+        workspace: {
+          run: async (name, args, principal) =>
+            (await import("./workspace-tools")).runWorkspaceTool(
+              name,
+              args,
+              principal,
+            ),
+        },
         audit: auditToolCall,
         digestArguments: createArgumentsDigester(
           env.BETTER_AUTH_SECRET,

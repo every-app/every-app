@@ -55,6 +55,7 @@ import {
   type McpHttpHandler,
   type McpRequestContext,
 } from "@modelcontextprotocol/server";
+import type { BuiltinHostOptions } from "./builtins";
 import { scopesForAccess } from "./execute";
 import { isPlainObject } from "./io";
 import {
@@ -275,6 +276,11 @@ function viewOf(context: McpRequestContext): ToolBusView {
   return view as ToolBusView;
 }
 
+/** What the listing needs to know of the host: whether it runs the workspace tools. */
+function hostOf(deps: ToolBusDeps): BuiltinHostOptions {
+  return { workspace: deps.workspace !== undefined };
+}
+
 async function serveLegacy(
   request: Request,
   view: ToolBusView,
@@ -302,7 +308,7 @@ async function serveLegacy(
   const method = isPlainObject(body) ? body["method"] : undefined;
   const params =
     isPlainObject(body) && isPlainObject(body["params"]) ? body["params"] : {};
-  const hash = await toolListHash(view);
+  const hash = await toolListHash(view, hostOf(deps));
   const session = request.headers.get("mcp-session-id");
   const sessionHash = toolsHashOfSession(session);
   const changed = sessionHash !== undefined && sessionHash !== hash;
@@ -557,7 +563,7 @@ async function serveListen(
   const encoder = new TextEncoder();
   let last: string;
   try {
-    last = await toolListHash(view);
+    last = await toolListHash(view, hostOf(deps));
   } catch (error) {
     release();
     throw error;
@@ -610,7 +616,10 @@ async function serveListen(
         }
         let current: string | undefined;
         try {
-          current = await toolListHash(await withinPoll(refresh(), pollMs));
+          current = await toolListHash(
+            await withinPoll(refresh(), pollMs),
+            hostOf(deps),
+          );
           failures = 0;
         } catch (error) {
           failures += 1;

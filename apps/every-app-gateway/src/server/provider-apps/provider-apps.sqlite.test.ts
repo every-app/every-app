@@ -70,6 +70,7 @@ import { UserPatService } from "@/server/services/UserPatService";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { clearCatalogSyncClaimsForTests } from "@/server/toolbus/catalog-sync";
 import { createKvFake } from "@/test/kv-fake";
+import { withoutWorkspaceTools } from "@/test/mcp-tools";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { setProviderUpstreamFetchForTests } from "./call";
 import {
@@ -192,7 +193,7 @@ async function toolNames(token: string): Promise<string[]> {
     result: { tools: { name: string }[] };
   };
   await settle();
-  return body.result.tools.map((tool) => tool.name);
+  return withoutWorkspaceTools(body.result.tools.map((tool) => tool.name));
 }
 
 async function callTool(

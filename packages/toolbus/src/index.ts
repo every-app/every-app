@@ -11,7 +11,9 @@
 export {
   BUILTIN_APP_ID,
   SEARCH_RESULT_MAX_BYTES,
+  builtinToolKind,
   listBuiltinTools,
+  type BuiltinKind,
   type ListingMode,
 } from "./builtins";
 export {
@@ -40,7 +42,11 @@ export {
   namespacedToolName,
   splitNamespacedToolName,
 } from "./names";
-export { evaluateToolPolicy, type ToolPolicyDecision } from "./policy";
+export {
+  evaluateToolPolicy,
+  roleReaches,
+  type ToolPolicyDecision,
+} from "./policy";
 export {
   principalFromSession,
   type PrincipalResolution,
@@ -66,4 +72,12 @@ export type {
   ToolCallAuditEvent,
   ToolCallOutcome,
   UnavailableApp,
+  WorkspaceHost,
+  WorkspaceRole,
 } from "./types";
+export {
+  ACTIVITY_TIME_MAX_MS,
+  WORKSPACE_ACTIVITY_PAGE_MAX,
+  WORKSPACE_TOOLS,
+  type WorkspaceToolDefinition,
+} from "./workspace";

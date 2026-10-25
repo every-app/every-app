@@ -127,7 +127,7 @@ async function updateAccessForApp(
 ) {
   const app = await AppRepository.findById(appRowId, ctx.orgId);
   if (!app) {
-    throw new Error("App not found");
+    throw new PublicError("APP_NOT_FOUND", "App not found");
   }
   assertNotShared(app);
 

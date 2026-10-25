@@ -8,6 +8,15 @@
  * input schema, a wrapper runs it. They are named under `everyapp`, an app
  * id no manifest may take, are listed before every app's tools, and are
  * marked to stay loaded in Claude Code.
+ *
+ * The third kind, `host`, is the workspace tools (workspace.ts): every
+ * admin action of the gateway's UI, and a member's own tokens and
+ * connections, run by the host through `ToolBusDeps.workspace`. They are
+ * listed in the full listing only, to a caller whose role reaches each
+ * tool's `minRole` and whose credential reaches every app (never to a
+ * token bound to one app or a connection consented to some), and found by
+ * the search and run by the wrappers in either mode; without a host to run
+ * them they are not listed at all.
  */
 import type { Tool } from "@modelcontextprotocol/server";
 import type { ToolCallResultV1 } from "@every-app/sdk/internal";
@@ -19,13 +28,23 @@ import type {
   ToolBusApp,
   ToolBusTool,
   ToolBusView,
+  WorkspaceRole,
 } from "./types";
+import { WORKSPACE_TOOLS } from "./workspace";
 
 /** The reserved app id the built-in tools are namespaced under. */
 export const BUILTIN_APP_ID = "everyapp";
 
 /** How the gateway surface lists tools (`ToolBusView.listing`). */
 export type ListingMode = NonNullable<ToolBusView["listing"]>;
+
+/**
+ * What the host supplies, as the listing and the search need to know it:
+ * whether the workspace tools have handlers (`ToolBusDeps.workspace`).
+ */
+export interface BuiltinHostOptions {
+  workspace?: boolean;
+}
 
 /**
  * A search answer stops taking tools once it would serialize past this
@@ -59,14 +78,27 @@ export type BuiltinTool = ToolBusTool & {
 } & (
     | {
         kind: "answer";
-        run(view: ToolBusView, args: JsonObject): BuiltinAnswer;
+        run(
+          view: ToolBusView,
+          args: JsonObject,
+          host: BuiltinHostOptions,
+        ): BuiltinAnswer;
       }
     | {
         /** Delegates one app call; `ceiling` is the highest risk it reaches. */
         kind: "wrapper";
         ceiling: McpAccess;
       }
+    | {
+        /** Run by the host (`ToolBusDeps.workspace`); hidden below `minRole`. */
+        kind: "host";
+        minRole: WorkspaceRole;
+        irreversible?: true;
+      }
   );
+
+/** A built-in's kind: the two view-answered kinds and the wrappers, or `host`. */
+export type BuiltinKind = BuiltinTool["kind"];
 
 const NO_INPUT = {
   type: "object",
@@ -120,15 +152,38 @@ const SEARCH_INPUT = {
   additionalProperties: false,
 };
 
-/** The app tools this caller may call, as the policy leaves them. */
+/** One tool the search runs over: an app's, or a workspace tool of the gateway's. */
+interface SearchableTool {
+  appId: string;
+  tool: ToolBusTool;
+}
+
+/**
+ * The tools this caller may call, as the policy leaves them: every app's,
+ * and the workspace tools when the host runs them (they are the caller's
+ * tools like any other, whichever listing mode leaves them out of
+ * tools/list). Never the other built-ins: the search is how a client gets
+ * from those to a tool, not the other way round.
+ */
 function visibleTools(
   view: ToolBusView,
-): { app: ToolBusApp; tool: ToolBusTool }[] {
-  const visible: { app: ToolBusApp; tool: ToolBusTool }[] = [];
+  host: BuiltinHostOptions,
+): SearchableTool[] {
+  const visible: SearchableTool[] = [];
+  if (host.workspace) {
+    for (const tool of BUILTINS) {
+      if (
+        tool.kind === "host" &&
+        evaluateToolPolicy(tool, view.principal).action === "allow"
+      ) {
+        visible.push({ appId: BUILTIN_APP_ID, tool });
+      }
+    }
+  }
   for (const app of view.apps) {
     for (const tool of app.tools) {
       if (evaluateToolPolicy(tool, view.principal).action === "allow") {
-        visible.push({ app, tool });
+        visible.push({ appId: app.appId, tool });
       }
     }
   }
@@ -141,13 +196,10 @@ function visibleToolCount(view: ToolBusView, app: ToolBusApp): number {
   ).length;
 }
 
-const byAppThenName = (
-  a: { app: ToolBusApp; tool: ToolBusTool },
-  b: { app: ToolBusApp; tool: ToolBusTool },
-) =>
-  a.app.appId < b.app.appId
+const byAppThenName = (a: SearchableTool, b: SearchableTool) =>
+  a.appId < b.appId
     ? -1
-    : a.app.appId > b.app.appId
+    : a.appId > b.appId
       ? 1
       : a.tool.name < b.tool.name
         ? -1
@@ -234,7 +286,11 @@ function searchArguments(
   };
 }
 
-function searchTools(view: ToolBusView, args: JsonObject): BuiltinAnswer {
+function searchTools(
+  view: ToolBusView,
+  args: JsonObject,
+  host: BuiltinHostOptions,
+): BuiltinAnswer {
   const read = searchArguments(args);
   if ("problem" in read) return read;
   const { query, app: appId, limit } = read;
@@ -242,11 +298,11 @@ function searchTools(view: ToolBusView, args: JsonObject): BuiltinAnswer {
     return { problem: "give a query, an app id, or both." };
   }
 
-  const candidates = visibleTools(view)
-    .filter((entry) => appId === undefined || entry.app.appId === appId)
+  const candidates = visibleTools(view, host)
+    .filter((entry) => appId === undefined || entry.appId === appId)
     .map((entry) => ({
       ...entry,
-      name: namespacedToolName(entry.app.appId, entry.tool.name),
+      name: namespacedToolName(entry.appId, entry.tool.name),
     }));
   let matched = candidates.sort(byAppThenName);
   if (query !== undefined) {
@@ -261,9 +317,9 @@ function searchTools(view: ToolBusView, args: JsonObject): BuiltinAnswer {
       .map((scored) => scored.entry);
   }
 
-  const found = matched.slice(0, limit).map(({ name, app, tool }) => ({
+  const found = matched.slice(0, limit).map(({ name, appId: app, tool }) => ({
     name,
-    app: app.appId,
+    app,
     ...(tool.title ? { title: tool.title } : {}),
     description: tool.description,
     risk: tool.risk,
@@ -387,6 +443,20 @@ const BUILTINS: BuiltinTool[] = [
     kind: "wrapper",
     ceiling: "write",
   },
+  // The workspace tools, in the full listing only: a compact listing's
+  // client finds them with everyapp_search_tools and runs them through the
+  // wrappers, like an app's tools.
+  ...WORKSPACE_TOOLS.map((tool): BuiltinTool => ({
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    risk: tool.risk,
+    inputSchema: tool.inputSchema,
+    listedIn: ["full"],
+    kind: "host",
+    minRole: tool.minRole,
+    ...(tool.irreversible ? { irreversible: true } : {}),
+  })),
 ];
 
 /** The listed name of the wrapper that runs write tools, for messages. */
@@ -403,34 +473,45 @@ function toTool(tool: BuiltinTool): Tool {
     inputSchema: tool.inputSchema as Tool["inputSchema"],
     // Spelled out like an app tool's (server.ts): a missing hint reads as
     // true. A read wrapper runs read tools, so it is as idempotent as they
-    // are; the write wrapper never reaches a destructive tool.
+    // are; the write wrapper never reaches a destructive tool; a workspace
+    // tool that cannot be undone (it asks confirm: true) says so.
     annotations:
       tool.risk === "read"
         ? { readOnlyHint: true, idempotentHint: true, openWorldHint: false }
         : {
             readOnlyHint: false,
-            destructiveHint: false,
+            destructiveHint: tool.kind === "host" && tool.irreversible === true,
             idempotentHint: false,
             openWorldHint: false,
           },
-    _meta: { [ALWAYS_LOAD_META_KEY]: true },
+    // The core built-ins stay loaded in Claude Code, since they are how a
+    // model finds its way in; the workspace tools are deferred behind its
+    // tool search like an app's, so thirty admin tools don't crowd the
+    // context of a client that never administers anything.
+    ...(tool.kind === "host"
+      ? {}
+      : { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
   };
 }
 
 /**
  * The built-in tools as tools/list shows them, in a stable order: with a
  * view, those its listing mode shows to that caller (the wrappers only in
- * compact mode, `everyapp_call_write` only to a read & write caller);
+ * compact mode, `everyapp_call_write` only to a read & write caller, the
+ * workspace tools only in full mode, only to a caller whose role reaches
+ * each tool's `minRole`, and only when the host runs them, `host.workspace`);
  * without one, every built-in the gateway has, for the docs' drift test.
  */
 export function listBuiltinTools(
   view?: Pick<ToolBusView, "listing" | "principal">,
+  host: BuiltinHostOptions = {},
 ): Tool[] {
   const mode: ListingMode = view?.listing ?? "full";
   return BUILTINS.filter(
     (tool) =>
       !view ||
       (tool.listedIn.includes(mode) &&
+        (tool.kind !== "host" || host.workspace === true) &&
         evaluateToolPolicy(tool, view.principal).action === "allow"),
   ).map(toTool);
 }
@@ -438,6 +519,18 @@ export function listBuiltinTools(
 /** The built-in a local name (after `everyapp_`) refers to, if any. */
 export function findBuiltinTool(localName: string): BuiltinTool | null {
   return BUILTINS.find((tool) => tool.name === localName) ?? null;
+}
+
+/**
+ * The kind of the built-in a listed name (`everyapp_<name>`) refers to:
+ * `answer` or `wrapper` for the core built-ins, `host` for a workspace
+ * tool; null for any other name. For tests and the docs' drift test, which
+ * document the two groups on different rows.
+ */
+export function builtinToolKind(listedName: string): BuiltinKind | null {
+  const prefix = `${BUILTIN_APP_ID}_`;
+  if (!listedName.startsWith(prefix)) return null;
+  return findBuiltinTool(listedName.slice(prefix.length))?.kind ?? null;
 }
 
 function builtinResult(data: JsonObject): ToolCallResultV1 {
@@ -460,7 +553,8 @@ export function runBuiltinTool(
   tool: Extract<BuiltinTool, { kind: "answer" }>,
   view: ToolBusView,
   args: JsonObject,
+  host: BuiltinHostOptions = {},
 ): { result: ToolCallResultV1 } | { problem: string } {
-  const answer = tool.run(view, args);
+  const answer = tool.run(view, args, host);
   return "problem" in answer ? answer : { result: builtinResult(answer.data) };
 }

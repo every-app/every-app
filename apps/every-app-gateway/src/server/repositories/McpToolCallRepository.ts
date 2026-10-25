@@ -69,6 +69,11 @@ interface ListForOrganizationOptions {
   /** The page continues before this row (the previous page's `nextBefore`). */
   before?: ToolCallCursor | undefined;
   appRowId?: string | undefined;
+  /**
+   * Rows by the app id the call was made under, for calls on no row: the
+   * gateway's own built-ins (`everyapp`).
+   */
+  appSlug?: string | undefined;
   userId?: string | undefined;
   decision?: "allowed" | "blocked" | undefined;
   risk?: string | undefined;
@@ -155,6 +160,7 @@ async function listForOrganization(
         options.appRowId
           ? eq(mcpToolCalls.appRowId, options.appRowId)
           : undefined,
+        options.appSlug ? eq(mcpToolCalls.appSlug, options.appSlug) : undefined,
         options.userId ? eq(mcpToolCalls.userId, options.userId) : undefined,
         options.decision
           ? eq(mcpToolCalls.decision, options.decision)

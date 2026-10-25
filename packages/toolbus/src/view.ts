@@ -1,4 +1,4 @@
-import { type ListingMode } from "./builtins";
+import { type BuiltinHostOptions, type ListingMode } from "./builtins";
 import { evaluateToolPolicy } from "./policy";
 import { listTools } from "./server";
 import type {
@@ -24,12 +24,13 @@ const MAX_GATEWAY_INSTRUCTIONS = 8 * 1024;
  */
 export const CLAUDE_CODE_INSTRUCTIONS_READ = 4096;
 /**
- * Past either of these, a full listing (the built-ins it shows and every
- * app tool the policy allows, as tools/list would serialize them) is served
- * compactly unless the caller chose otherwise. The count is claude.ai's
- * reported connector cap, where tools past it are dropped without a word;
- * the bytes keep a list of large schemas readable by the clients that load
- * every definition.
+ * Past either of these, a full listing (the built-ins it shows, the
+ * workspace tools where the host runs them, and every app tool the policy
+ * allows, as tools/list would serialize them) is served compactly unless
+ * the caller chose otherwise. The count is claude.ai's reported connector
+ * cap, where tools past it are dropped without a word; the bytes keep a
+ * list of large schemas readable by the clients that load every
+ * definition.
  */
 export const FULL_LISTING_MAX_TOOLS = 256;
 export const FULL_LISTING_MAX_BYTES = 1024 * 1024;
@@ -76,19 +77,25 @@ function reachableToolCount(
 
 /**
  * The listing mode a caller gets when it chose none: full while the full
- * listing fits, else compact.
+ * listing fits, else compact. Counts what tools/list would list, so the
+ * host says whether it runs the workspace tools (the gateway does; the
+ * dev ToolBus doesn't).
  */
 function defaultListing(
   principal: McpPrincipal,
   apps: ToolBusApp[],
+  host: BuiltinHostOptions,
 ): ListingMode {
-  const full = listTools({
-    surface: "gateway",
-    principal,
-    apps,
-    serverInfo: { name: "every-app" },
-    listing: "full",
-  });
+  const full = listTools(
+    {
+      surface: "gateway",
+      principal,
+      apps,
+      serverInfo: { name: "every-app" },
+      listing: "full",
+    },
+    host,
+  );
   if (full.length > FULL_LISTING_MAX_TOOLS) return "compact";
   const bytes = new TextEncoder().encode(JSON.stringify(full)).byteLength;
   return bytes > FULL_LISTING_MAX_BYTES ? "compact" : "full";
@@ -161,7 +168,9 @@ function gatewayInstructions(
  * setup) serve no tools; the instructions and `everyapp_list_apps` say why.
  * The listing mode is the caller's choice when it made one, else full
  * while the full listing fits (`FULL_LISTING_MAX_TOOLS`,
- * `FULL_LISTING_MAX_BYTES`) and compact past that.
+ * `FULL_LISTING_MAX_BYTES`) and compact past that; a host that runs the
+ * workspace tools (`workspace: true`) has them counted, since its
+ * tools/list lists them.
  */
 export function gatewaySurfaceView(
   principal: McpPrincipal,
@@ -172,10 +181,14 @@ export function gatewaySurfaceView(
     unavailable?: UnavailableApp[];
     /** The caller's explicit listing choice (`X-EveryApp-Tools`, `?tools=`). */
     listing?: ListingMode;
+    /** Whether the host runs the workspace tools (`ToolBusDeps.workspace`). */
+    workspace?: boolean;
   } = {},
 ): ToolBusView {
   const unavailable = options.unavailable ?? [];
-  const listing = options.listing ?? defaultListing(principal, apps);
+  const listing =
+    options.listing ??
+    defaultListing(principal, apps, { workspace: options.workspace === true });
   return {
     surface: "gateway",
     principal,

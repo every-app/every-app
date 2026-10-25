@@ -1,10 +1,11 @@
-import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { db } from "@/db";
 import { members } from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 import { passwordResetUrl } from "@/server/email/links";
+import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
+import { passwordResetEmail } from "@/server/email/templates";
 import { requirePasswordSignIn } from "@/server/password-sign-in";
 import { requireTenantAdminUserActions } from "@/server/tenant-user-actions";
 import { PublicError, type PublicErrorCode } from "@/server/errors";
@@ -246,13 +247,11 @@ async function requirePasswordResettable(
 }
 
 /**
- * A password-reset link for an admin to hand over directly, for gateways
- * without email. It is Better Auth's own reset token: single use, one
- * hour, consumed by the regular /reset-password page.
+ * Better Auth's own reset token for a user: single use, one hour, stored as
+ * `reset-password:<token>` the way requestPasswordReset stores it, so the
+ * regular /reset-password page consumes it.
  */
-async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
-  const user = await requirePasswordResettable(ctx, targetUserId);
-
+async function mintPasswordResetLink(userId: string) {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   const token = btoa(String.fromCharCode(...bytes))
@@ -265,33 +264,60 @@ async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
   const context = await auth.$context;
   await context.internalAdapter.createVerificationValue({
     identifier: `reset-password:${token}`,
-    value: user.id,
+    value: userId,
     expiresAt,
   });
+  return { url: passwordResetUrl(token), expiresAt };
+}
+
+/**
+ * A password-reset link for an admin to hand over directly, for gateways
+ * without email.
+ */
+async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
+  const user = await requirePasswordResettable(ctx, targetUserId);
+  const { url, expiresAt } = await mintPasswordResetLink(user.id);
   logEvent("member.reset_link_created", {
     organizationId: ctx.orgId,
     userId: user.id,
     by: ctx.userId,
   });
 
-  return { email: user.email, url: passwordResetUrl(token), expiresAt };
+  return { email: user.email, url, expiresAt };
 }
 
 /**
- * Mail a password-reset link to a member, for gateways with email. Better
- * Auth makes and sends the link (sendResetPassword in the auth config), so
- * it is the same single-use, one-hour token the link variant hands out.
+ * Mail a password-reset link to a member, for gateways with email: the same
+ * single-use, one-hour token the link variant hands out, sent with the
+ * gateway's own sender and awaited, so a success means the mail went.
+ * After the member rules, and before any token is minted, refused where
+ * the gateway sends no email (the UI hides the action then; an agent is
+ * told what to do instead); refused too when delivery fails (Better Auth's
+ * requestPasswordReset would swallow that and leave the caller believing
+ * a mail is on its way).
  */
 async function sendPasswordResetEmail(ctx: OrgContext, targetUserId: string) {
   const user = await requirePasswordResettable(ctx, targetUserId);
-
-  const auth = createAuth();
-  await auth.api.requestPasswordReset({
-    body: {
-      email: user.email,
-      redirectTo: `${env.GATEWAY_URL}/reset-password`,
-    },
-  });
+  if (!isEmailConfigured()) {
+    throw new PublicError(
+      "EMAIL_NOT_CONFIGURED",
+      "This Gateway sends no email. Copy a password-reset link from Admin → Users, or run everyapp workspace reset-link",
+    );
+  }
+  const { url } = await mintPasswordResetLink(user.id);
+  try {
+    await sendEmail({
+      kind: "reset",
+      to: user.email,
+      ...passwordResetEmail(url),
+    });
+  } catch {
+    // sendEmail logs the failure; the unused token expires in an hour.
+    throw new PublicError(
+      "EMAIL_DELIVERY_FAILED",
+      "The email could not be sent. Copy a password-reset link from Admin → Users, or run everyapp workspace reset-link",
+    );
+  }
   logEvent("member.reset_email_sent", {
     organizationId: ctx.orgId,
     userId: user.id,
