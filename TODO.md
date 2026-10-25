@@ -1179,6 +1179,21 @@ The Gateway says what to do next from its own state ([docs/design/2026-10-proact
 - [ ] **A weekly digest email.** Needs email configured, a cron, a template and a way out. Not now.
 - [ ] **Follow-ups.** The rules' commands stay `secret set NAME` by design: each names a Gateway-wide key with no app in play (an AI key, the sender, an MCP app's key), and `configure` takes an app (an MCP app's id is refused by name: no Worker; the SDK's `setupCommand` says `secret set` for it too). `status --help` and `cli.md` don't mention `next` yet; the `Next:` block prints each step's `note`, and `why` is `--json`'s alone.
 
+### Alchemy (2026-10-24)
+
+Ben asked, over ratstack.sh, what converting the Gateway and the CLI's provisioning to Alchemy would entail and whether to do it now. [docs/design/2026-10-alchemy-research.md](docs/design/2026-10-alchemy-research.md) has the answer with the evidence: not now; keep cf plus the in-Worker REST deployer plus the Gateway's D1 as the operator path. The feasible conversion is Alchemy as the uploader behind the CLI with a D1-backed state layer, 40 to 70 engineer-days, and it meets one hard blocker in Alchemy 2.0.0-beta.84 (every upload replaces the whole binding set, so secrets set outside the stack and the Gateway's JWT keypair are wiped on the next deploy) plus three traps (service-binding prop keys snake-cased on the wire, `appId` arriving as `app_id`; secrets persisted in plaintext in a D1-backed state store; D1 migrations taken over one way). The typed-infrastructure property RatStack sells already exists here through `cf workers types && tsc`. The document stays out of the public copy by name (`--design designs` drops `*research*`). Nothing in the code changed. The hosted-gateway Alchemy stage noted under Done ("OpenSEO's first deploy is the Alchemy stage") is deferred with it.
+
+**Needs Ben**
+
+- [ ] **Confirm the deferral and the probe dates.** Re-probe on 2026-12-01 and 2027-02-01, or when Alchemy 2.0.0 reaches GA, against the document's section 8; the gating trigger is a keep-or-inherit bindings mode. In a loop test account with the cleanup step, never the main account; results go in the document's probe log.
+- [ ] **A plan before mutation** (`gateway.plan` NDJSON step, then `setup|update --dry-run`): the one Alchemy benefit the product lacks, built on the Gateway's D1 as the state with no dependency (document section 7, items 4 and 5; two to four plus one to two days). After the first week of real self-hoster `update` runs, and only if you want it.
+- [ ] **Delete the dead `everyapp` Alchemy stage in the OpenSEO port repository** (it never ran against a real account; about 730 lines; closes the second half of "OpenSEO onto `everyapp deploy`" under Build). Port-repository venue rules apply.
+
+**Follow-ups, no decision needed, after launch**
+
+- [ ] **Pin the gateway test fixture to the real `cf build`** inside `packages/cli/src/lib/cfDryRun.test.ts` (CI only): `gateway-worker.config.json` is hand-copied, last touched 2026-10-13, and 42 apply tests run on it.
+- [ ] **A gateway binding fence test**: every name `patchBuildOutput` writes is declared with the same type in `cloudflare.config.ts`, no `KV` or `APP__*` there, then delete the legacy `delete env["KV"]`.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).
