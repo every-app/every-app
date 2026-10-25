@@ -21,11 +21,16 @@
  * is the first of them.
  *
  * Behind Cloudflare Access the deploy's own probe never reaches the
- * gateway (ACCESS_IN_FRONT), so nobody makes that first request until a
- * person opens the app. The launcher and Admin → Apps read their lists
- * through {@link activateBindingApps}, which probes each `binding` app
- * the same way: "Deploying" then means the gateway can't reach the Worker
- * yet, not that nobody has visited.
+ * gateway, so nobody makes that first request until a person opens the
+ * app. Two more triggers make the same probe and the same transition: the
+ * launcher and Admin → Apps read their lists through
+ * {@link activateBindingApps}, and the per-minute cron sweeps every
+ * `binding` row of the install through {@link activateDeployingApps}, so
+ * an uploaded app is live within a minute whether or not anyone visits,
+ * and the CLI's live wait (which reads D1) finishes under Access too.
+ * "Deploying" then means the gateway can't reach the Worker yet, not that
+ * nobody has visited. One `app.live` event records the transition, with
+ * which trigger made it.
  */
 import { waitUntil } from "cloudflare:workers";
 import {
@@ -34,6 +39,9 @@ import {
   type AppRegistry,
   type RegisteredApp,
 } from "@every-app/perimeter";
+import { emit } from "@/server/events/bus";
+import { catalogue, type AppLiveTrigger } from "@/server/events/catalogue";
+import { GATEWAY_ACTOR } from "@/server/events/subjects";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { platformPolicy } from "@/server/platform-policy";
@@ -77,19 +85,38 @@ export async function probeApp(
 
 /**
  * Make a `binding` app `active` once this isolate reaches its Worker. True
- * when the app is now active and the request may be served.
+ * when the app is now active and the request may be served. The isolate
+ * that makes the transition announces it once (`app.live`, with the
+ * trigger); one that finds another got there first says nothing.
  */
 export async function activateApp(
   env: { GATEWAY_DEPLOYMENT_MODE?: string },
   app: RegisteredApp,
+  trigger: AppLiveTrigger = "request",
 ): Promise<boolean> {
   if (!platformPolicy(env).bindingActivation) return false;
   if (!app.rowId || !(await probeApp(env, app))) return false;
-  if (!(await AppRepository.activate(app.rowId, app.organizationId))) {
+  const result = await AppRepository.activate(app.rowId, app.organizationId);
+  if (!result) {
     // Deleted or disabled since the request looked it up.
     return false;
   }
-  logEvent("app.activated", { app: app.appId, org: app.organizationId });
+  if (result.activated) {
+    logEvent("app.activated", {
+      app: app.appId,
+      org: app.organizationId,
+      trigger,
+    });
+    await emit({
+      organizationId: app.organizationId,
+      actor: GATEWAY_ACTOR,
+      ...catalogue.appLive({
+        app: { id: app.appId, rowId: app.rowId, name: result.name },
+        version: app.versionId ?? null,
+        trigger,
+      }),
+    });
+  }
   const target = syncTarget(app);
   if (target) scheduleCatalogResync(target, "first_use");
   return true;
@@ -97,6 +124,14 @@ export async function activateApp(
 
 /** How many `binding` apps one list read probes; a list seldom has any. */
 const LIST_ACTIVATIONS_MAX = 5;
+
+/** How a list of apps is read, for {@link activateBindingApps}. */
+interface BindingActivationOptions {
+  /** What `app.live` and the logs say made it live; a list by default. */
+  trigger?: AppLiveTrigger;
+  /** How many of the list's `binding` apps are probed, at most. */
+  max?: number;
+}
 
 /** What a listed row needs to say for {@link activateBindingApps} to look it up. */
 interface ListedAppRow {
@@ -120,11 +155,15 @@ export async function activateBindingApps(
   /** Opened only when the list has a `binding` app, inside its guard. */
   openRegistry: () => Pick<AppRegistry, "findByOrgApp">,
   listed: readonly ListedAppRow[],
+  {
+    trigger = "list",
+    max = LIST_ACTIVATIONS_MAX,
+  }: BindingActivationOptions = {},
 ): Promise<Set<string>> {
   const activated = new Set<string>();
   const binding = listed
     .filter((app) => app.status === "binding")
-    .slice(0, LIST_ACTIVATIONS_MAX);
+    .slice(0, max);
   if (binding.length === 0) return activated;
   let registry: Pick<AppRegistry, "findByOrgApp">;
   try {
@@ -133,7 +172,7 @@ export async function activateBindingApps(
     logEvent(
       "app.activate_failed",
       {
-        trigger: "list",
+        trigger,
         message: error instanceof Error ? error.message : String(error),
       },
       "warn",
@@ -145,13 +184,13 @@ export async function activateBindingApps(
       try {
         const app = await registry.findByOrgApp(row.organizationId, row.appId);
         if (!app || app.status !== "binding") return;
-        if (await activateApp(env, app)) activated.add(row.id);
+        if (await activateApp(env, app, trigger)) activated.add(row.id);
       } catch (error) {
         logEvent(
           "app.activate_failed",
           {
             app: row.appId,
-            trigger: "list",
+            trigger,
             message: error instanceof Error ? error.message : String(error),
           },
           "warn",
@@ -160,6 +199,52 @@ export async function activateBindingApps(
     }),
   );
   return activated;
+}
+
+/** How many `binding` apps one scheduled sweep probes: a whole install's, in practice. */
+const SCHEDULED_ACTIVATIONS_MAX = 50;
+
+/**
+ * The cron's sweep (server.ts `scheduled`, every minute): every `binding`
+ * row of the install, probed and made active like a visit would. This is
+ * what finishes a deploy behind Cloudflare Access, where neither the
+ * CLI's probe nor an uptime monitor reaches the gateway: the CLI's live
+ * wait reads the row and sees it go `active` within a minute. Bounded,
+ * never throws (a sweep that fails is logged as `app.activate_failed`,
+ * trigger `scheduled`, and the next minute tries again). How many went
+ * live.
+ */
+export async function activateDeployingApps(
+  env: { GATEWAY_DEPLOYMENT_MODE?: string },
+  openRegistry: () => Pick<AppRegistry, "findByOrgApp">,
+): Promise<number> {
+  if (!platformPolicy(env).bindingActivation) return 0;
+  let binding: ListedAppRow[];
+  try {
+    binding = await AppRepository.findBinding(SCHEDULED_ACTIVATIONS_MAX);
+  } catch (error) {
+    logEvent(
+      "app.activate_failed",
+      {
+        trigger: "scheduled",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+    return 0;
+  }
+  if (binding.length === 0) return 0;
+  const activated = await activateBindingApps(env, openRegistry, binding, {
+    trigger: "scheduled",
+    max: SCHEDULED_ACTIVATIONS_MAX,
+  });
+  if (activated.size > 0) {
+    logEvent("app.activate_sweep", {
+      binding: binding.length,
+      activated: activated.size,
+    });
+  }
+  return activated.size;
 }
 
 // Per isolate: the version of each app this isolate last checked the

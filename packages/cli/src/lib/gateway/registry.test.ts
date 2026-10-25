@@ -722,17 +722,57 @@ describe("the live wait", () => {
     expect(app("todo")).toMatchObject({ status: "binding" });
   });
 
-  it("stops at Cloudflare Access in front, once TLS answers, and says it goes live on its first visit", async () => {
-    const id = await uploaded();
-    const behindAccess = gateway({
-      answer: () =>
-        new Response(null, {
-          status: 302,
-          headers: { location: "https://acme.cloudflareaccess.com/cdn-cgi/access/login/x" },
-        }),
+  const accessAnswer = () =>
+    new Response(null, {
+      status: 302,
+      headers: { location: "https://acme.cloudflareaccess.com/cdn-cgi/access/login/x" },
     });
 
-    await expect(wait(id, { fetch: behindAccess.fetch })).resolves.toMatchObject({ outcome: "first_visit" });
+  it("behind Cloudflare Access, sends nothing more and reads D1 until the Gateway's sweep makes it live", async () => {
+    const id = await uploaded();
+    const behindAccess = gateway({ answer: accessAnswer });
+    let sleeps = 0;
+
+    await expect(
+      wait(id, {
+        fetch: behindAccess.fetch,
+        sleep: async () => {
+          // The gateway's per-minute cron, two polls in.
+          sleeps += 1;
+          if (sleeps === 2) sqlite.sqlite.exec("UPDATE apps SET status = 'active' WHERE status = 'binding'");
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "live", waited: "live" });
+
+    expect(behindAccess.requests).toHaveLength(1);
+    expect(sleeps).toBe(2);
+    expect(app("todo")).toMatchObject({ status: "active" });
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "progress",
+        step: "app.live",
+        message: "Cloudflare Access answers before the Gateway; waiting for the Gateway to make todo live (it looks every minute)",
+        data: expect.objectContaining({ answered: true, access: true }),
+      }),
+    );
+  });
+
+  it("names the stall behind Access when the time runs out, with status to run, and leaves the app bound", async () => {
+    const id = await uploaded();
+    const behindAccess = gateway({ answer: accessAnswer });
+    let now = 0;
+
+    await expect(
+      wait(id, {
+        fetch: behindAccess.fetch,
+        maxWaitMs: 60_000,
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "first_visit" });
 
     expect(behindAccess.requests).toHaveLength(1);
     expect(app("todo")).toMatchObject({ status: "binding" });
@@ -740,7 +780,11 @@ describe("the live wait", () => {
       expect.objectContaining({
         type: "warning",
         code: "ACCESS_IN_FRONT",
-        message: expect.stringContaining("goes live on its first visit"),
+        step: "app.live",
+        message: expect.stringMatching(
+          /^Cloudflare Access answers before the Gateway, and the Gateway hasn't made todo live after 1m 00s\nThe deploy stalled: .*opening https:\/\/todo\.apps\.example\.com signed in through Access finishes it/,
+        ),
+        data: { hostname: `todo.${BASE}`, rerun: expect.stringMatching(/ status$/), rerunNote: "then deploy again" },
       }),
     );
   });

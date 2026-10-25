@@ -1229,6 +1229,11 @@ describe("the event bus (SQLite)", () => {
         unmet: ["OPENROUTER_API_KEY"],
       }),
       "app.ready": catalogue.appReady({ app }),
+      "app.live": catalogue.appLive({
+        app,
+        version: "v2",
+        trigger: "scheduled",
+      }),
       "app.paused_cap": catalogue.appPausedCap({ ...cap, calls: 1000 }),
       "app.tools_changed": catalogue.appToolsChanged({
         app,
@@ -1490,6 +1495,7 @@ describe("the event bus (SQLite)", () => {
         "CRM needs setup: OPENROUTER_API_KEY",
       );
       expect(line("app.ready")).toBe("CRM is ready");
+      expect(line("app.live")).toBe("CRM is live");
       expect(line("app.paused_cap")).toBe(
         "CRM is paused: monthly cap of 1,000 reached",
       );

@@ -871,18 +871,62 @@ describe("deploy", () => {
     });
   });
 
-  it("goes live on its first visit behind Cloudflare Access, and says so", async () => {
+  it("goes live behind Cloudflare Access from the Gateway's per-minute sweep, with no request of its own reaching it", async () => {
     worker.accessInFront.add("todo.example.com");
+    let polls = 0;
 
-    await expect(deploy()).resolves.toMatchObject({
-      live: false,
-      liveUrl: "https://todo.example.com",
-    });
+    await expect(
+      deploy(TODO, {
+        live: {
+          fetch: worker.fetch,
+          // The cron fires while the wait sleeps.
+          sleep: async () => {
+            polls += 1;
+            if (polls === 2) expect(worker.sweep()).toBe(1);
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ live: true, liveUrl: "https://todo.example.com" });
 
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+    expect(appRow("todo")).toMatchObject({ status: "active" });
+    expect(worker.requests.filter((url) => url.startsWith("https://todo.example.com/"))).toHaveLength(1);
+    expect(events.filter((event) => event["type"] === "warning" && event["step"] === "app.live")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "progress",
+        step: "app.live",
+        message: expect.stringMatching(/^Cloudflare Access answers before the Gateway; waiting for the Gateway/),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ step: "app.live", status: "ok", data: expect.objectContaining({ waited: "live" }) }),
+    );
+  });
+
+  it("stalls behind Cloudflare Access when the Gateway never makes it live, as a warning that names status", async () => {
+    worker.accessInFront.add("todo.example.com");
+    // A gateway whose sweep never reaches the Worker: nothing activates it.
+    let now = 0;
+    await expect(
+      deploy(TODO, {
+        live: {
+          fetch: worker.fetch,
+          maxWaitMs: 30_000,
+          now: () => now,
+          sleep: async (ms) => {
+            now += ms;
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ live: false, liveUrl: "https://todo.example.com" });
     expect(appRow("todo")).toMatchObject({ status: "binding" });
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "warning", code: "ACCESS_IN_FRONT" }),
+      expect.objectContaining({
+        type: "warning",
+        code: "ACCESS_IN_FRONT",
+        message: expect.stringContaining("The deploy stalled"),
+      }),
     );
     expect(events.some((event) => event["step"] === "app.live" && event["status"] === "ok")).toBe(false);
 

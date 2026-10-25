@@ -66,6 +66,7 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("organization", "organization.renamed", "The workspace was renamed"),
   entry("app", "app.installed", "An app was installed on the Gateway"),
   entry("app", "app.updated", "An app was redeployed"),
+  entry("app", "app.live", "An app went live on the Gateway"),
   entry("app", "app.removed", "An app was removed from the Gateway"),
   entry("app", "app.needs_setup", "An app needs a setting before it opens"),
   entry("app", "app.ready", "An app has every setting it needs"),

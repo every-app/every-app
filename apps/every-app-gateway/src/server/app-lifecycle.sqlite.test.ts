@@ -35,17 +35,22 @@ vi.mock("@/db", async () => {
 });
 
 import { generateKeyPairSync } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { UnroutableAppError } from "@every-app/perimeter";
 import {
   apps,
   appToolCatalogs,
   appTools,
+  events,
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
-import { activateApp, followAppVersion } from "@/server/app-activation";
+import {
+  activateApp,
+  activateDeployingApps,
+  followAppVersion,
+} from "@/server/app-activation";
 import { AppService } from "@/server/services/AppService";
 import { markAppDeployed, registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
@@ -206,6 +211,72 @@ describe("app lifecycle (SQLite)", () => {
     await db.update(apps).set({ status: "disabled" });
     await expect(activateApp(BOUND, uploaded)).resolves.toBe(false);
     await expect(lookup()).resolves.toMatchObject({ status: "disabled" });
+  });
+
+  it("goes live from the per-minute sweep without a visit, once, with one app.live event", async () => {
+    const registered = await register(acme);
+    await markAppDeployed(db, registered.app.id, {
+      versionId: "version-1",
+      manifest: TODO_MANIFEST,
+      actor: "ben@example.com",
+    });
+    // Another organization's app, still deploying, whose Worker this
+    // gateway version doesn't bind yet: left for the next minute.
+    const other = await registerApp(db, {
+      organizationId: globex,
+      appSlug: "notes",
+      name: "Notes",
+      description: "Notes",
+      manifest: { id: "notes" },
+      deployerUserId: acmeOwner,
+    });
+    await markAppDeployed(db, other.app.id, {
+      versionId: "version-1",
+      manifest: { id: "notes" },
+      actor: "ben@example.com",
+    });
+
+    const open = () => new DrizzleAppRegistry(db as never);
+    await expect(activateDeployingApps(BOUND, open)).resolves.toBe(1);
+    await settle();
+    await expect(lookup()).resolves.toMatchObject({ status: "active" });
+    expect(
+      (
+        await db
+          .select({ status: apps.status })
+          .from(apps)
+          .where(eq(apps.id, other.app.id))
+      )[0],
+    ).toMatchObject({ status: "binding" });
+
+    // The transition's one event (the tools snapshot announces its own).
+    const live = async () =>
+      (
+        await db
+          .select({ data: events.data, actor: events.actor })
+          .from(events)
+          .where(
+            and(eq(events.organizationId, acme), eq(events.type, "app.live")),
+          )
+      ).map((row) => ({
+        data: JSON.parse(row.data),
+        actor: JSON.parse(row.actor),
+      }));
+    expect(await live()).toEqual([
+      {
+        actor: { kind: "gateway" },
+        data: {
+          app: { id: "todo", rowId: registered.app.id, name: "Todo" },
+          version: "version-1",
+          trigger: "scheduled",
+        },
+      },
+    ]);
+
+    // The next minute finds nothing of acme's to do, and says nothing again.
+    await expect(activateDeployingApps(BOUND, open)).resolves.toBe(0);
+    await settle();
+    expect(await live()).toHaveLength(1);
   });
 
   it("snapshots an app's tools once it is activated, after the response", async () => {

@@ -220,7 +220,16 @@ async function update(id: string, data: UpdateApp) {
  * deleted, disabled or never uploaded in the meantime. Concurrent requests
  * may all activate it: an app already active answers true again.
  */
-async function activate(id: string, organizationId: string) {
+/**
+ * Make a `binding` app `active`: `activated` true when this call made it
+ * so, false when it was already (another isolate got there first), null
+ * when the row was deleted or disabled meanwhile. The row's name comes
+ * along for the event the caller announces once, on the transition.
+ */
+async function activate(
+  id: string,
+  organizationId: string,
+): Promise<{ activated: boolean; name: string } | null> {
   const rows = await db
     .update(apps)
     .set({ status: "active", updatedAt: new Date() })
@@ -228,11 +237,40 @@ async function activate(id: string, organizationId: string) {
       and(
         eq(apps.id, id),
         eq(apps.organizationId, organizationId),
-        inArray(apps.status, ["binding", "active"]),
+        eq(apps.status, "binding"),
       ),
     )
-    .returning({ id: apps.id });
-  return rows.length === 1;
+    .returning({ name: apps.name });
+  if (rows.length === 1) return { activated: true, name: rows[0]!.name };
+  const [row] = await db
+    .select({ status: apps.status, name: apps.name })
+    .from(apps)
+    .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
+  return row?.status === "active" ? { activated: false, name: row.name } : null;
+}
+
+/** How many `binding` rows one scheduled sweep looks at. */
+const BINDING_SWEEP_MAX = 50;
+
+/**
+ * The install's `binding` rows, every organization's, oldest change first:
+ * what the per-minute cron probes so a deploy finishes without a visit.
+ * The shape `activateBindingApps` takes.
+ */
+async function findBinding(limit = BINDING_SWEEP_MAX) {
+  const rows = await db
+    .select({
+      id: apps.id,
+      organizationId: apps.organizationId,
+      appId: apps.appSlug,
+      status: apps.status,
+      updatedAt: apps.updatedAt,
+    })
+    .from(apps)
+    .where(eq(apps.status, "binding"))
+    .orderBy(apps.updatedAt)
+    .limit(limit);
+  return rows.map(({ updatedAt: _updatedAt, ...row }) => row);
 }
 
 /**
@@ -366,5 +404,6 @@ export const AppRepository = {
   findAllWithoutAccess,
   update,
   activate,
+  findBinding,
   tombstone,
 } as const;

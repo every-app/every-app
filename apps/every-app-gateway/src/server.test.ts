@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   runMcpMaintenance: vi.fn(),
   sweep: vi.fn(),
   activateApp: vi.fn(),
+  activateDeployingApps: vi.fn(),
   followAppVersion: vi.fn(),
   refuseUnreadyApp: vi.fn(),
 }));
@@ -65,6 +66,7 @@ vi.mock("./server/toolbus/app-host-mcp", () => ({
 
 vi.mock("./server/app-activation", () => ({
   activateApp: mocks.activateApp,
+  activateDeployingApps: mocks.activateDeployingApps,
   followAppVersion: mocks.followAppVersion,
 }));
 
@@ -1260,6 +1262,7 @@ describe("scheduled", () => {
       skipped: 0,
     });
     mocks.runMcpMaintenance.mockReset().mockResolvedValue(undefined);
+    mocks.activateDeployingApps.mockReset().mockResolvedValue(0);
   });
 
   it("the hourly cron sweeps the event deliveries, then runs the MCP housekeeping with the cron's env", async () => {
@@ -1301,12 +1304,33 @@ describe("scheduled", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("the per-minute cron sweeps the event deliveries and nothing else", async () => {
+  it("the per-minute cron sweeps the event deliveries and the deploying apps, and nothing else", async () => {
+    const runtimeEnv = { GATEWAY_URL: "https://example.com", DB: {} };
     await server.scheduled(
       { cron: "* * * * *" } as ScheduledController,
-      { GATEWAY_URL: "https://example.com" } as unknown as Cloudflare.Env,
+      runtimeEnv as unknown as Cloudflare.Env,
     );
     expect(mocks.sweep).toHaveBeenCalledTimes(1);
+    expect(mocks.activateDeployingApps).toHaveBeenCalledTimes(1);
+    expect(mocks.activateDeployingApps.mock.calls[0]![0]).toBe(runtimeEnv);
+    // The registry it opens is the cron env's D1.
+    const open = mocks.activateDeployingApps.mock.calls[0]![1] as () => object;
+    expect(open()).toBeInstanceOf(Object);
     expect(mocks.runMcpMaintenance).not.toHaveBeenCalled();
+  });
+
+  it("the hourly cron sweeps the deploying apps too, for an install whose per-minute trigger was never published", async () => {
+    await server.scheduled(
+      { cron: "17 * * * *" } as ScheduledController,
+      {
+        GATEWAY_URL: "https://example.com",
+        DB: {},
+      } as unknown as Cloudflare.Env,
+    );
+    expect(mocks.activateDeployingApps).toHaveBeenCalledTimes(1);
+    expect(mocks.runMcpMaintenance).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.activateDeployingApps.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.runMcpMaintenance.mock.invocationCallOrder[0]!);
   });
 });

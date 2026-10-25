@@ -4,8 +4,11 @@
  * that has no certificate yet, or no Custom Domain, fails as fetch does),
  * an app hostname whose app is `binding` goes `active` on the first request
  * once the deployed gateway binds its Worker (as `handleGatewayRequest`
- * activates it), and a person can claim the owner setup link (as
- * SetupService.claimOwner does). It writes the same D1 the CLI reads.
+ * activates it), its per-minute cron does the same for every `binding`
+ * app without a request ({@link GatewayWorker.sweep}, as
+ * `activateDeployingApps` does), and a person can claim the owner setup
+ * link (as SetupService.claimOwner does). It writes the same D1 the CLI
+ * reads.
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { FakeCloudflare } from "./fakeCloudflare";
@@ -69,6 +72,24 @@ export class GatewayWorker {
     if (app["status"] === "active") return new Response("app", { status: 200 });
     return Response.json({ code: "app_deploying" }, { status: 503 });
   }) as typeof fetch;
+
+  /**
+   * What the gateway's per-minute cron does: every `binding` app whose
+   * Worker the deployed gateway binds goes `active`, visited or not. How
+   * many went live.
+   */
+  sweep(): number {
+    const bound = this.account.gatewayBindings();
+    let activated = 0;
+    for (const app of this.db.all("SELECT id, worker_name FROM apps WHERE status = 'binding'")) {
+      if (!bound.includes(String(app["worker_name"]))) continue;
+      this.db.sqlite
+        .prepare("UPDATE apps SET status = 'active' WHERE id = ? AND status = 'binding'")
+        .run(String(app["id"]));
+      activated += 1;
+    }
+    return activated;
+  }
 
   /**
    * What a person does on the gateway's /setup page with a setup link, as

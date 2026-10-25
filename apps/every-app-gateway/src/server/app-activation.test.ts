@@ -2,20 +2,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   activate: vi.fn(),
+  findBinding: vi.fn(),
+  emit: vi.fn(),
   scheduleCatalogResync: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ env: {}, waitUntil: () => undefined }));
 vi.mock("@/server/repositories/AppRepository", () => ({
-  AppRepository: { activate: mocks.activate },
+  AppRepository: { activate: mocks.activate, findBinding: mocks.findBinding },
 }));
+vi.mock("@/server/events/bus", () => ({ emit: mocks.emit }));
 vi.mock("@/server/toolbus/catalog-sync", () => ({
   scheduleCatalogResync: mocks.scheduleCatalogResync,
 }));
 
 import type { RegisteredApp } from "@every-app/perimeter";
 import { validateManifest } from "@every-app/perimeter/manifest";
-import { activateApp, activateBindingApps, probeApp } from "./app-activation";
+import {
+  activateApp,
+  activateBindingApps,
+  activateDeployingApps,
+  probeApp,
+} from "./app-activation";
 
 const TODO: RegisteredApp = {
   appId: "todo",
@@ -97,16 +105,29 @@ describe("probeApp", () => {
 describe("activateApp", () => {
   beforeEach(() => {
     mocks.activate.mockReset();
-    mocks.activate.mockResolvedValue(true);
+    mocks.activate.mockResolvedValue({ activated: true, name: "Todos" });
+    mocks.emit.mockReset().mockResolvedValue(undefined);
     mocks.scheduleCatalogResync.mockReset();
     vi.spyOn(console, "log").mockImplementation(() => undefined);
   });
 
-  it("marks the app active once this isolate reaches its Worker, and snapshots its tools", async () => {
+  it("marks the app active once this isolate reaches its Worker, announces it once, and snapshots its tools", async () => {
     const { env, fetch } = boundEnv("self_hosted");
     await expect(activateApp(env, TODO)).resolves.toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(mocks.activate).toHaveBeenCalledWith("row-1", "org-1");
+    expect(mocks.emit).toHaveBeenCalledExactlyOnceWith({
+      organizationId: "org-1",
+      actor: { kind: "gateway" },
+      type: "app.live",
+      version: 1,
+      data: {
+        app: { id: "todo", rowId: "row-1", name: "Todos" },
+        version: "version-1",
+        trigger: "request",
+      },
+      appRowId: "row-1",
+    });
     expect(mocks.scheduleCatalogResync).toHaveBeenCalledWith(
       {
         rowId: "row-1",
@@ -130,9 +151,36 @@ describe("activateApp", () => {
   });
 
   it("serves nothing when the row changed meanwhile (deleted or disabled)", async () => {
-    mocks.activate.mockResolvedValue(false);
+    mocks.activate.mockResolvedValue(null);
     await expect(activateApp(boundEnv("self_hosted").env, TODO)).resolves.toBe(
       false,
+    );
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it("serves an app another isolate activated first, without announcing it again", async () => {
+    mocks.activate.mockResolvedValue({ activated: false, name: "Todos" });
+    await expect(activateApp(boundEnv("self_hosted").env, TODO)).resolves.toBe(
+      true,
+    );
+    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(mocks.scheduleCatalogResync).toHaveBeenCalledOnce();
+  });
+
+  it("names the app as its row does, and says what made it live", async () => {
+    mocks.activate.mockResolvedValue({ activated: true, name: "My todos" });
+    const unversioned: RegisteredApp = { ...TODO, versionId: undefined };
+    await expect(
+      activateApp(boundEnv("self_hosted").env, unversioned, "scheduled"),
+    ).resolves.toBe(true);
+    expect(mocks.emit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "app.live",
+        data: {
+          app: { id: "todo", rowId: "row-1", name: "My todos" },
+          trigger: "scheduled",
+        },
+      }),
     );
   });
 
@@ -163,6 +211,7 @@ describe("activateApp", () => {
 describe("activateBindingApps", () => {
   beforeEach(() => {
     mocks.activate.mockReset();
+    mocks.emit.mockReset().mockResolvedValue(undefined);
     mocks.scheduleCatalogResync.mockReset();
   });
 
@@ -189,7 +238,7 @@ describe("activateBindingApps", () => {
   });
 
   it("activates the binding apps of a list this gateway reaches, and only those", async () => {
-    mocks.activate.mockResolvedValue(true);
+    mocks.activate.mockResolvedValue({ activated: true, name: "Todos" });
     const { env, fetch } = boundEnv("self_hosted");
     const found = registry(TODO, NOTES);
 
@@ -210,6 +259,13 @@ describe("activateBindingApps", () => {
     );
     expect(found.findByOrgApp).toHaveBeenCalledTimes(2);
     expect(found.findByOrgApp).not.toHaveBeenCalledWith("org-1", "wiki");
+    // The event says a list made it live.
+    expect(mocks.emit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "app.live",
+        data: expect.objectContaining({ trigger: "list" }),
+      }),
+    );
   });
 
   it("leaves an app the registry no longer says is binding, and one it can't find", async () => {
@@ -248,7 +304,7 @@ describe("activateBindingApps", () => {
   });
 
   it("probes at most five binding apps per read", async () => {
-    mocks.activate.mockResolvedValue(true);
+    mocks.activate.mockResolvedValue({ activated: true, name: "Todos" });
     const apps = Array.from({ length: 7 }, (_, index) => ({
       ...TODO,
       appId: `app-${index}`,
@@ -263,5 +319,99 @@ describe("activateBindingApps", () => {
     );
     expect(activated.size).toBe(5);
     expect(fetch).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("activateDeployingApps (the cron's sweep)", () => {
+  beforeEach(() => {
+    mocks.activate
+      .mockReset()
+      .mockResolvedValue({ activated: true, name: "Todos" });
+    mocks.findBinding.mockReset();
+    mocks.emit.mockReset().mockResolvedValue(undefined);
+    mocks.scheduleCatalogResync.mockReset();
+  });
+
+  const NOTES: RegisteredApp = {
+    ...TODO,
+    appId: "notes",
+    organizationId: "org-2",
+    hostname: "notes-globex.gateway.example.com",
+    workerName: "every-globex-notes",
+    rowId: "row-2",
+  };
+  const row = (app: RegisteredApp) => ({
+    id: app.rowId!,
+    organizationId: app.organizationId,
+    appId: app.appId,
+    status: app.status,
+  });
+  const registry = (...known: RegisteredApp[]) => ({
+    findByOrgApp: vi.fn(
+      async (organizationId: string, appId: string) =>
+        known.find(
+          (app) => app.organizationId === organizationId && app.appId === appId,
+        ) ?? null,
+    ),
+  });
+
+  it("makes every binding app of the install live that this gateway reaches, every organization's, and says the sweep did it", async () => {
+    mocks.findBinding.mockResolvedValue([row(TODO), row(NOTES)]);
+    const { env, fetch } = boundEnv("self_hosted");
+    Object.assign(env, { "APP__every-globex-notes": { fetch } });
+
+    await expect(
+      activateDeployingApps(env, () => registry(TODO, NOTES)),
+    ).resolves.toBe(2);
+
+    expect(mocks.findBinding).toHaveBeenCalledExactlyOnceWith(50);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.activate).toHaveBeenCalledWith("row-1", "org-1");
+    expect(mocks.activate).toHaveBeenCalledWith("row-2", "org-2");
+    expect(mocks.emit).toHaveBeenCalledTimes(2);
+    for (const call of mocks.emit.mock.calls) {
+      expect(call[0]).toMatchObject({
+        type: "app.live",
+        data: expect.objectContaining({ trigger: "scheduled" }),
+      });
+    }
+  });
+
+  it("leaves what it can't reach for the next minute, and opens no registry with nothing binding", async () => {
+    mocks.findBinding.mockResolvedValue([row(NOTES)]);
+    const { env } = boundEnv("self_hosted");
+    const open = vi.fn(() => registry(NOTES));
+    // Its binding isn't on this gateway version.
+    await expect(activateDeployingApps(env, open)).resolves.toBe(0);
+    expect(mocks.activate).not.toHaveBeenCalled();
+
+    mocks.findBinding.mockResolvedValue([]);
+    open.mockClear();
+    await expect(activateDeployingApps(env, open)).resolves.toBe(0);
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("never throws: a read that fails is logged, and a gateway that can't activate reads nothing", async () => {
+    mocks.findBinding.mockRejectedValue(new Error("D1 is down"));
+    const warnings = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const { env } = boundEnv("self_hosted");
+    await expect(
+      activateDeployingApps(env, () => registry(TODO)),
+    ).resolves.toBe(0);
+    expect(
+      warnings.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.includes("app.activate_failed")),
+    ).toHaveLength(1);
+
+    mocks.findBinding.mockReset();
+    await expect(
+      activateDeployingApps({ GATEWAY_DEPLOYMENT_MODE: undefined }, () =>
+        registry(TODO),
+      ),
+    ).resolves.toBe(0);
+    expect(mocks.findBinding).not.toHaveBeenCalled();
   });
 });

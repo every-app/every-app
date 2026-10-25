@@ -42,12 +42,15 @@
  * host can be identified again.
  *
  * Two cron triggers (cloudflare.config.ts): every minute, the event bus's
- * delivery sweep retries what is due (server/events/deliver.ts); hourly,
- * the sweep again and then the MCP housekeeping: audit retention, idle
- * connections, the OAuth storage sweep, event retention
+ * delivery sweep retries what is due (server/events/deliver.ts) and the
+ * deploy sweep makes every `binding` app live that this gateway reaches
+ * (server/app-activation.ts activateDeployingApps: what finishes a deploy
+ * behind Cloudflare Access, where no request of the CLI's reaches the
+ * gateway); hourly, both sweeps again and then the MCP housekeeping: audit
+ * retention, idle connections, the OAuth storage sweep, event retention
  * (server/mcp-auth/maintenance.ts). The hourly one sweeps too so a
  * gateway whose per-minute trigger was never published (an install that
- * predates it) still delivers.
+ * predates it) still delivers and still activates.
  */
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import {
@@ -68,7 +71,11 @@ import {
 import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
 import { createHostSessionAuthenticator } from "./perimeter/hostSessionAuthenticator";
-import { activateApp, followAppVersion } from "./server/app-activation";
+import {
+  activateApp,
+  activateDeployingApps,
+  followAppVersion,
+} from "./server/app-activation";
 import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import type { AppCallerProps } from "./server/app-gateway-entrypoint";
@@ -86,7 +93,7 @@ import { OrganizationRepository } from "./server/repositories/OrganizationReposi
 import { OrgAppSettingsRepository } from "./server/repositories/OrgAppSettingsRepository";
 import { UsageRepository } from "./server/repositories/UsageRepository";
 
-/** The per-minute trigger: the delivery sweep alone (cloudflare.config.ts). */
+/** The per-minute trigger: the two sweeps alone (cloudflare.config.ts). */
 const EVENTS_SWEEP_CRON = "* * * * *";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
@@ -533,6 +540,12 @@ export default {
         "error",
       );
     }
+    // Never throws: a deploy sweep that fails is logged inside and tried
+    // again next minute.
+    await activateDeployingApps(
+      runtimeEnv,
+      () => new DrizzleAppRegistry(runtimeEnv.DB),
+    );
     if (controller.cron === EVENTS_SWEEP_CRON) return;
     const { runMcpMaintenance } = await import("./server/mcp-auth/maintenance");
     await runMcpMaintenance(runtimeEnv);

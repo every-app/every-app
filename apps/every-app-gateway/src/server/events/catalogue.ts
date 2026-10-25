@@ -44,6 +44,9 @@ export type EventActor =
   | { kind: "operator"; id: string }
   | { kind: "gateway" };
 
+/** What made a `binding` app active: `app.live`'s `trigger`. */
+export type AppLiveTrigger = "request" | "list" | "scheduled";
+
 /** The app an event is about: the manifest id, the registry row, the name. */
 export interface EventApp {
   id: string;
@@ -375,6 +378,27 @@ export const catalogue = {
         app: app(input.app),
         version: input.version ?? undefined,
         previousVersion: input.previousVersion ?? undefined,
+      }),
+      { appRowId: input.app.rowId },
+    );
+  },
+
+  /**
+   * The Gateway reached the app's Worker and made it `active`: `trigger`
+   * says which request did it (one on the app's host, a list of the apps,
+   * or the per-minute sweep behind Cloudflare Access).
+   */
+  appLive(input: {
+    app: EventApp;
+    version?: string | null;
+    trigger: AppLiveTrigger;
+  }): BuiltEvent {
+    return built(
+      "app.live",
+      compact({
+        app: app(input.app),
+        version: input.version ?? undefined,
+        trigger: input.trigger,
       }),
       { appRowId: input.app.rowId },
     );
@@ -1216,6 +1240,8 @@ export function summarize(
       return str(d.version)
         ? `${appLabel(d.app)} was redeployed (version ${str(d.version)})`
         : `${appLabel(d.app)} was redeployed`;
+    case "app.live":
+      return `${appLabel(d.app)} is live`;
     case "app.removed":
       return `${appLabel(d.app)} was removed`;
     case "app.needs_setup": {

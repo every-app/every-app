@@ -16,7 +16,7 @@ export const deployCommand = buildCommand({
       "no-wait": {
         kind: "boolean",
         brief:
-          "Don't wait for the app to go live (a new hostname's certificate included); it goes live on its first visit",
+          "Don't wait for the app to go live (a new hostname's certificate included); the Gateway makes it live within a minute, or on its first visit",
         optional: true,
       },
       yes: {

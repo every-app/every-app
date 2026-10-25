@@ -8,13 +8,20 @@
  *
  * Until the hostname has its certificate (a new one usually within five
  * minutes) and the gateway version with the binding serves (seconds),
- * nothing answers or the gateway answers 503; the wait goes on. Two answers
- * end it early, without the app going live in this run, and say it goes
- * live on its first visit: Cloudflare Access in front of the gateway (the
- * gateway never sees this request; the Gateway's home page, which probes
- * a deploying app each time it lists it, counts as that visit too), and
- * running out of time with no certificate yet. Running out of time while the gateway answers is an
- * error: it can't reach the app.
+ * nothing answers or the gateway answers 503; the wait goes on.
+ *
+ * Behind Cloudflare Access the request never reaches the gateway: Access
+ * answers first, with a redirect to its login. The gateway's per-minute
+ * sweep makes the app live instead (it probes every `binding` app over
+ * its service binding; the launcher does the same each time it lists
+ * one), so from that answer on this step sends nothing more and only
+ * reads D1, which it can read through the Cloudflare API whatever stands
+ * in front of the gateway. Running out of time with no certificate yet
+ * ends the wait with a warning: it goes live on its first visit, once it
+ * has one. Running out of time while the gateway answers is an error: it
+ * can't reach the app. Running out of time behind Access is the same
+ * stall, as a warning (ACCESS_IN_FRONT) naming `status` and the visit
+ * that finishes it, since this run can't tell the two apart.
  *
  * The request resolves the hostname at its zone's nameservers, which serve
  * a new record at once, so it goes out with no pause first. An app that
@@ -62,8 +69,8 @@ const LEFT: Readonly<Record<LiveWaitVerb, string>> = {
 
 /**
  * `live`: the registry says active. `first_visit`: it will be once a person
- * opens it (Access in front, or no certificate yet). `disabled`: an admin
- * switched it off.
+ * opens it (no certificate yet, or stalled behind Access). `disabled`: an
+ * admin switched it off.
  */
 type LiveOutcome = "live" | "first_visit" | "disabled";
 
@@ -94,6 +101,8 @@ export async function waitForLive({
   const url = `https://${hostname}/`;
   const started = now();
   let answered = false;
+  /** Access answered the request: nothing of this run's reaches the gateway; the sweep makes it live. */
+  let accessInFront = false;
   let lastProgress: number | null = null;
   let waitedFor: Waited | undefined;
   const live = async () => {
@@ -123,21 +132,20 @@ export async function waitForLive({
       return { outcome: "disabled" };
     }
 
-    const answer = await probeHttps(url, fetchImpl);
-    if (answer.answered) {
-      answered = true;
-      if (answer.access) {
-        out.emit({
-          type: "warning",
-          code: "ACCESS_IN_FRONT",
-          step: STEP,
-          message: `Cloudflare Access answers before the Gateway, so this run can't confirm ${appId} is live\nIt goes live on its first visit: open https://${hostname}, or the Gateway's home page, signed in through Access.`,
-          data: { hostname },
-        });
-        return { outcome: "first_visit" };
+    if (!accessInFront) {
+      const answer = await probeHttps(url, fetchImpl);
+      if (answer.answered) {
+        answered = true;
+        if (answer.access) {
+          // Say so at once, then only read D1: the gateway's sweep does
+          // what this request would have.
+          accessInFront = true;
+          lastProgress = null;
+        } else if ((await appStatus(db, appRowId, appId)) === "active") {
+          // The request reached the gateway, which activates a bound app on it.
+          return live();
+        }
       }
-      // The request reached the gateway, which activates a bound app on it.
-      if ((await appStatus(db, appRowId, appId)) === "active") return live();
     }
 
     const waited = now() - started;
@@ -155,6 +163,16 @@ export async function waitForLive({
         });
         return { outcome: "first_visit" };
       }
+      if (accessInFront) {
+        out.emit({
+          type: "warning",
+          code: "ACCESS_IN_FRONT",
+          step: STEP,
+          message: `Cloudflare Access answers before the Gateway, and the Gateway hasn't made ${appId} live after ${elapsed(waited)}\nThe deploy stalled: the Gateway should have reached ${appId}'s Worker within a minute of the upload. ${appId} stays ${LEFT[verb]}; opening https://${hostname} signed in through Access finishes it when the Gateway can reach it.`,
+          data: { hostname, rerun: `${CLI} status`, rerunNote: `then ${verb} again` },
+        });
+        return { outcome: "first_visit" };
+      }
       throw new EveryAppError(
         "APP_NOT_LIVE",
         `${appId} isn't live after ${elapsed(waited)}: the Gateway can't reach its Worker yet\n${appId} stays ${LEFT[verb]}.`,
@@ -166,10 +184,12 @@ export async function waitForLive({
       out.emit({
         type: "progress",
         step: STEP,
-        message: answered
-          ? `Waiting for ${appId} to go live`
-          : `Waiting for the certificate for ${hostname} (usually under 5m)`,
-        data: { hostname, waitedMs: waited, answered },
+        message: accessInFront
+          ? `Cloudflare Access answers before the Gateway; waiting for the Gateway to make ${appId} live (it looks every minute)`
+          : answered
+            ? `Waiting for ${appId} to go live`
+            : `Waiting for the certificate for ${hostname} (usually under 5m)`,
+        data: { hostname, waitedMs: waited, answered, ...(accessInFront ? { access: true } : {}) },
       });
       lastProgress = now();
     }
