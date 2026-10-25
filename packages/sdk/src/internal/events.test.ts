@@ -12,6 +12,7 @@ import {
   eventTypeInfo,
   formatEventSignature,
   isAppOwnEventType,
+  isPrivateEventTargetName,
   parseEventSignature,
 } from "./events.js";
 
@@ -189,5 +190,38 @@ describe("the signature header", () => {
     expect(parseEventSignature("v1=abc")).toBeNull();
     expect(parseEventSignature("t=12")).toBeNull();
     expect(parseEventSignature(`t=x,v1=${"a".repeat(64)}`)).toBeNull();
+  });
+});
+
+describe("isPrivateEventTargetName", () => {
+  it("knows the local and private name classes, and a bare label", () => {
+    for (const host of [
+      "localhost",
+      "box.localhost",
+      "n8n.local",
+      "a.localdomain",
+      "hooks.internal",
+      "box.intranet",
+      "n8n.lan",
+      "hooks.acme.corp",
+      "x.private",
+      "printer.home.arpa",
+      "abc.onion",
+      "n8n",
+    ]) {
+      expect(isPrivateEventTargetName(host), host).toBe(true);
+    }
+  });
+
+  it("lets a public hostname through, even one that merely contains a suffix", () => {
+    for (const host of [
+      "hooks.example.com",
+      "corp.example.com",
+      "localhost.example.com",
+      "lan.example.org",
+      "my-internal-tools.example.com",
+    ]) {
+      expect(isPrivateEventTargetName(host), host).toBe(false);
+    }
   });
 });

@@ -4,6 +4,7 @@
 // clients until the Gateway has approvals.
 import { ToolError, defineTools } from "@every-app/sdk/server";
 import { z } from "zod";
+import { emitIfCompleted } from "@/server/events";
 import * as todos from "@/server/todos";
 
 export const tools = defineTools(
@@ -27,9 +28,15 @@ export const tools = defineTools(
       risk: "write",
       idempotent: true,
       input: todos.updateTodoInput,
-      handler: async (input, { user }) =>
-        (await todos.updateTodo(user.id, input)) ??
-        raise("No todo with that id"),
+      handler: async (input, { user, env, request, ctx }) => {
+        const todo = await todos.updateTodo(user.id, input);
+        emitIfCompleted(
+          { env, request, waitUntil: (promise) => ctx.waitUntil(promise) },
+          input,
+          todo,
+        );
+        return todo ?? raise("No todo with that id");
+      },
     },
     delete_todo: {
       description: "Delete one todo for good.",

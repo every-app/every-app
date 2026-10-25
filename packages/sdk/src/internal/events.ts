@@ -180,6 +180,39 @@ export const EVENT_HEADERS = {
 export const EVENTS_ALLOW_PRIVATE_TARGETS_SETTING =
   "EVENTS_ALLOW_PRIVATE_TARGETS";
 
+/**
+ * Name suffixes (and exact names) that mean a local or private machine: a
+ * webhook target under one is refused unless EVENTS_ALLOW_PRIVATE_TARGETS
+ * is "true". One list for the gateway (which checks a URL before every
+ * attempt) and the CLI (which checks it when `everyapp events add` writes
+ * the subscription), so the two never drift.
+ */
+export const EVENT_PRIVATE_NAME_SUFFIXES: readonly string[] = [
+  "localhost",
+  "local",
+  "localdomain",
+  "internal",
+  "intranet",
+  "lan",
+  "corp",
+  "private",
+  "home.arpa",
+  "onion",
+];
+
+/**
+ * Whether a normalized hostname (lowercase, no trailing dot) is a local or
+ * private name: one of {@link EVENT_PRIVATE_NAME_SUFFIXES}, a name under
+ * one (`n8n.lan`, `hooks.acme.corp`), or a bare label (`n8n`), which only
+ * a private resolver answers.
+ */
+export function isPrivateEventTargetName(host: string): boolean {
+  if (!host.includes(".")) return true;
+  return EVENT_PRIVATE_NAME_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+  );
+}
+
 /** The sinks a subscription delivers to. */
 export const EVENT_SINKS = ["webhook", "email"] as const;
 export type EventSink = (typeof EVENT_SINKS)[number];

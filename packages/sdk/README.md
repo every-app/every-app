@@ -486,6 +486,37 @@ tool call is refused (`integration_agent_not_allowed`). In local dev, with
 no binding, it answers the request's signed-in user alone, and no one for
 background work.
 
+### Events
+
+An app puts its own events on the gateway's event bus, for the
+organization's webhook and email subscribers
+(`docs/design/2026-10-events-out.md`). No manifest entry is needed: the
+gateway names the event `app.<app id>.<event>`, and owners and admins
+subscribe to `app.<app id>.*` (or one name) in Manage workspace, Events.
+
+```ts
+import { emit } from "@every-app/sdk/server";
+import { waitUntil } from "cloudflare:workers";
+
+waitUntil(
+  emit({ env, for: request, event: "invoice.paid", data: { invoiceId } }),
+);
+```
+
+`event` is lowercase dotted segments (`invoice.paid`), at most 64
+characters. `data` is a JSON object, at most 8 KiB and 8 levels deep, and
+goes as written to every URL a subscriber chose: never a credential, and a
+key named like one at any depth (`token`, `secret`, `password`, `apiKey`,
+`session`, `cookie`, ...) is refused. It answers `{ id, type }`, the
+event's id and its delivered type. A refusal throws `GatewayRefusalError`
+with its `code` (`event_name_invalid`, `event_data_invalid`,
+`event_data_refused`, `event_data_too_large`, `event_rate_limited` past 600
+an hour, ...) and a message to show; an emit that must never fail the work
+around it goes under `waitUntil` or a `.catch()`. In local dev, with no
+binding, the event is checked as the gateway would, printed as
+`[everyapp dev] event app.<id>.<event>` (never its data) and answered
+`{ id: "dev-<uuid>", type }`.
+
 ### Social networks' OAuth clients
 
 The gateway holds a client for each social network its operator set up
@@ -571,8 +602,8 @@ passes the Worker.
 
 ### Whom a call is for
 
-`createGatewayFetch`, `integrationFetch`, `sendEmail` and `listMembers` take `for`, which
-decides the organization the call is attributed to:
+`createGatewayFetch`, `integrationFetch`, `sendEmail`, `listMembers` and
+`emit` take `for`, which decides the organization the call is attributed to:
 
 - `for: request`, the inbound request: the identity the gateway put on it
   is forwarded, so the call is that person's, in their organization.

@@ -42,6 +42,7 @@ export {
 } from "./nodeServer.js";
 export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
 export { listMembers, type ListMembersOptions } from "./listMembers.js";
+export { emit, type EmitOptions } from "./emit.js";
 export type {
   ApiKeyCapabilityId,
   CapabilityId,
@@ -53,6 +54,7 @@ export type {
   ListMembersResult,
   OrganizationMember,
   OrganizationMemberRole,
+  EmitEventResult,
 } from "../internal/index.js";
 export {
   ToolError,
