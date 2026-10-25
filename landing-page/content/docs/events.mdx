@@ -1,0 +1,284 @@
+---
+title: Get notified when something happens
+description: Send what happens on your Gateway (someone joins, an app hits its cap, an AI call is blocked) to Slack, Zapier, n8n or your own code, or to your admins by email.
+---
+
+Your Gateway can tell other tools when something happens: someone joins, an app is installed, an app nears its monthly cap, an AI assistant's call is blocked. You pick the events and a web address, and the Gateway sends each one there as it happens, signed so the receiver can check it came from your Gateway. Slack, Zapier, n8n, Make or your own code can take it from there, and owners and admins can get the same events by email.
+
+## Add a webhook
+
+1. Open **Manage workspace** at the bottom of the sidebar, then the **Events** tab.
+2. Select **Add subscription**, choose **Webhook**, and paste the address that should receive the events.
+3. Tick the events you want, or **Everything**, and select **Add subscription**.
+
+Or, in your `every-app` folder:
+
+```bash
+pnpm everyapp events add https://hooks.example.com/everyapp --events 'cap.*,member.*'
+```
+
+The address has to start with `https://` and be reachable from the internet. The Gateway makes a signing secret for it and shows it once. Copy it if your receiver will [check the signature](#check-the-signature); a Slack workflow doesn't need it.
+
+`cap.*` means every cap event, `member.*` every member event. Leave `--events` out to send everything. Run `pnpm everyapp events test <id>` (or **Send test** in the row's menu) to send a test event.
+
+## Post to Slack, no app needed
+
+Slack's Workflow Builder can start a workflow from a webhook, on Slack's paid plans:
+
+1. In Slack, open **Workflow Builder**, create a workflow, and choose to start it **From a webhook** (older versions say **Starts with a webhook**).
+2. Add two variables, both text: `summary` and `type`.
+3. Add a **Send a message to a channel** step, pick the channel, and put the `{{summary}}` variable in the message.
+4. Publish it and copy the webhook address Slack gives you.
+5. Add that address as a webhook, above.
+
+Each event arrives as one line, like "crm is at 80% of its monthly cap (800 of 1,000)".
+
+A classic Slack incoming webhook (an address starting `https://hooks.slack.com/services/`) won't work directly: it only accepts a message in its own format. Put a relay in between:
+
+- **Zapier**: a Zap that starts with **Webhooks by Zapier**, **Catch Hook**, then **Slack**, **Send Channel Message** with the `summary` field.
+- **n8n**: a **Webhook** node, then a **Slack** node posting `{{ $json.body.summary }}`.
+- **Make**: a **Custom webhook**, then **Slack**, **Create a Message** with `summary`.
+
+Add the relay's address as the webhook.
+
+## Email alerts
+
+When you set a monthly cap on an app in **Usage**, owners and admins start getting an email when an app reaches 80% of its cap and when it reaches the cap. It shows as **Cap alerts** under **Events**; switch it off there if you don't want it.
+
+To email owners and admins about other events, select **Add subscription**, choose **Email**, and pick the events. Or:
+
+```bash
+pnpm everyapp events add --email admins --events 'member.*'
+```
+
+`admins` mails owners and admins; `owners` mails owners only. Each of them gets one email per event; if some can't be reached, the Gateway tries again for the rest. Email alerts need your Gateway to [send email](/docs/people#send-email).
+
+## Check the signature
+
+Every delivery has an `X-EveryApp-Signature` header like `t=1761383703,v1=5f0c…`. To check it, compute an HMAC-SHA256 of the timestamp, a dot and the exact body, with the subscription's secret, and compare it with `v1`. Refuse a timestamp more than five minutes from now, so an old delivery can't be replayed. Use the raw body as it arrived, before any JSON parsing.
+
+### Node.js
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createServer } from "node:http";
+
+const SECRET = process.env.EVERYAPP_WEBHOOK_SECRET;
+
+export function verifyEveryApp(
+  secret,
+  header,
+  rawBody,
+  now = Date.now() / 1000,
+) {
+  let timestamp = null;
+  const signatures = [];
+  for (const part of (header ?? "").split(",")) {
+    const [key, value = ""] = part.trim().split("=", 2);
+    if (key === "t" && /^\d+$/.test(value)) timestamp = Number(value);
+    if (key === "v1") signatures.push(Buffer.from(value, "hex"));
+  }
+  if (timestamp === null || signatures.length === 0) return false;
+  if (Math.abs(now - timestamp) > 300) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest();
+  return signatures.some(
+    (given) =>
+      given.length === expected.length && timingSafeEqual(given, expected),
+  );
+}
+
+createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks);
+    if (!verifyEveryApp(SECRET, req.headers["x-everyapp-signature"], body)) {
+      res.writeHead(400).end("bad signature");
+      return;
+    }
+    const event = JSON.parse(body.toString("utf8"));
+    console.log(event.type, event.id);
+    res.writeHead(200).end("ok");
+  });
+}).listen(Number(process.env.PORT ?? 3000));
+```
+
+### Python
+
+```python
+import hashlib
+import hmac
+import json
+import os
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+SECRET = os.environ["EVERYAPP_WEBHOOK_SECRET"]
+
+
+def verify_everyapp(secret, header, raw_body, now=None):
+    timestamp = None
+    signatures = []
+    for part in (header or "").split(","):
+        key, _, value = part.strip().partition("=")
+        if key == "t" and value.isascii() and value.isdigit():
+            timestamp = int(value)
+        elif key == "v1":
+            signatures.append(value.encode())
+    if timestamp is None or not signatures:
+        return False
+    if abs((now or time.time()) - timestamp) > 300:
+        return False
+    expected = hmac.new(
+        secret.encode(), f"{timestamp}.".encode() + raw_body, hashlib.sha256
+    ).hexdigest().encode()
+    return any(hmac.compare_digest(expected, given) for given in signatures)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if not verify_everyapp(SECRET, self.headers.get("X-EveryApp-Signature"), body):
+            self.send_response(400)
+            self.end_headers()
+            return
+        event = json.loads(body)
+        print(event["type"], event["id"])
+        self.send_response(200)
+        self.end_headers()
+
+
+HTTPServer(("", int(os.environ.get("PORT", "3000"))), Handler).serve_forever()
+```
+
+### Go
+
+```go
+package main
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func verifyEveryApp(secret, header string, body []byte, now time.Time) bool {
+	timestamp := int64(-1)
+	var signatures [][]byte
+	for _, part := range strings.Split(header, ",") {
+		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
+		switch key {
+		case "t":
+			if t, err := strconv.ParseInt(value, 10, 64); err == nil && t >= 0 {
+				timestamp = t
+			}
+		case "v1":
+			if sig, err := hex.DecodeString(value); err == nil {
+				signatures = append(signatures, sig)
+			}
+		}
+	}
+	if timestamp < 0 || len(signatures) == 0 {
+		return false
+	}
+	age := now.Unix() - timestamp
+	if age > 300 || age < -300 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(strconv.FormatInt(timestamp, 10) + "."))
+	mac.Write(body)
+	expected := mac.Sum(nil)
+	for _, sig := range signatures {
+		if hmac.Equal(sig, expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func main() {
+	secret := os.Getenv("EVERYAPP_WEBHOOK_SECRET")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil || !verifyEveryApp(secret, r.Header.Get("X-EveryApp-Signature"), body, time.Now()) {
+			http.Error(w, "bad signature", http.StatusBadRequest)
+			return
+		}
+		log.Println(r.Header.Get("X-EveryApp-Event"), r.Header.Get("X-EveryApp-Event-Id"))
+		w.WriteHeader(http.StatusOK)
+	})
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+```
+
+Answer with any 2xx within 10 seconds. The same event can arrive twice; skip one whose `id` you've already seen.
+
+## When the receiver is down
+
+A delivery that fails is tried again after 1 minute, 5 minutes, 30 minutes, 2 hours, 8 hours and 24 hours: seven tries over about 35 hours. After the last one it is marked **Dead**. A receiver that answers 410 Gone is marked Dead at once.
+
+Open **Events** and the subscription's **Deliveries** to see every try and what the receiver answered. Fix the receiver, then select **Redeliver** on a failed or dead delivery: it starts the seven tries over. Or:
+
+```bash
+pnpm everyapp events deliveries --dead
+pnpm everyapp events redeliver <delivery id>
+```
+
+Deliveries are kept for 30 days.
+
+## The events
+
+| Event                   | When                                              |
+| ----------------------- | ------------------------------------------------- |
+| `member.invited`        | Someone was invited to the workspace              |
+| `member.joined`         | Someone joined the workspace                      |
+| `member.role_changed`   | A member's role changed                           |
+| `member.deactivated`    | A member was deactivated                          |
+| `member.reactivated`    | A member was reactivated                          |
+| `member.removed`        | A member was removed                              |
+| `member.password_reset` | A member reset their password                     |
+| `app.installed`         | An app was installed on the Gateway               |
+| `app.updated`           | An app was redeployed                             |
+| `app.removed`           | An app was removed from the Gateway               |
+| `app.needs_setup`       | An app needs a setting before it opens            |
+| `app.ready`             | An app has every setting it needs                 |
+| `app.paused_cap`        | An app is paused: its monthly cap is reached      |
+| `app.tools_changed`     | An app's AI tools changed                         |
+| `cap.warning`           | An app is at 80% of its monthly cap               |
+| `cap.reached`           | An app reached its monthly cap                    |
+| `cap.raised`            | An app's monthly cap was raised or removed        |
+| `tool.blocked`          | An AI client's tool call was blocked              |
+| `tool.error`            | An AI client's tool call failed                   |
+| `connection.created`    | An AI app was connected                           |
+| `connection.revoked`    | An AI app connection was revoked                  |
+| `token.created`         | A personal access token was created               |
+| `token.revoked`         | A personal access token was revoked               |
+| `access.changed`        | Cloudflare Access was turned on or off            |
+| `mcp_app.added`         | An MCP app was added                              |
+| `mcp_app.removed`       | An MCP app was removed                            |
+| `mcp_app.enabled`       | An MCP app is being served again                  |
+| `mcp_app.disabled`      | An MCP app stopped being served                   |
+| `provider.added`        | An API provider was registered                    |
+| `provider.removed`      | An API provider was removed                       |
+| `ping`                  | A test event, sent to one subscription on request |
+
+Apps can send their own events too, named `app.<app id>.<name>`, like `app.crm.invoice.paid`. To get every event one app sends, subscribe to `app.crm.*`.
+
+An event never holds a password, a token, an invitation or reset link, what an AI assistant sent to a tool or got back, or the text of an email.
+
+For the full reference, with every field of every event, give your coding agent [Events](/docs/agent/events).

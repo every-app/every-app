@@ -18,7 +18,8 @@ protocol), errors (every code and its fix), troubleshooting (by symptom),
 status (the report, every line, and its fixes in order), manifest
 (everyapp.config.ts), identity (headers, token, env, SDK), secrets
 (secrets vs Gateway settings vs capabilities), dev (dev vs production),
-email, mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
+email, events (webhooks, email alerts, the signature, every event type,
+emit()), mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
 check refuses), providers (API providers: the catalog, registering one,
 a spec's fields), access (Cloudflare Access), workspace (the workspace from
 the terminal and from an AI client: every command and every tool), gateway
@@ -235,6 +236,13 @@ Manage:  pnpm everyapp workspace --help   the rest of Manage workspace from the
          ORG_AMBIGUOUS; scripts pass the slug or id). deactivate and remove keep
          the last owner who can act (LAST_OWNER); a ban is account-wide, so
          deactivate checks every organization the person owns.
+Events:  pnpm everyapp events add <url> --events 'cap.*,member.*' --json   sends
+         those Gateway events to a webhook (Slack workflow, Zapier, n8n), signed;
+         the generated secret is data.secret, shown once: hand it to the person,
+         never invent or echo one. --email admins mails owners and admins instead.
+         events list|test <id>|deliveries --dead|redeliver <id>; events types lists
+         types. An app emits its own with emit() (app.<id>.<name>), declaring
+         nothing. Everything: /docs/agent/events.
 Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.

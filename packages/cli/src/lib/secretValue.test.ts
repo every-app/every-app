@@ -150,6 +150,13 @@ describe("readSecretValue", () => {
     expect(await problems("EMAIL_PROVIDER", ["Resend", "sendgrid"])).toEqual([null, "Not cloudflare or resend."]);
     expect(await problems("BROWSER_APP_INSTALLS", ["off", "Off"])).toEqual([null, "Not on or off."]);
     expect(await problems("HOSTED_OPEN_SIGNUP", ["false", "no"])).toEqual([null, "Not true or false."]);
+    // The Gateway turns private event targets on for exactly "true" (server/events/target.ts).
+    expect(await problems("EVENTS_ALLOW_PRIVATE_TARGETS", ["true", "false", "True", "yes"])).toEqual([
+      null,
+      null,
+      "Not true or false.",
+      "Not true or false.",
+    ]);
     expect(await problems("CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN", ["everyone", "all"])).toEqual([
       null,
       "Not everyone.",

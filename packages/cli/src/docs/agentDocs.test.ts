@@ -31,6 +31,9 @@ import {
   SHARED_ENV,
   DEV_ENV,
   DEV_ISSUER,
+  EVENT_HEADERS,
+  EVENT_TYPES,
+  EVENTS_ALLOW_PRIVATE_TARGETS_SETTING,
 } from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
 import { commandPaths } from "@/app";
@@ -106,6 +109,7 @@ describe("the agent docs", () => {
       "secrets",
       "dev",
       "email",
+      "events",
       "mcp",
       "deploy",
       "providers",
@@ -438,6 +442,38 @@ describe("the command pages", () => {
     expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ", "anthropic/alwaysLoad", "client_info", "client_name", "Mcp-Session-Id", "describeClient", "clientOfSession"]);
     expectDocumented("mcp", BUILTINS_WHAT, BUILTIN_TOOLS);
   });
+  it("events.md documents every event type, flag, header, code and the app-emit refusals", () => {
+    expectDocumented("events", "the event types (EVENT_TYPES in packages/sdk/src/internal/events.ts)", EVENT_TYPES.map((info) => info.type));
+    // Section 8's flags must be in the walk, so a missing or renamed `events` group fails here rather than documenting nothing.
+    expect(flagsOf("events")).toEqual(expect.arrayContaining(["--events", "--email", "--secret-from-env", "--no-wait", "--dead"]));
+    expectDocumented("events", "the flags of everyapp events", flagsOf("events"));
+    expectDocumented("events", "the delivery headers (EVENT_HEADERS)", Object.values(EVENT_HEADERS));
+    expectDocumented("events", "the setting, the SDK call and the app event pattern", [EVENTS_ALLOW_PRIVATE_TARGETS_SETTING, "emit", "app.<id>.<name>"]);
+    expectDocumented("events", "the error codes of everyapp events", [
+      "EVENT_TARGET_REFUSED",
+      "EVENT_SUBSCRIPTIONS_LIMIT",
+      "EVENT_SUBSCRIPTION_NOT_FOUND",
+      "EVENT_DELIVERY_NOT_FOUND",
+      "EVENT_TYPE_UNKNOWN",
+      "EVENT_SECRET_INVALID",
+      "EVENT_SINK_CONFLICT",
+      "EVENT_TEST_TIMEOUT",
+    ]);
+    expectDocumented("events", "the refusals of an app's emit", [
+      "event_name_invalid",
+      "event_data_invalid",
+      "event_data_too_large",
+      "event_data_refused",
+      "event_rate_limited",
+    ]);
+  });
+  it("the user page /docs/events lists every event type", () => {
+    // The person's page carries the catalogue too, so a new type fails here until it is listed there as well.
+    const userPage = readFileSync(fileURLToPath(new URL("../docs/events.mdx", AGENT_DOCS_DIR)), "utf8");
+    const missing = missingFrom(userPage, EVENT_TYPES.map((info) => info.type));
+    expect(missing, `landing-page/content/docs/events.mdx doesn't list these event types in its table: ${missing.join(", ")}`).toEqual([]);
+  });
+
   it("workspace.md documents every workspace command, its flags and every workspace tool", () => {
     const commands = commandPaths().filter(
       (path) => path.startsWith("workspace ") && !commandPaths().some((other) => other.startsWith(`${path} `)),

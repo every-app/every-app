@@ -836,6 +836,36 @@ In local dev (`everyapp dev`, no binding) there is no directory:
 `listMembers()` answers the request's signed-in user alone, and no one for
 background work.
 
+## Gateway services: events
+
+Events are a service the gateway performs itself, and not a capability: an
+app lists nothing in its manifest to emit them, the way it lists nothing
+to log. It calls `emit()` from `@every-app/sdk/server` with a name and a
+JSON object, and the gateway delivers it as `app.<id>.<name>` to the
+organization's subscriptions that match (signed webhooks, or email to
+owners and admins), beside the gateway's own events (a member joined, a
+cap was reached, an agent's tool call was blocked).
+
+```ts
+import { emit } from "@every-app/sdk/server";
+
+await emit({
+  env,
+  for: request, // or { background: true, organizationId }
+  event: "invoice.paid", // delivered as app.<id>.invoice.paid
+  data: { invoiceId: "inv_42", total: 1200 },
+});
+```
+
+The call is attributed like any gateway call (`POST /api/events/emit` over
+the `EVERY_APP_GATEWAY` binding). `data` is at most 8 KiB, and a key named
+like a credential (`token`, `secret`, `password`, `session`, ...) is
+refused, so an event can't carry one by accident; 600 emits per app per
+hour. Emits are not provider calls: not counted in usage, not capped. The
+agent docs page is
+[/docs/agent/events](https://everyapp.com/docs/agent/events); the design is
+[docs/design/2026-10-events-out.md](design/2026-10-events-out.md).
+
 ## MCP apps
 
 An MCP app (a provider app in the code) offers an `api_key` provider's data

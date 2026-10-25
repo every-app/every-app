@@ -159,7 +159,7 @@ function isTeamDomain(value: string): boolean {
  * reads it (apps/every-app-gateway/src: cloudflare-access/config.ts,
  * oauth-flag.ts, platform-policy.ts, deploy/browser-install.ts,
  * mcp-auth/maintenance.ts, toolbus/gateway-mcp.ts, ai-proxy.ts,
- * server/app-hosts.ts). A name left out is a plain setting that takes
+ * server/app-hosts.ts, server/events/target.ts). A name left out is a plain setting that takes
  * anything.
  */
 const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], PlainSetting>> = {
@@ -252,6 +252,10 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
   BROWSER_APP_INSTALLS: {
     takes: "on or off, in lowercase; off turns browser app installs off",
     check: oneOf(["on", "off"], { exact: true }),
+  },
+  EVENTS_ALLOW_PRIVATE_TARGETS: {
+    takes: "true or false, in lowercase; true lets event webhooks reach http: URLs and private host names",
+    check: oneOf(["true", "false"], { exact: true }),
   },
   DISPATCH_NAMESPACE: {
     takes: "the Workers for Platforms namespace third-party Workers go into (hosted Gateway only)",

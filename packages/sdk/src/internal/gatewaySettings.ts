@@ -166,6 +166,7 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",
+  "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const satisfies readonly SettableGatewaySetting[];
 
 const PLAIN: ReadonlySet<string> = new Set(PLAIN_GATEWAY_SETTINGS);

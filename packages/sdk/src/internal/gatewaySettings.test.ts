@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "./aiProviders";
 import { CAPABILITIES, capabilitySettings } from "./capabilities";
+import { EVENTS_ALLOW_PRIVATE_TARGETS_SETTING } from "./events";
 import {
   gatewaySettingOwner,
   HOSTED_ONLY_GATEWAY_SETTINGS,
@@ -98,6 +99,7 @@ describe("gatewaySettingOwner", () => {
       "MCP_OAUTH_ENABLED",
       "CLOUDFLARE_ACCESS_AUD",
       "HOSTED_OPEN_SIGNUP",
+      "EVENTS_ALLOW_PRIVATE_TARGETS",
     ]) {
       expect(gatewaySettingOwner(name), name).toBeNull();
     }
@@ -117,6 +119,13 @@ describe("plain and hosted-only settings", () => {
     expect(isPlainGatewaySetting("OPENAI_API_KEY")).toBe(false);
     expect(isPlainGatewaySetting("LINKEDIN_CLIENT_SECRET")).toBe(false);
     expect(isPlainGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
+    // The event bus's switch is set with `everyapp secret set` and shown as typed.
+    expect(isSettableGatewaySetting(EVENTS_ALLOW_PRIVATE_TARGETS_SETTING)).toBe(
+      true,
+    );
+    expect(isPlainGatewaySetting(EVENTS_ALLOW_PRIVATE_TARGETS_SETTING)).toBe(
+      true,
+    );
     expect(isHostedOnlyGatewaySetting("THIRD_PARTY_DOMAIN")).toBe(true);
     // The browser deployer's token serves self-hosted installs too.
     expect(isHostedOnlyGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
