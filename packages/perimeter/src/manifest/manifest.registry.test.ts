@@ -129,6 +129,29 @@ describe("the strict validator and the provider registry", () => {
     }
   });
 
+  it("refuses an app secret a registered provider holds, in the words it refuses a catalog key in", () => {
+    expect(() =>
+      validateManifestStrict(
+        { id: "shop", secrets: ["STRIPE_API_KEY"] },
+        { capabilities: registry },
+      ),
+    ).toThrow(
+      "Invalid everyapp.config: secrets.0: STRIPE_API_KEY is a Gateway setting, which `everyapp secret set STRIPE_API_KEY` sets on the Gateway for every app; list `stripe` under capabilities instead",
+    );
+    // Without the registry the name is the app's to hold.
+    expect(
+      validateManifestStrict({ id: "shop", secrets: ["STRIPE_API_KEY"] })
+        .secrets,
+    ).toEqual(["STRIPE_API_KEY"]);
+    // A catalog key is refused as before, with or without it.
+    expect(() =>
+      validateManifestStrict(
+        { id: "shop", secrets: [{ name: "openai_api_key" }] },
+        { capabilities: registry },
+      ),
+    ).toThrow(/list `openai` under providers instead/);
+  });
+
   it("builds an entry schema only for a capability the lookup has", () => {
     expect(() => capabilityEntrySchema("stripe")).toThrow(/not a capability/);
     expect(() => capabilityEntrySchema("openrouter")).toThrow(

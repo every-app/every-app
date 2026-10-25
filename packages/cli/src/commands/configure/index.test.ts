@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { CancelledError } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
+import { readInstall } from "@/lib/gateway/install";
+import { addProvider } from "@/lib/gateway/providers";
 import { readApp } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -273,13 +275,14 @@ describe("configure at a terminal", () => {
     ]);
     // Required first (manifest order), then the group's chosen member, never a set one twice.
     expect(run.prompter.asked).toEqual(["DATAFORSEO_API_KEY", "TOKEN_ENCRYPTION_KEY", "OPENROUTER_API_KEY"]);
-    // The first prompt carries why, where to get it and the guide; a hidden prompt for a credential.
+    // The first prompt carries why, what the key is, where to get it and the guide; a hidden prompt for a credential.
     expect(run.prompter.questions[0]).toEqual({
       kind: "secret",
       question: "DATAFORSEO_API_KEY",
       optional: false,
       context: [
         "DataForSEO: Keyword data for research.",
+        "The API login and password from API Access, as login:password (or that pair base64-encoded); the Gateway sends them as HTTP Basic. login:password, or its base64; never the dashboard sign-in password.",
         "Get it at https://app.dataforseo.com/api-access",
         "Guide: .claude/skills/everyapp/setup/dataforseo.md",
       ],
@@ -743,6 +746,38 @@ describe("configure from a script", () => {
         next: [{ command: "pnpm everyapp deploy", note: "then pnpm everyapp configure crm for TOKEN_ENCRYPTION_KEY and GITHUB_TOKEN" }],
       },
     });
+  });
+
+  it("sets a registered provider's key on the Gateway and binds it to the row's hosts", async () => {
+    const stripe = {
+      id: "stripe",
+      name: "Stripe",
+      docs: "https://dashboard.stripe.com/apikeys",
+      hosts: ["api.stripe.com"],
+      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+      hint: "A restricted key from the Stripe dashboard.",
+    };
+    await addProvider(db(), { spec: stripe, actor: "ops@example.com", install: (await readInstall(db()))! });
+    const shop: EveryAppCliManifest = { id: "shop", resources: { d1: ["DB"] }, capabilities: { stripe: { access: "read" } } };
+    await deploy(appDir(shop), shop);
+
+    // At a terminal, the prompt says what the key is and where the spec is.
+    const asked = configureAt(emptyDir(), { values: { STRIPE_API_KEY: "sk_test" } }, { appId: "shop" });
+    await asked;
+    expect(asked.prompter.questions[0]).toMatchObject({
+      kind: "secret",
+      question: "STRIPE_API_KEY",
+      context: [
+        "Stripe: STRIPE_API_KEY",
+        "A restricted key from the Stripe dashboard.",
+        "Get it at https://dashboard.stripe.com/apikeys",
+        "Guide: pnpm everyapp provider show stripe",
+      ],
+    });
+    expect(gateway().secrets["STRIPE_API_KEY"]).toBe("sk_test");
+    const [row] = (await db().run([{ sql: "SELECT bound_to FROM providers WHERE id = 'stripe'" }]))[0]!;
+    expect(row!["bound_to"]).toEqual(expect.stringContaining('"hosts":["api.stripe.com"]'));
+    expect(done()).toMatchObject({ message: "Set STRIPE_API_KEY. shop is ready", data: { changed: { gateway: { bound: ["stripe"] } } } });
   });
 });
 

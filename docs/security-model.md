@@ -298,7 +298,7 @@ in the gateway's Cloudflare account **is** operator authority.
   unknown status as disabled; a row whose `tier` isn't `service_binding` or
   `dispatch`, or whose `scope` isn't `org` or `shared`, is never routed (a
   503 on its host), never read as another tier or scope. An MCP app's (tier `provider`)
-  row (`everyapp provider on`: tier `provider`, no hostname, no Worker) is
+  row (`everyapp mcp on`: tier `provider`, no hostname, no Worker) is
   left out of that lookup altogether: the gateway serves its tools itself on
   `/mcp` (docs/threat-model.md B5, `toolbus.provider-app-in-process`). A
   hand-written row that breaks a rule is the operator's doing, as a
@@ -435,7 +435,9 @@ in the gateway's Cloudflare account **is** operator authority.
   AppGateway binding, `docs/capabilities.md`) puts a key the gateway holds
   on calls only for an app whose registry row's manifest lists the
   capability, only to that provider's own https hosts, with no redirect
-  followed, and only with the methods the provider reads with. The key is
+  followed, and only with the methods the provider reads with (or writes
+  with, for an entry that asks for `access: "write"` on a provider that
+  offers it; an agent's identity needs `mcp:write` for those). The key is
   shared by every app in every organization, so paths that list or describe
   the whole provider account (DataForSEO's `tasks_ready`, `tasks_fixed`, `id_list`,
   `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused.
@@ -447,6 +449,25 @@ in the gateway's Cloudflare account **is** operator authority.
   forwards when it verifies for the app's organization, otherwise to the
   app; a shared app's calls follow the attribution rule under
   "Organizations and Shared Apps".
+- The providers come from a registry: the built-in catalog
+  (`packages/sdk/src/internal/capabilities.ts`), then the API-key providers
+  an operator registered on this gateway as rows of its D1 `providers`
+  table (`everyapp provider add`, under the Cloudflare login, ADR-0003; the
+  gateway only reads the table, and no MCP tool writes it yet). A row is a
+  new host to send a secret to, so what a row may say is checked when it is
+  written and again every time the gateway reads it
+  (`packages/sdk/src/internal/providerRegistry.ts`,
+  `apps/every-app-gateway/src/server/providers/index.ts`): every setting it
+  names starts with its own id and is nobody else's (never the gateway's
+  signing material, a catalog provider's key or another row's), its hosts
+  are public DNS names the gateway doesn't serve itself, it never takes a
+  catalog id, and its key is read only while the row has the hosts and auth
+  it had when `everyapp secret set` set it, so rewriting a row never moves a
+  key the operator set. A row that fails is left out and logged
+  `provider.row_invalid`. A row is gateway-wide like every key here, so a
+  provider whose data is a whole account (`data: "account"`) is refused on
+  a hosted gateway. The register's `providers.*` rows (docs/threat-model.md
+  B4) are these rules.
 - Social networks' OAuth clients (`oauth_client` capabilities,
   `server/capabilities/oauthClient.ts`) are the operator's, one per network
   for every organization. The gateway completes only each network's token

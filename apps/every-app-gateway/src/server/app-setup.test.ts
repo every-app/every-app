@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 
+import { BUILTIN_PROVIDERS } from "@every-app/sdk/internal";
 import {
   appIsReady,
   appSetupFor,
@@ -56,7 +57,12 @@ function deps(
   settings: Record<string, unknown>,
   emailConfigured = false,
 ): AppSetupDeps {
-  return { settings, emailConfigured: async () => emailConfigured };
+  return {
+    settings,
+    emailConfigured: async () => emailConfigured,
+    // The catalog alone: the registered rows have their own test (server/providers).
+    providers: async () => BUILTIN_PROVIDERS,
+  };
 }
 
 describe("appSetupFor", () => {

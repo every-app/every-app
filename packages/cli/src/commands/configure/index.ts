@@ -39,11 +39,14 @@ import {
   type AppSettingsReport,
   type AppSetup,
   type EvaluatedSetting,
+  type ProviderRegistry,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import {
   appSetupFrom,
+  boundGatewayNames,
   describeUnmet,
+  guideLine,
   listAppSecretNames,
   listGatewaySecretNames,
   namesToSet,
@@ -54,6 +57,7 @@ import {
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
+import { gatewayRegistry } from "@/lib/gateway/providers";
 import { findRegisteredApp } from "@/lib/gateway/registry";
 import { recordSetupStateQuietly, refreshSetupStates } from "@/lib/gateway/setupState";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
@@ -79,9 +83,6 @@ import {
   type Applied,
   type SecretsManifest,
 } from "../secret";
-
-/** Where the everyapp skill's setup guides live in an app that has the skill. */
-const SKILL_DIR = ".claude/skills/everyapp";
 
 export interface ConfigureFlags extends GatewayCommandFlags {
   /** Each unset setting's value from the environment variable of its name. */
@@ -152,6 +153,8 @@ interface Target {
   /** The app's Worker and registry row; null before its first deploy. */
   deployed: { workerName: string; rowId: string } | null;
   connection: Awaited<ReturnType<typeof connectToGateway>>;
+  /** The catalog and the Gateway's registered providers, which the manifest's capabilities are read against. */
+  registry: ProviderRegistry;
 }
 
 /** What the app needs and what is set, as the settings model reads it now. */
@@ -208,7 +211,15 @@ export async function configureApp(options: ConfigureOptions): Promise<void> {
     throw valueRequired(target, before, plan);
   }
   const applied = names.length > 0 ? await applyChanges(target, changes, options) : null;
-  const after = applied ? await readState(target) : before;
+  // A registered provider's key set here is bound now: read the rows again.
+  const after = applied
+    ? await readState({
+        ...target,
+        registry: applied.gateway?.bound?.length
+          ? await gatewayRegistry(target.connection.db, target.connection.install)
+          : target.registry,
+      })
+    : before;
   // The app's state on its row, with app.needs_setup or app.ready on a
   // change, never failing the run: from what was just read when the
   // manifest is the deployed one; from the deployed one, as the Gateway
@@ -316,6 +327,7 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
       source: ManifestSource.Registry,
       deployed: { workerName: found.workerName, rowId: found.id },
       connection,
+      registry: await gatewayRegistry(connection.db, connection.install),
     };
   }
   const local = await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
@@ -334,15 +346,26 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
     source: ManifestSource.Directory,
     deployed: found && found.status !== "pending" ? { workerName: found.workerName, rowId: found.id } : null,
     connection,
+    registry: await gatewayRegistry(connection.db, connection.install),
   };
 }
 
-/** The manifest's settings against what the Gateway Worker and the app's own hold now. */
+/**
+ * The manifest's settings against what the Gateway Worker and the app's
+ * own hold now, a registered provider's key counting once it is bound to
+ * its row's hosts (as the Gateway reads it).
+ */
 async function readState(target: Target): Promise<State> {
   const { cf } = target.connection;
-  const gatewayNames = await listGatewaySecretNames(cf);
+  const gatewayNames = boundGatewayNames(await listGatewaySecretNames(cf), target.registry);
   const secretNames = target.deployed ? await listAppSecretNames(cf, target.deployed.workerName) : null;
-  const { report, setup } = appSetupFrom({ manifest: target.manifest, appId: target.appId, gatewayNames, secretNames });
+  const { report, setup } = appSetupFrom({
+    manifest: target.manifest,
+    appId: target.appId,
+    gatewayNames,
+    secretNames,
+    lookup: target.registry,
+  });
   const held = new Set<string>();
   for (const setting of report.settings) {
     const names = setting.holder === "gateway" ? gatewayNames : (secretNames ?? []);
@@ -605,12 +628,9 @@ async function askValue(
   prompter: Prompter,
   { optional, context }: { optional: boolean; context: boolean },
 ): Promise<string> {
+  const guide = guideLine(setting);
   const lines = context
-    ? [
-        ...describeUnmet(setting),
-        ...(setting.setup ? [`Guide: ${SKILL_DIR}/${setting.setup}`] : []),
-        ...plainContext(name),
-      ]
+    ? [...describeUnmet(setting), ...(guide ? [guide] : []), ...plainContext(name)]
     : plainContext(name);
   const question = optional ? `${name} (Enter to skip)` : name;
   const value = isPlainGatewaySetting(name)

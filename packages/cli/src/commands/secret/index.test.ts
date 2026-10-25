@@ -10,11 +10,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { isHostedOnlyGatewaySetting, SETTABLE_GATEWAY_SETTINGS } from "@every-app/sdk/internal";
+import {
+  isHostedOnlyGatewaySetting,
+  parseProviderSpec,
+  providerBindingKey,
+  SETTABLE_GATEWAY_SETTINGS,
+} from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
+import { addProvider, removeProvider } from "@/lib/gateway/providers";
 import { readApp, register } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -77,6 +83,14 @@ const VALUES: Record<string, string> = {
   EMAIL_FROM: "hello@example.com",
   TOKEN_ENCRYPTION_KEY: "tek",
 };
+
+/** What each provider's entry says its key is (its `hint`), as the unmet settings show it. */
+const DATAFORSEO_HINT =
+  "The API login and password from API Access, as login:password (or that pair base64-encoded); the Gateway sends them as HTTP Basic. login:password, or its base64; never the dashboard sign-in password.";
+const OPENAI_HINT =
+  "A secret key from the API keys page; the Gateway puts it on every call as a bearer token.";
+const OPENROUTER_HINT =
+  "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.";
 
 let account: FakeCloudflare;
 let worker: GatewayWorker;
@@ -323,13 +337,22 @@ describe("secret set refuses a name that goes nowhere, before a value is read", 
 
   it("refuses a name the app's manifest doesn't list, showing the line to add", async () => {
     const dir = appDir(TODO);
+    const versions = gatewayWorker().versions.length;
     await expect(set(dir, "SENDGRID_KEY")).rejects.toMatchObject({
       code: "SECRET_NOT_DECLARED",
       message: "todo doesn't list SENDGRID_KEY as a secret\nIt isn't a Gateway setting either.",
       fix: 'add it to secrets in everyapp.config.ts: secrets: ["GITHUB_TOKEN", "STRIPE_KEY", "SENDGRID_KEY"],',
       rerun: "pnpm everyapp secret set SENDGRID_KEY",
     });
+    // A provider registered on the Gateway might hold the name, so its rows
+    // are read first; nothing is asked for or changed.
     expect(read).not.toHaveBeenCalled();
+    expect(gatewayWorker().versions).toHaveLength(versions);
+  });
+
+  it("refuses a name no registered provider could hold without reaching the Gateway", async () => {
+    await expect(set(appDir(TODO), "lowercase_name")).rejects.toMatchObject({ code: "SECRET_NOT_DECLARED" });
+    await expect(set(appDir(TODO), "EVERY_APP_ORG_ID")).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
     expect(createCf).not.toHaveBeenCalled();
   });
 
@@ -609,6 +632,103 @@ describe("secret set --app", () => {
   });
 });
 
+describe("a registered provider's key", () => {
+  /** A provider registered on the Gateway (`everyapp provider add`). */
+  const STRIPE = {
+    id: "stripe",
+    name: "Stripe",
+    docs: "https://dashboard.stripe.com/apikeys",
+    hosts: ["api.stripe.com"],
+    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  };
+  /** An app that lists it. */
+  const SHOP: EveryAppCliManifest = {
+    id: "shop",
+    resources: { d1: ["DB"] },
+    capabilities: { stripe: { access: "read", why: "Shows the last charges." } },
+  };
+  const register = async (spec: Record<string, unknown> = STRIPE, replace = false) =>
+    addProvider(db(), { spec, actor: "ops@example.com", replace, install: (await readInstall(db()))! });
+  const row = async () =>
+    (await db().run([{ sql: "SELECT added_at, bound_to, bound_at FROM providers WHERE id = 'stripe'" }]))[0]![0]!;
+  const keyOf = (spec: Record<string, unknown>) => {
+    const parsed = parseProviderSpec(spec);
+    if (!parsed.ok) throw new Error("the spec parses");
+    return providerBindingKey(parsed.capability);
+  };
+
+  beforeEach(() => {
+    VALUES["STRIPE_API_KEY"] = "sk_test";
+  });
+
+  it("goes to the Gateway from anywhere, says who registered the row and where the key goes before asking, then binds the row", async () => {
+    await register();
+    // What had been said when the value was asked for.
+    const saidBefore: unknown[] = [];
+    read.mockImplementationOnce(async (name: string) => {
+      saidBefore.push(...events.filter((event) => event["step"] === "secrets.provider"));
+      return VALUES[name]!;
+    });
+    await set(emptyDir(), "STRIPE_API_KEY");
+
+    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBe("sk_test");
+    const day = new Date(Number((await row())["added_at"])).toISOString().slice(0, 10);
+    expect(saidBefore).toEqual([
+      expect.objectContaining({
+        type: "step",
+        status: "ok",
+        message: `STRIPE_API_KEY is Stripe's, registered by ops@example.com on ${day}; the key is sent to api.stripe.com.`,
+        data: expect.objectContaining({ name: "STRIPE_API_KEY", provider: "stripe", hosts: ["api.stripe.com"] }),
+      }),
+    ]);
+    // Bound to the hosts and auth the row has now: the Gateway reads the key.
+    expect(await row()).toMatchObject({ bound_to: keyOf(STRIPE), bound_at: expect.any(Number) });
+    expect(done()).toMatchObject({
+      message: "Set STRIPE_API_KEY on the Gateway",
+      data: { gateway: { names: ["STRIPE_API_KEY"], bound: ["stripe"] } },
+    });
+    expect(progress("secrets.bind")).toEqual(["Bound stripe's key to the hosts its row names"]);
+  });
+
+  it("goes to the Gateway from the directory of an app that lists the provider, and counts as set there once bound", async () => {
+    await register();
+    const dir = appDir(SHOP);
+    await list(dir);
+    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ! not set");
+    expect(done()!["message"]).toContain("Guide: pnpm everyapp provider show stripe");
+
+    events = [];
+    await set(dir, "STRIPE_API_KEY");
+    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBe("sk_test");
+    events = [];
+    await list(dir);
+    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ✓ set");
+
+    // Replaced, the row is unbound: the key it held reads as not set until it is set again.
+    await register({ ...STRIPE, hosts: ["api.stripe.com", "files.stripe.com"] }, true);
+    events = [];
+    await list(dir);
+    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ! not set");
+    expect(done()!["data"]["gateway"]["missing"]).toEqual(["STRIPE_API_KEY"]);
+    events = [];
+    await set(dir, "STRIPE_API_KEY");
+    expect((await row())["bound_to"]).toBe(keyOf({ ...STRIPE, hosts: ["api.stripe.com", "files.stripe.com"] }));
+    expect(events.find((event) => event["step"] === "secrets.provider")!["message"]).toContain(
+      "the key is sent to api.stripe.com and files.stripe.com.",
+    );
+  });
+
+  it("is removed from the Gateway by secret unset once its row is gone", async () => {
+    await register();
+    await set(emptyDir(), "STRIPE_API_KEY");
+    await removeProvider(db(), "stripe");
+    events = [];
+    await unset(emptyDir(), "STRIPE_API_KEY");
+    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBeUndefined();
+    expect(done()).toMatchObject({ message: "Removed STRIPE_API_KEY from the Gateway" });
+  });
+});
+
 describe("secret list", () => {
   it("outside an app directory, names the Gateway's secrets, who set them, what else can be set, and every app's settings", async () => {
     await set(emptyDir(), "OPENAI_API_KEY");
@@ -760,6 +880,7 @@ describe("secret list", () => {
         "",
         // Each unmet setting as status describes it, with its guide once.
         "DataForSEO: DATAFORSEO_API_KEY",
+        DATAFORSEO_HINT,
         "Get it at https://app.dataforseo.com/api-access",
         "Guide: .claude/skills/everyapp/setup/dataforseo.md",
         "Email: EMAIL_FROM and EMAIL_FROM_NAME",
@@ -831,9 +952,11 @@ describe("secret list", () => {
         "GITHUB_TOKEN          crm      not set (optional)",
         "",
         "OpenAI: OPENAI_API_KEY",
+        OPENAI_HINT,
         "Get it at https://platform.openai.com/api-keys",
         "Guide: .claude/skills/everyapp/setup/openai.md",
         "OpenRouter: Any model through one key.",
+        OPENROUTER_HINT,
         "Get it at https://openrouter.ai/settings/keys",
         "Guide: .claude/skills/everyapp/setup/openrouter.md",
         "TOKEN_ENCRYPTION_KEY: Encrypts the OAuth tokens it stores.",
@@ -968,9 +1091,11 @@ describe("secret list", () => {
         "STRIPE_KEY                  todo     after first deploy",
         "",
         "OpenAI: OPENAI_API_KEY",
+        OPENAI_HINT,
         "Get it at https://platform.openai.com/api-keys",
         "Guide: .claude/skills/everyapp/setup/openai.md",
         "DataForSEO: DATAFORSEO_API_KEY",
+        DATAFORSEO_HINT,
         "Get it at https://app.dataforseo.com/api-access",
         "Guide: .claude/skills/everyapp/setup/dataforseo.md",
         "Email: EMAIL_FROM and EMAIL_FROM_NAME",

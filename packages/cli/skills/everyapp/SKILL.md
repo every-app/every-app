@@ -19,7 +19,8 @@ status (the report, every line, and its fixes in order), manifest
 (everyapp.config.ts), identity (headers, token, env, SDK), secrets
 (secrets vs Gateway settings vs capabilities), dev (dev vs production),
 email, mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
-check refuses), access (Cloudflare Access), workspace (the workspace from
+check refuses), providers (API providers: the catalog, registering one,
+a spec's fields), access (Cloudflare Access), workspace (the workspace from
 the terminal and from an AI client: every command and every tool), gateway
 (everything a Gateway offers: apps vs MCP apps vs the compact MCP surface,
 people, groups and caps, the CLI by job, what to suggest next, other MCP
@@ -27,8 +28,8 @@ servers), build (the build-every-app skill as a page), patterns (its
 example-patterns index), repo/* (security model, capabilities, runbooks).
 Step-by-step setup of each
 integration (the Gateway, Access, email, DataForSEO, Context, OpenRouter,
-OpenAI, Workers AI, Google, Microsoft 365, Slack): setup/README.md beside
-this file.
+OpenAI, Workers AI, Google, Microsoft 365, Slack; every catalog provider by
+id in setup/providers.md): setup/README.md beside this file.
 Answering "how do I": fetch the page for the subject and answer from it
 with the exact command or manifest field, naming the page. A failed
 command: look its code up on errors (anchor: the code, lowercased) before
@@ -173,7 +174,10 @@ Set up:  what the Gateway holds for apps, end to end (the provider's side, the
          (setup/gateway.md), Cloudflare Access (setup/access.md), email
          (setup/email.md), API keys (setup/dataforseo.md, context.md,
          openrouter.md, openai.md, workers-ai.md), OAuth clients
-         (setup/google.md, microsoft-365.md, slack.md). A key or client secret
+         (setup/google.md, microsoft-365.md, slack.md), any other catalog
+         provider (setup/providers.md#<id>, generated from the catalog); a
+         provider registered on the Gateway has no file: pnpm everyapp
+         provider show <id> prints its spec. A key or client secret
          never goes through the chat: README.md says the three ways it gets in.
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
@@ -193,12 +197,24 @@ MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
          serving and keeps access (mcp on is instant); mcp remove <id> deletes
          it (the key stays; before 2026-10-25 off deleted it). The credential
          never goes through the chat (setup/README.md's three ways). provider
-         … is an alias. You, owners and admins get it;
+         on|off still run mcp on|off through launch week; provider list is the
+         API providers' list. You, owners and admins get it;
          others are granted in Admin → Apps → Manage access. An owner or admin
          caps an app's provider calls per month in Admin → Usage (off by
          default): past it a provider tool answers a tool error naming the
          cap, and an app's brokered call gets 429 app_monthly_cap_exceeded
          until the next UTC month.
+APIs:    pnpm everyapp provider add stripe.json --json   registers an API
+         provider the catalog doesn't have on the Gateway: a JSON spec (hosts,
+         auth, settings named after its id, STRIPE_…; never a value; fields
+         and rules on the providers page), from a file or an https URL. Then
+         pnpm everyapp secret set STRIPE_API_KEY (it names the provider and
+         the hosts the key goes to, and binds the key to them: a row replaced
+         with --replace needs the key set again). An app lists it under
+         capabilities like a catalog provider and calls integrationFetch().
+         provider list (the catalog and the rows), provider show <id> (the
+         whole spec; --save writes .everyapp/providers/<id>.json for dev),
+         provider remove <id> (PROVIDER_IN_USE while an app lists it).
 Workspace: pnpm everyapp workspace rename "Acme Corp" --json   renames the workspace
          (the Gateway's organization: the name in the switcher and in invitations;
          1 to 64 characters, no line breaks). Nothing is deployed; members see it

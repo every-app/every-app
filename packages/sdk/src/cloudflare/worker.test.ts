@@ -36,6 +36,8 @@ import { appSettings } from "../internal/appSettings";
 import { isReservedAppSecretName } from "../internal/gatewaySettings";
 import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
+// The worker keeps its own copy of the name; the SDK's dev fallback reads this one.
+import { DEV_PROVIDERS_ENV } from "../internal/devProviders";
 
 /** The placeholder Worker name every production build has. */
 const BUILT = BUILD_SENTINEL.workerName;
@@ -719,6 +721,96 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expectTypeOf<EveryAppDevEnv<typeof workersAi>>().toHaveProperty(
       "CLOUDFLARE_ACCOUNT_ID",
     );
+  });
+
+  it("hands the dev Worker the specs in .everyapp/providers, and the keys .dev.vars sets for the ones it lists", () => {
+    const stripe = {
+      id: "stripe",
+      name: "Stripe",
+      docs: "https://dashboard.stripe.com/apikeys",
+      hosts: ["api.stripe.com"],
+      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    };
+    const twilio = {
+      id: "twilio",
+      name: "Twilio",
+      docs: "https://console.twilio.com",
+      hosts: ["api.twilio.com"],
+      auth: {
+        kind: "basic",
+        secret: "TWILIO_AUTH_TOKEN",
+        as: "password",
+        user: { secret: "TWILIO_ACCOUNT_SID" },
+      },
+    };
+    const dir = path.join(root, ".everyapp", "providers");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "stripe.json"), JSON.stringify(stripe));
+    fs.writeFileSync(path.join(dir, "twilio.json"), JSON.stringify(twilio));
+    fs.writeFileSync(path.join(dir, "broken.json"), "{not json");
+    fs.writeFileSync(path.join(dir, "notes.txt"), "not a spec");
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "STRIPE_API_KEY=sk_test\nTWILIO_AUTH_TOKEN=t\nTWILIO_ACCOUNT_SID=AC1\n",
+    );
+    const lists = {
+      ...manifest,
+      capabilities: { stripe: { access: "read" } },
+    } as const;
+    const env = (mode: string) =>
+      everyAppWorker({ manifest: lists, entrypoint, ctx: { mode }, root })
+        .env as Record<string, unknown>;
+
+    // Every file, in name order; one that isn't JSON as its text, for the
+    // SDK to name when an app asks for it.
+    expect(env("development")[DEV_PROVIDERS_ENV]).toEqual({
+      type: "text",
+      value: JSON.stringify([
+        { file: ".everyapp/providers/broken.json", spec: "{not json" },
+        { file: ".everyapp/providers/stripe.json", spec: stripe },
+        { file: ".everyapp/providers/twilio.json", spec: twilio },
+      ]),
+    });
+    // The key of the provider the manifest lists, not of the one it doesn't.
+    expect(env("development")).toMatchObject({
+      STRIPE_API_KEY: { type: "secret" },
+    });
+    expect(env("development")).not.toHaveProperty("TWILIO_AUTH_TOKEN");
+    const both = everyAppWorker({
+      manifest: {
+        ...manifest,
+        capabilities: {
+          stripe: { access: "read" },
+          twilio: { access: "read" },
+        },
+      },
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    }).env as Record<string, unknown>;
+    expect(both).toMatchObject({
+      TWILIO_AUTH_TOKEN: { type: "secret" },
+      TWILIO_ACCOUNT_SID: { type: "secret" },
+    });
+    // A helper Worker gets them too.
+    const helper = everyAppAuxiliaryWorker({
+      manifest: { ...lists, workers: [{ name: "audit" }] },
+      worker: "audit",
+      entrypoint: "./src/audit.ts",
+      ctx: { mode: "development" },
+      root,
+    }).env;
+    expect(helper[DEV_PROVIDERS_ENV]).toEqual(
+      env("development")[DEV_PROVIDERS_ENV],
+    );
+    expect(helper["STRIPE_API_KEY"]).toEqual({ type: "secret" });
+
+    // Deployed, the gateway holds the specs and the keys.
+    expect(env("production")).not.toHaveProperty(DEV_PROVIDERS_ENV);
+    expect(env("production")).not.toHaveProperty("STRIPE_API_KEY");
+    // No directory, no binding.
+    fs.rmSync(path.join(root, ".everyapp"), { recursive: true });
+    expect(env("development")).not.toHaveProperty(DEV_PROVIDERS_ENV);
   });
 
   it("refuses a secret named like a binding it builds or one the deploy sets", () => {

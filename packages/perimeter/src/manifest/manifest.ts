@@ -16,8 +16,10 @@ import { z } from "zod";
 import {
   CATALOG,
   capabilityIdsOf,
+  capabilitySettings,
   EMAIL_SET_COMMAND,
   gatewaySettingOwner,
+  isCapabilityId,
   isReservedAppSecretName,
   isRemoteMcpSecretName,
   isSettableGatewaySetting,
@@ -774,39 +776,71 @@ const SecretEntrySchemaStrict = z
   })
   .strict();
 
-const AppSecretsSchemaStrict = z
-  .array(z.union([BindingNameSchema, SecretEntrySchemaStrict]))
-  .superRefine((entries, ctx) => {
-    const seen = new Set<string>();
-    entries.forEach((entry, index) => {
-      const name = typeof entry === "string" ? entry : entry.name;
-      const issue = (message: string) =>
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
-      if (seen.has(name)) issue(`duplicate secret ${name}`);
-      seen.add(name);
-      if (isReservedAppSecretName(name)) {
+/**
+ * The provider a gateway registered (a lookup's id outside the catalog)
+ * whose settings include `name`, as {@link gatewaySettingOwner} names a
+ * catalog provider's.
+ */
+function registeredSettingOwner(
+  lookup: CapabilityLookup | undefined,
+  name: string,
+): { kind: "capability"; id: string } | null {
+  if (!lookup) return null;
+  for (const id of lookup.ids()) {
+    if (isCapabilityId(id)) continue;
+    const capability = lookup.get(id);
+    if (capability && capabilitySettings(capability).includes(name)) {
+      return { kind: "capability", id };
+    }
+  }
+  return null;
+}
+
+/**
+ * The strict `secrets` schema. With a gateway's registry (`lookup`), a
+ * setting one of its registered providers holds is a Gateway setting too,
+ * refused in the same words as the catalog's.
+ */
+function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
+  return z
+    .array(z.union([BindingNameSchema, SecretEntrySchemaStrict]))
+    .superRefine((entries, ctx) => {
+      const seen = new Set<string>();
+      entries.forEach((entry, index) => {
+        const name = typeof entry === "string" ? entry : entry.name;
+        const issue = (message: string) =>
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
+        if (seen.has(name)) issue(`duplicate secret ${name}`);
+        seen.add(name);
+        if (isReservedAppSecretName(name)) {
+          issue(
+            `${name} is set by everyapp itself (${RESERVED_APP_SECRET_NAMES_TEXT})`,
+          );
+          return;
+        }
+        const upper = name.toUpperCase();
+        const registered = isSettableGatewaySetting(upper)
+          ? null
+          : registeredSettingOwner(lookup, upper);
+        if (!isSettableGatewaySetting(upper) && !registered) return;
+        if (isRemoteMcpSecretName(upper)) {
+          issue(
+            `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's secret another name`,
+          );
+          return;
+        }
+        const owner = registered ?? gatewaySettingOwner(upper);
+        const instead = owner
+          ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`
+          : "give the app's secret another name";
         issue(
-          `${name} is set by everyapp itself (${RESERVED_APP_SECRET_NAMES_TEXT})`,
+          `${name} is a Gateway setting, which \`everyapp secret set ${upper}\` sets on the Gateway for every app; ${instead}`,
         );
-        return;
-      }
-      const upper = name.toUpperCase();
-      if (!isSettableGatewaySetting(upper)) return;
-      if (isRemoteMcpSecretName(upper)) {
-        issue(
-          `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's secret another name`,
-        );
-        return;
-      }
-      const owner = gatewaySettingOwner(upper);
-      const instead = owner
-        ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`
-        : "give the app's secret another name";
-      issue(
-        `${name} is a Gateway setting, which \`everyapp secret set ${upper}\` sets on the Gateway for every app; ${instead}`,
-      );
+      });
     });
-  });
+}
+
+const AppSecretsSchemaStrict = appSecretsSchemaStrict();
 
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
@@ -854,7 +888,10 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
     scopes: ScopesSchemaStrict.optional(),
     ai: AiPolicySchema.strict().optional(),
     capabilities: capabilities.optional(),
-    secrets: AppSecretsSchemaStrict.optional(),
+    secrets: (options.capabilities
+      ? appSecretsSchemaStrict(options.capabilities)
+      : AppSecretsSchemaStrict
+    ).optional(),
     email: EmailSchemaStrict.optional(),
     database: DatabaseSchema.strict().optional(),
     limits: WorkerLimitsSchema.strict().optional(),

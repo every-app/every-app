@@ -115,7 +115,7 @@ The row menu's "Delete app" on an MCP app reads "Turn off" (a power icon, still 
 
 ## 5. The CLI: `everyapp mcp`
 
-`everyapp mcp on <id>`, `everyapp mcp off <id>`, `everyapp mcp list` (alias `ls`), with `everyapp provider …` kept as an alias of the whole group through launch week (`commandPaths()` lists both, so a document that still says `provider on` passes the setup-skills check). The group's help says "MCP apps" and what one is in one sentence; `--json` shapes, the `provider.update` step name and the error codes are unchanged. The verb `mcp` leaves room for the forward-looking command in section 8 (`everyapp mcp add <url>`).
+`everyapp mcp on <id>`, `everyapp mcp off <id>`, `everyapp mcp list` (alias `ls`), with `everyapp provider …` kept as an alias of the whole group through launch week (`commandPaths()` lists both, so a document that still says `provider on` passes the setup-skills check). Amended 2026-10-25 by the provider registry (docs/design/2026-10-provider-registry.md section 8): the alias of the whole group is withdrawn, since `everyapp provider` is now the API provider registry's group and `provider list` lists API providers; `provider on <id>` and `provider off <id>` stay through launch week as hidden routes that run `mcp on|off` and say so first, and `provider list` ends with `MCP apps: pnpm everyapp mcp list` for the same week. The group's help says "MCP apps" and what one is in one sentence; `--json` shapes, the `provider.update` step name and the error codes are unchanged. The verb `mcp` leaves room for the forward-looking command in section 8 (`everyapp mcp add <url>`).
 
 ## 6. Curated tools, or the provider's own MCP
 

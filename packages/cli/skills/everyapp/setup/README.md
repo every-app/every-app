@@ -24,6 +24,19 @@ click when they have to do something themselves.
 | Google (Gmail, Calendar, Search Console and Analytics) | [google.md](google.md)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
+| Every catalog provider, one section each (generated) | [providers.md](providers.md)    | each provider's own, named there                                                | apps listing the provider                                               |
+
+A provider of the built-in catalog without a file of its own above is a
+section of [providers.md](providers.md) under its id
+(`setup/providers.md#<id>`: its settings, where the key comes from, how
+the Gateway sends it, a smoke request, cost and rate), generated from the
+catalog by `pnpm -C packages/cli docs:update`; one with a file has a
+section there too, which points at the file. A provider registered on
+one Gateway (`pnpm everyapp provider add`, the agent docs' `providers`
+page) has no file at all: `pnpm everyapp provider show <id>` prints its
+whole spec, hint and smoke request included, and its setting is set like
+any Gateway setting (`pnpm everyapp secret set <NAME>`, which first names
+the provider and the hosts its key goes to).
 
 Which integrations a person needs: the apps they deploy decide. The four
 Every App apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
@@ -41,7 +54,8 @@ ready). A setting has `names` (all must be set), `holder` (`gateway`, or
 `app` for the app's own secret), `need.kind` (`required`, `optional`, or
 `anyOf` with its `group`), `set` (true, false, or null when the app
 Worker's names were never recorded, which never blocks), `blocking`, and
-when known `why`, `docs` (where the key comes from) and `setup`: the file
+when known `why`, `hint` (what the key is and where it comes from, from
+the provider's entry), `docs` (where the key comes from) and `setup`: the file
 here that sets it up, relative to the everyapp skill (`setup/dataforseo.md`;
 in an app `.claude/skills/everyapp/setup/dataforseo.md`, in this checkout
 `packages/cli/skills/everyapp/setup/dataforseo.md`). An unset optional
@@ -57,7 +71,8 @@ checkout root with no app named, `data.apps[]` has every app's `id` and
 `data.fixes[].message`) and `secret list <app id>` (under its unmet settings)
 print `Guide: .claude/skills/everyapp/setup/<name>.md`, once per guide, and
 `secret list --json` names it as the setting's `setup`: that is how an agent lands on
-one of these files. On the Gateway's home such an app shows
+one of these files. A provider registered on the Gateway has no file, so
+its line is `Guide: pnpm everyapp provider show <id>` instead. On the Gateway's home such an app shows
 "Needs setup" and opens its setup dialog instead of the app (a browser
 visit to the app's own host lands in that dialog too; any other request
 gets a 503 `app_needs_setup`), and its tools stay out of the Gateway's
@@ -90,7 +105,7 @@ install one.
 https://everyapp.com/docs/agent/, each page also as Markdown at
 `https://everyapp.com/docs/agent/<page>.md` (`setup`, `cli`, `json`,
 `errors`, `troubleshooting`, `manifest`, `identity`, `secrets`, `dev`,
-`email`, `mcp`, `deploy`, `access`; an error code's fix is at
+`email`, `mcp`, `deploy`, `providers`, `access`; an error code's fix is at
 `errors.md#<code>`, the code lower-cased). They go live with the launch on
 2026-10-27; until then each page is in the checkout at
 `landing-page/content/agent/<page>.md`; `docs/runbooks/`,

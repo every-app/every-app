@@ -369,6 +369,58 @@ describe("everyapp dev", () => {
     });
   });
 
+  it("runs with a capability outside the catalog, warning that the deploy checks it and how to reach it locally", async () => {
+    const stripe = {
+      id: "stripe",
+      name: "Stripe",
+      docs: "https://dashboard.stripe.com/apikeys",
+      hosts: ["api.stripe.com"],
+      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    };
+    await fs.writeFile(
+      path.join(cwd, "everyapp.config.ts"),
+      `export default ${JSON.stringify({ ...manifest, capabilities: { stripe: { access: "read" }, dataforseo: { access: "read" } } })};\n`,
+    );
+    // The run stops right after (no cloudflare.config.ts): the warning comes first.
+    await fs.rm(path.join(cwd, "cloudflare.config.ts"));
+    const cf = new DevCf(cwd);
+    const warnings = () => events.filter((event) => event["code"] === "CAPABILITY_NOT_IN_CATALOG");
+
+    await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({ code: "MISSING_CLOUDFLARE_CONFIG" });
+    expect(warnings()).toEqual([
+      expect.objectContaining({
+        type: "warning",
+        message:
+          "stripe isn't in the built-in provider catalog\nIf it's registered on your Gateway, pnpm everyapp provider show stripe --save writes .everyapp/providers/stripe.json, which this run reaches it from (start dev again after). The deploy checks it against the Gateway's registered providers.",
+        data: {
+          id: "stripe",
+          file: ".everyapp/providers/stripe.json",
+          found: false,
+          fix: "pnpm everyapp provider show stripe --save",
+        },
+      }),
+    ]);
+
+    // With the spec there, the run reaches it, and .dev.vars wants its key.
+    await fs.mkdir(path.join(cwd, ".everyapp", "providers"), { recursive: true });
+    await fs.writeFile(path.join(cwd, ".everyapp", "providers", "stripe.json"), JSON.stringify(stripe));
+    events = [];
+    await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({ code: "MISSING_CLOUDFLARE_CONFIG" });
+    expect(warnings()).toEqual([
+      expect.objectContaining({
+        message:
+          "stripe isn't in the built-in provider catalog\nThis run reaches it from .everyapp/providers/stripe.json with your key from .dev.vars; the deploy checks it against the Gateway's registered providers.",
+        data: { id: "stripe", file: ".everyapp/providers/stripe.json", found: true },
+      }),
+    ]);
+    expect(
+      devVarsHint({ capabilities: { stripe: { access: "read" } } }, cwd).map((fact) => stripVTControlCharacters(fact.value)),
+    ).toEqual([
+      "no .dev.vars yet: add STRIPE_API_KEY  (the app's keys for local runs; see pnpm everyapp dev --help)",
+    ]);
+    expect(cf.started).toEqual([]);
+  });
+
   it("refuses an unknown mode before starting anything", async () => {
     const cf = new DevCf(cwd);
     await expect(

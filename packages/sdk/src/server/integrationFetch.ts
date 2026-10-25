@@ -5,11 +5,13 @@ import {
   INTEGRATION_PROXY_PREFIX,
   OAUTH_TOKEN_BODY_LIMIT,
   allowedScopes,
+  apiKeyHosts,
   authorizationFor,
   capabilitySettings,
   carriesToken,
   declaredScopeSets,
   describeTokenEndpoints,
+  devProviderFile,
   grantedScopes,
   injectClientCredentials,
   integrationProxyPath,
@@ -17,13 +19,13 @@ import {
   oauthClientOrigin,
   requestedScopes,
   requestedTokenScopes,
+  resolveDevProvider,
   rewriteTokenRequestScope,
   scopeExcess,
   tokenEndpointFor,
   tokenGrantType,
   type ApiKeyCapability,
   type ApiKeyCapabilityId,
-  type Capability,
   type CapabilityId,
   type EmailCapabilityStatus,
   type OAuthClientCapability,
@@ -88,15 +90,18 @@ export interface IntegrationFetchOptions {
  * token directly.
  *
  * In local dev only, with no binding, the developer's own key or client
- * from `.dev.vars` reaches the provider directly, under the gateway's names;
- * that fallback knows the built-in catalog, not a gateway's registered rows.
+ * from `.dev.vars` reaches the provider directly, under the gateway's names:
+ * a catalog provider's from the catalog, a provider registered on the
+ * gateway from its spec in `.everyapp/providers/<id>.json` (`everyapp
+ * provider show <id> --save` writes it), put on the call as the gateway's
+ * spec says.
  */
 export function integrationFetch({
   env,
   provider,
   for: target,
 }: IntegrationFetchOptions): typeof fetch {
-  const integration = fetchableCapability(provider);
+  const catalogEntry = fetchableCapability(provider);
   checkAttribution(env, target, `integrationFetch("${provider}")`);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
@@ -108,11 +113,11 @@ export function integrationFetch({
       "EVERY_APP_GATEWAY is configured but is not a valid service binding.",
     );
   }
-  if (!integration && !binding) {
-    throw new ConfigurationError(
-      `"${provider}" isn't in the built-in provider catalog. A provider registered on the gateway (everyapp provider add) is reached through the EVERY_APP_GATEWAY binding and has no local-development fallback yet.`,
-    );
-  }
+  // An id outside the catalog: the gateway's to resolve over the binding,
+  // or in local dev, the registered row's spec `everyapp dev` hands over.
+  const integration =
+    catalogEntry ??
+    (binding ? undefined : devRegisteredProvider(provider, values));
   const local =
     binding || !integration ? null : localCredentials(integration, values);
   if (!binding && !local && integration) {
@@ -160,12 +165,14 @@ export function integrationFetch({
       });
     }
 
-    if (
-      upstream.protocol !== "https:" ||
-      !(integration.hosts as readonly string[]).includes(upstream.host)
-    ) {
+    // In local dev a provider's host setting (`.dev.vars`) adds its host,
+    // as the gateway's setting does there.
+    const hosts = binding
+      ? [...integration.hosts]
+      : apiKeyHosts(integration, values);
+    if (upstream.protocol !== "https:" || !hosts.includes(upstream.host)) {
       throw new TypeError(
-        `integrationFetch("${provider}") only reaches ${integration.hosts.join(", ")}, not ${upstream.host}.`,
+        `integrationFetch("${provider}") only reaches ${hosts.join(", ")}, not ${upstream.host}.`,
       );
     }
     if (binding) {
@@ -527,13 +534,24 @@ async function checkTokenResponse(
   return forward();
 }
 
-/** The catalog entry `provider` names, from plain JavaScript or a stale type too; throws for an id the catalog doesn't have. */
-function capability(provider: string): Capability {
-  const found = CATALOG.get(String(provider));
-  if (!found) {
-    throw new ConfigurationError(`Unknown capability "${String(provider)}".`);
+/**
+ * A provider outside the catalog in local dev (no binding): the gateway
+ * row's spec from EVERYAPP_DEV_PROVIDERS (`.everyapp/providers/<id>.json`,
+ * which `everyAppWorker()` reads in dev), or a ConfigurationError naming
+ * the file that doesn't parse, or the command that writes one.
+ */
+function devRegisteredProvider(
+  provider: string,
+  values: Record<string, unknown>,
+): ApiKeyCapability {
+  if (!values["EVERYAPP_DEV"]) {
+    throw new ConfigurationError(
+      `"${provider}" isn't in the built-in provider catalog. A provider registered on the gateway (everyapp provider add) is reached through the EVERY_APP_GATEWAY binding, or in everyapp dev from ${devProviderFile(provider)}.`,
+    );
   }
-  return found;
+  const resolved = resolveDevProvider(values, provider);
+  if (!resolved.found) throw new ConfigurationError(resolved.problem);
+  return resolved.capability;
 }
 
 /**
@@ -639,11 +657,13 @@ export async function integrationStatus<
     | GatewayServiceBinding
     | undefined;
   // A provider registered on the gateway is the gateway's to answer for;
-  // without one, only the catalog is known here.
+  // without one, the catalog, or in local dev the row's spec from
+  // `.everyapp/providers/<id>.json`.
   const integration =
     binding && typeof binding.fetch === "function"
       ? CATALOG.get(String(provider))
-      : capability(provider);
+      : (CATALOG.get(String(provider)) ??
+        devRegisteredProvider(String(provider), values));
   if (integration?.mode === "ai") {
     throw new ConfigurationError(
       `${String(provider)} is an AI provider: it has no integration status (createGatewayFetch() answers ai_provider_not_configured when its key is unset).`,

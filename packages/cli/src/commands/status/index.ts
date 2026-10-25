@@ -1,6 +1,6 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { storedSecretNames } from "@every-app/perimeter/registry";
-import type { AppSetup } from "@every-app/sdk/internal";
+import type { AppSetup, ProviderRegistry } from "@every-app/sdk/internal";
 import { readAccessSettingsRecord } from "@/lib/access/record";
 import { accessStateOf, type AccessState } from "@/lib/access/settings";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
@@ -31,6 +31,7 @@ import {
   PROVIDER_APPS,
   providerAppKeySetting,
 } from "@every-app/sdk/internal";
+import { gatewayRegistry } from "@/lib/gateway/providers";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { readOwnerOrganization } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
@@ -181,7 +182,9 @@ export async function reportStatus({
     readOrUnread(async () =>
       emailRoutes.length === 0 ? [] : emailRouteProblems(cf, emailRoutes),
     ),
-    readSettings(cf, db, registered, missingWorkers, gatewayNames),
+    gatewayRegistry(db, install).then((registry) =>
+      readSettings(cf, db, registered, missingWorkers, gatewayNames, registry),
+    ),
     // The install organization's counts, for the next steps; a Gateway
     // from before one of the tables, or cf failing, leaves them unread.
     claimed
@@ -352,12 +355,14 @@ async function readSettings(
   apps: RegisteredAppInfo[],
   missingWorkers: Set<string>,
   gatewayNames: { value: string[] } | Unread | null,
+  /** The catalog and the Gateway's registered providers. */
+  registry: ProviderRegistry,
 ): Promise<{ setups: Map<string, AppSetup>; unread: Unread | null }> {
   const setups = new Map<string, AppSetup>();
   const declaring = apps.filter(
     (app) =>
       app.manifest &&
-      declaresSettings(app.manifest) &&
+      declaresSettings(app.manifest, registry) &&
       app.tier !== "dispatch" &&
       app.status !== "pending" &&
       !missingWorkers.has(app.workerName),
@@ -382,6 +387,7 @@ async function readSettings(
       appId: app.appSlug,
       gatewayNames: "error" in gateway ? null : gateway.value,
       secretNames,
+      lookup: registry,
     });
     setups.set(app.appSlug, setup);
   }

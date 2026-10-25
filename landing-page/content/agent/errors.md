@@ -210,6 +210,14 @@ The app's production build failed (step `app.build` of `deploy` and `release`). 
 
 Source: `packages/cli/src/lib/app/buildApp.ts`, `packages/cli/src/lib/childLog.ts` (`runLogged`).
 
+### CAPABILITY_UNKNOWN
+
+`deploy` (and `install`), right after the Gateway is reached and before anything is registered: the manifest lists a capability id that neither the built-in catalog nor the providers registered on this Gateway (`everyapp provider list`) have. Before connecting, everyapp accepts any well-formed id, since it may be a registered provider. Message `<app> lists <ids> under capabilities, which <gateway host> doesn't offer` then `Neither the built-in catalog nor the providers registered on this Gateway has it. It offers: <ids>.`
+
+**Fix:** `data.fix`: `register it with pnpm everyapp provider add <spec.json or https URL> (or fix the id in everyapp.config.ts), then deploy again`; `data.unknown` (the ids), `data.offered`. No rerun, not retryable.
+
+Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkCapabilitiesOffered`)
+
 ### CHECKOUT_MISSING
 
 everyapp isn't running from a checkout of the Every App repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout) and by every Gateway deploy (`checkoutGateway` in `lib/gateway/checkoutRelease.ts` builds the Gateway's release from the checkout: `setup`, `update`, and the rebind `deploy` and `delete` run). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the Every App repository`, then `This copy is installed in <package dir>, outside any checkout.`
@@ -849,7 +857,7 @@ Source: `packages/cli/src/lib/manifest.ts`, `packages/cli/src/commands/email/ind
 
 **Fix:** none for the tool; `pnpm everyapp mcp off <id>` stops serving the whole app. No rerun, not retryable.
 
-Source: `packages/cli/src/commands/provider/index.ts` (`changeTool`)
+Source: `packages/cli/src/commands/mcp/index.ts` (`changeTool`)
 
 ### MCP_TOOL_CHANGE_INVALID
 
@@ -857,7 +865,7 @@ Source: `packages/cli/src/commands/provider/index.ts` (`changeTool`)
 
 **Fix:** as the message says. Not retryable.
 
-Source: `packages/cli/src/commands/provider/index.ts` (`changeTool`)
+Source: `packages/cli/src/commands/mcp/index.ts` (`changeTool`)
 
 ### MEMBER_NOT_FOUND
 
@@ -1017,6 +1025,48 @@ The id given to an `mcp` command (`on`, `off`, `remove`, `show`, `refresh`, `too
 
 Source: `packages/cli/src/lib/gateway/remoteMcpApps.ts` (`resolveMcpApp`), `packages/perimeter/src/registry/providerApps.ts`
 
+### PROVIDER_BUILTIN
+
+`provider add` with a spec whose id is a built-in provider's (or `everyapp`): `<id> is built in` / `A registered provider can't take a built-in provider's id.`, `data.fix` naming `provider show <id>`. `provider remove <id>` of a built-in id: only a registered provider can be removed (`data.rerun` `pnpm everyapp provider list`). `provider show <id> --save` of a built-in provider: `everyapp dev reaches it without a file`, `data.fix` naming the settings to put in `.dev.vars`. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
+
+### PROVIDER_EXISTS
+
+`provider add` with a spec whose id is registered on this Gateway already. Nothing is written. `data.rerun` is the same command with `--replace` (`authorize: true`: replacing writes the new spec and leaves the row unbound, so its key must be set again with `secret set` before the Gateway sends it). Also raised when the row changed between the read and the write (`data.rerun` `pnpm everyapp provider list`).
+
+Source: `packages/cli/src/lib/gateway/providers.ts`
+
+### PROVIDER_HOST_REFUSED
+
+`provider add`: a host in the spec isn't one a key may be sent to: an IP address, `localhost` or a name under `.localhost`, `.local`, `.internal` or `.arpa`, this Gateway's own host, or a host under its apps' domain. Message `<id>'s key can't be sent there: <why>`, `data.fix` `list only the provider's own public API hosts under hosts`. The Gateway applies the same rule every time it reads the row.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/sdk/src/internal/providerRegistry.ts` (`publicHostProblem`, `gatewayHostRefusal`)
+
+### PROVIDER_IN_USE
+
+`provider remove <id>` of a registered provider a registered app's manifest lists under `capabilities`: `<apps> list <id> under capabilities` / `Removing it stops their calls to it at once …`. Nothing is removed. `data.rerun` is the same command with `--force` (`authorize: true`).
+
+Source: `packages/cli/src/lib/gateway/providers.ts`
+
+### PROVIDER_NOT_FOUND
+
+`provider remove <id>` of an id with no row (`No provider <id> is registered on this Gateway`), or `provider show <id>` of an id the Gateway doesn't offer (or a Gateway service such as `email`, or a row the Gateway refuses, with why). `data.rerun`: `pnpm everyapp provider list`.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
+
+### PROVIDER_SECRET_TAKEN
+
+`provider add`: a setting the spec names isn't the provider's to hold: it doesn't start with the provider's id upper-cased (`STRIPE_` for `stripe`), or it is one of the Gateway's own, a local-development or reserved name, a setting the Gateway or a built-in provider reads, another registered provider's (`<id> can't use that setting: <why>`), or a secret a registered app's manifest lists as its own (`<names> is <app>'s own secret`). Nothing is written.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/sdk/src/internal/providerRegistry.ts` (`rowSecretProblem`)
+
+### PROVIDER_SPEC_INVALID
+
+`provider add <spec>`: the spec couldn't be read (no file there, not JSON, over 64 KiB, a URL that isn't https, didn't answer 2xx or couldn't be fetched) or the parser refused it: `The spec isn't one this Gateway takes` then every problem as `<field>: <problem>` (`parseProviderSpec`, `describeSpecProblems`). Nothing is written; `data.fix` says what to change.
+
+Source: `packages/cli/src/commands/provider/index.ts` (`readSpecSource`), `packages/cli/src/lib/gateway/providers.ts`, `packages/sdk/src/internal/providerSpec.ts`
+
 ### QUERY_FAILED
 
 `everyapp db query` (local or production): D1 refused the SQL with a SQLite error, recognized by a `SQLITE_…` code in cf's message. Message `Query failed: <problem>` then `<SQLITE_CODE> from the <local|production> database.` A cf failure without such a code is reported as cf's own (`CF_…`).
@@ -1103,7 +1153,7 @@ Source: `packages/cli/src/lib/gateway/release.ts`
 
 **Fix:** as the message says, then the same `mcp add` again. Not retryable.
 
-Source: `packages/cli/src/commands/provider/index.ts` (`authFromFlags`), `packages/perimeter/src/registry/remoteMcpApps.ts`, `packages/sdk/src/internal/remoteMcp.ts`
+Source: `packages/cli/src/commands/mcp/index.ts` (`authFromFlags`), `packages/perimeter/src/registry/remoteMcpApps.ts`, `packages/sdk/src/internal/remoteMcp.ts`
 
 ### RESOURCE_NAME_MISSING
 
@@ -2139,6 +2189,12 @@ The Gateway rebind (any command that redeploys the Gateway: `setup`, and `deploy
 
 Source: `packages/cli/src/lib/gateway/apply.ts`
 
+### CAPABILITY_NOT_IN_CATALOG
+
+`dev`, once per capability id the manifest lists outside the built-in catalog: `everyapp dev` can't ask the Gateway, so it runs with the id and says where it is reached from. With `.everyapp/providers/<id>.json` in the app (written by `provider add` in the app's directory or `provider show <id> --save`), the dev Worker reaches it from that spec with the key in `.dev.vars`; without, `data.fix` is `pnpm everyapp provider show <id> --save`. `data.id`, `data.file`, `data.found`. The deploy checks the id against the Gateway's registry (`CAPABILITY_UNKNOWN`).
+
+Source: `packages/cli/src/commands/dev/index.ts`
+
 ### CERT_CLEANUP_FAILED
 
 `delete`, step `app.certificate`: the deleted app's hostname's certificate packs couldn't be deleted: `Couldn't remove <hostname>'s certificate` / `It serves nothing now. Cloudflare said: <error>.` / `Optional: delete it in the Cloudflare dashboard (SSL/TLS → Edge Certificates).` The app is deleted either way.
@@ -2249,21 +2305,21 @@ Source: `packages/cli/src/commands/setup/runSetup.ts`
 
 ### PROVIDER_KEY_UNSET
 
-`mcp on` (alias `provider on`), step `provider.update`, and `mcp add`, step `mcp.add`: the MCP app is on, but the Gateway setting holding its key (a built-in's, `DATAFORSEO_API_KEY`) or its credential (a remote server's, `<ID>_MCP_TOKEN`) isn't set: `<NAME> isn't set on the Gateway` / `<provider>'s tools answer "not set up" until it is.` (a built-in) or `<name>'s tools stay out of /mcp until it is.` (a remote server); `data.fix`: `pnpm everyapp secret set <NAME>`, `data.name`: the setting. The `done` event's `data.key.set` is false and `data.next` names the same command. `mcp add` at a terminal first asks `Set <NAME> now?` and, on yes, reads the value with `secret set`'s own hidden prompt (`--from-env <VAR>` reads it from a variable instead); it warns only when the credential is still unset after that. Set the key (the setup skill's file: `setup/dataforseo.md`, `setup/remote-mcp.md`) and nothing else needs rerunning: the Gateway reads the setting on its next request.
+`mcp on` (and the hidden `provider on` through launch week), step `provider.update`, and `mcp add`, step `mcp.add`: the MCP app is on, but the Gateway setting holding its key (a built-in's, `DATAFORSEO_API_KEY`) or its credential (a remote server's, `<ID>_MCP_TOKEN`) isn't set: `<NAME> isn't set on the Gateway` / `<provider>'s tools answer "not set up" until it is.` (a built-in) or `<name>'s tools stay out of /mcp until it is.` (a remote server); `data.fix`: `pnpm everyapp secret set <NAME>`, `data.name`: the setting. The `done` event's `data.key.set` is false and `data.next` names the same command. `mcp add` at a terminal first asks `Set <NAME> now?` and, on yes, reads the value with `secret set`'s own hidden prompt (`--from-env <VAR>` reads it from a variable instead); it warns only when the credential is still unset after that. Set the key (the setup skill's file: `setup/dataforseo.md`, `setup/remote-mcp.md`) and nothing else needs rerunning: the Gateway reads the setting on its next request.
 
-Source: `packages/cli/src/commands/provider/index.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### REMOTE_MCP_GATEWAY_OUTDATED
 
 `mcp add`, step `mcp.add`: the app is written, but the Gateway's D1 has no `remote_mcp_tools` table (migration 0011), so the Gateway running there predates MCP apps by URL and serves none of the server's tools: `This Gateway predates MCP apps by URL` / `It serves a remote MCP server's tools once it is updated to this checkout.`; `data.rerun`: `pnpm everyapp update`. Until then `secret set` records no credential pin and `mcp show` lists no tools.
 
-Source: `packages/cli/src/commands/provider/index.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### REMOTE_MCP_PROBE_FAILED
 
 `mcp add`, step `mcp.probe`: the one look at the server from this machine, without the credential (`probeRemoteMcp` in `packages/cli/src/lib/gateway/remoteMcpProbe.ts`: a 2026-07-28 `tools/list`, then a 2025 `initialize` when that isn't a JSON-RPC result, 10 seconds, no redirect followed), found something the operator may want to change. The app is added either way. `data.probe` is what it found (`outcome` `needs-credential`, `redirected` or `unreachable`, with `status`, `location` or `reason`). Three messages: `<url> asks for a credential, and <id> sends none` / `The Gateway's listing of its tools will fail the same way until it has one.` (`--auth none` and a 401 or 403; `data.fix` names `pnpm everyapp mcp remove <id>`, then `pnpm everyapp mcp add <url> --name <id> --auth bearer`); `<url> redirects to <location>` / `The Gateway follows no redirects; register the address it redirects to.` (a 3xx); `Couldn't reach <url> from here: <reason>` / `The Gateway may still reach it; pnpm everyapp mcp show <id> says whether its tools listed.` (no answer in time, a host that doesn't resolve, a refused connection or TLS, or an answer that isn't MCP). A server the Gateway reaches and this machine doesn't (a VPN, an allowlist) is fine: `mcp show` after the first `/mcp` request says whether the tools listed.
 
-Source: `packages/cli/src/commands/provider/index.ts`, `packages/cli/src/lib/gateway/remoteMcpProbe.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`, `packages/cli/src/lib/gateway/remoteMcpProbe.ts`
 
 ### REMOTE_MCP_SECRET_AMBIGUOUS
 
@@ -2275,7 +2331,7 @@ Source: `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/lib/gatew
 
 `mcp add`, step `mcp.add`: the credential name the new app declares is set, but pinned (`remote_mcp_credentials`) to another origin, where it was set for an app since removed: `<NAME> was set for <origin>, not <new origin>` / `The Gateway sends a credential only to the origin it was set for; set it again for <name>.`; `data.fix` `pnpm everyapp secret set <NAME>`, `data.boundOrigin`. The app needs setup (`mcp list` says so) until `secret set` pins the name to its origin; only the operator can do that, so an owner or admin who re-points a server never moves a credential.
 
-Source: `packages/cli/src/commands/provider/index.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### REMOTE_MCP_SECRET_UNDECLARED
 
@@ -2287,13 +2343,13 @@ Source: `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/lib/gatew
 
 `mcp tool <id> <tool>`, step `mcp.tool`: `<tool>` is neither a server name nor a listed name in the app's last listing (`remote_mcp_tools`), so the override is written under that name verbatim, as the server's: `<tool> isn't in <id>'s last tool listing` / `The override is kept under the server's name <tool> and applies once the server lists a tool by that name.`; `data.rerun` `pnpm everyapp mcp show <id>`. A typo here overrides nothing: check `mcp show`, then `mcp tool` with the right name (the stray entry is harmless; the Gateway ignores overrides for tools the server doesn't list).
 
-Source: `packages/cli/src/commands/provider/index.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### REMOTE_MCP_WANTS_OAUTH
 
 `mcp add`, step `mcp.probe`: the server answered 401 or 403 with a `WWW-Authenticate` naming `resource_metadata=`, the MCP authorization spec's sign of an OAuth-protected server. The Gateway doesn't sign in to MCP servers with OAuth this week (`--auth oauth` is recorded and serves no tools). With `--auth none` or `oauth`: `<url> wants OAuth` / `The Gateway doesn't sign in to MCP servers with OAuth yet. If the server also takes an API key, add it with --auth bearer and set the key.` (`data.fix` names the remove and the add with `--auth bearer`); with a credential: `<url> asks for OAuth` / `The Gateway doesn't sign in to MCP servers with OAuth yet; it sends <NAME> as you set it, which works only if the server also takes an API key.` `data.probe` has `oauth: true`.
 
-Source: `packages/cli/src/commands/provider/index.ts`
+Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### RESOURCES_KEPT
 
@@ -2384,7 +2440,9 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run update now, or leave it: the next new app's deploy updates it too.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
 
-Source: `packages/cli/src/commands/status/problems.ts`
+Also an error: `provider add` and `provider remove` on a Gateway whose database predates the `providers` table (migration 0013): `This Gateway predates the provider registry`, nothing changed, `data.rerun` `pnpm everyapp update`, `data.rerunNote` `then run this again`. Every other reader treats such a Gateway as having no registered providers.
+
+Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/lib/gateway/providers.ts`
 
 ### NO_OWNER
 
@@ -2394,7 +2452,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### APP_NEEDS_SETUP (status)
 
-Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide). Run: `pnpm everyapp configure <id>` (the app's `setup.command`: it asks for each unmet setting, which member of an any-of group, then offers the optional ones). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
+Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then the provider's `hint`, `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide, or `Guide: pnpm everyapp provider show <id>` for a provider registered on the Gateway). Run: `pnpm everyapp configure <id>` (the app's `setup.command`: it asks for each unmet setting, which member of an any-of group, then offers the optional ones). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
 
 Source: `packages/cli/src/commands/status/problems.ts`
 

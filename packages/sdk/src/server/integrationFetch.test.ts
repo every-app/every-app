@@ -118,6 +118,133 @@ describe("integrationFetch", () => {
     ).toThrowError(/isn't in the built-in provider catalog/);
   });
 
+  describe("a registered provider in local dev, from .everyapp/providers", () => {
+    const stripe = {
+      id: "stripe",
+      name: "Stripe",
+      docs: "https://dashboard.stripe.com/apikeys",
+      hosts: ["api.stripe.com"],
+      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    };
+    const devEnv = (
+      files: Array<{ file: string; spec: unknown }>,
+      settings: Record<string, string> = { STRIPE_API_KEY: "sk_test_dev" },
+    ) => ({
+      EVERYAPP_DEV: "1",
+      EVERYAPP_DEV_PROVIDERS: JSON.stringify(files),
+      ...settings,
+    });
+
+    it("calls the provider directly with the developer's key, put where the spec says", async () => {
+      const directFetch = vi.fn<(request: Request) => Promise<Response>>(
+        async () => Response.json({ via: "direct" }),
+      );
+      vi.stubGlobal("fetch", directFetch);
+      const env = devEnv([
+        { file: ".everyapp/providers/stripe.json", spec: stripe },
+      ]);
+      await integrationFetch({ env, provider: "stripe" })(
+        "https://api.stripe.com/v1/customers?limit=1",
+        { headers: { authorization: "Bearer app-key" } },
+      );
+      const forwarded = directFetch.mock.calls[0]?.[0] as Request;
+      expect(forwarded.url).toBe("https://api.stripe.com/v1/customers?limit=1");
+      expect(forwarded.headers.get("authorization")).toBe("Bearer sk_test_dev");
+
+      // Only the spec's hosts.
+      await expect(
+        integrationFetch({ env, provider: "stripe" })(
+          "https://attacker.example/v1/customers",
+        ),
+      ).rejects.toThrowError(/only reaches api\.stripe\.com/);
+
+      // A query-key spec puts the key on the query string.
+      directFetch.mockClear();
+      const weather = {
+        id: "openweather",
+        name: "OpenWeather",
+        docs: "https://home.openweathermap.org/api_keys",
+        hosts: ["api.openweathermap.org"],
+        auth: { kind: "query", secret: "OPENWEATHER_API_KEY", param: "appid" },
+      };
+      await integrationFetch({
+        env: devEnv(
+          [{ file: ".everyapp/providers/openweather.json", spec: weather }],
+          { OPENWEATHER_API_KEY: "ow_dev" },
+        ),
+        provider: "openweather",
+      })("https://api.openweathermap.org/data/2.5/weather?q=Oslo");
+      expect((directFetch.mock.calls[0]?.[0] as Request).url).toBe(
+        "https://api.openweathermap.org/data/2.5/weather?q=Oslo&appid=ow_dev",
+      );
+    });
+
+    it("says what to set when the spec's key isn't in .dev.vars", () => {
+      expect(() =>
+        integrationFetch({
+          env: devEnv(
+            [{ file: ".everyapp/providers/stripe.json", spec: stripe }],
+            {},
+          ),
+          provider: "stripe",
+        }),
+      ).toThrowError(
+        "Stripe is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set STRIPE_API_KEY in .dev.vars for local development.",
+      );
+    });
+
+    it("names the file when the spec for the id asked for doesn't parse, and ignores the others", () => {
+      const env = devEnv([
+        { file: ".everyapp/providers/broken.json", spec: "{not json" },
+        {
+          file: ".everyapp/providers/stripe.json",
+          spec: { ...stripe, hosts: [] },
+        },
+      ]);
+      expect(() => integrationFetch({ env, provider: "stripe" })).toThrowError(
+        /^\.everyapp\/providers\/stripe\.json isn't a provider spec: hosts: required.*everyapp provider show stripe --save/,
+      );
+      expect(() => integrationFetch({ env, provider: "broken" })).toThrowError(
+        /^\.everyapp\/providers\/broken\.json isn't JSON\./,
+      );
+      expect(() => integrationFetch({ env, provider: "linear" })).toThrowError(
+        /"linear" isn't in the built-in provider catalog, and no \.everyapp\/providers\/linear\.json describes it/,
+      );
+    });
+
+    it("leaves a registered provider to the gateway when the binding is there, spec file or not", async () => {
+      const { env, bindingFetch } = bindingEnv();
+      await integrationFetch({
+        env: {
+          ...env,
+          EVERYAPP_DEV_PROVIDERS: JSON.stringify([
+            { file: ".everyapp/providers/stripe.json", spec: stripe },
+          ]),
+          STRIPE_API_KEY: "sk_test_dev",
+        },
+        provider: "stripe",
+      })("https://api.stripe.com/v1/customers");
+      const forwarded = bindingFetch.mock.calls[0]?.[0] as Request;
+      expect(forwarded.url).toBe(
+        "http://every-app-gateway.internal/api/integrations/stripe/api.stripe.com/v1/customers",
+      );
+      expect(forwarded.headers.get("authorization")).toBeNull();
+    });
+
+    it("reports its status from the spec and .dev.vars", async () => {
+      const files = [{ file: ".everyapp/providers/stripe.json", spec: stripe }];
+      expect(
+        await integrationStatus({ env: devEnv(files), provider: "stripe" }),
+      ).toEqual({ requested: true, configured: true, ready: true });
+      expect(
+        await integrationStatus({ env: devEnv(files, {}), provider: "stripe" }),
+      ).toEqual({ requested: true, configured: false, ready: false });
+      await expect(
+        integrationStatus({ env: devEnv([]), provider: "stripe" }),
+      ).rejects.toThrowError(/no \.everyapp\/providers\/stripe\.json/);
+    });
+  });
+
   it("builds Context.dev's path and keys it as a bearer token in local dev", async () => {
     const { env, bindingFetch } = bindingEnv();
     await integrationFetch({ env, provider: "context" })(

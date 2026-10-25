@@ -19,8 +19,11 @@ listing the organization's members, [below](#gateway-services-members)).
 Organization-held OAuth accounts and admin approval come in later phases and
 keep the same manifest entry, binding route and SDK call.
 
-AI providers stay separate: `providers: ["openai", "openrouter", "workers-ai"]`
-and the `/api/ai/<provider>` proxy, with their model and route allowlists.
+AI providers are entries of the same catalog (`mode: "ai"`) and stay
+separate in how an app reaches them:
+`providers: ["openai", "openrouter", "workers-ai"]` and the
+`/api/ai/<provider>` proxy, with their model and route allowlists. A gateway may also register API-key providers the catalog
+doesn't have, as rows of its own ([Provider registry](#provider-registry)).
 
 What comes next is designed, not built: the October 2026 redesign review
 folds AI providers into this model behind one route and one SDK fetch, and the
@@ -36,29 +39,42 @@ manifest key was `integrations` with `as` and `background` on each entry; read
 them with this document's `capabilities` and
 `{ access, why, docs, optional, anyOf }`.
 
-## The three kinds
+## The four kinds
 
-One registry (`packages/sdk/src/internal/capabilities.ts`) defines every
-capability; its `mode` is the kind. All three take the same manifest entry,
-`capabilities: { <id>: { access, scopes, why, docs, optional, anyOf } }`
+One catalog (`CAPABILITIES` in `packages/sdk/src/internal/capabilities.ts`)
+defines every provider the gateway holds a credential for, built in; its
+`mode` is the kind. Three kinds are capabilities: they take the same
+manifest entry, `capabilities: { <id>: { access, scopes, why, docs, optional, anyOf } }`
 (`access`, `scopes` for a client with scope sets ([OAuth clients](#oauth-clients)),
 and the need fields of [docs/manifest-settings.md](manifest-settings.md)),
 travel the app's private binding to the gateway under
 `/api/integrations/<id>/...`, and answer `GET /api/integrations/<id>`
-(`integrationStatus`) without calling out.
+(`integrationStatus`) without calling out. The fourth, `ai`, is an AI
+provider, which is never a capability: an app lists it under `providers` and
+reaches it at `/api/ai/<id>/...`. The strict validator refuses
+`capabilities: { openrouter }` ("list it under providers, not
+capabilities"), `/api/integrations/openrouter/…` answers 400
+`invalid_integration_route`, and the settings model reads it under
+`providers` only (pinned in `apps/every-app-gateway/src/server/provider-rules.test.ts`,
+`packages/perimeter/src/manifest/manifest.registry.test.ts` and
+`packages/sdk/src/internal/appSettings.registry.test.ts`): a key on an
+inference host reaches the account's files, batches and keys too, so only the
+AI proxy's inference routes may use it.
 
 | Kind           | Capabilities                                          | What the gateway does                                                             | The app calls                                                                            | Access  | Status adds                     |
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
-| `api_key`      | `dataforseo`, `context`                               | puts its key on calls to the provider's own hosts, with the methods it reads with | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read`  |                                 |
+| `api_key`      | `dataforseo`, `context`, and the providers a gateway registers ([Provider registry](#provider-registry)) | puts its key on calls to the provider's own hosts, with the methods its entry allows (read methods; write methods under a write grant, where the provider offers write) | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read` (a registered provider may offer `write`) |                                 |
+| `ai`           | `openai`, `openrouter`, `workers-ai` ([AI providers](#ai-providers)) | puts its key on inference calls to the provider's origin, with the AI proxy's rules (inference routes, `store: false`, the model allowlist) | `createGatewayFetch({ env, for })` on `/api/ai/<id>/...`; listed under `providers`, not `capabilities` | | none here: `GET /api/integrations/<id>` is 400 |
 | `oauth_client` | 16 social networks, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 | `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
 Every status answers `{ capability, requested, configured, ready }`;
 `configured` is false for an app that doesn't list the capability, so no app
-learns what the operator holds. The AI providers are not a kind yet: an app
-lists them in `providers` (and limits them with `ai.models`) and calls
-`/api/ai/<provider>/...` with `createGatewayFetch()`.
+learns what the operator holds. An AI provider has no status route: an app
+lists it in `providers` (and limits it with `ai.models`) and calls
+`/api/ai/<provider>/...` with `createGatewayFetch()`, whose refusal
+`ai_provider_not_configured` says when its key is unset.
 
 ## For an operator
 
@@ -112,6 +128,7 @@ Everything the gateway holds for apps, in one table:
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | OpenCRM (`slack`); the other 15 were added for Postiz's port |
 | `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
+| a provider this gateway registered | `api_key` (a row) | its own, each starting with its id (`STRIPE_API_KEY` for `stripe`) | the names `everyapp provider add` prints; `secret set` names the hosts and binds the key to them ([Provider registry](#provider-registry)) | the apps that list it |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
 secret, which the gateway never holds, so an app keeps `X_API_KEY` and
@@ -121,10 +138,17 @@ its first deploy).
 
 ### API-key providers
 
-| Capability   | Gateway secret       | Hosts the key may reach                        | Access |
-| ------------ | -------------------- | ---------------------------------------------- | ------ |
-| `dataforseo` | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `read` |
-| `context`    | `CONTEXT_API_KEY`    | `api.context.dev`                              | `read` |
+The catalog's, generated from it; a gateway's registered providers are its
+own (`pnpm everyapp provider list`):
+
+<!-- api-key-providers:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
+
+| Capability | Provider | Gateway settings | Hosts the key may reach | How the key is sent | Access | Methods |
+| --- | --- | --- | --- | --- | --- | --- |
+| `dataforseo` | DataForSEO | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `Authorization: Basic <DATAFORSEO_API_KEY>` (`login:password`, base64-encoded unless it already is) | `read` | GET, POST |
+| `context` | Context.dev | `CONTEXT_API_KEY` | `api.context.dev` | `Authorization: Bearer <CONTEXT_API_KEY>` | `read` | GET, POST |
+
+<!-- api-key-providers:end -->
 
 DataForSEO can also go to members' AI clients directly, with nothing
 deployed: `pnpm everyapp mcp on dataforseo` ([MCP apps](#mcp-apps)).
@@ -187,9 +211,13 @@ capabilities: {
 },
 ```
 
-`everyapp deploy` refuses a capability the gateway doesn't offer and an
-access level it doesn't offer (`write`, for both providers today; `read`,
-for email and the OAuth clients).
+`everyapp deploy` refuses a capability neither the catalog nor the
+gateway's registered providers have (`CAPABILITY_UNKNOWN`, naming
+`pnpm everyapp provider add`), an AI provider listed here instead of under
+`providers`, and an access level the provider doesn't offer (`write`, for
+both catalog API-key providers today; `read`, for email and the OAuth
+clients). `everyapp dev` can't ask the gateway, so it accepts an id outside
+the catalog and warns `CAPABILITY_NOT_IN_CATALOG`.
 
 An entry may also say its need: `optional: true` when only one feature uses
 it (the app opens without it, and that feature says what is missing),
@@ -243,29 +271,66 @@ const { ready } = await integrationStatus({ env, provider: "dataforseo" });
 ## What the gateway checks on an API-key call
 
 `AppGateway` serves `/api/integrations/<capability>/<host>/<path>` over the
-app's private binding (`apps/every-app-gateway/src/server/integration-proxy.ts`):
+app's private binding (`handleIntegrationProxyRequest` in
+`apps/every-app-gateway/src/server/integration-proxy.ts`), with the
+provider looked up in the gateway's registry (the catalog, then its
+registered rows). The checks run in this order, the code's:
 
-1. The caller is a registered, active app (the binding's props, as for AI).
-2. Its registry row's manifest lists this capability; otherwise
-   `capability_not_requested` (403).
-3. The host is one of the provider's, over https, with no path that could
-   leave it; otherwise `invalid_integration_route` (400).
-4. The path isn't one that lists or describes the whole provider account
-   (DataForSEO's `tasks_ready`, `tasks_fixed`, `id_list`, `errors`, `appendix/user_data`,
-   `appendix/webhook_resend`): one key serves every app in every
-   organization; otherwise `integration_path_not_allowed` (403).
-5. The method is one the provider reads with; otherwise
-   `integration_method_not_allowed` (405).
-6. The gateway has a key; otherwise `integration_not_configured` (503), whose
-   message names the secret and who sets it.
+1. The caller is a registered, active app: the AppGateway entrypoint checks
+   the binding's props against the app's registry row before the proxy
+   runs, as for AI (`missing_caller_identity` 401, `caller_not_registered`
+   403, ...).
+2. The route: the id is an API-key provider of the registry (an AI
+   provider's id, or an id nobody has, is refused here), the host is one of
+   its hosts or the one its `hostSetting` names, over https, with no path
+   that could leave it; otherwise `invalid_integration_route` (400).
+3. The grant: the app's registry row's manifest lists the capability;
+   otherwise `capability_not_requested` (403).
+4. The account-wide paths: the path isn't one the entry lists as describing
+   the whole provider account (DataForSEO's `tasks_ready`, `tasks_fixed`,
+   `id_list`, `errors`, `appendix/user_data`, `appendix/webhook_resend`),
+   however spelled, since one key serves every app in every organization;
+   otherwise `integration_path_not_allowed` (403).
+5. The method and the write grant: a method in the entry's `readMethods`
+   goes through on any grant; a method in its `writeMethods` only when the
+   provider offers `write` and the app's entry asks for `access: "write"`;
+   otherwise `integration_method_not_allowed` (405), whose message says
+   whether `access: "write"` would allow it.
+6. The key and its binding: every setting the entry's `auth` names is set;
+   otherwise `integration_not_configured` (503), whose message names the
+   settings and the `everyapp secret set` that sets them. For a registered
+   provider the key must also be bound to the hosts and auth the row has
+   now ([Provider registry](#provider-registry)); otherwise
+   `integration_not_configured` (503), "the key was set for other hosts
+   than the provider has now", with the same command.
+7. The hosted rule: on a hosted gateway, a provider whose `data` is
+   `account` (every list is the whole account the key belongs to) is
+   refused, `integration_not_available_hosted` (503), since one key would
+   be every organization's; a self-hosted gateway serves it.
+8. Attribution and the cap: the call is attributed to an organization (the
+   AppGateway entrypoint's `caller_*` refusals) and refused at the
+   organization's monthly cap on the app, `app_monthly_cap_exceeded` (429),
+   before anything is sent.
+9. The agent's write scope: a write method under an agent's identity
+   (`chan: "mcp"`) without `mcp:write` is `integration_read_only` (403).
 
-It then drops the app's `Authorization`, `x-api-key`, cookies and every
-`x-everyapp-*` header, puts its own credential on the request, refuses to
-follow redirects, and streams the body both ways. A provider it cannot reach
-is `integration_upstream_failed` (502). Every call is logged
-(`integration.proxy.call`) with the organization, app, path, status,
-attribution, and DataForSEO's `cost` from the response. Refusals the gateway
-makes, the AppGateway entrypoint's own included (`caller_not_registered`,
+It then drops the app's `Authorization`, `x-api-key`, cookies, every
+`x-everyapp-*` header and the hop-by-hop and forwarding headers, puts the
+key where the entry's `auth` says (a header, or a query parameter that
+replaces every copy the app sent), refuses to follow redirects, and streams
+the body both ways without the provider's `set-cookie`. A provider it cannot
+reach is `integration_upstream_failed` (502). For a provider whose key goes
+in the query string the key is in the URL, so the answer's `location`,
+`content-location` and `refresh` headers are deleted, a 3xx answer is never
+relayed (`integration_upstream_redirected`, 502), and a failed call logs the
+error's name only, never a message that might quote the URL. The call is
+counted the moment the provider answers. Every call is logged
+(`integration.proxy.call`) with the organization, app, host, path, method,
+status and attribution, and with the call's cost where the entry names a
+`cost.responseField`: a top-level field of the answer read off its first
+2 KiB, in US dollars, added to the usage counters (DataForSEO's `cost`; no
+other provider's answer is read). Refusals the gateway makes, the
+AppGateway entrypoint's own included (`caller_not_registered`,
 `invalid_gateway_route`, ...), carry their code in `x-everyapp-error` so an
 app can tell them from the provider's own errors.
 
@@ -273,6 +338,32 @@ app can tell them from the provider's own errors.
 `{ capability, requested, configured, ready }` without calling the provider
 (`integrationStatus`); `configured` is false for an app that doesn't list the
 capability, so no app learns which keys the operator holds.
+
+## Provider registry
+
+An API-key provider the catalog doesn't have can be registered on one
+gateway: `pnpm everyapp provider add stripe.json` writes a row of the
+gateway's `providers` table (migration 0010) holding a JSON spec of the
+same shape as a catalog entry (hosts, the `auth` that says where the key
+goes, the settings it names, the methods, the account-wide paths). The
+gateway resolves the catalog first and its rows after
+(`providerRegistry()` in `packages/sdk/src/internal/providerRegistry.ts`,
+read by `apps/every-app-gateway/src/server/providers/index.ts` and cached
+30 seconds per isolate), so an app lists and calls a registered provider
+exactly as a catalog one, and every check above applies to it. What a row
+may say is the security boundary: its settings carry its own id as a prefix
+and are nobody else's, its hosts are public DNS names the gateway doesn't
+serve itself, it never shadows a catalog id, and its key is read only for
+the hosts and auth it was set for (`secret set` binds it; a replaced row
+needs the key again). The gateway checks every row again each time it
+reads one and leaves out, logged `provider.row_invalid`, a row that fails.
+`pnpm everyapp provider list` lists the catalog and the rows with whether
+each setting is set and bound; `provider show <id>` prints a spec;
+`provider remove <id>` removes a row. The spec's fields, the auth kinds,
+the rules, the commands and their codes are the agent docs page
+[/docs/agent/providers](https://everyapp.com/docs/agent/providers); the
+rules' invariants are the `providers.*` rows of the threat model's register
+(B4), and the design is docs/design/2026-10-provider-registry.md.
 
 ## OAuth clients
 
@@ -750,7 +841,8 @@ background work.
 An MCP app (a provider app in the code) offers an `api_key` provider's data
 to members' AI clients directly, as an app of the gateway's own with no
 page and nothing to deploy: the operator turns it on (`pnpm everyapp mcp on
-dataforseo`; `provider on` is an alias through launch week) and sets the
+dataforseo`; `provider on|off` still run `mcp on|off` through launch week,
+as hidden routes, while `provider list` is the provider registry's) and sets the
 key as for any capability; the gateway serves a curated set of the
 provider's tools on its `/mcp` under `<id>_<tool>` names. The registry is
 `PROVIDER_APPS` in `packages/sdk/src/internal/providerApps.ts`; the row is

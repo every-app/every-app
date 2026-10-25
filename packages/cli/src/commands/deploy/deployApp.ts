@@ -62,10 +62,10 @@
  */
 import path from "node:path";
 import { version as cliVersion } from "../../../package.json";
-import { manifestTierProblems } from "@every-app/perimeter/manifest";
+import { manifestTierProblems, validateManifestStrict } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
-import type { AppSetup } from "@every-app/sdk/internal";
+import { capabilityIdsOf, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
 import {
   awaitLive,
   bindIfNeeded,
@@ -134,6 +134,7 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
+import { gatewayRegistry } from "@/lib/gateway/providers";
 import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
 import {
   findRegisteredApp,
@@ -328,6 +329,10 @@ async function deploySteps(
         : undefined,
     });
   out.emit({ type: "step", step: "app.connect", status: "ok", data: { gatewayUrl } });
+  // The manifest against what this Gateway offers: the catalog and the
+  // providers registered on it, before anything is registered or built.
+  const providers = await gatewayRegistry(registry, install);
+  checkCapabilitiesOffered(manifest, providers, gatewayUrl);
   // A person's first line, before anything can stop the run: where this
   // goes, and whether the app has ever been live (a first deploy that
   // stopped part way is still the first).
@@ -842,7 +847,7 @@ async function deploySteps(
     // What the app still needs set, once its upload is on record: a
     // warning with the one command, said again under Next; and the state
     // on the app's row, with app.needs_setup or app.ready on a change.
-    const setup = await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next });
+    const setup = await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next, providers });
     await recordSetupStateQuietly(registry, { appRowId: plan.app.id, setup, deployer }, out);
   } finally {
     await lease.release();
@@ -948,6 +953,7 @@ async function warnIfNeedsSetup({
   secretNames,
   out,
   next,
+  providers,
 }: {
   cf: CfRunner;
   manifest: EveryAppCliManifest;
@@ -955,11 +961,15 @@ async function warnIfNeedsSetup({
   secretNames: string[] | null;
   out: EventSink;
   next: DeployAppResult["next"];
+  /** The catalog and the Gateway's registered providers. */
+  providers: ProviderRegistry;
 }): Promise<AppSetup> {
   // Nothing to set: ready, with nothing to list.
-  if (!declaresSettings(manifest)) return appSetupFrom({ manifest, appId, gatewayNames: [], secretNames: [] }).setup;
+  if (!declaresSettings(manifest, providers)) {
+    return appSetupFrom({ manifest, appId, gatewayNames: [], secretNames: [], lookup: providers }).setup;
+  }
   const gatewayNames = await listGatewaySecretNames(cf).catch(() => null);
-  const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames });
+  const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames, lookup: providers });
   if (setup.ready || !setup.command) return setup;
   const names = namesToSet(setup);
   const why = setup.unmet.find((setting) => setting.why);
@@ -975,6 +985,39 @@ async function warnIfNeedsSetup({
   });
   next.push({ command: setup.command.command, note: `asks for each; ${appId} opens once they are set` });
   return setup;
+}
+
+/**
+ * The manifest against the Gateway's registry, once connected (the load
+ * before it accepted any well-formed capability id): an id neither the
+ * catalog nor the Gateway's registered providers have is
+ * CAPABILITY_UNKNOWN, naming the command that registers one; then the
+ * strict validator with the registry, which checks a registered
+ * provider's entry as a catalog one's (the access it offers) and refuses
+ * an app secret a registered provider holds, in the words it refuses a
+ * catalog key in (INVALID_MANIFEST).
+ */
+function checkCapabilitiesOffered(
+  manifest: EveryAppCliManifest,
+  providers: ProviderRegistry,
+  gatewayUrl: string,
+): void {
+  const unknown = Object.keys(manifest.capabilities ?? {}).filter((id) => !providers.get(id));
+  if (unknown.length > 0) {
+    const offered = capabilityIdsOf(providers);
+    throw new EveryAppError(
+      "CAPABILITY_UNKNOWN",
+      [
+        `${manifest.id} lists ${listed(unknown)} under capabilities, which ${gatewayUrl.replace(/^https:\/\//, "")} doesn't offer`,
+        `Neither the built-in catalog nor the providers registered on this Gateway ${unknown.length === 1 ? "has it" : "have them"}. It offers: ${offered.join(", ")}.`,
+      ].join("\n"),
+      {
+        fix: `register ${unknown.length === 1 ? "it" : "each"} with ${CLI} provider add <spec.json or https URL> (or fix the id in everyapp.config.ts), then deploy again`,
+        data: { unknown, offered },
+      },
+    );
+  }
+  validateManifestStrict(manifest, { capabilities: providers });
 }
 
 /**

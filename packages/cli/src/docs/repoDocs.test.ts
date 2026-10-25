@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
 import { commandDocs } from "./cliReference";
 import { manifestFields } from "./manifestFields";
-import { AGENT_DOCS_DIR, mirroredDocuments } from "./pages";
+import { AGENT_DOCS_DIR, PENDING_ROUTES, mirroredDocuments } from "./pages";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -282,6 +282,7 @@ describe("the commands the documents cite", () => {
         for (const text of texts) {
           for (const { words } of citedCommands(text, { span: !line.inCode })) {
             const { unknown: bad } = routeOf(words);
+            if (bad && PENDING_ROUTES.has(bad)) continue;
             if (bad && !seen.has(bad)) {
               seen.add(bad);
               unknown.push(`${file}:${line.n} everyapp ${bad}`);
@@ -291,6 +292,14 @@ describe("the commands the documents cite", () => {
       }
     }
     expect(unknown, "commands cited in the documents that the CLI doesn't have").toEqual([]);
+  });
+
+  it("leave out of PENDING_ROUTES every route the CLI has built", () => {
+    const built = [...PENDING_ROUTES.keys()].filter((route) => routes.has(route));
+    expect(
+      built,
+      "routes the CLI answers now: remove them from PENDING_ROUTES in packages/cli/src/docs/pages.ts, so the documents are checked against them",
+    ).toEqual([]);
   });
 
   it("take the flags the documents give them", () => {

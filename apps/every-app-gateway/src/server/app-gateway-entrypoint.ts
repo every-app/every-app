@@ -1,4 +1,5 @@
 import {
+  CATALOG,
   EVENTS_EMIT_PATH,
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
@@ -6,6 +7,7 @@ import {
   providerIds,
   parseIntegrationProxyPath,
   verifyIdentityJwt,
+  type CapabilityLookup,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
@@ -96,6 +98,12 @@ interface HandleAppGatewayRequestOptions {
    */
   caps?: AppCapSources;
   /**
+   * Where a provider id is found: the catalog and this gateway's registered
+   * providers (server/providers in the Worker); the catalog alone when
+   * absent.
+   */
+  providers?: () => Promise<CapabilityLookup>;
+  /**
    * What a cap check's standing is reported to, after the answer
    * (events/cap-events.ts: cap.warning at 80%, cap.reached and
    * app.paused_cap at the cap); the event bus by default, loaded on first
@@ -164,6 +172,7 @@ export async function handleAppGatewayRequest({
   usage,
   waitUntil,
   caps,
+  providers,
   onCap = noteCapCheckLater,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
@@ -296,14 +305,20 @@ export async function handleAppGatewayRequest({
       return handleAppEmit({ request, app, organizationId, user }, deps);
     }
 
+    const lookup = providers ? await providers() : CATALOG;
     if (route.kind === "integration") {
       const url = new URL(request.url);
+      // Only to tell a provider call from a service's for the cap: a
+      // provider whose host comes from a setting parses to null here and
+      // still counts as a provider call.
       const providerCall =
-        parseIntegrationProxyPath(url.pathname, url.search)?.kind !== "service";
+        parseIntegrationProxyPath(url.pathname, url.search, undefined, lookup)
+          ?.kind !== "service";
       // Awaited so a refusal `admit` throws is answered below.
       return await handleIntegrationProxyRequest({
         request,
         capabilities: app.manifest.capabilities,
+        lookup,
         emailSenders: app.emailSenders ?? [],
         env,
         admit: async () => {
@@ -396,6 +411,7 @@ export async function handleAppGatewayRequest({
       request,
       provider,
       env,
+      lookup,
       policy: app.manifest.ai,
       caller: { organizationId, appId: props.appId },
       fetchUpstream,

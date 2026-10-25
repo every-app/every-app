@@ -37,6 +37,7 @@ import {
   type ReleaseOrigin,
 } from "@/lib/gateway/release";
 import {
+  LOCAL_MANIFEST_OPTIONS,
   migrationsDir,
   resolveMigrationBinding,
   type EveryAppCliManifest,
@@ -292,7 +293,8 @@ export async function openAppRelease(
     refuseNewerThanCli(release, version, `${release.appId} ${release.version}`);
     let manifest: EveryAppCliManifest;
     try {
-      manifest = validateManifestStrict(release.manifest);
+      // The ids it lists are checked against the Gateway when it is deployed.
+      manifest = validateManifestStrict(release.manifest, LOCAL_MANIFEST_OPTIONS);
     } catch (error) {
       if (!(error instanceof ManifestError)) throw error;
       throw new EveryAppError(

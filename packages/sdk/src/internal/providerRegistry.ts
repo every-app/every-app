@@ -45,6 +45,55 @@ export interface ProviderRow {
   id: string;
   /** The spec, as JSON text or already parsed. */
   spec: unknown;
+  /**
+   * What the row's key was set for: {@link providerBindingKey} of the row
+   * as it was when `everyapp secret set` last set one of its settings;
+   * null until then. The gateway reads the row's settings only while this
+   * equals the key of the row it has now (`providers.value-bound-to-hosts`).
+   */
+  boundTo?: string | null;
+  /** Who registered it (the Cloudflare login's email, or a member's), for the person setting its key. */
+  addedBy?: string | null;
+  /** When, in epoch milliseconds. */
+  addedAt?: number | null;
+}
+
+/**
+ * The part of a row a key is set for: its hosts, its host setting and its
+ * auth, as one canonical string (sorted keys, sorted hosts), so that
+ * replacing a row's hosts or auth changes the key and the value it held
+ * is no longer read until the operator sets it again.
+ */
+export function providerBindingKey(capability: ApiKeyCapability): string {
+  const auth = Object.fromEntries(
+    Object.entries(capability.auth)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([field, value]) => [
+        field,
+        typeof value === "object" && value !== null
+          ? Object.fromEntries(
+              Object.entries(value).sort(([a], [b]) =>
+                a < b ? -1 : a > b ? 1 : 0,
+              ),
+            )
+          : value,
+      ]),
+  );
+  return JSON.stringify({
+    auth,
+    hostSetting: capability.hostSetting ?? null,
+    hosts: [...capability.hosts].sort(),
+  });
+}
+
+/** One registered row as `provider list` and `provider show` report it. */
+export interface RegisteredProvider {
+  id: string;
+  capability: ApiKeyCapability;
+  /** Whether the row's key was set for the hosts and auth it has now. */
+  bound: boolean;
+  addedBy: string | null;
+  addedAt: number | null;
 }
 
 export type RowRefusalCode =
@@ -67,6 +116,16 @@ export interface ProviderRegistry extends CapabilityLookup {
   sourceOf(id: string): "catalog" | "row" | undefined;
   /** Every Gateway setting any provider reads, the catalog's and the rows'. */
   settingNames(): ReadonlySet<string>;
+  /**
+   * Whether `id`'s settings may be read: always for a catalog entry; for a
+   * row, only while its key was set for the hosts and auth it has now.
+   * False for an id the registry doesn't have.
+   */
+  bound(id: string): boolean;
+  /** The settings of rows whose key isn't bound: read as unset everywhere. */
+  unboundSettings(): ReadonlySet<string>;
+  /** The registered rows this registry serves, in row order. */
+  rows(): readonly RegisteredProvider[];
   /** The rows this registry left out, each with why. */
   readonly rejected: readonly RowRefusal[];
 }
@@ -98,6 +157,52 @@ export function publicHostProblem(host: string): string | null {
     LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix))
   ) {
     return `${host} is not a public host`;
+  }
+  return null;
+}
+
+/** What a gateway serves itself, for {@link gatewayHostRefusal}. */
+export interface GatewayHosts {
+  /** The gateway's own host (`apps.example.com`), or its URL. */
+  gatewayHost?: string | null;
+  /** Where its apps live (`APP_BASE_DOMAIN`): the domain and everything under it. */
+  appBaseDomain?: string | null;
+  /** A hosted gateway's third-party domain (`THIRD_PARTY_DOMAIN`), when it has one. */
+  thirdPartyDomain?: string | null;
+}
+
+/** A bare lowercase host from a host or a URL; null when neither. */
+function bareHost(value: string | null | undefined): string | null {
+  const text = value?.trim().toLowerCase().replace(/\.$/, "");
+  if (!text) return null;
+  if (!text.includes("/")) return text;
+  try {
+    return new URL(text).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why a row can't send its key to `host` on this gateway: the gateway's
+ * own host, an app host under its base domain, or a host under its
+ * third-party domain. Null when none applies. The gateway applies it on
+ * every read (`refusedGatewayHost`, with its env) and the CLI at `provider
+ * add` (with the install's gateway host and base domain), in the same words.
+ */
+export function gatewayHostRefusal(
+  host: string,
+  hosts: GatewayHosts,
+): string | null {
+  const own = bareHost(hosts.gatewayHost);
+  if (own && host === own) return `${host} is this gateway's own host`;
+  const base = bareHost(hosts.appBaseDomain);
+  if (base && (host === base || host.endsWith(`.${base}`))) {
+    return `${host} is under this gateway's app domain ${base}`;
+  }
+  const third = bareHost(hosts.thirdPartyDomain);
+  if (third && (host === third || host.endsWith(`.${third}`))) {
+    return `${host} is under this gateway's third-party domain ${third}`;
   }
   return null;
 }
@@ -235,7 +340,7 @@ export function providerRegistry(
   const catalog = new Map<string, Capability>(
     CAPABILITY_IDS.map((id) => [id, CAPABILITIES[id] as Capability]),
   );
-  const accepted = new Map<string, ApiKeyCapability>();
+  const accepted = new Map<string, RegisteredProvider>();
   const rejected: RowRefusal[] = [];
   const rowSettings = new Set<string>();
   for (const row of rows) {
@@ -255,13 +360,25 @@ export function providerRegistry(
       rejected.push(resolved.refusal);
       continue;
     }
-    accepted.set(row.id, resolved.capability);
+    accepted.set(row.id, {
+      id: row.id,
+      capability: resolved.capability,
+      bound: row.boundTo === providerBindingKey(resolved.capability),
+      addedBy: row.addedBy ?? null,
+      addedAt: row.addedAt ?? null,
+    });
     for (const name of capabilitySettings(resolved.capability)) {
       rowSettings.add(name);
     }
   }
-  const all = new Map<string, Capability>([...catalog, ...accepted]);
+  const all = new Map<string, Capability>([
+    ...catalog,
+    ...[...accepted.values()].map(
+      (row) => [row.id, row.capability] as [string, Capability],
+    ),
+  ]);
   let names: Set<string> | undefined;
+  let unbound: Set<string> | undefined;
   return {
     get: (id) => all.get(id),
     ids: () => [...all.keys()],
@@ -276,6 +393,16 @@ export function providerRegistry(
       );
       return names;
     },
+    bound: (id) => catalog.has(id) || (accepted.get(id)?.bound ?? false),
+    unboundSettings: () => {
+      unbound ??= new Set(
+        [...accepted.values()]
+          .filter((row) => !row.bound)
+          .flatMap((row) => capabilitySettings(row.capability)),
+      );
+      return unbound;
+    },
+    rows: () => [...accepted.values()],
     rejected,
   };
 }

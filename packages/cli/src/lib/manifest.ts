@@ -59,8 +59,18 @@ export async function loadEveryAppManifestFile(
 
   const jiti = createJiti(pathToFileURL(manifestPath).href);
   const raw = await jiti.import(manifestPath, { default: true });
-  return validateManifestStrict(raw);
+  return validateManifestStrict(raw, LOCAL_MANIFEST_OPTIONS);
 }
+
+/**
+ * How the CLI validates a manifest before it has asked a Gateway: every
+ * field strictly, and a capability id outside the built-in catalog as a
+ * well-formed entry (`access` and its need), since it may be a provider
+ * registered on the Gateway (`everyapp provider add`). `deploy` checks the
+ * ids against the Gateway's registry once connected (CAPABILITY_UNKNOWN),
+ * and `dev` warns about each (CAPABILITY_NOT_IN_CATALOG).
+ */
+export const LOCAL_MANIFEST_OPTIONS = { unknownCapabilities: "accept" } as const;
 
 // An absent `migrations` field means drizzle against the first D1 binding, on
 // both the deploy and dev-preflight paths. Diverging would silently skip the

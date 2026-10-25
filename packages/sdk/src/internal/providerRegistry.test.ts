@@ -6,6 +6,7 @@ import {
 } from "./capabilities";
 import {
   BUILTIN_PROVIDERS,
+  gatewayHostRefusal,
   providerRegistry,
   providerSettingPrefix,
   publicHostProblem,
@@ -269,5 +270,37 @@ describe("a registry with rows", () => {
     );
     expect(registry.rejected[2]!.code).toBe("PROVIDER_SPEC_INVALID");
     expect(registry.ids()).toEqual(CAPABILITY_IDS);
+  });
+});
+
+describe("gatewayHostRefusal", () => {
+  const hosts = {
+    gatewayHost: "apps.example.com",
+    appBaseDomain: "apps.example.com",
+    thirdPartyDomain: "usercontent.example.net",
+  };
+
+  it("refuses the gateway's own host, its app hosts and its third-party hosts, in the gateway's words", () => {
+    expect(gatewayHostRefusal("apps.example.com", hosts)).toBe(
+      "apps.example.com is this gateway's own host",
+    );
+    expect(gatewayHostRefusal("crm.apps.example.com", hosts)).toBe(
+      "crm.apps.example.com is under this gateway's app domain apps.example.com",
+    );
+    expect(gatewayHostRefusal("x.usercontent.example.net", hosts)).toBe(
+      "x.usercontent.example.net is under this gateway's third-party domain usercontent.example.net",
+    );
+    expect(gatewayHostRefusal("api.stripe.com", hosts)).toBeNull();
+    // A sibling of the base domain is someone else's.
+    expect(gatewayHostRefusal("example.com", hosts)).toBeNull();
+  });
+
+  it("takes the gateway as a URL too, and refuses nothing it isn't told", () => {
+    expect(
+      gatewayHostRefusal("gw.example.org", {
+        gatewayHost: "https://GW.example.org/",
+      }),
+    ).toBe("gw.example.org is this gateway's own host");
+    expect(gatewayHostRefusal("apps.example.com", {})).toBeNull();
   });
 });

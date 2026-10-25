@@ -1633,6 +1633,12 @@ export interface CapabilityLookup {
   get(id: string): Capability | undefined;
   /** Every id, in order: the catalog's, then a gateway's rows. */
   ids(): readonly string[];
+  /**
+   * Whether `id`'s settings may be read now: a registered row's only while
+   * its key was set for the hosts and auth it has (the registry's rule);
+   * absent, as for the catalog alone, every entry's may.
+   */
+  bound?(id: string): boolean;
 }
 
 /** The built-in catalog as a lookup: what every surface reads without a gateway's rows. */

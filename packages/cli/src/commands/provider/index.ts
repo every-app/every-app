@@ -1,146 +1,107 @@
 /**
- * `everyapp mcp add|remove|on|off|list|show|refresh|tool` (alias
- * `provider`): MCP apps, provider apps in the code (tier `provider`), the
- * tools of a data provider (DataForSEO, built in) or of any remote MCP
- * server added by URL, offered to members' AI clients through the
- * Gateway's /mcp as apps of the Gateway's own, with no page and nothing to
- * deploy (docs/design/2026-10-mcp-by-url.md). Every change is written to
- * the Gateway's registry under the Cloudflare login
- * (lib/gateway/remoteMcpApps.ts, lib/gateway/providerApps.ts); `list` and
- * `show` read it and, like `secret list`, which Gateway settings are set,
- * so each app's key shows as set or not. The Gateway reads a change
- * within 30 seconds.
+ * `everyapp provider add|list|show|remove`: the provider registry
+ * (docs/design/2026-10-provider-registry.md). Every API provider the
+ * Gateway brokers is an entry of data: the built-in catalog
+ * (`@every-app/sdk/internal` capabilities.ts) and the rows this Gateway
+ * registered (`providers` in its D1, lib/gateway/providers.ts), which the
+ * CLI writes under the Cloudflare login (ADR-0003) and the Gateway reads
+ * within 30 seconds. An app lists either kind under `capabilities` and
+ * calls it with `integrationFetch()`; the key is a Gateway setting, set
+ * with `secret set`, which binds a row's key to the hosts the row has then.
  *
- * `on` serves, `off` stops serving and keeps everyone's access, the tokens
- * and the tools snapshot (status `disabled`), `remove` is the tombstone
- * (until 2026-10-25 `off` was). `add` looks at the server once from here
- * and warns about what it found, never refuses on it.
+ * `provider on|off` (hidden) run `mcp on|off`, which they were until
+ * 2026-10-24, and say so: through launch week only.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import { remoteMcpBlockOf } from "@every-app/perimeter/registry";
 import {
-  PROVIDER_APPS,
-  providerAppKeySetting,
-  remoteMcpAuthLabel,
-  remoteMcpIdFromUrl,
-  remoteMcpSecretName,
-  remoteMcpSecretOf,
-  type ProviderAppId,
-  type RemoteMcpAuth,
-  type RemoteMcpAuthKind,
-  type RemoteMcpBlock,
-  type RemoteMcpRiskDefault,
-  type ToolRisk,
+  capabilitySettings,
+  DEV_PROVIDERS_DIR,
+  describeTokenEndpoints,
+  devProviderFile,
+  providerIds,
+  providerSpecOf,
+  type ApiKeyCapability,
+  type Capability,
+  type ProviderRegistry,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { turnProviderAppOn } from "@/lib/gateway/providerApps";
-import {
-  addRemoteMcpApp,
-  bindRemoteMcpCredentials,
-  listMcpApps,
-  mcpAppState,
-  originOf,
-  readCredentialBindings,
-  readMcpAppDetail,
-  refreshMcpAppTools,
-  remoteMcpTables,
-  removedRemoteApp,
-  removeMcpApp,
-  resolveMcpApp,
-  setMcpAppStatus,
-  setRemoteMcpTool,
-  type CredentialBinding,
-  type McpAppRef,
-  type McpAppState,
-  type ToolSnapshot,
-} from "@/lib/gateway/remoteMcpApps";
-import { probeRemoteMcp, type RemoteMcpProbe } from "@/lib/gateway/remoteMcpProbe";
-import type { StoredAppRow } from "@/lib/gateway/registry";
+import { addProvider, gatewayRegistry, removeProvider } from "@/lib/gateway/providers";
+import { listApps } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
+import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
-import { formatFacts, formatTable } from "@/lib/output/table";
-import { plural } from "@/lib/output/text";
-import { readSecretValue } from "@/lib/secretValue";
-import { version as cliVersion } from "../../../package.json";
+import { formatTable } from "@/lib/output/table";
+import { listed } from "@/lib/output/text";
 import type { GatewayCommandFlags } from "../flags";
-import { applyGatewaySettings } from "../secret";
+import { turnOff, turnOn } from "../mcp";
 
-/** `mcp add`'s flags. */
-export interface AddFlags extends GatewayCommandFlags {
-  name?: string;
-  auth?: RemoteMcpAuthKind;
-  header?: string;
-  secret?: string;
-  risk?: RemoteMcpRiskDefault;
-  description?: string;
-  /** The credential's value from this environment variable (as `secret set --from-env`). */
-  "from-env"?: string;
-}
-
-/** `mcp tool`'s flags. */
-export interface ToolFlags extends GatewayCommandFlags {
-  risk?: ToolRisk | "annotations";
-  on?: boolean;
-  off?: boolean;
-}
+/** The most a spec may be, from a file or a URL. */
+export const MAX_SPEC_BYTES = 64 * 1024;
 
 /** What the handlers take from the command line, and the seams tests use. */
-export interface McpOptions<Flags extends GatewayCommandFlags = GatewayCommandFlags> {
-  flags: Flags;
+export interface ProviderOptions {
+  flags: GatewayCommandFlags;
   out: EventSink;
+  /** Where a spec path is read from and an app's directory is looked for (default: the working directory). */
+  cwd?: string;
   /** cf per account (tests). */
   createCf?: (accountId?: string) => CfRunner;
-  now?: () => number;
-  /** `add`'s probe (tests). */
+  /** How a spec URL is fetched (tests). */
   fetch?: typeof fetch;
-  /** Whether a person is at the terminal for `add` to offer the credential (default: canPromptInTerminal). */
-  interactive?: boolean;
-  /** `add`'s "set it now?" (default: the terminal's yes/no). */
-  confirm?: Confirm;
-  /** `add`'s credential value (default: `secret set`'s own reader: --from-env, else the hidden prompt). */
-  readValue?: (name: string) => Promise<string>;
+  now?: () => number;
 }
 
-export async function add(flags: AddFlags, url: string): Promise<void> {
-  await runCommand(flags, (out) => addServer({ flags, out }, url));
-}
-
-export async function remove(flags: GatewayCommandFlags, id: string): Promise<void> {
-  await runCommand(flags, (out) => removeApp({ flags, out }, id));
-}
-
-export async function on(flags: GatewayCommandFlags, id: string): Promise<void> {
-  await runCommand(flags, (out) => turnOn({ flags, out }, id));
-}
-
-export async function off(flags: GatewayCommandFlags, id: string): Promise<void> {
-  await runCommand(flags, (out) => turnOff({ flags, out }, id));
+export async function add(flags: GatewayCommandFlags & { replace?: boolean }, spec: string): Promise<void> {
+  await runCommand(flags, (out) => addFromSpec({ flags, out }, spec));
 }
 
 export async function list(flags: GatewayCommandFlags): Promise<void> {
-  await runCommand(flags, (out) => listMcp({ flags, out }));
+  await runCommand(flags, (out) => listProviders({ flags, out }));
 }
 
-export async function show(flags: GatewayCommandFlags, id: string): Promise<void> {
-  await runCommand(flags, (out) => showApp({ flags, out }, id));
+export async function show(flags: GatewayCommandFlags & { save?: boolean }, id: string): Promise<void> {
+  await runCommand(flags, (out) => showProvider({ flags, out }, id));
 }
 
-export async function refresh(flags: GatewayCommandFlags, id: string): Promise<void> {
-  await runCommand(flags, (out) => refreshApp({ flags, out }, id));
+export async function remove(flags: GatewayCommandFlags & { force?: boolean }, id: string): Promise<void> {
+  await runCommand(flags, (out) => removeRegistered({ flags, out }, id));
 }
 
-export async function tool(flags: ToolFlags, id: string, toolName: string): Promise<void> {
-  await runCommand(flags, (out) => changeTool({ flags, out }, id, toolName));
+/** `provider on`: `mcp on`, said first. */
+export async function on(flags: GatewayCommandFlags, id: string): Promise<void> {
+  await runCommand(flags, (out) => runMcpAlias({ flags, out }, "on", id));
 }
 
-function connect({ flags, out, createCf }: McpOptions) {
+/** `provider off`: `mcp off`, said first. */
+export async function off(flags: GatewayCommandFlags, id: string): Promise<void> {
+  await runCommand(flags, (out) => runMcpAlias({ flags, out }, "off", id));
+}
+
+/**
+ * An old `provider on|off`: one dim line saying what it is now (step
+ * `provider.alias`), then `mcp on|off` itself, events and all.
+ */
+export async function runMcpAlias(options: ProviderOptions, verb: "on" | "off", id: string): Promise<void> {
+  options.out.emit({
+    type: "step",
+    step: "provider.alias",
+    status: "ok",
+    message: `everyapp provider ${verb} is now everyapp mcp ${verb}; this alias goes after launch week.`,
+    data: { command: `${CLI} mcp ${verb} ${id}` },
+  });
+  await (verb === "on" ? turnOn : turnOff)(options, id);
+}
+
+function connect({ flags, out, createCf }: ProviderOptions) {
   return connectToGateway({
     gateway: requestedGatewayUrl(flags.gateway),
     accountId: flags["account-id"],
@@ -150,767 +111,538 @@ function connect({ flags, out, createCf }: McpOptions) {
   });
 }
 
-type Connection = Awaited<ReturnType<typeof connect>>;
+/** Whether `dir` is an app's directory: its everyapp.config.ts is there. */
+async function isAppDirectory(dir: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(dir, "everyapp.config.ts"));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-/** The step `on` and `off` report under (as since #489). */
-const STEP = "provider.update";
+function specRefused(message: string, fix: string): EveryAppError {
+  return new EveryAppError("PROVIDER_SPEC_INVALID", message, { fix });
+}
 
-/** A done event: the message plain, the first line bright and the rest dim for a person. */
-function finish(out: EventSink, lines: readonly string[], data: Record<string, unknown>, extra: readonly string[] = []): void {
+/**
+ * The spec `source` names, parsed as JSON: an https URL fetched here (no
+ * other scheme), or a file, relative to `cwd`; 64 KiB at most either way.
+ * Nothing is checked but that it is JSON: the parser and the rules come
+ * after.
+ */
+export async function readSpecSource(
+  source: string,
+  { cwd, fetcher = fetch }: { cwd: string; fetcher?: typeof fetch },
+): Promise<unknown> {
+  let text: string;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) {
+    let url: URL;
+    try {
+      url = new URL(source);
+    } catch {
+      throw specRefused(`${source} isn't a URL`, "give the spec's https URL, or a path to the file");
+    }
+    if (url.protocol !== "https:") {
+      throw specRefused(`${source} isn't https`, "fetch specs over https only, or save the file and give its path");
+    }
+    let response: Response;
+    try {
+      response = await fetcher(url, { headers: { accept: "application/json" }, redirect: "follow" });
+    } catch (error) {
+      throw specRefused(
+        `Couldn't fetch ${source}: ${errorMessage(error).split("\n")[0]}`,
+        "check the URL, or save the file and give its path",
+      );
+    }
+    if (response.url && !response.url.startsWith("https://")) {
+      throw specRefused(`${source} redirected to a URL that isn't https`, "give the spec's final https URL");
+    }
+    if (!response.ok) {
+      throw specRefused(`${source} answered ${response.status}`, "check the URL, or save the file and give its path");
+    }
+    text = await readCapped(response, source);
+  } else {
+    const file = path.resolve(cwd, source);
+    let bytes: Buffer;
+    try {
+      const stat = await fs.stat(file);
+      if (stat.size > MAX_SPEC_BYTES) {
+        throw specRefused(`${source} is over ${MAX_SPEC_BYTES / 1024} KiB`, "a spec is a short JSON file");
+      }
+      bytes = await fs.readFile(file);
+    } catch (error) {
+      if (error instanceof EveryAppError) throw error;
+      if (isNotFoundError(error)) {
+        throw specRefused(`No file at ${source}`, "give the path to the spec's JSON file, or its https URL");
+      }
+      throw error;
+    }
+    text = bytes.toString("utf8");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw specRefused(`${source} isn't JSON: ${errorMessage(error).split("\n")[0]}`, "fix the file, then add it again");
+  }
+}
+
+/** A response's body as text, refused past 64 KiB however it is sent. */
+async function readCapped(response: Response, source: string): Promise<string> {
+  const declared = Number(response.headers.get("content-length"));
+  const tooBig = () => specRefused(`${source} is over ${MAX_SPEC_BYTES / 1024} KiB`, "a spec is a short JSON file");
+  if (Number.isFinite(declared) && declared > MAX_SPEC_BYTES) throw tooBig();
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_SPEC_BYTES) {
+      await reader.cancel();
+      throw tooBig();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** "api.stripe.com", "api.stripe.com and the host STRIPE_HOST names". */
+function keyHosts(capability: ApiKeyCapability): string {
+  return listed([
+    ...capability.hosts,
+    ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
+  ]);
+}
+
+/** How the key goes on a request, in a few words. */
+function sentAs(capability: ApiKeyCapability): string {
+  const { auth } = capability;
+  switch (auth.kind) {
+    case "bearer":
+      return `as ${auth.scheme ?? "a bearer"} token`;
+    case "header":
+      return `in the ${auth.header} header`;
+    case "query":
+      return `as the ${auth.param} query parameter`;
+    case "basic":
+      return "as HTTP Basic";
+  }
+}
+
+/**
+ * `provider add <spec>`: the spec read (a file, or an https URL fetched
+ * here) and registered, then what to set next. In an app's directory the
+ * spec is also written to `.everyapp/providers/<id>.json` for `everyapp
+ * dev`.
+ */
+export async function addFromSpec(
+  options: ProviderOptions & { flags: { replace?: boolean } },
+  source: string,
+): Promise<void> {
+  const { out, flags } = options;
+  const cwd = options.cwd ?? process.cwd();
+  const spec = await readSpecSource(source, { cwd, fetcher: options.fetch });
+  const gateway = await connect(options);
+  const named =
+    spec && typeof spec === "object" && typeof (spec as { id?: unknown }).id === "string"
+      ? (spec as { id: string }).id
+      : "the provider";
+  out.emit({ type: "step", step: "provider.add", status: "start", message: `Registering ${named}...` });
+  const added = await addProvider(gateway.db, {
+    spec,
+    actor: gateway.deployer.actor,
+    replace: flags.replace ?? false,
+    install: gateway.install,
+    now: options.now?.(),
+  });
+  const { id, capability } = added;
+  const settings = [...capabilitySettings(capability)];
+  const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
+  out.emit({
+    type: "step",
+    step: "provider.add",
+    status: "ok",
+    message: `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}`,
+    data: { id, replaced: added.replaced },
+  });
+  // For `everyapp dev`: the SDK reaches the provider from this file with
+  // the developer's own key.
+  let devFile: string | null = null;
+  if (await isAppDirectory(cwd)) {
+    devFile = devProviderFile(id);
+    await writeDevSpec(cwd, id, capability);
+  }
+  const names = settings.join(" ");
+  const lines = [
+    `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}.`,
+    `Its key goes to ${keyHosts(capability)} only, ${sentAs(capability)}.`,
+    ...(added.replaced ? ["The key set before was for the old spec: set it again before the Gateway sends it."] : []),
+    ...(devFile ? [`Wrote ${devFile} for everyapp dev (your key goes in .dev.vars).`] : []),
+    `Apps list it as capabilities: { ${JSON.stringify(id)}: { access: "${capability.access[0]}", why: "..." } }.`,
+  ];
   out.emit({
     type: "done",
     message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line)), ...extra].join("\n"),
-    data,
-  });
-}
-
-/** Who can use a newly added app, in a sentence. */
-function accessLine(actorGranted: boolean, hasOwner: boolean): string {
-  const who = actorGranted
-    ? "You, the owners and the admins can use it"
-    : hasOwner
-      ? "The owners and the admins can use it"
-      : "The owner gets it when they claim the Gateway";
-  return `${who}; an admin grants others in Admin → Apps → Manage access.`;
-}
-
-/** The auth block as `--json` shows it: the kind, and the credential's NAME and header when it has them. */
-function authData(auth: RemoteMcpAuth): Record<string, unknown> {
-  return {
-    kind: auth.kind,
-    ...("secret" in auth ? { secret: auth.secret } : {}),
-    ...(auth.kind === "header" ? { header: auth.header } : {}),
-  };
-}
-
-/** A key or credential as the commands report it: its name, whether it is set, and a credential's pin. */
-interface KeyState {
-  name: string;
-  set: boolean;
-  /** A remote credential: pinned to this app's origin. */
-  bound?: boolean;
-  /** A remote credential: the origin it is pinned to, null when it has no pin yet. */
-  boundOrigin?: string | null;
-}
-
-function keyState(
-  name: string | null,
-  gatewayNames: readonly string[],
-  remote: RemoteMcpBlock | null,
-  bindings: ReadonlyMap<string, CredentialBinding>,
-): KeyState | null {
-  if (!name) return null;
-  const set = gatewayNames.includes(name);
-  if (!remote) return { name, set };
-  const pin = bindings.get(name)?.origin ?? null;
-  return { name, set, bound: pin !== null && pin === originOf(remote.url), boundOrigin: pin };
-}
-
-/** The flags as the registry's auth block, refusing combinations that say two things. */
-function authFromFlags(flags: AddFlags): Record<string, unknown> {
-  const header = flags.header?.trim();
-  const secret = flags.secret?.trim();
-  const kind = flags.auth ?? (header ? "header" : secret ? "bearer" : "none");
-  if (header && kind !== "header") {
-    throw new EveryAppError(
-      "REMOTE_MCP_INVALID",
-      `--header names the header of --auth header\nWith --auth ${kind} the Gateway sends ${kind === "none" || kind === "oauth" ? "no credential" : "Authorization"}.`,
-      { fix: "drop --header, or use --auth header" },
-    );
-  }
-  if (kind === "header" && !header) {
-    throw new EveryAppError(
-      "REMOTE_MCP_INVALID",
-      "--auth header needs --header <name>: the header the server reads the credential from",
-      { fix: "add --header X-Api-Key (the name the server's docs give)" },
-    );
-  }
-  if ((secret || flags["from-env"]) && (kind === "none" || kind === "oauth")) {
-    const flag = secret ? "--secret" : "--from-env";
-    throw new EveryAppError(
-      "REMOTE_MCP_INVALID",
-      `${flag} names a credential, and --auth ${kind} sends none`,
-      { fix: `drop ${flag}, or use --auth bearer, header or basic` },
-    );
-  }
-  return { kind, ...(secret ? { secret } : {}), ...(header ? { header } : {}) };
-}
-
-/** What the probe found, in one line. */
-function probeLine(url: string, probe: RemoteMcpProbe): string {
-  switch (probe.outcome) {
-    case "reachable": {
-      const parts = [
-        probe.era,
-        ...(probe.tools !== null ? [plural(probe.tools, "tool")] : []),
-        ...(probe.server ? [`server ${probe.server}`] : []),
-      ];
-      return `${url} answers MCP (${parts.join(", ")})`;
-    }
-    case "needs-credential":
-      return `${url} asks for a credential (${probe.status}${probe.oauth ? ", OAuth" : ""})`;
-    case "redirected":
-      return `${url} redirects (${probe.status}${probe.location ? ` to ${probe.location}` : ""})`;
-    case "unreachable":
-      return `${url} didn't answer from here: ${probe.reason}`;
-  }
-}
-
-/** The probe's warnings for the app as added: what the operator may want to change. */
-function probeWarnings(out: EventSink, id: string, url: string, auth: RemoteMcpAuth, probe: RemoteMcpProbe): void {
-  const again = `${CLI} mcp remove ${id}, then ${CLI} mcp add ${url} --name ${id} --auth bearer`;
-  const data = { probe };
-  if (probe.outcome === "needs-credential" && probe.oauth) {
-    const secret = remoteMcpSecretOf(auth);
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_WANTS_OAUTH",
-      step: "mcp.probe",
-      message: secret
-        ? `${url} asks for OAuth\nThe Gateway doesn't sign in to MCP servers with OAuth yet; it sends ${secret} as you set it, which works only if the server also takes an API key.`
-        : `${url} wants OAuth\nThe Gateway doesn't sign in to MCP servers with OAuth yet. If the server also takes an API key, add it with --auth bearer and set the key.`,
-      data: secret ? data : { ...data, fix: again },
-    });
-    return;
-  }
-  if (probe.outcome === "needs-credential" && auth.kind === "none") {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_PROBE_FAILED",
-      step: "mcp.probe",
-      message: `${url} asks for a credential, and ${id} sends none\nThe Gateway's listing of its tools will fail the same way until it has one.`,
-      data: { ...data, fix: again },
-    });
-    return;
-  }
-  if (probe.outcome === "redirected") {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_PROBE_FAILED",
-      step: "mcp.probe",
-      message: `${url} redirects${probe.location ? ` to ${probe.location}` : ""}\nThe Gateway follows no redirects; register the address it redirects to.`,
-      data: { ...data, fix: `${CLI} mcp remove ${id}, then ${CLI} mcp add <the address it redirects to> --name ${id}` },
-    });
-    return;
-  }
-  if (probe.outcome === "unreachable") {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_PROBE_FAILED",
-      step: "mcp.probe",
-      message: `Couldn't reach ${url} from here: ${probe.reason}\nThe Gateway may still reach it; ${CLI} mcp show ${id} says whether its tools listed.`,
-      data,
-    });
-  }
-}
-
-/** The Gateway's D1 predates migration 0011: the app is written, but served only after an update. */
-async function warnIfOutdated(out: EventSink, connection: Connection, step: string): Promise<void> {
-  if ((await remoteMcpTables(connection.db)).tools) return;
-  out.emit({
-    type: "warning",
-    code: "REMOTE_MCP_GATEWAY_OUTDATED",
-    step,
-    message: "This Gateway predates MCP apps by URL\nIt serves a remote MCP server's tools once it is updated to this checkout.",
-    data: { rerun: `${CLI} update` },
-  });
-}
-
-export async function addServer(options: McpOptions<AddFlags>, url: string): Promise<void> {
-  const { out, flags } = options;
-  const auth = authFromFlags(flags);
-  const readValue =
-    options.readValue ?? ((name: string) => readSecretValue(name, { fromEnv: flags["from-env"], json: flags.json }));
-  // --from-env is read before anything is written, so an empty variable (SECRET_EMPTY) changes nothing.
-  const fromEnvValue = flags["from-env"]
-    ? await readValue(
-        flags.secret?.trim() || remoteMcpSecretName(flags.name?.trim() || remoteMcpIdFromUrl(url.trim()) || "remote"),
-      )
-    : null;
-  const gateway = await connect(options);
-  out.emit({ type: "step", step: "mcp.add", status: "start", message: `Adding ${url}...` });
-  const added = await addRemoteMcpApp(gateway.db, {
-    url,
-    id: flags.name,
-    description: flags.description,
-    auth,
-    risk: flags.risk,
-    env: { gatewayUrl: gateway.gatewayUrl, appBaseDomain: gateway.install.appBaseDomain },
-    deployer: gateway.deployer,
-    organizationName: gateway.accountName ?? "My Organization",
-    now: options.now?.(),
-  });
-  const { plan, organization } = added;
-  const { app, remote } = plan;
-  const id = app.appSlug;
-  out.emit({
-    type: "step",
-    step: "mcp.add",
-    status: "ok",
-    message: `${app.name} is on for ${organization.name}`,
-    data: { id, was: plan.kind },
-  });
-  await warnIfOutdated(out, gateway, "mcp.add");
-
-  out.emit({ type: "step", step: "mcp.probe", status: "start", message: `Looking at ${remote.url}...` });
-  const probe = await probeRemoteMcp(remote.url, { version: cliVersion, fetch: options.fetch });
-  out.emit({ type: "step", step: "mcp.probe", status: "ok", message: probeLine(remote.url, probe), data: { probe } });
-  probeWarnings(out, id, remote.url, remote.auth, probe);
-
-  const origin = originOf(remote.url);
-  const secret = remoteMcpSecretOf(remote.auth);
-  let key: KeyState | null = null;
-  if (secret) {
-    let set = (await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME)).includes(secret);
-    let value = fromEnvValue;
-    const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
-    if (value === null && !set && interactive) {
-      const confirm = options.confirm ?? confirmAtTerminal;
-      const now = await confirm(`Set ${secret} now?`, [
-        `${app.name}'s credential (${remoteMcpAuthLabel(remote.auth)}${remote.auth.kind === "basic" ? ", entered as user:password" : ""}) is a Gateway setting.`,
-        `The Gateway sends it to ${origin} and nowhere else. Later: ${CLI} secret set ${secret}`,
-      ]);
-      if (now) value = await readValue(secret);
-    }
-    if (value !== null) {
-      // secret set's own path: the lease, one Gateway version, and the pin to this origin.
-      await applyGatewaySettings(gateway, { [secret]: value }, { flags, out });
-      set = true;
-    }
-    let bindings = await readCredentialBindings(gateway.db);
-    if (set && !bindings.has(secret)) {
-      // Set before this app existed: the operator adding the app that uses it pins it here.
-      await bindRemoteMcpCredentials(gateway.db, [secret], gateway.deployer.actor, options.now?.());
-      bindings = await readCredentialBindings(gateway.db);
-    }
-    key = keyState(secret, set ? [secret] : [], remote, bindings);
-    if (!set) {
-      out.emit({
-        type: "warning",
-        code: "PROVIDER_KEY_UNSET",
-        step: "mcp.add",
-        message: `${secret} isn't set on the Gateway\n${app.name}'s tools stay out of /mcp until it is.`,
-        data: { fix: `${CLI} secret set ${secret}`, name: secret },
-      });
-    } else if (key?.boundOrigin && !key.bound) {
-      out.emit({
-        type: "warning",
-        code: "REMOTE_MCP_SECRET_BOUND_ELSEWHERE",
-        step: "mcp.add",
-        message: `${secret} was set for ${key.boundOrigin}, not ${origin}\nThe Gateway sends a credential only to the origin it was set for; set it again for ${app.name}.`,
-        data: { fix: `${CLI} secret set ${secret}`, name: secret, boundOrigin: key.boundOrigin },
-      });
-    }
-  }
-
-  const mcp = { url: `${gateway.gatewayUrl}/mcp`, toolPrefix: `${id}_` };
-  const keyLine =
-    remote.auth.kind === "oauth"
-      ? "It serves no tools yet: the Gateway doesn't sign in to MCP servers with OAuth this week."
-      : !key
-        ? "It takes no credential."
-        : !key.set
-          ? `${key.name} isn't set: ${CLI} secret set ${key.name}`
-          : key.bound
-            ? `${key.name} is set on the Gateway and pinned to ${origin}.`
-            : `${key.name} is set, but for ${key.boundOrigin}: ${CLI} secret set ${key.name}`;
-  const lines = [
-    `${app.name} is on for ${organization.name}${plan.kind === "revived" ? " (added again, from scratch)" : ""}.`,
-    accessLine(added.actorGranted, added.hasOwner),
-    `Its tools are on ${mcp.url} as ${mcp.toolPrefix}<tool>; the Gateway lists them on first use.`,
-    keyLine,
-  ];
-  const next = [
-    ...(key && (!key.set || !key.bound) ? [{ command: `${CLI} secret set ${key.name}`, note: `${app.name}'s credential` }] : []),
-    { command: `${CLI} mcp show ${id}`, note: "its tools, once the Gateway lists them" },
-  ];
-  finish(out, lines, {
-    id,
-    name: app.name,
-    url: remote.url,
-    auth: authData(remote.auth),
-    risk: remote.risk,
-    on: true,
-    was: plan.kind,
-    organization: { id: organization.id, name: organization.name },
-    probe,
-    key,
-    mcp,
-    granted: plan.grants.map((grant) => grant.userId),
-    next,
-  });
-}
-
-/** A remote ref with a live row, or the refusal for a removed one. */
-function liveRemote(ref: McpAppRef): StoredAppRow {
-  if (!ref.app || ref.app.status === "deleted") throw removedRemoteApp(ref);
-  return ref.app;
-}
-
-/** The display name of a ref: the built-in's, or the row's. */
-function nameOf(ref: McpAppRef): string {
-  return ref.kind === "builtin" ? PROVIDER_APPS[ref.id as ProviderAppId].name : (ref.app?.name ?? ref.id);
-}
-
-/** The Gateway setting a ref's app needs, and its remote block (null for a built-in). */
-function keyOf(ref: McpAppRef): { name: string | null; remote: RemoteMcpBlock | null } {
-  if (ref.kind === "builtin") return { name: providerAppKeySetting(ref.id as ProviderAppId), remote: null };
-  const remote = ref.app ? remoteMcpBlockOf(ref.app) : null;
-  return { name: remote ? remoteMcpSecretOf(remote.auth) : null, remote };
-}
-
-/** A ref's key state now: what `secret list` says, with a credential's pin. */
-async function refKey(connection: Connection, ref: McpAppRef): Promise<KeyState | null> {
-  const { name, remote } = keyOf(ref);
-  if (!name) return null;
-  const [names, bindings] = await Promise.all([
-    listWorkerSecrets(connection.cf, GATEWAY_WORKER_NAME),
-    remote ? readCredentialBindings(connection.db) : Promise.resolve(new Map<string, CredentialBinding>()),
-  ]);
-  return keyState(name, names, remote, bindings);
-}
-
-export async function turnOn(options: McpOptions, id: string): Promise<void> {
-  const { out } = options;
-  const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Turning ${id} on...` });
-  let was: string;
-  let organization: { id: string; name: string };
-  let accessText: string | null = null;
-  let granted: string[] = [];
-  if (ref.kind === "builtin") {
-    const result = await turnProviderAppOn(gateway.db, {
+    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    data: {
       id,
-      deployer: gateway.deployer,
-      organizationName: gateway.accountName ?? "My Organization",
-      now: options.now?.(),
-    });
-    was = result.was;
-    organization = result.organization;
-    granted = result.plan.grants.map((grant) => grant.userId);
-    if (was === "new" || was === "revived") accessText = accessLine(result.actorGranted, result.hasOwner);
-  } else {
-    const app = liveRemote(ref);
-    const { changed } = await setMcpAppStatus(gateway.db, app, "active", gateway.deployer, options.now?.());
-    was = changed ? "off" : "existing";
-    organization = ref.organization!;
-  }
-  const name = nameOf(ref);
-  out.emit({
-    type: "step",
-    step: STEP,
-    status: "ok",
-    message: was === "existing" ? `${name} was on already` : `${name} is on for ${organization.name}`,
-    data: { id, was },
-  });
-  const key = await refKey(gateway, ref);
-  const mcp = { url: `${gateway.gatewayUrl}/mcp`, toolPrefix: `${id}_` };
-  if (key && !key.set) {
-    out.emit({
-      type: "warning",
-      code: "PROVIDER_KEY_UNSET",
-      step: STEP,
-      message: `${key.name} isn't set on the Gateway\n${name}'s tools ${ref.kind === "builtin" ? 'answer "not set up"' : "stay out of /mcp"} until it is.`,
-      data: { fix: `${CLI} secret set ${key.name}`, name: key.name },
-    });
-  }
-  const lines = [
-    `${name} is on for ${organization.name}${was === "existing" ? " (it was already)" : was === "off" ? " (it was off; everyone's access was kept)" : ""}.`,
-    ...(accessText ? [accessText] : []),
-    `Its tools are on ${mcp.url} as ${mcp.toolPrefix}<tool>.`,
-    ...(key
-      ? [key.set ? `${key.name} is set on the Gateway.` : `${key.name} isn't set: ${CLI} secret set ${key.name}`]
-      : []),
-  ];
-  finish(out, lines, {
-    id,
-    name,
-    kind: ref.kind,
-    on: true,
-    was,
-    organization: { id: organization.id, name: organization.name },
-    key,
-    mcp,
-    granted,
-    ...(key && !key.set
-      ? { next: [{ command: `${CLI} secret set ${key.name}`, note: ref.kind === "builtin" ? "the provider's key" : `${name}'s credential` }] }
-      : {}),
+      name: capability.label,
+      hosts: [...capability.hosts],
+      ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+      settings,
+      source: "row",
+      replaced: added.replaced,
+      ...(devFile ? { devFile } : {}),
+      next: [
+        {
+          command: `${CLI} secret set ${names}`,
+          note: `${capability.label}'s key, from ${capability.docs}; the Gateway sends it only to ${keyHosts(capability)}`,
+        },
+      ],
+    },
   });
 }
 
-export async function turnOff(options: McpOptions, id: string): Promise<void> {
-  const { out } = options;
-  const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  out.emit({ type: "step", step: STEP, status: "start", message: `Turning ${id} off...` });
-  const name = nameOf(ref);
-  const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
-  const wasOn = live ? (await setMcpAppStatus(gateway.db, live, "disabled", gateway.deployer, options.now?.())).changed : false;
-  const where = ref.organization ? ` for ${ref.organization.name}` : "";
-  const message = wasOn
-    ? `${name} is off${where}`
-    : live
-      ? `${name} was off already${where}`
-      : ref.kind === "remote"
-        ? `${name} was removed${where}`
-        : `${name} isn't on${where}`;
-  out.emit({ type: "step", step: STEP, status: "ok", message, data: { id } });
-  const key = await refKey(gateway, ref);
-  const lines = [
-    `${message}.`,
-    wasOn
-      ? `Its tools leave /mcp within 30 seconds. Everyone's access, its tokens and its tools snapshot are kept: ${CLI} mcp on ${id} serves it again at once.`
-      : "Nothing changed.",
-    ...(live ? [`${CLI} mcp remove ${id} removes it for good.`] : []),
-  ];
-  finish(out, lines, { id, name, kind: ref.kind, on: false, wasOn, key });
+/** `.everyapp/providers/<id>.json` under `dir`: the spec, defaults spelled out. */
+async function writeDevSpec(dir: string, id: string, capability: ApiKeyCapability): Promise<string> {
+  const file = path.join(dir, DEV_PROVIDERS_DIR, `${id}.json`);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, `${JSON.stringify(providerSpecOf(id, capability), null, 2)}\n`);
+  return file;
 }
 
-export async function removeApp(options: McpOptions, id: string): Promise<void> {
-  const { out } = options;
-  const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  out.emit({ type: "step", step: "mcp.remove", status: "start", message: `Removing ${id}...` });
-  const name = nameOf(ref);
-  const { removed } = await removeMcpApp(gateway.db, ref.app, gateway.deployer, options.now?.());
-  const where = ref.organization ? ` from ${ref.organization.name}` : "";
-  const message = removed
-    ? `${name} is removed${where}`
-    : ref.app
-      ? `${name} was removed already${where}`
-      : `${name} isn't added${where}`;
-  out.emit({ type: "step", step: "mcp.remove", status: "ok", message, data: { id, removed } });
-  const key = await refKey(gateway, ref);
-  const remote = keyOf(ref).remote;
-  const lines = [
-    `${message}.`,
-    removed
-      ? "Its tools left /mcp, and everyone's access to it, its tokens, its tools snapshot and its place in AI connections went with it."
-      : "Nothing changed.",
-    ...(key && key.set
-      ? [
-          key.boundOrigin
-            ? `${key.name} stays on the Gateway, pinned to ${key.boundOrigin}: ${CLI} secret unset ${key.name} removes both.`
-            : `${key.name} stays on the Gateway${ref.kind === "builtin" ? " (an app may use it too)" : ""}: ${CLI} secret unset ${key.name} removes it.`,
-        ]
-      : []),
-    ...(ref.kind === "builtin"
-      ? [`${CLI} mcp on ${id} adds it again, from scratch.`]
-      : remote
-        ? [`${CLI} mcp add ${remote.url} --name ${id} adds it again, from scratch.`]
-        : []),
-  ];
-  finish(out, lines, { id, name, kind: ref.kind, removed, key });
-}
+/** A catalog or registered provider's kind, as `provider list` names it. */
+type ProviderKind = "api key" | "ai" | "oauth client";
 
-/** A snapshot in a few words: its tool count, when, and a failure. */
-function snapshotText(snapshot: ToolSnapshot | null): string {
-  if (!snapshot) return "not listed yet";
-  const when = snapshot.listedAt ? ` ${timeText(snapshot.listedAt)}` : "";
-  if (snapshot.status === "error") return `listing failed${when}${snapshot.lastError ? `: ${snapshot.lastError}` : ""}`;
-  return `${plural(snapshot.toolCount, "tool")}, listed${when}`;
-}
-
-function timeText(ms: number): string {
-  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-}
-
-/** A snapshot as `--json` shows it. */
-function snapshotData(snapshot: ToolSnapshot | null): Record<string, unknown> | null {
-  if (!snapshot) return null;
-  return {
-    status: snapshot.status,
-    tools: snapshot.status === "error" ? null : snapshot.toolCount,
-    listedAt: snapshot.listedAt === null ? null : new Date(snapshot.listedAt).toISOString(),
-    lastError: snapshot.lastError,
-  };
-}
-
-/** The KEY cell: the name and whether it is set, none, or OAuth's "not supported yet". */
-function keyCell(auth: RemoteMcpAuth | null, key: KeyState | null): string {
-  if (auth?.kind === "oauth") return chalk.yellow("OAuth: not supported yet");
-  if (!key) return chalk.dim("none");
-  if (!key.set) return `${key.name} ${chalk.yellow("not set")}`;
-  if (key.boundOrigin && !key.bound) return `${key.name} ${chalk.yellow(`set for ${key.boundOrigin}`)}`;
-  return `${key.name} ${chalk.green("set")}`;
-}
-
-function stateCell(state: McpAppState): string {
-  switch (state) {
-    case "on":
-      return chalk.green("on");
-    case "needs setup":
-      return chalk.yellow("needs setup");
-    default:
-      return chalk.dim(state);
+function kindOf(capability: Capability): ProviderKind | null {
+  switch (capability.mode) {
+    case "api_key":
+      return "api key";
+    case "ai":
+      return "ai";
+    case "oauth_client":
+      return "oauth client";
+    case "service":
+      return null;
   }
 }
 
-export async function listMcp(options: McpOptions): Promise<void> {
+/** The hosts a provider's key or client is sent to, and the setting naming one, when it has one. */
+function hostsOf(capability: Capability): { hosts: string[]; hostSetting?: string } {
+  switch (capability.mode) {
+    case "api_key":
+      return {
+        hosts: [...capability.hosts],
+        ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+      };
+    case "ai":
+      return { hosts: [new URL(capability.origin).host] };
+    case "oauth_client":
+      return {
+        hosts: [...new Set(capability.token.flatMap((endpoint) => (endpoint.host ? [endpoint.host] : [])))],
+        ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+      };
+    case "service":
+      return { hosts: [] };
+  }
+}
+
+/** The registered apps listing `id` (under `capabilities`, or an AI provider under `providers`). */
+function appsUsing(
+  apps: Awaited<ReturnType<typeof listApps>>,
+  id: string,
+  capability: Capability,
+): string[] {
+  return apps
+    .filter((app) => {
+      if (!app.manifest) return false;
+      if (capability.mode === "ai") return providerIds(app.manifest).includes(id);
+      return Boolean(app.manifest.capabilities && Object.hasOwn(app.manifest.capabilities, id));
+    })
+    .map((app) => app.appSlug);
+}
+
+/** One provider as `provider list --json` reports it. */
+interface ListedProvider {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  hosts: string[];
+  hostSetting?: string;
+  settings: Array<{ name: string; set: boolean }>;
+  /** Whether its settings may be read: always for a built-in one; for a registered one, once its key was set for the hosts it has now. */
+  bound: boolean;
+  source: "catalog" | "row";
+  addedBy?: string | null;
+  addedAt?: number | null;
+  apps: string[];
+}
+
+/** Every provider the registry has but the Gateway's services, as `provider list` reports it. */
+function providersOf(
+  registry: ProviderRegistry,
+  gatewayNames: readonly string[],
+  apps: Awaited<ReturnType<typeof listApps>>,
+): ListedProvider[] {
+  const rows = new Map(registry.rows().map((row) => [row.id, row]));
+  const providers: ListedProvider[] = [];
+  for (const [id, capability] of registry.entries()) {
+    const kind = kindOf(capability);
+    if (!kind) continue;
+    const row = rows.get(id);
+    providers.push({
+      id,
+      name: capability.label,
+      kind,
+      ...hostsOf(capability),
+      settings: capabilitySettings(capability).map((name) => ({ name, set: gatewayNames.includes(name) })),
+      bound: registry.bound(id),
+      source: row ? "row" : "catalog",
+      ...(row ? { addedBy: row.addedBy, addedAt: row.addedAt } : {}),
+      apps: appsUsing(apps, id, capability),
+    });
+  }
+  return providers;
+}
+
+/**
+ * `provider list`: the catalog's API-key, AI and OAuth entries and the
+ * registered rows, with each setting's state (names only, as `secret
+ * list` reads them), whether a row's key is bound, where each is from and
+ * which apps list it. Rows the Gateway refuses are named under the table.
+ */
+export async function listProviders(options: ProviderOptions): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
-  const [entries, names, bindings] = await Promise.all([
-    listMcpApps(gateway.db),
+  const [registry, gatewayNames, apps] = await Promise.all([
+    gatewayRegistry(gateway.db, gateway.install),
     listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
-    readCredentialBindings(gateway.db),
+    listApps(gateway.db),
   ]);
-  const rows = entries.map((entry) => {
-    const state = mcpAppState(entry, names, bindings);
-    const key = keyState(entry.keyName, names, entry.remote, bindings);
-    const tools = entry.snapshot && entry.snapshot.status !== "error" ? entry.snapshot.toolCount : null;
-    return { entry, state, key, tools };
-  });
+  const providers = providersOf(registry, gatewayNames, apps);
   const table = formatTable(
-    ["APP", "KIND", "STATUS", "TOOLS", "KEY"],
-    rows.map(({ entry, state, key }) => [
-      `${entry.id}  ${chalk.dim(entry.name)}`,
-      entry.kind === "builtin" ? "built-in" : "remote",
-      stateCell(state),
-      !entry.snapshot
-        ? chalk.dim("not listed yet")
-        : entry.snapshot.status === "error"
-          ? chalk.yellow("listing failed")
-          : String(entry.snapshot.toolCount),
-      keyCell(entry.remote?.auth ?? null, key),
+    ["ID", "NAME", "KIND", "HOSTS", "SETTINGS", "SOURCE", "APPS"],
+    providers.map((provider) => [
+      provider.id,
+      provider.name,
+      provider.kind,
+      [...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])].join(", ") || chalk.dim("-"),
+      [
+        provider.settings
+          .map((setting) => `${setting.name} ${setting.set ? chalk.green("set") : chalk.yellow("not set")}`)
+          .join(", "),
+        ...(provider.source === "row" ? [provider.bound ? chalk.green("bound") : chalk.yellow("not bound")] : []),
+      ].join(", "),
+      provider.source === "row" ? `registered by ${provider.addedBy ?? "someone"}` : chalk.dim("catalog"),
+      provider.apps.join(", ") || chalk.dim("-"),
     ]),
   );
-  const next = rows.flatMap(({ entry, state, key }) => [
-    ...(state === "not added" ? [{ command: `${CLI} mcp on ${entry.id}`, note: `offer ${entry.name}` }] : []),
-    ...(key && entry.app && (!key.set || (key.boundOrigin && !key.bound))
-      ? [{ command: `${CLI} secret set ${key.name}`, note: `${entry.name}'s ${entry.kind === "builtin" ? "key" : "credential"}` }]
-      : []),
-  ]);
-  const onCount = rows.filter((row) => row.entry.app?.status === "active").length;
-  const summary = `${onCount} of ${rows.length} MCP ${rows.length === 1 ? "app" : "apps"} on`;
-  const hasRemote = rows.some((row) => row.entry.kind === "remote");
+  const registered = providers.filter((provider) => provider.source === "row").length;
+  const rejected = registry.rejected.map(({ id, code, message }) => ({ id, code, message }));
   out.emit({
     type: "done",
-    message: summary,
+    message: `${providers.length} providers: ${providers.length - registered} built in, ${registered} registered`,
     display: [
       ...table,
+      ...(rejected.length > 0
+        ? [
+            "",
+            chalk.yellow(`The Gateway doesn't serve ${listed(rejected.map((row) => row.id))}:`),
+            ...rejected.map((row) => chalk.dim(`  ${row.id}: ${row.message} (${row.code})`)),
+          ]
+        : []),
       "",
-      chalk.dim(`Tools are on ${gateway.gatewayUrl}/mcp as <id>_<tool>.`),
-      ...(hasRemote ? [] : [chalk.dim(`Add any MCP server by its URL: ${CLI} mcp add <url>`)]),
+      chalk.dim(`MCP apps: ${CLI} mcp list`),
     ].join("\n"),
     data: {
-      apps: rows.map(({ entry, state, key, tools }) => ({
-        id: entry.id,
-        name: entry.name,
-        kind: entry.kind,
-        status: state,
-        on: entry.app?.status === "active",
-        ...(entry.remote
-          ? {
-              url: entry.remote.url,
-              auth: authData(entry.remote.auth),
-              supported: entry.remote.auth.kind !== "oauth",
-            }
-          : {}),
-        tools,
-        key,
-        ...(entry.snapshot?.listedAt ? { lastListedAt: new Date(entry.snapshot.listedAt).toISOString() } : {}),
-        ...(entry.snapshot?.lastError ? { lastError: entry.snapshot.lastError } : {}),
-      })),
-      mcp: `${gateway.gatewayUrl}/mcp`,
-      ...(next.length > 0 ? { next } : {}),
+      providers,
+      ...(rejected.length > 0 ? { rejected } : {}),
+      mcp: `${CLI} mcp list`,
     },
   });
 }
 
-/** How a risk default reads. */
-function riskDefaultText(risk: RemoteMcpRiskDefault): string {
-  switch (risk) {
-    case "annotations":
-      return "annotations (the server's hints; a tool without one is write)";
-    case "read":
-      return "read (every tool)";
-    case "write":
-      return "write (every tool)";
+/**
+ * The spec of `id` as `provider show` prints it: an API-key entry's whole
+ * spec (`providerSpecOf`, what `provider add` takes), or for an AI
+ * provider or an OAuth client, what a person needs to set it up.
+ */
+function specOf(id: string, capability: Capability): Record<string, unknown> {
+  const settings = [...capabilitySettings(capability)];
+  switch (capability.mode) {
+    case "api_key":
+      return providerSpecOf(id, capability);
+    case "ai":
+      return {
+        id,
+        kind: "ai",
+        name: capability.label,
+        ...(capability.description ? { description: capability.description } : {}),
+        docs: capability.docs,
+        ...(capability.api ? { api: capability.api } : {}),
+        ...(capability.hint ? { hint: capability.hint } : {}),
+        settings,
+        hosts: [new URL(capability.origin).host],
+        routes: [...capability.inferenceRoutes],
+        ...(capability.setup ? { setup: capability.setup } : {}),
+      };
+    case "oauth_client":
+      return {
+        id,
+        kind: "oauth client",
+        name: capability.label,
+        docs: capability.console,
+        settings,
+        tokenEndpoints: describeTokenEndpoints(capability).split(", "),
+        authorize: { url: capability.authorize.url, scopes: [...capability.authorize.scopes] },
+        redirectPaths: [...capability.redirectPaths],
+        ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+        ...(capability.setup ? { setup: capability.setup } : {}),
+      };
+    case "service":
+      return { id, name: capability.label };
   }
 }
 
-export async function showApp(options: McpOptions, id: string): Promise<void> {
-  const { out } = options;
+/**
+ * `provider show <id>`: the spec, where it is from, whether its key is
+ * bound, who registered it and which apps list it. With `--save`, in an
+ * app's directory, a registered provider's spec is written to
+ * `.everyapp/providers/<id>.json` for `everyapp dev`.
+ */
+export async function showProvider(
+  options: ProviderOptions & { flags: { save?: boolean } },
+  id: string,
+): Promise<void> {
+  const { out, flags } = options;
+  const cwd = options.cwd ?? process.cwd();
+  if (flags.save && !(await isAppDirectory(cwd))) {
+    throw new EveryAppError(
+      "MANIFEST_NOT_FOUND",
+      "No everyapp.config.ts in this directory\n--save writes the spec where everyapp dev reads it, in an app's directory. Nothing was written.",
+      { fix: "run this from the app's directory" },
+    );
+  }
   const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  if (ref.kind === "remote") liveRemote(ref);
-  const name = nameOf(ref);
-  const [names, bindings] = await Promise.all([
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
-    readCredentialBindings(gateway.db),
+  const [registry, apps] = await Promise.all([
+    gatewayRegistry(gateway.db, gateway.install),
+    listApps(gateway.db),
   ]);
-  const { name: keyName, remote } = keyOf(ref);
-  const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
-  const state = mcpAppState({ kind: ref.kind, app: live, remote, keyName }, names, bindings);
-  const key = keyState(keyName, names, remote, bindings);
-  const detail = live ? await readMcpAppDetail(gateway.db, { ...ref, app: live }, remote) : null;
-  const mcp = { url: `${gateway.gatewayUrl}/mcp`, toolPrefix: `${id}_` };
-  const added = live?.deployedAt
-    ? `${live.deployedByActor ? `by ${live.deployedByActor}, ` : ""}${timeText(live.deployedAt)}`
-    : null;
-
+  const capability = registry.get(id);
+  if (!capability || capability.mode === "service") {
+    const rejected = registry.rejected.find((row) => row.id === id);
+    throw new EveryAppError(
+      "PROVIDER_NOT_FOUND",
+      capability
+        ? `${id} is a Gateway service, not a provider\nApps call it with its own helper (sendEmail(), listMembers()).`
+        : rejected
+          ? `The Gateway doesn't serve ${id}: ${rejected.message}`
+          : `${id} isn't a provider this Gateway offers`,
+      { rerun: `${CLI} provider list`, rerunNote: "names every one" },
+    );
+  }
+  const row = registry.rows().find((each) => each.id === id);
+  const spec = specOf(id, capability);
+  let saved: string | null = null;
+  if (flags.save) {
+    if (!row || capability.mode !== "api_key") {
+      throw new EveryAppError(
+        "PROVIDER_BUILTIN",
+        `${id} is built in\neveryapp dev reaches it without a file. Nothing was written.`,
+        { fix: `put its key in .dev.vars: ${capabilitySettings(capability).join(", ")}` },
+      );
+    }
+    await writeDevSpec(cwd, id, capability);
+    saved = devProviderFile(id);
+  }
+  const using = appsUsing(apps, id, capability);
+  const bound = registry.bound(id);
   const facts = [
-    { label: "Kind", value: ref.kind === "builtin" ? "built-in (the Gateway's own)" : "remote" },
-    { label: "Status", value: stateCell(state) },
-    ...(remote
-      ? [
-          { label: "URL", value: remote.url },
-          { label: "Auth", value: remoteMcpAuthLabel(remote.auth) },
-          { label: "Risk", value: riskDefaultText(remote.risk) },
-          { label: "Revision", value: String(remote.rev) },
-        ]
-      : []),
-    ...(added ? [{ label: "Added", value: added }] : []),
-    ...(key || remote?.auth.kind === "oauth"
-      ? [{ label: ref.kind === "builtin" ? "Key" : "Credential", value: keyCell(remote?.auth ?? null, key) + (key?.bound ? chalk.dim(`, pinned to ${key.boundOrigin}`) : "") }]
-      : []),
-    ...(live ? [{ label: "Tools", value: snapshotText(detail!.snapshot) }] : []),
+    row
+      ? `Registered by ${row.addedBy ?? "someone"}${row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : ""}; ${bound ? "its key is bound to these hosts" : "its key isn't set for these hosts yet"}.`
+      : "Built in.",
+    using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
+    ...(saved ? [`Wrote ${saved} for everyapp dev.`] : []),
   ];
-  const toolRows = detail
-    ? remote
-      ? formatTable(
-          ["NAME", "SERVER NAME", "RISK", "ON"],
-          detail.remoteTools.map((each) => [
-            each.name ?? chalk.dim("(none)"),
-            each.serverName,
-            `${each.risk} ${chalk.dim(each.source)}`,
-            each.on ? chalk.green("on") : chalk.yellow(each.problem ?? "off"),
-          ]),
-        )
-      : formatTable(
-          ["NAME", "RISK"],
-          detail.catalogTools.map((each) => [each.name, each.risk]),
-        )
-    : [];
-  const hasTools = detail ? (remote ? detail.remoteTools.length > 0 : detail.catalogTools.length > 0) : false;
-  const lines = [`${name} (${id})`];
   out.emit({
     type: "done",
-    message: stripVTControlCharacters([lines[0], ...formatFacts(facts)].join("\n")),
-    display: [
-      chalk.bold(lines[0]),
-      ...formatFacts(facts),
-      ...(hasTools ? ["", ...toolRows] : []),
-      ...(live && !hasTools
-        ? ["", chalk.dim(`No tools listed yet: the Gateway lists them on the next request to ${mcp.url}.`)]
-        : []),
-    ].join("\n"),
+    message: `${capability.label} (${id})`,
+    display: [JSON.stringify(spec, null, 2), "", ...facts.map((line) => chalk.dim(line))].join("\n"),
     data: {
-      id,
-      name,
-      kind: ref.kind,
-      status: state,
-      on: live?.status === "active",
-      ...(remote
+      provider: spec,
+      source: row ? "row" : "catalog",
+      bound,
+      addedBy: row?.addedBy ?? null,
+      addedAt: row?.addedAt ?? null,
+      apps: using,
+      ...(saved ? { saved } : {}),
+      ...(row && !bound
         ? {
-            url: remote.url,
-            auth: authData(remote.auth),
-            supported: remote.auth.kind !== "oauth",
-            risk: remote.risk,
-            rev: remote.rev,
-            overrides: remote.tools,
+            next: [
+              {
+                command: `${CLI} secret set ${capabilitySettings(capability).join(" ")}`,
+                note: `${capability.label}'s key; the Gateway sends it only to ${listed(hostsOf(capability).hosts)}`,
+              },
+            ],
           }
         : {}),
-      addedBy: live?.deployedByActor ?? null,
-      addedAt: live?.deployedAt ? new Date(live.deployedAt).toISOString() : null,
-      key,
-      snapshot: snapshotData(detail?.snapshot ?? null),
-      tools: detail
-        ? remote
-          ? detail.remoteTools
-          : detail.catalogTools.map((each) => ({ ...each, source: "registry", on: true }))
-        : [],
-      mcp,
-      ...(key && live && (!key.set || (key.boundOrigin && !key.bound))
-        ? { next: [{ command: `${CLI} secret set ${key.name}`, note: `${name}'s ${ref.kind === "builtin" ? "key" : "credential"}` }] }
-        : state === "not added"
-          ? { next: [{ command: `${CLI} mcp on ${id}`, note: `offer ${name}` }] }
-          : {}),
     },
   });
 }
 
-export async function refreshApp(options: McpOptions, id: string): Promise<void> {
-  const { out } = options;
-  const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  if (ref.kind === "remote") liveRemote(ref);
-  const name = nameOf(ref);
-  const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
-  if (!live) {
-    const message = `${name} isn't on, so it has no tools to list again`;
-    finish(out, [`${message}.`, "Nothing changed."], { id, name, kind: ref.kind, refreshed: false }, []);
-    return;
-  }
-  out.emit({ type: "step", step: "mcp.refresh", status: "start", message: `Dropping ${name}'s tools snapshot...` });
-  const dropped = await refreshMcpAppTools(gateway.db, live);
-  out.emit({ type: "step", step: "mcp.refresh", status: "ok", message: `Dropped ${name}'s tools snapshot`, data: { id } });
-  const lines = [
-    dropped
-      ? `Dropped ${name}'s tools snapshot (${snapshotText(dropped)}).`
-      : `${name} had no tools snapshot to drop.`,
-    live.status === "active"
-      ? `The Gateway lists its tools again on the next request to ${gateway.gatewayUrl}/mcp, or within the hour.`
-      : `It's off: the Gateway lists its tools again once it's on (${CLI} mcp on ${id}).`,
-  ];
-  finish(out, lines, { id, name, kind: ref.kind, refreshed: true, dropped: snapshotData(dropped) });
-}
-
-export async function changeTool(options: McpOptions<ToolFlags>, id: string, toolName: string): Promise<void> {
+/**
+ * `provider remove <id>`: the row deleted (refused for a built-in id, an
+ * id with no row, and one a deployed app lists unless --force). The
+ * Gateway setting holding its key stays: the done event says which, and
+ * the command that removes each.
+ */
+export async function removeRegistered(
+  options: ProviderOptions & { flags: { force?: boolean } },
+  id: string,
+): Promise<void> {
   const { out, flags } = options;
-  if (flags.on && flags.off) {
-    throw new EveryAppError("MCP_TOOL_CHANGE_INVALID", "--on and --off say opposite things; give one", {
-      fix: "drop one of them",
-    });
-  }
-  if (!flags.risk && !flags.on && !flags.off) {
-    throw new EveryAppError(
-      "MCP_TOOL_CHANGE_INVALID",
-      `Nothing to change about ${toolName}\nGive --risk read|write|destructive|annotations, --on or --off.`,
-      { rerun: `${CLI} mcp show ${id}`, rerunNote: "lists its tools with their risks" },
-    );
-  }
   const gateway = await connect(options);
-  const ref = await resolveMcpApp(gateway.db, id);
-  if (ref.kind === "builtin") {
-    throw new EveryAppError(
-      "MCP_APP_BUILTIN",
-      `${nameOf(ref)} is the Gateway's built-in MCP app\nIts tools and their risks are the Gateway's own, and can't be changed here. ${CLI} mcp off ${id} stops serving it.`,
-    );
-  }
-  const app = liveRemote(ref);
-  out.emit({ type: "step", step: "mcp.tool", status: "start", message: `Changing ${toolName} on ${id}...` });
-  const changed = await setRemoteMcpTool(
-    gateway.db,
-    { ...ref, app },
-    toolName,
-    { ...(flags.risk ? { risk: flags.risk } : {}), ...(flags.on ? { enabled: true } : flags.off ? { enabled: false } : {}) },
-    options.now?.(),
-  );
-  out.emit({ type: "step", step: "mcp.tool", status: "ok", message: `Changed ${changed.serverName} on ${id}`, data: { id } });
-  if (!changed.inListing) {
-    out.emit({
-      type: "warning",
-      code: "REMOTE_MCP_TOOL_NOT_LISTED",
-      step: "mcp.tool",
-      message: `${toolName} isn't in ${id}'s last tool listing\nThe override is kept under the server's name ${changed.serverName} and applies once the server lists a tool by that name.`,
-      data: { rerun: `${CLI} mcp show ${id}`, rerunNote: "lists its tools by both names" },
-    });
-  }
-  const after = changed.after ?? {};
-  const risk = after.risk ? `risk ${after.risk} (your override)` : "risk from the app's default and the server's hints";
-  const listed = after.enabled === false ? "left out of the catalog" : "listed";
+  out.emit({ type: "step", step: "provider.remove", status: "start", message: `Removing ${id}...` });
+  const removed = await removeProvider(gateway.db, id, { force: flags.force ?? false });
+  const gatewayNames = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+  const settings = removed.settings.map((name) => ({ name, set: gatewayNames.includes(name) }));
+  const stays = settings.filter((setting) => setting.set).map((setting) => setting.name);
+  const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
+  out.emit({
+    type: "step",
+    step: "provider.remove",
+    status: "ok",
+    message: `Removed ${removed.name} (${id}) from ${gatewayHost}`,
+    data: { id },
+  });
   const lines = [
-    `${changed.serverName}${changed.listedName ? ` (${changed.listedName})` : ""} on ${id}: ${risk}, ${listed}.`,
-    `The Gateway lists ${id}'s tools again on first use (revision ${changed.rev}).`,
+    `Removed ${removed.name} (${id}) from ${gatewayHost}.`,
+    "The Gateway stops serving it within 30 seconds.",
+    ...(removed.apps.length > 0
+      ? [`${listed(removed.apps)} ${removed.apps.length === 1 ? "lists" : "list"} it: ${removed.apps.length === 1 ? "its" : "their"} calls to it fail until it is registered again.`]
+      : []),
+    ...(stays.length > 0
+      ? [
+          `${listed(stays)} ${stays.length === 1 ? "stays" : "stay"} on the Gateway, read by nothing: ${CLI} secret unset ${stays.join(" ")} removes ${stays.length === 1 ? "it" : "them"}.`,
+        ]
+      : []),
   ];
-  finish(out, lines, {
-    id,
-    tool: { serverName: changed.serverName, name: changed.listedName, inListing: changed.inListing },
-    before: changed.before,
-    override: changed.after,
-    rev: changed.rev,
+  out.emit({
+    type: "done",
+    message: stripVTControlCharacters(lines.join("\n")),
+    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    data: {
+      id,
+      name: removed.name,
+      removed: true,
+      settings,
+      apps: removed.apps,
+      ...(stays.length > 0
+        ? { next: [{ command: `${CLI} secret unset ${stays.join(" ")}`, note: "the key nothing reads any more" }] }
+        : {}),
+    },
   });
 }

@@ -3,7 +3,7 @@
  * app access, caps, usage, activity, tokens and AI connections, read and
  * written in the Gateway's D1 under the operator's Cloudflare login
  * (ADR-0003: write access to the Gateway's D1 is operator authority), the
- * way `provider on` and `email set` write the registry. The Gateway's own
+ * way `mcp on` and `email set` write the registry. The Gateway's own
  * services (apps/every-app-gateway/src/server/services) do the same work
  * for a signed-in admin; this file mirrors what they read and write, with
  * their guards as SQL conditions on the write itself, so a row that

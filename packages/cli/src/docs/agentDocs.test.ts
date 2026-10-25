@@ -38,6 +38,7 @@ import { NextCode } from "@/commands/status/next";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
 import { manifestFields } from "./manifestFields";
+import { catalogSettings, providersCatalog, setupProvidersPage, withBlock } from "./providersCatalog";
 import { BUILD_SKILL, buildPage, patternsPage } from "./skillPages";
 import {
   AGENT_DOCS_DIR,
@@ -107,6 +108,7 @@ describe("the agent docs", () => {
       "email",
       "mcp",
       "deploy",
+      "providers",
       "access",
       "workspace",
       "gateway",
@@ -194,6 +196,49 @@ describe("cli.md", () => {
       readPage("cli"),
       "cli.md is out of date with the commands: run `pnpm -C packages/cli docs:update` and commit the result",
     ).toBe(generated);
+  });
+});
+
+/**
+ * A generated block of a hand-written page (between its `<!-- <name>:begin` and
+ * `<!-- <name>:end -->` markers) against what the catalog generates now:
+ * rewritten by `docs:update`, compared otherwise.
+ */
+function expectBlock(slug: string, name: string, block: string): void {
+  const page = readPage(slug);
+  const updated = withBlock(page, name, block);
+  expect(updated, `${slug}.md has no ${name} block (its begin and end markers inside a prettier-ignore range)`).not.toBeNull();
+  if (UPDATE_DOCS) {
+    if (updated !== page) writePage(slug, updated!);
+    return;
+  }
+  expect(page, `${slug}.md's ${name} block is out of date with the provider catalog: run \`pnpm -C packages/cli docs:update\` and commit the result`).toBe(updated);
+}
+
+describe("providers.md", () => {
+  it("has the catalog the provider catalog generates", () => {
+    expectBlock("providers", "providers-catalog", providersCatalog());
+  });
+
+  it("names the registry's commands, flags and codes", () => {
+    expectDocumented("providers", "the flags of everyapp provider", flagsOf("provider"));
+    expectDocumented("providers", "the provider registry's codes", [
+      "PROVIDER_SPEC_INVALID",
+      "PROVIDER_EXISTS",
+      "PROVIDER_BUILTIN",
+      "PROVIDER_NOT_FOUND",
+      "PROVIDER_IN_USE",
+      "PROVIDER_SECRET_TAKEN",
+      "PROVIDER_HOST_REFUSED",
+      "CAPABILITY_UNKNOWN",
+      "CAPABILITY_NOT_IN_CATALOG",
+      "integration_read_only",
+      "integration_upstream_redirected",
+      "integration_not_available_hosted",
+      "integration_not_configured",
+      "provider.row_invalid",
+      "EVERYAPP_DEV_PROVIDERS",
+    ]);
   });
 });
 
@@ -367,6 +412,10 @@ describe("secrets.md", () => {
   it("documents every secret and configure flag", () => {
     expectDocumented("secrets", "the flags of everyapp secret and everyapp configure", flagsOf("secret", "configure"));
   });
+  it("has the AI and API-key settings the provider catalog generates", () => {
+    expectBlock("secrets", "ai-provider-settings", catalogSettings("ai"));
+    expectBlock("secrets", "api-key-provider-settings", catalogSettings("api_key"));
+  });
 });
 
 describe("the command pages", () => {
@@ -512,6 +561,19 @@ describe("the everyapp skill", () => {
     const skill = readPage("../../../packages/cli/skills/everyapp/SKILL");
     expect(skill).toContain("https://everyapp.com/llms.txt");
     expect(skill).toContain("/docs/agent/");
+  });
+
+  it("setup/providers.md is what the provider catalog generates", () => {
+    const slug = "../../../packages/cli/skills/everyapp/setup/providers";
+    const generated = setupProvidersPage();
+    if (UPDATE_DOCS) {
+      writePage(slug, generated);
+      return;
+    }
+    expect(
+      readPage(slug),
+      "packages/cli/skills/everyapp/setup/providers.md is out of date with the provider catalog: run `pnpm -C packages/cli docs:update` and commit the result",
+    ).toBe(generated);
   });
 
   it("lists every agent page in its Docs paragraph", () => {

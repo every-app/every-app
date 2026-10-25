@@ -9,6 +9,7 @@ import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
+import { gatewayProviders } from "@/server/providers";
 import { appCapabilities } from "./appCapabilities";
 import { listedAppSetup } from "./listedAppSetup";
 
@@ -33,16 +34,18 @@ type UpdateAppInput = {
  * fix.
  */
 async function getAllWithAccessCounts(ctx: OrgContext) {
-  const [own, shared] = await Promise.all([
+  const [own, shared, providers] = await Promise.all([
     AppRepository.findAllWithAccessCounts(ctx.orgId),
     platformPolicy(env).sharedApps
       ? AppRepository.findAllShared(ctx.orgId)
       : [],
+    // The catalog and this gateway's registered providers, for the labels.
+    gatewayProviders(),
   ]);
   const listed = [
     ...own.map((app) => ({
       ...app,
-      capabilities: appCapabilities(app.manifest),
+      capabilities: appCapabilities(app.manifest, providers),
       readOnly: false,
     })),
     ...shared.map((app) => ({
@@ -66,7 +69,7 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
       createdAt: app.createdAt,
       updatedAt: app.updatedAt,
       accessCount: 0,
-      capabilities: appCapabilities(app.manifest),
+      capabilities: appCapabilities(app.manifest, providers),
       readOnly: true,
     })),
   ];

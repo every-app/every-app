@@ -11,9 +11,11 @@ import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import {
   appSettings,
   appSetupOf,
+  CATALOG,
   evaluateAppSettings,
   isReservedAppSecretName,
   type AppSettingsReport,
+  type CapabilityLookup,
   type AppSetup,
   type AppSetupSetting,
   type EvaluatedSetting,
@@ -38,6 +40,16 @@ export async function listAppSecretNames(cf: CfRunner, workerName: string): Prom
   return (await listWorkerSecrets(cf, workerName)).filter((name) => !isReservedAppSecretName(name));
 }
 
+/**
+ * Where the settings model finds a provider: the catalog alone (`dev`,
+ * and before a command connects), or the Gateway's registry with its
+ * registered rows (`gatewayRegistry` in lib/gateway/providers.ts), whose
+ * unbound rows' settings read as unset.
+ */
+type SettingsLookup = CapabilityLookup & {
+  unboundSettings?(): ReadonlySet<string>;
+};
+
 interface AppSetupInput {
   manifest: SettingsManifestLike;
   appId: string;
@@ -45,6 +57,8 @@ interface AppSetupInput {
   gatewayNames: readonly string[] | null;
   /** The app Worker's names; null when it has no Worker yet, or cf couldn't list them. */
   secretNames: readonly string[] | null;
+  /** The catalog (the default) or the Gateway's registry. */
+  lookup?: SettingsLookup;
 }
 
 interface AppSetupResult {
@@ -53,24 +67,39 @@ interface AppSetupResult {
   setup: AppSetup;
 }
 
+/**
+ * The Gateway's names that count as set: a registered row's key only while
+ * it is bound to the hosts and auth the row has now (the Gateway doesn't
+ * read it otherwise), as the Gateway's own settings model reads it.
+ */
+export function boundGatewayNames(
+  names: readonly string[],
+  lookup: SettingsLookup = CATALOG,
+): string[] {
+  const unbound = lookup.unboundSettings?.();
+  return unbound && unbound.size > 0 ? names.filter((name) => !unbound.has(name)) : [...names];
+}
+
 /** The manifest's settings against the names each Worker holds. */
 export function appSetupFrom(input: AppSetupInput): AppSetupResult {
-  const report = evaluateAppSettings(appSettings(input.manifest), (holder, name) => {
-    const names = holder === "gateway" ? input.gatewayNames : input.secretNames;
+  const lookup = input.lookup ?? CATALOG;
+  const gatewayNames = input.gatewayNames === null ? null : boundGatewayNames(input.gatewayNames, lookup);
+  const report = evaluateAppSettings(appSettings(input.manifest, lookup), (holder, name) => {
+    const names = holder === "gateway" ? gatewayNames : input.secretNames;
     return names === null ? null : names.includes(name);
   });
   return { report, setup: appSetupOf(report, { cli: CLI, appId: input.appId }) };
 }
 
 /** Whether the manifest declares anything to set (a capability with no setting, like members, doesn't count). */
-export function declaresSettings(manifest: SettingsManifestLike): boolean {
-  return appSettings(manifest).some((setting) => setting.names.length > 0);
+export function declaresSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup = CATALOG): boolean {
+  return appSettings(manifest, lookup).some((setting) => setting.names.length > 0);
 }
 
 /** Every Gateway name the manifest reads: each setting's names and what it also reads when set. */
-export function gatewayNamesRead(manifest: SettingsManifestLike): string[] {
+export function gatewayNamesRead(manifest: SettingsManifestLike, lookup: CapabilityLookup = CATALOG): string[] {
   const names = new Set<string>();
-  for (const setting of appSettings(manifest)) {
+  for (const setting of appSettings(manifest, lookup)) {
     if (setting.holder !== "gateway") continue;
     for (const name of [...setting.names, ...setting.alsoReads]) names.add(name);
   }
@@ -213,6 +242,7 @@ export function renderSettingsTable(
 /**
  * What an unmet setting is, for whoever sets it: "<label>: <why>" (the
  * names when the manifest says no why and the label doesn't name them),
+ * then what the key is and where it comes from (the provider's `hint`),
  * then "Get it at <docs>" when the registry or manifest knows where.
  */
 export function describeUnmet(setting: AppSetupSetting): string[] {
@@ -220,6 +250,7 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
   const what = setting.why ?? (setting.label === names ? undefined : names);
   return [
     what ? `${setting.label}: ${what}` : setting.label,
+    ...(setting.hint ? [setting.hint] : []),
     ...(setting.docs ? [`Get it at ${setting.docs}`] : []),
   ];
 }
@@ -228,17 +259,33 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
 const SKILL_DIR = ".claude/skills/everyapp";
 
 /**
+ * Where an agent reads how to set `setting` up: the everyapp skill's guide
+ * when the registry names one ("Guide: .claude/skills/everyapp/setup/
+ * dataforseo.md"), else for a provider (a registered row has no guide) the
+ * command that prints its whole spec ("Guide: pnpm everyapp provider show
+ * stripe"). Null for an app's own secret without a guide.
+ */
+export function guideLine(setting: Pick<AppSetupSetting, "setup" | "kind" | "id">): string | null {
+  if (setting.setup) return `Guide: ${SKILL_DIR}/${setting.setup}`;
+  if (setting.kind === "capability" || setting.kind === "provider") {
+    return `Guide: ${CLI} provider show ${setting.id}`;
+  }
+  return null;
+}
+
+/**
  * Every unmet setting described, and under the first that has one, its
- * setup guide ("Guide: .claude/skills/everyapp/setup/dataforseo.md"), once
- * per distinct guide: two Google clients share setup/google.md.
+ * guide (see {@link guideLine}), once per distinct guide: two Google
+ * clients share setup/google.md.
  */
 export function describeUnmetSettings(unmet: readonly AppSetupSetting[]): string[] {
   const guides = new Set<string>();
   return unmet.flatMap((setting) => {
     const lines = describeUnmet(setting);
-    if (!setting.setup || guides.has(setting.setup)) return lines;
-    guides.add(setting.setup);
-    return [...lines, `Guide: ${SKILL_DIR}/${setting.setup}`];
+    const guide = guideLine(setting);
+    if (!guide || guides.has(guide)) return lines;
+    guides.add(guide);
+    return [...lines, guide];
   });
 }
 

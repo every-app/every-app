@@ -161,7 +161,9 @@ export async function handleIntegrationProxyRequest({
   if (status?.capability.mode === "api_key") {
     const requested = Boolean(capabilities?.[status.id]);
     const configured =
-      requested && authorizationFor(status.capability, env) !== null;
+      requested &&
+      authorizationFor(status.capability, env) !== null &&
+      (lookup.bound?.(status.id) ?? true);
     return Response.json({
       capability: status.id,
       requested,
@@ -263,6 +265,17 @@ export async function handleIntegrationProxyRequest({
       503,
       "integration_not_configured",
       `${integration.label} isn't set up on this gateway. Its operator sets ${names.join(" and ")} with: everyapp secret set ${names.join(" ")}`,
+    );
+  }
+  // A registered provider's value is read only for the hosts and auth it
+  // was set for (`providers.value-bound-to-hosts`): a row replaced or
+  // added again since reads nothing until the operator sets the key again.
+  if (lookup.bound && !lookup.bound(route.id)) {
+    const names = capabilitySettings(integration);
+    return refusal(
+      503,
+      "integration_not_configured",
+      `${integration.label}'s key was set for other hosts than the provider has now. Its operator sets it again with: everyapp secret set ${names.join(" ")}`,
     );
   }
   // One key reaches one whole account: on a hosted gateway that would be

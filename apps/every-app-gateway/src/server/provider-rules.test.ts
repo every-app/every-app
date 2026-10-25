@@ -7,71 +7,72 @@
  * running only where a spec names its field.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { providerRegistry, type EveryAppUser } from "@every-app/sdk/internal";
+import {
+  parseProviderSpec,
+  providerBindingKey,
+  providerRegistry,
+  type EveryAppUser,
+} from "@every-app/sdk/internal";
 import { handleIntegrationProxyRequest } from "./integration-proxy";
 
 const ORIGIN = "http://every-app-gateway.internal";
 
+/** A row as `everyapp secret set` leaves it: its key bound to the hosts it has. */
+function bound(spec: Record<string, unknown>) {
+  const parsed = parseProviderSpec(spec);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems));
+  return {
+    id: parsed.id,
+    spec,
+    boundTo: providerBindingKey(parsed.capability),
+  };
+}
+
 const registry = providerRegistry([
-  {
+  bound({
     id: "linear",
-    spec: {
-      id: "linear",
-      name: "Linear",
-      docs: "https://linear.app/settings/api",
-      hosts: ["api.linear.app"],
-      auth: { kind: "bearer", secret: "LINEAR_API_KEY" },
-      access: ["read", "write"],
-      readMethods: ["GET"],
-      writeMethods: ["POST"],
-    },
-  },
-  {
+    name: "Linear",
+    docs: "https://linear.app/settings/api",
+    hosts: ["api.linear.app"],
+    auth: { kind: "bearer", secret: "LINEAR_API_KEY" },
+    access: ["read", "write"],
+    readMethods: ["GET"],
+    writeMethods: ["POST"],
+  }),
+  bound({
     id: "openweather",
-    spec: {
-      id: "openweather",
-      name: "OpenWeather",
-      docs: "https://home.openweathermap.org/api_keys",
-      hosts: ["api.openweathermap.org"],
-      auth: { kind: "query", secret: "OPENWEATHER_API_KEY", param: "appid" },
-    },
-  },
-  {
+    name: "OpenWeather",
+    docs: "https://home.openweathermap.org/api_keys",
+    hosts: ["api.openweathermap.org"],
+    auth: { kind: "query", secret: "OPENWEATHER_API_KEY", param: "appid" },
+  }),
+  bound({
     id: "stripe",
-    spec: {
-      id: "stripe",
-      name: "Stripe",
-      docs: "https://dashboard.stripe.com/apikeys",
-      hosts: ["api.stripe.com"],
-      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
-      data: "account",
-    },
-  },
-  {
+    name: "Stripe",
+    docs: "https://dashboard.stripe.com/apikeys",
+    hosts: ["api.stripe.com"],
+    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    data: "account",
+  }),
+  bound({
     id: "shopify",
-    spec: {
-      id: "shopify",
-      name: "Shopify",
-      docs: "https://shopify.dev/",
-      hostSetting: "SHOPIFY_HOST",
-      auth: {
-        kind: "header",
-        secret: "SHOPIFY_API_KEY",
-        header: "X-Shopify-Access-Token",
-      },
+    name: "Shopify",
+    docs: "https://shopify.dev/",
+    hostSetting: "SHOPIFY_HOST",
+    auth: {
+      kind: "header",
+      secret: "SHOPIFY_API_KEY",
+      header: "X-Shopify-Access-Token",
     },
-  },
-  {
+  }),
+  bound({
     id: "exa",
-    spec: {
-      id: "exa",
-      name: "Exa",
-      docs: "https://dashboard.exa.ai/api-keys",
-      hosts: ["api.exa.ai"],
-      auth: { kind: "header", secret: "EXA_API_KEY", header: "x-api-key" },
-      readMethods: ["POST"],
-    },
-  },
+    name: "Exa",
+    docs: "https://dashboard.exa.ai/api-keys",
+    hosts: ["api.exa.ai"],
+    auth: { kind: "header", secret: "EXA_API_KEY", header: "x-api-key" },
+    readMethods: ["POST"],
+  }),
 ]);
 
 const ENV = {

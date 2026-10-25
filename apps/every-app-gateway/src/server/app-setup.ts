@@ -18,10 +18,14 @@ import { env } from "cloudflare:workers";
 import {
   appSettings,
   appSetupOf,
+  BUILTIN_PROVIDERS,
+  CATALOG,
   evaluateAppSettings,
+  providerIds,
   type AppSetting,
   type AppSettingsReport,
   type AppSetup,
+  type ProviderRegistry,
   PROVIDER_APP_TIER,
   remoteMcpOf,
 } from "@every-app/sdk/internal";
@@ -53,6 +57,12 @@ export interface AppSetupDeps {
   /** The gateway's own email rule, read only for an app that lists email. */
   emailConfigured: () => Promise<boolean>;
   /**
+   * Where a provider id is found: the catalog and this gateway's
+   * registered providers (server/providers), whose unbound rows' settings
+   * read as unset however the env holds them.
+   */
+  providers: () => Promise<ProviderRegistry>;
+  /**
    * A remote MCP app's credential rule (server/remote-mcp/bind.ts): set,
    * and bound to the row's origin. Read only for a row with a `remote`
    * block; `undefined` leaves it to the names.
@@ -67,6 +77,8 @@ const defaultDeps: AppSetupDeps = {
   settings: env as unknown as Readonly<Record<string, unknown>>,
   emailConfigured: async () =>
     (await import("@/server/email/sendEmail")).isEmailConfigured(),
+  providers: async () =>
+    (await import("@/server/providers")).gatewayProviders(),
   remoteMcpReady: async (manifest, rowId) => {
     const remote = remoteMcpOf(manifest);
     if (!remote) return undefined;
@@ -101,6 +113,35 @@ function remember(key: string, report: AppSettingsReport): void {
   }
 }
 
+/**
+ * What of the registry the report depends on: the registered providers
+ * the manifest names, each with whether it is bound. A manifest naming no
+ * registered provider keys as before.
+ */
+function registryKey(
+  registry: ProviderRegistry,
+  settings: readonly AppSetting[],
+): string {
+  return settings
+    .filter(
+      (setting) =>
+        setting.holder === "gateway" && registry.sourceOf(setting.id) === "row",
+    )
+    .map((setting) => `${setting.id}=${registry.bound(setting.id) ? 1 : 0}`)
+    .join(",");
+}
+
+/** Whether the manifest lists a provider or capability id the catalog doesn't have. */
+function namesOutsideCatalog(manifest: Record<string, unknown>): boolean {
+  const ids = [
+    ...providerIds(manifest as Parameters<typeof providerIds>[0]),
+    ...Object.keys(
+      (manifest["capabilities"] as Record<string, unknown> | undefined) ?? {},
+    ),
+  ];
+  return ids.some((id) => !CATALOG.get(id));
+}
+
 function parsedManifest(manifest: unknown): Record<string, unknown> | null {
   if (typeof manifest === "string") {
     try {
@@ -117,11 +158,15 @@ function parsedManifest(manifest: unknown): Record<string, unknown> | null {
 function isSetOn(
   deps: AppSetupDeps,
   secretNames: string[] | null,
+  unbound: ReadonlySet<string>,
 ): (holder: AppSetting["holder"], name: string) => boolean | null {
   return (holder, name) => {
     if (holder === "app") {
       return secretNames === null ? null : secretNames.includes(name);
     }
+    // A registered provider's setting counts only while its key was set
+    // for the hosts the provider has now (providers.value-bound-to-hosts).
+    if (unbound.has(name)) return false;
     const value = deps.settings[name];
     return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
   };
@@ -138,13 +183,20 @@ export async function appSettingsReport(
   if (input.tier === "dispatch") return null;
   const manifest = parsedManifest(input.manifest);
   if (!manifest) return null;
-  const settings = appSettings(manifest);
+  // The registered rows are read only for a manifest that names an id the
+  // catalog doesn't have (one D1 read, cached 30 s per isolate), before
+  // the report cache, since a provider added, replaced or bound since
+  // changes what the manifest needs. Every other app costs nothing here.
+  const registry = namesOutsideCatalog(manifest)
+    ? await deps.providers()
+    : BUILTIN_PROVIDERS;
+  const settings = appSettings(manifest, registry);
   if (settings.length === 0) return null;
   // A remote MCP app's row keeps its id across a remove and an add
   // (revived), and its version is null: its registration's revision keys
   // the cache instead.
   const remoteRev = remoteMcpOf(manifest)?.rev;
-  const key = `${cacheKey(input)}\0${remoteRev ?? ""}`;
+  const key = `${cacheKey(input)}\0${remoteRev ?? ""}\0${registryKey(registry, settings)}`;
   const cached = reports.get(key);
   if (cached) return cached;
   const listsEmail = settings.some(
@@ -158,7 +210,7 @@ export async function appSettingsReport(
       : undefined;
   const report = evaluateAppSettings(
     settings,
-    isSetOn(deps, input.secretNames),
+    isSetOn(deps, input.secretNames, registry.unboundSettings()),
     {
       readiness: (setting) =>
         setting.kind === "capability" && setting.id === "email"

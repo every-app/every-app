@@ -1,7 +1,7 @@
 import {
-  CAPABILITIES,
+  CATALOG,
   declaredScopeSets,
-  type Capability,
+  type CapabilityLookup,
   type OAuthScopePolicy,
 } from "@every-app/sdk/internal";
 import { validateManifest } from "@every-app/perimeter/manifest";
@@ -18,6 +18,7 @@ import type { AppCapabilitySummary } from "@/types/app";
  */
 export function appCapabilities(
   manifest: string | null,
+  lookup: CapabilityLookup = CATALOG,
 ): AppCapabilitySummary[] {
   let listed: Record<
     string,
@@ -31,9 +32,8 @@ export function appCapabilities(
   }
   const summaries: AppCapabilitySummary[] = [];
   for (const [id, entry] of Object.entries(listed)) {
-    if (!Object.hasOwn(CAPABILITIES, id)) continue;
-    const capability: Capability =
-      CAPABILITIES[id as keyof typeof CAPABILITIES];
+    const capability = lookup.get(id);
+    if (!capability || capability.mode === "ai") continue;
     const policy =
       capability.mode === "oauth_client" ? capability.scopePolicy : undefined;
     summaries.push({

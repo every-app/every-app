@@ -763,6 +763,16 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       };
     },
     "secrets.app": saidByMessage,
+    // Before a registered provider's key is asked for: who registered it and where it goes.
+    "secrets.provider": (event) =>
+      event.status === "ok" && event.message ? { line: event.message } : null,
+    "provider.add": (event) =>
+      event.status === "start" ? { spin: event.message ?? "Registering..." } : null,
+    "provider.remove": (event) =>
+      event.status === "start" ? { spin: event.message ?? "Removing..." } : null,
+    // `provider on|off`, said before `mcp on|off` runs for it.
+    "provider.alias": (event) =>
+      event.status === "ok" && event.message ? { line: chalk.dim(event.message) } : null,
     // `events test`: a spinner while the Gateway's sweep sends the ping; the done line says how it went.
     "events.deliver": saidByMessage,
     "create.skill": saidByMessage,

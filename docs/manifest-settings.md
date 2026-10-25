@@ -94,6 +94,14 @@ Every setting may also carry:
 | an OAuth client                                        | its developer console, the "Developer console" column of the [OAuth clients table](capabilities.md#oauth-clients); for a client with no fixed host, the path on the default instance (Mastodon: https://mastodon.social/settings/applications) |
 | `email`, `members`, the AI routes, an app's own secret | none, unless the manifest gives one                                                                                                                                                                                                            |
 
+A provider's or capability's setting also carries a `hint` that no
+manifest sets: what the key is and where it comes from, from the
+provider's entry in the registry (its `hint`, then each setting's own),
+which `everyapp status`, `secret list` and `configure` print between `why`
+and "Get it at" and an agent reads in `AppSetup` (§5). For a provider
+registered on the Gateway (`everyapp provider add`, the agent docs'
+providers page) it is the only setup text there is.
+
 A setting may also carry `setup`: the everyapp skill's guide to setting it
 up end to end, relative to the skill (`setup/dataforseo.md`). The guides
 are the skill's own, under `packages/cli/skills/everyapp/setup/` in the
@@ -354,8 +362,8 @@ terminal: one dim line saying where values go (an AI key or a capability's
 client on the Gateway Worker, once for every app; the app's own secrets on
 its Worker; changes live at once, no deploy), the SETTING, WHERE, STATUS
 table (names only, never values), a hidden prompt per required unset
-setting with "Label: why", "Get it at <docs>" and "Guide:
-.claude/skills/everyapp/setup/<file>.md" above it (a plain setting such as
+setting with "Label: why", the provider's hint, "Get it at <docs>" and
+"Guide: .claude/skills/everyapp/setup/<file>.md" above it (a plain setting such as
 `EMAIL_FROM` gets a visible prompt with what it takes, and is checked; a
 setting with several names, an OAuth client's id and secret, reads unset
 while one is missing and is asked only for the missing one),
@@ -498,8 +506,9 @@ interface AppSetupSetting {
     | { kind: "optional" }
     | { kind: "anyOf"; group: string };
   why?: string;
+  hint?: string; // what the key is and where it comes from: the provider entry's hint, then each setting's own (never the manifest's)
   docs?: string;
-  setup?: string; // the everyapp skill's guide to it, "setup/email.md": the registry's for a Gateway setting, the entry's for an app secret
+  setup?: string; // the everyapp skill's guide to it, "setup/email.md": the registry's for a Gateway setting, the entry's for an app secret; none for a provider registered on the Gateway
   set: boolean | null; // null: not known (app names never recorded); never blocks
   blocking: boolean; // required and unset, or in an any-of group none of whose members is set
 }
@@ -572,8 +581,11 @@ app's names were recorded with none set:
 How an agent uses it (the everyapp skill's rule): run
 `pnpm everyapp status --json` and read `data.apps[].setup`; for each app
 whose `ready` is false, go through `unmet`, show the person each setting's
-`label`, `why` and `docs`, and read its `setup` guide, which walks through
-getting the key or client. Then get the value in without it ever passing
+`label`, `why`, `hint` and `docs`, and read its `setup` guide, which walks
+through getting the key or client (a provider registered on the Gateway
+has no guide: `pnpm everyapp provider show <id>` prints its spec, and
+`status`, `secret list` and `configure` print
+`Guide: pnpm everyapp provider show <id>` for it). Then get the value in without it ever passing
 through the chat, one of the three ways the skill's `setup/README.md`
 gives: tell the person to run `setup.command.command`
 (`pnpm everyapp configure <app>`, or `pnpm everyapp secret set NAME` for

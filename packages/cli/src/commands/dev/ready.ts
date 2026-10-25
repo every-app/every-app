@@ -7,10 +7,14 @@ import {
   aiProviderSettings,
   appSettings,
   CAPABILITIES,
+  CATALOG,
+  DEV_PROVIDERS_DIR,
   devAiProvider,
   evaluateAppSettings,
   isCapabilityId,
+  providerRegistry,
   type AppSetting,
+  type CapabilityLookup,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -136,7 +140,7 @@ export function devVarsHint(
   manifest: SettingsManifestLike,
   cwd: string,
 ): Fact[] {
-  const settings = devSettings(manifest);
+  const settings = devSettings(manifest, devProviderLookup(cwd));
   if (settings.length === 0) return [];
   const set = readDevVars(cwd);
   const report = evaluateAppSettings(settings, (_holder, name) =>
@@ -183,8 +187,8 @@ export function devVarsHint(
  * from the dev identity); nor are the AI proxy's extra routes, which the
  * direct calls don't go through.
  */
-function devSettings(manifest: SettingsManifestLike): AppSetting[] {
-  return appSettings(manifest).flatMap((setting): AppSetting[] => {
+function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): AppSetting[] {
+  return appSettings(manifest, lookup).flatMap((setting): AppSetting[] => {
     switch (setting.kind) {
       case "provider": {
         const spec = devAiProvider(setting.id);
@@ -204,6 +208,37 @@ function devSettings(manifest: SettingsManifestLike): AppSetting[] {
         return [setting];
     }
   });
+}
+
+/**
+ * The catalog, and each provider registered on a Gateway that the app
+ * keeps a spec of for local runs (`.everyapp/providers/<id>.json`, which
+ * `provider add` in the app's directory and `provider show <id> --save`
+ * write): what the SDK's dev fallback reaches, so the settings a local run
+ * needs include a registered provider's key. A file that doesn't parse is
+ * left out (the SDK names it when the app calls the provider).
+ */
+export function devProviderLookup(cwd: string): CapabilityLookup {
+  const dir = path.join(cwd, DEV_PROVIDERS_DIR);
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((name) => name.endsWith(".json")).sort();
+  } catch {
+    return CATALOG;
+  }
+  const rows = files.flatMap((name) => {
+    try {
+      const spec: unknown = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+      const id =
+        spec && typeof spec === "object" && typeof (spec as { id?: unknown }).id === "string"
+          ? (spec as { id: string }).id
+          : name.replace(/\.json$/, "");
+      return [{ id, spec }];
+    } catch {
+      return [];
+    }
+  });
+  return rows.length > 0 ? providerRegistry(rows) : CATALOG;
 }
 
 /**

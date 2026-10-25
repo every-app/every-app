@@ -14,6 +14,8 @@ import path from "node:path";
 import { isSettableGatewaySetting } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
+import { PENDING_ROUTES } from "@/docs/pages";
+import { GENERATED_SETUP_MARKER } from "@/docs/providersCatalog";
 import { checkoutRoot } from "@/lib/checkout";
 import { asksForSecretInChat } from "../../../test/shared/chat-secret.mjs";
 
@@ -30,7 +32,7 @@ const files = (fs.existsSync(setupDir) ? fs.readdirSync(setupDir) : [])
 /** README.md and the setup files: the rules about commands and values hold in all of them. */
 const allFiles = [...(readme ? [{ name: "README.md", text: readme }] : []), ...files];
 
-/** Routes the files may name that aren't on main yet, each with why. */
+/** The sections every hand-written setup file has, in the README's contract. */
 const REQUIRED_HEADINGS = [
   "Settings",
   "Costs and plans",
@@ -124,7 +126,8 @@ describe("every setup file", () => {
         for (const match of line.matchAll(/(?:pnpm |npx )everyapp ([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?/g)) {
           const [, command, sub] = match;
           const route = groups.has(command!) && sub ? `${command} ${sub}` : command!;
-          if (!paths.has(route)) problems.push(`${file.name}:${index + 1} pnpm everyapp ${route}`);
+          // A route the CLI half of the same pull request builds (docs/pages.ts says which, and repoDocs.test.ts fails once it is built).
+          if (!paths.has(route) && !PENDING_ROUTES.has(route)) problems.push(`${file.name}:${index + 1} pnpm everyapp ${route}`);
         }
       });
     }
@@ -153,6 +156,10 @@ describe("every setup file", () => {
   it("has every section the README's contract requires", () => {
     const problems: string[] = [];
     for (const file of files) {
+      // setup/providers.md is generated from the catalog (docs/providersCatalog.ts): one section per
+      // provider, each pointing at the provider's own file where there is one, so the nine sections of
+      // a hand-written guide aren't its shape. agentDocs.test.ts holds it to the catalog instead.
+      if (file.text.startsWith(GENERATED_SETUP_MARKER)) continue;
       const headings = [...file.text.matchAll(/^#{1,6}\s+(.+?)\s*$/gm)].map((match) => match[1]!.toLowerCase());
       for (const required of REQUIRED_HEADINGS) {
         if (!headings.some((heading) => heading.startsWith(required.toLowerCase()))) {

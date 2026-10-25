@@ -414,6 +414,8 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
   DevEmailEnv<M> & {
     EVERYAPP_DEV: TextBinding;
     EVERYAPP_DEV_CAPABILITIES: TextBinding;
+    /** The specs in `.everyapp/providers/*.json`, when the app has any: providers registered on a gateway, for integrationFetch()'s dev fallback. */
+    EVERYAPP_DEV_PROVIDERS?: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
   } & { [K in DevGatewayKeys<M>]: SecretBinding };
@@ -537,6 +539,102 @@ const GATEWAY_ENTRYPOINT = "AppGateway";
 function devCapabilities(manifest: EveryAppWorkerManifest): TextBinding {
   return { type: "text", value: JSON.stringify(manifest.capabilities ?? {}) };
 }
+
+/**
+ * The binding the dev Worker gets the specs of providers registered on a
+ * gateway in (`DEV_PROVIDERS_ENV` in ../internal/devProviders.ts; a copy,
+ * kept in step by a test, for the reason {@link DEV_GATEWAY_KEYS} is one).
+ */
+const DEV_PROVIDERS_ENV = "EVERYAPP_DEV_PROVIDERS";
+
+/** One `.everyapp/providers/<id>.json` as the binding carries it. */
+interface DevProviderFile {
+  file: string;
+  /** The file's JSON, or its text when it isn't JSON (the SDK names the file when an app asks for it). */
+  spec: unknown;
+}
+
+/**
+ * The specs `everyapp provider add` (in an app directory) and `everyapp
+ * provider show <id> --save` wrote under the app, in name order; none
+ * without the directory. integrationFetch()'s dev fallback reaches a
+ * provider outside the catalog from them, with the developer's own key.
+ */
+function devProviderFiles(root: string | undefined): DevProviderFile[] {
+  const dir = path.join(root ?? process.cwd(), ".everyapp", "providers");
+  let names: string[];
+  try {
+    names = fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith(".json"))
+      .sort();
+  } catch {
+    return [];
+  }
+  return names.map((name) => {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    let spec: unknown;
+    try {
+      spec = JSON.parse(text);
+    } catch {
+      spec = text;
+    }
+    return { file: `.everyapp/providers/${name}`, spec };
+  });
+}
+
+/** EVERYAPP_DEV_PROVIDERS, when the app has any spec files. */
+function addDevProviders(
+  env: Record<string, EveryAppBinding>,
+  root: string | undefined,
+): void {
+  const files = devProviderFiles(root);
+  if (files.length === 0) return;
+  env[DEV_PROVIDERS_ENV] = { type: "text", value: JSON.stringify(files) };
+}
+
+/**
+ * The Gateway settings the spec files name for the capabilities the
+ * manifest lists outside {@link DEV_GATEWAY_KEYS} (a registered provider's
+ * key, a Basic username held as a setting, its host setting), read
+ * loosely: the SDK parses the spec when the app calls the provider.
+ */
+function devProviderKeys(
+  manifest: EveryAppWorkerManifest,
+  root: string | undefined,
+): string[] {
+  const listed = Object.keys(manifest.capabilities ?? {}).filter(
+    (id) => !Object.hasOwn(DEV_GATEWAY_KEYS.capabilities, id),
+  );
+  if (listed.length === 0) return [];
+  const record = (value: unknown): Record<string, unknown> | undefined =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const names: string[] = [];
+  for (const { file, spec } of devProviderFiles(root)) {
+    const fields = record(spec);
+    const id =
+      typeof fields?.["id"] === "string"
+        ? fields["id"]
+        : file
+            .split("/")
+            .at(-1)!
+            .replace(/\.json$/, "");
+    if (!fields || !listed.includes(id)) continue;
+    const auth = record(fields["auth"]);
+    for (const name of [
+      auth?.["secret"],
+      record(auth?.["user"])?.["secret"],
+      fields["hostSetting"],
+    ]) {
+      if (typeof name === "string" && /^[A-Z][A-Z0-9_]*$/.test(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
@@ -600,6 +698,7 @@ export function everyAppWorker<
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
+    addDevProviders(env, options.root);
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
@@ -734,6 +833,7 @@ export function everyAppAuxiliaryWorker<
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
+    addDevProviders(env, options.root);
   }
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
@@ -1055,6 +1155,7 @@ function addSecrets(
     const names = new Set([
       ...secrets,
       ...devGatewayKeys(options.manifest),
+      ...devProviderKeys(options.manifest, options.root),
       ...(options.manifest.capabilities?.["email"]
         ? ["EVERYAPP_EMAIL_SENDERS"]
         : []),

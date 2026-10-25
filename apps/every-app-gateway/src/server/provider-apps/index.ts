@@ -1,6 +1,6 @@
 /**
  * Provider apps as the gateway serves them (`@every-app/sdk/internal`
- * providerApps.ts; the row is written by `everyapp provider on`): a data
+ * providerApps.ts; the row is written by `everyapp mcp on`): a data
  * provider offered to members' AI clients as an app of the gateway's own,
  * with no Worker. Each is an SDK app (`everyApp()` with `defineTools()`)
  * that runs inside the gateway Worker, so the catalog snapshot, tools/list,

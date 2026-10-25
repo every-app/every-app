@@ -6,10 +6,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { appSettings, CAPABILITIES, DEV_AI_PROVIDERS } from "@every-app/sdk/internal";
+import {
+  appSettings,
+  CAPABILITIES,
+  DEV_AI_PROVIDERS,
+  parseProviderSpec,
+  providerBindingKey,
+  providerRegistry,
+} from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import {
   appSetupFrom,
+  boundGatewayNames,
   declaresSettings,
   describeUnmet,
   describeUnmetSettings,
@@ -24,6 +32,10 @@ import {
 } from "./settings";
 
 const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
+
+/** What OpenRouter's entry says its key is (its `hint`). */
+const OPENROUTER_HINT =
+  "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.";
 
 /** CRM: an AI model from either provider, an optional capability, a required and an optional secret. */
 const CRM = {
@@ -204,7 +216,7 @@ describe("helperRows", () => {
 });
 
 describe("describeUnmet", () => {
-  it("says the label with its why, or its names when the label doesn't name them, then where to get it", () => {
+  it("says the label with its why, or its names when the label doesn't name them, then what the key is, then where to get it", () => {
     const { setup } = appSetupFrom({
       manifest: {
         providers: ["openrouter"],
@@ -216,8 +228,17 @@ describe("describeUnmet", () => {
       secretNames: [],
     });
     expect(setup.unmet.map(describeUnmet)).toEqual([
-      ["OpenRouter: OPENROUTER_API_KEY", "Get it at https://openrouter.ai/settings/keys"],
-      ["DataForSEO: Keyword data.", "Get it at https://app.dataforseo.com/api-access"],
+      [
+        "OpenRouter: OPENROUTER_API_KEY",
+        OPENROUTER_HINT,
+        "Get it at https://openrouter.ai/settings/keys",
+      ],
+      [
+        "DataForSEO: Keyword data.",
+        // The entry's hint, then its one setting's own.
+        "The API login and password from API Access, as login:password (or that pair base64-encoded); the Gateway sends them as HTTP Basic. login:password, or its base64; never the dashboard sign-in password.",
+        "Get it at https://app.dataforseo.com/api-access",
+      ],
       ["MAIN_SECRET"],
       ["SIGNING_KEY: Signs the tracker's cookies.", "Get it at https://example.com/keys"],
     ]);
@@ -237,6 +258,7 @@ describe("describeUnmet", () => {
     });
     expect(describeUnmetSettings(setup.unmet)).toEqual([
       "OpenRouter: OPENROUTER_API_KEY",
+      OPENROUTER_HINT,
       "Get it at https://openrouter.ai/settings/keys",
       "Guide: .claude/skills/everyapp/setup/openrouter.md",
       "Google (Gmail, Calendar, Search Console and Analytics): GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
@@ -248,6 +270,80 @@ describe("describeUnmet", () => {
       "SIGNING_KEY",
       "Guide: .claude/skills/everyapp/setup/signing-key.md",
     ]);
+  });
+
+  it("points at provider show for a provider without a guide: a registered one, or a client the skill has no file for", () => {
+    const { setup } = appSetupFrom({
+      manifest: {
+        capabilities: {
+          stripe: { access: "read", why: "Shows the last charges." },
+          linkedin: { access: "write" },
+          dataforseo: { access: "read" },
+        },
+      },
+      appId: "shop",
+      gatewayNames: [],
+      secretNames: [],
+      lookup: STRIPE_REGISTRY,
+    });
+    expect(describeUnmetSettings(setup.unmet)).toEqual([
+      "Stripe: Shows the last charges.",
+      "A restricted key from the Stripe dashboard. Read access to Charges is enough.",
+      "Get it at https://dashboard.stripe.com/apikeys",
+      "Guide: pnpm everyapp provider show stripe",
+      "LinkedIn: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET",
+      "Get it at https://www.linkedin.com/developers/apps",
+      "Guide: pnpm everyapp provider show linkedin",
+      "DataForSEO: DATAFORSEO_API_KEY",
+      expect.stringMatching(/^The API login and password/),
+      "Get it at https://app.dataforseo.com/api-access",
+      "Guide: .claude/skills/everyapp/setup/dataforseo.md",
+    ]);
+  });
+});
+
+/** A gateway's registry with one registered provider, Stripe, with the Gateway's host rule. */
+const STRIPE_SPEC = {
+  id: "stripe",
+  name: "Stripe",
+  docs: "https://dashboard.stripe.com/apikeys",
+  hosts: ["api.stripe.com"],
+  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  hint: "A restricted key from the Stripe dashboard.",
+  secrets: [{ name: "STRIPE_API_KEY", hint: "Read access to Charges is enough." }],
+};
+const STRIPE_REGISTRY = providerRegistry([{ id: "stripe", spec: STRIPE_SPEC }]);
+
+describe("a gateway's registered providers", () => {
+  const manifest = { capabilities: { stripe: { access: "read" } }, secrets: ["MAIN_SECRET"] };
+
+  it("are settings like a catalog provider's once the registry is the lookup, and nothing without it", () => {
+    expect(declaresSettings({ capabilities: { stripe: { access: "read" } } })).toBe(false);
+    expect(declaresSettings({ capabilities: { stripe: { access: "read" } } }, STRIPE_REGISTRY)).toBe(true);
+    expect(gatewayNamesRead(manifest, STRIPE_REGISTRY)).toEqual(["STRIPE_API_KEY"]);
+    const { setup } = appSetupFrom({
+      manifest,
+      appId: "shop",
+      gatewayNames: [],
+      secretNames: ["MAIN_SECRET"],
+      lookup: STRIPE_REGISTRY,
+    });
+    expect(setup.unmet.map((setting) => setting.names)).toEqual([["STRIPE_API_KEY"]]);
+  });
+
+  it("read a key that isn't bound to the row's hosts as not set, as the Gateway reads it", () => {
+    const set = { manifest, appId: "shop", gatewayNames: ["STRIPE_API_KEY"], secretNames: ["MAIN_SECRET"] };
+    // Never bound (just added, or replaced since): the Gateway doesn't read it.
+    expect(appSetupFrom({ ...set, lookup: STRIPE_REGISTRY }).setup.ready).toBe(false);
+    expect(boundGatewayNames(["STRIPE_API_KEY", "OPENAI_API_KEY"], STRIPE_REGISTRY)).toEqual(["OPENAI_API_KEY"]);
+    const parsed = parseProviderSpec(STRIPE_SPEC);
+    if (!parsed.ok) throw new Error("the spec parses");
+    const bound = providerRegistry([
+      { id: "stripe", spec: STRIPE_SPEC, boundTo: providerBindingKey(parsed.capability) },
+    ]);
+    expect(appSetupFrom({ ...set, lookup: bound }).setup.ready).toBe(true);
+    // The catalog alone has nothing to leave out.
+    expect(boundGatewayNames(["STRIPE_API_KEY"])).toEqual(["STRIPE_API_KEY"]);
   });
 });
 

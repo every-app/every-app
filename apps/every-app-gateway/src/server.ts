@@ -291,9 +291,11 @@ export class AppGateway extends WorkerEntrypoint<
     // The capability proxy (AI, integrations, email) and its usage
     // accounting load with the first app-to-gateway call on an isolate; a
     // request on an app host never evaluates them.
-    const { handleAppGatewayRequest } = await import(
-      "./server/app-gateway-entrypoint"
-    );
+    const [{ handleAppGatewayRequest }, { gatewayProviders }] =
+      await Promise.all([
+        import("./server/app-gateway-entrypoint"),
+        import("./server/providers"),
+      ]);
     return handleAppGatewayRequest({
       request,
       props: this.ctx.props,
@@ -306,6 +308,8 @@ export class AppGateway extends WorkerEntrypoint<
         monthlyCallCap: OrgAppSettingsRepository.getMonthlyCap,
         monthlyCalls: UsageRepository.monthlyCalls,
       },
+      // The catalog and this gateway's registered providers.
+      providers: gatewayProviders,
     });
   }
 }

@@ -90,3 +90,15 @@ export function mirroredDocuments(): Map<string, string> {
   }
   return map;
 }
+
+/**
+ * Commands the documents name before this branch's CLI answers them: the
+ * provider registry's `everyapp provider add|show|remove`
+ * (docs/design/2026-10-provider-registry.md section 8), built on the CLI
+ * half of the same pull request while the docs half was written. A route
+ * here passes the route checks of repoDocs.test.ts and
+ * lib/app/setupSkills.test.ts while the CLI lacks it; once the CLI answers
+ * it, repoDocs.test.ts fails until it is removed from here, so the list
+ * never outlives the commands it waits for.
+ */
+export const PENDING_ROUTES: ReadonlyMap<string, string> = new Map([]);

@@ -14,6 +14,7 @@ export * from "./events.js";
 export * from "./providerSpec.js";
 export * from "./providerRegistry.js";
 export * from "./remoteMcp.js";
+export * from "./devProviders.js";
 export {
   ConfigurationError,
   IdentityError,

@@ -12,7 +12,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
-import { readApp } from "@/lib/gateway/registry";
+import { readInstall } from "@/lib/gateway/install";
+import { addProvider } from "@/lib/gateway/providers";
+import { findRegisteredApp, readApp } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -221,5 +223,55 @@ describe("deploy and the app's settings", () => {
         message: expect.stringMatching(/^crm won't open until OPENROUTER_API_KEY is set\n/),
       }),
     ]);
+  });
+});
+
+describe("deploy and the Gateway's registered providers", () => {
+  const STRIPE = {
+    id: "stripe",
+    name: "Stripe",
+    docs: "https://dashboard.stripe.com/apikeys",
+    hosts: ["api.stripe.com"],
+    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  };
+  const SHOP: EveryAppCliManifest = {
+    id: "crm",
+    resources: { d1: ["DB"] },
+    capabilities: { stripe: { access: "read", why: "Shows the last charges." } },
+  };
+  const registerStripe = async () =>
+    addProvider(registry(), { spec: STRIPE, actor: "ops@example.com", install: (await readInstall(registry()))! });
+
+  it("refuses a capability neither the catalog nor the Gateway's rows have, before registering anything", async () => {
+    await expect(deploy(SHOP)).rejects.toMatchObject({
+      code: "CAPABILITY_UNKNOWN",
+      message: expect.stringMatching(
+        /^crm lists stripe under capabilities, which example\.com doesn't offer\nNeither the built-in catalog nor the providers registered on this Gateway has it\. It offers: dataforseo, context, email, members, /,
+      ),
+      fix: "register it with pnpm everyapp provider add <spec.json or https URL> (or fix the id in everyapp.config.ts), then deploy again",
+      data: { unknown: ["stripe"] },
+    });
+    expect(await findRegisteredApp(registry(), "crm")).toBeNull();
+  });
+
+  it("deploys an app listing a registered provider, and says what to set for it at the end", async () => {
+    await registerStripe();
+    const result = await deploy(SHOP);
+    expect(result.live).toBe(true);
+    expect(warnings()).toEqual([
+      expect.objectContaining({
+        message: "crm won't open until STRIPE_API_KEY is set\nStripe: Shows the last charges.",
+        data: { setup: expect.objectContaining({ unmet: [expect.objectContaining({ id: "stripe", names: ["STRIPE_API_KEY"] })] }) },
+      }),
+    ]);
+  });
+
+  it("refuses an app secret a registered provider holds, in the words it refuses a catalog key in", async () => {
+    await registerStripe();
+    await expect(deploy({ ...SHOP, capabilities: {}, secrets: ["STRIPE_API_KEY"] })).rejects.toMatchObject({
+      message:
+        "Invalid everyapp.config: secrets.0: STRIPE_API_KEY is a Gateway setting, which `everyapp secret set STRIPE_API_KEY` sets on the Gateway for every app; list `stripe` under capabilities instead",
+    });
+    expect(await findRegisteredApp(registry(), "crm")).toBeNull();
   });
 });

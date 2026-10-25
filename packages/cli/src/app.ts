@@ -27,7 +27,8 @@ import { emailRoutes } from "./commands/email/command";
 import { eventsRoutes } from "./commands/events/command";
 import { installCommand } from "./commands/install/command";
 import { loginCommand } from "./commands/login/command";
-import { mcpRoutes } from "./commands/provider/command";
+import { mcpRoutes } from "./commands/mcp/command";
+import { providerRoutes } from "./commands/provider/command";
 import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
@@ -55,14 +56,15 @@ const routes = buildRouteMap({
     delete: deleteCommand,
     access: accessRoutes,
     secret: secretRoutes,
+    provider: providerRoutes,
     mcp: mcpRoutes,
     email: emailRoutes,
     events: eventsRoutes,
     workspace: workspaceRoutes,
   },
-  // `everyapp provider …` was the group's name until 2026-10-24; kept through
-  // launch week for documents that still say it.
-  aliases: { provider: "mcp" },
+  // `everyapp provider …` was `mcp`'s name until 2026-10-24; it is the
+  // provider registry's group now, and its hidden `on|off` run `mcp on|off`
+  // through launch week for documents that still say them.
   docs: {
     brief: "Deploy and run Every App apps on your own Cloudflare account.",
   },
@@ -108,6 +110,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "delete",
       "access",
       "secret",
+      "provider",
       "mcp",
       "email",
       "events",
@@ -133,6 +136,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "events deliveries --dead",
   ],
   access: ["access on", "access on --email-domain example.com", "access off"],
+  provider: ["provider list", "provider add stripe.json", "provider show stripe"],
   mcp: [
     "mcp list",
     "mcp on dataforseo",
@@ -221,8 +225,8 @@ export function groupHelp(args: readonly string[]): string | null {
   const { path, target } = commandPath(routeMap, rest);
   if (path.length !== 1 || !("getAllEntries" in target)) return null;
   const group = path[0]!;
-  // The examples and notes are keyed by the group's own name; an alias
-  // (`provider` for `mcp`) gets the same help, under the name typed.
+  // The examples and notes are keyed by the group's own name; an alias of a
+  // group gets the same help, under the name typed.
   const canonical =
     routeMap.getAllEntries().find((entry) => entry.target === target)?.name.original ?? group;
   const entries = target.getAllEntries().filter((entry) => !entry.hidden);

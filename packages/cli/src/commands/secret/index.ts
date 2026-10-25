@@ -44,6 +44,7 @@ import { GATEWAY_WORKER_NAME, validateManifest, type Manifest } from "@every-app
 import {
   appSettings,
   appSetupOf,
+  capabilitySettings,
   evaluateAppSettings,
   isDevOnlyGatewaySetting,
   isHostedOnlyGatewaySetting,
@@ -51,10 +52,13 @@ import {
   isReservedAppSecretName,
   isSettableGatewaySetting,
   PROVIDER_APP_TIER,
+  PROVIDER_SECRET_NAME,
   secretEntries,
   secretNames,
   SETTABLE_GATEWAY_SETTINGS,
+  type ApiKeyCapability,
   type AppSetup,
+  type RegisteredProvider,
   type SecretEntry,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
@@ -62,6 +66,7 @@ import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import {
   appSetupFrom,
+  boundGatewayNames,
   declaresSettings,
   gatewayMissing,
   gatewayNamesRead,
@@ -81,8 +86,9 @@ import { listWorkerSecrets, patchWorkerSecrets } from "@/lib/cf/secrets";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { readInstall, writeInstall } from "@/lib/gateway/install";
+import { readInstall, writeInstall, type InstallRecord } from "@/lib/gateway/install";
 import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
+import { bindProviderSettings, gatewayRegistry, providerRowsNaming } from "@/lib/gateway/providers";
 import { refreshSetupStates } from "@/lib/gateway/setupState";
 import {
   bindRemoteMcpCredentials,
@@ -182,10 +188,55 @@ export async function setSecrets(options: SetSecretsOptions): Promise<void> {
 /** Reuse the secret command's checks, leases and version recording inside setup. */
 export async function applySecretValues(options: SetSecretsOptions) {
   const reached = await resolve(options.names, options, SecretAction.Set);
+  // A registered provider's key goes where its row says: who registered
+  // it and where it is sent, before the person types it.
+  sayWhereKeysGo(reached.providers, options.names, options.out);
   const changes: Record<string, string> = {};
   for (const name of options.names) changes[name] = await options.readValue(name);
   const applied = (await apply(reached, changes, options, SecretAction.Set))!;
   return { applied, gatewayHost: reached.gatewayHost };
+}
+
+/** "the key is sent to api.stripe.com and the host STRIPE_HOST names". */
+function hostsOf(capability: ApiKeyCapability): string {
+  return listed([
+    ...capability.hosts,
+    ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
+  ]);
+}
+
+/**
+ * For each name a registered row holds: "<NAME> is <Provider>'s,
+ * registered by <who> on <date>; the key is sent to <hosts>." (step
+ * `secrets.provider`, shown at a terminal too), so the person setting a
+ * key sees where the Gateway will send it.
+ */
+function sayWhereKeysGo(
+  providers: readonly RegisteredProvider[],
+  names: readonly string[],
+  out: EventSink,
+): void {
+  for (const row of providers) {
+    const { capability } = row;
+    for (const name of capabilitySettings(capability).filter((each) => names.includes(each))) {
+      const when = row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : "";
+      const who = row.addedBy ? ` by ${row.addedBy}` : "";
+      out.emit({
+        type: "step",
+        step: "secrets.provider",
+        status: "ok",
+        message: `${name} is ${capability.label}'s, registered${who}${when}; the key is sent to ${hostsOf(capability)}.`,
+        data: {
+          name,
+          provider: row.id,
+          addedBy: row.addedBy,
+          addedAt: row.addedAt,
+          hosts: [...capability.hosts],
+          ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+        },
+      });
+    }
+  }
 }
 
 /**
@@ -214,6 +265,7 @@ export async function applyGatewaySettings(
     accountName: connection.accountName,
     gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
     app: null,
+    providers: [],
   };
   return apply(reached, changes, options, removing ? SecretAction.Unset : SecretAction.Set);
 }
@@ -228,7 +280,10 @@ export async function applyGatewaySettings(
  * of the app's own is refused with APP_NOT_FOUND, and nothing changes.
  */
 export async function applyAppSettings(
-  connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl">,
+  connection: Pick<
+    Awaited<ReturnType<typeof connectToGateway>>,
+    "cf" | "db" | "deployer" | "accountName" | "gatewayUrl" | "install"
+  >,
   target: {
     manifest: SecretsManifest;
     source: ManifestSource;
@@ -237,7 +292,9 @@ export async function applyAppSettings(
   changes: Readonly<Record<string, string>>,
   options: Pick<SecretOptions, "flags" | "out" | "setupRecordedBy">,
 ): Promise<Applied> {
-  const route = routeNames(Object.keys(changes), target.manifest, target.source, SecretAction.Set);
+  const names = Object.keys(changes);
+  const held = await heldByGateway(names, target.manifest, connection, SecretAction.Set);
+  const route = routeNames(names, target.manifest, target.source, SecretAction.Set, held.names);
   if (route.app && !target.app) {
     throw new EveryAppError(
       "APP_NOT_FOUND",
@@ -253,6 +310,7 @@ export async function applyAppSettings(
     accountName: connection.accountName,
     gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
     app: route.app && target.app ? { ...route.app, ...target.app } : null,
+    providers: held.providers,
   };
   return (await apply(reached, changes, options, SecretAction.Set))!;
 }
@@ -327,8 +385,15 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
   const { out } = options;
   const local = options.appId ? null : await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
   const { cf, db, gatewayUrl, install } = await connect(options);
-  const gatewayNames = await listGatewaySecretNames(cf);
-  const settable = [...SETTABLE_GATEWAY_SETTINGS];
+  const [gatewayNames, registry] = await Promise.all([
+    listGatewaySecretNames(cf),
+    gatewayRegistry(db, install),
+  ]);
+  // The catalog's settings, then each registered provider's.
+  const settable = [
+    ...SETTABLE_GATEWAY_SETTINGS,
+    ...registry.rows().flatMap((row) => capabilitySettings(row.capability)),
+  ];
   const shown = (display: string, data: Record<string, unknown>) =>
     out.emit({ type: "done", message: stripVTControlCharacters(display), display, data });
 
@@ -340,7 +405,9 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     const yours = gatewayNames.filter((name) => !isInstallOwnedGatewaySetting(name));
     const setups = gatewayNames.filter((name) => isInstallOwnedGatewaySetting(name));
     const registered = await listApps(db);
-    const read = new Set(registered.flatMap((app) => (app.manifest ? gatewayNamesRead(app.manifest) : [])));
+    const read = new Set(
+      registered.flatMap((app) => (app.manifest ? gatewayNamesRead(app.manifest, registry) : [])),
+    );
     // The hosted Gateway's own switches: nothing on a self-hosted install reads them.
     const hosted = install.deploymentMode === "hosted";
     const relevant = settable.filter((name) => hosted || !isHostedOnlyGatewaySetting(name));
@@ -360,7 +427,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     const unlisted: Array<{ id: string; reason: string }> = [];
     for (const app of registered) {
       // A dispatch-tier app's settings the platform doesn't gate.
-      if (!app.manifest || !declaresSettings(app.manifest) || app.tier === "dispatch") continue;
+      if (!app.manifest || !declaresSettings(app.manifest, registry) || app.tier === "dispatch") continue;
       if (app.tier === PROVIDER_APP_TIER) {
         // An MCP app has no Worker of its own: its key or credential is a
         // Gateway setting. Listed only while it needs setup, with the one
@@ -385,6 +452,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
         appId: app.appSlug,
         gatewayNames,
         secretNames,
+        lookup: registry,
       });
       apps.push({ id: app.appSlug, setup, rows: settingsRows(app.appSlug, report.settings) });
     }
@@ -440,7 +508,13 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     }
   }
   const own = workers[0] ? workers[0].names.filter((name) => !isReservedAppSecretName(name)) : null;
-  const { report, setup } = appSetupFrom({ manifest, appId: manifest.id, gatewayNames, secretNames: own });
+  const { report, setup } = appSetupFrom({
+    manifest,
+    appId: manifest.id,
+    gatewayNames,
+    secretNames: own,
+    lookup: registry,
+  });
   const rows = settingsRows(manifest.id, report.settings).map((row) =>
     // Before the first deploy there is no Worker to hold the app's own.
     !workerName && row.where === manifest.id ? { ...row, status: chalk.dim("after first deploy") } : row,
@@ -451,7 +525,13 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
   // everyapp's own names only with --verbose.
   for (const helper of workers.slice(1)) {
     const held = helper.names.filter((name) => !isReservedAppSecretName(name));
-    const { report: onHelper } = appSetupFrom({ manifest, appId: manifest.id, gatewayNames, secretNames: held });
+    const { report: onHelper } = appSetupFrom({
+      manifest,
+      appId: manifest.id,
+      gatewayNames,
+      secretNames: held,
+      lookup: registry,
+    });
     rows.push(...helperRows(manifest.id, helper.workerName.split("--").at(-1)!, onHelper.settings));
   }
   const set = `${chalk.green("✓")} set`;
@@ -501,8 +581,9 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
       gateway: {
         workerName: GATEWAY_WORKER_NAME,
         names: gatewayNames,
-        needed: gatewayNeeds(report.settings, gatewayNames),
-        missing: gatewayMissing(report.settings, gatewayNames),
+        // A registered provider's key counts once it is bound to the row's hosts.
+        needed: gatewayNeeds(report.settings, boundGatewayNames(gatewayNames, registry)),
+        missing: gatewayMissing(report.settings, boundGatewayNames(gatewayNames, registry)),
         settable,
       },
       ...(rows.length > 0 && next.length > 0 ? { next } : {}),
@@ -548,6 +629,8 @@ export interface Applied {
   gateway?: {
     names: string[];
     versions: Record<string, string | null>;
+    /** The registered providers whose key this set, now bound to their hosts. */
+    bound?: string[];
     /** Remote MCP credentials among `names`, each with the one origin the Gateway now sends it to. */
     pinned?: Array<{ name: string; origin: string }>;
   };
@@ -560,19 +643,23 @@ export interface Applied {
 }
 
 /**
- * Route every name: a Gateway setting goes to the Gateway; anything else
- * needs the app's manifest (read only then, so a Gateway-only call never
- * evaluates it), which must list the name for `set`. A name that goes
- * nowhere is refused here, before anything is read.
+ * Route every name: a Gateway setting goes to the Gateway (the catalog's,
+ * and `onGateway`: those a registered provider holds, which the caller
+ * read from the Gateway's rows); anything else needs the app's manifest
+ * (read only then, so a Gateway-only call never evaluates it), which must
+ * list the name for `set`. A name that goes nowhere is refused here,
+ * before any value is read.
  */
 function routeNames(
   names: string[],
   manifest: SecretsManifest | null,
   source: ManifestSource,
   action: SecretAction,
+  onGateway: ReadonlySet<string> = new Set(),
 ): Route {
-  const gateway = names.filter((name) => isSettableGatewaySetting(name));
-  const rest = names.filter((name) => !isSettableGatewaySetting(name));
+  const isGateway = (name: string) => isSettableGatewaySetting(name) || onGateway.has(name);
+  const gateway = names.filter(isGateway);
+  const rest = names.filter((name) => !isGateway(name));
   if (rest.length === 0) return { gateway, app: null, undeclared: [] };
   const declared = manifest ? secretNames(manifest) : [];
   const undeclared: string[] = [];
@@ -736,20 +823,83 @@ interface Reached {
     /** The app's registry row, where its secret names are recorded. */
     rowId: string;
   } | null;
+  /** The registered providers holding some of the Gateway's names: bound to their hosts once set. */
+  providers: RegisteredProvider[];
+}
+
+/**
+ * The names only the Gateway's registered providers can say where they
+ * go: neither a catalog setting nor one of the manifest's own secrets, and
+ * shaped like a provider's setting (`STRIPE_API_KEY`: not the Gateway's
+ * own, a dev-only or a reserved name, nor a catalog name typed in another
+ * case), which the rules let a row hold. Any other name is refused or
+ * routed without asking the Gateway.
+ */
+function mayBeProviders(names: readonly string[], manifest: SecretsManifest | null): string[] {
+  const declared = manifest ? secretNames(manifest) : [];
+  return names.filter(
+    (name) =>
+      !isSettableGatewaySetting(name) &&
+      !declared.includes(name) &&
+      PROVIDER_SECRET_NAME.test(name) &&
+      !isInstallOwnedGatewaySetting(name) &&
+      !isDevOnlyGatewaySetting(name) &&
+      !isReservedAppSecretName(name) &&
+      !closeName(name, [...SETTABLE_GATEWAY_SETTINGS, ...declared]),
+  );
+}
+
+/**
+ * The names a call routes to the Gateway beyond the catalog's: those a
+ * registered provider holds (read from the Gateway's rows, which connects
+ * first), for the names that are neither a catalog setting nor one of the
+ * manifest's own secrets. For `unset`, also a name the Gateway Worker
+ * holds that no row claims any more: a provider's key outlives its row
+ * (`provider remove`), and this is how it goes.
+ */
+async function heldByGateway(
+  names: readonly string[],
+  manifest: SecretsManifest | null,
+  connection: Pick<Awaited<ReturnType<typeof connect>>, "cf" | "db" | "install">,
+  action: SecretAction,
+): Promise<{ names: Set<string>; providers: RegisteredProvider[] }> {
+  const unknown = mayBeProviders(names, manifest);
+  if (unknown.length === 0) return { names: new Set(), providers: [] };
+  const registry = await gatewayRegistry(connection.db, connection.install);
+  const providers = providerRowsNaming(registry, unknown);
+  const held = new Set(
+    providers.flatMap((row) => capabilitySettings(row.capability)).filter((name) => unknown.includes(name)),
+  );
+  const orphans = unknown.filter((name) => !held.has(name));
+  if (action === SecretAction.Unset && orphans.length > 0) {
+    const onGateway = await listGatewaySecretNames(connection.cf);
+    for (const name of orphans) if (onGateway.includes(name)) held.add(name);
+  }
+  return { names: held, providers };
 }
 
 /**
  * Route the names and reach what they go to, every refusal before a value
- * is read: a Gateway-only call connects and routes without a manifest;
- * `--app <id>` connects first and routes by the manifest the registry
- * stores for that app (refused when it isn't deployed); otherwise the
- * manifest here routes before anything connects, and the app must be
- * deployed. Given both, `--app` wins and the directory is never read.
+ * is read: a call of catalog Gateway settings only connects and routes
+ * without a manifest; `--app <id>` connects first and routes by the
+ * manifest the registry stores for that app (refused when it isn't
+ * deployed); otherwise the manifest here routes, and the app must be
+ * deployed. A name that is neither a catalog setting nor one the manifest
+ * lists is looked up in the Gateway's registered providers first (which
+ * connects before routing): a row's setting is a Gateway setting. Given
+ * both, `--app` wins and the directory is never read.
  */
 async function resolve(names: string[], options: SecretOptions, action: SecretAction): Promise<Reached> {
   const gatewayOnly = names.every((name) => isSettableGatewaySetting(name));
   const appId = options.flags.app;
-  const reached = (connected: Awaited<ReturnType<typeof connect>>, route: Route, app: Reached["app"]) => ({
+  let connection: Awaited<ReturnType<typeof connect>> | undefined;
+  const connected = async () => (connection ??= await connect(options));
+  const reached = (
+    connected: Awaited<ReturnType<typeof connect>>,
+    route: Route,
+    app: Reached["app"],
+    providers: RegisteredProvider[] = [],
+  ): Reached => ({
     route,
     cf: connected.cf,
     db: connected.db,
@@ -757,13 +907,14 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
     accountName: connected.accountName,
     gatewayHost: connected.gatewayUrl.replace(/^https:\/\//, ""),
     app,
+    providers,
   });
   if (gatewayOnly) {
-    return reached(await connect(options), routeNames(names, null, ManifestSource.Directory, action), null);
+    return reached(await connected(), routeNames(names, null, ManifestSource.Directory, action), null);
   }
   if (appId) {
-    const connected = await connect(options);
-    const found = await findRegisteredApp(connected.db, appId);
+    const connection = await connected();
+    const found = await findRegisteredApp(connection.db, appId);
     if (!found) {
       throw new EveryAppError(
         "APP_NOT_FOUND",
@@ -772,19 +923,27 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
       );
     }
     const stored = storedManifestOf(found);
-    const route = routeNames(
-      names,
-      { id: stored.id, secrets: secretEntries(stored) },
-      ManifestSource.Registry,
-      action,
+    const manifest = { id: stored.id, secrets: secretEntries(stored) };
+    const held = await heldByGateway(names, manifest, connection, action);
+    const route = routeNames(names, manifest, ManifestSource.Registry, action, held.names);
+    return reached(
+      connection,
+      route,
+      route.app ? { ...route.app, workerName: found.workerName, rowId: found.id } : null,
+      held.providers,
     );
-    return reached(connected, route, { ...route.app!, workerName: found.workerName, rowId: found.id });
   }
   const manifest = await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
-  const route = routeNames(names, manifest, ManifestSource.Directory, action);
-  const connected = await connect(options);
-  const { id } = route.app!.manifest;
-  const found = await findRegisteredApp(connected.db, id);
+  // Only a name a registered provider might hold needs the Gateway first.
+  const held =
+    mayBeProviders(names, manifest).length > 0
+      ? await heldByGateway(names, manifest, await connected(), action)
+      : { names: new Set<string>(), providers: [] };
+  const route = routeNames(names, manifest, ManifestSource.Directory, action, held.names);
+  if (!route.app) return reached(await connected(), route, null, held.providers);
+  const connectedNow = await connected();
+  const { id } = route.app.manifest;
+  const found = await findRegisteredApp(connectedNow.db, id);
   if (!found) {
     throw new EveryAppError(
       "APP_NOT_FOUND",
@@ -792,7 +951,12 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
       { rerun: `${CLI} deploy` },
     );
   }
-  return reached(connected, route, { ...route.app!, workerName: found.workerName, rowId: found.id });
+  return reached(
+    connectedNow,
+    route,
+    { ...route.app, workerName: found.workerName, rowId: found.id },
+    held.providers,
+  );
 }
 
 /** Whether any Worker the names go to holds one of them. */
@@ -860,9 +1024,12 @@ async function apply(
       : null;
     try {
       const destinations: Destination[] = [];
+      // The install row as the Gateway's lease found it: its host rule binds a registered provider's key.
+      let gatewayInstall: InstallRecord | null = null;
       if (gatewayLease) {
         // Under the lease, the install row is the last deploy's for sure.
         const install = await readInstall(db);
+        gatewayInstall = install;
         if (!install) {
           throw new EveryAppError("GATEWAY_NOT_INSTALLED", `The Gateway${reached.accountName ? ` in ${reached.accountName}` : ""} isn't fully installed`, {
             rerun: `${CLI} setup`,
@@ -1009,6 +1176,20 @@ async function apply(
             },
           );
           applied.gateway = { names, versions, ...(pinned.length > 0 ? { pinned } : {}) };
+          // The Gateway reads a registered provider's key only for the hosts
+          // and auth its row has now: record them (`providers.value-bound-to-hosts`).
+          if (!removing && reached.providers.length > 0 && gatewayInstall) {
+            const bound = await bindProviderSettings(db, gatewayInstall, names);
+            if (bound.length > 0) {
+              applied.gateway.bound = bound;
+              out.emit({
+                type: "progress",
+                step: "secrets.bind",
+                message: `Bound ${listed(bound)}'s key to the hosts ${bound.length === 1 ? "its row names" : "their rows name"}`,
+                data: { providers: bound },
+              });
+            }
+          }
         } else {
           applied.app = { id: app!.manifest.id, workerName: app!.workerName, names, versions };
           await recordSecretNames(cf, db, app!, out);

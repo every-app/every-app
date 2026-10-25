@@ -3,7 +3,7 @@
  * providerApps.ts): a data provider the operator turns on as an app of the
  * Gateway's own, with no Worker. Pure functions over rows the caller read,
  * like ./registration.ts: the CLI runs them against the Gateway's D1
- * (`everyapp provider on|off`), a hosted control plane later.
+ * (`everyapp mcp on|off`), a hosted control plane later.
  *
  * A provider app's row has the provider's id as its slug, tier "provider",
  * no hostname and no Worker name, the generated manifest, and is `active`

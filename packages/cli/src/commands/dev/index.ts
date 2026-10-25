@@ -29,6 +29,7 @@
  */
 import http from "node:http";
 import { ManifestError } from "@every-app/perimeter/manifest";
+import { devProviderFile, isCapabilityId } from "@every-app/sdk/internal";
 import type { SessionAuthenticator } from "@every-app/perimeter/dev";
 import { getFreePort, waitForHttp, waitForUrl } from "./proxy";
 import {
@@ -45,12 +46,13 @@ import { PINNED_CF_VERSION, resolveCfBinary } from "@/lib/cf/bin";
 import { applyDevMigrations } from "./migrations";
 import { startAppDevServer, type AppDevServer } from "./appServer";
 import { assertPortFree, listen, serveGateway } from "./gatewayServer";
-import { readyBlock } from "./ready";
+import { devProviderLookup, readyBlock } from "./ready";
 import { readCloudflareConfig } from "@/lib/app/cloudflareConfig";
 import { generateWorkerTypes, hasWorkerTypes } from "@/lib/app/workerTypes";
 import { EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt, sayOnInterrupt } from "@/lib/interrupt";
 import type { EventSink } from "@/lib/output/events";
+import { CLI } from "@/lib/output/command";
 import { eventSink, runReported } from "@/lib/output/run";
 
 interface DevCommandFlags {
@@ -93,6 +95,7 @@ export async function runDev(
   if (mode === DevMode.Mirror) checkMirrorBaseHost(mirrorBaseHost);
 
   const manifest = await loadManifest(cwd);
+  warnOutsideCatalog(manifest, cwd, out);
   const cloudflareConfig = await readCloudflareConfig(cwd);
   if (!manifest.dev && !cloudflareConfig) {
     throw new EveryAppError(
@@ -285,6 +288,35 @@ async function loadManifest(cwd: string): Promise<EveryAppCliManifest> {
       );
     }
     throw error;
+  }
+}
+
+/**
+ * dev can't ask a Gateway which providers it registered, so it validates
+ * with any well-formed capability id and says so for each id outside the
+ * built-in catalog: reached locally from `.everyapp/providers/<id>.json`
+ * (with the key in .dev.vars) when that file has its spec, and checked
+ * against the Gateway's registry by the deploy.
+ */
+function warnOutsideCatalog(manifest: EveryAppCliManifest, cwd: string, out: EventSink): void {
+  const lookup = devProviderLookup(cwd);
+  for (const id of Object.keys(manifest.capabilities ?? {})) {
+    if (isCapabilityId(id)) continue;
+    const file = devProviderFile(id);
+    const found = lookup.get(id) !== undefined;
+    out.emit({
+      type: "warning",
+      code: "CAPABILITY_NOT_IN_CATALOG",
+      message: found
+        ? `${id} isn't in the built-in provider catalog\nThis run reaches it from ${file} with your key from .dev.vars; the deploy checks it against the Gateway's registered providers.`
+        : `${id} isn't in the built-in provider catalog\nIf it's registered on your Gateway, ${CLI} provider show ${id} --save writes ${file}, which this run reaches it from (start dev again after). The deploy checks it against the Gateway's registered providers.`,
+      data: {
+        id,
+        file,
+        found,
+        ...(found ? {} : { fix: `${CLI} provider show ${id} --save` }),
+      },
+    });
   }
 }
 

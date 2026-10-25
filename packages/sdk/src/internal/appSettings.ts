@@ -536,9 +536,9 @@ export interface SetupCommand {
  * `everyapp secret set NAME [--app <id>]` instead.
  *
  * A provider app (`provider`: the gateway's own, with no Worker and no
- * directory; `everyapp provider on <id>`) has nothing to configure: its
+ * directory; `everyapp mcp on <id>`, an MCP app) has nothing to configure: its
  * command is the `secret set` of its Gateway key (the first member of an
- * unmet any-of group), as `provider list` says it.
+ * unmet any-of group), as `mcp list` says it.
  */
 export function setupCommand(
   report: Pick<AppSettingsReport, "unmet" | "groups">,

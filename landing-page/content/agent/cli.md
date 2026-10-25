@@ -53,6 +53,7 @@ RUN A GATEWAY
   delete     Remove an app from the Gateway
   access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
   secret     Set, remove and list secrets and Gateway settings
+  provider   Register API providers for apps to call with the Gateway's key, beside the built-in ones
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
   events     Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
@@ -139,6 +140,28 @@ EXAMPLES
   $ pnpm everyapp secret list crm
 
 Run pnpm everyapp secret <command> --help for its flags.
+```
+
+### `everyapp provider`
+
+```text
+Register API providers for apps to call with the Gateway's key, beside the built-in ones.
+
+USAGE
+  pnpm everyapp provider <command> [flags]
+
+COMMANDS
+  add     Register an API provider on the Gateway from its spec, so apps can list it under capabilities
+  list    List the API providers the Gateway offers: built in and registered, each key's state, the apps using each
+  show    Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it
+  remove  Remove a registered provider from the Gateway; its key stays set until secret unset
+
+EXAMPLES
+  $ pnpm everyapp provider list
+  $ pnpm everyapp provider add stripe.json
+  $ pnpm everyapp provider show stripe
+
+Run pnpm everyapp provider <command> --help for its flags.
 ```
 
 ### `everyapp mcp`
@@ -1190,6 +1213,217 @@ FLAGS
 
 ARGUMENTS
   [app]  An app id (default: the app in this directory; elsewhere, every app)
+```
+
+### `everyapp provider add`
+
+Register an API provider on the Gateway from its spec, so apps can list it under capabilities.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<spec>` | yes | The provider's spec: a JSON file, or an https URL to one (64 KiB at most) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--replace` | switch | no |  | Replace the provider registered under the spec's id; its key must be set again |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <spec>
+  pnpm everyapp provider add --help
+
+The spec says what the provider is and where its key goes: its id, name, the page the key
+comes from (docs), the only hosts the key is ever sent to, and how it is sent (auth: bearer,
+header, query or basic), naming the Gateway setting that holds the key (STRIPE_API_KEY for
+stripe). It never holds the key itself. A URL is fetched on this machine.
+
+The rules a spec must pass: an id that isn't a built-in provider's, settings named after the
+id that no other provider, app or the Gateway itself reads, and public hosts that aren't the
+Gateway's own or its apps'. The Gateway checks them again every time it reads the row.
+
+Next, set the key; the Gateway sends it only to the hosts the row had when it was set:
+  pnpm everyapp secret set STRIPE_API_KEY
+
+Run in an app's directory, it also writes .everyapp/providers/<id>.json, which everyapp dev
+reaches the provider from with your key in .dev.vars.
+
+Examples:
+  pnpm everyapp provider add stripe.json
+  pnpm everyapp provider add https://example.com/providers/stripe.json
+  pnpm everyapp provider add stripe.json --replace
+
+FLAGS
+     [--replace/--no-replace]  Replace the provider registered under the spec's id; its key must be set again
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  spec  The provider's spec: a JSON file, or an https URL to one (64 KiB at most)
+```
+
+### `everyapp provider list`
+
+List the API providers the Gateway offers: built in and registered, each key's state, the apps using each.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider list [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp provider list --help
+
+Nothing is changed. A key's value can't be read back; only whether it is set, and for a
+registered provider whether it was set for the hosts the row names now (bound).
+
+Example:
+  pnpm everyapp provider list
+
+ALIASES
+  pnpm everyapp provider ls
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp provider show`
+
+Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The provider's id (provider list names them): stripe |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--save` | switch | no |  | Also write the spec to .everyapp/providers/<id>.json in this app's directory, for everyapp dev |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider show [--save] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp provider show --help
+
+What an agent reads to set up and call a provider without a setup guide. With --save, in an
+app's directory, the spec is written where everyapp dev reads it.
+
+Examples:
+  pnpm everyapp provider show stripe
+  pnpm everyapp provider show stripe --save
+
+FLAGS
+     [--save/--no-save]        Also write the spec to .everyapp/providers/<id>.json in this app's directory, for everyapp dev
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The provider's id (provider list names them): stripe
+```
+
+### `everyapp provider remove`
+
+Remove a registered provider from the Gateway; its key stays set until secret unset.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The provider's id (provider list names them): stripe |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--force` | switch | no |  | Remove it even though deployed apps list it (their calls to it stop) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp provider remove --help
+
+The Gateway stops serving it within 30 seconds. A provider a deployed app lists under
+capabilities is refused unless --force. The Gateway setting holding its key stays; remove
+it with pnpm everyapp secret unset <NAME>. Registering it again needs the key set again too.
+
+Example:
+  pnpm everyapp provider remove stripe
+
+ALIASES
+  pnpm everyapp provider rm
+
+FLAGS
+     [--force/--no-force]      Remove it even though deployed apps list it (their calls to it stop)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The provider's id (provider list names them): stripe
+```
+
+### `everyapp provider on` (hidden)
+
+Same as pnpm everyapp mcp on; this alias goes after launch week.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+
+```
+
+### `everyapp provider off` (hidden)
+
+Same as pnpm everyapp mcp off; this alias goes after launch week.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+
 ```
 
 ### `everyapp mcp add`

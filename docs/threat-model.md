@@ -15,7 +15,7 @@ shape (our own install of the same code) comes second: its extra boundaries
 are built, mostly unverified against a live Workers for Platforms namespace,
 and switched off by default.
 
-Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit, except the public-surface rows (an app host's `/mcp` opt-in, the gateway's `/health`, the Access sign-in methods and bypass list), re-read on 2026-10-25 against `c2d04d85` (main after #606, #612 and #622).
+Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit.
 
 ## How to use this document
 
@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 337 is
+  try first; the complete register of 338 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -40,11 +40,9 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
                  ┌───────────────────────── your Cloudflare account ─────────────────────────┐
                  │                                                                           │
  browser ──────┐ │  ┌─ Cloudflare Access (optional outer ring) ─┐                           │
- AI client ────┼─┼─►│  bypasses on the Gateway host: /health,   │                           │
- webhook/API ──┘ │  │  /mcp, /oauth/token, /oauth/register,     │                           │
-                 │  │  /.well-known/*; on app hosts: public     │                           │
-                 │  │  routes, and /mcp only where the manifest │                           │
-                 │  │  sets mcp; the *.<base> wildcard: nothing │                           │
+ AI client ────┼─┼─►│  bypasses: /health, /mcp, /oauth/token,   │                           │
+ webhook/API ──┘ │  │  /oauth/register, /.well-known/*, public   │                           │
+                 │  │  routes, and /mcp on opted-in app hosts   │                           │
                  │  └──────────────────┬────────────────────────┘                           │
                  │                     ▼                                                     │
                  │     ┌────────── Gateway Worker (the only public Worker) ──────────┐       │
@@ -109,7 +107,7 @@ What an attacker would want, roughly in the order it would hurt.
 |---|---|---|---|
 | A1 | The Cloudflare account and its credentials (the operator's login, `CLOUDFLARE_API_TOKEN` in CI, the browser-install token) | Cloudflare; the operator's machine; the Gateway's secrets when browser installs are on | The operator |
 | A2 | The Gateway's signing material: `JWT_PRIVATE_KEY` (identity tokens), `BETTER_AUTH_SECRET` (sessions, host sessions through HKDF, the setup and invitation hashes) | Worker secrets | Nobody reads them; the Gateway uses them |
-| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `LINKEDIN_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`) | Worker secrets | Apps use them only through the Gateway's proxies, never hold them |
+| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `LINKEDIN_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), and the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for |
 | A4 | Each app's data: its D1 databases, KV, R2, Durable Objects, Postgres through Hyperdrive | The app's own bindings | That app's Worker, for members with access |
 | A5 | Accounts and sessions: emails, password hashes, Better Auth sessions, verification and reset tokens | The Gateway's D1 | The person; admins act on members of their organization |
 | A6 | Organizations, memberships, roles, app access grants, invitations | The Gateway's D1 | Owners and admins of that organization |
@@ -265,7 +263,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 337 invariants
+stop, the invariants to try first (the complete register, 338 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -297,12 +295,11 @@ on private routes; forced-anonymous on public ones). A client forging
 `x-everyapp-identity`, `x-everyapp-org` or an Access header. An app seeing
 a cookie or a bearer. A token minted for one Worker being replayed at
 another. A sibling subdomain planting a session cookie. A personal token
-meant for MCP being used on app pages. An app host serving MCP its manifest
-never asked for. The control plane being served on an app origin. A
-switched-off, half-deployed, deleted or hand-edited registry row being
-routed.
+meant for MCP being used on app pages. The control plane being served on an
+app origin. A switched-off, half-deployed, deleted or hand-edited registry
+row being routed.
 
-**Invariants.** The full register has 35; these are the ones to try first.
+**Invariants.** The full register has 34; these are the ones to try first.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -316,8 +313,7 @@ routed.
 | `perimeter.app-access-policy` | An organization's own app opens only for a live, non-banned member of the app's organization with a `user_app_access` row; a session under another of the person's organizations is re-resolved as that membership; a token acts only in its own organization and, when bound, its own app. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:55-76` (`resolveLiveOrgRole`) | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.test.ts` :: opens no app with a deploy key, an owner's included |
 | `perimeter.bearer-never-cookie` | A request carrying any `Authorization` bearer is never authenticated by a cookie: an `epat_` token verifies or yields null, any other bearer yields null, without reading the session cookie. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:104-155` | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.test.ts` :: returns null for epat credentials without falling back (partial: the third-party authenticator has no unit test) |
 | `perimeter.duplicate-session-cookie-refused` | A request whose `Cookie` header(s) name the session cookie more than once, in any order or variant, is refused `401 duplicate_session_cookie` before authentication, public routes included. | `packages/perimeter/src/cookies.ts:29-50` | `packages/perimeter/src/cookies.test.ts` :: refuses the same name twice, in either order; `packages/perimeter/src/integration/e2e.test.ts` :: cookie tossing |
-| `perimeter.mcp-only-token-scope` | A credential whose scopes are all `mcp:*` is served at exactly `/mcp`, and only where the host's manifest has `mcp` and MCP is served there; it answers `403 token_scope` on every other app route (public ones included), on every route of a host without `mcp` (`/mcp` included) and at a `/mcp` a public route covers on a `by: "gateway"` host. | `packages/perimeter/src/session.ts:32-37` (`isMcpOnlyCredential`); `packages/perimeter/src/gateway.ts:491-502` (`mcpServedHere`) | `packages/perimeter/src/gateway.test.ts` :: refuse every app route but /mcp with 403 token_scope; :: open nothing on a host whose manifest serves no MCP, /mcp included; :: open nothing at a /mcp a public route covers, even where the manifest opts in |
-| `perimeter.app-host-mcp-opt-in` | An app host serves no MCP unless its manifest opts in with `mcp: { by: "gateway" \| "app", why }`: with the field unset, `/mcp` is a private route like any other (proxied with the identity; the app answers), the ToolBus is never asked, an MCP-only token opens nothing, and `${GATEWAY_URL}/mcp` is the one connector; the old string form is refused by both schemas, and a public route that covers `/mcp` at author time. | `packages/perimeter/src/manifest/manifest.ts:542-566, 877-895` (`McpSchema`, the public-/mcp refusal); `packages/perimeter/src/gateway.ts:484-511` (`mcpBy`, `gatewayServesMcp`, `mcpServedHere`) | `packages/perimeter/src/gateway.test.ts` :: never runs for an app whose manifest has no mcp: /mcp is a private route like any other; `packages/perimeter/src/manifest/manifest.test.ts` :: refuses the old string form with the new shape, in both schemas |
+| `perimeter.mcp-only-token-scope` | A credential whose scopes are all `mcp:*` is served at exactly `/mcp`, and only where the host's manifest has `mcp` and MCP is served there; it answers `403 token_scope` on every other app route (public ones included), on every route of a host without `mcp` (`/mcp` included) and at a `/mcp` a public route covers on a `by: "gateway"` host. | `packages/perimeter/src/session.ts:32-37` (`isMcpOnlyCredential`); `packages/perimeter/src/gateway.ts` (`mcpServedHere`) | `packages/perimeter/src/gateway.test.ts` :: refuse every app route but /mcp with 403 token_scope; :: open nothing on a host whose manifest serves no MCP, /mcp included; :: open nothing at a /mcp a public route covers, even where the manifest opts in |
 | `perimeter.tools-contract-404` | `/__everyapp/tools` and anything under it answers 404 from outside under any spelling (case, dot segments, encoded separators, double encoding, backslashes), before authentication. | `packages/perimeter/src/gateway.ts:297-299` | `packages/perimeter/src/publicRoutes.test.ts` :: finds the tools contract under any spelling; `packages/perimeter/src/integration/e2e.test.ts` :: (d) |
 | `perimeter.serverfn-guard` | A request whose path (decoded as TanStack Start decodes it) is under the server-function base answers `403 server_fn_denied` unless it is a non-navigation, same-origin call carrying TanStack's client header. | `packages/perimeter/src/gateway.ts:312-320`; `packages/perimeter/src/serverFunctions.ts` | `packages/perimeter/src/serverFunctions.test.ts` :: matches the server-function prefix the way TanStack Start routes it |
 | `perimeter.websocket-origin` | A WebSocket upgrade that carries a cookie and no bearer must present an `Origin` whose host is the app host; bearer-only upgrades are exempt. | `packages/perimeter/src/csrf.ts:68-99` | `packages/perimeter/src/csrf.test.ts` :: allows only the app's own origin |
@@ -419,11 +415,8 @@ their people nor their groups cross`).
 **What crosses.** Sign-in, sign-up, password reset and email verification;
 the one-time setup claim; invitations; every admin action (members, roles,
 app access, app rows, tokens); the organization switcher; the OAuth
-consent pages and `/mcp` (B5); and `/health`, for uptime monitors: the
-one route Access lets through that answers an anonymous caller with a
-200 (the OAuth machine endpoints Access also lets through are B5's). On
-the other side, the
-Gateway's D1 with every account and every organization. The code is Better Auth as
+consent pages and `/mcp` (B5). On the other side, the Gateway's D1 with
+every account and every organization. The code is Better Auth as
 configured in `apps/every-app-gateway/src/auth/config.ts`, the request
 guard in `src/server/control-plane-guard.ts`, the server functions under
 `src/serverFunctions/` with their middleware in `src/middleware/auth.ts`,
@@ -438,7 +431,7 @@ owner, or on an account that belongs to another organization too. A
 sign-in page redirecting off-site. Error bodies leaking internals. A
 misconfigured deployment mode turning anything on.
 
-**Invariants.** The register has 47; the ones to try first:
+**Invariants.** The register has 46; the ones to try first:
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -471,7 +464,6 @@ misconfigured deployment mode turning anything on.
 | `headers.control-plane` | Every control-plane response carries HSTS (no `includeSubDomains`), `nosniff`, frame denial, `Referrer-Policy: no-referrer`, and `Cache-Control: no-store` on admin, OAuth, setup and reset pages. | `apps/every-app-gateway/src/server/control-plane-guard.ts:38, 94-121` | `apps/every-app-gateway/src/server.test.ts` :: stamps control-plane security headers and keeps the session cookie domain |
 | `errors.no-internal-leak` | Server functions surface only `GatewayError`/`PublicError` codes and `INVALID_INPUT`; any other throw is logged as name, message and stack and answered as an opaque error. | `apps/every-app-gateway/src/middleware/publicError.ts:11-42` | `apps/every-app-gateway/src/middleware/publicError.test.ts` :: hides an unexpected error and logs only its name, message and stack |
 | `session.db-read-every-request-no-cookie-cache` | Better Auth's cookie cache is off, so every session check reads the sessions table and a deleted session is dead on the next request everywhere. | `apps/every-app-gateway/src/auth/shared.ts:8-12` | **unpinned** |
-| `gateway.health-liveness-only` | On the gateway's own host, `GET` and `HEAD /health` (exact case, served before the MCP/OAuth router, the bypass refusal and the control plane) answer 200 `{"status":"ok"}` after one `SELECT 1` against D1 bounded to 2 seconds, else 503 `{"status":"error","database":"down"}`, `no-store`, reading no session and naming no version; other methods 405; one probe at a time per isolate, its answer reused for 5 seconds. Access lets the path through; `/HEALTH` and every other spelling is the JSON 404. | `apps/every-app-gateway/src/server/health.ts` (`serveHealth`); `apps/every-app-gateway/src/server.ts:162-176, 194-196` | `apps/every-app-gateway/src/server/health.test.ts` :: answers 200 ok after one SELECT 1, uncached, and HEAD the same without a body; `apps/every-app-gateway/src/server.test.ts` :: serves /health for uptime monitors: a bounded SELECT 1, no session, no version, never cached |
 
 **Not this boundary's job.** Who may deploy (B7), what Access adds in
 front of these pages (B6), the MCP and OAuth endpoints (B5), the strength
@@ -655,7 +647,27 @@ leaking either way. A remote MCP credential sent anywhere but the origin
 the operator set it for, followed through a redirect, or a remote MCP app
 pointed at the gateway itself or at a host whose key the gateway holds.
 
-**Invariants.** The register has 47: the two the provider registry added (`providers.query-key-never-echoed`, `providers.account-data-self-host-only`, docs/design/2026-10-provider-registry.md) are in the register only.
+**The provider registry.** Since PR 2 of the provider registry
+(docs/design/2026-10-provider-registry.md) the capability proxy reads its
+providers from a registry: the built-in catalog first, then the API-key
+providers an operator registered on this Gateway as rows of its D1
+`providers` table (`everyapp provider add`, under the Cloudflare login; the
+Gateway only reads the table). A row is a new host to send a secret to, so
+the boundary is what a row may say, checked when it is written and again
+by the Gateway every time it reads one (`apps/every-app-gateway/src/server/providers/index.ts`):
+its settings carry its own id as a prefix and are nobody else's, so no row
+can name the signing key, a catalog provider's key or another row's; its
+hosts are public DNS names the Gateway doesn't serve itself; it never
+shadows a catalog id; and its key is read only while the row still has the
+hosts and auth it had when `everyapp secret set` set the key, so whoever
+can rewrite a row can't move a key the operator set. A row that fails is
+left out and logged `provider.row_invalid`, never served. A row is
+gateway-wide (its key is every organization's on that Gateway), which is
+why a provider whose `data` is `account` is refused on a hosted Gateway.
+What it does not change: whoever can deploy an app can list any provider,
+as before, and no MCP tool writes rows yet.
+
+**Invariants.** The register has 53. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -685,6 +697,9 @@ pointed at the gateway itself or at a host whose key the gateway holds.
 | `email.agent-needs-write-scope` | A send under an agent's identity goes through only with `mcp:write` or `*`. | `capabilities/email.ts:160-169` | `capabilities/email.test.ts` :: refuses an agent's read-only connection, and sends for one with write |
 | `email.daily-budgets` | App mail is counted before sending, once per distinct recipient, against daily budgets per address and per gateway (100 and 5,000 self-hosted; 20 and 5,000 hosted; none in an invalid mode). | `email/sendEmail.ts:131-215` | `capabilities/email.test.ts` :: spends one per recipient, per address and for the gateway |
 | `members.scoped-to-attributed-organization` | The members list returns only the attributed organization's live members in an active organization who are granted that app; an agent's identity is refused outright. | `capabilities/members.ts:76-90` | `members-capability.sqlite.test.ts` :: lists the organization's live members the app is granted to, and nobody else |
+| `providers.row-secret-is-its-own` | Every setting a registered provider's row names starts with its own id (`STRIPE_` for `stripe`) and is nobody else's: not an install-owned, dev-only or reserved name, not a settable Gateway setting (every catalog key), not an earlier row's; such a row is refused at `add` and skipped on every read. | `packages/sdk/src/internal/providerRegistry.ts` (`rowSecretProblem`, `checkProviderRow`) | `providerRegistry.test.ts` :: refuses a row naming %s |
+| `providers.value-bound-to-hosts` | A registered provider's key is read only while the row has the hosts and auth `everyapp secret set` recorded (`bound_to`, `providerBindingKey`); a replaced, re-added or hand-edited row answers `503 integration_not_configured` and its apps need setup until the key is set again. | `providerRegistry.ts` (`providerBindingKey`, `bound`); `integration-proxy.ts`; `app-setup.ts` | `providers.test.ts` :: reads the key for a row bound to the hosts it has, and not after the hosts change |
+| `providers.row-hosts-public-https` | A row's hosts are public DNS names: no IP literal, `localhost`, `.local`, `.internal` or `.arpa` name, and not the Gateway's own host or under `APP_BASE_DOMAIN` or `THIRD_PARTY_DOMAIN`; calls go over https with no redirect followed. A `hostSetting`'s value is checked for shape only (partial). | `providerRegistry.ts` (`publicHostProblem`); `apps/every-app-gateway/src/server/providers/index.ts` (`refusedGatewayHost`) | `providers.test.ts` :: refuses its own host and anything under its app and third-party domains |
 | `remote-mcp.credential-only-to-bound-origin` | A remote MCP app's credential goes only to the origin `remote_mcp_credentials` pins its name to: the origin of the app that declared it when the operator ran `everyapp secret set`, or of the first row that used it; a row at another origin needs setup and gets nothing sent. | `remote-mcp/bind.ts` (credentialFor), #627; `packages/perimeter/src/registry/remoteMcpApps.ts:184`; `packages/cli/src/lib/gateway/remoteMcpApps.ts:849` | `packages/perimeter/src/registry/remoteMcpApps.test.ts` :: refuses a credential name another MCP app sends to a different origin; `remote-mcp.sqlite.test.ts :: refuses to send a credential bound to another origin, and reads as needing setup` (pinned (PR 2)) |
 | `remote-mcp.url-pinned-no-redirect` | The gateway fetches a remote MCP server only at the row's stored URL, checked again before every fetch, and follows no redirect, so the credential never reaches another host. | `remote/client.ts` (redirect: manual), `remote-mcp/index.ts` (refusal), #627 | `remote/client.test.ts :: sends the credential only to the registered URL and follows no redirect`; `remote-mcp.sqlite.test.ts :: forwards a call with the credential to the registered URL only, and never to a redirect` (pinned (PR 2)) |
 | `remote-mcp.credential-never-leaks` | A remote MCP credential appears only in the request headers to its pinned origin: never in a result, an error, an audit row, a usage row or a log line; only the operator sets it, never the UI or a tool. | `remote/client.ts` (sanitizedHead), `remote-mcp/index.ts` (upstreamFailure), #627; `packages/sdk/src/internal/remoteMcp.ts:551` | `remote/client.test.ts :: never carries the credential or the upstream body in an error`; `remote-mcp.sqlite.test.ts :: never puts the credential in a result, an audit row, a usage row or a log line` (pinned (PR 2)) |
@@ -769,6 +784,12 @@ which tokens it gets, not the calls it makes with them).
   `MASTODON_URL` is unset.
 - *`Reply-To` on app mail is unrestricted* while `From` is allowlisted
   (low).
+- *A registered provider's `hostSetting` value is checked for shape only*
+  (low, registry slice): a row whose host is the operator's setting
+  (Shopify's shop) sends its key wherever that setting names, a bare host
+  or an https origin, without the public-host and gateway-host rules a
+  row's own `hosts` pass (`providers.row-hosts-public-https`, partial). The
+  setting is the operator's, under the row's own prefix.
 
 **Merged this week** (the teams slice; #381 the counters, #416 the cap):
 usage counters (`usage_daily`, `usage_monthly`; counts only, never bodies
@@ -782,9 +803,10 @@ the caller cache, a deleted app's caps gone with it. The first answer to
 the first gap above; pinned by `app-cap.sqlite.test.ts` (see
 `cap.per-organization-limits` in the register).
 
-**Docs to fix.** `docs/capabilities.md` lists the checks in a different
-order than the code runs them (route, then capability, then account-wide
-path).
+**Docs fixed.** `docs/capabilities.md` lists the checks in the order the
+code runs them (route, grant, account-wide paths, method and write grant,
+key and binding, the hosted rule, attribution and the cap, the agent's write
+scope), since PR 2b of the provider registry.
 
 ### B5. AI client → `/mcp`: the OAuth server, personal tokens and the ToolBus
 
@@ -857,13 +879,13 @@ changing a remote MCP app.
 | `pat.scopes-decide-mcp-access` | On either `/mcp`, `*` or `mcp:write` is read & write, `mcp:read` read only, any other scope set (API scopes, `deploy`) is `403 token_scope`. | `validate.ts:95-151` | `gateway-mcp.e2e.sqlite.test.ts` :: reads only with mcp:read, sees only its app |
 | `pat.bound-to-org-and-app` | A personal token acts only in its own organization, only on its bound app when it has one, and fails when its user is no longer a member, is banned, or the organization is suspended. | `betterAuthAuthenticator.ts:55-76` | `app-host-mcp.sqlite.test.ts` :: refuses a token bound to another app |
 | `pat.deploy-key-opens-nothing` | A deploy key opens no app on any host and is refused on the gateway's `/mcp`. | `betterAuthAuthenticator.ts:120-122`; `validate.ts:95-100` | `betterAuthAuthenticator.test.ts` :: opens no app with a deploy key (partial: the gateway `/mcp` refusal has no test) |
-| `apphost.mcp-session-or-pat-with-csrf` | An app host serves `/mcp` only when its manifest sets `mcp: { by, why }` (by default it serves none, and the Gateway's `/mcp` is the one connector); where it does, it serves a browser session only from the app's own origin (a cookie POST needs `Sec-Fetch-Site: same-origin` or an `Origin` on the app's host) or a personal token; it takes no OAuth token. | `packages/perimeter/src/gateway.ts:428-441` (CSRF), `:484-511` (the `manifest.mcp` checks) | `app-host-mcp.sqlite.test.ts` :: runs a tool for the app's own page and audits it; :: proxies /mcp like any private route for an app whose manifest has no mcp |
+| `apphost.mcp-session-or-pat-with-csrf` | An app host serves `/mcp` only when its manifest sets `mcp: { by, why }` (by default it serves none, and the Gateway's `/mcp` is the one connector); where it does, it serves a browser session only from the app's own origin (a cookie POST needs `Sec-Fetch-Site: same-origin` or an `Origin` on the app's host) or a personal token; it takes no OAuth token. | `packages/perimeter/src/gateway.ts` (CSRF, and the `manifest.mcp` checks in handleGatewayRequest) | `app-host-mcp.sqlite.test.ts` :: runs a tool for the app's own page and audits it; :: proxies /mcp like any private route for an app whose manifest has no mcp |
 | `tools.policy-destructive-hidden-write-gated` | Destructive tools are absent from `tools/list` and refused for every caller; write tools, and tools with no declared risk, are hidden from and refused for read-only callers. | `packages/toolbus/src/policy.ts:25-39` | `packages/toolbus/src/policy.test.ts` :: hides destructive tools from everyone and write tools from read-only callers |
 | `tools.per-call-identity` | Each tool call reaches exactly one app with a fresh identity minted for that call: `chan: "mcp"`, explicit `mcp:read`/`mcp:write` (never `*`, never `mcp:destructive`), `act.sub` naming the credential, a `tc` claim naming the tool and call id. | `packages/toolbus/src/execute.ts:69-91, 218-257` | `packages/toolbus/src/execute.test.ts` :: calls the app once with an identity minted for exactly this call |
 | `tools.request-shape-limits` | JSON-RPC batches are refused; bodies over 256 KiB; arguments nested more than 64 levels; arguments with more than 1,000 values and recursive schemas are left to the app's own validation; an app gets 30 seconds to answer. | `packages/toolbus/src/http.ts:60-124`; `validation.ts` | `packages/toolbus/src/http.test.ts` :: refuses JSON-RPC batches, whatever their routing headers say |
 | `audit.one-row-per-call-no-arguments` | Every tool call on either surface, refused ones included, writes one `mcp.tool_call` log line and one `mcp_tool_calls` row with the caller, credential, tool, decision, outcome, a keyed digest of the arguments and the client's unverified self-description (`client_info`, bounded), never the arguments or result. | `apps/every-app-gateway/src/server/toolbus/runtime.ts:43-105` | `gateway-mcp.e2e.sqlite.test.ts` :: registers as public, connects, calls tools, and audits each call |
 | `catalog.system-token-opens-only-the-catalog` | A catalog sync is one invocation of the app carrying the gateway's one-minute system token, which the SDK accepts only on `/__everyapp/tools/list` and never as an identity for a tool call. | `apps/every-app-gateway/src/server/toolbus/catalog-sync.ts:148-160` (fetchAppCatalog with signing; in-process for tier `provider`) | `app-host-mcp.sqlite.test.ts` :: snapshots the app's tools with one invocation and the system token |
-| `toolbus.provider-app-in-process` | A provider app (tier `provider`, no hostname, no Worker; `everyapp provider on`) is reached only in-process by the gateway's own SDK app for it, never routed or bound, with every identity minted for `aud` `provider:<row id>` and verified with the gateway's own public key. | `apps/every-app-gateway/src/server/provider-apps/index.ts`; `server/toolbus/catalog-sync.ts` (appFetcherFor); `perimeter/drizzleAppRegistry.ts` | `provider-apps.sqlite.test.ts` :: is never routed by the perimeter, even with a hostname on its row |
+| `toolbus.provider-app-in-process` | A provider app (tier `provider`, no hostname, no Worker; `everyapp mcp on`) is reached only in-process by the gateway's own SDK app for it, never routed or bound, with every identity minted for `aud` `provider:<row id>` and verified with the gateway's own public key. | `apps/every-app-gateway/src/server/provider-apps/index.ts`; `server/toolbus/catalog-sync.ts` (appFetcherFor); `perimeter/drizzleAppRegistry.ts` | `provider-apps.sqlite.test.ts` :: is never routed by the perimeter, even with a hostname on its row |
 | `toolbus.provider-call-through-proxy-key-never-relayed` | A provider tool reaches the provider only through the capability proxy's rules (B4), after the organization's monthly cap on the row is checked, attributed to the member and counted against the provider row; its answer never carries the key or a refusal body. | `apps/every-app-gateway/src/server/provider-apps/call.ts` | `provider-apps.sqlite.test.ts` :: calls the provider through the capability proxy with the gateway's key, tagged with the organization, and counts and audits the call |
 | `toolbus.workspace-tools-role-gated` | The `everyapp_workspace_*` tools (and `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`, `everyapp_revoke_connection`) are built-ins answered by the gateway's own services, each with a `minRole`: a tool is listed and runs only for a caller whose live role (re-read every request) reaches it and whose credential is not narrowed to apps (a one-app token or a selected-apps connection sees none), its write tools are hidden from and refused for a read-only connection like any write tool, the services' own rules (never an owner by an admin, never yourself, never the last owner) apply on top and come back as tool errors, `remove` and `app_delete` are owner-only and take `confirm: true`, and every call leaves one audit row (app `everyapp`, `via` when wrapped). | `packages/toolbus/src/workspace.ts`; `packages/toolbus/src/policy.ts` (minRole); `packages/toolbus/src/execute.ts` (kind `host`); `apps/every-app-gateway/src/server/toolbus/workspace-tools.ts` | `apps/every-app-gateway/src/server/toolbus/workspace-tools.sqlite.test.ts` :: a member sees no workspace tool; a read-only admin lists but cannot invite |
 | `toolbus.workspace-tools-no-credentials` | No built-in returns a credential (no invite link, no password-reset link, no token value) and none creates a personal access token: a revocable connection cannot mint itself something that outlives it. | `apps/every-app-gateway/src/server/toolbus/workspace-tools.ts` | `apps/every-app-gateway/src/server/toolbus/workspace-tools.sqlite.test.ts` :: the invite answer carries no URL; my_tokens carries no value |
@@ -942,7 +964,7 @@ shell. No control-plane route, server function or auth endpoint lives under
 keep it so. `/health` is served before that refusal, exact-case, reads no
 session and says only whether D1 answers (`server/health.ts`).
 
-**Invariants.** The register has 38.
+**Invariants.** The register has 36.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -968,8 +990,6 @@ session and says only whether D1 answers (`server/health.ts`).
 | `access.mcp.header-only-origin-first-gateway-aud` | On the gateway's `/mcp` an assertion is read from the header only, never the `CF_Authorization` cookie, only with the outer ring configured, only for the gateway application's AUD, and only after the browser `Origin` rule passed. | `apps/every-app-gateway/src/server/mcp-auth/routes.ts:174-202` | `access-mcp.sqlite.test.ts` :: never reads the CF_Authorization cookie |
 | `access.mcp.linked-account-only-nothing-created` | `/mcp` serves an Access identity only through the account row a browser sign-in linked; a user row that merely has that email is never a fallback; nothing is created from `/mcp`. | `access-caller.ts:56-73` | `access-mcp.sqlite.test.ts` :: refuses an identity no account is linked to, even when a user has that email |
 | `access.settings.secrets-only` | Every Access setting is read from the Worker's environment; no admin UI, server function or route writes one. | `config.ts:311-325` | **unpinned** (nothing asserts the absence of a writer) |
-| `access.bypass-list.machine-endpoints-only` | Access lets through without a login only `/health`, `/mcp`, `/mcp/*`, `/oauth/token`, `/oauth/register` and `/.well-known/*` on the gateway's host (only `/health` under Managed OAuth), and on an app's host its public routes plus, only where its manifest sets `mcp` and Managed OAuth is off, `/mcp` and `/mcp/*`; the wildcard `*.<base>` bypasses nothing; never `/oauth/authorize` or the consent pages. | operator configuration, computed by `packages/cli/src/lib/access/plan.ts:48-54, 118-146, 174-196` and written by `everyapp access on`; the gateway's side `apps/every-app-gateway/src/server.ts:162-176` | **not enforced** by the gateway; the plan: `packages/cli/src/lib/access/plan.test.ts` :: is the wildcard with nothing let through, then one destination per app with public routes or mcp under the base, by host; the gateway's side: `apps/every-app-gateway/src/server.test.ts` :: answers a JSON 404, never the control plane, on every spelling of a bypassed prefix it doesn't serve |
-| `access.sign-in-methods-both` | `everyapp access on` keeps Sign in with Cloudflare (a type `cloudflare` provider, created with Restrict to account members on when the team has no `cloudflare` provider at all) and the one-time PIN (created when none), and allows both on the two applications while the Cloudflare provider is restricted to the account's members: one with the restriction off is left off and named in `ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT`, no restricted one is made beside it, and the PIN alone is allowed until the operator restricts it (`access.cli.allowed-idps`); adding to an application made before and taking nothing off; `auto_redirect_to_identity` only with one provider; interactive `everyapp setup` offers the same right after the owner claim, Yes by default (never under `--yes`, `--json` or CI: a team name is permanent), a failure there a warning. Operator configuration: the policy still decides who gets in. | `packages/cli/src/commands/access/index.ts:402-424, 621-631, 666-735`; `packages/cli/src/lib/cf/access.ts:178-189`; `packages/cli/src/lib/access/plan.ts:371-380, 415-421`; `packages/cli/src/commands/setup/runSetup.ts:473-514` | `packages/cli/src/commands/access/index.test.ts` :: creates the team, both sign-in methods, the policy, both applications and the settings, in one Worker version; :: adds Sign in with Cloudflare to applications made before it, taking nothing off them; `packages/cli/src/commands/setup/runSetup.test.ts` :: never offers Access with --yes, under --json, or from update; a failure is a warning and setup still ends done |
 
 **Not this boundary's job.** Whether the Zero Trust configuration matches
 the runbook (two applications, the bypass list, HttpOnly, the binding
@@ -991,17 +1011,9 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
   gateway doesn't verify* (medium, known, large). A single application for
   both hosts, a bypass wider than the list, HttpOnly off, are all silent
   weakenings. `access.bypass-list.machine-endpoints-only` is **not
-  enforced** by the gateway (it is operator configuration; the gateway
-  only answers every spelling of a bypassed path it doesn't serve with a
-  404). The list got smaller in the public-surface swath (2026-10-24, #612
-  and #622): the apps' wildcard `*.<base>` bypasses nothing, an app host's
-  `/mcp` is let through only where its manifest sets `mcp` (never under
-  Managed OAuth), and the gateway's own `/health` is the one path an
-  uptime monitor needs, so an app's health route needs no public entry.
-  `everyapp access on` makes that shape and `everyapp access show`
-  compares the destinations, overrides and sign-in methods it finds with
-  the plan; a read-back in `status`, and the gateway refusing to serve
-  behind an application it can't vouch for, are the follow-ups.
+  enforced** by the gateway (it is operator configuration). `everyapp
+  access on` makes the right shape; a `status` check that reads the
+  applications back is the follow-up.
 - *Access's email claim is trusted whatever identity provider issued it*
   (medium, medium fix). A generic OIDC provider that lets users pick their
   email would let them pick someone else's. The runbook says to enable only
@@ -1055,7 +1067,7 @@ version everyapp didn't record. A release that was tampered with, or a
 repository being built from its URL on the operator's machine. Two deploys
 racing.
 
-**Invariants.** The register has 40.
+**Invariants.** The register has 38.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1086,10 +1098,8 @@ racing.
 | `release.never-built-from-url` | A GitHub URL fetches only the release's `everyapp-release.tar.gz`, anonymously, over HTTPS with HTTPS-only redirects, a 200 MB cap and a timeout, into a private temp file; a repository without a release is never built from its URL. | `packages/cli/src/lib/release/github.ts:46-98` | `packages/cli/src/commands/install/release.test.ts` :: takes a GitHub repository's latest release, and sends a repository without one to its clone |
 | `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `packages/cli/src/commands/install/release.test.ts` :: refuses local state, a build that isn't production's, and Prisma migrations |
 | `gateway.no-deploy-api-on-self-host` | The HTTP deploy API (`/api/v1/*`) is served only when `thirdPartyDeploys` holds, which is false in `self_hosted` and invalid modes. | `apps/every-app-gateway/src/server.ts:151-157` | `platform-policy.test.ts` :: opens third-party deploys only on a hosted gateway whose gate is on |
-| `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:65-134` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
-| `deploy.browser-install-install-org-only` | On self-host the browser install spends the account-wide `CF_DEPLOY_TOKEN` only for the install organization's owners and admins (the oldest organization with an owner, as the CLI names it); any other chosen workspace is refused before any download (the install and the poll; each refusal is one `app_install.refused` warn line), availability and the page's workspaces go by the person rather than the session's active workspace, and nobody installs before the Gateway has an owner. | `apps/every-app-gateway/src/server/deploy/install.ts:74-147` (`authenticateAdmin`, `mayInstallForOrganization`), `install.ts:181-228` (`installableWorkspaces`), `browser-install.ts:41-46` (`installOrganizationId`) | `install-api.sqlite.test.ts` :: spends the account-wide token only for the install organization's owners and admins; `install-api.sqlite.test.ts` :: shows Install app to an admin of the install organization whose session is active elsewhere; `install-api.sqlite.test.ts` :: installs for a second organization's owner too: hosted, every organization has its own dispatch app |
+| `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
 | `browser-install.policy-subset-and-intake` | A browser-installed release must be a tenant-neutral build with only the allowed keys, no `workers.dev`, no triggers, no `EVERYAPP_DEV`, bindings from the allowlist (D1, own Durable Objects, assets); helpers, Workflows, KV, R2, Hyperdrive, secrets and crons are refused before anything is provisioned. | `apps/every-app-gateway/src/server/deploy/metadata.ts:119-312` | `metadata.test.ts` :: refuses helper Workers, Workflows, KV, secrets and too many Durable Object classes (partial on self-host, see gaps) |
-| `cli.workspace-operator-authority` | `everyapp workspace …` writes the Gateway's D1 under the Cloudflare login (ADR-0003: the operator is root in every organization of the Gateway), keeping the services' guards as SQL conditions: never the last live owner demoted, deactivated or removed; a deactivation ends sessions and revokes tokens and connections in the same batch; an invitation records the operator as inviter and needs their verified membership; no command prints a token hash or value. Nothing is asked of the Gateway over HTTPS and nothing is written to Admin → Activity. | `packages/cli/src/lib/gateway/workspace.ts`; `packages/cli/src/commands/workspace/` | `packages/cli/src/commands/workspace/index.test.ts` :: refuses to remove or deactivate the last owner; revokes tokens and connections with a deactivation |
 
 **Not this boundary's job.** Keeping the operator's Cloudflare login
 safe, or revoking it (Cloudflare's). What a trusted release's code does
@@ -1100,27 +1110,24 @@ intent).
 **Gaps.**
 
 - *The browser install is a deploy path on the public Worker, open to
-  the install organization's owners and admins, its upload untested on
-  self-host* (high, medium fix). `docs/security-model.md` "Operator
-  Authority" records it as the second deploy authority; ADR-0003 predates
-  #371. Once `CF_DEPLOY_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and
-  `APP_BASE_DOMAIN` are set and `BROWSER_APP_INSTALLS` isn't `off`, `POST
-  /api/admin/apps/install` registers and uploads an account Worker from a
-  public GitHub release or an oss.new URL for a signed-in owner or admin
-  of the install organization; since the agent-parity swath (2026-10-24)
-  any other organization is refused before the download, each refusal
-  one `app_install.refused` warn line
-  (`deploy.browser-install-install-org-only`), and
-  `install-api.sqlite.test.ts` pins the self-hosted gate and that rule
-  (the install, the poll, and availability by the person) up to the
-  download. Still open: the upload path on self-host is unpinned
-  (the fake Cloudflare has no account-Worker routes), and
-  `gateway.nothing-public-registers-or-deploys-on-self-host` is **not
-  enforced**. What stands: the admin gate, the organization rule, the
-  CSRF guard, the release intake (integrity, tar refusals, the policy
+  every organization owner and admin, untested on self-host* (high, medium
+  fix). `docs/security-model.md` "Operator Authority" records it as the
+  second deploy authority; ADR-0003 predates #371. Once `CF_DEPLOY_TOKEN`,
+  `CLOUDFLARE_ACCOUNT_ID` and `APP_BASE_DOMAIN` are set and
+  `BROWSER_APP_INSTALLS` isn't `off`, `POST /api/admin/apps/install`
+  registers and uploads an account Worker from a public GitHub release or
+  an oss.new URL for any signed-in owner or admin of any active
+  organization, not only the install organization
+  (`install.ts:59-104`). `install-api.sqlite.test.ts` claims the route
+  "isn't available on a self-hosted gateway", which passes only because
+  its env sets no `APP_BASE_DOMAIN`; `install.self-hosted-default-on` is
+  **unpinned** and `gateway.nothing-public-registers-or-deploys-on-self-host`
+  is **not enforced**. What stands: the admin gate,
+  the CSRF guard, the release intake (integrity, tar refusals, the policy
   subset) and, behind the outer ring, Access in front of the page. What
-  needs deciding: whether to default it off, or owners only. The
-  security model and this threat model record it as the second authority.
+  needs deciding: whether an admin of a secondary organization should be
+  able to deploy at all, or default it off. The security model and this
+  threat model record it as the second authority.
 - *`CF_DEPLOY_TOKEN` on the public Worker is account-wide authority*
   (high, known, medium fix). The runbook asks for Workers Scripts Edit and
   D1 Edit on the account: the token can rewrite every Worker in the account,
@@ -1282,23 +1289,20 @@ means it is on main (every boundary fix from this pass merged on
 
 **Self-hosted, before Monday if possible**
 
-1. **The browser install lets the install organization's owners and
-   admins deploy into the operator's account** (B7, high;
-   `install.self-hosted-default-on`,
+1. **The browser install lets any organization owner or admin deploy into
+   the operator's account** (B7, high; `install.self-hosted-default-on`,
    `gateway.nothing-public-registers-or-deploys-on-self-host`). Once
    `everyapp setup` has stored a `CF_DEPLOY_TOKEN`, `POST
-   /api/admin/apps/install` registers and uploads a public release for an
-   owner or admin of the install organization (the one the setup claim
-   made, so: anyone the owner made an admin; since 2026-10-24 any other
-   organization is refused, `deploy.browser-install-install-org-only`),
-   with a token that can rewrite every Worker and database in the
-   account; the release's manifest then grants it the operator's provider
-   keys, sender and members list, which the operator never read. Behind
-   Access the page is behind Access; the token's reach is the problem
-   either way. Decision for Ben (TODO "Threat model and security
-   scanning"): owners only, default it off, or move the token into a thin
-   deployer Worker. The self-hosted gate and the organization rule are
-   tested up to the download; the upload is not.
+   /api/admin/apps/install` registers and uploads a public release for any
+   owner or admin (on a self-hosted gateway that is the one organization
+   the setup claim made, so: anyone the owner made an admin), with a token
+   that can rewrite every Worker and database in the account; the release's
+   manifest then grants it the operator's provider keys, sender and members
+   list, which the operator never read. Behind Access the
+   page is behind Access; the token's reach is the problem either way.
+   Decision for Ben (TODO "Threat model and security scanning"): restrict
+   it to the install organization's owners, default it off, or move the
+   token into a thin deployer Worker. It also has no self-hosted test.
 2. **The OAuth-client proxy signed any grant** (B4, high; fixed in #387,
    merged). Facebook's client-credentials grant returns the app access
    token, which is `<app id>|<app secret>`: the operator's secret handed
@@ -1325,21 +1329,16 @@ means it is on main (every boundary fix from this pass merged on
    the SDK's `createMcpHandler`, the only in-repo way an app served `/mcp`
    itself; #404, which patched it, closed unmerged). What remains, by
    Ben's decision to keep it through launch: the manifest's
-   `mcp: { by: "app", why }` escape hatch, which since the public-surface
-   swath (2026-10-24, #612) is an opt-in with a reason: an app host serves
-   `/mcp` only when its manifest sets `mcp` (the `why` is shown by
-   `everyapp deploy` and `everyapp status`; the string form is refused),
-   and on a host without the field an MCP-only token opens nothing, `/mcp`
-   included (`perimeter.app-host-mcp-opt-in`,
-   `perimeter.mcp-only-token-scope`). Where an app does opt in with `by:
-   "app"`, the perimeter (`packages/perimeter/src/gateway.ts:491-496`,
-   the `by: "app"` condition; it falls through to the ordinary identity
-   mint at `:513-530`, the credential's channel at `:522`) still forwards
-   an identity carrying the token's `mcp:read` scopes (`chan: "api"`; the
-   ToolBus's policy, per-call identity and audit row don't apply) to
-   whatever handler the app wrote, so the read-only promise there rests on
-   the app honouring the scopes. No in-repo app sets it and the starter
-   never did; a post-launch perimeter PR may remove the hatch.
+   `mcp: { by: "app", why }` escape hatch and the perimeter branch that
+   proxies `/mcp` for it (`packages/perimeter/src/gateway.ts`) still
+   forward an identity carrying the token's `mcp:read` scopes to whatever
+   handler the app wrote, so the read-only promise there rests on the app
+   honouring the scopes. Narrowed by the public-surface swath
+   (2026-10-24): an app host serves `/mcp` only when its manifest sets
+   `mcp` (with a `why` the CLI shows), the string form is refused, and on
+   a host without the field an MCP-only token opens nothing, `/mcp`
+   included. No in-repo app sets it and the starter never did; a
+   post-launch perimeter PR may remove the hatch.
 7. **A password reset didn't end existing sessions** (B2, medium; fixed in #405,
    merged). Better Auth's `revokeSessionsOnPasswordReset` was
    unset, so the standard remedy for a stolen session did nothing to it
