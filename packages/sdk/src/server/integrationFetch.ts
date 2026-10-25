@@ -884,9 +884,17 @@ export async function integrationStatus<
 >({
   env,
   provider,
+  for: target,
 }: {
   env: object;
   provider: P;
+  /**
+   * Whom the status is for: the inbound request (its person), so an OAuth
+   * provider's `connection` is that person's; absent, the status carries
+   * no connection. Background work names its organization, whose own
+   * connection is then reported.
+   */
+  for?: GatewayCallFor;
 }): Promise<IntegrationStatusOf<P>> {
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
@@ -921,9 +929,17 @@ export async function integrationStatus<
           ready: false,
         }) as IntegrationStatusOf<P>;
   if (binding && typeof binding.fetch === "function") {
-    const response = await binding.fetch(
-      `${BINDING_ORIGIN}${INTEGRATION_PROXY_PREFIX}/${provider}`,
-    );
+    const statusUrl = `${BINDING_ORIGIN}${INTEGRATION_PROXY_PREFIX}/${provider}`;
+    let response: Response;
+    if (target === undefined) {
+      response = await binding.fetch(statusUrl);
+    } else {
+      // Whose status: the person's identity (their OAuth connection) or the
+      // organization's, as a call would carry it.
+      const headers = new Headers();
+      applyAttribution(headers, target);
+      response = await binding.fetch(statusUrl, { headers });
+    }
     if (!response.ok) return unavailable();
     return (await response.json()) as IntegrationStatusOf<P>;
   }

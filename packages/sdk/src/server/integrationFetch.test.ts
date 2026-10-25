@@ -356,6 +356,46 @@ describe("integrationStatus", () => {
     ).rejects.toThrowError(/is an AI provider/);
   });
 
+  it("carries the person's identity when the status is for a request", async () => {
+    // An OAuth provider's `connection` is the caller's: the status carries
+    // the inbound request's identity as a call would.
+    const bindingFetch = vi.fn(async () =>
+      Response.json({ requested: true, configured: true, ready: true }),
+    );
+    const inbound = new Request("https://app.example/page", {
+      headers: { "x-everyapp-identity": "signed-user-identity" },
+    });
+    await integrationStatus({
+      env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+      provider: "google-workspace",
+      for: inbound,
+    });
+    const [url, init] = bindingFetch.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe(
+      "http://every-app-gateway.internal/api/integrations/google-workspace",
+    );
+    expect(new Headers(init.headers).get("x-everyapp-identity")).toBe(
+      "signed-user-identity",
+    );
+    // Background work names its organization instead.
+    await integrationStatus({
+      env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+      provider: "google-workspace",
+      for: { background: true, organizationId: "org_1" },
+    });
+    const [, background] = bindingFetch.mock.calls[1] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(new Headers(background.headers).get("x-everyapp-org")).toBe("org_1");
+    expect(new Headers(background.headers).has("x-everyapp-identity")).toBe(
+      false,
+    );
+  });
+
   it("is ready in local dev once .dev.vars sets the key", async () => {
     await expect(
       integrationStatus({
