@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as sdkServer from "@every-app/sdk/server";
 import {
+  PROVIDER_APP_IDS,
   DEV_ONLY_GATEWAY_SETTINGS,
   IDENTITY_DEV_KEY_ID,
   IDENTITY_HEADER,
@@ -37,6 +38,7 @@ import { NextCode } from "@/commands/status/next";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
 import { manifestFields } from "./manifestFields";
+import { BUILD_SKILL, buildPage, patternsPage } from "./skillPages";
 import {
   AGENT_DOCS_DIR,
   UPDATE_DOCS,
@@ -82,12 +84,13 @@ function flagsOf(...prefixes: string[]): string[] {
   return [...names];
 }
 
-describe("the agent docs", () => {
-  const slugs = () =>
-    readdirSync(fileURLToPath(AGENT_DOCS_DIR))
-      .filter((name) => name.endsWith(".md"))
-      .map((name) => name.replace(/\.md$/, ""));
+/** The slugs of the hand-written and generated agent pages (the mirrored repo/ pages are built later). */
+const slugs = () =>
+  readdirSync(fileURLToPath(AGENT_DOCS_DIR))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => name.replace(/\.md$/, ""));
 
+describe("the agent docs", () => {
   it("has every page the index and the sidebar name", () => {
     for (const slug of [
       "index",
@@ -106,9 +109,32 @@ describe("the agent docs", () => {
       "deploy",
       "access",
       "workspace",
+      "gateway",
+      "build",
+      "patterns",
     ]) {
       expect(slugs(), `${slug}.md`).toContain(slug);
     }
+  });
+
+  it("is the sidebar: every page is in meta.json, and meta.json names only pages that exist", () => {
+    // landing-page/content/agent/meta.json lists the pages by hand (no `...`
+    // entry), so a page left out of it is missing from the sidebar, and a slug
+    // without a page is a dead entry. The separators (`---Drive it---`), the
+    // link back to the user docs (`[Back …](/docs)`) and the mirrored `repo`
+    // folder are not pages here.
+    const meta = JSON.parse(readFileSync(fileURLToPath(new URL("meta.json", AGENT_DOCS_DIR)), "utf8")) as {
+      pages: string[];
+    };
+    const listed = meta.pages.filter(
+      (entry) => !/^---.*---$/.test(entry) && !entry.startsWith("[") && entry !== "repo",
+    );
+    expect(listed, "meta.json reads as a page list").toEqual(
+      expect.arrayContaining(["index", "setup", "cli", "gateway", "build", "patterns"]),
+    );
+    const pages = slugs();
+    expect(listed.filter((slug) => !pages.includes(slug)), "slugs in meta.json without a page").toEqual([]);
+    expect(pages.filter((slug) => !listed.includes(slug)), "pages missing from meta.json (the sidebar)").toEqual([]);
   });
 
   it("links only to pages that exist", () => {
@@ -167,6 +193,23 @@ describe("cli.md", () => {
     expect(
       readPage("cli"),
       "cli.md is out of date with the commands: run `pnpm -C packages/cli docs:update` and commit the result",
+    ).toBe(generated);
+  });
+});
+
+describe("build.md and patterns.md", () => {
+  it.each([
+    ["build", BUILD_SKILL.skill, buildPage],
+    ["patterns", BUILD_SKILL.patterns, patternsPage],
+  ] as const)("%s.md is what %s generates", (slug, source, generate) => {
+    const generated = generate();
+    if (UPDATE_DOCS) {
+      writePage(slug, generated);
+      return;
+    }
+    expect(
+      readPage(slug),
+      `${slug}.md is out of date with ${source}: run \`pnpm -C packages/cli docs:update\` and commit the result`,
     ).toBe(generated);
   });
 });
@@ -370,6 +413,88 @@ describe("the command pages", () => {
   });
 });
 
+describe("gateway.md", () => {
+  const page = () => readPage("gateway");
+
+  it("names every CLI route, as `everyapp <route>` or the route itself", () => {
+    const found = [...backticked(page())];
+    const named = (route: string) =>
+      found.some((span) => span === route || new RegExp(`^(?:pnpm )?everyapp ${route}(?:\\s|$)`).test(span));
+    const missing = commandPaths().filter((route) => !named(route));
+    expect(
+      missing,
+      `gateway.md doesn't name these CLI routes (commandPaths in packages/cli/src/app.ts), in backticks as \`pnpm everyapp <route>\` or the route alone: ${missing.join(", ")}. ${HOW}`,
+    ).toEqual([]);
+  });
+
+  it("names every built-in tool and every provider app", () => {
+    expectDocumented("gateway", BUILTINS_WHAT, BUILTIN_TOOLS);
+    expectDocumented("gateway", "the provider app ids (PROVIDER_APP_IDS in packages/sdk/src/internal/providerApps.ts)", PROVIDER_APP_IDS);
+  });
+
+  it("names the listing modes and the header that picks one", () => {
+    expectDocumented("gateway", "the listing modes of the connector", ["X-EveryApp-Tools", "compact", "full"]);
+  });
+
+  it("names both manifest access values, since it says who can open a new app", () => {
+    expectDocumented(
+      "gateway",
+      "the manifest's access values (AppAccessSchema in packages/perimeter/src/manifest/manifest.ts)",
+      ["everyone", "admins"],
+    );
+  });
+
+  it("names every Admin tab as the Gateway labels it, with its route", () => {
+    // The tabs of Manage workspace, from the route that draws them: a renamed
+    // or added tab fails here until the page says it.
+    const admin = readFileSync(
+      fileURLToPath(new URL("../../../../apps/every-app-gateway/src/routes/_app/admin.tsx", import.meta.url)),
+      "utf8",
+    );
+    const tabs = [...admin.matchAll(/label: "([^"]+)",\s*to: "(\/admin\/[a-z]+)"/g)].map((match) => ({
+      label: match[1]!,
+      to: match[2]!,
+    }));
+    expect(tabs.map((tab) => tab.label), "the tabs read from admin.tsx").toEqual(
+      expect.arrayContaining(["Users", "Apps", "Groups", "Usage", "Activity", "Tokens"]),
+    );
+    const text = page();
+    const missingLabels = tabs.filter((tab) => !text.includes(`**${tab.label}**`)).map((tab) => tab.label);
+    expect(missingLabels, "Admin tabs gateway.md doesn't name in bold, as the Gateway labels them").toEqual([]);
+    expectDocumented("gateway", "the Admin tabs' routes", tabs.map((tab) => tab.to));
+  });
+
+  it("names every MCP server address the setup skill's section names", () => {
+    // The one source for which servers to recommend beside Every App is the
+    // setup skill's section "Optional: MCP servers worth having beside Every
+    // App" (packages/cli/skills/everyapp/setup/gateway.md); this page says
+    // the same, so an address that changes there fails here until it is
+    // changed here too.
+    const skill = readPage("../../../packages/cli/skills/everyapp/setup/gateway");
+    const section = skill.split(/^## /m).find((part) => part.startsWith("Optional: MCP servers")) ?? "";
+    expect(section, "the setup skill has its MCP servers section").not.toBe("");
+    const addresses = [...new Set([...section.matchAll(/`(https:\/\/[^`\s]+\/mcp)`/g)].map((match) => match[1]!))];
+    expect(addresses, "the section names Cloudflare's server in backticks").toContain("https://mcp.cloudflare.com/mcp");
+    expectDocumented("gateway", "the MCP server addresses the setup skill names", addresses);
+  });
+});
+
+describe("the Gateway's Build-your-own prompt", () => {
+  // apps/every-app-gateway/src/client/lib/buildPrompt.ts names the agent
+  // pages the prompt sends an agent to; a renamed slug fails here.
+  const file = new URL("../../../../apps/every-app-gateway/src/client/lib/buildPrompt.ts", import.meta.url);
+
+  it("points at agent pages that exist", () => {
+    const source = readFileSync(file, "utf8");
+    const slugs = [...source.matchAll(/https:\/\/everyapp\.com\/docs\/agent\/([a-z0-9-]+)\.md/g)].map((match) => match[1]!);
+    expect(slugs, "the prompt names at least the build and patterns pages").toEqual(
+      expect.arrayContaining(["build", "patterns"]),
+    );
+    const missing = slugs.filter((slug) => !existsSync(fileURLToPath(new URL(`${slug}.md`, AGENT_DOCS_DIR))));
+    expect(missing, "pages buildPrompt.ts names that landing-page/content/agent doesn't have").toEqual([]);
+  });
+});
+
 describe("backticked", () => {
   it("reads a double-backtick span as one span, so the names after it on the line still count", () => {
     const found = backticked(
@@ -387,6 +512,20 @@ describe("the everyapp skill", () => {
     const skill = readPage("../../../packages/cli/skills/everyapp/SKILL");
     expect(skill).toContain("https://everyapp.com/llms.txt");
     expect(skill).toContain("/docs/agent/");
+  });
+
+  it("lists every agent page in its Docs paragraph", () => {
+    // The "Pages: setup (…), cli (…), …" sentence: each slug as an item,
+    // followed by its parenthesis or a comma, so a new page is named there.
+    const skill = readPage("../../../packages/cli/skills/everyapp/SKILL");
+    const sentence = skill.match(/Pages: [\s\S]*?\.\s+[A-Z]/)?.[0] ?? "";
+    expect(sentence, "the skill's Docs paragraph has a Pages: sentence").not.toBe("");
+    const pages = slugs().filter((slug) => slug !== "index");
+    const missing = pages.filter((slug) => !new RegExp(`(^|[\\s,])${slug}(?=\\s*\\(|,)`).test(sentence));
+    expect(
+      missing,
+      `packages/cli/skills/everyapp/SKILL.md's Docs paragraph doesn't list these agent pages: ${missing.join(", ")}. Add each to its "Pages:" sentence, as "<slug> (what it answers)".`,
+    ).toEqual([]);
   });
 
   it("mcp.md names every built-in tool", () => {

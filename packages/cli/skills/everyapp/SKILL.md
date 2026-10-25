@@ -15,13 +15,20 @@ plus .md (https://everyapp.com/docs/agent/manifest.md); in a checkout they
 are landing-page/content/agent/*.md. Pages: setup (driving setup for a
 person, every handoff), cli (every command and flag), json (the --json
 protocol), errors (every code and its fix), troubleshooting (by symptom),
-manifest (everyapp.config.ts), identity (headers, token, env, SDK), secrets
+status (the report, every line, and its fixes in order), manifest
+(everyapp.config.ts), identity (headers, token, env, SDK), secrets
 (secrets vs Gateway settings vs capabilities), dev (dev vs production),
 email, mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
-check refuses), access (Cloudflare Access), repo/* (security model,
-capabilities, runbooks). Step-by-step setup of each integration (the
-Gateway, Access, email, DataForSEO, Context, OpenRouter, OpenAI, Workers
-AI, Google, Microsoft 365, Slack): setup/README.md beside this file.
+check refuses), access (Cloudflare Access), workspace (the workspace from
+the terminal and from an AI client: every command and every tool), gateway
+(everything a Gateway offers: apps vs MCP apps vs the compact MCP surface,
+people, groups and caps, the CLI by job, what to suggest next, other MCP
+servers), build (the build-every-app skill as a page), patterns (its
+example-patterns index), repo/* (security model, capabilities, runbooks).
+Step-by-step setup of each
+integration (the Gateway, Access, email, DataForSEO, Context, OpenRouter,
+OpenAI, Workers AI, Google, Microsoft 365, Slack): setup/README.md beside
+this file.
 Answering "how do I": fetch the page for the subject and answer from it
 with the exact command or manifest field, naming the page. A failed
 command: look its code up on errors (anchor: the code, lowercased) before

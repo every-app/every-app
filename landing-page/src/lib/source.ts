@@ -182,6 +182,8 @@ export async function llmsIndex(): Promise<string> {
     "",
     `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\`, run as \`pnpm everyapp\` from the Every App checkout; add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
     "",
+    `Two skills ship with the CLI and are copied into every app \`everyapp create\` makes (\`.agents/skills/<name>\` and \`.claude/skills/<name>\`): \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the four open apps and the starter do; the build skill is served here as ${SITE_URL}/docs/agent/build.md and its patterns index as ${SITE_URL}/docs/agent/patterns.md.`,
+    "",
     asSection(user, "User guides"),
     "",
     asSection(agentDocs, "Agent docs"),
