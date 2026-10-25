@@ -33,10 +33,11 @@ Pausing removed what only a published CLI needs. Bring back:
 - **Publishing itself:** drop `"private": true` from `packages/cli/package.json`
   and `packages/sdk/package.json`, and restore their pack scripts. The SDK
   had `prepack` and `prepublishOnly`. The CLI had `prepack`, which
-  type-checked, built, and ran `scripts/bundle-gateway.js` (the gateway
-  release tarball, which stays out of the package now: see Gateway releases)
-  and `scripts/bundle-templates.js` (the starter, now `starter/`, into
-  `packages/cli/templates/`, removed; its `.gitignore` shipped as `gitignore`).
+  type-checked, built, and ran `scripts/bundle-gateway.js` (removed: the
+  gateway release tarball stays out of the package now, see Gateway releases)
+  and `scripts/bundle-templates.js` (removed too: the starter, now
+  `starter/`, into `packages/cli/templates/`, removed; its `.gitignore`
+  shipped as `gitignore`).
 - **A Gateway for a CLI with no checkout:** published Gateway releases
   (the `setup --release` flag, the latest-release fallback and the Gateway
   Release workflow, all at `5ef30882`), or a tarball inside the CLI package

@@ -203,17 +203,16 @@ Security: the Gateway signs people in and passes identity to the app in a
          user is from a client-supplied header, cookie or parameter. Routes
          are private unless listed under `public` in everyapp.config.ts; a
          public route is open to the internet and does its own checks.
-         Before opening a pull request, run /security-review in Claude Code
-         (Anthropic's open-source review of the branch's changes) and fix
-         what it finds; an app that is the root of its own GitHub repository
-         (what create makes outside the checkout) also runs it on every pull
-         request from .github/workflows/security-review.yml once
-         ANTHROPIC_API_KEY is in that repository's secrets; inside the
-         checkout GitHub reads no workflow from apps/<name>, and the
-         checkout's own workflow reviews pull requests to the checkout's
-         repository once you have a fork or remote of your own, with the
-         same key in its secrets. What the Gateway promises and what an app
-         must do itself: docs/threat-model.md in the Every App checkout.
+         Before opening a pull request that touches identity, public routes,
+         tools, secrets or queries, review the changes locally against the
+         app boundaries in security-review.md beside this file: in Claude
+         Code, /security-review (its built-in review of the branch's pending
+         changes) pointed at that file; any other agent reads git diff
+         against the list there. No CI job and no API key: the review runs
+         where you run. Fix what it finds, or say in the pull request why a
+         finding is a false positive. What the Gateway promises and what an
+         app must do itself: docs/threat-model.md in the Every App checkout
+         (https://everyapp.com/docs/agent/repo/threat-model).
 
 Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive

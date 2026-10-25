@@ -15,7 +15,7 @@ click when they have to do something themselves.
 | Cloudflare account, the Gateway and its owner | [gateway.md](gateway.md)               | set by `everyapp setup` (optional: `CF_DEPLOY_TOKEN`, `BROWSER_APP_INSTALLS`)    | everything                                                              |
 | Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`, `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, `CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`) | sign-in, every app                                          |
 | Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, agentic-inbox, Open Analytics (optional), any app that sends |
-| DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO MCP app (`pnpm everyapp mcp on dataforseo`) |
+| DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO provider app (`pnpm everyapp provider on dataforseo`) |
 | Context.dev                                   | [context.md](context.md)               | `CONTEXT_API_KEY`                                                               | Open CRM; OpenSEO (optional: rendered audits)                           |
 | OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, agentic-inbox                                        |
 | OpenAI                                        | [openai.md](openai.md)                 | `OPENAI_API_KEY`, `AI_PROXY_EXTRA_ROUTES`                                       | apps listing the `openai` provider                                      |
@@ -30,10 +30,10 @@ lists it in `data.apps[].id`; in the app's directory it can be left out)
 reports the app's setup state as `data.app.setup`: `ready` (the app
 opens), `unmet` (the settings keeping it closed), `settings` (every
 setting, set or not), `groups` (each any-of group, `met` once one member
-is set) and `command`, `{ command: "pnpm everyapp configure <app id>" }`,
-the one command that sets up the app, asking for each unmet setting (null
-once ready). A setting has `names` (all must be set), `holder` (`gateway`,
-or `app` for the app's own secret), `need.kind` (`required`, `optional`, or
+is set) and `command`, the one `secret set` that sets everything missing
+(`{ command, note? }`, the note an any-of group's alternatives; null once
+ready). A setting has `names` (all must be set), `holder` (`gateway`, or
+`app` for the app's own secret), `need.kind` (`required`, `optional`, or
 `anyOf` with its `group`), `set` (true, false, or null when the app
 Worker's names were never recorded, which never blocks), `blocking`, and
 when known `why`, `docs` (where the key comes from) and `setup`: the file
@@ -71,11 +71,8 @@ to do). An event with `"waiting": true` is being waited for: keep reading.
 A Gateway setting is set from any directory; an app's own secret (a name
 its `everyapp.config.ts` lists under `secrets`) from the app's directory,
 or from anywhere with `--app <id>` (against the manifest its last deploy
-stored), either way after its first deploy. From anywhere,
-`pnpm everyapp configure <app id>` sets both kinds by that stored
-manifest; in the app's directory `pnpm everyapp configure` reads its
-`everyapp.config.ts` and sets the Gateway's settings before the first
-deploy too. Every `cf …` in these files is the CLI's pinned
+stored; `setup.command` carries the flag when it sets one), either way
+after its first deploy. Every `cf …` in these files is the CLI's pinned
 `cf` (1.0.0-beta.14, which `pnpm install` puts under `packages/cli`, not
 on PATH): from the `every-app` folder, run it as `pnpm --filter everyapp
 exec cf …` (the root's bare `pnpm exec cf` finds none). A bare `cf` only
@@ -100,13 +97,11 @@ command's file under `packages/cli/src/commands/` or its library under
 These files say what to do; the agent docs say why and what else is
 possible.
 
-**Not a Gateway setting.** A secret of the app's own repository (GitHub
-Actions secrets such as `ANTHROPIC_API_KEY`, which a new app's
-`security-review.yml` workflow reads) is set in that repository (`gh secret
-set NAME` there, the value from the person's terminal), never with
-`everyapp secret set` (which refuses names it doesn't know) or
-`everyapp configure` (which refuses a name the app's manifest doesn't
-declare).
+**Not a Gateway setting.** A secret of the app's own repository (a GitHub
+Actions secret for a workflow the person added; a new app ships none) is
+set in that repository (`gh secret set NAME` there, the value from the
+person's terminal), never with `everyapp secret set`, which refuses names
+it doesn't know.
 
 **Preconditions, checked, not assumed.** Before the provider's side, both,
 in either order (the integration files lead with 2, which says whether
@@ -141,99 +136,54 @@ the file applies):
    is in `data.app.setup.unmet` (each entry's `names`, `need.kind`,
    `holder` and `setup` say what goes where and which file), or, for an
    optional one, in `settings` with `set: false`; `data.app.setup.command`
-   is `pnpm everyapp configure <app id>`, which asks for what is missing.
-   For a setting no app declares (the Gateway's own, Cloudflare Access's),
-   from the checkout root `pnpm everyapp secret list --json`:
-   `data.gateway.names` is what is set. Set already (`set: true`, or the
-   name in `data.gateway.names`):
+   is the one command that sets what is missing. For a setting no app
+   declares (the Gateway's own, Cloudflare Access's), from the checkout
+   root `pnpm everyapp secret list --json`: `data.gateway.names` is what
+   is set. Set already (`set: true`, or the name in `data.gateway.names`):
    ask whether to replace it before doing anything on the provider's side;
    a value can't be read back, so "replace" means a new key.
 
 **The value never goes through the chat.** A key or client secret is never
 asked for in the conversation, never shown, never put on a command line
 (shell history, the process list), never written into a file you create in
-the repository. `pnpm everyapp configure <app id>` (every setting the app
-needs, each where it is held) and `pnpm everyapp secret set NAME` (one name)
-read the value from one of three places, and your shell has no terminal, so
-neither prompts for you:
+the repository. `pnpm everyapp secret set NAME` reads the value from one of
+three places, and your shell has no terminal, so it never prompts for you:
 
 - **The person types it.** Tell them to open a second terminal in the
-  `every-app` folder and run `pnpm everyapp configure <app id>` (the id as
-  `status` lists it: `openseo`, `crm`, `agentic-inbox`). It shows what is
-  set (names only, never values), asks for each required setting that
-  isn't with a hidden prompt (why the app needs it, where to get it and
-  this folder's guide above each; pasting works; nothing is echoed; of a
-  client with one of its two names set, only the other), asks which
-  member of an any-of group, offers the optional ones (`Set the N optional
-  settings too?`: one keystroke skips them all; Enter skips one), and sets
-  everything in one go; an app that is ready gets a menu to change one
-  setting. For just this one
-  setting, or one no app declares (`CF_DEPLOY_TOKEN`, a provider app's
-  key): `pnpm everyapp secret set NAME`, one hidden prompt. Then they tell
-  you, and you verify. This is the default when the value is on a
+  `every-app` folder and run `pnpm everyapp secret set NAME`; it asks for
+  the value with a hidden prompt (pasting works; nothing is echoed). Then
+  they tell you, and you verify. This is the default when the value is on a
   dashboard the person is looking at.
 - **A command produced it.** When a CLI or API call returns the key
   (Microsoft's `az ad app credential reset`, Slack's `apps.manifest.create`,
   a JSON file the console let the person download), pipe it straight in and
-  the value never appears anywhere: `… | jq -r '.client_secret' | pnpm everyapp secret set NAME --json`
-  (one value, one name), or several at once as `NAME=value` lines (one per
-  line; blank lines and `#` lines are skipped, an `export ` prefix is
-  allowed, one pair of quotes around a value is dropped, and the value is
-  otherwise taken as it is) into `pnpm everyapp configure <app id> --json`,
-  each set where it belongs; a line that isn't `NAME=value` (a bare value,
-  which goes to `secret set`) and a name the app's manifest doesn't declare
-  are refused before anything is written, the line never echoed. Never run
-  the producing command on its own to look at the result first.
+  the value never appears anywhere: `… | jq -r '.client_secret' | pnpm everyapp secret set NAME --json`.
+  Never run the producing command on its own to look at the result first.
 - **It is in an environment variable.** In their own terminal, in the
   `every-app` folder, the person reads it in hidden (bash or zsh:
   `read -rs NAME && export NAME`; fish: `read -s -x NAME`), pastes the
   value and presses Enter (nothing is echoed; bash and zsh show no prompt
-  either), then runs `pnpm everyapp configure <app id> --from-env --json`
-  there (each unset setting from the variable of its own name; several
-  reads, one run; stdin isn't read) or
-  `pnpm everyapp secret set NAME --from-env NAME --json`,
-  and `unset NAME` (fish: `set -e NAME`) once the file's smoke check is
-  done. Never a typed `export NAME=…`: on a default macOS zsh and on bash
-  it lands in the shell history, leading space or not (only a shell set
-  up with `HIST_IGNORE_SPACE` or `HISTCONTROL=ignorespace` drops it).
-  Variables they exported before starting you: you run the same
-  `pnpm everyapp configure <app id> --from-env --json` (every exported
-  name the app lacks, at once; a name that is set already is never
-  replaced) or `pnpm everyapp secret set NAME --from-env VAR --json` (which
-  replaces). Never `echo $VAR`, and never ask them to paste the export
-  line into the chat.
+  either), then runs `pnpm everyapp secret set NAME --from-env NAME --json`
+  there, and `unset NAME` (fish: `set -e NAME`) once the file's smoke
+  check is done. Never a typed `export NAME=…`: on a default macOS zsh and
+  on bash it lands in the shell history, leading space or not (only a
+  shell set up with `HIST_IGNORE_SPACE` or `HISTCONTROL=ignorespace` drops
+  it). A variable they exported before starting you: you run the same
+  `pnpm everyapp secret set NAME --from-env VAR --json`. Never `echo $VAR`,
+  and never ask them to paste the export line into the chat.
 
-One value per call for a pipe or `--from-env` into `secret set`; several
-names at once at the hidden prompt, or through `configure`, which takes
-the pipe or `--from-env`, never both (with the flag, stdin isn't read). The
-change is live at once (one new version of the Gateway Worker, and one of
-the app's for its own secrets; no deploy). If `secret set` or
-`configure --json` fails with `SECRET_VALUE_REQUIRED`, nothing was piped
-and no `--from-env` variable was found (`configure`'s message names what
-the app still needs, and its `data.rerun` is
-`pnpm everyapp configure <app id> --from-env`, or
-`pnpm everyapp configure --from-env` in the app's directory before its
-first deploy): use one of the three ways above; `SECRET_EMPTY` means the
-`--from-env` variable is empty or unset in the shell that ran `secret set`,
-or a piped `NAME=` line has nothing after it: the hidden read again, in
-that same terminal. `PIPED_LINE_INVALID` means a piped line isn't
-`NAME=value` (a bare value, which goes to `pnpm everyapp secret set NAME`);
-nothing was written, and the line is never echoed.
+One value per call for a pipe or `--from-env`; several names at once only
+at the hidden prompt. The change is live on the Gateway at once (one new
+version of its Worker, no deploy). If `secret set` fails with
+`SECRET_VALUE_REQUIRED`, nothing was piped: use one of the three ways above;
+`SECRET_EMPTY` means the `--from-env` variable is empty or unset in the
+shell that ran it: the hidden read again, in that same terminal.
 `SETTING_VALUE_INVALID` means a plain setting (`EMAIL_FROM`,
 `EMAIL_PROVIDER`, `EMAIL_PASSWORD_SIGN_IN`, a `CLOUDFLARE_ACCESS_*` or
 `MCP_*` switch) got a value the Gateway wouldn't read: the message names the
 setting and the value, `data.fix` says what it takes, and nothing was
-written; pipe the right value. `VALUE_ON_COMMAND_LINE` means
-`configure NAME=value` was typed: the value is in the shell's history,
-nothing was set; rotate it if it was real, then pipe it or use `--from-env`.
-A `NAME=value` after the app id, or `--from-env=value`, is refused by the
-argument parser before that (`TOO_MANY_ARGUMENTS`, `INVALID_VALUE`) with
-the same advice, the value cut out of the message. `SECRET_NOT_DECLARED`
-from `configure` means a piped name the app's manifest doesn't declare
-(echoed only when it looks like a setting name; otherwise `line <n> (not
-shown: it may be a value)`); nothing was written. A plain setting's prompt
-at a terminal is visible and says what it takes; a credential's stays
-hidden.
+written; pipe the right value. A plain setting's prompt at a terminal is
+visible and says what it takes; a credential's stays hidden.
 
 **Only a person can** sign in to a provider, accept its terms, add a card
 or choose a plan, approve an OAuth consent, pick a Google Cloud project's
@@ -245,7 +195,7 @@ pipe, verifying) you do. With a browser tool you may do the clicking too,
 but a secret shown on screen still goes in through the person's terminal
 or a file they save, not through you.
 
-**Verify, every time.** After `configure` or `secret set`:
+**Verify, every time.** After `secret set`:
 
 1. `pnpm everyapp secret list <app id> --json`: in `data.app.setup` the
    setting has `set: true` and is out of `unmet` (`ready: true` and
@@ -275,11 +225,11 @@ or a file they save, not through you.
    streams the same after wrangler's own login. Each file says which log
    lines to look for.
 
-**Resume.** Every step can be run again: `configure` and `secret set`
-replace, the provider's console shows what exists, `everyapp setup` and
-`everyapp access on` change only what differs. When a run was interrupted,
-or the person comes back later, start from the Verify section, keep what
-is done, and continue at the first step that isn't.
+**Resume.** Every step can be run again: `secret set` replaces, the
+provider's console shows what exists, `everyapp setup` and `everyapp access
+on` change only what differs. When a run was interrupted, or the person
+comes back later, start from the Verify section, keep what is done, and
+continue at the first step that isn't.
 
 **Remove.** `pnpm everyapp secret unset NAME --json` (it asks at a
 terminal; with `--json` add `--yes` only when the person said so). Then

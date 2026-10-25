@@ -70,8 +70,14 @@ SIGINT, the capability manifests the built CLI refused on 2026-10-24 (#543),
 test resolves the workspace packages from source, so only this one sees what
 the tsup bundle does differently. Locally, from the checkout's root,
 `pnpm test:built-cli` builds both and runs it (about a minute; the new app's
-`pnpm install` needs the network). `security-review.yml`: Anthropic's
-security review for Claude Code, against `docs/threat-model.md` (#388).
+`pnpm install` needs the network). The security review is not a workflow:
+`pnpm security-review` (`scripts/security-review.mjs`, the `security-review`
+skill in `.claude/skills/`) runs Anthropic's security review for Claude Code
+locally over the branch's diff, against `docs/threat-model.md`, before a
+pull request that touches a boundary; it is advisory (the diff enters the
+prompt, so a stranger's branch gets a person's read first), and
+`packages/cli/src/lib/securityReview.test.ts` pins its exit codes, what the
+diff carries and the flags Claude Code gets, with a fake `claude` on PATH.
 
 > **Honest status:** the legacy gateway control plane (iframe embed,
 > `/api/session-token`, postMessage/expo machinery, `app_url`/`dev_url`
@@ -366,7 +372,8 @@ checks the client secret, the redirect URI and PKCE):
 The perimeter's own
 tests (`packages/perimeter/src/headers.test.ts`, `gateway.test.ts`) check
 that every `cf-access-*` header is stripped.
-To try it by hand against a local gateway, `scripts/access-local.mjs` runs a
+To try it by hand against a local gateway,
+`apps/every-app-gateway/scripts/access-local.mjs` runs a
 mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
 "Test locally".
 

@@ -63,10 +63,25 @@ const DOCUMENTS = [
   "packages/sdk/README.md",
   "packages/onboarding-loop/README.md",
   ".github/RELEASE.md",
+  ".claude/skills/security-review/SKILL.md",
 ].filter((path) => existsSync(at(path)));
 
+/** The two places coding agents look for the checkout's security-review skill. */
+const SECURITY_REVIEW_SKILL = [".claude/skills/security-review/SKILL.md", ".agents/skills/security-review/SKILL.md"];
+
+describe("the security-review skill", () => {
+  it("is the same file in both places agents look, and the files the script reads exist", () => {
+    const [claude, agents] = SECURITY_REVIEW_SKILL.map((path) => readFileSync(at(path), "utf8"));
+    expect(claude, `${SECURITY_REVIEW_SKILL.join(" and ")} differ: copy one over the other`).toBe(agents);
+    expect(claude).toContain("name: security-review");
+    for (const file of ["audit-prompt.md", "scan-instructions.md", "false-positives.md"]) {
+      expect(existsSync(at(`scripts/security-review/${file}`)), `scripts/security-review/${file}`).toBe(true);
+    }
+  });
+});
+
 /** The repository's top-level directories a cited path may start with, and its top-level files. */
-const TOP_DIRS = new Set(["apps", "packages", "docs", "landing-page", "starter", "adr", ".github"]);
+const TOP_DIRS = new Set(["apps", "packages", "docs", "landing-page", "starter", "adr", "scripts", ".github"]);
 const TOP_FILES = new Set([
   "README.md",
   "AGENTS.md",
@@ -147,17 +162,23 @@ describe("the documents cite", () => {
     const missing: string[] = [];
     for (const file of DOCUMENTS) {
       const seen = new Set<string>();
-      const report = (path: string, n: number) => {
+      // A package's README names its own `scripts/x` the way its commands
+      // run, and a command after `cd <dir>` in a code block runs from there.
+      const report = (path: string, n: number, cwd = "") => {
         if (seen.has(path)) return;
         seen.add(path);
-        if (EXAMPLE_PATHS.has(path) || existsSync(at(path))) return;
+        const candidates = [path, posix.join(dirname(file), path), ...(cwd ? [posix.join(cwd, path)] : [])];
+        if (EXAMPLE_PATHS.has(path) || candidates.some((candidate) => existsSync(at(candidate)))) return;
         missing.push(`${file}:${n} ${path}`);
       };
+      let cwd = "";
       for (const line of lines(file)) {
+        const cd = line.inCode ? line.text.match(/^\s*cd\s+(\S+)/) : null;
+        if (cd) cwd = asRepoPath(cd[1]!) ?? "";
         if (HISTORICAL.test(line.text)) continue;
         for (const span of spans(line)) {
           const path = asRepoPath(span);
-          if (path) report(path, line.n);
+          if (path) report(path, line.n, line.inCode ? cwd : "");
         }
         if (!line.inCode && file.endsWith(".md")) {
           for (const match of withoutCode(line.text).matchAll(/\]\(([^)\s]+)\)/g)) {

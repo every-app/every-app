@@ -50,9 +50,9 @@ After the push, on GitHub: make `main` the default branch, flip the repository
 public, delete the old tags from the 2026-08-01 copy (`git push <url>
 --delete gateway-v0.1.13`, and the others `git ls-remote --tags <url>` lists),
 turn on private vulnerability reporting (Settings → Code security; SECURITY.md
-and the threat model promise it), set "Require approval for all external
-contributors" under Actions, and add the `ANTHROPIC_API_KEY` secret the
-security review workflow reads.
+and the threat model promise it), and set "Require approval for all external
+contributors" under Actions (the workflows run on pull requests; none needs a
+secret).
 
 ## What the report should say
 

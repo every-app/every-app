@@ -233,10 +233,9 @@ Cloudflare's job, some are simply not built.
   accepted: a self-host builds from the public repository, so its commit is
   public anyway, and the stamp lets an operator match a screen to a commit.
 - **Supply chain beyond the floors.** `pnpm-workspace.yaml` pins known-bad
-  transitive versions (`jose`, `seroval`, `tinypool`), CI fails on critical
-  advisories in the lockfile, and the security-review action is
-  pinned to a commit; nothing verifies package provenance or reviews each
-  dependency's code.
+  transitive versions (`jose`, `seroval`, `tinypool`) and CI fails on critical
+  advisories in the lockfile; nothing verifies package provenance or reviews
+  each dependency's code.
 - **The browser.** Extensions, a malware-ridden machine, a shared computer
   left signed in. `HttpOnly`, `Secure`, `SameSite` and the two-minute
   identity token limit what a page can do, not what the machine can.
@@ -245,7 +244,7 @@ Cloudflare's job, some are simply not built.
 - **An app's own logic bugs within its organization**: an app that shows one
   member another member's todo is the app's bug. The Gateway gives it the
   identity; scoping the query is the app's job (the skill and AGENTS.md say
-  so; the security review checks for it).
+  so; the local security review checks for it).
 - **The local development gateway** (`everyapp dev`): it enforces the same
   perimeter shape with a public dev key, for one seeded user, on localhost.
   It is not a deployment.
@@ -1037,7 +1036,7 @@ racing.
 **Not this boundary's job.** Keeping the operator's Cloudflare login
 safe, or revoking it (Cloudflare's). What a trusted release's code does
 once deployed (B1–B4 bound it like any app). Reviewing an app's code before
-deploying it (the security review helps; the policy checks shape, not
+deploying it (`pnpm security-review` helps; the policy checks shape, not
 intent).
 
 **Gaps.**
@@ -1450,12 +1449,27 @@ scope narrowing is the OAuth-scopes design (`docs/design/2026-10-oauth-scopes.md
   the file and test. `docs/TESTING.md` lists every suite and the end-to-end
   perimeter test (`packages/perimeter/src/integration/e2e.test.ts`) that
   wires the real proxy core to a real app built with the real SDK.
-- **Anthropic's security review for Claude Code.** `/security-review` in
-  Claude Code reviews the branch's pending changes against this model (the
-  repository's additions to its prompt are in `.github/security-review/`),
-  and `.github/workflows/security-review.yml` runs the same review on
-  every pull request once `ANTHROPIC_API_KEY` is in the repository's
-  secrets. New apps get it too (`starter/.github/`).
+- **The security review, locally.** `pnpm security-review`
+  (`scripts/security-review.mjs`) runs Claude Code non-interactively in
+  restricted mode (read-only tools confined to the checkout, the branch's
+  settings and hooks ignored), over the branch's diff: the audit prompt of
+  Anthropic's security review for Claude Code
+  (`scripts/security-review/audit-prompt.md`, pinned to the upstream commit
+  it names), this repository's boundaries
+  (`scripts/security-review/scan-instructions.md`) and its false-positive
+  rules (`scripts/security-review/false-positives.md`), judged against this
+  model; it exits 1 while a high or medium finding remains. The review is
+  advisory and not hardened against prompt injection: the diff enters the
+  prompt, so a stranger's pull request gets a person's read first, and the
+  command runs the branch's own copy of the script. The `security-review`
+  skill (`.claude/skills/security-review/SKILL.md`, the same at
+  `.agents/skills/`) says when to run it and what to do with a finding;
+  `packages/cli/src/lib/securityReview.test.ts` pins the script's exit codes,
+  what the diff carries and the flags Claude Code gets, with a fake `claude`.
+  There is no CI job and no API key in the repository: the maintainer chose
+  local skills over a review in Actions (2026-10-24). New apps get the app
+  boundaries and the recipe in the everyapp skill
+  (`packages/cli/skills/everyapp/security-review.md`).
 - **Dependency audit.** `pnpm audit` runs in CI on the lockfile
   and fails on critical advisories (`.github/workflows/pr-checks.yml`).
 - **A live Gateway.** `everyapp status` says whether the live Gateway was
