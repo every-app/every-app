@@ -121,6 +121,56 @@ describe("gatewaySurfaceView", () => {
     ).not.toHaveProperty("unavailable");
   });
 
+  it("names a provider app an admin could turn on, to an owner or admin and to nobody else", () => {
+    const offered = [
+      {
+        appId: "dataforseo",
+        name: "DataForSEO",
+        command: "pnpm everyapp mcp on dataforseo",
+      },
+    ];
+    const apps = [
+      todoApp({ appId: "todo", name: "Todos", instructions: undefined }),
+    ];
+    const unavailable = [{ appId: "crm", name: "CRM", reason: "needs setup" }];
+    const line =
+      "dataforseo (DataForSEO) is off and its key is set: an admin runs pnpm everyapp mcp on dataforseo.";
+
+    for (const orgRole of ["owner", "admin", "member,admin"]) {
+      const view = gatewaySurfaceView(
+        { ...PRINCIPAL, orgRole, organizationName: "Acme" },
+        apps,
+        { unavailable, offered },
+      );
+      expect(view.offered, orgRole).toEqual(offered);
+      // After the app list and the not-available lines, before any guidance.
+      expect(view.instructions, orgRole).toBe(
+        [
+          FULL_HEADER,
+          "Apps: todo (Todos).",
+          "crm (CRM) is not available: needs setup.",
+          line,
+        ].join("\n"),
+      );
+      expect(view.apps.map((app) => app.appId)).toEqual(["todo"]);
+    }
+
+    // A member's view carries none, whatever the host passed: operator state.
+    const member = gatewaySurfaceView(
+      { ...PRINCIPAL, orgRole: "member", organizationName: "Acme" },
+      apps,
+      { unavailable, offered },
+    );
+    expect(member).not.toHaveProperty("offered");
+    expect(member.instructions).not.toContain("is off and its key is set");
+    // Nothing offered: no field, as before.
+    expect(
+      gatewaySurfaceView({ ...PRINCIPAL, orgRole: "owner" }, apps, {
+        offered: [],
+      }),
+    ).not.toHaveProperty("offered");
+  });
+
   it("keeps the header, app list and not-available lines inside Claude Code's read for the launch apps", () => {
     // The launch set, each with the most guidance the catalog keeps (2048),
     // and the organization's real name.
@@ -158,25 +208,44 @@ describe("gatewaySurfaceView", () => {
     for (const app of unavailable) {
       expect(app.reason.length).toBeGreaterThanOrEqual(150);
     }
-    const worst = gatewayInstructionsHead(principal, apps, unavailable);
+    // And, for an owner, every provider app offered on top: one line each.
+    const owner = { ...principal, orgRole: "owner" };
+    const offered = [
+      {
+        appId: "dataforseo",
+        name: "DataForSEO",
+        command: "pnpm everyapp mcp on dataforseo",
+      },
+    ];
+    const worst = gatewayInstructionsHead(
+      owner,
+      apps,
+      unavailable,
+      "full",
+      offered,
+    );
     expect(
-      gatewaySurfaceView(principal, apps, { unavailable }).instructions,
+      gatewaySurfaceView(owner, apps, { unavailable, offered }).instructions,
     ).toContain(worst);
     expect(worst.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
 
     // The compact head is longer (it says how to find and run a tool), and
     // the worst case of that stays inside the read too.
     const compact = gatewayInstructionsHead(
-      principal,
+      owner,
       apps,
       unavailable,
       "compact",
+      offered,
     );
     expect(compact.length).toBeGreaterThan(worst.length);
     expect(compact.length).toBeLessThanOrEqual(CLAUDE_CODE_INSTRUCTIONS_READ);
     expect(
-      gatewaySurfaceView(principal, apps, { unavailable, listing: "compact" })
-        .instructions,
+      gatewaySurfaceView(owner, apps, {
+        unavailable,
+        offered,
+        listing: "compact",
+      }).instructions,
     ).toContain(compact);
   });
 

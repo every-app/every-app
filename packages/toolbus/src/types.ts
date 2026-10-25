@@ -59,6 +59,20 @@ export interface UnavailableApp {
   reason: string;
 }
 
+/**
+ * A provider app the gateway could serve and doesn't yet: the provider's
+ * key is set on the gateway and no row offers the app. Named in the
+ * gateway's instructions and by `everyapp_list_apps` with the command that
+ * turns it on, to owners and admins only (`gatewaySurfaceView` drops it for
+ * anyone else): it is operator state, and nothing a member can act on.
+ */
+export interface OfferedApp {
+  appId: string;
+  name: string;
+  /** What an admin runs, e.g. `pnpm everyapp mcp on dataforseo`. */
+  command: string;
+}
+
 export type McpAccess = "read" | "write";
 
 /** Who is calling, as the host (gateway or `everyapp dev`) resolved it. */
@@ -104,6 +118,8 @@ export interface ToolBusView {
   apps: ToolBusApp[];
   /** Gateway surface: the apps left out of `apps` because they need setup. */
   unavailable?: UnavailableApp[];
+  /** Gateway surface, owners and admins: provider apps an admin could turn on. */
+  offered?: OfferedApp[];
   /** What initialize and server/discover report. */
   serverInfo: { name: string; title?: string };
   instructions?: string;

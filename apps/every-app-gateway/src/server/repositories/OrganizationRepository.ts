@@ -76,6 +76,35 @@ async function findAwaitingOwner(): Promise<string | null> {
 }
 
 /**
+ * The install organization: the oldest with an owner, which is where the
+ * CLI registers bare-id apps and provider apps (`installOrganization` in
+ * `packages/cli/src/lib/gateway/registry.ts`; the deploy API's
+ * `isInstallOrganization` reads the same rows). Null before the setup
+ * claim.
+ */
+async function findInstallOrganizationId(): Promise<string | null> {
+  const rows = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      exists(
+        db
+          .select({ id: members.id })
+          .from(members)
+          .where(
+            and(
+              eq(members.organizationId, organizations.id),
+              eq(members.role, "owner"),
+            ),
+          ),
+      ),
+    )
+    .orderBy(asc(organizations.createdAt), asc(organizations.id))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
+/**
  * Make `userId` the owner of an organization that has none, and give it the
  * name the claim would have given a new one.
  */
@@ -147,6 +176,7 @@ export const OrganizationRepository = {
   findSummaryById,
   findAdminSummariesForUser,
   findAwaitingOwner,
+  findInstallOrganizationId,
   adoptForOwner,
   rename,
   isAttributable,

@@ -127,7 +127,12 @@ Calls:   `tools/list` never calls the app. `tools/call` checks the arguments
          (`chan: "mcp"`, explicit scopes, `tc: { id, name }`), makes one
          `POST /__everyapp/tools/call` (30 s) and audits one `mcp_tool_calls` row.
 Built-ins (Gateway connector only; always loaded in Claude Code):
-         `everyapp_list_apps` (the apps this connection can use),
+         `everyapp_list_apps` (the apps this connection can use; one that
+         needs setup is `available: false` with the command an admin runs;
+         for an owner or admin of the install organization, an MCP app
+         that is off while its key is set, and no deployed app lists its
+         capability, is `offered: true` with `pnpm everyapp mcp on <id>`,
+         and the instructions' head says the same in one line),
          `everyapp_whoami` (user, org, access), `everyapp_search_tools`
          (`{ query?, app?, limit? }`: finds callable tools by words, by app
          id or both, with their input schemas; read-only), and the two call

@@ -3,6 +3,7 @@ import { evaluateToolPolicy } from "./policy";
 import { listTools } from "./server";
 import type {
   McpPrincipal,
+  OfferedApp,
   ToolBusApp,
   ToolBusView,
   UnavailableApp,
@@ -61,6 +62,16 @@ function clip(text: string, max: number): string {
 const byAppId = <T extends { appId: string }>(a: T, b: T) =>
   a.appId < b.appId ? -1 : 1;
 
+/**
+ * Whether the caller may act on operator state: an owner or admin of the
+ * organization. Better Auth stores several roles comma-separated.
+ */
+export function isOwnerOrAdmin(orgRole: string): boolean {
+  return orgRole
+    .split(",")
+    .some((role) => role.trim() === "owner" || role.trim() === "admin");
+}
+
 /** How many app tools the caller could reach: the policy-allowed ones. */
 function reachableToolCount(
   principal: McpPrincipal,
@@ -103,8 +114,9 @@ function defaultListing(
 
 /**
  * The part of the gateway's instructions every client reads: the header
- * (which says how the tools are listed and found), the app list and one
- * line per app that needs setup. It comes before any app's own guidance,
+ * (which says how the tools are listed and found), the app list, one line
+ * per app that needs setup and, for an owner or admin, one per provider
+ * app an admin could turn on. It comes before any app's own guidance,
  * which a client may cut (`CLAUDE_CODE_INSTRUCTIONS_READ`).
  */
 export function gatewayInstructionsHead(
@@ -112,6 +124,7 @@ export function gatewayInstructionsHead(
   apps: ToolBusApp[],
   unavailable: UnavailableApp[],
   listing: ListingMode = "full",
+  offered: OfferedApp[] = [],
 ): string {
   const sorted = [...apps].sort(byAppId);
   const organization = principal.organizationName ?? "your organization";
@@ -139,6 +152,14 @@ export function gatewayInstructionsHead(
       .map(
         (app) => `${app.appId} (${app.name}) is not available: ${app.reason}.`,
       ),
+    // Operator state, for the people who can act on it: the view keeps
+    // it from anyone else (gatewaySurfaceView).
+    ...[...offered]
+      .sort(byAppId)
+      .map(
+        (app) =>
+          `${app.appId} (${app.name}) is off and its key is set: an admin runs ${app.command}.`,
+      ),
   ].join("\n");
 }
 
@@ -147,8 +168,15 @@ function gatewayInstructions(
   apps: ToolBusApp[],
   unavailable: UnavailableApp[],
   listing: ListingMode,
+  offered: OfferedApp[],
 ): string {
-  let text = gatewayInstructionsHead(principal, apps, unavailable, listing);
+  let text = gatewayInstructionsHead(
+    principal,
+    apps,
+    unavailable,
+    listing,
+    offered,
+  );
   // Each app's guidance follows, clipped; a later app's block is dropped
   // whole once the total reaches the cap. The cap never cuts the head: a
   // partial app list would mislead more than a long one.
@@ -166,8 +194,10 @@ function gatewayInstructions(
  * under `<appId>_<tool>` names, with the built-in `everyapp_*` tools. The
  * apps the caller reaches but can't use yet (`unavailable`: they need
  * setup) serve no tools; the instructions and `everyapp_list_apps` say why.
- * The listing mode is the caller's choice when it made one, else full
- * while the full listing fits (`FULL_LISTING_MAX_TOOLS`,
+ * The provider apps an admin could turn on (`offered`) are named the same
+ * two ways, to an owner or admin only: whatever the host passes, a member's
+ * view carries none. The listing mode is the caller's choice when it made
+ * one, else full while the full listing fits (`FULL_LISTING_MAX_TOOLS`,
  * `FULL_LISTING_MAX_BYTES`) and compact past that; a host that runs the
  * workspace tools (`workspace: true`) has them counted, since its
  * tools/list lists them.
@@ -179,6 +209,7 @@ export function gatewaySurfaceView(
     requestId?: string;
     allowedOrigins?: readonly string[];
     unavailable?: UnavailableApp[];
+    offered?: OfferedApp[];
     /** The caller's explicit listing choice (`X-EveryApp-Tools`, `?tools=`). */
     listing?: ListingMode;
     /** Whether the host runs the workspace tools (`ToolBusDeps.workspace`). */
@@ -188,6 +219,9 @@ export function gatewaySurfaceView(
   } = {},
 ): ToolBusView {
   const unavailable = options.unavailable ?? [];
+  const offered = isOwnerOrAdmin(principal.orgRole)
+    ? (options.offered ?? [])
+    : [];
   const listing =
     options.listing ??
     defaultListing(principal, apps, {
@@ -200,13 +234,20 @@ export function gatewaySurfaceView(
     apps,
     listing,
     ...(unavailable.length ? { unavailable } : {}),
+    ...(offered.length ? { offered } : {}),
     serverInfo: {
       name: "every-app",
       title: principal.organizationName
         ? `${principal.organizationName} · Every App`
         : "Every App",
     },
-    instructions: gatewayInstructions(principal, apps, unavailable, listing),
+    instructions: gatewayInstructions(
+      principal,
+      apps,
+      unavailable,
+      listing,
+      offered,
+    ),
     ...(options.requestId ? { requestId: options.requestId } : {}),
     ...(options.allowedOrigins?.length
       ? { allowedOrigins: options.allowedOrigins }

@@ -57,6 +57,19 @@ async function findAll(organizationId: string) {
 }
 
 /**
+ * The organization's live rows by slug, each with its tier and manifest:
+ * what the gateway's /mcp reads to decide whether a provider app can be
+ * offered (gateway-mcp.ts `offeredProviderApps`), from the rows rather
+ * than the caller's view. Tombstones left out; one statement.
+ */
+async function findSlugsAndManifests(organizationId: string) {
+  return db
+    .select({ appSlug: apps.appSlug, tier: apps.tier, manifest: apps.manifest })
+    .from(apps)
+    .where(and(eq(apps.organizationId, organizationId), notDeleted));
+}
+
+/**
  * Find all apps with access counts in a single query: how many distinct
  * members open each, directly or through a group. The version comes
  * along for the setup evaluation's cache key; the service keeps it
@@ -343,6 +356,7 @@ async function findAllManifests() {
 export const AppRepository = {
   findAll,
   findAllManifests,
+  findSlugsAndManifests,
   findAllWithAccessCounts,
   findAllShared,
   findById,

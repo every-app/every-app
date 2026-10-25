@@ -46,24 +46,31 @@ import { parseSecretNames } from "@every-app/perimeter/registry";
 import {
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
+  PROVIDER_APP_IDS,
   PROVIDER_APP_TIER,
+  PROVIDER_APPS,
+  providerAppKeySetting,
   type AppSetup,
 } from "@every-app/sdk/internal";
 import {
   ViewRefusedError,
+  isOwnerOrAdmin,
   type McpPrincipal,
+  type OfferedApp,
   type ToolBusApp,
   type ToolBusView,
   type UnavailableApp,
 } from "@every-app/toolbus";
-import { appSetupFor } from "@/server/app-setup";
+import { appSetupFor, parsedManifest, SETUP_CLI } from "@/server/app-setup";
 import { platformPolicy } from "@/server/platform-policy";
 import {
   providerAudience,
   providerBaseUrl,
   providerCatalogVersion,
 } from "@/server/provider-apps";
+import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
+import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
 import { resolveAccessCaller } from "@/server/mcp-auth/access-caller";
 import {
   resolveOauthCaller,
@@ -315,6 +322,68 @@ function needsSetupReason(setup: AppSetup): string {
   return `needs setup: an admin runs ${setup.command.command}`;
 }
 
+/**
+ * The provider apps an owner or admin of the install organization could
+ * turn on (docs/design/2026-10-proactive-next-steps.md, rule 2): the
+ * gateway holds the provider's key (its setting is set in env) and the
+ * install organization has no row for the app. Decided from the rows,
+ * never from the caller's view: a grant they lack, a connection that chose
+ * other apps, a token bound to one app or a failed catalog sync keeps an
+ * app out of `known` (the catalogs read for this view) while it is on, and
+ * nobody is told to turn on what is on; `known` only short-circuits, since
+ * an app the caller sees has its row. Not offered either while a deployed
+ * app of the organization lists the provider's capability (OpenSEO lists
+ * `dataforseo`): the key is that app's, and the line would never go. A
+ * member sees nothing, since it is operator state; another organization's
+ * owner neither, since `mcp on` writes the install organization's row
+ * (ADR-0003). Nothing is read until the state is there: the role and env
+ * are free, and the two reads (the install organization, its rows) run
+ * only while a key is set and the caller's view lacks its app.
+ */
+async function offeredProviderApps(
+  principal: McpPrincipal,
+  known: ReadonlySet<string>,
+): Promise<OfferedApp[]> {
+  if (!isOwnerOrAdmin(principal.orgRole)) return [];
+  const settings = env as unknown as Readonly<Record<string, unknown>>;
+  const isSet = (value: unknown) =>
+    typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+  const candidates = PROVIDER_APP_IDS.filter(
+    (id) => !known.has(id) && isSet(settings[providerAppKeySetting(id)]),
+  );
+  if (candidates.length === 0) return [];
+  const install = await OrganizationRepository.findInstallOrganizationId();
+  if (install !== principal.organizationId) return [];
+  const rows = await AppRepository.findSlugsAndManifests(install);
+  const off = candidates.filter(
+    (id) =>
+      !rows.some((row) => row.appSlug === id) &&
+      !rows.some(
+        (row) =>
+          row.tier !== PROVIDER_APP_TIER &&
+          manifestListsCapability(row.manifest, PROVIDER_APPS[id].capability),
+      ),
+  );
+  return off.map((id) => ({
+    appId: id,
+    name: PROVIDER_APPS[id].name,
+    command: `${SETUP_CLI} mcp on ${id}`,
+  }));
+}
+
+/** Whether a stored manifest lists `capability` under `capabilities`. */
+function manifestListsCapability(
+  manifest: unknown,
+  capability: string,
+): boolean {
+  const capabilities = parsedManifest(manifest)?.["capabilities"];
+  return (
+    typeof capabilities === "object" &&
+    capabilities !== null &&
+    Object.hasOwn(capabilities, capability)
+  );
+}
+
 interface GatewayViewInput {
   requestId: string | undefined;
   principal: McpPrincipal;
@@ -435,12 +504,18 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
     });
   }
 
+  const offered = await offeredProviderApps(
+    principal,
+    new Set(catalogs.map((catalog) => catalog.appSlug)),
+  );
+
   const { gatewaySurfaceView } = await import("@every-app/toolbus");
   return {
     ...gatewaySurfaceView(principal, apps, {
       ...(requestId ? { requestId } : {}),
       allowedOrigins: allowedOrigins(),
       unavailable,
+      offered,
       // The caller's own choice; without one the view decides from the
       // size of the full listing (the workspace tools this gateway lists
       // the caller counted), on this read and on every re-read.

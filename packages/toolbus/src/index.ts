@@ -78,11 +78,13 @@ export {
   FULL_LISTING_MAX_TOOLS,
   appSurfaceView,
   gatewaySurfaceView,
+  isOwnerOrAdmin,
 } from "./view";
 export type {
   JsonObject,
   McpAccess,
   McpPrincipal,
+  OfferedApp,
   ToolBusApp,
   ToolBusDeps,
   ToolBusSigning,

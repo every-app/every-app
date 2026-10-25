@@ -142,7 +142,10 @@ function namesOutsideCatalog(manifest: Record<string, unknown>): boolean {
   return ids.some((id) => !CATALOG.get(id));
 }
 
-function parsedManifest(manifest: unknown): Record<string, unknown> | null {
+/** A stored manifest as an object: parsed from its JSON, or null when it is neither. */
+export function parsedManifest(
+  manifest: unknown,
+): Record<string, unknown> | null {
   if (typeof manifest === "string") {
     try {
       return parsedManifest(JSON.parse(manifest));

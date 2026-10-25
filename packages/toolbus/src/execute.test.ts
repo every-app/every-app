@@ -205,6 +205,44 @@ describe("executeToolCall", () => {
     );
   });
 
+  it("lists a provider app an admin could turn on as offered, with the command", async () => {
+    const { deps } = harness(() => ok());
+    const view: ToolBusView = {
+      ...gatewayView([todoApp()]),
+      offered: [
+        {
+          appId: "dataforseo",
+          name: "DataForSEO",
+          command: "pnpm everyapp mcp on dataforseo",
+        },
+      ],
+    };
+
+    const resolution = await executeToolCall(
+      view,
+      { name: "everyapp_list_apps", arguments: {} },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      kind: "result",
+      result: {
+        structuredContent: {
+          apps: [
+            { id: "todo", tools: 2 },
+            {
+              id: "dataforseo",
+              name: "DataForSEO",
+              available: false,
+              offered: true,
+              reason:
+                "off and its key is set: an admin runs pnpm everyapp mcp on dataforseo",
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it("audits the built-in tools, which never call an app", async () => {
     const { deps, requests, events } = harness(() => ok());
     const view = gatewayView([todoApp()], { ...PRINCIPAL, access: "read" });

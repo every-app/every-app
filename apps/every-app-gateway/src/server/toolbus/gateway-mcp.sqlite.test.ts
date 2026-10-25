@@ -52,14 +52,23 @@ vi.mock("./runtime", async (importOriginal) => {
 
 import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { storedSecretNames } from "@every-app/perimeter/registry";
+import {
+  planProviderAppOn,
+  storedSecretNames,
+} from "@every-app/perimeter/registry";
 import {
   defineTools,
   everyApp,
   type PlainToolSchema,
 } from "@every-app/sdk/server";
 import type { McpPrincipal, ToolBusView } from "@every-app/toolbus";
-import { apps, appToolCatalogs } from "@/db/schema";
+import {
+  apps,
+  appToolCatalogs,
+  mcpConnectionApps,
+  mcpConnections,
+  userAppAccess,
+} from "@/db/schema";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import type { McpCaller } from "@/server/mcp-auth/validate";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
@@ -81,6 +90,8 @@ let keys: { privateKeyPem: string; publicKeyPem: string };
 let db: TestDb;
 let organizationId: string;
 let ownerId: string;
+/** The todo app's row id, for a token or connection bound to it. */
+let todoRowId: string;
 
 function objectInput<T>(): PlainToolSchema<T> {
   return {
@@ -180,8 +191,15 @@ async function deploy(
   return app;
 }
 
-/** Acme's owner, resolved as a personal token's caller is, unless told otherwise. */
-function caller(principal: Partial<McpPrincipal> = {}): McpCaller {
+/**
+ * Acme's owner, resolved as a personal token's caller is, unless told
+ * otherwise; `apps` narrows the reach to a token's app or a connection's
+ * chosen apps, as validate.ts does.
+ */
+function caller(
+  principal: Partial<McpPrincipal> = {},
+  apps: { connectionId?: string; appRowId?: string } = {},
+): McpCaller {
   return {
     kind: "caller",
     principal: {
@@ -194,7 +212,7 @@ function caller(principal: Partial<McpPrincipal> = {}): McpCaller {
       access: "write",
       ...principal,
     },
-    apps: {},
+    apps,
   };
 }
 
@@ -280,6 +298,7 @@ beforeAll(async () => {
 afterEach(() => {
   delete hoisted.env["OPENROUTER_API_KEY"];
   delete hoisted.env["WORKERS_AI_API_TOKEN"];
+  delete hoisted.env["DATAFORSEO_API_KEY"];
   hoisted.env["GATEWAY_DEPLOYMENT_MODE"] = "self_hosted";
   vi.restoreAllMocks();
 });
@@ -294,7 +313,7 @@ beforeEach(async () => {
   resetAppSetupCacheForTests();
   resetToolBusForTests();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
-  await deploy("todo", { id: "todo", name: "Todos" });
+  todoRowId = (await deploy("todo", { id: "todo", name: "Todos" })).id;
   await deploy("openseo", {
     id: "openseo",
     name: "OpenSEO",
@@ -469,6 +488,180 @@ describe("the gateway /mcp and an app that needs setup", () => {
     resetAppSetupCacheForTests();
     expect(await toolNames()).toContain("crm_ping");
     expect(await toolNames(platformOwner)).toContain("crm_ping");
+  });
+});
+
+describe("the gateway /mcp and a provider app an admin could turn on", () => {
+  const LINE =
+    "dataforseo (DataForSEO) is off and its key is set: an admin runs pnpm everyapp mcp on dataforseo.";
+  const ENTRY = {
+    id: "dataforseo",
+    name: "DataForSEO",
+    available: false,
+    offered: true,
+    reason:
+      "off and its key is set: an admin runs pnpm everyapp mcp on dataforseo",
+  };
+  const OFFERED = expect.objectContaining({ offered: true });
+
+  /** The row `everyapp mcp on dataforseo` writes, with its grants. */
+  async function turnOn(): Promise<void> {
+    const plan = planProviderAppOn({
+      organizationId,
+      id: "dataforseo",
+      existingApp: null,
+      members: [{ id: ownerId, role: "owner" }],
+      actorUserId: ownerId,
+      actor: "owner@example.com",
+      now: Date.now(),
+    });
+    const row = {
+      ...plan.app,
+      deployedAt:
+        plan.app.deployedAt === null ? null : new Date(plan.app.deployedAt),
+    };
+    await db.batch([
+      db.insert(apps).values(row),
+      ...plan.grants.map((grant) =>
+        db.insert(userAppAccess).values(grant).onConflictDoNothing(),
+      ),
+    ]);
+  }
+
+  it("names it to the install organization's owners and admins while its key is set, and to nobody else", async () => {
+    // No key: nothing to offer, whoever asks.
+    expect(await instructions()).not.toContain("is off and its key is set");
+
+    hoisted.env["DATAFORSEO_API_KEY"] = "api-login@example.com:s3cret";
+    const text = await instructions();
+    expect(text).toContain("Apps: todo (Todos).");
+    // After the not-available line, in the head.
+    expect(text.split("\n").slice(0, 4)).toEqual([
+      expect.stringMatching(/^Tools for acme on Every App\./),
+      "Apps: todo (Todos).",
+      "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp configure openseo.",
+      LINE,
+    ]);
+    expect(await listApps()).toContainEqual(ENTRY);
+    expect(await toolNames()).not.toContain("dataforseo_keyword_overview");
+
+    // An admin too.
+    const adminId = await seedMember(db, { organizationId, role: "admin" });
+    const admin = caller({
+      userId: adminId,
+      email: "admin@example.com",
+      orgRole: "admin",
+    });
+    expect(await instructions(admin)).toContain(LINE);
+
+    // A member: operator state is not theirs.
+    const memberId = await seedMember(db, { organizationId, role: "member" });
+    const member = caller({
+      userId: memberId,
+      email: "member@example.com",
+      orgRole: "member",
+    });
+    expect(await instructions(member)).not.toContain(
+      "is off and its key is set",
+    );
+    expect(await listApps(member)).not.toContainEqual(OFFERED);
+
+    // Another organization's owner: `mcp on` writes the install
+    // organization's row, so the line is not for them.
+    const otherOrg = await seedOrganization(db, "other");
+    const otherOwner = await seedMember(db, {
+      organizationId: otherOrg,
+      role: "owner",
+    });
+    const other = caller({
+      userId: otherOwner,
+      email: "other@example.com",
+      organizationId: otherOrg,
+      organizationName: "other",
+      orgRole: "owner",
+    });
+    expect(await instructions(other)).not.toContain(
+      "is off and its key is set",
+    );
+  });
+
+  it("stops offering it once it is on, when it is served like any app", async () => {
+    hoisted.env["DATAFORSEO_API_KEY"] = "api-login@example.com:s3cret";
+    expect(await instructions()).toContain(LINE);
+
+    await turnOn();
+    // A POST syncs the provider's catalog before the view is built.
+    const names = await toolNames();
+    expect(names).toContain("dataforseo_keyword_overview");
+    const text = await instructions();
+    expect(text).toContain("Apps: dataforseo (DataForSEO), todo (Todos).");
+    expect(text).not.toContain("is off and its key is set");
+    expect(await listApps()).not.toContainEqual(OFFERED);
+  });
+
+  it("decides from the install organization's rows, not the caller's view: nobody is told to turn on what is on", async () => {
+    hoisted.env["DATAFORSEO_API_KEY"] = "api-login@example.com:s3cret";
+    await turnOn();
+
+    // An admin added after `mcp on`: no grant, so no catalog in their view.
+    const adminId = await seedMember(db, { organizationId, role: "admin" });
+    const admin = caller({
+      userId: adminId,
+      email: "admin@example.com",
+      orgRole: "admin",
+    });
+    expect(await toolNames(admin)).not.toContain("dataforseo_keyword_overview");
+    expect(await instructions(admin)).not.toContain(
+      "is off and its key is set",
+    );
+    expect(await listApps(admin)).not.toContainEqual(OFFERED);
+
+    // The owner's token bound to one app.
+    const bound = caller({}, { appRowId: todoRowId });
+    expect(await instructions(bound)).toContain("Apps: todo (Todos).");
+    expect(await instructions(bound)).not.toContain(
+      "is off and its key is set",
+    );
+    expect(await listApps(bound)).not.toContainEqual(OFFERED);
+
+    // The owner's connection that chose todo alone.
+    const connectionId = `mcpc_${"c".repeat(32)}`;
+    await db.insert(mcpConnections).values({
+      id: connectionId,
+      userId: ownerId,
+      organizationId,
+      clientId: "client-1",
+      clientName: "Claude",
+      redirectUri: "https://claude.ai/callback",
+      redirectHost: "claude.ai",
+      appScope: "selected",
+      access: "write",
+      createdAt: new Date(),
+    });
+    await db
+      .insert(mcpConnectionApps)
+      .values({ connectionId, appRowId: todoRowId });
+    const selected = caller({}, { connectionId });
+    expect(await instructions(selected)).toContain("Apps: todo (Todos).");
+    expect(await instructions(selected)).not.toContain(
+      "is off and its key is set",
+    );
+    expect(await listApps(selected)).not.toContainEqual(OFFERED);
+  });
+
+  it("doesn't offer it while a deployed app lists the provider's capability: the key is that app's", async () => {
+    hoisted.env["DATAFORSEO_API_KEY"] = "api-login@example.com:s3cret";
+    expect(await instructions()).toContain(LINE);
+
+    await deploy("seo", {
+      id: "seo",
+      name: "SEO",
+      capabilities: { dataforseo: { access: "read", why: "Keyword data." } },
+    });
+    const text = await instructions();
+    expect(text).toContain("Apps: seo (SEO), todo (Todos).");
+    expect(text).not.toContain("is off and its key is set");
+    expect(await listApps()).not.toContainEqual(OFFERED);
   });
 });
 
