@@ -67,6 +67,7 @@ import {
   type NormalizedRemoteCatalog,
 } from "@every-app/toolbus/remote";
 import { checkMonthlyCap } from "@/server/app-cap";
+import { noteCapCheck } from "@/server/events/cap-events";
 import {
   providerAudience,
   providerIdentityVerify,
@@ -554,6 +555,23 @@ async function callTool(
     route.organizationId,
     route.rowId,
   );
+  // The standing goes to the event bus after the answer (cap.warning,
+  // cap.reached, app.paused_cap), as for a built-in provider app.
+  if (cap.cap !== undefined) {
+    waitUntil(
+      noteCapCheck(route.organizationId, route.rowId, cap).catch(
+        (error: unknown) =>
+          logEvent(
+            "events.cap_failed",
+            {
+              app: route.appSlug,
+              message: error instanceof Error ? error.message : String(error),
+            },
+            "warn",
+          ),
+      ),
+    );
+  }
   if (cap.exceeded) {
     logEvent(
       "usage.cap_exceeded",

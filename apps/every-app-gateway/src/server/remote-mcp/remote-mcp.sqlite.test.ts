@@ -63,6 +63,7 @@ import {
 import {
   apps,
   appToolCatalogs,
+  events,
   mcpToolCalls,
   orgAppSettings,
   remoteMcpCredentials,
@@ -72,6 +73,8 @@ import {
 } from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearAppCapCache } from "@/server/app-cap";
+import { clearCapEventMemoryForTests } from "@/server/events/cap-events";
+import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
 import { resetRegistrationLimitsForTests } from "@/server/mcp-auth/registration-limit";
 import { UserPatService } from "@/server/services/UserPatService";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
@@ -391,6 +394,8 @@ beforeEach(async () => {
   resetRemoteMcpForTests();
   resetRemoteMcpBindingsForTests();
   clearAppCapCache();
+  clearCapEventMemoryForTests();
+  clearEventSubjectCachesForTests();
   db = await createTestDb();
   hoisted.testDb.current = db;
   orgId = await seedOrganization(db, "acme");
@@ -744,6 +749,77 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(
       seen.filter((request) => request.body["method"] === "tools/list"),
     ).toHaveLength(listsBefore);
+  });
+
+  it("reports the cap standing to the event bus: cap.warning at 80%, then cap.reached and app.paused_cap once", async () => {
+    await db.insert(orgAppSettings).values({
+      organizationId: orgId,
+      appRowId: rowId,
+      monthlyCallCap: 5,
+      updatedAt: new Date(),
+      updatedBy: ownerId,
+    });
+    const token = await pat(ownerId);
+    const capEvents = async () =>
+      (await db.select().from(events))
+        .filter((event) =>
+          ["cap.warning", "cap.reached", "app.paused_cap"].includes(event.type),
+        )
+        .map((event) => ({
+          type: event.type,
+          data: JSON.parse(event.data) as Record<string, unknown>,
+        }));
+    // Four calls stand under 80% of five when they're checked.
+    for (const id of ["u1", "u2", "u3", "u4"]) {
+      const call = await callTool(token, "treg_get_user", { id });
+      expect(call.result?.isError).toBeUndefined();
+    }
+    expect(await capEvents()).toEqual([]);
+    // The fifth is checked at four of five: forwarded, and warned.
+    const fifth = await callTool(token, "treg_get_user", { id: "u5" });
+    expect(fifth.result?.isError).toBeUndefined();
+    expect(await capEvents()).toEqual([
+      {
+        type: "cap.warning",
+        data: expect.objectContaining({
+          app: expect.objectContaining({ id: "treg", rowId }),
+          cap: 5,
+          calls: 4,
+          threshold: 80,
+          source: "app",
+        }),
+      },
+    ]);
+    // The sixth and seventh are refused at the cap: reached and paused, once.
+    for (const id of ["u6", "u7"]) {
+      const call = await callTool(token, "treg_get_user", { id });
+      expect(call.result?.content[0]?.text).toMatch(/monthly cap of 5 calls/);
+    }
+    clearCapEventMemoryForTests();
+    const eighth = await callTool(token, "treg_get_user", { id: "u8" });
+    expect(eighth.result?.isError).toBe(true);
+    expect((await capEvents()).map((event) => event.type)).toEqual([
+      "cap.warning",
+      "cap.reached",
+      "app.paused_cap",
+    ]);
+    expect((await capEvents())[1]!.data).toEqual(
+      expect.objectContaining({ cap: 5, calls: 5, source: "app" }),
+    );
+  });
+
+  it("reports nothing to the event bus for an app with no cap", async () => {
+    const token = await pat(ownerId);
+    for (const id of ["u1", "u2", "u3", "u4", "u5", "u6"]) {
+      const call = await callTool(token, "treg_get_user", { id });
+      expect(call.result?.isError).toBeUndefined();
+    }
+    const types = (await db.select().from(events)).map((event) => event.type);
+    expect(
+      types.filter((type) =>
+        ["cap.warning", "cap.reached", "app.paused_cap"].includes(type),
+      ),
+    ).toEqual([]);
   });
 
   it("stops serving when the app is off and serves again when on", async () => {
