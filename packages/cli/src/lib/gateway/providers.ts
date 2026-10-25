@@ -28,7 +28,7 @@ import {
   providerBindingKey,
   providerRegistry,
   secretNames,
-  type ApiKeyCapability,
+  type RegistrableCapability,
   type ProviderRegistry,
   type ProviderRow,
   type RegisteredProvider,
@@ -151,7 +151,7 @@ interface AddProviderInput {
 
 interface AddedProvider {
   id: string;
-  capability: ApiKeyCapability;
+  capability: RegistrableCapability;
   /** The row was there and replaced (its key must be set again). */
   replaced: boolean;
 }

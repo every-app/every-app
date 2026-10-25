@@ -760,7 +760,7 @@ describe("OAuth clients", () => {
   it("in local dev, gives the developer's client id once both settings are set", async () => {
     await expect(
       integrationStatus({ env: DEV_CLIENTS, provider: "linkedin" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -768,7 +768,7 @@ describe("OAuth clients", () => {
     });
     await expect(
       integrationStatus({ env: DEV_CLIENTS, provider: "mastodon" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -780,7 +780,7 @@ describe("OAuth clients", () => {
         env: { EVERYAPP_DEV: "1", SLACK_CLIENT_ID: "id" },
         provider: "slack",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: false,
       ready: false,
@@ -868,7 +868,7 @@ describe("OAuth clients with scope sets", () => {
   it("in local dev, answers the sets the manifest declares and the provider strings they ask for", async () => {
     await expect(
       integrationStatus({ env: DEV, provider: "google-workspace" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -879,7 +879,7 @@ describe("OAuth clients with scope sets", () => {
     // Microsoft's end with offline_access, which every declaring app asks for.
     await expect(
       integrationStatus({ env: DEV, provider: "microsoft-365" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -890,7 +890,7 @@ describe("OAuth clients with scope sets", () => {
     // A client without scope sets answers as before.
     await expect(
       integrationStatus({ env: DEV, provider: "linkedin" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -914,7 +914,7 @@ describe("OAuth clients with scope sets", () => {
         },
         provider: "slack",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
@@ -941,7 +941,7 @@ describe("OAuth clients with scope sets", () => {
         },
         provider: "slack",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: false,
@@ -974,7 +974,7 @@ describe("OAuth clients with scope sets", () => {
           provider: "google-workspace",
         }),
         capabilities,
-      ).resolves.toEqual(voided);
+      ).resolves.toMatchObject(voided);
     }
     // Without the client as well: not configured either.
     await expect(
@@ -982,7 +982,7 @@ describe("OAuth clients with scope sets", () => {
         env: { EVERYAPP_DEV: "1" },
         provider: "google-workspace",
       }),
-    ).resolves.toEqual({ ...voided, configured: false });
+    ).resolves.toMatchObject({ ...voided, configured: false });
     // LinkedIn has no sets to void.
     await expect(
       integrationStatus({ env: noManifest, provider: "linkedin" }),
@@ -993,9 +993,6 @@ describe("OAuth clients with scope sets", () => {
     for (const capabilities of [
       "{}",
       JSON.stringify({ linkedin: { access: "write" } }),
-      JSON.stringify({
-        "google-workspace": { access: "read", scopes: ["identity"] },
-      }),
     ]) {
       await expect(
         integrationStatus({
@@ -1005,6 +1002,26 @@ describe("OAuth clients with scope sets", () => {
         capabilities,
       ).resolves.toEqual({ requested: false, configured: false, ready: false });
     }
+    // Listed for reading: no token-endpoint call (the app-driven flow
+    // needs the write grant), but a Gateway-owned connection serves API
+    // calls, so the status answers the sets and the connect path.
+    await expect(
+      integrationStatus({
+        env: {
+          ...DEV,
+          EVERYAPP_DEV_CAPABILITIES: JSON.stringify({
+            "google-workspace": { access: "read", scopes: ["identity"] },
+          }),
+        },
+        provider: "google-workspace",
+      }),
+    ).resolves.toMatchObject({
+      requested: true,
+      scopeSets: ["identity"],
+      flow: "both",
+      connectPath: "/connect/google-workspace",
+      connection: null,
+    });
   });
 
   it("in local dev, forwards an answer within the grant, dropping Google's scope from the request", async () => {

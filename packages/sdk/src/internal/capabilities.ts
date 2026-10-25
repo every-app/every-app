@@ -301,8 +301,18 @@ export interface OAuthScopeSet {
   routes: readonly OAuthScopeRoute[];
 }
 
-/** How a provider spells granted scopes in its token response; each has a parser in ./oauthScopes.ts. */
-export type OAuthScopeDialect = "google" | "microsoft" | "slack";
+/**
+ * How a provider spells granted scopes in its token response; each has a
+ * parser in ./oauthScopes.ts. `space` and `comma` are the plain spellings
+ * a registered provider names (`scopeDialect`): a token response without
+ * a `scope` field is taken as granted-as-requested (RFC 6749 §5.1).
+ */
+export type OAuthScopeDialect =
+  | "google"
+  | "microsoft"
+  | "slack"
+  | "space"
+  | "comma";
 
 /**
  * Everything the gateway needs to hold an app to its scope sets at the
@@ -345,6 +355,41 @@ export interface OAuthScopePolicy {
   deniedSegments: readonly string[];
 }
 
+/** How a provider names the account a new connection is for, read once after the exchange. */
+export interface OAuthIdentity {
+  /** An https URL on one of the provider's `api` hosts, GET with the new token. */
+  url: string;
+  /** A dot path into the JSON answer for the label ("ben", "ben@example.com"). */
+  label: string;
+  /** A dot path for the provider's stable id of the account (optional). */
+  id?: string;
+}
+
+/**
+ * What the Gateway needs to run a provider's authorization-code flow
+ * itself (docs/design/2026-10-oauth-providers.md section 5): present on a
+ * catalog entry that supports the Gateway-owned flow, and built from a
+ * registered row's `auth` (`kind: "oauth2-user"`). Absent: the entry
+ * keeps the app-driven flow only (the social networks).
+ */
+export interface OAuthFlow {
+  /** The token endpoint the Gateway posts the code and refresh token to (https). */
+  tokenUrl: string;
+  /** Where a disconnect revokes the token; absent means the tokens die at their expiry. */
+  revokeUrl?: string;
+  /** The revoke call's method (default POST). */
+  revokeMethod?: "POST" | "DELETE";
+  /** Whether the authorize request carries a PKCE S256 challenge (default true). */
+  pkce: boolean;
+  /** How the token response spells what it granted. */
+  scopeDialect: OAuthScopeDialect;
+  /** Extra query on the authorize URL (Google's `access_type=offline`). */
+  authorizeParams?: Readonly<Record<string, string>>;
+  /** Extra headers on the token request (GitHub's `Accept: application/json`). */
+  tokenHeaders?: Readonly<Record<string, string>>;
+  identity?: OAuthIdentity;
+}
+
 /**
  * A provider's OAuth client the gateway holds. The gateway completes its
  * token endpoints only (`token`), putting the client on each request; the
@@ -367,8 +412,13 @@ export interface OAuthClientCapability {
   hostSetting?: string;
   /** The origin when `hostSetting` is unset. */
   defaultOrigin?: string;
-  /** Obtaining and refreshing user tokens with the operator's client writes. */
-  access: readonly ["write"];
+  /**
+   * Obtaining and refreshing user tokens with the operator's client
+   * writes, so a catalog client is `["write"]`. A registered OAuth
+   * provider says what the proxy may do with the held token: read, write
+   * or both (docs/design/2026-10-oauth-providers.md section 7).
+   */
+  access: readonly CapabilityAccess[];
   /** Where the operator registers the client. */
   console: string;
   /** The everyapp skill's setup guide for the client, when one exists. */
@@ -386,8 +436,28 @@ export interface OAuthClientCapability {
    * client is the grant, as for Postiz's social networks.
    */
   scopePolicy?: OAuthScopePolicy;
-  /** Hosts the app calls afterwards with the user's token (docs only); a scope policy's routes are on them. */
+  /**
+   * Hosts the app calls afterwards with the user's token; the Gateway's
+   * held-token branch forwards to these alone, and a scope policy's
+   * routes are on them.
+   */
   api: readonly string[];
+  /** The Gateway-owned flow, when the entry supports it. */
+  flow?: OAuthFlow;
+  /** A registered OAuth provider's spec fields (a catalog client has `setup` instead). */
+  description?: string;
+  /** The API reference (a spec's `api`), optional. */
+  reference?: string;
+  hint?: string;
+  example?: string;
+  tags?: readonly string[];
+  /**
+   * A registered OAuth provider's methods: what a read grant may use
+   * (default GET and HEAD) and what a write grant adds (default the
+   * API-key default). A catalog client leaves both unset.
+   */
+  readMethods?: readonly string[];
+  writeMethods?: readonly string[];
   /**
    * The redirect paths the operator registers, on the app's host
    * (`https://<app>.<APP_BASE_DOMAIN><path>`): Postiz's callback pages, the
@@ -933,6 +1003,17 @@ export const CAPABILITIES = {
     },
     api: ["discord.com"],
     redirectPaths: ["/integrations/social/discord"],
+    flow: {
+      tokenUrl: "https://discord.com/api/oauth2/token",
+      revokeUrl: "https://discord.com/api/oauth2/token/revoke",
+      pkce: true,
+      scopeDialect: "space",
+      identity: {
+        url: "https://discord.com/api/users/@me",
+        label: "username",
+        id: "id",
+      },
+    },
   },
   slack: {
     mode: "oauth_client",
@@ -1147,6 +1228,19 @@ export const CAPABILITIES = {
       "/integrations/social/slack",
       "/integrations/slack/callback",
     ],
+    // Slack refuses `code_challenge`; `auth.test` names the workspace and
+    // the installing person.
+    flow: {
+      tokenUrl: "https://slack.com/api/oauth.v2.access",
+      revokeUrl: "https://slack.com/api/auth.revoke",
+      pkce: false,
+      scopeDialect: "slack",
+      identity: {
+        url: "https://slack.com/api/auth.test",
+        label: "team",
+        id: "user_id",
+      },
+    },
   },
   mastodon: {
     mode: "oauth_client",
@@ -1437,6 +1531,21 @@ export const CAPABILITIES = {
       "openidconnect.googleapis.com",
     ],
     redirectPaths: ["/integrations/google/callback"],
+    // The Gateway-owned flow: a refresh token needs `access_type=offline`,
+    // and `prompt=consent` makes Google issue one on every connect. No
+    // revoke: Google's `/revoke` is per person per client and would also
+    // kill the tokens an app-driven OpenSEO holds under the same client.
+    flow: {
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      pkce: true,
+      scopeDialect: "google",
+      authorizeParams: { access_type: "offline", prompt: "consent" },
+      identity: {
+        url: "https://openidconnect.googleapis.com/v1/userinfo",
+        label: "email",
+        id: "sub",
+      },
+    },
   },
   "microsoft-365": {
     mode: "oauth_client",
@@ -1533,6 +1642,16 @@ export const CAPABILITIES = {
     },
     api: ["graph.microsoft.com"],
     redirectPaths: ["/integrations/microsoft/callback"],
+    flow: {
+      tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      pkce: true,
+      scopeDialect: "microsoft",
+      identity: {
+        url: "https://graph.microsoft.com/v1.0/me",
+        label: "userPrincipalName",
+        id: "id",
+      },
+    },
   },
   // The first fifty beyond the entries above (catalog/*.ts, PR 3 of the
   // provider registry), after them so the derived lists keep their order.

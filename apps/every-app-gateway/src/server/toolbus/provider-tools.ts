@@ -323,12 +323,21 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       provider: {
         id,
         name: capability.label,
-        hosts: [...capability.hosts],
-        auth: authSummary(capability.auth),
+        ...(capability.mode === "api_key"
+          ? { hosts: [...capability.hosts], auth: authSummary(capability.auth) }
+          : {
+              hosts: [...capability.api],
+              auth: { kind: "oauth2-user" },
+              authorizeUrl: capability.authorize.url,
+              scopeSets: Object.keys(capability.scopePolicy?.sets ?? {}),
+            }),
       },
       settings: [...settings],
       bound: false,
-      next: `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`,
+      next:
+        capability.mode === "api_key"
+          ? `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`
+          : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${id} once the client is set.`,
     };
   },
 

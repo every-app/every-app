@@ -238,13 +238,13 @@ describe("provider add", () => {
 
   it("refuses a spec the parser or the rules refuse, naming why, and writes nothing", async () => {
     // Every problem, each with its path.
-    const invalid = add(specDir({ ...NORTHWIND, hosts: [], auth: { kind: "oauth2-user", secret: "NORTHWIND_ID" } }));
+    const invalid = add(specDir({ ...NORTHWIND, hosts: [], auth: { kind: "oauth1", secret: "NORTHWIND_ID" } }));
     await expect(invalid).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
       message: expect.stringMatching(/^The spec isn't one this Gateway takes\n.*hosts: required: at least one host/),
     });
     await expect(invalid).rejects.toMatchObject({
-      message: expect.stringContaining("auth.kind: must be bearer, header, query or basic"),
+      message: expect.stringContaining("auth.kind: must be bearer, header, query, basic or oauth2-user"),
     });
     await expect(add(specDir({ ...NORTHWIND, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
       code: "PROVIDER_BUILTIN",

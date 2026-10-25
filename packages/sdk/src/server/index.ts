@@ -19,6 +19,11 @@ export {
 export { AttributionError, type GatewayCallFor } from "./attribution.js";
 export { authorizeUrl, type AuthorizeUrlOptions } from "./authorizeUrl.js";
 export {
+  connectPath,
+  connectUrl,
+  type ConnectUrlOptions,
+} from "./connectUrl.js";
+export {
   createGatewayFetch,
   type CreateGatewayFetchOptions,
   type GatewayFetchEnv,
@@ -26,6 +31,7 @@ export {
 export {
   GatewayRefusalError,
   gatewayRefusal,
+  devAccessTokenName,
   integrationFetch,
   integrationStatus,
   type EmailIntegrationStatus,
@@ -47,6 +53,7 @@ export type {
   ApiKeyCapabilityId,
   CapabilityId,
   OAuthClientCapabilityId,
+  ConnectionAccount,
   EmailAddressInput,
   EmailAttachmentInput,
   SendEmailMessage,

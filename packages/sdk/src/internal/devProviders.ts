@@ -16,8 +16,11 @@
  * doesn't parse is ignored until an app asks for its id, which then gets
  * a ConfigurationError naming the file.
  */
-import type { ApiKeyCapability } from "./capabilities.js";
-import { describeSpecProblems, parseProviderSpec } from "./providerSpec.js";
+import {
+  describeSpecProblems,
+  parseProviderSpec,
+  type RegistrableCapability,
+} from "./providerSpec.js";
 
 /** The dev Worker's binding holding the specs (a copy is in ../cloudflare/worker.ts, kept in step by a test). */
 export const DEV_PROVIDERS_ENV = "EVERYAPP_DEV_PROVIDERS";
@@ -40,7 +43,7 @@ export function devProviderFile(id: string): string {
 
 /** A registered provider resolved for local development, or why it can't be. */
 export type DevProviderLookup =
-  | { found: true; capability: ApiKeyCapability; file: string }
+  | { found: true; capability: RegistrableCapability; file: string }
   | { found: false; problem: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

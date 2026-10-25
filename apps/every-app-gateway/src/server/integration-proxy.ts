@@ -156,6 +156,7 @@ export async function handleIntegrationProxyRequest({
       capability: status.capability,
       entry: capabilities?.[status.id],
       env,
+      lookup,
     });
   }
   if (status?.capability.mode === "api_key") {

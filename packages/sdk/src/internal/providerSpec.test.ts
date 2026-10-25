@@ -103,9 +103,17 @@ describe("parseProviderSpec", () => {
     ]) {
       expect(problems({ ...base, auth }), JSON.stringify(auth)).toEqual([]);
     }
+    // An OAuth provider is its own kind (oauthSpec.test.ts); bare, it
+    // names what it lacks.
     expect(problems({ ...base, auth: { kind: "oauth2-user" } })).toEqual([
+      "auth.authorizeUrl: required",
+      "auth.tokenUrl: required",
+      "auth.clientId: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (GITHUB_CLIENT_ID)",
+      'scopeSets: required: at least one named set, { "repo.read": { "label", "access", "scopes" } }',
+    ]);
+    expect(problems({ ...base, auth: { kind: "oauth1" } })).toEqual([
       "auth.secret: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (STRIPE_API_KEY)",
-      "auth.kind: must be bearer, header, query or basic (an OAuth client or an AI provider is a catalog entry, not a spec this gateway takes)",
+      "auth.kind: must be bearer, header, query, basic or oauth2-user (an AI provider is a catalog entry, not a spec this gateway takes)",
     ]);
     expect(
       problems({
@@ -114,7 +122,7 @@ describe("parseProviderSpec", () => {
         auth: { kind: "bearer", secret: "X_API_KEY" },
       }),
     ).toEqual([
-      "mode: this gateway registers api_key providers; an AI provider or an OAuth client is a catalog entry",
+      "mode: this gateway registers api_key and oauth_client (auth.kind oauth2-user) providers; an AI provider is a catalog entry",
     ]);
   });
 
@@ -277,7 +285,9 @@ describe("cost.responseField", () => {
     for (const field of ["cost", "usage.cost", "data.usage.total_cost"]) {
       const parsed = parseProviderSpec(spec(field));
       expect(parsed.ok, field).toBe(true);
-      if (parsed.ok) expect(parsed.capability.cost?.responseField).toBe(field);
+      if (parsed.ok && parsed.capability.mode === "api_key") {
+        expect(parsed.capability.cost?.responseField).toBe(field);
+      }
     }
     for (const field of [
       "usage.",

@@ -6,9 +6,11 @@
  * JSON into an {@link ApiKeyCapability} or names every problem; nothing
  * here reads a value: a spec names Gateway settings, never holds one.
  *
- * This slice parses API-key providers (`auth.kind` bearer, header, query
- * or basic). An AI provider or an OAuth client is a catalog entry only;
- * the parser says so rather than guessing.
+ * Two kinds parse: API-key providers (`auth.kind` bearer, header, query
+ * or basic) and OAuth providers (`auth.kind` oauth2-user, the half in
+ * ./oauthSpec.ts: the Gateway runs the flow and holds the tokens,
+ * docs/design/2026-10-oauth-providers.md). An AI provider is a catalog
+ * entry only; the parser says so rather than guessing.
  *
  * The rules that make a row safe on a particular gateway (its secret names
  * are its own, its hosts are public, it shadows no catalog entry) are the
@@ -19,12 +21,14 @@ import {
   authSettingNames,
   type ApiKeyAuth,
   type ApiKeyCapability,
+  type OAuthClientCapability,
   type ProviderCost,
   type ProviderRate,
   type ProviderSecretDetail,
   type ProviderVerification,
   type SmokeRequest,
 } from "./capabilities.js";
+import { oauthSpecOf, parseOAuthUserSpec } from "./oauthSpec.js";
 
 /** A provider id: lowercase, a letter first, 2 to 40 characters. */
 export const PROVIDER_ID = /^[a-z][a-z0-9-]{1,39}$/;
@@ -94,7 +98,27 @@ const KNOWN_FIELDS = new Set([
   "example",
   "verified",
   "tags",
+  // An `oauth2-user` spec's own (./oauthSpec.ts).
+  "scopeSets",
+  "alwaysRequested",
+  "tolerated",
 ]);
+/** Fields an API-key spec has that an `oauth2-user` spec does not. */
+const API_KEY_ONLY_FIELDS = [
+  "hostSetting",
+  "data",
+  "secrets",
+  "accountWidePaths",
+  "smoke",
+  "cost",
+  "rate",
+  "verified",
+] as const;
+const OAUTH_ONLY_FIELDS = [
+  "scopeSets",
+  "alwaysRequested",
+  "tolerated",
+] as const;
 
 export interface ProviderSpecProblem {
   /** Dotted: `auth.secret`, `hosts.1`, or `(root)`. */
@@ -102,8 +126,11 @@ export interface ProviderSpecProblem {
   message: string;
 }
 
+/** What a row or a preset may be: an API key, or an OAuth provider with a `flow`. */
+export type RegistrableCapability = ApiKeyCapability | OAuthClientCapability;
+
 export type ParsedProviderSpec =
-  | { ok: true; id: string; capability: ApiKeyCapability }
+  | { ok: true; id: string; capability: RegistrableCapability }
   | { ok: false; problems: ProviderSpecProblem[] };
 
 type Problems = ProviderSpecProblem[];
@@ -353,7 +380,7 @@ function auth(value: unknown, problems: Problems): ApiKeyAuth | undefined {
       problems.push({
         path: "auth.kind",
         message:
-          "must be bearer, header, query or basic (an OAuth client or an AI provider is a catalog entry, not a spec this gateway takes)",
+          "must be bearer, header, query, basic or oauth2-user (an AI provider is a catalog entry, not a spec this gateway takes)",
       });
       return undefined;
   }
@@ -615,6 +642,54 @@ function verified(
   return undefined;
 }
 
+/** `access`, `readMethods` and `writeMethods`, shared by both kinds. */
+function grants(
+  input: Record<string, unknown>,
+  problems: Problems,
+): {
+  access: string[] | undefined;
+  readMethods: string[] | undefined;
+  writeMethods: string[] | undefined;
+} {
+  const access = stringList(input["access"], "access", problems, {
+    max: 2,
+    each: (level, at) => {
+      if (level !== "read" && level !== "write") {
+        problems.push({ path: at, message: "must be read or write" });
+      }
+    },
+  });
+  if (access && access.length === 0) {
+    problems.push({ path: "access", message: "must list read, write or both" });
+  }
+  const readMethods = methods(input["readMethods"], "readMethods", problems);
+  // A write-only provider (a sender, a GraphQL API) reads with nothing:
+  // every call needs the write grant. Anything that offers read lists how.
+  if (
+    readMethods &&
+    readMethods.length === 0 &&
+    (!Array.isArray(access) || access.includes("read"))
+  ) {
+    problems.push({
+      path: "readMethods",
+      message: "must list a method unless access is write alone",
+    });
+  }
+  const writeMethods = methods(input["writeMethods"], "writeMethods", problems);
+  return { access, readMethods, writeMethods };
+}
+
+function tagList(value: unknown, problems: Problems): string[] | undefined {
+  return stringList(value, "tags", problems, {
+    max: 10,
+    each: (tag, at) => {
+      if (!TAG.test(tag)) {
+        problems.push({ path: at, message: "must be a lowercase word" });
+      }
+    },
+  });
+}
+
 /**
  * Parse a provider spec. Every problem is reported, with its path, so a
  * person fixes the file once. On success the id and the catalog-shaped
@@ -642,11 +717,15 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
         "must be lowercase letters, digits and hyphens, a letter first, 2 to 40 characters (stripe)",
     });
   }
-  if (input["mode"] !== undefined && input["mode"] !== "api_key") {
+  const isOAuth =
+    isRecord(input["auth"]) && input["auth"]["kind"] === "oauth2-user";
+  const expectedMode = isOAuth ? "oauth_client" : "api_key";
+  if (input["mode"] !== undefined && input["mode"] !== expectedMode) {
     problems.push({
       path: "mode",
-      message:
-        "this gateway registers api_key providers; an AI provider or an OAuth client is a catalog entry",
+      message: isOAuth
+        ? "an oauth2-user spec's mode is oauth_client (or left out)"
+        : "this gateway registers api_key and oauth_client (auth.kind oauth2-user) providers; an AI provider is a catalog entry",
     });
   }
   const name = text(input["name"], "name", problems, { max: 64 });
@@ -676,6 +755,67 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
       }
     },
   });
+  if (isOAuth) {
+    const { access, readMethods, writeMethods } = grants(input, problems);
+    const hint = text(input["hint"], "hint", problems, { max: 500 });
+    const example = text(input["example"], "example", problems, { max: 200 });
+    const tags = tagList(input["tags"], problems);
+    // An OAuth provider: its token goes to `hosts` alone, so the API-key
+    // fields that shape a key's placement have no meaning here.
+    for (const field of API_KEY_ONLY_FIELDS) {
+      if (input[field] !== undefined) {
+        problems.push({
+          path: field,
+          message: "not a field of an oauth2-user spec",
+        });
+      }
+    }
+    if (input["hosts"] === undefined || (hosts && hosts.length === 0)) {
+      problems.push({
+        path: "hosts",
+        message: "required: at least one API host the token is sent to",
+      });
+    }
+    const parsed =
+      typeof id === "string" &&
+      name !== undefined &&
+      docs !== undefined &&
+      hosts !== undefined
+        ? parseOAuthUserSpec(
+            input,
+            {
+              id,
+              name,
+              docs,
+              hosts,
+              ...(description === undefined ? {} : { description }),
+              ...(api === undefined ? {} : { reference: api }),
+              ...(access === undefined
+                ? {}
+                : { access: access as ("read" | "write")[] }),
+              ...(readMethods === undefined ? {} : { readMethods }),
+              ...(writeMethods === undefined ? {} : { writeMethods }),
+              ...(hint === undefined ? {} : { hint }),
+              ...(example === undefined ? {} : { example }),
+              ...(tags === undefined ? {} : { tags }),
+            },
+            problems,
+          )
+        : undefined;
+    if (problems.length > 0 || !parsed || typeof id !== "string") {
+      return { ok: false, problems };
+    }
+    return { ok: true, id, capability: parsed.capability };
+  }
+  for (const field of OAUTH_ONLY_FIELDS) {
+    if (input[field] !== undefined) {
+      problems.push({
+        path: field,
+        message: "only an oauth2-user spec has it",
+      });
+    }
+  }
+
   const hostSetting =
     input["hostSetting"] === undefined
       ? undefined
@@ -721,31 +861,7 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
     ],
     problems,
   );
-  const access = stringList(input["access"], "access", problems, {
-    max: 2,
-    each: (level, at) => {
-      if (level !== "read" && level !== "write") {
-        problems.push({ path: at, message: "must be read or write" });
-      }
-    },
-  });
-  if (access && access.length === 0) {
-    problems.push({ path: "access", message: "must list read, write or both" });
-  }
-  const readMethods = methods(input["readMethods"], "readMethods", problems);
-  // A write-only provider (a sender, a GraphQL API) reads with nothing:
-  // every call needs the write grant. Anything that offers read lists how.
-  if (
-    readMethods &&
-    readMethods.length === 0 &&
-    (!Array.isArray(access) || access.includes("read"))
-  ) {
-    problems.push({
-      path: "readMethods",
-      message: "must list a method unless access is write alone",
-    });
-  }
-  const writeMethods = methods(input["writeMethods"], "writeMethods", problems);
+  const { access, readMethods, writeMethods } = grants(input, problems);
   const paths = accountWidePaths(input["accountWidePaths"], problems);
   const hint = text(input["hint"], "hint", problems, { max: 500 });
   const smokeRequest = smoke(input["smoke"], hosts ?? [], problems);
@@ -753,14 +869,7 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
   const parsedRate = rate(input["rate"], problems);
   const example = text(input["example"], "example", problems, { max: 200 });
   const parsedVerified = verified(input["verified"], problems);
-  const tags = stringList(input["tags"], "tags", problems, {
-    max: 10,
-    each: (tag, at) => {
-      if (!TAG.test(tag)) {
-        problems.push({ path: at, message: "must be a lowercase word" });
-      }
-    },
-  });
+  const tags = tagList(input["tags"], problems);
   if (
     problems.length > 0 ||
     typeof id !== "string" ||
@@ -814,8 +923,17 @@ export function describeSpecProblems(
  */
 export function providerSpecOf(
   id: string,
-  capability: ApiKeyCapability,
+  capability: RegistrableCapability,
 ): Record<string, unknown> {
+  if (capability.mode === "oauth_client") {
+    const spec = oauthSpecOf(id, capability);
+    if (!spec) {
+      throw new Error(
+        `${id} is a catalog OAuth client without a Gateway-owned flow: it has no spec`,
+      );
+    }
+    return spec;
+  }
   return {
     id,
     name: capability.label,
@@ -859,7 +977,7 @@ export function providerSpecOf(
 
 /** The methods an app with `access: "write"` may use on `capability` besides its read methods. */
 export function writeMethodsOf(
-  capability: ApiKeyCapability,
+  capability: RegistrableCapability,
 ): readonly string[] {
   return capability.writeMethods ?? DEFAULT_WRITE_METHODS;
 }

@@ -86,17 +86,39 @@ describe("the strict validator and the provider registry", () => {
         options,
       ).capabilities,
     ).toEqual({ square: { access: "write", why: "Orders." } });
+    // A registered OAuth provider's scope sets pass as well-formed names;
+    // the gateway's registry says whether the provider has them.
+    expect(
+      validateManifestStrict(
+        {
+          id: "shop",
+          capabilities: {
+            square: { access: "read", scopes: ["identity", "orders.read"] },
+          },
+        },
+        options,
+      ).capabilities,
+    ).toEqual({
+      square: { access: "read", scopes: ["identity", "orders.read"] },
+    });
     expect(() =>
       validateManifestStrict(
         {
           id: "shop",
-          capabilities: { square: { access: "read", scopes: ["x"] } },
+          capabilities: { square: { access: "read", scopes: ["Orders Read"] } },
         },
         options,
       ),
-    ).toThrow(
-      /capabilities\.square\.scopes: a provider registered on the gateway takes no scopes/,
-    );
+    ).toThrow(/capabilities\.square\.scopes\.0: a scope set is named identity/);
+    expect(() =>
+      validateManifestStrict(
+        {
+          id: "shop",
+          capabilities: { square: { access: "read", scopes: [] } },
+        },
+        options,
+      ),
+    ).toThrow(/capabilities\.square\.scopes: scopes lists at least one set/);
     expect(() =>
       validateManifestStrict(
         { id: "shop", capabilities: { square: { access: "admin" } } },

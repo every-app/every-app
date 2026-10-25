@@ -40,6 +40,17 @@ export const GATEWAY_ERROR_HEADER = "x-everyapp-error";
  * from what browsers send.
  */
 export const ORG_HEADER = "x-everyapp-org";
+/**
+ * Which connection an app's call to an OAuth provider uses: the person's
+ * (`user`, the default when a person is behind the call) or the
+ * organization's (`organization`, the default for background work),
+ * docs/design/2026-10-oauth-providers.md section 7. Set by
+ * `integrationFetch({ account })`; the gateway reads it on the held-token
+ * branch and ignores it elsewhere.
+ */
+export const ACCOUNT_HEADER = "x-everyapp-account";
+/** The values {@link ACCOUNT_HEADER} may carry. */
+export type ConnectionAccount = "user" | "organization";
 /** 120-second lifetime — caps revocation staleness while surviving clock skew. */
 export const IDENTITY_TTL_SECONDS = 120;
 /** System tokens are minted per call and live at most a minute. */

@@ -39,6 +39,7 @@ import {
   describeSpecProblems,
   parseProviderSpec,
   PROVIDER_ID,
+  type RegistrableCapability,
 } from "./providerSpec.js";
 
 /** A `providers` row as the gateway or the CLI read it. */
@@ -63,9 +64,25 @@ export interface ProviderRow {
  * The part of a row a key is set for: its hosts, its host setting and its
  * auth, as one canonical string (sorted keys, sorted hosts), so that
  * replacing a row's hosts or auth changes the key and the value it held
- * is no longer read until the operator sets it again.
+ * is no longer read until the operator sets it again. For an OAuth
+ * provider the client is bound to its authorize, token and revoke URLs,
+ * its API hosts, where the client goes on the token request and its
+ * client setting names (`oauth.client-bound-to-endpoints`): an admin who
+ * re-points `tokenUrl` has to paste the secret again.
  */
-export function providerBindingKey(capability: ApiKeyCapability): string {
+export function providerBindingKey(capability: RegistrableCapability): string {
+  if (capability.mode === "oauth_client") {
+    return JSON.stringify({
+      kind: "oauth2-user",
+      authorizeUrl: capability.authorize.url,
+      tokenUrl: capability.flow?.tokenUrl ?? null,
+      revokeUrl: capability.flow?.revokeUrl ?? null,
+      inject: capability.token[0]?.inject ?? "form",
+      clientId: capability.secrets.clientId,
+      clientSecret: capability.secrets.clientSecret ?? null,
+      hosts: [...capability.api].sort(),
+    });
+  }
   const auth = Object.fromEntries(
     Object.entries(capability.auth)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -90,7 +107,7 @@ export function providerBindingKey(capability: ApiKeyCapability): string {
 /** One registered row as `provider list` and `provider show` report it. */
 export interface RegisteredProvider {
   id: string;
-  capability: ApiKeyCapability;
+  capability: RegistrableCapability;
   /** Whether the row's key was set for the hosts and auth it has now. */
   bound: boolean;
   addedBy: string | null;
@@ -250,7 +267,7 @@ export function rowSecretProblem(
  */
 export function checkProviderRow(
   id: string,
-  capability: ApiKeyCapability,
+  capability: RegistrableCapability,
   context: {
     /** Settings the other rows hold. */
     rowSettings: ReadonlySet<string>;
@@ -272,13 +289,39 @@ export function checkProviderRow(
       return { id, code: "PROVIDER_SECRET_TAKEN", message: problem };
     }
   }
-  for (const host of capability.hosts) {
+  for (const host of registrableHosts(capability)) {
     const problem = publicHostProblem(host) ?? context.refuseHost?.(host);
     if (problem) {
       return { id, code: "PROVIDER_HOST_REFUSED", message: problem };
     }
   }
   return null;
+}
+
+/**
+ * Every host a row sends a secret to: an API-key provider's `hosts`; an
+ * OAuth provider's API hosts (the token), and its authorize, token and
+ * revoke hosts (the client). Each passes the row host rules.
+ */
+export function registrableHosts(capability: RegistrableCapability): string[] {
+  if (capability.mode === "api_key") return [...capability.hosts];
+  const hosts = [...capability.api];
+  const urls = [
+    capability.authorize.url,
+    capability.flow?.tokenUrl,
+    capability.flow?.revokeUrl,
+    capability.flow?.identity?.url,
+  ];
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (!hosts.includes(host)) hosts.push(host);
+    } catch {
+      // The parser refused it already.
+    }
+  }
+  return hosts;
 }
 
 /** A row's spec parsed and checked: the capability, or the refusal. */
@@ -289,7 +332,7 @@ export function resolveProviderRow(
     refuseHost?: (host: string) => string | null;
   },
 ):
-  | { ok: true; capability: ApiKeyCapability }
+  | { ok: true; capability: RegistrableCapability }
   | { ok: false; refusal: RowRefusal } {
   let spec: unknown = row.spec;
   if (typeof spec === "string") {

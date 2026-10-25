@@ -60,7 +60,7 @@ import {
   SETTABLE_GATEWAY_SETTINGS,
   SIGN_IN_PROVIDER_IDS,
   SIGN_IN_PROVIDERS,
-  type ApiKeyCapability,
+  type RegistrableCapability,
   type AppSetup,
   type RegisteredProvider,
   type SecretEntry,
@@ -201,12 +201,25 @@ export async function applySecretValues(options: SetSecretsOptions) {
   return { applied, gatewayHost: reached.gatewayHost };
 }
 
-/** "the key is sent to api.stripe.com and the host STRIPE_HOST names". */
-function hostsOf(capability: ApiKeyCapability): string {
+/** "the key is sent to api.stripe.com and the host STRIPE_HOST names"; an OAuth client's goes to its token endpoint, the token to its API hosts. */
+function hostsOf(capability: RegistrableCapability): string {
+  if (capability.mode === "oauth_client") {
+    return listed([
+      ...capability.token.map((endpoint) => endpoint.host ?? "the provider's origin"),
+      ...capability.api,
+    ]);
+  }
   return listed([
     ...capability.hosts,
     ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
   ]);
+}
+
+/** The hosts a row's settings reach, for a step's data. */
+function rowHosts(capability: RegistrableCapability): string[] {
+  return capability.mode === "oauth_client"
+    ? [...capability.token.flatMap((endpoint) => (endpoint.host ? [endpoint.host] : [])), ...capability.api]
+    : [...capability.hosts];
 }
 
 /**
@@ -235,8 +248,10 @@ function sayWhereKeysGo(
           provider: row.id,
           addedBy: row.addedBy,
           addedAt: row.addedAt,
-          hosts: [...capability.hosts],
-          ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+          hosts: rowHosts(capability),
+          ...(capability.mode === "api_key" && capability.hostSetting
+            ? { hostSetting: capability.hostSetting }
+            : {}),
         },
       });
     }

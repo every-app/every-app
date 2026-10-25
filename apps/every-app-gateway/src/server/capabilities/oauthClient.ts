@@ -69,15 +69,20 @@ export function oauthClientStatus({
   capability,
   entry,
   env,
+  lookup = CATALOG,
 }: {
   id: string;
   /** The client `id` names in the gateway's registry. */
   capability: OAuthClientCapability;
   entry: CapabilityRequest | undefined;
   env: CapabilitySettings;
+  /** The registry the id came from: a registered row's client reads as unset while unbound. */
+  lookup?: CapabilityLookup;
 }): Response {
   const isRequested = requested(entry);
-  const client = isRequested ? oauthClientCredentials(capability, env) : null;
+  const bound = !lookup.bound || lookup.bound(id);
+  const client =
+    isRequested && bound ? oauthClientCredentials(capability, env) : null;
   const origin = client ? oauthClientOrigin(capability, env) : null;
   const policy = capability.scopePolicy;
   if (policy && isRequested) {
@@ -213,7 +218,10 @@ export async function handleOAuthClientCall({
     );
   }
 
-  // 4. The gateway's client.
+  // 4. The gateway's client: read only while a registered row still has
+  // the endpoints, hosts and setting names it was set for
+  // (`oauth.client-bound-to-endpoints`), as an API-key row's key is.
+  if (lookup.bound && !lookup.bound(id)) return notConfigured();
   const client = oauthClientCredentials(capability, env);
   if (!client) return notConfigured();
 
@@ -471,6 +479,10 @@ const RECOVERY: Record<OAuthScopePolicy["dialect"], string> = {
     "On a shared Microsoft client a token carries everything the person consented to this client: have them remove this app's consent at https://myapplications.microsoft.com and connect again, or add the scope set to everyapp.config.ts and deploy.",
   slack:
     "Slack scopes add up per workspace installation: reinstall the app in the workspace with only the status's scopes, or add the scope set to everyapp.config.ts and deploy.",
+  space:
+    "Ask for only the scopes integrationStatus() returns and connect again, or add the scope set to everyapp.config.ts and deploy.",
+  comma:
+    "Ask for only the scopes integrationStatus() returns and connect again, or add the scope set to everyapp.config.ts and deploy.",
 };
 
 /** The policy's grants as a sentence lists them: "authorization_code and refresh_token". */

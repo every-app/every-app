@@ -23,9 +23,9 @@ import {
   devProviderFile,
   providerIds,
   providerSpecOf,
-  type ApiKeyCapability,
   type Capability,
   type ProviderRegistry,
+  type RegistrableCapability,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -209,8 +209,9 @@ async function readCapped(response: Response, source: string): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** "api.stripe.com", "api.stripe.com and the host STRIPE_HOST names". */
-function keyHosts(capability: ApiKeyCapability): string {
+/** "api.stripe.com", "api.stripe.com and the host STRIPE_HOST names"; an OAuth provider's API hosts. */
+function keyHosts(capability: RegistrableCapability): string {
+  if (capability.mode === "oauth_client") return listed([...capability.api]);
   return listed([
     ...capability.hosts,
     ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
@@ -218,7 +219,10 @@ function keyHosts(capability: ApiKeyCapability): string {
 }
 
 /** How the key goes on a request, in a few words. */
-function sentAs(capability: ApiKeyCapability): string {
+function sentAs(capability: RegistrableCapability): string {
+  if (capability.mode === "oauth_client") {
+    return "as the bearer token of the person's connection";
+  }
   const { auth } = capability;
   switch (auth.kind) {
     case "bearer":
@@ -290,8 +294,7 @@ export async function addFromSpec(
     data: {
       id,
       name: capability.label,
-      hosts: [...capability.hosts],
-      ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+      ...hostsOf(capability),
       settings,
       source: "row",
       replaced: added.replaced,
@@ -299,7 +302,7 @@ export async function addFromSpec(
       next: [
         {
           command: `${CLI} secret set ${names}`,
-          note: `${capability.label}'s key, from ${capability.docs}; the Gateway sends it only to ${keyHosts(capability)}`,
+          note: `${capability.label}'s ${capability.mode === "oauth_client" ? "client" : "key"}, from ${capability.mode === "oauth_client" ? capability.console : capability.docs}; the Gateway sends it only to ${keyHosts(capability)}`,
         },
       ],
     },
@@ -307,7 +310,7 @@ export async function addFromSpec(
 }
 
 /** `.everyapp/providers/<id>.json` under `dir`: the spec, defaults spelled out. */
-async function writeDevSpec(dir: string, id: string, capability: ApiKeyCapability): Promise<string> {
+async function writeDevSpec(dir: string, id: string, capability: RegistrableCapability): Promise<string> {
   const file = path.join(dir, DEV_PROVIDERS_DIR, `${id}.json`);
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, `${JSON.stringify(providerSpecOf(id, capability), null, 2)}\n`);

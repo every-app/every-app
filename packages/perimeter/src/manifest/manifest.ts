@@ -423,15 +423,30 @@ const CapabilitiesSchema = z
 /**
  * The entry of a capability this validator can't look up (a provider
  * registered on a gateway the CLI hasn't asked yet): `access` and its
- * need, no scope sets, nothing else. `everyapp deploy` checks the id
- * against the gateway's registry once it is connected.
+ * need, and `scopes` as well-formed set names for a registered OAuth
+ * provider (the gateway's registry says whether the provider has them),
+ * nothing else. `everyapp deploy` checks the id and the sets against the
+ * gateway's registry once it is connected.
  */
 const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
   scopes: z
-    .undefined({
-      error:
-        "a provider registered on the gateway takes no scopes; list it as { access: ..., why }",
-    })
+    .array(
+      z
+        .string()
+        .regex(
+          /^[a-z][a-z0-9-]{0,31}(?:\.[a-z][a-z0-9-]{0,31})?$/,
+          "a scope set is named identity, or <area>.<access> (repo.read)",
+        ),
+      {
+        error:
+          "scopes lists the scope sets of a registered OAuth provider (the gateway's registry names them); an API-key provider takes none",
+      },
+    )
+    .min(1, "scopes lists at least one set, or is left out")
+    .refine(
+      (list) => new Set(list).size === list.length,
+      "a scope set is listed twice",
+    )
     .optional(),
 }).strict();
 

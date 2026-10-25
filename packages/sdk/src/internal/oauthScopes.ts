@@ -66,7 +66,7 @@ export function requestedScopes(
 ): ScopeList {
   const scopes: string[] = [];
   const userScopes: string[] = [];
-  for (const [, set] of declaredSets(policy, sets)) {
+  for (const [, set] of setsOf(policy, sets)) {
     pushNew(scopes, set.scopes);
     pushNew(userScopes, set.userScopes ?? []);
   }
@@ -148,7 +148,132 @@ export function grantedScopes(
     }
     case "slack":
       return slackGrantedScopes(body);
+    case "space":
+    case "comma": {
+      const scopes = splitScopes(policy.dialect, body["scope"]);
+      return scopes ? { scopes } : null;
+    }
   }
+}
+
+/**
+ * What a token response granted, for the Gateway-owned flow: as
+ * {@link grantedScopes}, except that a `space` or `comma` provider that
+ * names no `scope` at all is taken at its word (RFC 6749 §5.1: the field
+ * is optional when the grant matches the request), so `requested` stands.
+ * The three parsed dialects keep failing closed.
+ */
+export function grantedScopesOrRequested(
+  policy: OAuthScopePolicy,
+  json: unknown,
+  requested: ScopeList,
+): GrantedScopes | null {
+  const granted = grantedScopes(policy, json);
+  if (granted) return granted;
+  const body = record(json);
+  if (
+    body &&
+    body["scope"] === undefined &&
+    (policy.dialect === "space" || policy.dialect === "comma")
+  ) {
+    return { scopes: canonical(policy.dialect, requested.scopes) };
+  }
+  return null;
+}
+
+/** Why the proxy refuses a held-token call, with what would let it through. */
+export type HeldTokenRefusal =
+  | {
+      ok: false;
+      code: "integration_not_connected";
+      /** The declared sets the connection was not granted. */
+      missingSets: string[];
+    }
+  | {
+      ok: false;
+      code: "integration_scope_not_allowed" | "integration_method_not_allowed";
+      message: string;
+    };
+
+/**
+ * Whether an app's call with a held token goes through, and under which
+ * set (docs/design/2026-10-oauth-providers.md section 7). In order: every
+ * set the app declares must be among the connection's (else the person
+ * connects again: `integration_not_connected` with the missing sets); the
+ * host must be one of the provider's `api` hosts; the path passes the
+ * segment rules (`scopeRouteAllows`'s: no batch tunnels, no dot segments,
+ * no denied segments); then a declared set with routes must cover the
+ * call, or a declared set without routes covers its hosts by access: a
+ * read set unlocks `readMethods` (GET and HEAD by default), a write set
+ * every method the provider offers. `writes` says whether the method is
+ * one the grant allows beyond reads, decided by the caller as for an
+ * API-key provider.
+ */
+export function heldTokenCallAllowed({
+  policy,
+  declaredSets,
+  connectionSets,
+  hosts,
+  method,
+  upstream,
+  readMethods = ["GET", "HEAD"],
+  writes,
+}: {
+  policy: OAuthScopePolicy;
+  declaredSets: readonly string[];
+  connectionSets: readonly string[];
+  /** The provider's `api` hosts. */
+  hosts: readonly string[];
+  method: string;
+  upstream: URL;
+  readMethods?: readonly string[];
+  /** Whether `method` is a write the app's grant allows. */
+  writes: boolean;
+}): { ok: true; set: string } | HeldTokenRefusal {
+  const missingSets = declaredSets.filter(
+    (name) => !connectionSets.includes(name),
+  );
+  if (missingSets.length > 0) {
+    return { ok: false, code: "integration_not_connected", missingSets };
+  }
+  if (upstream.protocol !== "https:" || !hosts.includes(upstream.host)) {
+    return {
+      ok: false,
+      code: "integration_scope_not_allowed",
+      message: `${upstream.host} is not a host this provider's token reaches (${hosts.join(", ")}).`,
+    };
+  }
+  if (!safeSegments(policy, upstream.pathname)) {
+    return {
+      ok: false,
+      code: "integration_scope_not_allowed",
+      message: `${upstream.pathname} is a path no scope set unlocks.`,
+    };
+  }
+  const verb = method.toUpperCase();
+  const reads = readMethods.includes(verb);
+  // A set's routes decide first: a read-shaped POST a read set lists
+  // under `posts` (a search, a query) is a read whatever the grant.
+  const routed = scopeRouteAllows(policy, declaredSets, verb, upstream);
+  if (routed) return { ok: true, set: routed };
+  if (!reads && !writes) {
+    return {
+      ok: false,
+      code: "integration_method_not_allowed",
+      message: `${verb} ${upstream.pathname}: calls may use ${readMethods.join(" or ")} with access: "read"; ${verb} needs access: "write" in the app's capabilities entry, on a provider that offers it, or a scope set whose routes list it.`,
+    };
+  }
+  for (const [name, set] of setsOf(policy, declaredSets)) {
+    if (set.routes.length > 0) continue;
+    if (reads || (writes && set.access === "write")) {
+      return { ok: true, set: name };
+    }
+  }
+  return {
+    ok: false,
+    code: "integration_scope_not_allowed",
+    message: `${verb} ${upstream.pathname} is outside the scope sets this app declares (${declaredSets.join(", ")}).`,
+  };
 }
 
 /**
@@ -299,7 +424,7 @@ export function scopeRouteAllows(
   upstream: URL,
 ): string | null {
   if (upstream.protocol !== "https:") return null;
-  const onHost = declaredSets(policy, sets).flatMap(([name, set]) =>
+  const onHost = setsOf(policy, sets).flatMap(([name, set]) =>
     set.routes
       .filter((route) => route.host === upstream.host)
       .map((route) => [name, route] as const),
@@ -374,7 +499,7 @@ function safeSegment(text: string, denied: readonly string[]): boolean {
 }
 
 /** The policy's sets in registry order, keeping those `names` declares. */
-function declaredSets(
+function setsOf(
   policy: OAuthScopePolicy,
   names: readonly string[],
 ): [string, OAuthScopeSet][] {
@@ -398,6 +523,8 @@ function canonical(dialect: OAuthScopeDialect, scopes: string[]): string[] {
         case "microsoft":
           return scope.replace(GRAPH_PREFIX, "").toLowerCase();
         case "slack":
+        case "space":
+        case "comma":
           return scope;
       }
     }),
@@ -414,7 +541,8 @@ function splitScopes(
   value: unknown,
 ): string[] | null {
   if (typeof value !== "string") return null;
-  const separator = dialect === "slack" ? /[,\s]+/ : /\s+/;
+  const separator =
+    dialect === "slack" || dialect === "comma" ? /[,\s]+/ : /\s+/;
   const scopes = canonical(dialect, value.split(separator).filter(Boolean));
   return scopes.length > 0 ? scopes : null;
 }
