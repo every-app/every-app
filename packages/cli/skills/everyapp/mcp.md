@@ -141,8 +141,8 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          in full mode to a caller whose role reaches each; a read-only
          connection never sees a write one; a token bound to one app or a
          connection consented to some apps sees none of them; never a
-         credential; one audit row per call under app `everyapp`): owners
-         and admins get
+         credential that opens the Gateway; one audit row per call under app
+         `everyapp`): owners and admins get
          `everyapp_workspace_show`, `everyapp_workspace_users`,
          `everyapp_workspace_invite` (never the link), `everyapp_workspace_uninvite`,
          `everyapp_workspace_role`, `everyapp_workspace_deactivate`,
@@ -154,12 +154,20 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_workspace_apps`, `everyapp_workspace_app_set`,
          `everyapp_workspace_app_access`, `everyapp_workspace_app_access_set`,
          `everyapp_workspace_app_cap`, `everyapp_workspace_usage`,
-         `everyapp_workspace_activity` and `everyapp_workspace_rename`; owners
-         alone get `everyapp_workspace_remove` and `everyapp_workspace_app_delete`
+         `everyapp_workspace_activity`, `everyapp_workspace_rename`, and the
+         events tools `everyapp_workspace_events`, `everyapp_workspace_events_add`
+         (a generated signing secret comes back once, in that answer: it opens
+         nothing on the Gateway, so the person stores it in the receiver now),
+         `everyapp_workspace_events_set`, `everyapp_workspace_events_remove`
+         (asks `confirm: true`; Cap alerts is turned off instead),
+         `everyapp_workspace_events_test`, `everyapp_workspace_event_deliveries`
+         and `everyapp_workspace_event_redeliver`; owners alone get
+         `everyapp_workspace_remove` and `everyapp_workspace_app_delete`
          (both ask `confirm: true`); every member gets their own
          `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`
          and `everyapp_revoke_connection`. A user is an email or id, an app a
-         manifest id or row id, a group a name or `grp_` id. MCP apps, the
+         manifest id or row id, a group a name or `grp_` id, an event
+         subscription a name or `sub_` id. MCP apps, the
          `mcp` commands as tools: `everyapp_mcp_list`, `everyapp_mcp_show`,
          `everyapp_mcp_add` (a credential's setting name, never its value; the
          answer names `secret set`), `everyapp_mcp_on`, `everyapp_mcp_off`,

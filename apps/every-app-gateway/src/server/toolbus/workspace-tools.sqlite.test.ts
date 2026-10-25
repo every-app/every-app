@@ -54,12 +54,30 @@ import {
 } from "@every-app/sdk/server";
 import {
   WORKSPACE_ACTIVITY_PAGE_MAX,
+  WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
   WORKSPACE_TOOLS,
   type McpPrincipal,
 } from "@every-app/toolbus";
 import { INVITATION_LIMIT } from "@/auth/config";
-import { invitations, organizations, users, verifications } from "@/db/schema";
+import {
+  eventDeliveries,
+  eventSubscriptions,
+  invitations,
+  organizations,
+  users,
+  verifications,
+} from "@/db/schema";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
+import {
+  setDeliveryDepsForTests,
+  type DeliveryDeps,
+} from "@/server/events/deliver";
+import type { EventMailer } from "@/server/events/email-sink";
+import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
+import {
+  DELIVERIES_PAGE_MAX,
+  EventSubscriptionService,
+} from "@/server/events/subscriptions";
 import {
   resolveOauthCaller,
   resolvePatCaller,
@@ -1663,5 +1681,639 @@ describe("identifiers resolve inside the caller's organization alone", () => {
     expect(
       (await data("everyapp_workspace_users", {}, acme))["invitations"],
     ).toEqual([]);
+  });
+});
+
+describe("the events tools over /mcp", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+  const sendMock = vi.fn<EventMailer["send"]>();
+  const deliveryDeps: DeliveryDeps = {
+    fetch: (input, init) => fetchMock(input, init),
+    mailer: async () => ({
+      isConfigured: () => true,
+      send: (options) => sendMock(options),
+      recipientHash: async (address) => `h(${address})`,
+    }),
+    now: () => new Date(),
+    gatewayUrl: () => GATEWAY,
+    userAgent: () => "every-app-gateway/test",
+    targetRules: () => ({
+      allowPrivate: false,
+      gatewayHosts: ["gateway.example.com"],
+    }),
+  };
+  const HOOK = "https://hooks.example.net/every-app";
+
+  beforeEach(() => {
+    fetchMock
+      .mockReset()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    sendMock.mockReset().mockResolvedValue({ status: "delivered" });
+    setDeliveryDepsForTests(deliveryDeps);
+    clearEventSubjectCachesForTests();
+  });
+
+  afterEach(() => {
+    setDeliveryDepsForTests(undefined);
+  });
+
+  /** A webhook subscription added over /mcp by the admin; its answer. */
+  async function addHook(args: Record<string, unknown> = {}) {
+    return data(
+      "everyapp_workspace_events_add",
+      { url: HOOK, ...args },
+      admin(),
+    );
+  }
+
+  const idOf = (answer: Record<string, unknown>) =>
+    (answer["subscription"] as { id: string }).id;
+
+  it("adds a webhook and returns the generated secret once: the list never carries it, nor a URL's query, and the row records the agent", async () => {
+    const added = await addHook({
+      url: `${HOOK}?token=receiver-own-token`,
+      name: "Slack #ops",
+      events: ["member.*", "cap.reached"],
+    });
+    const secret = added["secret"] as string;
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9_-]{43}$/);
+    expect(added["next"]).toContain("opens nothing on the Gateway");
+    expect(added["subscription"]).toMatchObject({
+      id: expect.stringMatching(/^sub_[0-9a-f]{24}$/),
+      name: "Slack #ops",
+      sink: "webhook",
+      target: "hooks.example.net/every-app",
+      events: ["member.*", "cap.reached"],
+      enabled: true,
+      builtin: null,
+      lastDeliveryAt: null,
+      consecutiveFailures: 0,
+    });
+    const id = idOf(added);
+    // The row signs with it, and says an agent made it, by credential id.
+    const [row] = await db
+      .select()
+      .from(eventSubscriptions)
+      .where(eq(eventSubscriptions.id, id));
+    expect(row).toMatchObject({ secret, createdBy: "agent:pat_admin" });
+
+    // No list, page or later answer shows it again.
+    const listed = await call("everyapp_workspace_events", {}, admin());
+    if (!listed.ok) throw new Error("the list was refused");
+    expect(listed.data["subscriptions"]).toEqual([
+      expect.objectContaining({ id, target: "hooks.example.net/every-app" }),
+    ]);
+    expect(
+      (listed.data["subscriptions"] as Record<string, unknown>[])[0],
+    ).not.toHaveProperty("secret");
+    for (const text of [listed.text, JSON.stringify(listed.data)]) {
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain("receiver-own-token");
+    }
+    const changed = await data(
+      "everyapp_workspace_events_set",
+      { subscription: id, name: "Slack #alerts" },
+      admin(),
+    );
+    const tested = await data(
+      "everyapp_workspace_events_test",
+      { subscription: id },
+      admin(),
+    );
+    const deliveries = await data(
+      "everyapp_workspace_event_deliveries",
+      {},
+      admin(),
+    );
+    for (const answer of [changed, tested, deliveries]) {
+      expect(JSON.stringify(answer)).not.toContain(secret);
+    }
+
+    // A secret the caller gave is never returned at all.
+    const given = await addHook({ secret: "the-receivers-own-secret" });
+    expect(given).not.toHaveProperty("secret");
+    expect(JSON.stringify(given)).not.toContain("the-receivers-own-secret");
+  });
+
+  it("adds an email subscription for owners, or owners and admins, with no secret, and says when the Gateway sends no email", async () => {
+    const added = await data(
+      "everyapp_workspace_events_add",
+      { email: "owners", events: ["cap.*"] },
+      admin(),
+    );
+    expect(added).not.toHaveProperty("secret");
+    expect(added["subscription"]).toMatchObject({
+      name: "Email owners and admins",
+      sink: "email",
+      target: "email to the owners",
+      recipients: "owners",
+      events: ["cap.*"],
+    });
+    expect(added["next"]).toContain("EMAIL_FROM");
+  });
+
+  it("refuses what the service refuses: url and email together, neither, a target the rules refuse, a pattern that matches nothing, the 26th", async () => {
+    expect(
+      await refusal(
+        "everyapp_workspace_events_add",
+        { url: HOOK, email: "admins" },
+        admin(),
+      ),
+    ).toMatch(/^EVENT_SINK_CONFLICT: /);
+    expect(await refusal("everyapp_workspace_events_add", {}, admin())).toMatch(
+      /^INVALID_INPUT: /,
+    );
+    for (const url of [
+      "http://hooks.example.net/x",
+      "https://localhost/x",
+      "https://10.0.0.1/x",
+      "https://gateway.example.com/api",
+    ]) {
+      expect(
+        await refusal("everyapp_workspace_events_add", { url }, admin()),
+        url,
+      ).toMatch(/^EVENT_TARGET_REFUSED: /);
+    }
+    expect(
+      await refusal(
+        "everyapp_workspace_events_add",
+        { url: HOOK, events: ["member.nope"] },
+        admin(),
+      ),
+    ).toMatch(/^EVENT_TYPE_UNKNOWN: /);
+    for (let index = 0; index < 25; index += 1) {
+      await EventSubscriptionService.add(
+        { orgId: organizationId, userId: adminId, role: "admin" },
+        { url: `https://hooks${index}.example.net/` },
+      );
+    }
+    expect(await refusal("everyapp_workspace_events_add", {}, admin())).toMatch(
+      /^INVALID_INPUT: /,
+    );
+    expect(
+      await refusal("everyapp_workspace_events_add", { url: HOOK }, admin()),
+    ).toMatch(/^EVENT_SUBSCRIPTIONS_LIMIT: /);
+    expect(await db.select().from(eventSubscriptions)).toHaveLength(25);
+  });
+
+  it("changes a subscription by id or by name: pauses it, replaces its events, renames it; a name two share and a call that changes nothing are refused", async () => {
+    const id = idOf(await addHook({ name: "Slack #ops" }));
+    expect(
+      await data(
+        "everyapp_workspace_events_set",
+        { subscription: "slack #OPS", enabled: false },
+        admin(),
+      ),
+    ).toMatchObject({ subscription: { id, enabled: false } });
+    expect(
+      await data(
+        "everyapp_workspace_events_set",
+        { subscription: id, events: ["app.crm.*"], name: "CRM feed" },
+        admin(),
+      ),
+    ).toMatchObject({
+      subscription: { id, name: "CRM feed", events: ["app.crm.*"] },
+    });
+    // An empty list is every event, as add's default.
+    expect(
+      await data(
+        "everyapp_workspace_events_set",
+        { subscription: "CRM feed", events: [], enabled: true },
+        admin(),
+      ),
+    ).toMatchObject({ subscription: { id, events: ["*"], enabled: true } });
+    expect(
+      await refusal(
+        "everyapp_workspace_events_set",
+        { subscription: "CRM feed" },
+        admin(),
+      ),
+    ).toMatch(/^INVALID_INPUT: Give enabled, events or name/);
+    await addHook({ url: "https://b.example.net/", name: "CRM feed" });
+    expect(
+      await refusal(
+        "everyapp_workspace_events_set",
+        { subscription: "CRM feed", enabled: false },
+        admin(),
+      ),
+    ).toBe('INVALID_INPUT: 2 subscriptions are named "CRM feed"; give the id');
+    expect(
+      await refusal(
+        "everyapp_workspace_events_set",
+        { subscription: "sub_000000000000000000000000", enabled: false },
+        admin(),
+      ),
+    ).toMatch(/^EVENT_SUBSCRIPTION_NOT_FOUND: /);
+  });
+
+  it("removes a subscription only with confirm, and turns the built-in Cap alerts off instead, saying so", async () => {
+    const id = idOf(await addHook({ name: "Zapier" }));
+    expect(
+      await refusal(
+        "everyapp_workspace_events_remove",
+        { subscription: id },
+        admin(),
+      ),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_events_remove: /);
+    expect(
+      await data(
+        "everyapp_workspace_events_remove",
+        { subscription: "Zapier", confirm: true },
+        admin(),
+      ),
+    ).toEqual({
+      subscription: { id, name: "Zapier" },
+      removed: true,
+      disabled: false,
+    });
+    expect(
+      await db
+        .select()
+        .from(eventSubscriptions)
+        .where(eq(eventSubscriptions.id, id)),
+    ).toEqual([]);
+
+    // The first cap makes the built-in email subscription.
+    await data(
+      "everyapp_workspace_app_cap",
+      { app: "crm", cap: 1000 },
+      admin(),
+    );
+    const [capAlerts] = (
+      (await data("everyapp_workspace_events", {}, admin()))[
+        "subscriptions"
+      ] as { id: string; name: string; builtin: string | null }[]
+    ).filter((row) => row.builtin === "cap_alerts");
+    expect(capAlerts).toMatchObject({ name: "Cap alerts" });
+    const removed = await data(
+      "everyapp_workspace_events_remove",
+      { subscription: "Cap alerts", confirm: true },
+      admin(),
+    );
+    expect(removed).toMatchObject({
+      subscription: { id: capAlerts!.id, name: "Cap alerts" },
+      removed: false,
+      disabled: true,
+      note: expect.stringContaining("turned off instead of removed"),
+    });
+    const [row] = await db
+      .select()
+      .from(eventSubscriptions)
+      .where(eq(eventSubscriptions.id, capAlerts!.id));
+    expect(row).toMatchObject({ enabled: false, builtin: "cap_alerts" });
+  });
+
+  it("sends a test ping to that subscription only, a paused one too, and answers the first attempt with its status or its error", async () => {
+    const tested = idOf(await addHook({ name: "Tested" }));
+    const other = idOf(await addHook({ url: "https://b.example.net/" }));
+    await data(
+      "everyapp_workspace_events_set",
+      { subscription: tested, enabled: false },
+      admin(),
+    );
+    const answer = await data(
+      "everyapp_workspace_events_test",
+      { subscription: "Tested" },
+      admin(),
+    );
+    expect(answer).toMatchObject({
+      subscription: { id: tested, name: "Tested", enabled: false },
+      delivered: true,
+      delivery: {
+        id: expect.stringMatching(/^dlv_[0-9a-f]{24}$/),
+        event: { type: "ping", summary: "Test event from Every App" },
+        subscription: { id: tested, name: "Tested" },
+        state: "delivered",
+        attempts: 1,
+        statusCode: 200,
+        error: null,
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe(HOOK);
+    const rows = await db.select().from(eventDeliveries);
+    expect(rows.map((row) => row.subscriptionId)).toEqual([tested]);
+    expect(rows.some((row) => row.subscriptionId === other)).toBe(false);
+
+    // A receiver that fails: the error, the status and the retry.
+    fetchMock.mockResolvedValue(new Response("boom", { status: 500 }));
+    const failed = await data(
+      "everyapp_workspace_events_test",
+      { subscription: other },
+      admin(),
+    );
+    expect(failed).toMatchObject({
+      delivered: false,
+      delivery: {
+        state: "failed",
+        attempts: 1,
+        statusCode: 500,
+        error: expect.stringMatching(/^status_500/),
+        nextAttemptAt: expect.any(String),
+      },
+    });
+
+    // An email subscription says how many it mailed: the owner and the admin.
+    const email = idOf(
+      await data("everyapp_workspace_events_add", { email: "admins" }, admin()),
+    );
+    expect(
+      await data(
+        "everyapp_workspace_events_test",
+        { subscription: email },
+        admin(),
+      ),
+    ).toMatchObject({
+      delivered: true,
+      delivery: { state: "delivered", mailed: 2 },
+    });
+    expect(sendMock.mock.calls.map(([options]) => options.to).sort()).toEqual([
+      "admin@example.com",
+      "owner@example.com",
+    ]);
+  });
+
+  it("lists deliveries newest first, one subscription's or the dead ones, pages with nextBefore, and redelivers a dead one; a delivered one is left alone", async () => {
+    const hook = idOf(await addHook({ name: "Hook" }));
+    const other = idOf(await addHook({ url: "https://b.example.net/" }));
+    // A 410 is dead at once.
+    fetchMock.mockResolvedValueOnce(new Response("gone", { status: 410 }));
+    const dead = (
+      await data(
+        "everyapp_workspace_events_test",
+        { subscription: hook },
+        admin(),
+      )
+    )["delivery"] as { id: string; state: string };
+    expect(dead.state).toBe("dead");
+    await data(
+      "everyapp_workspace_events_test",
+      { subscription: hook },
+      admin(),
+    );
+    await data(
+      "everyapp_workspace_events_test",
+      { subscription: other },
+      admin(),
+    );
+
+    const all = await data("everyapp_workspace_event_deliveries", {}, admin());
+    expect(all["deliveries"]).toHaveLength(3);
+    expect(all["nextBefore"]).toBeNull();
+    const ofHook = await data(
+      "everyapp_workspace_event_deliveries",
+      { subscription: "Hook" },
+      admin(),
+    );
+    expect(
+      (ofHook["deliveries"] as { subscription: { id: string } }[]).map(
+        (delivery) => delivery.subscription.id,
+      ),
+    ).toEqual([hook, hook]);
+    const deadOnly = await data(
+      "everyapp_workspace_event_deliveries",
+      { dead: true },
+      admin(),
+    );
+    expect(deadOnly["deliveries"]).toEqual([
+      expect.objectContaining({
+        id: dead.id,
+        state: "dead",
+        statusCode: 410,
+        event: expect.objectContaining({ type: "ping" }),
+      }),
+    ]);
+    expect(JSON.stringify(deadOnly)).not.toContain('"data"');
+
+    // Pages of two: the second continues where the first stopped.
+    const first = await data(
+      "everyapp_workspace_event_deliveries",
+      { limit: 2 },
+      admin(),
+    );
+    expect(first["deliveries"]).toHaveLength(2);
+    expect(first["nextBefore"]).toEqual(expect.stringMatching(/^\d+:dlv_/));
+    const second = await data(
+      "everyapp_workspace_event_deliveries",
+      { limit: 2, before: first["nextBefore"] },
+      admin(),
+    );
+    const ids = [
+      ...(first["deliveries"] as { id: string }[]),
+      ...(second["deliveries"] as { id: string }[]),
+    ].map((delivery) => delivery.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(
+      await refusal(
+        "everyapp_workspace_event_deliveries",
+        { before: "yesterday" },
+        admin(),
+      ),
+    ).toBe("INVALID_INPUT: before must be the previous answer's nextBefore");
+
+    // Redeliver the dead one: it goes again, the schedule starting over.
+    const redelivered = await data(
+      "everyapp_workspace_event_redeliver",
+      { delivery: dead.id },
+      admin(),
+    );
+    expect(redelivered).toMatchObject({
+      redelivered: true,
+      delivery: {
+        id: dead.id,
+        state: "delivered",
+        attempts: 1,
+        statusCode: 200,
+        redeliveredAt: expect.any(String),
+      },
+    });
+    const fetches = fetchMock.mock.calls.length;
+    expect(
+      await data(
+        "everyapp_workspace_event_redeliver",
+        { delivery: dead.id },
+        admin(),
+      ),
+    ).toMatchObject({
+      redelivered: false,
+      delivery: { id: dead.id, state: "delivered" },
+      note: "It was delivered already, so nothing was sent again.",
+    });
+    expect(fetchMock.mock.calls.length).toBe(fetches);
+    expect(
+      await refusal(
+        "everyapp_workspace_event_redeliver",
+        { delivery: "dlv_000000000000000000000000" },
+        admin(),
+      ),
+    ).toMatch(/^EVENT_DELIVERY_NOT_FOUND: /);
+    expect(WORKSPACE_EVENT_DELIVERIES_PAGE_MAX).toBe(DELIVERIES_PAGE_MAX);
+  });
+
+  it("keeps every events tool inside the caller's organization: another's subscription and delivery are not found by id or name, and its deliveries are not listed", async () => {
+    const betaId = await seedOrganization(db, "beta");
+    const betaOwnerId = await seedMember(db, {
+      organizationId: betaId,
+      role: "owner",
+      email: "beta-owner@example.com",
+    });
+    const beta = { orgId: betaId, userId: betaOwnerId, role: "owner" as const };
+    const { subscription } = await EventSubscriptionService.add(beta, {
+      url: "https://beta.example.net/hook",
+      name: "Beta hook",
+    });
+    fetchMock.mockResolvedValueOnce(new Response("gone", { status: 410 }));
+    const { delivery } = await EventSubscriptionService.test(
+      beta,
+      subscription.id,
+    );
+    expect(delivery).toMatchObject({ status: "dead" });
+    fetchMock.mockClear();
+
+    for (const ref of [subscription.id, "Beta hook"]) {
+      expect(
+        await refusal(
+          "everyapp_workspace_events_set",
+          { subscription: ref, enabled: false },
+          owner(),
+        ),
+        ref,
+      ).toMatch(/^EVENT_SUBSCRIPTION_NOT_FOUND: /);
+      expect(
+        await refusal(
+          "everyapp_workspace_events_test",
+          { subscription: ref },
+          owner(),
+        ),
+        ref,
+      ).toMatch(/^EVENT_SUBSCRIPTION_NOT_FOUND: /);
+      expect(
+        await refusal(
+          "everyapp_workspace_events_remove",
+          { subscription: ref, confirm: true },
+          owner(),
+        ),
+        ref,
+      ).toMatch(/^EVENT_SUBSCRIPTION_NOT_FOUND: /);
+      expect(
+        await refusal(
+          "everyapp_workspace_event_deliveries",
+          { subscription: ref },
+          owner(),
+        ),
+        ref,
+      ).toMatch(/^EVENT_SUBSCRIPTION_NOT_FOUND: /);
+    }
+    expect(
+      await refusal(
+        "everyapp_workspace_event_redeliver",
+        { delivery: delivery!.id },
+        owner(),
+      ),
+    ).toMatch(/^EVENT_DELIVERY_NOT_FOUND: /);
+    expect(await data("everyapp_workspace_events", {}, owner())).toEqual({
+      subscriptions: [],
+    });
+    expect(
+      await data("everyapp_workspace_event_deliveries", {}, owner()),
+    ).toEqual({ deliveries: [], nextBefore: null });
+    // Beta's row and its dead delivery are as they were; nothing was sent.
+    const [row] = await db
+      .select()
+      .from(eventSubscriptions)
+      .where(eq(eventSubscriptions.id, subscription.id));
+    expect(row).toMatchObject({ enabled: true, organizationId: betaId });
+    const [betaDelivery] = await db
+      .select()
+      .from(eventDeliveries)
+      .where(eq(eventDeliveries.id, delivery!.id));
+    expect(betaDelivery).toMatchObject({ status: "dead", attempts: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("gives a member nothing, and a read-only admin the two reads alone: the writes are unknown and nothing is written", async () => {
+    // member.* only: each blocked call below is a tool.blocked event, which
+    // a subscription to everything would be sent.
+    const id = idOf(await addHook({ name: "Hook", events: ["member.*"] }));
+    const writes: [string, Record<string, unknown>][] = [
+      ["everyapp_workspace_events_add", { url: "https://c.example.net/" }],
+      ["everyapp_workspace_events_set", { subscription: id, enabled: false }],
+      ["everyapp_workspace_events_remove", { subscription: id, confirm: true }],
+      ["everyapp_workspace_events_test", { subscription: id }],
+      ["everyapp_workspace_event_redeliver", { delivery: "dlv_x" }],
+    ];
+    const reads: [string, Record<string, unknown>][] = [
+      ["everyapp_workspace_events", {}],
+      ["everyapp_workspace_event_deliveries", {}],
+    ];
+    for (const [name, args] of [...reads, ...writes]) {
+      expect(await call(name, args, member()), name).toEqual({
+        ok: false,
+        unknown: true,
+        message: `Unknown tool: ${name}`,
+      });
+      expect((await activityRows())[0], name).toMatchObject({
+        tool: { name },
+        decision: "blocked",
+        reason: "role_required",
+      });
+    }
+    const readOnly = admin({
+      access: "read",
+      credential: { kind: "oauth", id: "mcpc_ro", clientName: "Claude" },
+    });
+    expect(
+      (await toolNames(readOnly)).filter((name) => name.includes("event")),
+    ).toEqual([
+      "everyapp_workspace_events",
+      "everyapp_workspace_event_deliveries",
+    ]);
+    for (const [name, args] of reads) {
+      expect((await call(name, args, readOnly)).ok, name).toBe(true);
+    }
+    for (const [name, args] of writes) {
+      expect(await call(name, args, readOnly), name).toEqual({
+        ok: false,
+        unknown: true,
+        message: `Unknown tool: ${name}`,
+      });
+      expect((await activityRows())[0], name).toMatchObject({
+        tool: { name },
+        decision: "blocked",
+        reason: "read_only_connection",
+      });
+    }
+    expect(await db.select().from(eventSubscriptions)).toEqual([
+      expect.objectContaining({ id, enabled: true }),
+    ]);
+    expect(await db.select().from(eventDeliveries)).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("writes one audit row per events call under app everyapp, holding neither the secret nor the URL", async () => {
+    const added = await addHook({ name: "Audited" });
+    await data(
+      "everyapp_workspace_events_test",
+      { subscription: "Audited" },
+      admin(),
+    );
+    await data("everyapp_workspace_events", {}, admin());
+    const rows = await activityRows();
+    expect(rows.map((row) => [row.tool.name, row.tool.risk])).toEqual([
+      ["everyapp_workspace_events", "read"],
+      ["everyapp_workspace_events_test", "write"],
+      ["everyapp_workspace_events_add", "write"],
+    ]);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        user: { id: adminId },
+        app: { slug: "everyapp", rowId: null },
+        decision: "allowed",
+        outcome: "ok",
+      });
+    }
+    const stored = JSON.stringify(rows);
+    expect(stored).not.toContain(added["secret"] as string);
+    expect(stored).not.toContain("hooks.example.net");
   });
 });

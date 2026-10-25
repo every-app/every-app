@@ -7,7 +7,12 @@
  * gateway's (workspace-tools.sqlite.test.ts there).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { ToolCallResultV1 } from "@every-app/sdk/internal";
+import {
+  EVENT_SECRET_MAX_LENGTH,
+  EVENT_SECRET_MIN_LENGTH,
+  EVENT_TYPES,
+  type ToolCallResultV1,
+} from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "./builtins";
 import { createArgumentsDigester } from "./digest";
 import { executeToolCall } from "./execute";
@@ -28,7 +33,10 @@ import type {
   ToolCallAuditEvent,
   WorkspaceHost,
 } from "./types";
-import { WORKSPACE_TOOLS } from "./workspace";
+import {
+  WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
+  WORKSPACE_TOOLS,
+} from "./workspace";
 
 let keys: Awaited<ReturnType<typeof testKeys>>;
 beforeAll(async () => {
@@ -115,6 +123,13 @@ describe("the workspace tool definitions", () => {
       "workspace_usage",
       "workspace_activity",
       "workspace_rename",
+      "workspace_events",
+      "workspace_events_add",
+      "workspace_events_set",
+      "workspace_events_remove",
+      "workspace_events_test",
+      "workspace_event_deliveries",
+      "workspace_event_redeliver",
       "my_tokens",
       "revoke_token",
       "my_connections",
@@ -190,22 +205,28 @@ describe("the workspace tool definitions", () => {
     }
   });
 
-  it("make the three irreversible tools owner-only, asking confirm: true", () => {
+  it("make the irreversible tools ask confirm: true, removing a member, an app or an MCP app owner-only and removing an event subscription an admin's", () => {
     const irreversible = WORKSPACE_TOOLS.filter((tool) => tool.irreversible);
-    expect(irreversible.map((tool) => tool.name)).toEqual([
-      "workspace_remove",
-      "workspace_app_delete",
-      "mcp_remove",
+    expect(
+      irreversible.map((tool) => [tool.name, tool.minRole] as const),
+    ).toEqual([
+      ["workspace_remove", "owner"],
+      ["workspace_app_delete", "owner"],
+      ["workspace_events_remove", "admin"],
+      ["mcp_remove", "owner"],
     ]);
     for (const tool of irreversible) {
-      expect(tool.minRole, tool.name).toBe("owner");
       expect(tool.risk, tool.name).toBe("write");
       expect(tool.inputSchema["required"], tool.name).toContain("confirm");
       expect(
         (tool.inputSchema["properties"] as Record<string, unknown>)["confirm"],
       ).toMatchObject({ type: "boolean", const: true });
     }
-    expect(OWNER_TOOLS).toEqual(irreversible.map((tool) => listed(tool.name)));
+    expect(OWNER_TOOLS).toEqual([
+      "everyapp_workspace_remove",
+      "everyapp_workspace_app_delete",
+      "everyapp_mcp_remove",
+    ]);
   });
 
   it("split the member-level tools from the admin ones: the four on the caller's own account", () => {
@@ -218,6 +239,268 @@ describe("the workspace tool definitions", () => {
     expect(ADMIN_TOOLS.length + OWNER_TOOLS.length + MEMBER_TOOLS.length).toBe(
       WORKSPACE_TOOLS.length,
     );
+  });
+});
+
+describe("the events tools", () => {
+  const EVENT_TOOLS = [
+    "everyapp_workspace_events",
+    "everyapp_workspace_events_add",
+    "everyapp_workspace_events_set",
+    "everyapp_workspace_events_remove",
+    "everyapp_workspace_events_test",
+    "everyapp_workspace_event_deliveries",
+    "everyapp_workspace_event_redeliver",
+  ];
+  const EVENT_READS = [
+    "everyapp_workspace_events",
+    "everyapp_workspace_event_deliveries",
+  ];
+  const definition = (name: string) =>
+    WORKSPACE_TOOLS.find((tool) => listed(tool.name) === name)!;
+  const properties = (name: string) =>
+    definition(name).inputSchema["properties"] as Record<
+      string,
+      Record<string, unknown>
+    >;
+  /** Arguments each tool's schema takes, for the calls below. */
+  const VALID: Record<string, JsonObject> = {
+    everyapp_workspace_events: {},
+    everyapp_workspace_events_add: { url: "https://hooks.example.net/x" },
+    everyapp_workspace_events_set: { subscription: "Slack", enabled: false },
+    everyapp_workspace_events_remove: { subscription: "Slack", confirm: true },
+    everyapp_workspace_events_test: { subscription: "Slack" },
+    everyapp_workspace_event_deliveries: { dead: true },
+    everyapp_workspace_event_redeliver: { delivery: "dlv_1" },
+  };
+  const eventNames = (principal: McpPrincipal) =>
+    listBuiltinTools({ principal, listing: "full" }, { workspace: true })
+      .map((tool) => tool.name)
+      .filter((name) => EVENT_TOOLS.includes(name));
+
+  it("are seven admin tools: the subscriptions and the deliveries to read, five writes, and remove asks confirm", () => {
+    for (const name of EVENT_TOOLS) {
+      expect(definition(name).minRole, name).toBe("admin");
+      expect(definition(name).risk, name).toBe(
+        EVENT_READS.includes(name) ? "read" : "write",
+      );
+      expect(definition(name).irreversible === true, name).toBe(
+        name === "everyapp_workspace_events_remove",
+      );
+    }
+  });
+
+  it("take what the contract names: url or email (owners or admins), events as names, an optional secret of 16 to 128 characters; a subscription by id or name; a delivery by id; a page of 1 to 100", () => {
+    const add = definition("everyapp_workspace_events_add").inputSchema;
+    expect(add["required"]).toBeUndefined();
+    expect(Object.keys(properties("everyapp_workspace_events_add"))).toEqual([
+      "url",
+      "email",
+      "events",
+      "name",
+      "secret",
+    ]);
+    expect(properties("everyapp_workspace_events_add")["email"]).toMatchObject({
+      type: "string",
+      enum: ["owners", "admins"],
+    });
+    expect(properties("everyapp_workspace_events_add")["events"]).toMatchObject(
+      { type: "array", items: { type: "string" } },
+    );
+    expect(properties("everyapp_workspace_events_add")["secret"]).toMatchObject(
+      {
+        type: "string",
+        minLength: EVENT_SECRET_MIN_LENGTH,
+        maxLength: EVENT_SECRET_MAX_LENGTH,
+      },
+    );
+    expect(EVENT_SECRET_MIN_LENGTH).toBe(16);
+    expect(EVENT_SECRET_MAX_LENGTH).toBe(128);
+    expect(
+      definition("everyapp_workspace_events_set").inputSchema["required"],
+    ).toEqual(["subscription"]);
+    expect(Object.keys(properties("everyapp_workspace_events_set"))).toEqual([
+      "subscription",
+      "enabled",
+      "events",
+      "name",
+    ]);
+    expect(
+      definition("everyapp_workspace_events_remove").inputSchema["required"],
+    ).toEqual(["subscription", "confirm"]);
+    expect(
+      definition("everyapp_workspace_events_test").inputSchema["required"],
+    ).toEqual(["subscription"]);
+    expect(
+      properties("everyapp_workspace_events_test")["subscription"]![
+        "description"
+      ],
+    ).toMatch(/`sub_…`.*name/);
+    expect(
+      Object.keys(properties("everyapp_workspace_event_deliveries")),
+    ).toEqual(["subscription", "dead", "limit", "before"]);
+    expect(
+      properties("everyapp_workspace_event_deliveries")["limit"],
+    ).toMatchObject({
+      type: "integer",
+      minimum: 1,
+      maximum: WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
+    });
+    expect(WORKSPACE_EVENT_DELIVERIES_PAGE_MAX).toBe(100);
+    expect(
+      definition("everyapp_workspace_event_redeliver").inputSchema["required"],
+    ).toEqual(["delivery"]);
+  });
+
+  it("say in the add tool's description that a generated secret comes back once, opens nothing on the Gateway and must be stored, and list every event type but ping", () => {
+    const description = definition("everyapp_workspace_events_add").description;
+    expect(description).toContain("returns it once, in this answer");
+    expect(description).toContain("opens nothing on the Gateway");
+    expect(description).toContain("must store it");
+    for (const { type } of EVENT_TYPES) {
+      if (type === "ping") continue;
+      expect(description, type).toContain(type);
+    }
+    expect(description).not.toMatch(/\bping\b/);
+    // The list never shows a secret.
+    expect(definition("everyapp_workspace_events").description).toContain(
+      "Never a signing secret",
+    );
+  });
+
+  it("are listed to an owner and an admin, the two reads alone to a read-only admin, and to no member", () => {
+    expect(eventNames(OWNER)).toEqual(EVENT_TOOLS);
+    expect(eventNames(ADMIN)).toEqual(EVENT_TOOLS);
+    expect(eventNames(readOnly(ADMIN))).toEqual(EVENT_READS);
+    expect(eventNames(MEMBER)).toEqual([]);
+    expect(eventNames(readOnly(MEMBER))).toEqual([]);
+  });
+
+  it("run on the host as the caller under everyapp, and the audit holds the arguments' digest, never the secret given", async () => {
+    const { deps, calls, events } = harness();
+    const secret = "receiver-secret-0123456789";
+    const resolution = await executeToolCall(
+      gatewayView([todoApp()], ADMIN),
+      {
+        name: "everyapp_workspace_events_add",
+        arguments: { url: "https://hooks.example.net/x", secret },
+      },
+      deps,
+    );
+    expect(resolution.kind).toBe("result");
+    expect(calls).toEqual([
+      {
+        name: "workspace_events_add",
+        args: { url: "https://hooks.example.net/x", secret },
+        principal: ADMIN,
+      },
+    ]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_workspace_events_add",
+        appId: "everyapp",
+        risk: "write",
+        decision: "allowed",
+        outcome: "ok",
+        argsDigest: expect.stringMatching(/^[0-9a-f]{32}$/),
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain(secret);
+    expect(JSON.stringify(events)).not.toContain("hooks.example.net");
+  });
+
+  it("refuse arguments their schema refuses before the host runs: an email sink that is neither owners nor admins, a short secret, a remove without confirm, a page past 100", async () => {
+    const { deps, calls, events } = harness();
+    const view = gatewayView([todoApp()], ADMIN);
+    for (const [name, args] of [
+      ["everyapp_workspace_events_add", { email: "everyone" }],
+      [
+        "everyapp_workspace_events_add",
+        { url: "https://hooks.example.net/x", secret: "short" },
+      ],
+      ["everyapp_workspace_events_add", { url: "https://x.example", pad: 1 }],
+      ["everyapp_workspace_events_remove", { subscription: "Slack" }],
+      [
+        "everyapp_workspace_events_remove",
+        { subscription: "Slack", confirm: false },
+      ],
+      ["everyapp_workspace_events_set", { enabled: false }],
+      ["everyapp_workspace_event_deliveries", { limit: 101 }],
+      ["everyapp_workspace_event_redeliver", {}],
+    ] as const) {
+      const resolution = await executeToolCall(
+        view,
+        { name, arguments: args },
+        deps,
+      );
+      expect(resolution, `${name} ${JSON.stringify(args)}`).toMatchObject({
+        kind: "result",
+        result: { isError: true },
+      });
+      expect(events.at(-1), name).toMatchObject({
+        tool: name,
+        outcome: "invalid_arguments",
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("are hidden from a credential narrowed to apps, whatever its role, and from a member: Unknown tool, audited blocked", async () => {
+    const { deps, calls, events } = harness();
+    const cases: [McpPrincipal, string][] = [
+      [
+        {
+          ...OWNER,
+          credential: { kind: "pat", id: "pat_crm" },
+          appScope: "selected",
+        },
+        "app_scoped_credential",
+      ],
+      [
+        {
+          ...ADMIN,
+          credential: { kind: "oauth", id: "mcpc_some", clientName: "Claude" },
+          appScope: "selected",
+        },
+        "app_scoped_credential",
+      ],
+      [MEMBER, "role_required"],
+    ];
+    for (const [principal, reason] of cases) {
+      expect(eventNames(principal), reason).toEqual([]);
+      for (const name of EVENT_TOOLS) {
+        expect(
+          await executeToolCall(
+            gatewayView([todoApp()], principal),
+            { name, arguments: VALID[name]! },
+            deps,
+          ),
+          `${reason} ${name}`,
+        ).toEqual({ kind: "unknown_tool" });
+        expect(events.at(-1), `${reason} ${name}`).toMatchObject({
+          tool: name,
+          appId: "everyapp",
+          decision: "blocked",
+          reason,
+          outcome: "not_run",
+        });
+      }
+    }
+    // A read-only admin: the writes are unknown too.
+    for (const name of EVENT_TOOLS.filter((n) => !EVENT_READS.includes(n))) {
+      expect(
+        await executeToolCall(
+          gatewayView([todoApp()], readOnly(ADMIN)),
+          { name, arguments: VALID[name]! },
+          deps,
+        ),
+        name,
+      ).toEqual({ kind: "unknown_tool" });
+      expect(events.at(-1), name).toMatchObject({
+        reason: "read_only_connection",
+      });
+    }
+    expect(calls).toEqual([]);
   });
 });
 

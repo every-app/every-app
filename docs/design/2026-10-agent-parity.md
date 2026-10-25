@@ -39,9 +39,16 @@ Decisions taken as defaults (Ben can flip any; TODO.md "Agent parity (2026-10-24
    `everyapp workspace invite-link`. Personal access tokens are listed and
    revoked over MCP, never created (a revocable connection must not mint
    itself a year-long credential). Flipping this is a small change per tool.
+   The decision is about credentials that open the Gateway: the one secret
+   a tool returns is the webhook signing secret
+   `everyapp_workspace_events_add` generates, once, for a URL the caller
+   chose; it signs deliveries there and opens nothing here
+   (docs/design/2026-10-events-out.md, section 9).
 3. **Irreversible tools ask for `confirm: true`** (`remove`, `app_delete`)
    and are owner-only; they are `write` risk (a `destructive` tier stays
    hidden until approvals exist, `packages/toolbus/src/policy.ts`).
+   `events_remove` asks it too and is an owner's or admin's, as removing
+   a subscription is in Admin → Events.
 4. **Workspace tools are listed in the full listing only.** In the compact
    listing an admin finds them with `everyapp_search_tools` and runs them
    through `everyapp_call_read` / `everyapp_call_write`, like app tools.
@@ -240,14 +247,14 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Apps → an MCP app → Remove | `mcpApps.removeMcpApp` | `mcp remove` | `everyapp_mcp_remove` | owner only; MCP asks `confirm: true`; the credential and its pin stay |
 | Admin → Apps → an MCP app → Refresh tools | `mcpApps.refreshMcpAppTools` | `mcp refresh` | `everyapp_mcp_refresh` | the UI and the tool list within the request and say which names are new or gone; the CLI drops the snapshot and the Gateway lists again on first use |
 | Admin → Apps → an MCP app → the edit dialog's facts (URL, auth, credential state, tools) | `mcpApps.getMcpApp` | `mcp show` | `everyapp_mcp_show` | never a credential's value; the tool leaves out the origin a credential is bound to |
-| Admin → Events: the subscriptions (the Events tab, docs/design/2026-10-events-out.md section 10) | `events.listEventSubscriptions` | `events list` | `everyapp_workspace_events` | pending: the Events-out swath: the CLI lane's `events` group (section 8) and the MCP-twins PR (section 9); the core (#628) carries the server functions |
-| Admin → Events → Add subscription | `events.createEventSubscription` | `events add` | `everyapp_workspace_events_add` | pending: as above; a generated secret is returned once by every surface and never listed again (the one credential a workspace tool returns, for a target the caller chose) |
-| Admin → Events → Edit, Disable / Enable | `events.updateEventSubscription` | `events enable` / `events disable` | `everyapp_workspace_events_set` | pending: as above; the CLI pauses and resumes, the tool and the UI also change the name and the event list |
-| Admin → Events → Remove | `events.deleteEventSubscription` | `events remove` | `everyapp_workspace_events_remove` | pending: as above; a built-in row (Cap alerts) is disabled instead, and every surface says so; MCP asks `confirm: true` |
-| Admin → Events → Send test | `events.testEventSubscription` | `events test` | `everyapp_workspace_events_test` | pending: as above; a `ping` to that one subscription, paused or not |
-| Admin → Events → Deliveries (and the Dead filter) | `events.listEventDeliveries` | `events deliveries` | `everyapp_workspace_event_deliveries` | pending: as above |
-| Admin → Events → Deliveries → Redeliver | `events.redeliverEvent` | `events redeliver` | `everyapp_workspace_event_redeliver` | pending: as above; resets a failed or dead delivery to pending with the schedule starting over |
-| Admin → Events → Add subscription: the event types to pick from | `events.listEventTypes` | `events types` | — | no MCP: the add and set tools take type names and patterns in `events`, and the agent page lists the catalogue |
+| Admin → Events: the subscriptions (the Events tab, docs/design/2026-10-events-out.md section 10) | `events.listEventSubscriptions` | `events list` | `everyapp_workspace_events` | the CLI and the tool show a webhook's host and path, never its query |
+| Admin → Events → Add subscription | `events.createEventSubscription` | `events add` | `everyapp_workspace_events_add` | a generated secret is returned once by every surface and never listed again (the one secret a workspace tool returns: it signs deliveries to the target the caller chose and opens nothing on the Gateway) |
+| Admin → Events → Edit, Disable / Enable | `events.updateEventSubscription` | `events enable` / `events disable` | `everyapp_workspace_events_set` | the CLI pauses and resumes, the tool and the UI also change the name and the event list |
+| Admin → Events → Remove | `events.deleteEventSubscription` | `events remove` | `everyapp_workspace_events_remove` | a built-in row (Cap alerts) is disabled instead, and every surface says so; MCP asks `confirm: true` |
+| Admin → Events → Send test | `events.testEventSubscription` | `events test` | `everyapp_workspace_events_test` | a `ping` to that one subscription, paused or not |
+| Admin → Events → Deliveries (and the Dead filter) | `events.listEventDeliveries` | `events deliveries` | `everyapp_workspace_event_deliveries` | the tool pages with `before` / `nextBefore` like the activity tool, and shows each event's type and summary, never its data (the UI's Show payload) |
+| Admin → Events → Deliveries → Redeliver | `events.redeliverEvent` | `events redeliver` | `everyapp_workspace_event_redeliver` | resets a failed or dead delivery to pending with the schedule starting over |
+| Admin → Events → Add subscription: the event types to pick from | `events.listEventTypes` | `events types` | — | no MCP: the catalogue is in the docs and in everyapp_workspace_events_add's description, and the add and set tools take type names and patterns in `events` |
 | Home: the apps I can open | `apps.getMyApps` | `status` | `everyapp_list_apps` | |
 | Account menu → AI connections: the list | `mcpConnections.listMyMcpConnections` | `workspace connections` | `everyapp_my_connections` | any signed-in user, across every organization they belong to; the operator sees every member's (`--user` narrows) |
 | AI connections → Revoke | `mcpConnections.revokeMyMcpConnection` | `workspace connection revoke` | `everyapp_revoke_connection` | |
@@ -359,8 +366,10 @@ New rows in `docs/threat-model-invariants.md` (B5 and B7):
   are hidden from and refused for a read-only connection like any write
   tool; the services' own rules apply on top; every call is audited.
 - `toolbus.workspace-tools-no-credentials`: no built-in returns a
-  credential (invite link, reset link, token value), and none creates a
-  personal access token.
+  credential that opens the Gateway (invite link, reset link, token
+  value), and none creates a personal access token;
+  `everyapp_workspace_events_add` returns a freshly generated webhook
+  signing secret once, which opens nothing.
 - `cli.workspace-operator-authority`: `everyapp workspace …` writes the
   Gateway's D1 under the Cloudflare login (ADR-0003) with the services'
   guards as SQL conditions (never the last owner; an admin's role is

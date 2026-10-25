@@ -1,8 +1,9 @@
 /**
  * The subscriptions service (docs/design/2026-10-events-out.md, section
- * 5): what the server functions, and later the admin MCP tools, call for
- * an owner's or admin's subscriptions. Every read and write is scoped to
- * the acting organization. `add` validates the target URL against the
+ * 5): what the server functions and the admin MCP tools
+ * (server/toolbus/workspace-tools.ts) call for an owner's or admin's
+ * subscriptions. Every read and write is scoped to the acting
+ * organization. `add` validates the target URL against the
  * target rules and the patterns against the catalogue, generates a
  * signing secret when none was given and returns it once (no list ever
  * shows it again), and refuses the 26th subscription. `remove` disables a
@@ -48,7 +49,8 @@ const CAP_ALERTS_EVENTS = ["cap.warning", "cap.reached"];
 const EMAIL_SUBSCRIPTION_NAME = "Email owners and admins";
 const SECRET_PREFIX = "whsec_";
 const DELIVERIES_PAGE_DEFAULT = 50;
-const DELIVERIES_PAGE_MAX = 100;
+/** The most deliveries one page holds: the UI's, the admin tool's (pinned by its test). */
+export const DELIVERIES_PAGE_MAX = 100;
 
 /** A subscription as the pages, the CLI and the tools see it. */
 interface SubscriptionView {

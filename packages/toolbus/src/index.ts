@@ -97,6 +97,7 @@ export type {
 export {
   ACTIVITY_TIME_MAX_MS,
   WORKSPACE_ACTIVITY_PAGE_MAX,
+  WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
   WORKSPACE_TOOLS,
   type WorkspaceToolDefinition,
 } from "./workspace";

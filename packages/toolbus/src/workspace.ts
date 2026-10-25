@@ -20,14 +20,28 @@
  * email or id, an app by its manifest id or row id, a group by name or
  * `grp_` id, an invitation by id or email, a token by id or name.
  *
- * No workspace tool returns a credential: `everyapp_workspace_invite`
- * says whether the invitation was mailed and never carries the link,
- * password resets go to the user's inbox, and tokens are listed and
- * revoked, never created (docs/design/2026-10-agent-parity.md, decision 2).
+ * No workspace tool returns a credential that opens the Gateway:
+ * `everyapp_workspace_invite` says whether the invitation was mailed and
+ * never carries the link, password resets go to the user's inbox, and
+ * tokens are listed and revoked, never created
+ * (docs/design/2026-10-agent-parity.md, decision 2). The one secret a
+ * tool returns is the webhook signing secret `everyapp_workspace_events_add`
+ * generates, once, in its answer: it signs deliveries to the URL the
+ * caller chose and opens nothing on the Gateway
+ * (docs/design/2026-10-events-out.md, section 9).
  *
  * The MCP app tools (`everyapp_mcp_*`) are defined in mcpApps.ts and listed
  * here after these.
  */
+import {
+  EVENT_EMAIL_RECIPIENTS,
+  EVENT_SECRET_MAX_LENGTH,
+  EVENT_SECRET_MIN_LENGTH,
+  EVENT_SUBSCRIPTIONS_MAX,
+  EVENT_SUBSCRIPTION_NAME_MAX,
+  EVENT_TYPES,
+  EVENT_URL_MAX_LENGTH,
+} from "@every-app/sdk/internal";
 import { MCP_APP_TOOLS } from "./mcpApps";
 import type { JsonObject, WorkspaceRole } from "./types";
 
@@ -67,6 +81,22 @@ const ACTIVITY_LIMIT_DEFAULT = 50;
  * the same way; past it the cursor would bind NaN.
  */
 export const ACTIVITY_TIME_MAX_MS = 8_640_000_000_000_000;
+/**
+ * The most deliveries `everyapp_workspace_event_deliveries` returns per
+ * page: the gateway's `DELIVERIES_PAGE_MAX` (server/events/subscriptions.ts),
+ * which its test pins to this.
+ */
+export const WORKSPACE_EVENT_DELIVERIES_PAGE_MAX = 100;
+const EVENT_DELIVERIES_LIMIT_DEFAULT = 20;
+/**
+ * Event types or patterns one subscription names, and the length of one:
+ * the bounds of the server functions' schema (schemas/event-subscription.ts
+ * in the gateway); the catalogue's own rule refuses a longer pattern anyway.
+ */
+const EVENT_PATTERNS_MAX = 50;
+const EVENT_PATTERN_MAX = 80;
+/** A delivery page's cursor: `<created_at ms>:<dlv_ id>`. */
+const EVENT_CURSOR_MAX = 80;
 
 /** Longest identifier a tool takes: an email, an id, a name. */
 const ID_MAX = 254;
@@ -101,6 +131,26 @@ const APP = id(
 const GROUP = id(
   "The group: its name, or its id (`grp_…`, from everyapp_workspace_groups).",
 );
+const SUBSCRIPTION = id(
+  "The event subscription: its id (`sub_…`, from everyapp_workspace_events), or its name. A name several subscriptions share is refused; use the id.",
+);
+
+/**
+ * The catalogue as the add tool's description lists it, from the one list
+ * the gateway emits by (EVENT_TYPES), so the two never drift. `ping` is
+ * left out: only everyapp_workspace_events_test sends it, to one
+ * subscription.
+ */
+const EVENT_TYPE_NAMES = EVENT_TYPES.map((info) => info.type)
+  .filter((type) => type !== "ping")
+  .join(", ");
+
+const eventPatterns = (description: string) => ({
+  type: "array",
+  description,
+  items: { type: "string", minLength: 1, maxLength: EVENT_PATTERN_MAX },
+  maxItems: EVENT_PATTERNS_MAX,
+});
 
 const CONFIRM = {
   type: "boolean",
@@ -548,6 +598,145 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
         },
       },
       ["name"],
+    ),
+  },
+  // Events out (docs/design/2026-10-events-out.md, section 9): the
+  // organization's event subscriptions, a test ping, the delivery log and
+  // a redeliver, through the same service as Admin → Events.
+  {
+    ...ADMIN_READ,
+    name: "workspace_events",
+    title: "List event subscriptions",
+    description:
+      "List the organization's event subscriptions: id (`sub_…`), name, where it delivers (a webhook URL's host and path, never its query; or email to the owners, or to the owners and admins), the event types and patterns it takes, whether it is on, whether it is built in (Cap alerts), and its last delivery (when, and delivered, failed or dead) with the failures in a row. Never a signing secret. Owners and admins.",
+    inputSchema: NO_INPUT,
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_events_add",
+    title: "Add an event subscription",
+    description: `Subscribe a webhook URL (Slack's workflow webhook, Zapier, n8n, your own endpoint), or the organization's owners or owners and admins by email, to the Gateway's events. Give \`url\` or \`email\`, not both. A webhook URL is https on a public hostname, never the Gateway's own host or an app's. \`events\` takes types or patterns; none means every event. The types: ${EVENT_TYPE_NAMES}; patterns: a group (\`member.*\`, \`cap.*\`), an app's own events (\`app.crm.*\`, or \`app.crm.invoice.paid\`), or \`*\`. Every webhook delivery is signed with the subscription's secret (HMAC-SHA256 over the timestamp and the body, in the X-EveryApp-Signature header). Give \`secret\` when the receiver already has one; leave it out and the Gateway generates one and returns it once, in this answer, and never again. That secret only signs deliveries to this URL and opens nothing on the Gateway; the person must store it in their receiver now. At most ${EVENT_SUBSCRIPTIONS_MAX} subscriptions per organization. Owners and admins.`,
+    inputSchema: objectWith({
+      url: {
+        type: "string",
+        description:
+          "The webhook URL every matching event is POSTed to, signed. Give this or email, not both.",
+        minLength: 1,
+        maxLength: EVENT_URL_MAX_LENGTH,
+      },
+      email: {
+        type: "string",
+        description:
+          "Mail each event to the organization's owners (`owners`) or its owners and admins (`admins`) instead of a webhook. Give this or url, not both.",
+        enum: [...EVENT_EMAIL_RECIPIENTS],
+      },
+      events: eventPatterns(
+        "Event types (`member.joined`) or patterns (`member.*`, `app.crm.*`, `*`) to deliver. Leave it out for every event.",
+      ),
+      name: {
+        type: "string",
+        description: `What to call it, like "Slack #ops", up to ${EVENT_SUBSCRIPTION_NAME_MAX} characters. Default: the URL's host, or "Email owners and admins".`,
+        minLength: 1,
+        maxLength: EVENT_SUBSCRIPTION_NAME_MAX,
+      },
+      secret: {
+        type: "string",
+        description: `A webhook's signing secret the receiver already has, ${EVENT_SECRET_MIN_LENGTH} to ${EVENT_SECRET_MAX_LENGTH} characters with no spaces. Leave it out to have one generated and returned once.`,
+        minLength: EVENT_SECRET_MIN_LENGTH,
+        maxLength: EVENT_SECRET_MAX_LENGTH,
+      },
+    }),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_events_set",
+    title: "Change an event subscription",
+    description:
+      "Change an event subscription: turn it off or on (`enabled`; a paused one is sent no events, though everyapp_workspace_events_test still reaches it), replace the event types and patterns it takes (`events`; an empty list means every event), or rename it. A field left out keeps its value. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        subscription: SUBSCRIPTION,
+        enabled: {
+          type: "boolean",
+          description: "false pauses it; true turns it back on.",
+        },
+        events: eventPatterns(
+          "The event types and patterns it takes from now on, replacing the current list.",
+        ),
+        name: {
+          type: "string",
+          description: `The new name, 1 to ${EVENT_SUBSCRIPTION_NAME_MAX} characters.`,
+          minLength: 1,
+          maxLength: EVENT_SUBSCRIPTION_NAME_MAX,
+        },
+      },
+      ["subscription"],
+    ),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_events_remove",
+    title: "Remove an event subscription",
+    description:
+      "Remove an event subscription: events stop going to it at once, and its signing secret goes with it. A built-in one (Cap alerts) is turned off instead, so the Gateway never recreates it behind the person's back, and the answer says so. Cannot be undone: needs confirm: true. Owners and admins.",
+    inputSchema: objectWith({ subscription: SUBSCRIPTION, confirm: CONFIRM }, [
+      "subscription",
+      "confirm",
+    ]),
+    irreversible: true,
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_events_test",
+    title: "Send a test event",
+    description:
+      "Send a test event (type `ping`) to one subscription, a paused one too, and wait for the first attempt. The answer says where the delivery stands: delivered, with the receiver's HTTP status (for an email subscription, how many owners and admins were mailed); or failed, with the status or the error and when the Gateway retries; or dead. Nothing goes to any other subscription. Owners and admins.",
+    inputSchema: objectWith({ subscription: SUBSCRIPTION }, ["subscription"]),
+  },
+  {
+    ...ADMIN_READ,
+    name: "workspace_event_deliveries",
+    title: "List event deliveries",
+    description:
+      "One page of the organization's event deliveries from the last 30 days, newest first: the event (id, type, its one-line summary, when), the subscription, the attempts, where it stands (pending, delivered, failed and retrying, or dead), the last HTTP status or error, and the next attempt. Never the request body. Only one subscription's with `subscription`, only dead ones with `dead: true`; page with `before` from the previous answer's `nextBefore`. Owners and admins.",
+    inputSchema: objectWith({
+      subscription: id(
+        "Only this subscription's deliveries: its id (`sub_…`) or its name.",
+      ),
+      dead: {
+        type: "boolean",
+        description:
+          "true for dead deliveries only: out of attempts, or refused for good (everyapp_workspace_event_redeliver sends one again).",
+      },
+      limit: {
+        type: "integer",
+        description: `Deliveries per page, 1 to ${WORKSPACE_EVENT_DELIVERIES_PAGE_MAX}. Default ${EVENT_DELIVERIES_LIMIT_DEFAULT}.`,
+        minimum: 1,
+        maximum: WORKSPACE_EVENT_DELIVERIES_PAGE_MAX,
+        default: EVENT_DELIVERIES_LIMIT_DEFAULT,
+      },
+      before: {
+        type: "string",
+        description:
+          "The previous page's `nextBefore`: the page continues with the deliveries older than that one.",
+        minLength: 1,
+        maxLength: EVENT_CURSOR_MAX,
+      },
+    }),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_event_redeliver",
+    title: "Redeliver an event",
+    description:
+      "Send one failed or dead delivery again now, its retry schedule starting over, and answer where it stands after that attempt. A delivered one is left alone and the answer says so. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        delivery: id(
+          "The delivery's id (`dlv_…`, from everyapp_workspace_event_deliveries).",
+        ),
+      },
+      ["delivery"],
     ),
   },
   {

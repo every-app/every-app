@@ -15,9 +15,15 @@
  *
  * Identifiers are what a person would type: a user by email or id, an app
  * by manifest id or row id, a group by name or `grp_` id, an invitation by
- * id or email, a token by id or name. No handler returns a credential: no
+ * id or email, a token by id or name, an event subscription by `sub_` id or
+ * name. No handler returns a credential that opens the Gateway: no
  * invitation link, no reset link, no token value
- * (docs/design/2026-10-agent-parity.md, decision 2).
+ * (docs/design/2026-10-agent-parity.md, decision 2). The events tools
+ * (docs/design/2026-10-events-out.md, section 9) run through the same
+ * EventSubscriptionService as Admin → Events; the one secret any handler
+ * returns is the webhook signing secret `workspace_events_add` generates,
+ * once, in that answer: it signs deliveries to the URL the caller chose and
+ * opens nothing here, and no list shows it again.
  *
  * The MCP app tools' handlers (`everyapp_mcp_*`) are mcp-app-tools.ts's,
  * merged into the map below.
@@ -33,9 +39,12 @@ import {
 } from "@every-app/toolbus";
 import { isEmailConfigured } from "@/server/email/sendEmail";
 import { PublicError } from "@/server/errors";
+import { DELIVERY_ID_PATTERN } from "@/server/events/ids";
+import { EventSubscriptionService } from "@/server/events/subscriptions";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { AppRepository } from "@/server/repositories/AppRepository";
+import { EventDeliveryRepository } from "@/server/repositories/EventDeliveryRepository";
 import { GroupRepository } from "@/server/repositories/GroupRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
@@ -299,6 +308,182 @@ async function activityAppFilter(
   if (app) return { appRowId: app.id };
   const removed = await AppRepository.findByAppSlug(wanted, ctx.orgId);
   return { appRowId: removed?.id ?? wanted };
+}
+
+type EventSubscription = Awaited<
+  ReturnType<typeof EventSubscriptionService.list>
+>["subscriptions"][number];
+type EventDelivery = NonNullable<
+  Awaited<ReturnType<typeof EventSubscriptionService.test>>["delivery"]
+>;
+
+/** The rows a delivery page holds when the call names no limit. */
+const EVENT_DELIVERIES_LIMIT_DEFAULT = 20;
+
+/** The organization's event subscriptions, as the resolver reads them. */
+async function subscriptionsOf(ctx: OrgContext): Promise<EventSubscription[]> {
+  return (await EventSubscriptionService.list(ctx)).subscriptions;
+}
+
+/**
+ * An event subscription by `sub_` id or by name: the id first, then the
+ * name as written, then the name letter case aside. Names are not unique,
+ * so a name several subscriptions share is refused, as a token's is.
+ */
+function findSubscription(
+  subscriptions: EventSubscription[],
+  ref: string,
+): EventSubscription {
+  const wanted = ref.trim();
+  const byId = subscriptions.find((candidate) => candidate.id === wanted);
+  if (byId) return byId;
+  const name = wanted.replace(/\s+/g, " ");
+  const exact = subscriptions.filter((candidate) => candidate.name === name);
+  const named =
+    exact.length > 0
+      ? exact
+      : subscriptions.filter(
+          (candidate) => candidate.name.toLowerCase() === name.toLowerCase(),
+        );
+  if (named.length > 1) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      `${named.length} subscriptions are named "${name}"; give the id`,
+    );
+  }
+  const [found] = named;
+  if (!found) {
+    throw new PublicError(
+      "EVENT_SUBSCRIPTION_NOT_FOUND",
+      `No event subscription "${wanted}" here`,
+    );
+  }
+  return found;
+}
+
+/**
+ * Where a webhook delivers, as the tools show it: the host (with a port
+ * that isn't the default) and the path, never a user name, password or
+ * query, since a query often carries the receiver's own token. The CLI's
+ * `events list` shows the same.
+ */
+function shownTarget(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    const scheme = parsed.protocol === "http:" ? "http://" : "";
+    return `${scheme}${parsed.host}${path}`;
+  } catch {
+    return "(unreadable URL)";
+  }
+}
+
+/** A subscription as the events tools answer it: never its secret, never a URL's query. */
+function listedSubscription(subscription: EventSubscription) {
+  const email = subscription.sink === "email";
+  let target: string;
+  if (email) {
+    target =
+      subscription.recipients === "owners"
+        ? "email to the owners"
+        : "email to the owners and admins";
+  } else {
+    target = subscription.url ? shownTarget(subscription.url) : "(no URL)";
+  }
+  return {
+    id: subscription.id,
+    name: subscription.name,
+    sink: subscription.sink,
+    target,
+    ...(email ? { recipients: subscription.recipients } : {}),
+    events: subscription.events,
+    enabled: subscription.enabled,
+    builtin: subscription.builtin,
+    description: subscription.description,
+    createdAt: subscription.createdAt,
+    updatedAt: subscription.updatedAt,
+    lastDeliveryAt: subscription.lastDeliveryAt,
+    lastDeliveryStatus: subscription.lastDeliveryStatus,
+    consecutiveFailures: subscription.consecutiveFailures,
+  };
+}
+
+/**
+ * Where a delivery stands: delivered; dead (out of attempts, or refused
+ * for good); failed (its last attempt failed and the Gateway retries it);
+ * or pending (not attempted yet).
+ */
+function deliveryState(
+  delivery: EventDelivery,
+): "pending" | "delivered" | "failed" | "dead" {
+  if (delivery.status !== "pending") return delivery.status;
+  return delivery.attempts > 0 && delivery.lastError !== null
+    ? "failed"
+    : "pending";
+}
+
+/**
+ * A delivery as the events tools answer it: the event by id, type and
+ * summary (never its data, never the request body), the subscription by
+ * id and name, and the last attempt's answer.
+ */
+function listedDelivery(
+  delivery: EventDelivery,
+  subscription: EventSubscription | undefined,
+) {
+  return {
+    id: delivery.id,
+    event: delivery.event
+      ? {
+          id: delivery.event.id,
+          type: delivery.event.type,
+          summary: delivery.event.summary,
+          time: delivery.event.time,
+        }
+      : null,
+    subscription: {
+      id: delivery.subscriptionId,
+      name: subscription?.name ?? null,
+    },
+    state: deliveryState(delivery),
+    attempts: delivery.attempts,
+    // The email sink stores how many it mailed where a webhook's HTTP
+    // status goes.
+    ...(subscription?.sink === "email"
+      ? { mailed: delivery.lastStatusCode }
+      : { statusCode: delivery.lastStatusCode }),
+    error: delivery.lastError,
+    nextAttemptAt: delivery.nextAttemptAt,
+    lastAttemptAt: delivery.lastAttemptAt,
+    deliveredAt: delivery.deliveredAt,
+    redeliveredAt: delivery.redeliveredAt,
+    createdAt: delivery.createdAt,
+  };
+}
+
+/**
+ * The delivery page's cursor as the previous answer's `nextBefore` gives
+ * it, `<created_at ms>:<dlv_ id>`, read here so a cursor that isn't one is
+ * refused rather than read as the first page: a time inside the Date
+ * range and a delivery id.
+ */
+function deliveriesCursor(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const cursor = typeof value === "string" ? value : "";
+  const separator = cursor.indexOf(":");
+  const time = cursor.slice(0, separator);
+  if (
+    separator < 1 ||
+    !/^\d{1,16}$/.test(time) ||
+    Number(time) > ACTIVITY_TIME_MAX_MS ||
+    !DELIVERY_ID_PATTERN.test(cursor.slice(separator + 1))
+  ) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      "before must be the previous answer's nextBefore",
+    );
+  }
+  return cursor;
 }
 
 const HANDLERS: Record<string, Handler> = {
@@ -648,6 +833,188 @@ const HANDLERS: Record<string, Handler> = {
     );
     const summary = await OrganizationRepository.findSummaryById(ctx.orgId);
     return { organization: { ...renamed, slug: summary?.slug ?? null } };
+  },
+
+  async workspace_events(ctx) {
+    return {
+      subscriptions: (await subscriptionsOf(ctx)).map(listedSubscription),
+    };
+  },
+
+  async workspace_events_add(ctx, args, principal) {
+    const recipients = text(args["email"]);
+    const email =
+      recipients === "owners" || recipients === "admins"
+        ? recipients
+        : undefined;
+    if (recipients !== undefined && !email) {
+      throw new PublicError("INVALID_INPUT", "email is owners or admins");
+    }
+    const added = await EventSubscriptionService.add(
+      ctx,
+      {
+        url: text(args["url"]),
+        email,
+        events: strings(args["events"]),
+        name: text(args["name"]),
+        secret: text(args["secret"]),
+      },
+      // Who made it, as the table records an agent: the credential's id
+      // (a connection, a token), never a secret.
+      `agent:${principal.credential.id}`,
+    );
+    const subscription = listedSubscription(added.subscription);
+    return {
+      subscription,
+      // Only when the Gateway generated it: once, here, and never again.
+      ...(added.secret
+        ? {
+            secret: added.secret,
+            next: "Store this secret in the receiver now: it signs every delivery to this URL (the X-EveryApp-Signature header) and no tool, page or command shows it again. It opens nothing on the Gateway.",
+          }
+        : {}),
+      ...(subscription.sink === "email" && !isEmailConfigured()
+        ? {
+            next: "This Gateway sends no email yet (EMAIL_FROM is not set), so deliveries to it fail until it does.",
+          }
+        : {}),
+    };
+  },
+
+  async workspace_events_set(ctx, args) {
+    const subscription = findSubscription(
+      await subscriptionsOf(ctx),
+      requireText(args, "subscription"),
+    );
+    const enabled = args["enabled"];
+    const events = strings(args["events"]);
+    const name = text(args["name"]);
+    if (
+      typeof enabled !== "boolean" &&
+      events === undefined &&
+      name === undefined
+    ) {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "Give enabled, events or name: there is nothing to change",
+      );
+    }
+    const updated = await EventSubscriptionService.update(
+      ctx,
+      subscription.id,
+      {
+        ...(typeof enabled === "boolean" ? { enabled } : {}),
+        ...(events !== undefined ? { events } : {}),
+        ...(name !== undefined ? { name } : {}),
+      },
+    );
+    return { subscription: listedSubscription(updated.subscription) };
+  },
+
+  async workspace_events_remove(ctx, args) {
+    requireConfirm(args);
+    const subscription = findSubscription(
+      await subscriptionsOf(ctx),
+      requireText(args, "subscription"),
+    );
+    const { removed, disabled } = await EventSubscriptionService.remove(
+      ctx,
+      subscription.id,
+    );
+    return {
+      subscription: { id: subscription.id, name: subscription.name },
+      removed,
+      disabled,
+      ...(disabled
+        ? {
+            note: `${subscription.name} is built in, so it was turned off instead of removed, and the Gateway never recreates it. everyapp_workspace_events_set with enabled: true turns it back on.`,
+          }
+        : {}),
+    };
+  },
+
+  async workspace_events_test(ctx, args) {
+    const subscription = findSubscription(
+      await subscriptionsOf(ctx),
+      requireText(args, "subscription"),
+    );
+    // A ping to this one subscription, paused or not, and its first
+    // attempt awaited.
+    const { delivery } = await EventSubscriptionService.test(
+      ctx,
+      subscription.id,
+    );
+    if (!delivery) {
+      throw new PublicError(
+        "EVENT_SUBSCRIPTION_NOT_FOUND",
+        "That subscription doesn't exist or was removed.",
+      );
+    }
+    const listed = listedDelivery(delivery, subscription);
+    return {
+      subscription: {
+        id: subscription.id,
+        name: subscription.name,
+        enabled: subscription.enabled,
+      },
+      delivered: listed.state === "delivered",
+      delivery: listed,
+    };
+  },
+
+  async workspace_event_deliveries(ctx, args) {
+    const subscriptions = await subscriptionsOf(ctx);
+    const ref = text(args["subscription"]);
+    const only =
+      ref === undefined ? undefined : findSubscription(subscriptions, ref);
+    const limit = args["limit"];
+    const page = await EventSubscriptionService.deliveries(ctx, {
+      subscriptionId: only?.id,
+      status: args["dead"] === true ? "dead" : undefined,
+      before: deliveriesCursor(args["before"]),
+      limit: typeof limit === "number" ? limit : EVENT_DELIVERIES_LIMIT_DEFAULT,
+    });
+    const byId = new Map(subscriptions.map((row) => [row.id, row]));
+    return {
+      deliveries: page.deliveries.map((delivery) =>
+        listedDelivery(delivery, byId.get(delivery.subscriptionId)),
+      ),
+      nextBefore: page.nextCursor,
+    };
+  },
+
+  async workspace_event_redeliver(ctx, args) {
+    const id = requireText(args, "delivery").trim();
+    const existing = await EventDeliveryRepository.findById(id, ctx.orgId);
+    if (!existing) {
+      throw new PublicError(
+        "EVENT_DELIVERY_NOT_FOUND",
+        "That delivery doesn't exist any more.",
+      );
+    }
+    // A delivered row is left alone by the service; say so rather than
+    // answer as if it went again.
+    const alreadyDelivered = existing.status === "delivered";
+    const { delivery } = await EventSubscriptionService.redeliver(
+      ctx,
+      existing.id,
+    );
+    if (!delivery) {
+      throw new PublicError(
+        "EVENT_DELIVERY_NOT_FOUND",
+        "That delivery doesn't exist any more.",
+      );
+    }
+    const subscription = (await subscriptionsOf(ctx)).find(
+      (row) => row.id === delivery.subscriptionId,
+    );
+    return {
+      redelivered: !alreadyDelivered,
+      delivery: listedDelivery(delivery, subscription),
+      ...(alreadyDelivered
+        ? { note: "It was delivered already, so nothing was sent again." }
+        : {}),
+    };
   },
 
   async my_tokens(ctx, _args, principal) {

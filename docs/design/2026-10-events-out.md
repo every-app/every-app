@@ -286,6 +286,8 @@ On #614's `WORKSPACE_TOOLS` (`packages/toolbus/src/workspace.ts`, handlers in `a
 
 Each call is an audited tool call under `appId: "everyapp"` like the rest of #614. The parity matrix (`docs/design/2026-10-agent-parity.md`, when it lands) gets one row per server function above.
 
+What landed (the twins PR): the seven tools as above, handlers in `workspace-tools.ts` over `EventSubscriptionService`, a subscription by `sub_` id or by name (a name two share is refused; give the id), a delivery by id. Beyond the table: the tools show a webhook as `target`, its host and path, never its query (a query often carries the receiver's own token; the CLI's `events list` does the same); `everyapp_workspace_event_deliveries` also takes `before` and answers `nextBefore`, like the activity tool, with `limit` 1 to 100 (default 20), and shows each event's type and summary, never its data; a delivery's `state` is `pending`, `delivered`, `failed` (retrying) or `dead`, with `statusCode`, or `mailed` for an email subscription; `everyapp_workspace_events_test` answers `delivered` and the delivery; `everyapp_workspace_event_redeliver` says `redelivered: false` for a delivered row; the row an agent adds records `created_by = agent:<credential id>`. `listEventTypes` has no tool: the add tool's description lists the catalogue from `EVENT_TYPES`.
+
 ## 10. The UI: Manage workspace → Events
 
 A seventh tab (`/admin/events`, icon `Webhook`), after Activity. Owners and admins.

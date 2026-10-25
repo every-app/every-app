@@ -1071,6 +1071,9 @@ Ben's mandate for the batch: "assume we want all of this and build the best, mos
 - [ ] **The envelope carries a top-level `summary`** (one human line per event) beside `type` and `data`, so Slack's Workflow Builder webhook trigger and Zapier post it without parsing.
 - [ ] **No `member.signed_in` event**: the chattiest one and nothing people wire today.
 - [ ] **The admin MCP tools stack on #614** (`everyapp_workspace_events*`); `everyapp_workspace_events_add` returns a freshly generated secret once, the one credential a workspace tool returns, because it opens nothing on the gateway.
+- [ ] **The tools show a webhook's host and path, never its full URL** (a query often carries the receiver's own token, and a Slack or Zapier hook's path is itself a capability the tools still show, as the CLI's `events list` does); the Events tab shows the whole URL to the person. Walk-back: return `url` to owners and admins over MCP too.
+- [ ] **`everyapp_workspace_event_deliveries` shows an event's type and summary, never its `data`**, to keep an agent's answer small (a page of 100 events could be 1.6 MB); the Events tab's Show payload has it. Walk-back: a `payload: true` flag on a one-subscription page.
+- [ ] **Removing a subscription over MCP is an admin's** (with `confirm: true`), as in Admin → Events, unlike `workspace_remove` and `workspace_app_delete`, which are owner-only.
 
 Follow-ups:
 
