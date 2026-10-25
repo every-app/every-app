@@ -32,6 +32,7 @@ import {
   DEV_ISSUER,
 } from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
+import { commandPaths } from "@/app";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
 import { manifestFields } from "./manifestFields";
@@ -103,6 +104,7 @@ describe("the agent docs", () => {
       "mcp",
       "deploy",
       "access",
+      "workspace",
     ]) {
       expect(slugs(), `${slug}.md`).toContain(slug);
     }
@@ -335,6 +337,24 @@ describe("the command pages", () => {
   it("mcp.md documents the MCP settings, the SDK's tool API and every built-in tool", () => {
     expectDocumented("mcp", "the MCP settings and API", ["defineTools", "toolResult", "ToolError", "MCP_OAUTH_ENABLED", "MCP_DCR_ENABLED", "MCP_ALLOWED_ORIGINS", "MCP_AUDIT_RETENTION_DAYS", "epat_", "/mcp", "/oauth/register", "CLAUDE_CODE_INSTRUCTIONS_READ", "anthropic/alwaysLoad", "client_info", "client_name", "Mcp-Session-Id", "describeClient", "clientOfSession"]);
     expectDocumented("mcp", BUILTINS_WHAT, BUILTIN_TOOLS);
+  });
+  it("workspace.md documents every workspace command, its flags and every workspace tool", () => {
+    const commands = commandPaths().filter(
+      (path) => path.startsWith("workspace ") && !commandPaths().some((other) => other.startsWith(`${path} `)),
+    );
+    // A command is documented by a span that is the path or starts with it (`workspace rename <name>`).
+    const spans = [...backticked(readPage("workspace"))];
+    const undocumented = commands.filter((path) => !spans.some((span) => span === path || span.startsWith(`${path} `)));
+    expect(undocumented, `workspace.md doesn't document the workspace commands: ${undocumented.join(", ")}. ${HOW}`).toEqual([]);
+    // A flag counts when a usage line carries it (`workspace invite <email> [--role admin]`).
+    const flags = flagsOf("workspace").filter((flag) => !["--json", "--verbose", "--gateway", "--account-id", "--yes"].includes(flag));
+    const missingFlags = flags.filter((flag) => !spans.some((span) => new RegExp(`(^|[\\s\\[|])${flag}(?=$|[\\s\\]=|<])`).test(span)));
+    expect(missingFlags, `workspace.md doesn't document the flags of everyapp workspace: ${missingFlags.join(", ")}. ${HOW}`).toEqual([]);
+    expectDocumented(
+      "workspace",
+      "the workspace tools and the member tools (listBuiltinTools in packages/toolbus)",
+      BUILTIN_TOOLS.filter((name) => name.startsWith("everyapp_workspace_") || /^everyapp_(my|revoke)_/.test(name)),
+    );
   });
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));
