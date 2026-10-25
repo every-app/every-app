@@ -2,7 +2,7 @@
 
 > Make every app open source
 
-Own your tools. Customize your tools. Pay as you go.
+Own & customize your software. Pay as you go.
 
 > Build personal software with peace of mind.
 
