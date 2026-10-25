@@ -49,7 +49,7 @@ function connectionColumns({
       id: "app",
       accessorFn: (connection) => connection.clientName,
       header: ({ column }) => <SortableHeader column={column} label="App" />,
-      meta: { cellClassName: "max-w-[280px]" },
+      meta: { label: "App", cellClassName: "max-w-[280px]" },
       cell: ({ row: { original: connection } }) => (
         <>
           <p className="truncate font-medium">{connection.clientName}</p>
@@ -78,6 +78,7 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Organization" />
       ),
+      meta: { label: "Organization" },
     },
     {
       id: "apps",
@@ -104,7 +105,10 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Connected" />
       ),
-      meta: { cellClassName: "text-xs text-muted-foreground" },
+      meta: {
+        label: "Connected",
+        cellClassName: "text-xs text-muted-foreground",
+      },
       cell: ({ row: { original: connection } }) => (
         <DateCell value={connection.createdAt} />
       ),
@@ -116,7 +120,10 @@ function connectionColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Last used" />
       ),
-      meta: { cellClassName: "text-xs text-muted-foreground" },
+      meta: {
+        label: "Last used",
+        cellClassName: "text-xs text-muted-foreground",
+      },
       cell: ({ row: { original: connection } }) => (
         <DateCell value={connection.lastUsedAt} />
       ),

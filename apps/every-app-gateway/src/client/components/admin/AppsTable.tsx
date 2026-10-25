@@ -117,6 +117,10 @@ function AppNameCell({
  * The grants are what the gateway checks, so the count is the truth;
  * "Available to everyone" is an auto-grant to each member as they join,
  * said under it. Nobody is granted a shared app: every organization has it.
+ *
+ * The hint is its own block line rather than a flex column, so the cell
+ * takes the alignment of what holds it: left in the table's column, right
+ * as a card's value under `md`.
  */
 function WhoCanOpenCell({
   app,
@@ -131,7 +135,7 @@ function WhoCanOpenCell({
     );
   }
   return (
-    <div className="flex flex-col items-start">
+    <>
       <CountCell
         count={app.accessCount}
         noun="user"
@@ -139,11 +143,11 @@ function WhoCanOpenCell({
         onClick={() => onManageAccess(app)}
       />
       {app.isDefault ? (
-        <span className="text-xs text-muted-foreground">
+        <span className="block text-xs text-muted-foreground">
           + everyone who joins
         </span>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -161,12 +165,13 @@ function buildColumns({
       accessorFn: (app) => app.name,
       header: ({ column }) => <SortableHeader column={column} label="App" />,
       cell: ({ row }) => <AppNameCell app={row.original} onUseMcp={onUseMcp} />,
-      meta: { cellClassName: "max-w-[320px]" },
+      meta: { label: "App", cellClassName: "max-w-[320px]" },
     },
     {
       id: "status",
       accessorFn: (app) => appStatus(app).label,
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
+      meta: { label: "Status" },
       cell: ({ row }) => {
         const status = appStatus(row.original);
         // The usual state is plain text; only an exception is a chip (as
@@ -199,6 +204,7 @@ function buildColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Who can open" />
       ),
+      meta: { label: "Who can open" },
       cell: ({ row }) => (
         <WhoCanOpenCell app={row.original} onManageAccess={onManageAccess} />
       ),
@@ -210,7 +216,10 @@ function buildColumns({
       ),
       sortingFn: "datetime",
       cell: ({ row }) => <DateCell value={row.original.updatedAt} />,
-      meta: { cellClassName: "text-xs text-muted-foreground" },
+      meta: {
+        label: "Updated",
+        cellClassName: "text-xs text-muted-foreground",
+      },
     },
     {
       id: "actions",

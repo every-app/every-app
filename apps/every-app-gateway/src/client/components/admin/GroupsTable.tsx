@@ -74,7 +74,7 @@ const columns: ColumnDef<AdminGroup>[] = [
     id: "group",
     accessorFn: (group) => group.name,
     header: ({ column }) => <SortableHeader column={column} label="Group" />,
-    meta: { cellClassName: "max-w-[320px]" },
+    meta: { label: "Group", cellClassName: "max-w-[320px]" },
     cell: ({ row }) => (
       <>
         <p className="truncate font-medium">{row.original.name}</p>
@@ -89,18 +89,20 @@ const columns: ColumnDef<AdminGroup>[] = [
   {
     accessorKey: "memberCount",
     header: ({ column }) => <SortableHeader column={column} label="Members" />,
+    meta: { label: "Members" },
     cell: ({ row }) => <MembersCell group={row.original} />,
   },
   {
     accessorKey: "appCount",
     header: ({ column }) => <SortableHeader column={column} label="Apps" />,
+    meta: { label: "Apps" },
     cell: ({ row }) => <AppsCell group={row.original} />,
   },
   {
     id: "createdAt",
     accessorFn: (group) => dateSortValue(group.createdAt, 0),
     header: ({ column }) => <SortableHeader column={column} label="Created" />,
-    meta: { cellClassName: "text-xs text-muted-foreground" },
+    meta: { label: "Created", cellClassName: "text-xs text-muted-foreground" },
     cell: ({ row }) => <DateCell value={row.original.createdAt} />,
   },
   {

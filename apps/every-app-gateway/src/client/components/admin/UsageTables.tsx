@@ -57,7 +57,11 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column} label="Provider calls" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Provider calls",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => <Count value={row.original.calls} />,
     },
     {
@@ -65,7 +69,11 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column} label="Failures" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Failures",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => <Failures value={row.original.failures} />,
     },
     {
@@ -73,7 +81,11 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column} label="Tokens in" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Tokens in",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => <Count value={row.original.inputTokens} />,
     },
     {
@@ -81,7 +93,11 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column} label="Tokens out" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Tokens out",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => <Count value={row.original.outputTokens} />,
     },
     {
@@ -89,7 +105,11 @@ function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
       header: ({ column }) => (
         <SortableHeader column={column} label="Provider cost" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Provider cost",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => <Cost micros={row.original.costMicros} />,
     },
   ];
@@ -103,7 +123,11 @@ function toolCallsColumn<
     header: ({ column }) => (
       <SortableHeader column={column} label="Agent tool calls" />
     ),
-    meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+    meta: {
+      label: "Agent tool calls",
+      headerClassName: NUMERIC,
+      cellClassName: NUMERIC,
+    },
     cell: ({ row }) => <Count value={row.original.toolCalls} />,
   };
 }
@@ -197,7 +221,11 @@ function buildAppColumns({
       header: ({ column }) => (
         <SortableHeader column={column} label="Monthly cap" />
       ),
-      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      meta: {
+        label: "Monthly cap",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
       cell: ({ row }) => (
         <MonthlyCapCell
           row={row.original}
@@ -214,7 +242,7 @@ const appNameColumns: ColumnDef<UsageAppRow>[] = [
     id: "app",
     accessorFn: (row) => row.name ?? row.appRowId,
     header: ({ column }) => <SortableHeader column={column} label="App" />,
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { label: "App", cellClassName: "max-w-[280px]" },
     cell: ({ row }) =>
       row.original.name ? (
         <>
@@ -252,7 +280,7 @@ const memberColumns: ColumnDef<UsageMemberRow>[] = [
     id: "member",
     accessorFn: (row) => row.name || row.email || row.userId || "",
     header: ({ column }) => <SortableHeader column={column} label="Member" />,
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { label: "Member", cellClassName: "max-w-[280px]" },
     cell: ({ row }) => {
       const { userId, name, email } = row.original;
       // The apps' own calls: background work, or an identity that didn't verify.
@@ -302,6 +330,7 @@ const targetColumns: ColumnDef<UsageTargetRow>[] = [
     id: "target",
     accessorFn: (row) => `${row.kind} ${row.target}`,
     header: ({ column }) => <SortableHeader column={column} label="Provider" />,
+    meta: { label: "Provider" },
     // The registry's name, as the setup dialog and Admin → Apps say it;
     // the id under it is what the manifest and `secret set` use.
     cell: ({ row }) => {

@@ -91,7 +91,7 @@ const columns: ColumnDef<AdminUser>[] = [
     id: "user",
     accessorFn: (user) => user.name || user.email,
     header: ({ column }) => <SortableHeader column={column} label="User" />,
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { label: "User", cellClassName: "max-w-[280px]" },
     cell: ({ row }) => <UserCell user={row.original} />,
   },
   {
@@ -108,7 +108,7 @@ const columns: ColumnDef<AdminUser>[] = [
     id: "createdAt",
     accessorFn: (user) => dateSortValue(user.createdAt, 0),
     header: ({ column }) => <SortableHeader column={column} label="Created" />,
-    meta: { cellClassName: "text-xs text-muted-foreground" },
+    meta: { label: "Created", cellClassName: "text-xs text-muted-foreground" },
     cell: ({ row }) => <DateCell value={row.original.createdAt} />,
   },
   {

@@ -31,11 +31,14 @@ export function UserTokensTable({
         id: "name",
         accessorFn: (token) => token.name,
         header: ({ column }) => <SortableHeader column={column} label="Name" />,
-        meta: { cellClassName: "max-w-[240px] truncate font-medium" },
-        cell: ({ row }) =>
-          row.original.scopes.includes("deploy")
-            ? `${row.original.name} (deploy key)`
-            : row.original.name,
+        meta: { label: "Name", cellClassName: "max-w-[240px] truncate" },
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.scopes.includes("deploy")
+              ? `${row.original.name} (deploy key)`
+              : row.original.name}
+          </span>
+        ),
       },
       {
         id: "prefix",
@@ -75,7 +78,10 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Created" />
         ),
-        meta: { cellClassName: "text-xs text-muted-foreground" },
+        meta: {
+          label: "Created",
+          cellClassName: "text-xs text-muted-foreground",
+        },
         cell: ({ row }) => <DateCell value={row.original.createdAt} />,
       },
       {
@@ -85,7 +91,10 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Expires" />
         ),
-        meta: { cellClassName: "text-xs text-muted-foreground" },
+        meta: {
+          label: "Expires",
+          cellClassName: "text-xs text-muted-foreground",
+        },
         cell: ({ row }) => <DateCell value={row.original.expiresAt} />,
       },
       {
@@ -94,7 +103,10 @@ export function UserTokensTable({
         header: ({ column }) => (
           <SortableHeader column={column} label="Last used" />
         ),
-        meta: { cellClassName: "text-xs text-muted-foreground" },
+        meta: {
+          label: "Last used",
+          cellClassName: "text-xs text-muted-foreground",
+        },
         cell: ({ row }) => <DateCell value={row.original.lastUsedAt} />,
       },
       {
