@@ -21,6 +21,11 @@ the CLI accepts, every `pnpm everyapp …` is a route the CLI has (`commandPaths
 or puts one on a command line, and each file has the sections the
 README's contract requires.
 
+The build-every-app skill has a harness of the same kind,
+`../build-skill/` (a fresh app from the starter, a person asking for a
+feature, the app's own checks at the end); the claude session, the
+scripted person's rules and the tool stubs they share are `../shared/`.
+
 ## Run it
 
 From the checkout root (the SDK must be built, which `pnpm install` does):
@@ -216,8 +221,8 @@ alone.
 Start with `summary.txt`. A missing `secret list before the first set`
 usually means the file's Steps don't start with the preconditions; a
 `chat-secret` flag quotes the sentence that asked (the detector is
-`chat-secret.mjs`; when a quoted sentence didn't ask, add it to
-`chat-secret.test.mjs` and fix the pattern); `mentions …` failing
+`../shared/chat-secret.mjs`; when a quoted sentence didn't ask, add it to
+`../shared/chat-secret.test.mjs` and fix the pattern); `mentions …` failing
 means the file never gives the console's URL, or the agent paraphrased it
 (check the transcript before blaming the file). `events.jsonl` has every
 tool call: `grep '"name":"Bash"' events.jsonl` shows what the agent ran,

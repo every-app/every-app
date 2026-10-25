@@ -4,9 +4,16 @@
     "src/bin/*.ts",
     "src/commands/**/index.ts",
     "src/commands/*/command.ts",
-    // The setup-skill harness: run by hand with node (test/setup-skills/README.md), never imported.
+    // The claude -p harnesses: run by hand with node (test/setup-skills/README.md,
+    // test/build-skill/README.md), never imported; test/shared/ is what they share.
     "test/setup-skills/*.mjs",
     "test/setup-skills/stubs/*.mjs",
+    "test/build-skill/*.mjs",
+    "test/shared/*.mjs",
+  ],
+  "ignore": [
+    // Types for chat-secret.mjs, read by tsc through the src tests' import; knip follows no .mjs import to a .d.mts.
+    "test/shared/chat-secret.d.mts",
   ],
   "ignoreDependencies": [
     // Workspace source imports are followed by Knip but not credited as package usage.

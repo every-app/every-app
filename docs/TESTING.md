@@ -25,7 +25,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/perimeter` | `src/**/*.test.ts` | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green), including the platform policy per deployment mode (`src/server/platform-policy.test.ts`, and the hosted and invalid cases next to what each switch governs: Access sign-in, the setup claim, account actions, dynamic registration, app activation) |
 | `apps/every-app-gateway/src/server/deploy/cf-rest` (part of the gateway suite) | `*.test.ts` | the Cloudflare REST client's request shapes against a fetch mock: multipart uploads (boundary, `metadata` JSON part, each module's MIME type), settings and secrets bodies, tag filters and the refusal to delete by tag without a required tag, D1 single and batch queries, Worker pagination, the assets upload session; error envelopes mapped to `CloudflareApiError` (code, message, status), retries on 429 and on 5xx only for idempotent methods |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema; its REST API as a fetch in `src/test/fakeCloudflareApi.ts`, with Workers for Platforms dispatch namespaces, multipart script uploads, bindings, secrets, settings, tags and assets, driven through the gateway's cf-rest client, imported by path, in its own test) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the everyapp skill `create` copies into a new app (`lib/app/skill.test.ts`); `access`, `provider`, `secret`, `status`, `install` and `teardown` against the same fake account (`commands/<name>/*.test.ts`); and the agent docs against the code (`src/docs/agentDocs.test.ts`: a new command, flag, error code, manifest field or Gateway setting fails until it is documented; `pnpm -C packages/cli docs:update` regenerates the generated pages) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema; its REST API as a fetch in `src/test/fakeCloudflareApi.ts`, with Workers for Platforms dispatch namespaces, multipart script uploads, bindings, secrets, settings, tags and assets, driven through the gateway's cf-rest client, imported by path, in its own test) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the skills `create` copies into a new app (`lib/app/skill.test.ts`; the build-every-app skill's citations in `lib/app/buildSkill.test.ts`); `access`, `provider`, `secret`, `status`, `install` and `teardown` against the same fake account (`commands/<name>/*.test.ts`); and the agent docs against the code (`src/docs/agentDocs.test.ts`: a new command, flag, error code, manifest field or Gateway setting fails until it is documented; `pnpm -C packages/cli docs:update` regenerates the generated pages) |
 
 Run a single layer:
 
@@ -458,6 +458,33 @@ run's transcript and report land (`/tmp/setup-skills-runs/<scenario>-<n>/`)
 and how to read a failure. The fake's shapes come from
 `src/lib/output/events.ts` and captures of `status --json` and `secret list
 --json`: change the fake when the CLI's contract changes.
+
+### The build skill
+
+The build-every-app skill (`packages/cli/skills/build-every-app/`) has the
+same two checks:
+
+```bash
+# Static, in CI: the frontmatter, every cited starter and app path, every
+# `pnpm everyapp …` a route; and the harness's own readers
+( cd packages/cli && pnpm exec vitest run src/lib/app/buildSkill.test.ts test/build-skill )
+
+# End to end, by hand: `claude -p` in a fresh copy of the starter with both
+# skills in place, a scripted person asking for a feature, the fake everyapp
+# answering dev and deploy with nothing, then `pnpm test` and `pnpm
+# types:check` in the app; needs the claude CLI logged in, well under a
+# dollar a scenario on sonnet
+node packages/cli/test/build-skill/run.mjs add-notes
+node packages/cli/test/build-skill/run.mjs add-notes --scratch-only   # the scratch and its checks, no agent
+```
+
+`packages/cli/test/build-skill/README.md` says what a pass means (the skill
+read before the first edit, the table through drizzle with its migration,
+tools with a risk, no login or header-read of the app's own, nothing
+deployed, the app's checks green, a plain closing message) and where a run
+lands (`/tmp/build-skill-runs/<scenario>-<n>/`). What the two harnesses
+share (the claude session, the person's rules, the stubs) is
+`packages/cli/test/shared/`.
 
 ### The onboarding loop
 

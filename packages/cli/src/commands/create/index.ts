@@ -8,7 +8,8 @@
  *    named after its last part, as long as that is outside the checkout
  *    or in its apps/ (steps/appId.ts). The copy is named after the app in
  *    package.json, everyapp.config.ts and README.md.
- * 2. Put the everyapp skill where coding agents look (lib/app/skill.ts).
+ * 2. Put the skills the CLI ships (everyapp, build-every-app) where coding
+ *    agents look (lib/app/skill.ts).
  * 3. Install its dependencies; when that fails, the app is there and only
  *    the install is left, so the error says to finish it in place.
  * 4. Generate the Worker's types and apply its migrations to the local
@@ -137,7 +138,7 @@ export async function createApp({
     type: "step",
     step: "create.skill",
     status: "ok",
-    message: "Added the everyapp skill for coding agents",
+    message: `Added the ${skill.skills.join(" and ")} ${skill.skills.length === 1 ? "skill" : "skills"} for coding agents`,
     data: skill,
   });
 

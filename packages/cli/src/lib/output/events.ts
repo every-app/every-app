@@ -763,7 +763,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       };
     },
     "secrets.app": saidByMessage,
-    "create.skill": doneWhenOk("Added the everyapp skill for coding agents"),
+    "create.skill": saidByMessage,
     "create.install": spinThenDone("Installing dependencies...", "Installed dependencies"),
     "create.types": spinThenDone("Generating types...", "Generated types"),
     "create.git": (event) =>

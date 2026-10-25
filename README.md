@@ -76,7 +76,7 @@ Live          https://my-app.apps.yourcompany.com
 Who can open  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
 ```
 
-Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. The `everyapp` skill in every app tells your coding agent the CLI, the manifest and the rules, so it never writes a login page. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.
+Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. Every app you create carries two skills for your coding agent: `everyapp`, which drives the CLI, and `build-every-app`, which shows how the four apps and the starter do things. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.
 
 ### Or let your agent set it up
 

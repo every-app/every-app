@@ -1,0 +1,30 @@
+{
+  "prompt": "Add shared notes: a notes table every member can read, each note showing who wrote it, with tools to list and add notes. Don't deploy.",
+  "app": "team-notes",
+  "maxRounds": 6,
+  "defaultReply": "Go on.",
+  "rules": [
+    { "use": "chat-secret" },
+    {
+      "name": "spec",
+      "when": "\\?",
+      "reply": "Go ahead. Everyone in the organization can read every note and anyone can add one. Show the writer's email and when it was written. Put the notes on the existing page under the todos, or on a page of their own, your call. Tools: one to list notes and one to add a note; no editing or deleting for now. Keep the todos as they are. Don't deploy.",
+      "once": true
+    },
+    {
+      "name": "tried-it",
+      "when": "pnpm dev|pnpm run dev|localhost|127\\.0\\.0\\.1",
+      "reply": "I ran pnpm dev and opened it. The notes are there with an Add box; I added one and it shows my email and the time next to it.",
+      "once": true
+    },
+    { "use": "check-result" },
+    { "use": "opened-url" },
+    { "use": "yes" }
+  ],
+  "expect": {
+    "keep": ["src/server/todos.ts", "src/server/todos.test.ts", "src/serverFunctions/todos.ts", "drizzle/0000_todos.sql"],
+    "tools": { "min": 2, "nameMatches": "note" },
+    "finalMentions": ["pnpm dev"],
+    "finalPattern": "note"
+  }
+}

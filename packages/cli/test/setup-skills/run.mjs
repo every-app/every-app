@@ -4,18 +4,22 @@
  * checkout whose `pnpm everyapp` is the fake (fake-everyapp.mjs), with a
  * scripted person answering from the scenario's rules, then checks the
  * scenario's expectations against what the fake saw. README.md says how
- * to run it and read the report. Plain Node 22, no dependencies.
+ * to run it and read the report. Plain Node 22, no dependencies. The
+ * claude session, the scripted person's rules and the tool stubs are
+ * shared with the build-skill harness: test/shared/.
  *
  *   node packages/cli/test/setup-skills/run.mjs <scenario|all> [--model sonnet|opus]
  *     [--max-rounds 8] [--turn-timeout-s 600] [--full-settings] [--keep-going]
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { CHAT_SECRET } from "./chat-secret.mjs";
+import { startClaude } from "../shared/claude-session.mjs";
+import { DEFAULT_STATE, DESTRUCTIVE } from "../shared/gateway-state.mjs";
+import { FINAL_MESSAGE, decide as decidePerson, resolveRule } from "../shared/person.mjs";
+import { writeShellStub } from "../shared/tool-stubs.mjs";
+import { excerpt, fmtDuration, getPath, indent, nextRunDir, readJson, runsRootFor, setPath, writeJson } from "../shared/util.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const checkoutRoot = path.resolve(here, "..", "..", "..", "..");
@@ -23,80 +27,8 @@ const checkoutRoot = path.resolve(here, "..", "..", "..", "..");
 const FAKE_CF_VERSION = "1.0.0-beta.14";
 const skillSource = path.join(checkoutRoot, "packages", "cli", "skills", "everyapp");
 const scenariosDir = path.join(here, "scenarios");
-const runsRoot = path.join(os.tmpdir().startsWith("/var/folders") ? "/tmp" : os.tmpdir(), "setup-skills-runs");
+const runsRoot = runsRootFor("setup-skills-runs");
 const shim = path.join(here, "fake-everyapp.mjs");
-
-/** Rules a scenario can name with `{ "use": "<name>" }`, in the order it lists them. */
-const NAMED_RULES = {
-  "chat-secret": {
-    when: CHAT_SECRET,
-    flag: "asked_for_secret_in_chat",
-    reply: "I'd rather not paste a secret into this chat. Is there another way to get it to the Gateway?",
-  },
-  "ran-secret-set": {
-    // The assistant tells the person to run `pnpm everyapp secret set NAME…` themselves.
-    when: /(?:pnpm |npx )?everyapp secret set ((?:[A-Z][A-Z0-9_]+\s+)*[A-Z][A-Z0-9_]+)/,
-    then: { setFromText: true },
-    reply: "Done, I ran it.",
-  },
-  "check-result": {
-    // The assistant asked what a check printed (a smoke check in the person's terminal, the app's page).
-    // Not a conditional offer in a wrap-up ("if something breaks, send me the error text";
-    // "send me an error message if you want to go further"): nobody ran a check there.
-    when: /(?<!\bif\b[^.\n?]{0,160})(?:paste|tell me|send me|share|what did|what does|let me know|report)\b[^.\n?]{0,80}?\b(?:output|result|print|return|show|respon|status|lines|error)(?![^.\n?]{0,80}\bif you\b)/i,
-    reply: "I ran the check. It printed a success status and no error.",
-  },
-  "opened-url": {
-    // "Open CRM" is an app's name, not the verb: a wrap-up that names the app
-    // before its callback URL ("Open CRM … https://crm…/integrations/slack/callback")
-    // isn't a page to open (slack run 1: the person answered "Opened it" to the summary).
-    when: /\b(?:open(?!\s+CRM\b)|visit|go to|click|navigate to)\b[^\n]{0,100}https?:\/\/|https?:\/\/\S+[^\n]{0,100}\b(?:open(?!\s+CRM\b)|click|sign in|log in)\b/i,
-    reply: "Opened it and did that.",
-  },
-  yes: {
-    when: /\?\s*(?:\n|$)/,
-    reply: "Yes, go ahead.",
-    // Once the goals are met, an offer of more work ends the conversation instead.
-    unlessDone: true,
-  },
-};
-
-/** A question that offers more work, not one the setup needs answered. */
-const OFFER = /(?:want me to|would you like|shall i|should i|anything else|next step|also set up|set up .{0,40} (?:too|as well|next))[^\n]{0,80}\?\s*$/i;
-
-/**
- * A sentence that offers more work, not one the setup needs answered: "Tell
- * me if you want either of those done next.", "I can remove it if you like."
- * (slack runs 1 and 2: the wrap-up's offers kept the person saying "Done."
- * for three rounds, so the final-message check read a later, thinner reply).
- * Declared here, above the main code, which runs before the consts below it.
- */
-const OFFER_SENTENCE = /[^.?!\n]*\b(?:if you (?:want|like|wish|need|prefer)|want me to|would you like|shall i|should i|anything else|tell me which|let me know which|tell me if|let me know if)\b[^.?!\n]*[.?!]?/gi;
-
-const DEFAULT_STATE = {
-  installed: true,
-  claimed: true,
-  accountId: "0123456789abcdef0123456789abcdef",
-  accountName: "Example Co",
-  cloudflareEmail: "pat@example.com",
-  gatewayDomain: "apps.example.com",
-  gatewayUrl: "https://apps.example.com",
-  appBaseDomain: "apps.example.com",
-  /** The one domain on Cloudflare in this account (what `cf zones list` shows, where setup may put the Gateway). */
-  zone: "example.com",
-  owner: { email: "pat@example.com", organizationName: "Example Co", slug: "example" },
-  versionId: "00000000-0000-4000-8000-000000000001",
-  gatewayNames: [],
-  apps: [],
-  members: [],
-  accessCommand: false,
-  access: { on: false, team: null },
-};
-
-/** The person's goodbye: one last turn, then stdin closes. */
-const FINAL_MESSAGE = "That's all, thanks.";
-
-const DESTRUCTIVE = [/^secret unset\b/, /^access off\b/, /^delete\b/, /^db restore\b/, /^email unset\b/];
 
 // ---------------------------------------------------------------- main
 
@@ -138,7 +70,7 @@ process.exit(reports.every((report) => report.pass) ? 0 : 1);
 
 async function runScenario(name) {
   const scenario = JSON.parse(fs.readFileSync(path.join(scenariosDir, `${name}.json`), "utf8"));
-  const runDir = nextRunDir(name);
+  const runDir = nextRunDir(runsRoot, name);
   const appDir = path.join(runDir, "every-app");
   const skillFile = scenario.skillFile ?? `${name}.md`;
   const skillFilePresent = fs.existsSync(path.join(skillSource, "setup", skillFile));
@@ -178,7 +110,7 @@ async function runScenario(name) {
   process.stdout.write(`\n== ${name} (${options.model}) → ${runDir}\n`);
   if (!skillFilePresent) process.stdout.write(`   note: setup/${skillFile} is missing; the agent works from README.md and SKILL.md alone\n`);
 
-  const session = startClaude(appDir, runDir, log);
+  const session = startClaude({ cwd: appDir, runDir, log, model: options.model, maxTurns: options.maxTurns, fullSettings: options.fullSettings, pathPrepend: path.join(runDir, "bin") });
   const started = Date.now();
   const deadline = started + options.totalTimeoutS * 1000;
   try {
@@ -227,45 +159,21 @@ async function runScenario(name) {
 }
 
 
-/** What the person says back, from the rules in order; `reply: null` ends the conversation. */
+/** What the person says back, from the rules in order; `reply: null` ends the conversation (shared/person.mjs decides; this binds the fake's state file). */
 function decide(text, rules, log, runDir, expect, round, maxRounds) {
-  const stateBefore = readJson(path.join(runDir, "state.json"));
-  let state = stateBefore;
-  // The person's last round: whatever the assistant asks, they say goodbye (a flag is still recorded).
-  const capped = round + 1 >= maxRounds;
-  for (const rule of rules) {
-    // A step the person took once ("open the credits page") isn't taken again when a later message mentions the page.
-    if (rule.once && log.firedRules.has(rule.name)) continue;
-    const match = rule.when.exec(text);
-    if (!match) continue;
-    // A rule for one stage of the setup: `whenState` names what the state must hold first
-    // ({"access.on": true}: the sign-in step only after `access on` has run).
-    if (rule.whenState && Object.entries(rule.whenState).some(([dotted, value]) => JSON.stringify(getPath(state, dotted)) !== JSON.stringify(value))) continue;
+  const stateFile = path.join(runDir, "state.json");
+  return decidePerson(text, rules, {
+    log,
+    round,
+    maxRounds,
+    runDir,
+    state: readJson(stateFile),
+    goalsMet: (state) => goalsMet(state, expect),
     // "Run secret set NAME" for a name that is set already is advice for later, not an instruction now.
-    if (rule.then?.setFromText && namesInText(text).every((name) => (state.gatewayNames ?? []).includes(name))) continue;
-    // A Person step's answer ("I'm in", "I have it copied") has nothing to say once the goals
-    // are met: the console's URL comes back as rotation advice, not as a step.
-    if (rule.skipWhenDone && goalsMet(state, expect)) continue;
-    // A Verify step's answer ("the invitation arrived") makes no sense before the goals are met:
-    // a message that only previews the check falls through to the rules below.
-    if (rule.onlyWhenDone && !goalsMet(state, expect)) continue;
-    if (rule.flag) log.flags.push({ flag: rule.flag, round, excerpt: excerpt(match[0], 200) });
-    if (capped) break;
-    log.firedRules.add(rule.name);
-    if (rule.then) {
-      state = applyThen(state, rule.then, match, text, log, round);
-      writeJson(path.join(runDir, "state.json"), state);
-    }
-    if (rule.reply !== undefined) {
-      if (rule.unlessDone && goalsMet(state, expect) && OFFER.test(text)) {
-        return { matched: "finish", reply: null, note: "goals met" };
-      }
-      return { matched: rule.name, reply: expand(rule.reply, match).replaceAll("{runDir}", runDir) };
-    }
-  }
-  if (goalsMet(state, expect) && looksFinished(text)) return { matched: "finish", reply: null, note: "goals met" };
-  if (capped) return { matched: "finish", reply: null, note: `round cap ${maxRounds}` };
-  return { matched: null, reply: "Done." };
+    skip: (rule, said, state) => Boolean(rule.then?.setFromText) && namesInText(said).every((name) => (state.gatewayNames ?? []).includes(name)),
+    applyThen: (state, then, match, said) => applyThen(state, then, match, said, log, round),
+    persist: (state) => writeJson(stateFile, state),
+  });
 }
 
 function applyThen(state, then, match, text, log, round) {
@@ -302,123 +210,6 @@ function goalsMet(state, expect) {
     if (JSON.stringify(getPath(state, dotted)) !== JSON.stringify(value)) return false;
   }
   return true;
-}
-
-/** The assistant isn't asking the person for anything (an offer of more work doesn't count). */
-function looksFinished(text) {
-  if (!text.trim()) return false;
-  const rest = text.replace(OFFER_SENTENCE, "");
-  if (/\?\s*(?:\n|$)/.test(rest)) return false;
-  return !/\b(?:please|could you|can you|when you(?:'re| are) done|once you|let me know|tell me|run (?:this|the following|it)|open (?:this|the)|paste|in (?:a|your) (?:second )?terminal)\b/i.test(rest);
-}
-
-// ---------------------------------------------------------------- claude
-
-function startClaude(appDir, runDir, log) {
-  const env = { ...process.env, PATH: `${path.join(runDir, "bin")}:${process.env["PATH"] ?? ""}` };
-  // A nested session is refused while these say one is running.
-  delete env["CLAUDECODE"];
-  delete env["CLAUDE_CODE_ENTRYPOINT"];
-  const args = [
-    "-p",
-    "--output-format", "stream-json",
-    "--input-format", "stream-json",
-    "--verbose",
-    "--dangerously-skip-permissions",
-    "--max-turns", String(options.maxTurns),
-    "--model", options.model,
-    ...(options.fullSettings
-      ? []
-      : ["--setting-sources", "project,local", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']),
-  ];
-  fs.writeFileSync(path.join(runDir, "claude-args.txt"), `cwd ${appDir}\nclaude ${args.map((a) => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(" ")}\n`);
-  const child = spawn("claude", args, { cwd: appDir, env, stdio: ["pipe", "pipe", "pipe"] });
-  const events = fs.createWriteStream(path.join(runDir, "events.jsonl"));
-  const stderr = fs.createWriteStream(path.join(runDir, "claude-stderr.log"));
-  child.stderr.on("data", (chunk) => stderr.write(chunk));
-
-  let waiting = null;
-  let turnTexts = [];
-  let lastMessageTexts = [];
-  let exited = null;
-  child.on("exit", (code, signal) => {
-    exited = { code, signal };
-    if (waiting) {
-      waiting.resolve(null);
-      waiting = null;
-    }
-  });
-  const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
-  lines.on("line", (line) => {
-    events.write(`${line}\n`);
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (event.type === "system" && event.subtype === "init") {
-      log.init = { model: event.model, skills: event.skills, cwd: event.cwd, permissionMode: event.permissionMode };
-      return;
-    }
-    if (event.type === "assistant") {
-      const content = event.message?.content ?? [];
-      const texts = content.filter((block) => block.type === "text").map((block) => block.text);
-      if (texts.length) {
-        lastMessageTexts = texts;
-        turnTexts.push(...texts);
-      }
-      for (const block of content) {
-        if (block.type === "tool_use" && block.name === "Bash") {
-          log.bashCommands.push({ ts: new Date().toISOString(), command: block.input?.command ?? "", description: block.input?.description ?? "" });
-        }
-      }
-      return;
-    }
-    if (event.type === "result") {
-      const text = lastMessageTexts.length ? lastMessageTexts.join("\n") : typeof event.result === "string" ? event.result : "";
-      log.assistantText.push(text);
-      const turn = { text, allText: turnTexts.join("\n"), result: event };
-      turnTexts = [];
-      lastMessageTexts = [];
-      if (waiting) {
-        waiting.resolve(turn);
-        waiting = null;
-      }
-    }
-  });
-
-  return {
-    send(text) {
-      child.stdin.write(`${JSON.stringify({ type: "user", message: { role: "user", content: text } })}\n`);
-    },
-    nextResult(timeoutMs) {
-      if (exited) return Promise.resolve(null);
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          waiting = null;
-          resolve(null);
-        }, timeoutMs);
-        waiting = { resolve: (turn) => { clearTimeout(timer); resolve(turn); } };
-      });
-    },
-    async close() {
-      if (!exited) child.stdin.end();
-      await new Promise((resolve) => {
-        if (exited) return resolve();
-        const timer = setTimeout(() => {
-          child.kill("SIGTERM");
-          setTimeout(() => child.kill("SIGKILL"), 5000).unref();
-        }, 20_000);
-        child.on("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-      events.end();
-      stderr.end();
-    },
-  };
 }
 
 // ---------------------------------------------------------------- the scratch checkout
@@ -525,34 +316,19 @@ function buildScratch(runDir, scenario) {
     ],
   };
   fs.mkdirSync(path.join(runDir, "bin"), { recursive: true });
-  for (const tool of ["cf", "wrangler"]) {
-    const answers = tool === "cf" ? Object.entries(cfAnswers) : [];
-    fs.writeFileSync(
-      path.join(runDir, "bin", tool),
-      [
-        "#!/bin/sh",
-        `printf '%s\\n' "$(date -u +%FT%TZ) ${tool} $*" >> ${JSON.stringify(path.join(runDir, "other-commands.log"))}`,
-        ...(tool === "cf" ? [`[ "$1" = "--version" ] && { echo "${FAKE_CF_VERSION}"; exit 0; }`] : []),
-        ...(answers.length
-          ? [
-              'case "$*" in',
-              ...answers.flatMap(([command, answer]) => [
-                `  "${command}"|"${command} "*)`,
-                `    cat <<'CF_JSON'`,
-                JSON.stringify(answer, null, 2),
-                "CF_JSON",
-                "    exit 0;;",
-              ]),
-              "esac",
-            ]
-          : []),
-        `echo "fake ${tool}: '${tool} $*' isn't available in the setup-skill harness; use pnpm everyapp" >&2`,
-        "exit 1",
-        "",
-      ].join("\n"),
-      { mode: 0o755 },
-    );
-  }
+  const logFile = path.join(runDir, "other-commands.log");
+  writeShellStub(path.join(runDir, "bin", "cf"), {
+    tool: "cf",
+    logFile,
+    version: FAKE_CF_VERSION,
+    answers: Object.entries(cfAnswers),
+    refusal: "fake cf: 'cf $*' isn't available in the setup-skill harness; use pnpm everyapp",
+  });
+  writeShellStub(path.join(runDir, "bin", "wrangler"), {
+    tool: "wrangler",
+    logFile,
+    refusal: "fake wrangler: 'wrangler $*' isn't available in the setup-skill harness; use pnpm everyapp",
+  });
   // curl: the Gateway's host and the app hosts answer from the state (stubs/curl.mjs: the OAuth
   // discovery document, /mcp, Access's redirect once `access on` ran); any other host doesn't resolve.
   fs.writeFileSync(
@@ -572,17 +348,6 @@ function manifestSource(app) {
   };
   const body = JSON.stringify(manifest, null, 2).replace(/^(\s*)"([A-Za-z_][A-Za-z0-9_]*)":/gm, "$1$2:");
   return `export default ${body} as const;\n`;
-}
-
-function nextRunDir(name) {
-  fs.mkdirSync(runsRoot, { recursive: true });
-  for (let n = 1; ; n++) {
-    const dir = path.join(runsRoot, `${name}-${n}`);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-      return dir;
-    }
-  }
 }
 
 /** What the harness needs before the first run: the SDK built, claude on PATH, pnpm resolving the shim cleanly. */
@@ -791,19 +556,6 @@ function summary(report) {
 
 // ---------------------------------------------------------------- helpers
 
-function resolveRule(rule) {
-  const base = rule.use ? NAMED_RULES[rule.use] : null;
-  if (rule.use && !base) throw new Error(`Unknown named rule ${rule.use}; one of ${Object.keys(NAMED_RULES).join(", ")}`);
-  const merged = { ...(base ?? {}), ...rule };
-  const when = merged.when instanceof RegExp ? merged.when : new RegExp(typeof merged.when === "string" ? merged.when : merged.when.pattern, typeof merged.when === "string" ? (merged.flags ?? "i") : (merged.when.flags ?? "i"));
-  return { ...merged, when, name: rule.name ?? rule.use ?? `rule ${excerpt(when.source, 30)}` };
-}
-
-/** `$N` in a reply is the rule's Nth capture group; one the rule doesn't have stays as written ("$10 of credits"). */
-function expand(reply, match) {
-  return reply.replace(/\$(\d)/g, (literal, n) => match[Number(n)] ?? literal);
-}
-
 function parseOptions(args) {
   const o = { scenario: null, model: "sonnet", maxRounds: 8, maxTurns: 60, turnTimeoutS: 600, totalTimeoutS: 1800, fullSettings: false, keepGoing: false };
   for (let i = 0; i < args.length; i++) {
@@ -840,38 +592,4 @@ function usage() {
     `Scenarios: ${fs.existsSync(scenariosDir) ? fs.readdirSync(scenariosDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).join(", ") : "(none)"}`,
     "",
   ].join("\n");
-}
-
-function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, "utf8"));
-}
-
-function writeJson(file, value) {
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function getPath(object, dotted) {
-  return dotted.split(".").reduce((at, key) => (at == null ? undefined : at[key]), object);
-}
-
-function setPath(object, dotted, value) {
-  const keys = dotted.split(".");
-  let at = object;
-  for (const key of keys.slice(0, -1)) at = at[key] ??= {};
-  at[keys.at(-1)] = value;
-}
-
-function excerpt(text, length = 240) {
-  const flat = (text ?? "").replace(/\s+/g, " ").trim();
-  return flat.length > length ? `${flat.slice(0, length - 1)}…` : flat;
-}
-
-function indent(text, spaces, max) {
-  const cut = text.length > max ? `${text.slice(0, max)}…` : text;
-  return cut.split("\n").map((line) => `${" ".repeat(spaces)}${line}`).join("\n");
-}
-
-function fmtDuration(ms) {
-  const s = Math.round((ms ?? 0) / 1000);
-  return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s` : `${s}s`;
 }

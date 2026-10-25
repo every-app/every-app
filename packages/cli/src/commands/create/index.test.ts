@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { skillSource } from "@/lib/app/skill";
+import { skillsSource } from "@/lib/app/skill";
 import { starterTemplateDir } from "@/lib/app/starter";
 import { checkoutRoot } from "@/lib/checkout";
 import { FakeCf } from "@/lib/cf/fakeCf";
@@ -32,7 +32,7 @@ function fakeCheckout(root: string = tmp()): string {
         !source.includes("node_modules") && !source.includes(".cloudflare"),
     },
   );
-  fs.cpSync(skillSource(checkoutRoot()), skillSource(root), { recursive: true });
+  fs.cpSync(skillsSource(checkoutRoot()), skillsSource(root), { recursive: true });
   for (const [dir, name] of [
     ["sdk", "@every-app/sdk"],
     ["cli", "everyapp"],
@@ -110,12 +110,12 @@ describe("everyapp create", () => {
       [["workers", "types"], app],
       [["d1", "migrations", "apply"], app],
     ]);
-    // The skill, where coding agents look for it, and the template's
-    // AGENTS.md pointing at it, as it was.
+    // The skills, where coding agents look for them, and the template's
+    // AGENTS.md pointing at them, as it was.
     for (const dir of [".claude", ".agents"]) {
-      expect(fs.readFileSync(path.join(app, dir, "skills", "everyapp", "SKILL.md"), "utf8")).toContain(
-        "name: everyapp",
-      );
+      for (const name of ["everyapp", "build-every-app"]) {
+        expect(fs.readFileSync(path.join(app, dir, "skills", name, "SKILL.md"), "utf8")).toContain(`name: ${name}`);
+      }
     }
     expect(fs.readFileSync(path.join(app, "AGENTS.md"), "utf8")).toBe(
       fs.readFileSync(path.join(starterTemplateDir(root), "AGENTS.md"), "utf8"),
@@ -177,7 +177,7 @@ describe("everyapp create", () => {
         "Creating my-app in ../../apps/my-app",
         "New apps go in the checkout's apps/ folder, wherever you run create.",
         "Copied the starter template ✓",
-        "Added the everyapp skill for coding agents ✓",
+        "Added the everyapp and build-every-app skills for coding agents ✓",
         "Installed dependencies ✓",
         "Generated types ✓",
         "Set up the local database ✓ 1 migration",

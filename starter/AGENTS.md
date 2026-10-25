@@ -1,6 +1,7 @@
 # Agent instructions
 
 - Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md` (also in `.claude/skills/`). `everyapp create` puts it there.
+- To build or change this app, read the build-every-app skill: `.agents/skills/build-every-app/SKILL.md` (patterns in patterns.md beside it).
 - The Gateway signs people in; this app has no login, session or token check of its own, and never builds one. Read who the user is only through the SDK: `context.user` behind `ensureUserMiddleware` (`src/middleware/ensureUser.ts`) in a server function, the `user` a tool handler receives, `getEveryAppUser()` on a public route. Never from a header, cookie or parameter a client sent.
 - The Gateway admits every member of the organization; which rows each one sees is the app's job. Scope every query by `user.id`, as `src/server/todos.ts` does.
 - `description` in `everyapp.config.ts` is the one line the Gateway's app library shows under the app's name; change it when the app stops being a todo list.

@@ -965,7 +965,7 @@ function accessOff(state) {
 
 function notSimulated(cmd, sub) {
   const name = [cmd, sub].filter(Boolean).join(" ");
-  out.emit({ type: "warning", code: "FAKE_NOT_SIMULATED", message: `This is the setup-skill harness's fake everyapp: ${name} does nothing here` });
+  out.emit({ type: "warning", code: "FAKE_NOT_SIMULATED", message: `This is the test harness's fake everyapp: ${name} does nothing here (the person runs it on their own machine)` });
   out.emit({ type: "done", message: `${name}: nothing to do (fake everyapp)`, data: { simulated: false, durationMs: 10 } });
   return 0;
 }

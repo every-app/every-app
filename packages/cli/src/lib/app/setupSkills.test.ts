@@ -15,6 +15,7 @@ import { isSettableGatewaySetting } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
 import { checkoutRoot } from "@/lib/checkout";
+import { asksForSecretInChat } from "../../../test/shared/chat-secret.mjs";
 
 const setupDir = path.join(checkoutRoot(), "packages", "cli", "skills", "everyapp", "setup");
 const readmeFile = path.join(setupDir, "README.md");
@@ -138,6 +139,10 @@ describe("every setup file", () => {
         for (const phrase of FORBIDDEN_PHRASES) {
           if (lower.includes(phrase)) problems.push(`${file.name}:${index + 1} says "${phrase}"`);
         }
+        // The detector the claude -p harness flags an agent's turn with: a
+        // sentence a setup file writes is one an agent may repeat.
+        const ask = asksForSecretInChat(line);
+        if (ask) problems.push(`${file.name}:${index + 1} asks "${ask}"`);
         const value = valueAfterSecretSet(line);
         if (value) problems.push(`${file.name}:${index + 1} secret set with a value on the command line: ${value}`);
       });
