@@ -23,6 +23,7 @@ import {
   isReservedAppSecretName,
   isRemoteMcpSecretName,
   isSignInSettingName,
+  isOAuthProvider,
   isSettableGatewaySetting,
   providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
@@ -463,11 +464,20 @@ export function capabilityEntrySchema(
   if (!capability || capability.mode === "ai") {
     throw new Error(`capabilityEntrySchema: ${id} is not a capability`);
   }
+  // An OAuth client the Gateway runs the flow for (a `flow` block) also
+  // takes `read`: the app's calls to its API hosts carry the person's held
+  // token, and a read grant allows the read methods only (the held-token
+  // branch, docs/design/2026-10-oauth-providers.md section 7). `write`
+  // stays what the app-driven token-endpoint calls need.
+  const offered: readonly string[] =
+    isOAuthProvider(capability) && !capability.access.includes("read")
+      ? ["read", ...capability.access]
+      : capability.access;
   const access = z
     .enum(["read", "write"])
     .refine(
-      (level) => (capability.access as readonly string[]).includes(level),
-      `${capability.label} offers ${capability.access.join(" or ")} access`,
+      (level) => offered.includes(level),
+      `${capability.label} offers ${offered.join(" or ")} access`,
     );
   const policy =
     "scopePolicy" in capability ? capability.scopePolicy : undefined;

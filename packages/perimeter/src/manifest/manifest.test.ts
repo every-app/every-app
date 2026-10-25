@@ -685,6 +685,21 @@ describe("capabilities manifest field", () => {
     >();
   });
 
+  it("accepts a client the Gateway runs the flow for with access: read and its sets", () => {
+    const capabilities = {
+      "google-workspace": {
+        access: "read",
+        optional: true,
+        scopes: ["identity", "search-console.read", "analytics.read"],
+        why: "Search Console and GA4 reads through the Gateway's connection.",
+      },
+      slack: { access: "read", scopes: ["channels.read", "users.read"] },
+    };
+    expect(
+      validateManifestStrict({ id: "seo", capabilities }).capabilities,
+    ).toEqual(capabilities);
+  });
+
   it("accepts the OAuth clients for writing, with why", () => {
     const capabilities = {
       linkedin: { access: "write", why: "Connects LinkedIn channels." },
