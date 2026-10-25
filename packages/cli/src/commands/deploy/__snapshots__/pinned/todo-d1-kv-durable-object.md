@@ -241,7 +241,7 @@
       "type": "json",
       "value": {
         "version": "0.2.0",
-        "sha256": "cfe4f59cb0ab0ca6b68f6d10720321a4b36d5984b33537c84450e69f41cdb87f"
+        "sha256": "<release-sha256>"
       }
     },
     "APP_BASE_DOMAIN": {
@@ -459,7 +459,7 @@
       "type": "json",
       "value": {
         "version": "0.2.0",
-        "sha256": "cfe4f59cb0ab0ca6b68f6d10720321a4b36d5984b33537c84450e69f41cdb87f"
+        "sha256": "<release-sha256>"
       }
     },
     "APP_BASE_DOMAIN": {

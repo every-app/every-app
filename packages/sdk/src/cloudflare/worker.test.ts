@@ -603,7 +603,18 @@ describe("everyAppWorker crons and the app's own secrets", () => {
   it("knows every setting of every provider and capability the SDK reaches in dev", () => {
     const keys = new Set([
       ...Object.values(DEV_AI_PROVIDERS).flatMap(aiProviderSettings),
-      ...Object.values(CAPABILITIES).flatMap(capabilitySettings),
+      // The proxy entry (AI Gateway) fronts the gateway's calls only: dev
+      // goes direct, so its settings are never dev settings.
+      ...Object.values(CAPABILITIES)
+        .filter(
+          (capability) =>
+            !(
+              capability.mode === "ai" &&
+              "kind" in capability &&
+              capability.kind === "proxy"
+            ),
+        )
+        .flatMap(capabilitySettings),
     ]);
     fs.writeFileSync(
       path.join(root, ".dev.vars"),

@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 73 providers: 47 API-key, 8 AI, 18 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 74 providers: 47 API-key, 9 AI, 18 OAuth clients.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -70,6 +70,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`openai`](#openai) | OpenAI | AI | `OPENAI_API_KEY` | [openai.md](openai.md) |
 | [`openrouter`](#openrouter) | OpenRouter | AI | `OPENROUTER_API_KEY` | [openrouter.md](openrouter.md) |
 | [`workers-ai`](#workers-ai) | Workers AI | AI | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | [workers-ai.md](workers-ai.md) |
+| [`ai-gateway`](#ai-gateway) | Cloudflare AI Gateway | AI | `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`), `AI_GATEWAY_ID` | [ai-gateway.md](ai-gateway.md) |
 | [`anthropic`](#anthropic) | Anthropic | AI | `ANTHROPIC_API_KEY` |  |
 | [`gemini`](#gemini) | Google Gemini | AI | `GEMINI_API_KEY` |  |
 | [`mistral`](#mistral) | Mistral AI | AI | `MISTRAL_API_KEY` |  |
@@ -907,7 +908,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://platform.openai.com/api-keys
 - **API reference:** https://platform.openai.com/docs/api-reference
 - **How it is sent:** `Authorization: Bearer <OPENAI_API_KEY>`, to `api.openai.com` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/openai/…` with `createGatewayFetch()`: POST to `/v1/responses`, `/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/variations`, and more only where both `AI_PROXY_EXTRA_ROUTES` and the app's `ai.routes` allow it
+- **What apps may do:** list it under `providers` and call `/api/ai/openai/…` with `createGatewayFetch()`: POST to `/v1/responses`, `/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/variations`, and more only where both `AI_PROXY_EXTRA_ROUTES` and the app's `ai.routes` allow it; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v1/chat/completions` with `gpt-6-luna` when the app names no model and `/v1/embeddings` with `text-embedding-3-small`; through AI Gateway as `openai` once it is on
 - **Smoke request:** none recorded
 - **Cost:** not recorded
 - **Rate:** not recorded
@@ -924,7 +925,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://openrouter.ai/settings/keys
 - **API reference:** https://openrouter.ai/docs
 - **How it is sent:** `Authorization: Bearer <OPENROUTER_API_KEY>`, to `openrouter.ai` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/openrouter/…` with `createGatewayFetch()`: POST to `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/responses`, `/api/v1/embeddings`
+- **What apps may do:** list it under `providers` and call `/api/ai/openrouter/…` with `createGatewayFetch()`: POST to `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/responses`, `/api/v1/embeddings`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/api/v1/chat/completions` with `anthropic/claude-haiku-5.5` when the app names no model and `/api/v1/embeddings` with `openai/text-embedding-3-small`; through AI Gateway as `openrouter` once it is on
 - **Smoke request:** none recorded
 - **Cost:** per token. The answer's usage.cost is the call's price in USD, per model. The Gateway reads each answer's `usage.cost` field (US dollars) into the usage counters.
 - **Rate:** not recorded
@@ -941,13 +942,30 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://dash.cloudflare.com/profile/api-tokens
 - **API reference:** https://developers.cloudflare.com/workers-ai/
 - **How it is sent:** `Authorization: Bearer <WORKERS_AI_API_TOKEN>`, to `api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/workers-ai/…` with `createGatewayFetch()`: POST to `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`
+- **What apps may do:** list it under `providers` and call `/api/ai/workers-ai/…` with `createGatewayFetch()`: POST to `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v1/chat/completions` with `@cf/meta/llama-4-scout-17b-16e-instruct` when the app names no model and `/v1/embeddings` with `@cf/baai/bge-m3`; through AI Gateway as `workers-ai` once it is on
 - **Smoke request:** none recorded
 - **Cost:** not recorded
 - **Rate:** not recorded
 - **Verified:** 2026-10-25, live
 - **Set it:** `pnpm everyapp secret set WORKERS_AI_API_TOKEN`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** [workers-ai.md](workers-ai.md)
+
+### ai-gateway
+
+**Cloudflare AI Gateway** (`ai`): Cloudflare's proxy in front of the other AI providers: logs, caching, rate limits and spend, with each provider's own key.
+
+- **Settings:** `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`), `AI_GATEWAY_ID`
+- **What the key is:** The gateway's id from the AI Gateway page (everyapp ai gateway on makes one named everyapp); AI_GATEWAY_API_KEY only for an authenticated gateway, sent as cf-aig-authorization. AI_GATEWAY_ID: The AI Gateway's id (its name in the dashboard), in the Gateway's own Cloudflare account. AI_GATEWAY_API_KEY: An AI Gateway token with Run permission, only when the gateway is authenticated; leave unset for an open gateway.
+- **Where the key comes from:** https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
+- **API reference:** https://developers.cloudflare.com/ai-gateway/
+- **How it is sent:** `cf-aig-authorization: Bearer <AI_GATEWAY_API_KEY>`, to `gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{AI_GATEWAY_ID}` only, over https
+- **What apps may do:** nothing by id. With `AI_GATEWAY_ID` set (`pnpm everyapp ai gateway on`), every call to an AI provider that has an AI Gateway slug goes through `gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{AI_GATEWAY_ID}/<slug>/…` with the provider's own key still on it; a provider without a slug goes direct
+- **Smoke request:** none recorded
+- **Cost:** not recorded
+- **Rate:** not recorded
+- **Verified:** 2026-10-25, docs
+- **Set it:** `pnpm everyapp secret set AI_GATEWAY_API_KEY AI_GATEWAY_ID`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** [ai-gateway.md](ai-gateway.md)
 
 ### anthropic
 
@@ -958,7 +976,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://platform.claude.com/settings/keys
 - **API reference:** https://platform.claude.com/docs/en/api/overview
 - **How it is sent:** `Authorization: Bearer <ANTHROPIC_API_KEY>`, to `api.anthropic.com` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/anthropic/…` with `createGatewayFetch()`: POST to `/v1/messages`, `/v1/messages/count_tokens`
+- **What apps may do:** list it under `providers` and call `/api/ai/anthropic/…` with `createGatewayFetch()`: POST to `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v1/chat/completions` with `claude-haiku-5-5` when the app names no model; through AI Gateway as `anthropic` once it is on
 - **Smoke request:** `GET https://api.anthropic.com/v1/models`, expecting 200; free. Send an anthropic-version header, as every call does.
 - **Cost:** not recorded
 - **Rate:** Requests and tokens per minute by usage tier, on the Console's Rate limits page; token counting is free, with its own per-minute limit.
@@ -975,7 +993,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://aistudio.google.com/apikey
 - **API reference:** https://ai.google.dev/gemini-api/docs/openai
 - **How it is sent:** `Authorization: Bearer <GEMINI_API_KEY>`, to `generativelanguage.googleapis.com` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/gemini/…` with `createGatewayFetch()`: POST to `/v1beta/openai/chat/completions`, `/v1beta/openai/embeddings`, `/v1beta/openai/images/generations`
+- **What apps may do:** list it under `providers` and call `/api/ai/gemini/…` with `createGatewayFetch()`: POST to `/v1beta/openai/chat/completions`, `/v1beta/openai/embeddings`, `/v1beta/openai/images/generations`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v1beta/openai/chat/completions` with `gemini-3.1-flash-lite` when the app names no model and `/v1beta/openai/embeddings` with `gemini-embedding-001`
 - **Smoke request:** `GET https://generativelanguage.googleapis.com/v1beta/openai/models`, expecting 200; free
 - **Cost:** not recorded
 - **Rate:** Per project, not per key: requests and tokens per minute and requests per day, by tier (Free, then Tiers 1 to 3).
@@ -992,7 +1010,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://console.mistral.ai
 - **API reference:** https://docs.mistral.ai/api/
 - **How it is sent:** `Authorization: Bearer <MISTRAL_API_KEY>`, to `api.mistral.ai` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/mistral/…` with `createGatewayFetch()`: POST to `/v1/chat/completions`, `/v1/fim/completions`, `/v1/embeddings`, `/v1/moderations`, `/v1/chat/moderations`, `/v1/classifications`, `/v1/chat/classifications`, `/v1/ocr`, `/v1/audio/transcriptions`, `/v1/audio/speech`
+- **What apps may do:** list it under `providers` and call `/api/ai/mistral/…` with `createGatewayFetch()`: POST to `/v1/chat/completions`, `/v1/fim/completions`, `/v1/embeddings`, `/v1/moderations`, `/v1/chat/moderations`, `/v1/classifications`, `/v1/chat/classifications`, `/v1/ocr`, `/v1/audio/transcriptions`, `/v1/audio/speech`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v1/chat/completions` with `mistral-small-latest` when the app names no model and `/v1/embeddings` with `mistral-embed`; through AI Gateway as `mistral` once it is on
 - **Smoke request:** `GET https://api.mistral.ai/v1/models`, expecting 200; free
 - **Cost:** not recorded
 - **Rate:** not recorded
@@ -1009,7 +1027,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Where the key comes from:** https://console.groq.com/keys
 - **API reference:** https://console.groq.com/docs/api-reference
 - **How it is sent:** `Authorization: Bearer <GROQ_API_KEY>`, to `api.groq.com` only, over https
-- **What apps may do:** list it under `providers` and call `/api/ai/groq/…` with `createGatewayFetch()`: POST to `/openai/v1/chat/completions`, `/openai/v1/responses`, `/openai/v1/audio/transcriptions`, `/openai/v1/audio/translations`, `/openai/v1/audio/speech`
+- **What apps may do:** list it under `providers` and call `/api/ai/groq/…` with `createGatewayFetch()`: POST to `/openai/v1/chat/completions`, `/openai/v1/responses`, `/openai/v1/audio/transcriptions`, `/openai/v1/audio/translations`, `/openai/v1/audio/speech`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/openai/v1/chat/completions` with `openai/gpt-oss-20b` when the app names no model; through AI Gateway as `groq` once it is on
 - **Smoke request:** `GET https://api.groq.com/openai/v1/models`, expecting 200; free
 - **Cost:** not recorded
 - **Rate:** Requests and tokens per minute and per day, per model and plan, for the whole organization; the console Limits page shows them.

@@ -10,8 +10,11 @@ import { SectionHeader } from "@/client/components/PageHeader";
 import {
   UsageByAppTable,
   UsageByMemberTable,
+  UsageByModelTable,
   UsageByTargetTable,
 } from "@/client/components/admin/UsageTables";
+import { AiDefaultCard } from "@/client/components/admin/AiDefaultCard";
+import { SetAiDefaultModal } from "@/client/components/admin/SetAiDefaultModal";
 import { SetDefaultCapModal } from "@/client/components/admin/SetDefaultCapModal";
 import { SetMonthlyCapModal } from "@/client/components/admin/SetMonthlyCapModal";
 import { Button } from "@/client/components/ui/button";
@@ -23,6 +26,7 @@ import {
   SelectValue,
 } from "@/client/components/ui/select";
 import { formatCount, monthLabel, monthOptions } from "@/client/lib/usage";
+import { getAiDefault } from "@/serverFunctions/ai";
 import { getUsage } from "@/serverFunctions/usage";
 import type { UsageAppRow } from "@/types/usage";
 
@@ -37,11 +41,22 @@ function UsagePage() {
   const isCurrentMonth = month === months[0]!.value;
   const [capApp, setCapApp] = useState<UsageAppRow | null>(null);
   const [editingDefault, setEditingDefault] = useState(false);
+  const [editingAiDefault, setEditingAiDefault] = useState(false);
   const queryClient = useQueryClient();
   const onSetCap = useCallback((row: UsageAppRow) => setCapApp(row), []);
   const onSaved = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin", "usage"] });
   };
+  const onAiDefaultSaved = () => {
+    void queryClient.invalidateQueries({ queryKey: ["admin", "usage"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "ai-default"] });
+  };
+
+  // The default model provider: not per month, so its own query.
+  const aiDefaultQuery = useQuery({
+    queryKey: ["admin", "ai-default"],
+    queryFn: () => getAiDefault(),
+  });
 
   const usageQuery = useQuery({
     queryKey: ["admin", "usage", month],
@@ -112,6 +127,19 @@ function UsagePage() {
         }
       />
 
+      {aiDefaultQuery.isError ? (
+        <ErrorState
+          message="Couldn't load the AI default."
+          onRetry={() => void aiDefaultQuery.refetch()}
+          isRetrying={aiDefaultQuery.isFetching}
+        />
+      ) : (
+        <AiDefaultCard
+          report={aiDefaultQuery.data}
+          onChange={() => setEditingAiDefault(true)}
+        />
+      )}
+
       {usageQuery.isError ? (
         error
       ) : isEmpty ? (
@@ -176,6 +204,12 @@ function UsagePage() {
                   isLoading={usageQuery.isLoading}
                 />
               </section>
+              {summary && summary.byModel.length > 0 ? (
+                <section className="space-y-3">
+                  <SectionHeader title="By model" />
+                  <UsageByModelTable rows={summary.byModel} isLoading={false} />
+                </section>
+              ) : null}
             </>
           )}
         </>
@@ -187,6 +221,13 @@ function UsagePage() {
           isCurrentMonth={isCurrentMonth}
           onClose={() => setCapApp(null)}
           onSaved={onSaved}
+        />
+      ) : null}
+      {editingAiDefault && aiDefaultQuery.data ? (
+        <SetAiDefaultModal
+          report={aiDefaultQuery.data}
+          onClose={() => setEditingAiDefault(false)}
+          onSaved={onAiDefaultSaved}
         />
       ) : null}
       {editingDefault ? (

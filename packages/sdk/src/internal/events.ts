@@ -21,6 +21,7 @@ export type EventGroup =
   | "signin_provider"
   | "mcp_app"
   | "provider"
+  | "ai"
   | "ping";
 
 export interface EventTypeInfo {
@@ -115,6 +116,7 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "provider.connection_expired",
     "An OAuth provider refused to refresh a connection; it needs reconnecting",
   ),
+  entry("ai", "ai.default_changed", "The default model provider changed"),
   entry("ping", "ping", "A test event, sent to one subscription on request"),
 ];
 

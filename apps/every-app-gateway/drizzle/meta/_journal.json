@@ -106,6 +106,13 @@
       "when": 1792908011716,
       "tag": "0016_oauth_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792909063712,
+      "tag": "0017_ai_default_and_usage_models",
+      "breakpoints": true
     }
   ]
 }

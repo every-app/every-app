@@ -62,6 +62,7 @@ import { MembershipService } from "@/server/services/MembershipService";
 import { OrganizationService } from "@/server/services/OrganizationService";
 import { UserPatService } from "@/server/services/UserPatService";
 import { MCP_APP_HANDLERS } from "./mcp-app-tools";
+import { AI_HANDLERS } from "./ai-tools";
 import { PROVIDER_HANDLERS } from "./provider-tools";
 import { SIGNIN_HANDLERS } from "./signin-tools";
 
@@ -513,10 +514,12 @@ function deliveriesCursor(value: unknown): string | undefined {
 }
 
 const HANDLERS: Record<string, Handler> = {
-  // The provider tools (provider-tools.ts) and the sign-in provider tools
-  // (signin-tools.ts), run the same way.
+  // The provider tools (provider-tools.ts), the sign-in provider tools
+  // (signin-tools.ts) and the model-provider tools (ai-tools.ts), run the
+  // same way.
   ...PROVIDER_HANDLERS,
   ...SIGNIN_HANDLERS,
+  ...AI_HANDLERS,
 
   async workspace_show(ctx) {
     const [organization, { users }, { groups }, apps] = await Promise.all([

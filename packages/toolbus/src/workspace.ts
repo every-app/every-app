@@ -531,6 +531,43 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     ),
   },
   {
+    risk: "read",
+    minRole: "member",
+    name: "ai_show",
+    title: "The default model provider",
+    description:
+      "What the Gateway's default model provider resolves to now and why: the provider, its model, the source (the stored choice, the shipped order, or nothing configured yet), whether it is configured (its Gateway settings set; shown to owners and admins), whether calls go through Cloudflare AI Gateway, and every provider the default could be, in order, each with its state. What an app gets for `ai: { chat: true }`. Any member.",
+    inputSchema: objectWith({}),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "ai_default",
+    title: "Choose the default model provider",
+    description:
+      "Set the organization's default model provider (Admin → Usage → AI default; `everyapp ai default`): the provider id, and optionally the model to fill in when an app names none; or clear it (`clear: true`) so the shipped order decides (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral, Gemini: the first whose key is set). Refused for an API provider, an entry without an OpenAI-shaped chat route (Cohere) or AI Gateway. A provider whose key isn't set is accepted: apps get ai_default_not_configured until the operator sets it from the terminal. Queues ai.default_changed when the choice changed. Owners and admins.",
+    inputSchema: objectWith({
+      provider: {
+        type: "string",
+        description:
+          "The provider's id, as ai_show lists the candidates (openrouter, workers-ai, openai, …).",
+        minLength: 2,
+        maxLength: ID_MAX,
+      },
+      model: {
+        type: "string",
+        description:
+          "The model to fill in when an app names none (anthropic/claude-sonnet-5.5); omitted, the provider's own default model.",
+        minLength: 1,
+        maxLength: 200,
+      },
+      clear: {
+        type: "boolean",
+        description:
+          "True to clear the choice: the shipped order decides again. Give this or provider, not both.",
+      },
+    }),
+  },
+  {
     ...ADMIN_WRITE,
     name: "workspace_app_delete",
     title: "Delete an app",

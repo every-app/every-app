@@ -159,6 +159,7 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_workspace_apps`, `everyapp_workspace_app_set`,
          `everyapp_workspace_app_access`, `everyapp_workspace_app_access_set`,
          `everyapp_workspace_app_cap`, `everyapp_workspace_cap_default`,
+         `everyapp_ai_show` (any member), `everyapp_ai_default`,
          `everyapp_workspace_usage`, `everyapp_workspace_activity`,
          `everyapp_workspace_audit` (the audit log: who did what, 90 days),
          `everyapp_workspace_rename`, and the

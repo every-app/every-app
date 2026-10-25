@@ -55,6 +55,7 @@ RUN A GATEWAY
   signin     Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
   secret     Set, remove and list secrets and Gateway settings
   provider   Register API providers for apps to call with the Gateway's key, beside the built-in ones
+  ai         The default model provider apps get when they ask for one, and AI Gateway in front
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
   events     Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
@@ -1612,6 +1613,190 @@ Same as pnpm everyapp mcp off; this alias goes after launch week.
 
 ```text
 
+```
+
+### `everyapp ai show`
+
+What the Gateway's default model provider resolves to now, and why.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai show [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp ai show --help
+
+The provider and model an app that asks for the default chat model gets (ai: { chat: true }
+in its manifest, the SDK's ai()): the stored choice (ai default) if there is one, else the
+first provider of the shipped order whose key is set (OpenRouter, Workers AI, OpenAI, Anthropic,
+Groq, Mistral, Gemini), else what to set. Reads the Gateway's setting names, never values.
+Says whether calls go through Cloudflare AI Gateway (ai gateway on).
+
+Example:
+  pnpm everyapp ai show
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp ai list`
+
+Every provider the default model could be, in order, each with its key set or not.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai list [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp ai list --help
+
+The shipped order first, then any other AI provider with an OpenAI-shaped chat route; the
+one the default resolves to now is marked. An API provider (Stripe) or one without such a
+route (Cohere) isn't here: an app pins those under providers.
+
+Example:
+  pnpm everyapp ai list
+
+ALIASES
+  pnpm everyapp ai ls
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp ai default`
+
+Choose the default model provider (and model) for every app that asks for one, or off for the shipped order.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<provider[/model]\|off>` | yes | The provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-sonnet-5.5), or off |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai default [--gateway value] [--account-id value] [--json] [--verbose] <provider[/model]|off>
+  pnpm everyapp ai default --help
+
+The same setting as Manage workspace → Usage → AI default. The provider id is everything
+up to the first slash, the model everything after it (a model id may hold slashes). Without
+a model, the provider's own default model is filled in. A provider whose key isn't set is
+accepted with a warning naming the key; one the default can't be (an API provider, an entry
+without an OpenAI-shaped chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway
+reads the change within 30 seconds; a change queues ai.default_changed. Refused on a Gateway
+from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
+
+Examples:
+  pnpm everyapp ai default openrouter
+  pnpm everyapp ai default openrouter/anthropic/claude-sonnet-5.5
+  pnpm everyapp ai default workers-ai --json
+  pnpm everyapp ai default off
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  provider[/model]|off  The provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-sonnet-5.5), or off
+```
+
+### `everyapp ai gateway on`
+
+Put Cloudflare AI Gateway in front of every model call: find or make the gateway, set AI_GATEWAY_ID.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--id` | `<id>` | no |  | The AI Gateway's id (its name in the dashboard): lowercase letters, digits and single hyphens; everyapp by default |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai gateway on [--id id] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp ai gateway on --help
+
+Finds the AI Gateway in the Gateway's Cloudflare account (or makes it, logs on, no cache)
+and records its id as the Gateway setting AI_GATEWAY_ID. From the Gateway's next request
+every call to a model provider that AI Gateway fronts (OpenRouter, OpenAI, Anthropic, Groq,
+Mistral, Workers AI) goes through it with the provider's own key still on the call; Gemini
+and Cohere go direct. Changes no app and no key. For an authenticated gateway, set its
+token afterwards: pnpm everyapp secret set AI_GATEWAY_API_KEY.
+
+Examples:
+  pnpm everyapp ai gateway on
+  pnpm everyapp ai gateway on --id acme-models
+
+FLAGS
+     [--id]                    The AI Gateway's id (its name in the dashboard): lowercase letters, digits and single hyphens; everyapp by default
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp ai gateway off`
+
+Send model calls direct again: unset AI_GATEWAY_ID (the Cloudflare resource stays).
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai gateway off [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp ai gateway off --help
+
+Unsets AI_GATEWAY_ID on the Gateway; every model call goes direct from its next request.
+The AI Gateway and its logs stay in the account. AI_GATEWAY_API_KEY stays until pnpm everyapp secret unset.
+
+Example:
+  pnpm everyapp ai gateway off
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp mcp add`

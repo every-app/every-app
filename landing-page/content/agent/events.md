@@ -411,6 +411,14 @@ The upload record is the event, from the CLI and the Gateway's deploy paths alik
 
 `cap.warning` and `cap.reached` fire once per app, month and cap (their dedupe key), from the cap check on an app's brokered calls and on an MCP app's tool calls; `app.paused_cap` fires with `cap.reached`. A raised cap starts over, since its key changes. `cap.raised` fires when the Gateway sets a cap that is higher than before, new, or removed, not when it is lowered; its summary is "crm's cap set to 5,000" when there was none and "crm's cap was removed (was 1,000)" when it goes.
 
+### The default model provider
+
+| Type                 | v   | Summary                                                                                             | `data`                                                                                                                                                                                                             |
+| -------------------- | --- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ai.default_changed` | 1   | "The default model provider is now openrouter (anthropic/claude-haiku-5.5) (was the shipped order)" | `{ aiDefault: { provider, model: string \| null } \| null, previous: { provider, model } \| null }`; `null` on either side is the shipped order (OpenRouter → Workers AI → OpenAI → …, the first whose key is set) |
+
+`ai.default_changed` fires from Manage workspace → Usage → AI default, `everyapp ai default` and the `everyapp_ai_default` tool when the stored choice changes (never on a write that leaves it as it was). It carries provider ids and model ids only, never a key. See [/docs/agent/ai](/docs/agent/ai).
+
 ### Tool calls
 
 | Type           | v   | Summary                                                        | `data`                                                                      |

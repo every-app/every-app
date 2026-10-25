@@ -38,6 +38,7 @@ import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
+import { hasAiDefault } from "./aiDefault";
 import { capAlertsStatement, operatorActor, queueEventFromCli, requireAuditColumns } from "./events";
 import { anotherLiveOwnerSql } from "./members";
 import { installOrganization, registryCall, text, type Deployer, type Organization } from "./registry";
@@ -1622,19 +1623,33 @@ export async function setDefaultMonthlyCap(ws: Workspace, cap: number | null): P
         now: ws.now,
       })
     : [];
-  const results = await ws.db.run([
+  // The row also holds the default model provider (ai_default, migration
+  // 0017): clearing the cap keeps the row while that is set, and the row
+  // goes only when it holds nothing else.
+  const write =
     cap === null
-      ? { sql: "DELETE FROM org_settings WHERE organization_id = ?", params: [org] }
-      : {
-          sql: `INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by)
+      ? (await hasAiDefault(ws.db))
+        ? [
+            {
+              sql: "UPDATE org_settings SET default_monthly_call_cap = NULL, updated_at = ?, updated_by = ? WHERE organization_id = ?",
+              params: [ws.now, ws.operator.userId, org],
+            },
+            {
+              sql: "DELETE FROM org_settings WHERE organization_id = ? AND ai_default IS NULL AND default_monthly_call_cap IS NULL",
+              params: [org],
+            },
+          ]
+        : [{ sql: "DELETE FROM org_settings WHERE organization_id = ?", params: [org] }]
+      : [
+          {
+            sql: `INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT (organization_id) DO UPDATE SET default_monthly_call_cap = ?2, updated_at = ?3, updated_by = ?4`,
-          params: [org, cap, ws.now, ws.operator.userId],
-        },
-    ...(capAlerts ? [capAlerts] : []),
-    ...event,
-  ]);
-  const capAlertsId = capAlerts ? text(results[1]?.[0]?.["id"]) : null;
+            params: [org, cap, ws.now, ws.operator.userId],
+          },
+        ];
+  const results = await ws.db.run([...write, ...(capAlerts ? [capAlerts] : []), ...event]);
+  const capAlertsId = capAlerts ? text(results[write.length]?.[0]?.["id"]) : null;
   return { cap, was, capAlertsId };
 }
 

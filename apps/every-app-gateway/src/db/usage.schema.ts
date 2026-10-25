@@ -81,3 +81,42 @@ export const usageMonthly = sqliteTable(
     }),
   ],
 );
+
+/**
+ * AI calls by model: one row per organization, app, provider, model and
+ * UTC month, written beside `usage_daily` for a call the AI proxy read a
+ * model off (the request body's `model`, or the default the Gateway
+ * filled in). What Manage workspace → Usage shows under each provider.
+ * Counts only, like the tables above; deleted past 25 months.
+ */
+export const usageModels = sqliteTable(
+  "usage_models",
+  {
+    organizationId: text("organization_id").notNull(),
+    appRowId: text("app_row_id").notNull(),
+    // The AI provider the call went to (openrouter), never `default`.
+    provider: text("provider").notNull(),
+    // The model as the provider names it (anthropic/claude-haiku-5.5).
+    model: text("model").notNull(),
+    // UTC "YYYY-MM".
+    month: text("month").notNull(),
+    calls: integer("calls").notNull().default(0),
+    failures: integer("failures").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    costMicros: integer("cost_micros").notNull().default(0),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.organizationId,
+        table.appRowId,
+        table.provider,
+        table.model,
+        table.month,
+      ],
+    }),
+    index("usage_models_org_month_idx").on(table.organizationId, table.month),
+  ],
+);

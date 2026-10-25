@@ -2,6 +2,7 @@ export * from "./protocol.js";
 export * from "./tools.js";
 export * from "./capabilities.js";
 export * from "./aiProviders.js";
+export * from "./aiDefault.js";
 export * from "./gatewaySettings.js";
 export * from "./appSettings.js";
 export * from "./email.js";

@@ -1302,6 +1302,13 @@ describe("the event bus (SQLite)", () => {
         account: { kind: "user", user: { id: "u2", email: "jo@acme.example" } },
         connectionId: "conn_1",
       }),
+      "ai.default_changed": catalogue.aiDefaultChanged({
+        aiDefault: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-5.5",
+        },
+        previous: null,
+      }),
       ping: catalogue.ping({ subscription: { id: "sub_x", name: "Slack" } }),
     };
 

@@ -57,6 +57,7 @@ vi.mock("@/server/sign-in-providers", () => ({
  */
 const READS = [
   "getActiveOrganization",
+  "getAiDefault",
   "getAppAccessState",
   "getApps",
   "getEmailStatus",

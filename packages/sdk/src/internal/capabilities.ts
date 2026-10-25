@@ -198,6 +198,12 @@ export interface AiProviderCapability extends ProviderDetails {
   label: string;
   /** Where the key goes: bearer for the three today; Anthropic's `x-api-key` header is a `header` kind. */
   auth: ApiKeyAuth;
+  /**
+   * The auth setting is read when set and the entry works without it:
+   * Cloudflare AI Gateway's own token (`cf-aig-authorization`), which an
+   * authenticated gateway requires and an open one ignores. Never a need.
+   */
+  authOptional?: true;
   docs: string;
   setup?: string;
   /** `https://api.openai.com`. */
@@ -210,6 +216,52 @@ export interface AiProviderCapability extends ProviderDetails {
   unstoredRoutes?: readonly string[];
   extraRoutes?: boolean;
   normalize?: "workers-ai";
+  /**
+   * The request shape the provider's inference routes take: OpenAI's
+   * (chat completions and the OpenAI-compatible family: OpenRouter,
+   * Workers AI, Groq, Mistral, Gemini's `/v1beta/openai`), or Anthropic's
+   * Messages API, or the provider's own (Cohere's v2). The Gateway's
+   * default route (`/api/ai/default/…`) serves OpenAI-shaped chat, so only
+   * an `openai`-shaped entry can be the default; the others are pinned by
+   * an app that speaks them. Absent: `openai`.
+   */
+  shape?: "openai" | "anthropic" | "other";
+  /**
+   * Chat through the default route: the entry's chat route (one of
+   * `inferenceRoutes`) that `/api/ai/default/v1/chat/completions` maps
+   * onto, and the model the Gateway fills in when the app names none or
+   * names `default`. Absent: the entry can't be the Gateway's default.
+   */
+  chat?: AiRoute;
+  /** Embeddings through the default route (`/api/ai/default/v1/embeddings`), the same way. */
+  embeddings?: AiRoute;
+  /**
+   * How Cloudflare AI Gateway fronts the provider: its slug under
+   * `https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/`, and the
+   * prefix of the provider's direct path the gateway's URL leaves out
+   * (OpenRouter's `/api`, OpenAI's `/v1`); or, for Workers AI, whose REST
+   * API is AI Gateway's own host, `header: true`: the call keeps its URL
+   * and carries `cf-aig-gateway-id`. With `AI_GATEWAY_ID` set, every call
+   * to an entry with an `aig` block goes through AI Gateway with the
+   * provider's own key still on it; an entry without one goes direct
+   * (Gemini's and Cohere's OpenAI-shaped paths have no documented AI
+   * Gateway form, 2026-10-25).
+   */
+  aig?: { slug: string; trim?: string; header?: true };
+  /**
+   * `proxy`: the entry fronts the other AI providers (Cloudflare AI
+   * Gateway) and serves no models of its own: never listed under
+   * `providers`, never the default, reached through the entries it fronts.
+   */
+  kind?: "proxy";
+}
+
+/** A route of an AI provider the default route maps onto, with the model used when the app names none. */
+export interface AiRoute {
+  /** One of the entry's `inferenceRoutes`: `/api/v1/chat/completions`. */
+  path: string;
+  /** The model the Gateway fills in: a cheap, capable one of the provider's. */
+  model: string;
 }
 
 /** What `access: "write"` adds to a provider's read methods when its entry doesn't say. */
@@ -500,6 +552,12 @@ export const CAPABILITIES = {
     // More than inference needs both the operator (AI_PROXY_EXTRA_ROUTES)
     // and the app's manifest (`ai.routes`): OpenAI paths only.
     extraRoutes: true,
+    // Tool calling on chat completions needs `reasoning_effort: "none"`
+    // on the GPT-6 family (the responses route takes tools as it is).
+    chat: { path: "/v1/chat/completions", model: "gpt-6-luna" },
+    embeddings: { path: "/v1/embeddings", model: "text-embedding-3-small" },
+    // AI Gateway's OpenAI endpoint takes the path without `/v1`.
+    aig: { slug: "openai", trim: "/v1" },
     hint: "A secret key from the API keys page; the Gateway puts it on every call as a bearer token.",
     verified: { on: "2026-10-25", how: "live" },
   },
@@ -520,6 +578,16 @@ export const CAPABILITIES = {
       "/api/v1/responses",
       "/api/v1/embeddings",
     ],
+    chat: {
+      path: "/api/v1/chat/completions",
+      model: "anthropic/claude-haiku-5.5",
+    },
+    embeddings: {
+      path: "/api/v1/embeddings",
+      model: "openai/text-embedding-3-small",
+    },
+    // AI Gateway's OpenRouter endpoint takes the path without `/api`.
+    aig: { slug: "openrouter", trim: "/api" },
     hint: "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.",
     // Every answer's `usage.cost` is the call's price in USD, what
     // OpenRouter charges the key: read off the tail with the tokens.
@@ -552,8 +620,55 @@ export const CAPABILITIES = {
       "/v1/responses",
     ],
     normalize: "workers-ai",
+    chat: {
+      path: "/v1/chat/completions",
+      model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+    },
+    embeddings: { path: "/v1/embeddings", model: "@cf/baai/bge-m3" },
+    // Workers AI's REST API is AI Gateway's own host: the URL stays and
+    // `cf-aig-gateway-id` names the gateway.
+    aig: { slug: "workers-ai", header: true },
     hint: "A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.",
     verified: { on: "2026-10-25", how: "live" },
+  },
+  // Cloudflare AI Gateway: a proxy in front of the other AI providers
+  // (logs, caching, rate limits, spend), with no models of its own. With
+  // AI_GATEWAY_ID set, every call to an `ai` entry that has an `aig` slug
+  // goes through it, the provider's own key still on the call; the
+  // gateway's own token is optional (an authenticated gateway requires
+  // it). Never listed under `providers`: it fronts the entries apps list.
+  "ai-gateway": {
+    mode: "ai",
+    kind: "proxy",
+    label: "Cloudflare AI Gateway",
+    description:
+      "Cloudflare's proxy in front of the other AI providers: logs, caching, rate limits and spend, with each provider's own key.",
+    auth: {
+      kind: "header",
+      header: "cf-aig-authorization",
+      prefix: "Bearer ",
+      secret: "AI_GATEWAY_API_KEY",
+    },
+    authOptional: true,
+    docs: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway",
+    api: "https://developers.cloudflare.com/ai-gateway/",
+    setup: "setup/ai-gateway.md",
+    origin: "https://gateway.ai.cloudflare.com",
+    alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID", "AI_GATEWAY_ID"],
+    basePath: "/v1/{CLOUDFLARE_ACCOUNT_ID}/{AI_GATEWAY_ID}",
+    inferenceRoutes: [],
+    hint: "The gateway's id from the AI Gateway page (everyapp ai gateway on makes one named everyapp); AI_GATEWAY_API_KEY only for an authenticated gateway, sent as cf-aig-authorization.",
+    secrets: [
+      {
+        name: "AI_GATEWAY_ID",
+        hint: "The AI Gateway's id (its name in the dashboard), in the Gateway's own Cloudflare account.",
+      },
+      {
+        name: "AI_GATEWAY_API_KEY",
+        hint: "An AI Gateway token with Run permission, only when the gateway is authenticated; leave unset for an open gateway.",
+      },
+    ],
+    verified: { on: "2026-10-25", how: "docs" },
   },
   dataforseo: {
     mode: "api_key",

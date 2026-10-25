@@ -389,6 +389,8 @@ const DEV_GATEWAY_KEYS = {
     openai: ["OPENAI_API_KEY"],
     openrouter: ["OPENROUTER_API_KEY"],
     "workers-ai": ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+    // Not Cloudflare AI Gateway (the proxy entry): dev goes to the
+    // providers directly, so its settings are the Gateway's alone.
     // The AI providers of ../internal/catalog/inference.ts.
     anthropic: ["ANTHROPIC_API_KEY"],
     gemini: ["GEMINI_API_KEY"],

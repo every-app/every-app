@@ -61,6 +61,12 @@ export interface UsageTargetRow extends UsageTotals {
   target: string;
 }
 
+/** An AI provider's calls by model in the month (`usage_models`). */
+export interface UsageModelRow extends UsageTotals {
+  provider: string;
+  model: string;
+}
+
 /** What `setAppMonthlyCap` answers: the app's row and what binds it now. */
 export interface AppCapState {
   appRowId: string;
@@ -83,4 +89,6 @@ export interface UsageSummary {
   byApp: UsageAppRow[];
   byMember: UsageMemberRow[];
   byTarget: UsageTargetRow[];
+  /** AI calls by provider and model, most calls first. */
+  byModel: UsageModelRow[];
 }

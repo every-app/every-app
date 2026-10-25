@@ -1,10 +1,14 @@
 import {
+  AI_DEFAULT_MODEL,
+  AI_DEFAULT_PROVIDER,
+  AI_DEFAULT_ROUTES,
   aiProviderSettings,
   authorizationOf,
   ConfigurationError,
   DEV_AI_PROVIDERS,
   devAiProvider,
   joinProviderUrl,
+  resolveAiDefault,
   type DevAiProviderSpec,
 } from "../internal/index.js";
 import {
@@ -90,7 +94,8 @@ export function createGatewayFetch({
       return binding.fetch(bindingRequest);
     }
 
-    const { provider, spec, path, search } = directProviderPath(outbound.url);
+    const direct = directProviderPath(outbound.url, env);
+    const { provider, spec, path, search } = direct;
     const dev = devProviders[provider];
     if (!dev) {
       throw new ConfigurationError(
@@ -100,6 +105,11 @@ export function createGatewayFetch({
     const url = joinProviderUrl(`${spec.origin}${dev.basePath}`, path, search);
     if (!url) throw new ConfigurationError("Invalid provider proxy path.");
     applyAttribution(headers, undefined);
+    // The default route in dev: the model filled in as the gateway would.
+    let body: Request = outbound;
+    if (direct.fillModel !== null) {
+      body = await withModel(outbound, direct.fillModel, headers);
+    }
     // The developer's key, put where the provider's entry says (a bearer
     // token for the three today), as the gateway would put its own.
     const auth = authorizationOf(spec.auth, { [spec.keyEnv]: dev.key });
@@ -110,11 +120,49 @@ export function createGatewayFetch({
       url.searchParams.set(name, value);
     }
     const response = await fetch(
-      streamingRequest(url.toString(), outbound, headers),
+      streamingRequest(url.toString(), body, headers),
     );
     // What the gateway does to the provider's answer, so dev behaves alike.
     return spec.normalizeResponse?.(path, response) ?? response;
   };
+}
+
+/**
+ * `source` with `model` put into its JSON body where the app named none
+ * or named `default`, as the gateway's default route does. A body that
+ * isn't a JSON object goes through as it is.
+ */
+async function withModel(
+  source: Request,
+  model: string,
+  headers: Headers,
+): Promise<Request> {
+  if (!canIncludeBody(source.method) || !source.body) return source;
+  const text = await source.clone().text();
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return source;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return source;
+  }
+  const record = payload as Record<string, unknown>;
+  if (
+    record["model"] === undefined ||
+    record["model"] === null ||
+    record["model"] === AI_DEFAULT_MODEL
+  ) {
+    record["model"] = model;
+  }
+  headers.delete("content-length");
+  return new Request(source.url, {
+    method: source.method,
+    headers,
+    body: JSON.stringify(record),
+    signal: source.signal,
+  });
 }
 
 /** A copy of `source` aimed at `url`, streaming its body rather than buffering it. */
@@ -160,22 +208,59 @@ function localProviders(env: GatewayFetchEnv): Record<string, LocalProvider> {
   return providers;
 }
 
-function directProviderPath(input: string): {
+function directProviderPath(
+  input: string,
+  env: GatewayFetchEnv,
+): {
   provider: string;
   spec: DevAiProviderSpec;
   path: string;
   search: string;
+  /** The default route's model to fill in; null on a provider's own route. */
+  fillModel: string | null;
 } {
   const incoming = new URL(input);
   const match = incoming.pathname.match(
     /^\/api\/ai\/([a-z][a-z0-9-]*)(\/.*)?$/,
   );
-  const provider = match?.[1];
+  let provider = match?.[1];
+  let path = match?.[2] || "/";
+  let fillModel: string | null = null;
+  if (provider === AI_DEFAULT_PROVIDER) {
+    // The default in dev, by the gateway's rule on the developer's own
+    // `.dev.vars`: the first provider of the order with every setting set.
+    const values = env as Record<string, unknown>;
+    const resolution = resolveAiDefault({
+      choice: null,
+      isSet: (name) =>
+        typeof values[name] === "string" &&
+        (values[name] as string).trim().length > 0,
+    });
+    if (!resolution.configured) {
+      throw new ConfigurationError(
+        `Set ${resolution.settings.join(" and ")} (or another model provider's key) in .dev.vars to call the default model in local development.`,
+      );
+    }
+    const route =
+      path === AI_DEFAULT_ROUTES.chat
+        ? resolution.chat
+        : path === AI_DEFAULT_ROUTES.embeddings
+          ? resolution.embeddings
+          : undefined;
+    if (!route) {
+      throw new ConfigurationError(
+        `The default model serves ${AI_DEFAULT_ROUTES.chat} and ${AI_DEFAULT_ROUTES.embeddings} only; call /api/ai/<provider>/… for anything else.`,
+      );
+    }
+    provider = resolution.provider;
+    path = route.path;
+    fillModel = path === resolution.chat.path ? resolution.model : route.model;
+  }
   const spec = provider ? devAiProvider(provider) : undefined;
   if (!provider || !spec) {
     throw new ConfigurationError(
       `Direct local provider fallback only supports ${listOf(
-        Object.keys(DEV_AI_PROVIDERS).map(
+        [AI_DEFAULT_PROVIDER, ...Object.keys(DEV_AI_PROVIDERS)].map(
           (name) => `${AI_PROXY_PREFIX}${name}`,
         ),
         "and",
@@ -183,11 +268,10 @@ function directProviderPath(input: string): {
     );
   }
 
-  const path = match?.[2] || "/";
   if (path.startsWith("//") || path.includes("\\")) {
     throw new ConfigurationError("Invalid provider proxy path.");
   }
-  return { provider, spec, path, search: incoming.search };
+  return { provider, spec, path, search: incoming.search, fillModel };
 }
 
 /** A provider's settings as a person reads them: `KEY`, or `KEY and SETTING`. */

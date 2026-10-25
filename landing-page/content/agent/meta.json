@@ -23,6 +23,7 @@
     "deploy",
     "---Operate---",
     "providers",
+    "ai",
     "gateway",
     "access",
     "signin",

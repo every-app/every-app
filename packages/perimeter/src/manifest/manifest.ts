@@ -640,6 +640,10 @@ const AiRouteSchema = z
     'must be an OpenAI API path such as "/v1/files"',
   );
 
+/** `ai.chat` as an entry: the need fields alone (the Gateway's default has no id). */
+const AiChatEntrySchema = z.object({ ...SettingNeedFieldsSchema });
+const AiChatEntrySchemaStrict = AiChatEntrySchema.strict();
+
 export const AiPolicySchema = z
   .object({
     /** Model ids the app may request from inference endpoints. Omitted: any. */
@@ -650,8 +654,26 @@ export const AiPolicySchema = z
      * provider key is shared. Omitted: inference only.
      */
     routes: z.array(AiRouteSchema).optional(),
+    /**
+     * The app needs a chat model and takes whichever the Gateway's
+     * operator made the default (`/api/ai/default/…`, the SDK's `ai()`):
+     * `true`, or an entry with its need (`why`, `optional`, `anyOf`). The
+     * model allowlist above doesn't apply to the default route: the
+     * operator chose the model. An app that needs one provider in
+     * particular lists it under `providers` instead, or as well.
+     */
+    chat: z.union([z.boolean(), AiChatEntrySchema]).optional(),
   })
   .passthrough();
+
+/** The strict form: the `chat` entry takes the need fields and nothing else. */
+const AiPolicySchemaStrict = z
+  .object({
+    models: z.array(z.string().min(1).max(200)).optional(),
+    routes: z.array(AiRouteSchema).optional(),
+    chat: z.union([z.boolean(), AiChatEntrySchemaStrict]).optional(),
+  })
+  .strict();
 export type AiPolicy = z.infer<typeof AiPolicySchema>;
 
 /** What an author who wrote the old string form, or anything else, is told. */
@@ -1009,7 +1031,7 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
       .optional(),
     public: z.array(PublicRouteSchemaStrict).optional(),
     scopes: ScopesSchemaStrict.optional(),
-    ai: AiPolicySchema.strict().optional(),
+    ai: AiPolicySchemaStrict.optional(),
     capabilities: capabilities.optional(),
     secrets: (options.capabilities
       ? appSecretsSchemaStrict(options.capabilities)

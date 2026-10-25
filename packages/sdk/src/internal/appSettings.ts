@@ -32,6 +32,13 @@ import {
   type CapabilityLookup,
 } from "./capabilities.js";
 import {
+  aiDefaultSetupHint,
+  aiRequiredSettings,
+  resolveAiDefault,
+  type AiDefaultChoice,
+  type IsSet,
+} from "./aiDefault.js";
+import {
   isInstallOwnedGatewaySetting,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
@@ -79,7 +86,11 @@ export interface SettingsManifestLike {
   readonly providers?: ReadonlyArray<string | ProviderEntry>;
   readonly capabilities?: { readonly [id: string]: unknown };
   readonly secrets?: ReadonlyArray<string | SecretEntry>;
-  readonly ai?: { readonly routes?: readonly string[] };
+  readonly ai?: {
+    readonly routes?: readonly string[];
+    /** The app needs the Gateway's default chat model (`/api/ai/default`): `true`, or an entry with its need. */
+    readonly chat?: boolean | SettingNeedFields;
+  };
   /** A remote MCP app's registration (./remoteMcp.ts): its credential is a required Gateway setting. */
   readonly remote?: unknown;
   readonly name?: string;
@@ -90,6 +101,8 @@ export type SettingKind =
   | "capability"
   | "secret"
   | "ai-routes"
+  /** The Gateway's default model provider (`ai.chat`): one key of any provider in the order, or the operator's choice. */
+  | "ai-default"
   /** A remote MCP app's credential (./remoteMcp.ts): one Gateway setting named by the row. */
   | "remote-mcp";
 
@@ -101,6 +114,14 @@ export type SettingNeed =
   | { kind: "optional" }
   | { kind: "anyOf"; group: string };
 
+/** What `appSettings` may be told about the Gateway, for the default model provider. */
+export interface AppSettingsOptions {
+  /** The operator's stored default (`everyapp ai default`), or none. */
+  aiDefault?: AiDefaultChoice | null;
+  /** What is set, to put the configured provider first; absent, the order decides. */
+  isSet?: IsSet;
+}
+
 /** One thing the app needs set, as the manifest declares it. */
 export interface AppSetting {
   kind: SettingKind;
@@ -109,8 +130,14 @@ export interface AppSetting {
   /** "OpenRouter", "DataForSEO", "MAIN_SECRET", "AI proxy routes". */
   label: string;
   holder: SettingHolder;
-  /** Every one of these must be set for the setting to count as set. */
+  /** Every one of these must be set for the setting to count as set (or any one group of `alternatives`). */
   names: string[];
+  /**
+   * For the default model provider: the settings of each provider that
+   * could serve it, any one group of which, all set, makes the setting
+   * set; `names` is the first group, what to ask for.
+   */
+  alternatives?: string[][];
   /** Read when set, never required (a capability's optional settings). */
   alsoReads: string[];
   need: SettingNeed;
@@ -233,7 +260,8 @@ export function secretNames(
  * registered row's are its own, so they count too.
  */
 function providerNames(capability: AiProviderCapability): string[] {
-  return capabilitySettings(capability).filter(
+  // An optional key (AI Gateway's own token) is never a need.
+  return aiRequiredSettings(capability).filter(
     (name) => !isInstallOwnedGatewaySetting(name),
   );
 }
@@ -345,8 +373,45 @@ function withNeed(
 export function appSettings(
   manifest: SettingsManifestLike,
   lookup: CapabilityLookup = CATALOG,
+  options: AppSettingsOptions = {},
 ): AppSetting[] {
   const settings: AppSetting[] = [];
+  const chat = manifest.ai?.chat;
+  if (chat === true || (chat && typeof chat === "object")) {
+    // The default resolves on what is set: with nothing set, the first of
+    // the order (or the operator's choice) and its settings are what to
+    // ask for; with one configured, that provider's. `isSet` here only
+    // orders the candidates; evaluateAppSettings decides what is set.
+    const resolution = resolveAiDefault({
+      choice: options.aiDefault ?? null,
+      isSet: options.isSet ?? (() => false),
+      lookup,
+    });
+    const settable = (names: readonly string[]) =>
+      names.filter((name) => !isInstallOwnedGatewaySetting(name));
+    const provider = lookup.get(resolution.provider);
+    settings.push(
+      withNeed(
+        {
+          kind: "ai-default",
+          id: "ai-default",
+          label: `A chat model (${resolution.label})`,
+          holder: "gateway",
+          names: settable(resolution.settings),
+          alsoReads: [],
+          alternatives: resolution.candidates
+            .map((candidate) => settable(candidate.settings))
+            .filter((names) => names.length > 0),
+        },
+        chat === true ? undefined : chat,
+        {
+          ...(provider?.mode === "ai" ? { docs: provider.docs } : {}),
+          setup: "setup/ai.md",
+          hint: aiDefaultSetupHint(resolution),
+        },
+      ),
+    );
+  }
   for (const entry of providerEntries(manifest)) {
     const capability = lookup.get(entry.id);
     if (capability?.mode !== "ai") continue;
@@ -451,13 +516,25 @@ function settingIsSet(
   setting: AppSetting,
   isSet: (holder: SettingHolder, name: string) => boolean | null,
 ): boolean | null {
+  const groupIsSet = (names: readonly string[]): boolean | null => {
+    let unknown = false;
+    for (const name of names) {
+      const state = isSet(setting.holder, name);
+      if (state === false) return false;
+      if (state === null) unknown = true;
+    }
+    return unknown ? null : true;
+  };
+  if (!setting.alternatives?.length) return groupIsSet(setting.names);
+  // Any one provider configured makes the default serve; unknown only
+  // when no group is set and one couldn't be read.
   let unknown = false;
-  for (const name of setting.names) {
-    const state = isSet(setting.holder, name);
-    if (state === false) return false;
+  for (const names of setting.alternatives) {
+    const state = groupIsSet(names);
+    if (state === true) return true;
     if (state === null) unknown = true;
   }
-  return unknown ? null : true;
+  return unknown ? null : false;
 }
 
 export interface EvaluateOptions {

@@ -281,6 +281,7 @@ Deliveries are kept for 30 days.
 | `provider.connected`          | Someone connected an account at an OAuth provider          |
 | `provider.disconnected`       | An OAuth provider account was disconnected                 |
 | `provider.connection_expired` | An OAuth connection needs reconnecting                     |
+| `ai.default_changed`          | The default model provider changed                         |
 | `ping`                        | A test event, sent to one subscription on request          |
 
 Apps can send their own events too, named `app.<app id>.<name>`, like `app.crm.invoice.paid`. To get every event one app sends, subscribe to `app.crm.*`.

@@ -1,13 +1,20 @@
 import {
+  AI_DEFAULT_MODEL,
+  AI_DEFAULT_PROVIDER,
+  AI_DEFAULT_ROUTES,
+  AI_GATEWAY_PROVIDER,
   CATALOG,
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
   aiBaseUrl,
+  aiGatewayConfigured,
   authorizationFor,
   joinProviderUrl,
   normalizeWorkersAiResponse,
   PUBLIC_HEADER,
+  type AiDefaultResolution,
   type AiProviderCapability,
+  type AiRoute,
   type Authorization,
   type CapabilityLookup,
   type CapabilitySecret,
@@ -85,6 +92,13 @@ interface AiProvider {
   normalizeResponse?: (path: string, response: Response) => Response;
   /** The dotted path in the answer that carries the call's price (`cost.responseField`: OpenRouter's `usage.cost`). */
   costField?: string;
+  /** The routes the default route maps onto (`chat`, `embeddings`), where the entry has them. */
+  chat?: AiRoute;
+  embeddings?: AiRoute;
+  /** How Cloudflare AI Gateway fronts the provider, when it does (the entry's `aig`). */
+  aig?: { slug: string; trim?: string; header?: true };
+  /** The entry fronts the others (AI Gateway itself): apps never call it by id. */
+  proxy: boolean;
 }
 
 /** The proxy's view of an `ai` catalog entry. */
@@ -103,10 +117,14 @@ function aiProviderOf(capability: AiProviderCapability): AiProvider {
     ...(capability.cost?.responseField
       ? { costField: capability.cost.responseField }
       : {}),
+    ...(capability.chat ? { chat: capability.chat } : {}),
+    ...(capability.embeddings ? { embeddings: capability.embeddings } : {}),
+    ...(capability.aig ? { aig: capability.aig } : {}),
+    proxy: capability.kind === "proxy",
   };
 }
 
-/** The AI provider `id` names in `lookup`, or undefined. */
+/** The AI provider `id` names in `lookup`, or undefined (AI Gateway's own entry, `AI_GATEWAY_PROVIDER`, is one, marked `proxy`). */
 function aiProviderFor(
   id: string,
   lookup: CapabilityLookup = CATALOG,
@@ -124,7 +142,15 @@ function aiProviderFor(
  */
 type AiProxyEnv = Partial<Record<CapabilitySecret, string>> & {
   AI_PROXY_EXTRA_ROUTES?: string;
+  /** Cloudflare AI Gateway in front of the providers: its id, and the token of an authenticated gateway. */
+  AI_GATEWAY_ID?: string;
+  AI_GATEWAY_API_KEY?: string;
 };
+
+/** The origin AI Gateway serves the providers from, and the header that names a gateway on Workers AI's own API. */
+const AI_GATEWAY_ORIGIN = "https://gateway.ai.cloudflare.com";
+const AI_GATEWAY_ID_HEADER = "cf-aig-gateway-id";
+const AI_GATEWAY_AUTH_HEADER = "cf-aig-authorization";
 
 // The same shape the manifest accepts for `ai.routes`.
 const AI_ROUTE_PATTERN = /^\/v1(\/[a-z0-9_-]+)+$/;
@@ -137,6 +163,13 @@ interface HandleAuthenticatedAiProxyRequestOptions {
   lookup?: CapabilityLookup;
   /** The calling app's manifest `ai` policy. */
   policy?: AiPolicy;
+  /**
+   * For `provider` "default": what the Gateway's default resolved to
+   * (`resolveAiDefault`, on the organization's choice and the env). The
+   * call goes to that provider's chat or embeddings route with its model
+   * filled in where the app named none.
+   */
+  aiDefault?: AiDefaultResolution;
   /** Who is calling, for the usage log line. */
   caller?: { organizationId: string; appId: string };
   fetchUpstream?: (request: Request) => Promise<Response>;
@@ -158,6 +191,8 @@ interface HandleAuthenticatedAiProxyRequestOptions {
 }
 
 interface AiAnswerReport {
+  /** The provider the call went to: the resolved one for the default route. */
+  provider: string;
   route: string;
   model: string | null;
   status: number;
@@ -173,6 +208,63 @@ type PreparedBody =
   | { ok: false; response: Response };
 
 /**
+ * The provider's route a default-route path maps onto: the app sends
+ * OpenAI's paths (`/v1/chat/completions`, `/v1/embeddings`) and the
+ * resolved provider's entry says where each lives. Null for any other
+ * path: the default serves chat and embeddings, nothing else.
+ */
+function defaultRouteFor(
+  resolution: AiDefaultResolution,
+  path: string,
+): AiRoute | null {
+  if (path === AI_DEFAULT_ROUTES.chat) return resolution.chat;
+  if (path === AI_DEFAULT_ROUTES.embeddings)
+    return resolution.embeddings ?? null;
+  return null;
+}
+
+/**
+ * Where the call goes with AI Gateway in front: the provider's slug under
+ * the gateway's URL with the direct path's prefix dropped (OpenRouter's
+ * `/api`, OpenAI's `/v1`), or, for a provider whose API is AI Gateway's
+ * own host (Workers AI), the direct URL with the gateway named in a
+ * header. Null when AI Gateway isn't configured, the entry has no slug,
+ * or the path doesn't start with the prefix the slug drops (then the
+ * call goes direct, as it always did).
+ */
+function throughAiGateway(
+  provider: AiProvider,
+  env: AiProxyEnv,
+  directUrl: string,
+  path: string,
+  search: string,
+): { url: string; headers: Record<string, string> } | null {
+  if (!provider.aig || provider.proxy) return null;
+  const isSet = (name: string) => {
+    const value = (env as Record<string, unknown>)[name];
+    return typeof value === "string" && value.trim().length > 0;
+  };
+  if (!aiGatewayConfigured(isSet)) return null;
+  const gatewayId = env.AI_GATEWAY_ID!.trim();
+  const headers: Record<string, string> = {};
+  if (isSet("AI_GATEWAY_API_KEY")) {
+    headers[AI_GATEWAY_AUTH_HEADER] =
+      `Bearer ${env.AI_GATEWAY_API_KEY!.trim()}`;
+  }
+  if (provider.aig.header) {
+    return {
+      url: directUrl,
+      headers: { ...headers, [AI_GATEWAY_ID_HEADER]: gatewayId },
+    };
+  }
+  const trim = provider.aig.trim ?? "";
+  if (trim && !(path === trim || path.startsWith(`${trim}/`))) return null;
+  const base = `${AI_GATEWAY_ORIGIN}/v1/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID!.trim())}/${encodeURIComponent(gatewayId)}/${provider.aig.slug}`;
+  const url = joinProviderUrl(base, path.slice(trim.length) || "/", search);
+  return url ? { url: url.toString(), headers } : null;
+}
+
+/**
  * Forward a request whose caller has already been authenticated by its
  * service-binding transport boundary.
  */
@@ -182,17 +274,39 @@ export async function handleAuthenticatedAiProxyRequest({
   env,
   lookup = CATALOG,
   policy,
+  aiDefault,
   caller,
   fetchUpstream = fetch,
   onAnswer,
   onUsage,
 }: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
-  const aiProvider = aiProviderFor(provider, lookup);
-  if (!aiProvider) {
+  const isDefault = provider === AI_DEFAULT_PROVIDER;
+  if (isDefault && !aiDefault) {
+    return aiRefusal(
+      "ai_default_not_configured",
+      503,
+      "The Gateway's default model provider isn't set up: its operator sets one key with everyapp ai default <provider> (or any provider's key, in the order everyapp ai show lists).",
+    );
+  }
+  // The default route goes to the resolved provider; its entry decides
+  // the rest exactly as if the app had named it.
+  const resolved = isDefault ? aiDefault!.provider : provider;
+  const aiProvider = aiProviderFor(resolved, lookup);
+  if (!aiProvider || aiProvider.proxy) {
     return aiRefusal(
       "ai_provider_not_supported",
       404,
-      `Provider not supported: the gateway has no AI provider "${provider}".`,
+      aiProvider?.proxy
+        ? `Provider not supported: ${resolved} fronts the model providers and serves no models of its own; list a model provider, and the Gateway sends through AI Gateway once its operator turns it on (everyapp ai gateway on).`
+        : `Provider not supported: the gateway has no AI provider "${resolved}".`,
+    );
+  }
+  if (isDefault && !aiDefault!.configured) {
+    const settings = aiDefault!.settings;
+    return aiRefusal(
+      "ai_default_not_configured",
+      503,
+      `The Gateway's default model provider (${aiDefault!.label}) isn't configured: the gateway needs ${settings.join(" and ")}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")} (or picks another provider with everyapp ai default <provider>)`,
     );
   }
 
@@ -203,16 +317,48 @@ export async function handleAuthenticatedAiProxyRequest({
     return aiRefusal(
       "ai_provider_not_configured",
       503,
-      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${provider}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")}`,
+      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${resolved}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")}`,
     );
   }
 
-  const upstream = buildUpstreamUrl(request, provider, baseUrl);
-  if (!upstream) {
+  // The app's path under /api/ai/<provider>; for the default route, the
+  // resolved provider's own route for it.
+  const requested = requestedPath(request, provider);
+  if (!requested) {
     return aiRefusal("ai_request_invalid", 400, "Invalid proxy request path");
   }
-  const { path: upstreamPath } = upstream;
-  let upstreamUrl = upstream.url;
+  let upstreamPath = requested.path;
+  let fillModel: string | null = null;
+  if (isDefault) {
+    const route = defaultRouteFor(aiDefault!, requested.path);
+    if (!route) {
+      return aiRefusal(
+        "ai_route_not_allowed",
+        403,
+        `The default route serves ${AI_DEFAULT_ROUTES.chat}${aiDefault!.embeddings ? ` and ${AI_DEFAULT_ROUTES.embeddings}` : ""} only; for anything else list the provider under providers and call /api/ai/<provider>/…`,
+      );
+    }
+    upstreamPath = route.path;
+    fillModel =
+      requested.path === AI_DEFAULT_ROUTES.chat
+        ? aiDefault!.model
+        : route.model;
+  }
+  const direct = joinProviderUrl(baseUrl, upstreamPath, requested.search);
+  if (!direct) {
+    return aiRefusal("ai_request_invalid", 400, "Invalid proxy request path");
+  }
+  let upstreamUrl = direct.toString();
+  // With AI Gateway in front, the same call under the gateway's URL (or
+  // with the gateway named in a header), the provider's own key still on.
+  const fronted = throughAiGateway(
+    aiProvider,
+    env,
+    upstreamUrl,
+    upstreamPath,
+    requested.search,
+  );
+  if (fronted) upstreamUrl = fronted.url;
   if (Object.keys(authorization.query).length > 0) {
     const target = new URL(upstreamUrl);
     for (const [name, value] of Object.entries(authorization.query)) {
@@ -242,18 +388,24 @@ export async function handleAuthenticatedAiProxyRequest({
   for (const [name, value] of Object.entries(authorization.headers)) {
     requestHeaders.set(name, value);
   }
+  for (const [name, value] of Object.entries(fronted?.headers ?? {})) {
+    requestHeaders.set(name, value);
+  }
 
   const prepared = await prepareBody(
     aiProvider,
     request,
     upstreamPath,
     requestHeaders,
+    fillModel,
   );
   if (!prepared.ok) return prepared.response;
 
   // The model allowlist covers inference, where the gateway reads the model.
-  // Endpoints an app opted into with `ai.routes` stream through unread.
+  // Endpoints an app opted into with `ai.routes` stream through unread. On
+  // the default route the operator chose the model, so the list doesn't apply.
   if (
+    !isDefault &&
     policy?.models &&
     aiProvider.inferenceRoutes.has(upstreamPath) &&
     !policy.models.includes(prepared.model ?? "")
@@ -285,7 +437,8 @@ export async function handleAuthenticatedAiProxyRequest({
     logEvent(
       "ai.proxy.upstream_failed",
       {
-        provider,
+        provider: resolved,
+        ...(isDefault ? { via: AI_DEFAULT_PROVIDER } : {}),
         ...caller,
         route: upstreamPath,
         message: error instanceof Error ? error.message : String(error),
@@ -304,6 +457,7 @@ export async function handleAuthenticatedAiProxyRequest({
   // before the body goes out, so a stream nobody reads to the end (a
   // closed tab, an app that gave up) still counts.
   const answer = {
+    provider: resolved,
     route: upstreamPath,
     model: prepared.model,
     status: response.status,
@@ -314,9 +468,10 @@ export async function handleAuthenticatedAiProxyRequest({
   // provider failure can say so; a disconnected browser is never heard).
   const logUsage = (usage: AiUsageReport["usage"], ended: BodyEnd = "done") => {
     logEvent("ai.proxy.usage", {
-      provider,
       ...caller,
       ...answer,
+      ...(isDefault ? { via: AI_DEFAULT_PROVIDER } : {}),
+      ...(fronted ? { aiGateway: true } : {}),
       requestId: response.headers.get("x-request-id"),
       usage,
       ...(ended === "done" ? {} : { ended }),
@@ -374,6 +529,8 @@ async function prepareBody(
   request: Request,
   path: string,
   headers: Headers,
+  /** The default route's model, put in where the app named none or named `default`. */
+  fillModel: string | null = null,
 ): Promise<PreparedBody> {
   if (!canIncludeBody(request.method) || !request.body) {
     return { ok: true, body: null, model: null };
@@ -403,12 +560,12 @@ async function prepareBody(
         ),
       };
     }
-    const model = models[0];
-    return {
-      ok: true,
-      body: form,
-      model: typeof model === "string" ? model : null,
-    };
+    let model = typeof models[0] === "string" ? models[0] : null;
+    if (fillModel !== null && (model === null || model === AI_DEFAULT_MODEL)) {
+      form.set("model", fillModel);
+      model = fillModel;
+    }
+    return { ok: true, body: form, model };
   }
 
   let payload: unknown;
@@ -432,6 +589,14 @@ async function prepareBody(
   if (provider.unstoredRoutes.has(path)) {
     body.store = false;
   }
+  if (
+    fillModel !== null &&
+    (body.model === undefined ||
+      body.model === null ||
+      body.model === AI_DEFAULT_MODEL)
+  ) {
+    body.model = fillModel;
+  }
   headers.delete("content-length");
   return {
     ok: true,
@@ -441,35 +606,23 @@ async function prepareBody(
 }
 
 /**
- * The provider URL for an app's `/api/ai/<provider>/<path>`: `<path>` joined
- * onto the provider's base (whose own path, like Workers AI's account path,
- * is kept), and `<path>` itself, which the route checks read.
+ * The app's path and query under `/api/ai/<provider>`: what the route
+ * checks read, and what is joined onto the provider's base (whose own
+ * path, like Workers AI's account path, is kept). Null for a path that
+ * could leave the provider's base.
  */
-function buildUpstreamUrl(
+function requestedPath(
   request: Request,
   provider: string,
-  baseUrl: string,
-): { url: string; path: string } | null {
+): { path: string; search: string } | null {
   const incomingUrl = new URL(request.url);
   const routePrefix = `/api/ai/${provider}`;
-
   if (!matchesProviderRoute(incomingUrl.pathname, routePrefix)) {
     return null;
   }
-
-  const upstreamPath = incomingUrl.pathname.slice(routePrefix.length) || "/";
-  if (!isSafeUpstreamPath(upstreamPath)) {
-    return null;
-  }
-
-  const upstreamUrl = joinProviderUrl(
-    baseUrl,
-    upstreamPath,
-    incomingUrl.search,
-  );
-  return upstreamUrl
-    ? { url: upstreamUrl.toString(), path: upstreamPath }
-    : null;
+  const path = incomingUrl.pathname.slice(routePrefix.length) || "/";
+  if (!isSafeUpstreamPath(path)) return null;
+  return { path, search: incomingUrl.search };
 }
 
 function matchesProviderRoute(pathname: string, routePrefix: string): boolean {
@@ -521,8 +674,9 @@ function canIncludeBody(method: string): boolean {
 /**
  * A refusal the AI proxy makes itself, as opposed to the provider's answer
  * (`ai_provider_not_supported`, `ai_provider_not_configured`,
- * `ai_request_invalid`, `ai_route_not_allowed`, `model_not_allowed`,
- * `ai_upstream_failed`, and the AppGateway entrypoint's own on AI routes):
+ * `ai_default_not_configured`, `ai_request_invalid`, `ai_route_not_allowed`,
+ * `model_not_allowed`, `ai_upstream_failed`, and the AppGateway
+ * entrypoint's own on AI routes):
  * `x-everyapp-error` names it (gatewayRefusal reads it), and the body is
  * OpenAI's error shape, so OpenAI SDKs and ai-sdk clients show the message.
  * `code` and `message` are at the top level too, as the gateway's other

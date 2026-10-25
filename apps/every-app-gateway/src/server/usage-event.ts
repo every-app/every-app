@@ -11,8 +11,15 @@ export interface UsageEvent {
   /** The user behind the call, or '' when it was the app's own. */
   userId: string;
   kind: "ai" | "capability";
-  /** The AI provider id, or the capability id. */
+  /** The AI provider id (the one the call went to, never `default`), or the capability id. */
   target: string;
+  /**
+   * For an AI call, the model the request named (or the default the
+   * Gateway filled in), as the provider names it: counted per model in
+   * `usage_models` beside the provider's row. Absent when the proxy
+   * read none (a route it streams through unread).
+   */
+  model?: string;
   /**
    * 1 when this is the call itself, reported the moment the provider
    * answered (its headers arrived): the provider bills from there, however

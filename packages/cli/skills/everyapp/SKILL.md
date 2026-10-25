@@ -23,7 +23,9 @@ emit()), mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
 check refuses), providers (API providers: the catalog, registering one,
 a spec's fields), access (Cloudflare Access), signin (sign-in providers:
 Continue with Google, Microsoft, GitHub, Apple, Cloudflare or SSO; every
-setting, the signin commands), workspace (the workspace from
+setting, the signin commands), ai (the Gateway's default model
+provider: the order, `ai default|show|list`, AI Gateway in front, what an
+app writes), workspace (the workspace from
 the terminal and from an AI client: every command and every tool), gateway
 (everything a Gateway offers: apps vs MCP apps vs the compact MCP surface,
 people, groups and caps, the CLI by job, what to suggest next, other MCP
@@ -31,8 +33,10 @@ servers), build (the build-every-app skill as a page), patterns (its
 example-patterns index), repo/* (security model, capabilities, runbooks).
 Step-by-step setup of each
 integration (the Gateway, Access, email, DataForSEO, Context, OpenRouter,
-OpenAI, Workers AI, Google, Microsoft 365, Slack; every catalog provider by
-id in setup/providers.md): setup/README.md beside this file.
+OpenAI, Workers AI, the default model provider (setup/ai.md) and Cloudflare
+AI Gateway (setup/ai-gateway.md), Google, Microsoft 365, Slack; every
+catalog provider by id in setup/providers.md): setup/README.md beside this
+file.
 Answering "how do I": fetch the page for the subject and answer from it
 with the exact command or manifest field, naming the page. A failed
 command: look its code up on errors (anchor: the code, lowercased) before

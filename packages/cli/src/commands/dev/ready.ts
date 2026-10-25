@@ -201,6 +201,11 @@ function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): 
           : [setting];
       case "ai-routes":
         return [];
+      // The default model in dev: the first provider of the order whose
+      // settings .dev.vars has (the SDK's fallback), so the names are the
+      // first candidate's and any candidate's settings count.
+      case "ai-default":
+        return [setting];
       // A remote MCP app is the Gateway's own row, never an app run here.
       case "remote-mcp":
         return [];

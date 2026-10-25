@@ -99,6 +99,22 @@ No `--account-id` and no `CLOUDFLARE_ACCOUNT_ID`, and the Cloudflare login lists
 
 Source: `packages/cli/src/lib/cf/account.ts` (`resolveAccount`).
 
+### AI_DEFAULT_INVALID
+
+`ai default <provider>[/<model>]` with something the default model provider can't be: text that isn't a provider id (`Open Router`), an id the catalog doesn't have, an API provider (`stripe`), an entry without an OpenAI-shaped chat route (`cohere`: an app pins it under `providers`), or `ai-gateway` (it fronts the providers and serves no models; `ai gateway on` turns it on). The message says which.
+
+**Fix:** `fix`: pick one of the providers `pnpm everyapp ai list` shows, as `<provider>` or `<provider>/<model>`. Nothing was written. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`setAiDefault`, `parseAiDefaultArgument`).
+
+### AI_GATEWAY_ID_INVALID
+
+`ai gateway on --id <name>` with a name Cloudflare refuses for an AI Gateway: anything but lowercase letters, digits and single hyphens, or over 64 characters (`bad--id`, `under_score`).
+
+**Fix:** `fix`: `pnpm everyapp ai gateway on --id <name>` with a valid name (the default, `everyapp`, is one). Not retryable.
+
+Source: `packages/cli/src/commands/ai/index.ts` (`turnGatewayOn`).
+
 ### ALREADY_INVITED
 
 `workspace invite <email>`: the address has a pending invitation to the organization that hasn't expired (`invitations.status = 'pending'`, `expires_at` still to come). Checked before the write and again on it (the insert's `WHERE NOT EXISTS`), so an invite racing this one loses; a second raise after the write is `retryable`. An expired invitation doesn't count: a new one is made beside it. Headline: `<email> has a pending invitation to <organization> already`.
@@ -649,6 +665,14 @@ An `events` command (every one but `events types`) against a Gateway whose D1 pr
 **Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
 
 Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`, `requireAuditColumns`).
+
+### GATEWAY_PREDATES_AI_DEFAULT
+
+`ai default` against a Gateway whose D1 predates migration `0017_ai_default_and_usage_models` (2026-10-25): `org_settings` has no `ai_default` column, so there is nowhere to store the choice (`ai show` reads it as no choice meanwhile).
+
+**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/aiDefault.ts` (`requireAiDefault`).
 
 ### GATEWAY_PREDATES_DEFAULT_CAPS
 

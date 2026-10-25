@@ -8,6 +8,7 @@ import {
   orgAppSettings,
   orgSettings,
   usageDaily,
+  usageModels,
   usageMonthly,
   users,
 } from "@/db/schema";
@@ -19,7 +20,12 @@ import {
   type UsageRecorder,
 } from "@/server/usage-event";
 import { effectiveMonthlyCap, type MonthlyCallCounter } from "@/server/app-cap";
-import type { UsageAppRow, UsageSummary, UsageTotals } from "@/types/usage";
+import type {
+  UsageAppRow,
+  UsageModelRow,
+  UsageSummary,
+  UsageTotals,
+} from "@/types/usage";
 
 /** Daily rows are kept this many months, monthly rows this many. */
 const DAILY_RETENTION_MONTHS = 13;
@@ -58,60 +64,90 @@ async function record(event: UsageEvent): Promise<void> {
     costMicros,
     updatedAt: at,
   };
-  await db.batch([
-    db
-      .insert(usageDaily)
-      .values({
-        organizationId: event.organizationId,
-        appRowId: event.appRowId,
-        userId: event.userId,
-        kind: event.kind,
-        target: event.target,
-        day: utcDay(at),
-        ...deltas,
-      })
-      .onConflictDoUpdate({
-        target: [
-          usageDaily.organizationId,
-          usageDaily.appRowId,
-          usageDaily.userId,
-          usageDaily.kind,
-          usageDaily.target,
-          usageDaily.day,
-        ],
-        set: {
-          calls: sql`${usageDaily.calls} + ${calls}`,
-          failures: sql`${usageDaily.failures} + ${failure}`,
-          inputTokens: sql`${usageDaily.inputTokens} + ${inputTokens}`,
-          outputTokens: sql`${usageDaily.outputTokens} + ${outputTokens}`,
-          costMicros: sql`${usageDaily.costMicros} + ${costMicros}`,
-          updatedAt: at,
-        },
-      }),
-    db
-      .insert(usageMonthly)
-      .values({
-        organizationId: event.organizationId,
-        appRowId: event.appRowId,
-        month: utcMonth(at),
-        ...deltas,
-      })
-      .onConflictDoUpdate({
-        target: [
-          usageMonthly.organizationId,
-          usageMonthly.appRowId,
-          usageMonthly.month,
-        ],
-        set: {
-          calls: sql`${usageMonthly.calls} + ${calls}`,
-          failures: sql`${usageMonthly.failures} + ${failure}`,
-          inputTokens: sql`${usageMonthly.inputTokens} + ${inputTokens}`,
-          outputTokens: sql`${usageMonthly.outputTokens} + ${outputTokens}`,
-          costMicros: sql`${usageMonthly.costMicros} + ${costMicros}`,
-          updatedAt: at,
-        },
-      }),
-  ]);
+  // An AI call with a model is counted per model too, in the same batch.
+  const model =
+    event.kind === "ai" && event.model
+      ? db
+          .insert(usageModels)
+          .values({
+            organizationId: event.organizationId,
+            appRowId: event.appRowId,
+            provider: event.target,
+            model: event.model,
+            month: utcMonth(at),
+            ...deltas,
+          })
+          .onConflictDoUpdate({
+            target: [
+              usageModels.organizationId,
+              usageModels.appRowId,
+              usageModels.provider,
+              usageModels.model,
+              usageModels.month,
+            ],
+            set: {
+              calls: sql`${usageModels.calls} + ${calls}`,
+              failures: sql`${usageModels.failures} + ${failure}`,
+              inputTokens: sql`${usageModels.inputTokens} + ${inputTokens}`,
+              outputTokens: sql`${usageModels.outputTokens} + ${outputTokens}`,
+              costMicros: sql`${usageModels.costMicros} + ${costMicros}`,
+              updatedAt: at,
+            },
+          })
+      : null;
+  const daily = db
+    .insert(usageDaily)
+    .values({
+      organizationId: event.organizationId,
+      appRowId: event.appRowId,
+      userId: event.userId,
+      kind: event.kind,
+      target: event.target,
+      day: utcDay(at),
+      ...deltas,
+    })
+    .onConflictDoUpdate({
+      target: [
+        usageDaily.organizationId,
+        usageDaily.appRowId,
+        usageDaily.userId,
+        usageDaily.kind,
+        usageDaily.target,
+        usageDaily.day,
+      ],
+      set: {
+        calls: sql`${usageDaily.calls} + ${calls}`,
+        failures: sql`${usageDaily.failures} + ${failure}`,
+        inputTokens: sql`${usageDaily.inputTokens} + ${inputTokens}`,
+        outputTokens: sql`${usageDaily.outputTokens} + ${outputTokens}`,
+        costMicros: sql`${usageDaily.costMicros} + ${costMicros}`,
+        updatedAt: at,
+      },
+    });
+  const monthly = db
+    .insert(usageMonthly)
+    .values({
+      organizationId: event.organizationId,
+      appRowId: event.appRowId,
+      month: utcMonth(at),
+      ...deltas,
+    })
+    .onConflictDoUpdate({
+      target: [
+        usageMonthly.organizationId,
+        usageMonthly.appRowId,
+        usageMonthly.month,
+      ],
+      set: {
+        calls: sql`${usageMonthly.calls} + ${calls}`,
+        failures: sql`${usageMonthly.failures} + ${failure}`,
+        inputTokens: sql`${usageMonthly.inputTokens} + ${inputTokens}`,
+        outputTokens: sql`${usageMonthly.outputTokens} + ${outputTokens}`,
+        costMicros: sql`${usageMonthly.costMicros} + ${costMicros}`,
+        updatedAt: at,
+      },
+    });
+  await db.batch(model ? [daily, monthly, model] : [daily, monthly]);
 }
 
 function whole(value: number | undefined): number {
@@ -285,6 +321,7 @@ async function summarize({
     toolCallsByMember,
     callable,
     defaults,
+    byModel,
   ] = await db.batch([
     db
       .select({
@@ -371,6 +408,38 @@ async function summarize({
       .from(orgSettings)
       .where(eq(orgSettings.organizationId, organizationId))
       .limit(1),
+    db
+      .select({
+        provider: usageModels.provider,
+        model: usageModels.model,
+        calls: sql<number>`coalesce(sum(${usageModels.calls}), 0)`.mapWith(
+          Number,
+        ),
+        failures:
+          sql<number>`coalesce(sum(${usageModels.failures}), 0)`.mapWith(
+            Number,
+          ),
+        inputTokens:
+          sql<number>`coalesce(sum(${usageModels.inputTokens}), 0)`.mapWith(
+            Number,
+          ),
+        outputTokens:
+          sql<number>`coalesce(sum(${usageModels.outputTokens}), 0)`.mapWith(
+            Number,
+          ),
+        costMicros:
+          sql<number>`coalesce(sum(${usageModels.costMicros}), 0)`.mapWith(
+            Number,
+          ),
+      })
+      .from(usageModels)
+      .where(
+        and(
+          eq(usageModels.organizationId, organizationId),
+          eq(usageModels.month, month),
+        ),
+      )
+      .groupBy(usageModels.provider, usageModels.model),
   ]);
 
   const defaultMonthlyCallCap = defaults[0]?.cap ?? null;
@@ -459,6 +528,7 @@ async function summarize({
     byApp: [...appRows.values()].sort(byCallsThenName),
     byMember: [...memberRows.values()].sort(byCalls),
     byTarget: byTarget.sort((a, b) => b.calls - a.calls),
+    byModel: (byModel as UsageModelRow[]).sort((a, b) => b.calls - a.calls),
   };
 }
 
@@ -517,10 +587,15 @@ async function deleteOlderThan(
     lt(usageMonthly.month, monthlyCutoff),
     maxBatches,
   );
+  const models = await pruneRows(
+    usageModels,
+    lt(usageModels.month, monthlyCutoff),
+    maxBatches,
+  );
   return {
     daily: daily.deleted,
-    monthly: monthly.deleted,
-    done: daily.done && monthly.done,
+    monthly: monthly.deleted + models.deleted,
+    done: daily.done && monthly.done && models.done,
   };
 }
 

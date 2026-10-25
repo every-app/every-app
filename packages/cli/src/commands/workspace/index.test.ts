@@ -1424,7 +1424,8 @@ describe("workspace cap default and workspace app cap --unlimited", () => {
     await setDefaultCap(opts(), null);
     expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
     expect(takeCapEvents()).toEqual([{ app: null, cap: null, previousCap: 2000, source: "default", app_row_id: null }]);
-    expect(writeBatches()).toEqual([["DELETE FROM org_settings", "INSERT INTO events"]]);
+    // Off clears the cap column and drops the row only when it holds no default model provider either.
+    expect(writeBatches()).toEqual([["UPDATE org_settings", "DELETE FROM org_settings", "INSERT INTO events"]]);
     expect(data()).toMatchObject({ cap: null, was: 2000, capAlerts: null });
     expect(done()!["message"]).toContain("on the Gateway within 30 seconds");
 

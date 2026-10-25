@@ -67,6 +67,7 @@ import {
   events,
   invitations,
   organizations,
+  orgSettings,
   users,
   verifications,
 } from "@/db/schema";
@@ -2672,5 +2673,157 @@ describe("the events tools over /mcp", () => {
     const stored = JSON.stringify(rows);
     expect(stored).not.toContain(added["secret"] as string);
     expect(stored).not.toContain("hooks.example.net");
+  });
+});
+
+describe("the default model provider over /mcp", () => {
+  beforeEach(() => {
+    delete hoisted.env["OPENROUTER_API_KEY"];
+    delete hoisted.env["GROQ_API_KEY"];
+    delete hoisted.env["AI_GATEWAY_ID"];
+    delete hoisted.env["CLOUDFLARE_ACCOUNT_ID"];
+  });
+
+  it("shows the order and nothing configured to a member, without the settings", async () => {
+    const shown = await data("everyapp_ai_show", {}, member());
+    expect(shown).toMatchObject({
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-5.5",
+      source: "none",
+      via: "direct",
+      choice: null,
+      aiGateway: { on: false },
+    });
+    expect(shown).not.toHaveProperty("configured");
+    expect(shown).not.toHaveProperty("settings");
+    const candidates = shown["candidates"] as Array<Record<string, unknown>>;
+    expect(candidates.map((candidate) => candidate["id"])).toEqual([
+      "openrouter",
+      "workers-ai",
+      "openai",
+      "anthropic",
+      "groq",
+      "mistral",
+      "gemini",
+    ]);
+    expect(candidates[0]).not.toHaveProperty("configured");
+  });
+
+  it("shows an admin what is set, resolves the first configured provider of the order, and says when AI Gateway is in front", async () => {
+    hoisted.env["GROQ_API_KEY"] = "gsk";
+    hoisted.env["AI_GATEWAY_ID"] = "everyapp";
+    hoisted.env["CLOUDFLARE_ACCOUNT_ID"] = "acc";
+    const shown = await data("everyapp_ai_show", {}, admin());
+    expect(shown).toMatchObject({
+      provider: "groq",
+      source: "order",
+      configured: true,
+      settings: ["GROQ_API_KEY"],
+      via: "ai-gateway",
+      aiGateway: { on: true },
+    });
+    const candidates = shown["candidates"] as Array<Record<string, unknown>>;
+    expect(candidates[0]).toMatchObject({ id: "groq", configured: true });
+    expect(
+      candidates.find((candidate) => candidate["id"] === "openrouter"),
+    ).toMatchObject({
+      configured: false,
+      settings: ["OPENROUTER_API_KEY"],
+    });
+  });
+
+  it("stores the choice with its model, emits ai.default_changed once, and clears it", async () => {
+    const set = await data(
+      "everyapp_ai_default",
+      { provider: "openai", model: "gpt-6-sol" },
+      admin(),
+    );
+    expect(set).toMatchObject({
+      provider: "openai",
+      model: "gpt-6-sol",
+      source: "setting",
+      configured: false,
+      settings: ["OPENAI_API_KEY"],
+      choice: "openai/gpt-6-sol",
+    });
+    expect(
+      await db.select({ aiDefault: orgSettings.aiDefault }).from(orgSettings),
+    ).toEqual([{ aiDefault: "openai/gpt-6-sol" }]);
+    // The same choice again changes nothing and emits nothing.
+    await data(
+      "everyapp_ai_default",
+      { provider: "openai", model: "gpt-6-sol" },
+      admin(),
+    );
+    const emitted = await db
+      .select({ type: events.type, data: events.data })
+      .from(events)
+      .where(eq(events.type, "ai.default_changed"));
+    expect(emitted).toHaveLength(1);
+    expect(JSON.parse(emitted[0]!.data)).toEqual({
+      aiDefault: { provider: "openai", model: "gpt-6-sol" },
+      previous: null,
+    });
+    const cleared = await data("everyapp_ai_default", { clear: true }, admin());
+    expect(cleared).toMatchObject({ source: "none", choice: null });
+    expect(await db.select().from(orgSettings)).toEqual([]);
+    const after = await db
+      .select({ data: events.data })
+      .from(events)
+      .where(eq(events.type, "ai.default_changed"));
+    expect(after).toHaveLength(2);
+    expect(JSON.parse(after[1]!.data)).toEqual({
+      aiDefault: null,
+      previous: { provider: "openai", model: "gpt-6-sol" },
+    });
+  });
+
+  it("keeps the default cap when the choice clears, and the choice when the cap clears", async () => {
+    await data("everyapp_workspace_cap_default", { cap: 1000 }, admin());
+    await data("everyapp_ai_default", { provider: "groq" }, admin());
+    await data("everyapp_ai_default", { clear: true }, admin());
+    expect(
+      await db
+        .select({
+          cap: orgSettings.defaultMonthlyCallCap,
+          aiDefault: orgSettings.aiDefault,
+        })
+        .from(orgSettings),
+    ).toEqual([{ cap: 1000, aiDefault: null }]);
+    await data("everyapp_ai_default", { provider: "groq" }, admin());
+    await data("everyapp_workspace_cap_default", { cap: null }, admin());
+    expect(
+      await db
+        .select({
+          cap: orgSettings.defaultMonthlyCallCap,
+          aiDefault: orgSettings.aiDefault,
+        })
+        .from(orgSettings),
+    ).toEqual([{ cap: null, aiDefault: "groq" }]);
+  });
+
+  it("refuses a choice the default can't be, a member, and both provider and clear", async () => {
+    expect(
+      await refusal("everyapp_ai_default", { provider: "stripe" }, admin()),
+    ).toContain("API provider");
+    expect(
+      await refusal("everyapp_ai_default", { provider: "ai-gateway" }, admin()),
+    ).toContain("everyapp ai gateway on");
+    expect(
+      await refusal("everyapp_ai_default", { provider: "cohere" }, admin()),
+    ).toContain("chat route");
+    expect(
+      await refusal(
+        "everyapp_ai_default",
+        { provider: "openai", clear: true },
+        admin(),
+      ),
+    ).toContain("not both");
+    expect(await refusal("everyapp_ai_default", {}, admin())).toContain(
+      "provider is required",
+    );
+    expect(
+      await refusal("everyapp_ai_default", { provider: "openai" }, member()),
+    ).toMatch(/Unknown tool|not available|forbidden|role/i);
   });
 });

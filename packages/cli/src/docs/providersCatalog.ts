@@ -188,6 +188,21 @@ export function providersCatalog(): string {
   ]);
 }
 
+/**
+ * How an app asks for an AI entry: listed under `providers`, or, for the
+ * proxy entry (AI Gateway), never: the operator turns it on and it fronts
+ * the providers apps list. An entry with a chat route also serves the
+ * default (`ai: { chat: true }`).
+ */
+function manifestEntryOf(id: string, capability: AiProviderCapability): string {
+  if (capability.kind === "proxy") {
+    return `never listed: ${code("pnpm everyapp ai gateway on")} turns it on and every AI provider with an AI Gateway slug goes through it`;
+  }
+  return capability.chat
+    ? `${code(`providers: ["${id}"]`)}, or ${code("ai: { chat: true }")} when it is the Gateway's default`
+    : code(`providers: ["${id}"]`);
+}
+
 /** secrets.md's settings tables, one per kind: the AI providers' and the API-key providers'. */
 export function catalogSettings(kind: "ai" | "api_key"): string {
   if (kind === "ai") {
@@ -198,7 +213,7 @@ export function catalogSettings(kind: "ai" | "api_key"): string {
         row([
           settingsOf(capability),
           `${capability.label} (${hostsOf(capability)}), the key sent as ${authRequest(capability.auth)}. ${hintOf(capability)}`,
-          code(`providers: ["${id}"]`),
+          manifestEntryOf(id, capability),
         ]),
       ),
     ]);
@@ -229,9 +244,13 @@ function keySection(id: string, capability: ApiKeyCapability | AiProviderCapabil
       ? [
           `- **What apps may do:** access ${list(capability.access)}; ${capability.readMethods.join(", ")} on any grant${capability.access.includes("write") ? `, and ${writeMethodsOf(capability).join(", ")} for an entry with ${code('access: "write"')}` : ""}${capability.accountWidePaths.length > 0 ? `; account-wide paths refused: ${list(capability.accountWidePaths.map((run) => run.join("/")))}` : ""}${capability.data ? `; data ${code(capability.data)}${capability.data === "account" ? " (served on a self-hosted Gateway only)" : ""}` : ""}`,
         ]
-      : [
-          `- **What apps may do:** list it under ${code("providers")} and call ${code(`/api/ai/${id}/…`)} with ${code("createGatewayFetch()")}: POST to ${list(capability.inferenceRoutes)}${capability.extraRoutes ? `, and more only where both ${code("AI_PROXY_EXTRA_ROUTES")} and the app's ${code("ai.routes")} allow it` : ""}`,
-        ];
+      : capability.kind === "proxy"
+        ? [
+            `- **What apps may do:** nothing by id. With ${code("AI_GATEWAY_ID")} set (${code("pnpm everyapp ai gateway on")}), every call to an AI provider that has an AI Gateway slug goes through ${code(`${new URL(capability.origin).host}${capability.basePath ?? ""}/<slug>/…`)} with the provider's own key still on it; a provider without a slug goes direct`,
+          ]
+        : [
+            `- **What apps may do:** list it under ${code("providers")} and call ${code(`/api/ai/${id}/…`)} with ${code("createGatewayFetch()")}: POST to ${list(capability.inferenceRoutes)}${capability.extraRoutes ? `, and more only where both ${code("AI_PROXY_EXTRA_ROUTES")} and the app's ${code("ai.routes")} allow it` : ""}${capability.chat ? `; as the Gateway's default (${code("ai: { chat: true }")}, ${code("/api/ai/default/v1/chat/completions")}) it serves ${code(capability.chat.path)} with ${code(capability.chat.model)} when the app names no model${capability.embeddings ? ` and ${code(capability.embeddings.path)} with ${code(capability.embeddings.model)}` : ""}` : ""}${capability.aig ? `; through AI Gateway as ${code(capability.aig.slug)} once it is on` : ""}`,
+          ];
   return [
     `### ${id}`,
     "",

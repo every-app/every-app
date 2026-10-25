@@ -120,6 +120,8 @@ describe("the workspace tool definitions", () => {
       "workspace_app_access_set",
       "workspace_app_cap",
       "workspace_cap_default",
+      "ai_show",
+      "ai_default",
       "workspace_app_delete",
       "workspace_usage",
       "workspace_activity",
@@ -231,6 +233,7 @@ describe("the workspace tool definitions", () => {
 
   it("split the member-level tools from the admin ones: the four on the caller's own account", () => {
     expect(MEMBER_TOOLS).toEqual([
+      "everyapp_ai_show",
       "everyapp_my_tokens",
       "everyapp_revoke_token",
       "everyapp_my_connections",
@@ -534,6 +537,7 @@ describe("listing the workspace tools", () => {
       READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)),
     );
     expect(names(readOnly(MEMBER), "full")).toEqual([
+      "everyapp_ai_show",
       "everyapp_my_tokens",
       "everyapp_my_connections",
     ]);

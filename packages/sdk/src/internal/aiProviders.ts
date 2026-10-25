@@ -12,12 +12,16 @@ import {
   CAPABILITY_IDS,
   type AiProviderCapability,
   type AiProviderId,
+  type AiRoute,
   type ApiKeyAuth,
   type CapabilitySettings,
 } from "./capabilities.js";
 
 export interface DevAiProviderSpec {
   origin: string;
+  /** The routes the default maps onto in dev, with the model filled in (the entry's `chat` and `embeddings`). */
+  chat?: AiRoute;
+  embeddings?: AiRoute;
   /** The gateway secret holding the provider key; in local dev, the `.dev.vars` name. */
   keyEnv: string;
   /** Where the key goes on a request (`authorizationOf`). */
@@ -43,6 +47,8 @@ export function devAiProviderSpec(
   const { basePath, normalize } = capability;
   return {
     origin: capability.origin,
+    ...(capability.chat ? { chat: capability.chat } : {}),
+    ...(capability.embeddings ? { embeddings: capability.embeddings } : {}),
     keyEnv: capability.auth.secret,
     auth: capability.auth,
     docs: capability.docs,
@@ -64,7 +70,9 @@ export const DEV_AI_PROVIDERS: Readonly<
 > = Object.fromEntries(
   CAPABILITY_IDS.flatMap((id) => {
     const capability = CAPABILITIES[id];
-    return capability.mode === "ai"
+    // The proxy entry (AI Gateway) serves no models: never a dev target.
+    return capability.mode === "ai" &&
+      !("kind" in capability && capability.kind === "proxy")
       ? [[id, devAiProviderSpec(capability)] as const]
       : [];
   }),

@@ -31,6 +31,10 @@ export const OPTIONAL_SECRETS = [
   "OPENROUTER_API_KEY",
   // Workers AI (`/api/ai/workers-ai`), with CLOUDFLARE_ACCOUNT_ID below.
   "WORKERS_AI_API_TOKEN",
+  // Cloudflare AI Gateway in front of the AI providers: the gateway's id
+  // (with CLOUDFLARE_ACCOUNT_ID) and, for an authenticated gateway, its token.
+  "AI_GATEWAY_ID",
+  "AI_GATEWAY_API_KEY",
   "DATAFORSEO_API_KEY",
   "CONTEXT_API_KEY",
   // The catalog's fifty API-key and AI providers (packages/sdk/src/internal/catalog/*.ts):

@@ -211,6 +211,9 @@ function normalizer(): (text: string) => string {
       // The private directory each gateway reconcile unpacks its release in
       // (`<pid>-<random>`).
       .replace(/gateway-deploy-\d+-[A-Za-z0-9]+/g, "gateway-deploy-<tmp>")
+      // The release tarball's digest: the gateway's own bytes, which change
+      // with any gateway or SDK edit; the deploy's shape is what is pinned.
+      .replace(/"sha256": "[0-9a-f]{64}"/g, '"sha256": "<release-sha256>"')
       // The gateway's identity keypair, minted on its first upload.
       .replace(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----(\\n)?/g, "<public-key>")
       .replace(

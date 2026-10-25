@@ -667,6 +667,22 @@ export const catalogue = {
     );
   },
 
+  /**
+   * The default model provider changed (`everyapp ai default`, Manage
+   * workspace → Usage → AI default): what it is now and what it was, each
+   * a provider id with the model when one was chosen, or null when the
+   * shipped order decides.
+   */
+  aiDefaultChanged(input: {
+    aiDefault: { provider: string; model: string | null } | null;
+    previous: { provider: string; model: string | null } | null;
+  }): BuiltEvent {
+    return built("ai.default_changed", {
+      aiDefault: input.aiDefault,
+      previous: input.previous,
+    });
+  },
+
   ping(input: {
     subscription: { id: string; name: string };
     message?: string;
@@ -857,6 +873,15 @@ export function summarize(
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected`;
     case "provider.connection_expired":
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} connection expired and needs reconnecting`;
+    case "ai.default_changed": {
+      const now = d.aiDefault === null ? null : obj(d.aiDefault);
+      const was = d.previous === null ? null : obj(d.previous);
+      const name = (choice: Data | null): string =>
+        choice === null
+          ? "the shipped order"
+          : `${str(choice.provider) ?? "?"}${str(choice.model) ? ` (${str(choice.model)})` : ""}`;
+      return `The default model provider is now ${name(now)}${was === null && now === null ? "" : ` (was ${name(was)})`}`;
+    }
     case "ping":
       return "Test event from Every App";
     default:

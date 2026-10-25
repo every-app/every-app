@@ -14,6 +14,7 @@ import {
 import type {
   UsageAppRow,
   UsageMemberRow,
+  UsageModelRow,
   UsageTargetRow,
   UsageTotals,
 } from "@/types/usage";
@@ -375,6 +376,24 @@ const targetColumns: ColumnDef<UsageTargetRow>[] = [
   ...providerColumns<UsageTargetRow>(),
 ];
 
+const modelColumns: ColumnDef<UsageModelRow>[] = [
+  {
+    id: "model",
+    accessorFn: (row) => `${row.model} ${row.provider}`,
+    header: ({ column }) => <SortableHeader column={column} label="Model" />,
+    meta: { label: "Model", cellClassName: "max-w-[320px]" },
+    cell: ({ row }) => (
+      <>
+        <p className="truncate font-medium">{row.original.model}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {usageTargetLabel("ai", row.original.provider)}
+        </p>
+      </>
+    ),
+  },
+  ...providerColumns<UsageModelRow>(),
+];
+
 export function UsageByAppTable({
   rows,
   isLoading,
@@ -450,6 +469,30 @@ export function UsageByTargetTable({
       empty={{
         title: "No provider calls this month",
         description: "No AI provider or capability was called.",
+      }}
+    />
+  );
+}
+
+export function UsageByModelTable({
+  rows,
+  isLoading,
+  error,
+}: UsageTableProps<UsageModelRow>) {
+  const table = useDataTable({
+    data: rows,
+    columns: modelColumns,
+    getRowId: (row) => `${row.provider}:${row.model}`,
+    withSorting: true,
+  });
+  return (
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No model calls this month",
+        description: "No AI provider was called.",
       }}
     />
   );

@@ -234,7 +234,7 @@ Generated from `CAPABILITIES` by `pnpm -C packages/cli docs:update`; a test fail
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 73 providers: 47 API-key, 8 AI, 18 OAuth clients.
+The built-in catalog has 74 providers: 47 API-key, 9 AI, 18 OAuth clients.
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -288,6 +288,7 @@ The built-in catalog has 73 providers: 47 API-key, 8 AI, 18 OAuth clients.
 | `openai` | OpenAI | `ai` | `OPENAI_API_KEY` | `api.openai.com` | `Authorization: Bearer <OPENAI_API_KEY>` | https://platform.openai.com/api-keys; API reference https://platform.openai.com/docs/api-reference | none recorded | 2026-10-25, live |
 | `openrouter` | OpenRouter | `ai` | `OPENROUTER_API_KEY` | `openrouter.ai` | `Authorization: Bearer <OPENROUTER_API_KEY>` | https://openrouter.ai/settings/keys; API reference https://openrouter.ai/docs | none recorded | 2026-10-25, live |
 | `workers-ai` | Workers AI | `ai` | `WORKERS_AI_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`) | `api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai` | `Authorization: Bearer <WORKERS_AI_API_TOKEN>` | https://dash.cloudflare.com/profile/api-tokens; API reference https://developers.cloudflare.com/workers-ai/ | none recorded | 2026-10-25, live |
+| `ai-gateway` | Cloudflare AI Gateway | `ai` | `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` (set by `everyapp setup`), `AI_GATEWAY_ID` | `gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{AI_GATEWAY_ID}` | `cf-aig-authorization: Bearer <AI_GATEWAY_API_KEY>` | https://dash.cloudflare.com/?to=/:account/ai/ai-gateway; API reference https://developers.cloudflare.com/ai-gateway/ | none recorded | 2026-10-25, docs |
 | `anthropic` | Anthropic | `ai` | `ANTHROPIC_API_KEY` | `api.anthropic.com` | `Authorization: Bearer <ANTHROPIC_API_KEY>` | https://platform.claude.com/settings/keys; API reference https://platform.claude.com/docs/en/api/overview | `GET https://api.anthropic.com/v1/models`, expecting 200; free. Send an anthropic-version header, as every call does. | 2026-10-25, docs |
 | `gemini` | Google Gemini | `ai` | `GEMINI_API_KEY` | `generativelanguage.googleapis.com` | `Authorization: Bearer <GEMINI_API_KEY>` | https://aistudio.google.com/apikey; API reference https://ai.google.dev/gemini-api/docs/openai | `GET https://generativelanguage.googleapis.com/v1beta/openai/models`, expecting 200; free | 2026-10-25, docs |
 | `mistral` | Mistral AI | `ai` | `MISTRAL_API_KEY` | `api.mistral.ai` | `Authorization: Bearer <MISTRAL_API_KEY>` | https://console.mistral.ai; API reference https://docs.mistral.ai/api/ | `GET https://api.mistral.ai/v1/models`, expecting 200; free | 2026-10-25, docs |

@@ -26,7 +26,19 @@ export const INFERENCE = {
     docs: "https://platform.claude.com/settings/keys",
     api: "https://platform.claude.com/docs/en/api/overview",
     origin: "https://api.anthropic.com",
-    inferenceRoutes: ["/v1/messages", "/v1/messages/count_tokens"],
+    inferenceRoutes: [
+      "/v1/messages",
+      "/v1/messages/count_tokens",
+      // Anthropic's OpenAI-compatible chat completions (its docs: not a
+      // long-term solution; `strict` is ignored): what the default route
+      // maps onto when Anthropic is the Gateway's default.
+      "/v1/chat/completions",
+    ],
+    unstoredRoutes: ["/v1/chat/completions"],
+    // The Messages API is the shape an app pins `anthropic` for.
+    shape: "anthropic",
+    chat: { path: "/v1/chat/completions", model: "claude-haiku-5-5" },
+    aig: { slug: "anthropic" },
     hint: "An API key from the Claude Console's API keys page; the Gateway sends it as a bearer token. Apps send the anthropic-version header themselves.",
     secrets: [
       {
@@ -68,6 +80,16 @@ export const INFERENCE = {
       "/v1beta/openai/embeddings",
       "/v1beta/openai/images/generations",
     ],
+    chat: {
+      path: "/v1beta/openai/chat/completions",
+      model: "gemini-3.1-flash-lite",
+    },
+    embeddings: {
+      path: "/v1beta/openai/embeddings",
+      model: "gemini-embedding-001",
+    },
+    // No `aig`: AI Gateway documents Google AI Studio's native form only
+    // (/v1/models/{model}:generateContent), not these OpenAI-shaped paths.
     hint: "An API key from Google AI Studio; the Gateway sends it as a bearer token. Apps call Gemini's OpenAI-shaped paths under /v1beta/openai.",
     secrets: [
       {
@@ -115,6 +137,9 @@ export const INFERENCE = {
       "/v1/audio/transcriptions",
       "/v1/audio/speech",
     ],
+    chat: { path: "/v1/chat/completions", model: "mistral-small-latest" },
+    embeddings: { path: "/v1/embeddings", model: "mistral-embed" },
+    aig: { slug: "mistral" },
     hint: "An API key from API Keys in the Mistral Studio console; the Gateway sends it as a bearer token. Free mode needs no card; usage and rate limits apply.",
     secrets: [
       {
@@ -154,6 +179,9 @@ export const INFERENCE = {
       "/openai/v1/audio/translations",
       "/openai/v1/audio/speech",
     ],
+    chat: { path: "/openai/v1/chat/completions", model: "openai/gpt-oss-20b" },
+    // AI Gateway's Groq endpoint takes the path without `/openai/v1`.
+    aig: { slug: "groq", trim: "/openai/v1" },
     hint: "An API key from the Groq console; the Gateway sends it as a bearer token. Apps call the OpenAI-shaped paths under /openai/v1.",
     secrets: [
       {
@@ -199,6 +227,10 @@ export const INFERENCE = {
       "/v1/tokenize",
       "/v1/detokenize",
     ],
+    // Cohere's own v2 shape: pinned by an app that speaks it, never the
+    // default (its OpenAI-compatible endpoint is on another host,
+    // api.cohere.ai). No `aig`: AI Gateway documents v1 paths only.
+    shape: "other",
     hint: "An API key from the Cohere dashboard; the Gateway sends it as a bearer token. Trial keys are free and limited; production keys are paid.",
     secrets: [
       {

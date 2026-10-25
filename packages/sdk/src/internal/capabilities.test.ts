@@ -448,11 +448,15 @@ describe("the capability registry", () => {
           false,
         );
       }
-      // What the URL also needs is the install's (Workers AI's account id), never a key.
+      // What the URL also needs is the install's (Workers AI's account id)
+      // or the provider's own (AI Gateway's id), never another's key.
       for (const name of capability.mode === "ai"
         ? (capability.alsoNeeds ?? [])
         : []) {
-        expect(isInstallOwnedGatewaySetting(name), `${id}: ${name}`).toBe(true);
+        expect(
+          isInstallOwnedGatewaySetting(name) || name.startsWith(prefix),
+          `${id}: ${name}`,
+        ).toBe(true);
       }
       // Every catalog provider says where it was checked, or that it wasn't.
       expect(capability.verified, `${id}: verified`).toBeDefined();

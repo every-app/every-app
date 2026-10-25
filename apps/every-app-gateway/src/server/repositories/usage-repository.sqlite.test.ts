@@ -868,6 +868,7 @@ describe("UsageRepository (SQLite)", () => {
         byApp: [],
         byMember: [],
         byTarget: [],
+        byModel: [],
       });
       await expect(
         UsageRepository.summarize({ organizationId: acme, month: "2026-13" }),

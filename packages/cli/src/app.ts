@@ -29,6 +29,7 @@ import { installCommand } from "./commands/install/command";
 import { loginCommand } from "./commands/login/command";
 import { mcpRoutes } from "./commands/mcp/command";
 import { providerRoutes } from "./commands/provider/command";
+import { aiRoutes } from "./commands/ai/command";
 import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
@@ -59,6 +60,7 @@ const routes = buildRouteMap({
     signin: signinRoutes,
     secret: secretRoutes,
     provider: providerRoutes,
+    ai: aiRoutes,
     mcp: mcpRoutes,
     email: emailRoutes,
     events: eventsRoutes,
@@ -114,6 +116,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "signin",
       "secret",
       "provider",
+      "ai",
       "mcp",
       "email",
       "events",
@@ -147,6 +150,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "signin remove github",
   ],
   provider: ["provider list", "provider add stripe.json", "provider show stripe"],
+  ai: ["ai show", "ai default openrouter", "ai default openrouter/anthropic/claude-sonnet-5.5", "ai gateway on"],
   mcp: [
     "mcp list",
     "mcp on dataforseo",
