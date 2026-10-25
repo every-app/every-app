@@ -18,6 +18,7 @@ const INSTALLED: SetupResult = {
   gateway: "installed",
   ownerCreated: true,
   mode: "self_hosted",
+  accessOn: null,
 };
 
 /** The one event a result is reported as. */
@@ -66,6 +67,21 @@ describe("what setup ends with", () => {
         ],
       },
     });
+  });
+
+  it("says Access is on, and leaves access on out of the next steps, once setup turned it on", () => {
+    const { data } = reported({ ...INSTALLED, accessOn: true });
+    expect(data["accessOn"]).toBe(true);
+    expect(data["facts"]).toContainEqual({ label: "Access", value: "on", note: "everyone signs in through Cloudflare Access first" });
+    expect(commands(data["next"])).toEqual([
+      `${CLI} create my-app`,
+      `${CLI} secret set OPENAI_API_KEY`,
+      `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
+    ]);
+    // Declined: the next steps still recommend it, and no fact claims it.
+    const declined = reported({ ...INSTALLED, accessOn: false })["data"];
+    expect(commands(declined["next"])).toContain(`${CLI} access on`);
+    expect(declined["facts"]).not.toContainEqual(expect.objectContaining({ label: "Access" }));
   });
 
   it("says the same once a Gateway that was there gets its owner", () => {

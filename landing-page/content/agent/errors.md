@@ -1505,9 +1505,9 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 
 ### CF_ACCESS_NOT_ENABLED
 
-`access_not_enabled`: the message carries `access.api.error.not_enabled` (API code `9999`, 403): the account never opened Zero Trust, so every Access endpoint refuses (seen on a fresh account on 2026-10-24, on `access/organizations`). `teardown` reads it as a service with nothing of Every App's in it (a skipped `teardown.found` step, see `TEARDOWN_READ_FAILED`). `access on` on such an account fails with it instead of creating the team: whether the create call would work there without the dashboard's onboarding hasn't been checked.
+`access_not_enabled`: the message carries `access.api.error.not_enabled` (API code `9999`, 403): the account never opened Zero Trust, so every Access endpoint but `organization create` refuses (seen on a fresh account on 2026-10-24, on `access/organizations`). `teardown` reads it as a service with nothing of Every App's in it (a skipped `teardown.found` step, see `TEARDOWN_READ_FAILED`). `access on` and `access show` read it as "no team yet" (`getAccessOrganizationOrNone()` in `packages/cli/src/lib/cf/access.ts`) and `on` creates the team, which works on such an account without the dashboard's onboarding, plan pick or payment details (checked live on the loop's test account, 2026-10-24, `docs/onboarding-loop`); so the code surfaces from `access on` only when the create itself failed and something else refused after it.
 
-**Fix:** none given. Unverified: opening Zero Trust once in the dashboard (which creates the team) should make the account answer, then run again.
+**Fix:** none given. Run `access on` again; if Cloudflare keeps answering it after the team was created, open Zero Trust once in the dashboard.
 
 Source: `packages/cli/src/lib/cf/errors.ts`
 
@@ -1901,9 +1901,15 @@ Step `access.routes`: an Access application everyapp manages also covers destina
 
 Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/commands/access/index.ts`
 
+### ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT
+
+`access on` and `access show`, step `access.update`: a Sign in with Cloudflare provider (type `cloudflare`) whose "Restrict to account members" is off: `<name> (cloudflare) is open to any Cloudflare account, so left off the Every App applications` (or `… are open …`) / `Restrict to account members is off, so anyone with a Cloudflare account could sign in there, and Cloudflare doesn't promise the address it asserts is verified: someone who registers a Cloudflare account under a member's address could sign in as that member. Turn Restrict to account members on (Zero Trust → Settings → Authentication → the provider), then run access on again; an application that allowed it before keeps it.` `data.providers`: `[{ id, type, name }]`. The setting is read, never changed: the provider `access on` creates has it on, and only a restricted one is allowed on the applications (`allowedSignInProviders` in `packages/cli/src/lib/access/plan.ts`); until then the PIN alone signs people in.
+
+Source: `packages/cli/src/commands/access/index.ts` (`warnIfOpenToAnyCloudflareAccount`)
+
 ### ACCESS_IDP_UNVERIFIED_EMAILS
 
-`access on`, step `access.update`: a sign-in method among the policy's identity providers is of a type that doesn't verify the address (`UNVERIFIED_EMAIL_IDP_TYPES`): `<name> (<type>) is a generic provider` (or `… are generic providers`) / `The Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; keep only providers that verify addresses (runbook: "Verified emails").` `data.providers`: `[{ id, type, name }]`.
+`access on`, step `access.update`: a provider of the team is of a type that doesn't verify the address (`UNVERIFIED_EMAIL_IDP_TYPES`); it is left off the applications: `<name> (<type>) is a generic provider, left off the Every App applications` (or `… are generic providers, left off the Every App applications`) / `The Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; allow only providers that verify addresses (runbook: "Verified emails").` `data.providers`: `[{ id, type, name }]`.
 
 Source: `packages/cli/src/commands/access/index.ts`
 
@@ -1919,9 +1925,15 @@ The probe of `https://<hostname>/` got a 3xx redirect to Cloudflare Access's log
 
 Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/domains/https.ts`
 
+### ACCESS_LOGIN_NOT_MEMBER
+
+`access on`, step `access.update`: the Cloudflare login's email (`cf auth whoami`; nothing is said for an API token) is neither a member nor an invitee of the Gateway, nor an `--email`: `Sign in with Cloudflare signs you in as <email>, which has no account on this Gateway` / `Access asserts your Cloudflare login's address, and the Gateway refuses anyone it doesn't know. Sign in with the code Access emails to your Gateway account's address instead, or invite <email> in Manage workspace → Users.` `data.email`. Nothing changes: the PIN works for the Gateway account's address.
+
+Source: `packages/cli/src/commands/access/index.ts`
+
 ### ACCESS_NOT_CHECKED
 
-After `deploy` and `delete`, step `app.access` (`syncAppsAccessAfter`): the Access applications couldn't be listed, so whether the Gateway is behind Access, and whether the app's public routes are let through, wasn't checked. A login without the Access permissions (`ACCESS_PERMISSION_MISSING` above) says so only when the app has public routes: `This Cloudflare login can't read Cloudflare Access, so <app> wasn't checked against it`; any other failure: `Couldn't check Cloudflare Access for <app>` / `<first line of the error>`; then `If the Gateway is behind Access, <app>'s public routes need a login there until it is updated.` (on `delete`: `If the Gateway is behind Access, <app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `with a login that can manage Access, if the Gateway is behind it` or `if the Gateway is behind Access`.
+After `deploy` and `delete`, step `app.access` (`syncAppsAccessAfter`): the Access applications couldn't be listed, so whether the Gateway is behind Access, and whether the app's public surface is let through, wasn't checked. A login without the Access permissions (`ACCESS_PERMISSION_MISSING` above) says so only when the app has public routes or `mcp` in its manifest: `This Cloudflare login can't read Cloudflare Access, so <app> wasn't checked against it`; any other failure: `Couldn't check Cloudflare Access for <app>` / `<first line of the error>`; then `If the Gateway is behind Access, <app>'s <public routes | /mcp | public routes and /mcp> need a login there until it is updated.` (on `delete`: `If the Gateway is behind Access, <app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `with a login that can manage Access, if the Gateway is behind it` or `if the Gateway is behind Access`.
 
 Source: `packages/cli/src/lib/access/sync.ts`
 
@@ -1937,15 +1949,21 @@ Step `access.routes` (`access on`; the sync after `deploy` and `delete`): a publ
 
 Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
 
+### ACCESS_SETUP_SKIPPED
+
+Interactive `setup` (and a `deploy` that installs a Gateway), step `setup.access`: the person answered Yes to "Put Cloudflare Access in front of your Gateway?" and `access on`'s code failed (a login without the Access permissions, a team name Cloudflare refused, anything it raises): `Cloudflare Access wasn't turned on` / `<the error's first line>` / `The Gateway works without it: passwords sign people in.` `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `to try again`. Setup goes on to `done` with `data.accessOn: false`; exit 0.
+
+Source: `packages/cli/src/commands/setup/runSetup.ts` (`offerAccessInFront`)
+
 ### ACCESS_SYNC_FAILED
 
-Step `app.access` after `deploy` and `delete`: the Access applications were listed and the apps application exists, but updating it failed; the run doesn't fail for it: `Couldn't update Cloudflare Access for <app>'s public routes` / `<first line of the error>` / `Until it is updated, they need an Access login.` (on `delete`: `<app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`.
+Step `app.access` after `deploy` and `delete`: the Access applications were listed and the apps application exists, but updating it failed; the run doesn't fail for it: `Couldn't update Cloudflare Access for <app>'s <public routes | /mcp | public routes and /mcp>` / `<first line of the error>` / `Until it is updated, they need an Access login.` (on `delete`: `<app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`.
 
 Source: `packages/cli/src/lib/access/sync.ts`
 
 ### ACCESS_TOO_MANY_PUBLIC_ROUTES
 
-Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A public route stays behind Access: <app> <path>` (or `<n> public routes stay behind Access: …`) / `Access lets through at most 25 paths per host, two of them for MCP. Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many" }]`.
+Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A public route stays behind Access: <app> <path>` (or `<n> public routes stay behind Access: …`) / `Access lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp). Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many" }]`.
 
 Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
 

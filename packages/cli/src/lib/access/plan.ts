@@ -7,11 +7,13 @@
  *
  * Two hostname-based applications: one on the Gateway's own host (its
  * tokens sign people in), one on `*.<app base domain>` (its tokens only
- * vouch for a session on an app host). Each lets through only the machine
- * endpoints, which check their own credentials, and each app's public
- * routes on that app's host: Access picks the most specific matching
- * destination, so an app with public routes gets a destination of its own,
- * with the MCP paths again.
+ * vouch for a session on an app host). The Gateway's lets through only its
+ * machine endpoints, which check their own credentials, and `/health` for
+ * uptime monitors. The wildcard lets nothing through: an app host serves
+ * no MCP unless its manifest says so. Access picks the most specific
+ * matching destination, so an app with public routes, or with `mcp` in its
+ * manifest, gets a destination of its own on its host: the MCP paths where
+ * the manifest asks for them, then its public routes.
  *
  * Access path overrides: `*` matches any characters, `/` included; at most
  * one `*` per segment; no implicit subpaths (`/a` is `/a` only); at most 25
@@ -23,20 +25,32 @@ import type { AccessApplication, AccessDestinationOutput, AccessRule } from "@/l
 
 const MAX_OVERRIDES_PER_DESTINATION = 25;
 
-/** MCP clients reach `/mcp` with a token of their own, on the Gateway and on every app host. */
-const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
+/**
+ * MCP clients reach `/mcp` with a token of their own: on the Gateway, and
+ * on an app host whose manifest sets `mcp` (the Gateway's ToolBus or the
+ * app's own server answers there, after the perimeter checked the token).
+ */
+export const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
+
+/**
+ * The Gateway's `/health`: an uptime monitor can't sign in, and the route
+ * reads no session and names no version. Public whatever Managed OAuth
+ * says.
+ */
+const HEALTH_PATH = "/health";
 
 /**
  * The Gateway host's machine endpoints: MCP, the OAuth server's token,
- * revocation and registration endpoints, and OAuth discovery. Everything
- * else on the host, `/oauth/authorize` and the consent page included, is a
- * page for people and stays behind Access.
+ * revocation and registration endpoints, OAuth discovery, and `/health`.
+ * Everything else on the host, `/oauth/authorize` and the consent page
+ * included, is a page for people and stays behind Access.
  */
 const GATEWAY_BYPASS_PATHS: readonly string[] = [
   ...MCP_PATHS,
   "/oauth/token",
   "/oauth/register",
   "/.well-known/*",
+  HEALTH_PATH,
 ];
 
 interface AccessOverride {
@@ -74,12 +88,18 @@ export function accessPathPattern(path: string): string | null {
 const overridesFor = (patterns: readonly string[]): AccessOverride[] =>
   patterns.map((path_pattern) => ({ path_pattern, behavior: "public" }));
 
-/** An app as the plan sees it: its host and its manifest's public routes. */
+/** An app as the plan sees it: its host, its manifest's public routes, and whether the manifest sets `mcp`. */
 export interface AppPublicSurface {
   appId: string;
   hostname: string;
   publicPaths: readonly string[];
+  /** The stored manifest has `mcp: { by, why }`: its host serves `/mcp`, which MCP clients reach with a token. */
+  mcp: boolean;
 }
+
+/** Whether an app needs a destination of its own: something on its host is reached without a login. */
+const hasPublicSurface = (app: Pick<AppPublicSurface, "publicPaths" | "mcp">): boolean =>
+  app.publicPaths.length > 0 || app.mcp;
 
 /** A public route Access won't let through, and why. */
 export interface DroppedRoute {
@@ -90,18 +110,19 @@ export interface DroppedRoute {
 }
 
 /**
- * The destination for an app with public routes: the MCP paths (unless
- * Managed OAuth makes AI apps use the Gateway's `/mcp` through Access),
- * then its routes in manifest order, each once, up to the limit.
+ * The destination for an app with a public surface: the MCP paths when its
+ * manifest sets `mcp` (unless Managed OAuth makes AI apps use the
+ * Gateway's `/mcp` through Access), then its routes in manifest order,
+ * each once, up to the limit.
  */
 export function appDestination(
   app: AppPublicSurface,
-  { mcp }: { mcp: boolean },
+  { managedOAuth }: { managedOAuth: boolean },
 ): {
   destination: AccessPublicDestination;
   dropped: DroppedRoute[];
 } {
-  const patterns = mcp ? [...MCP_PATHS] : [];
+  const patterns = app.mcp && !managedOAuth ? [...MCP_PATHS] : [];
   const dropped: DroppedRoute[] = [];
   for (const path of app.publicPaths) {
     const pattern = accessPathPattern(path);
@@ -122,12 +143,12 @@ export function appDestination(
   };
 }
 
-/** The Gateway host's destination; with Managed OAuth on, nothing is bypassed. */
+/** The Gateway host's destination; with Managed OAuth on, only `/health` is bypassed. */
 export function gatewayDestination(gatewayHost: string, managedOAuth: boolean): AccessPublicDestination {
   return {
     type: "public",
     uri: gatewayHost.toLowerCase(),
-    overrides: managedOAuth ? [] : overridesFor(GATEWAY_BYPASS_PATHS),
+    overrides: overridesFor(managedOAuth ? [HEALTH_PATH] : GATEWAY_BYPASS_PATHS),
   };
 }
 
@@ -142,31 +163,34 @@ function underBase(hostname: string, base: string): boolean {
 }
 
 /**
- * The apps application's destinations: the wildcard with the MCP paths,
- * then one per app with public routes under the base domain, by host. Apps
- * without public routes need none (the wildcard covers them). With Managed
- * OAuth on the Gateway's application (`mcp: false`), nothing bypasses
- * `/mcp` on app hosts either: AI apps use the Gateway's, through Access.
+ * The apps application's destinations: the wildcard, with nothing let
+ * through, then one per app with a public surface (public routes, or
+ * `mcp` in its manifest) under the base domain, by host. Apps with neither
+ * need none (the wildcard covers them). With Managed OAuth on the Gateway's
+ * application, nothing bypasses `/mcp` on app hosts either: AI apps use
+ * the Gateway's, through Access, so an app with `mcp` alone gets no
+ * destination then (one with no override would let nothing through).
  */
 export function appsDestinations(
   appBaseDomain: string,
   apps: readonly AppPublicSurface[],
-  { mcp = true }: { mcp?: boolean } = {},
+  { managedOAuth = false }: { managedOAuth?: boolean } = {},
 ): { destinations: AccessPublicDestination[]; dropped: DroppedRoute[]; outsideBase: string[] } {
   const destinations: AccessPublicDestination[] = [
-    { type: "public", uri: appsWildcard(appBaseDomain), overrides: overridesFor(mcp ? MCP_PATHS : []) },
+    { type: "public", uri: appsWildcard(appBaseDomain), overrides: [] },
   ];
   const dropped: DroppedRoute[] = [];
   const outsideBase: string[] = [];
   for (const app of [...apps].sort((a, b) => a.hostname.localeCompare(b.hostname))) {
-    if (app.publicPaths.length === 0) continue;
+    if (!hasPublicSurface(app)) continue;
     if (!underBase(app.hostname, appBaseDomain)) {
       outsideBase.push(app.appId);
       continue;
     }
-    const planned = appDestination(app, { mcp });
-    destinations.push(planned.destination);
+    const planned = appDestination(app, { managedOAuth });
     dropped.push(...planned.dropped);
+    if (planned.destination.overrides.length === 0) continue;
+    destinations.push(planned.destination);
   }
   return { destinations, dropped, outsideBase };
 }
@@ -314,11 +338,16 @@ export function ruleDomains(rules: readonly AccessRule[]): string[] {
 // --- Identity providers -----------------------------------------------------
 
 /**
- * "Cloudflare account members" lets in the Cloudflare account's own users
- * only, so it is no way in for a Gateway's members; every other kind of
- * provider is one the operator added for people.
+ * "Sign in with Cloudflare": the person's own Cloudflare account, with
+ * Cloudflare's MFA. With `restrict_to_account_members` on, only members of
+ * the operator's Cloudflare account can use it; off, any Cloudflare user
+ * can (subject to the policy), and Cloudflare's docs don't say the address
+ * it asserts is verified.
  */
-const CLOUDFLARE_MEMBERS_IDP_TYPE = "cloudflare";
+export const CLOUDFLARE_IDP_TYPE = "cloudflare";
+
+/** The one-time PIN: a code emailed to the address the person types. */
+export const ONE_TIME_PIN_IDP_TYPE = "onetimepin";
 
 /**
  * Provider kinds that let a person pick their own email address, so Access
@@ -326,9 +355,120 @@ const CLOUDFLARE_MEMBERS_IDP_TYPE = "cloudflare";
  */
 export const UNVERIFIED_EMAIL_IDP_TYPES: readonly string[] = ["oidc", "saml"];
 
-/** The providers people sign in with: every one but the account-members provider. */
-export function peopleIdentityProviders<T extends { type: string }>(providers: readonly T[]): T[] {
-  return providers.filter((provider) => provider.type !== CLOUDFLARE_MEMBERS_IDP_TYPE);
+/** A provider as the sign-in rules read it. */
+interface SignInProvider {
+  id: string;
+  type: string;
+  name?: string | null | undefined;
+  config?: { restrict_to_account_members?: boolean | null | undefined } | null | undefined;
+}
+
+/**
+ * The two sign-in methods `access on` keeps on every team, so members of
+ * the operator's Cloudflare account sign in with it and everyone else gets
+ * a code by email: which of them the team lacks.
+ */
+export function missingSignInProviders(providers: readonly SignInProvider[]): {
+  cloudflare: boolean;
+  pin: boolean;
+} {
+  return {
+    cloudflare: !providers.some((provider) => provider.type === CLOUDFLARE_IDP_TYPE),
+    pin: !providers.some((provider) => provider.type === ONE_TIME_PIN_IDP_TYPE),
+  };
+}
+
+/** Cloudflare-account providers open to any Cloudflare user, not only the account's members. */
+export function unrestrictedCloudflareProviders<T extends SignInProvider>(providers: readonly T[]): T[] {
+  return providers.filter(
+    (provider) =>
+      provider.type === CLOUDFLARE_IDP_TYPE && provider.config?.restrict_to_account_members !== true,
+  );
+}
+
+/**
+ * The sign-in methods as a person reads them: "a Cloudflare account or a
+ * one-time PIN", other providers by name ("a Cloudflare account, Okta or a
+ * one-time PIN"). The Cloudflare account first, the PIN last.
+ */
+export function describeSignInMethods(providers: readonly SignInProvider[]): string {
+  const names = [
+    ...(providers.some((provider) => provider.type === CLOUDFLARE_IDP_TYPE) ? ["a Cloudflare account"] : []),
+    ...providers
+      .filter((provider) => provider.type !== CLOUDFLARE_IDP_TYPE && provider.type !== ONE_TIME_PIN_IDP_TYPE)
+      .map((provider) => provider.name ?? provider.type),
+    ...(providers.some((provider) => provider.type === ONE_TIME_PIN_IDP_TYPE) ? ["a one-time PIN"] : []),
+  ];
+  return names.length <= 1 ? (names[0] ?? "no sign-in method") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
+}
+
+/**
+ * The providers `access on` allows on the Every App applications: the
+ * one-time PIN and a Cloudflare provider restricted to the account's
+ * members, the two it vouches for (each asserts an address someone
+ * verified: the mailbox, or the Cloudflare account). The Zero Trust team
+ * is account-wide, so a provider on it says nothing about who should sign
+ * in here: an operator's own (Okta, a generic OIDC one, a Cloudflare
+ * provider open to any Cloudflare account) is theirs to allow in the
+ * dashboard, and `on` never takes one off an application.
+ */
+export function allowedSignInProviders<T extends SignInProvider>(providers: readonly T[]): T[] {
+  return providers.filter(
+    (provider) =>
+      provider.type === ONE_TIME_PIN_IDP_TYPE ||
+      (provider.type === CLOUDFLARE_IDP_TYPE && provider.config?.restrict_to_account_members === true),
+  );
+}
+
+/**
+ * The provider ids an application should allow: the ones it allows already
+ * (an operator's own stay) plus the providers `access on` vouches for
+ * (`allowedSignInProviders`). An empty list means "every provider" to
+ * Access, the operator's included, so a list is always sent.
+ */
+export function allowedIdpsFor(
+  existing: readonly string[] | null | undefined,
+  providerIds: readonly string[],
+): string[] {
+  const ids = [...(existing ?? [])];
+  for (const id of providerIds) {
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * An application's sign-in settings as `access on` makes them: the
+ * providers it vouches for allowed (beside what the application allowed
+ * already), and Access's redirect past its chooser only when that leaves
+ * one provider (with two, the person picks Sign in with Cloudflare or the
+ * PIN).
+ */
+export function desiredSignIn(
+  application: Pick<AccessApplication, "allowed_idps"> | null,
+  providerIds: readonly string[],
+): { allowedIdps: string[]; autoRedirect: boolean } {
+  const allowedIdps = allowedIdpsFor(application?.allowed_idps, providerIds);
+  return { allowedIdps, autoRedirect: allowedIdps.length === 1 };
+}
+
+/**
+ * Whether an application's sign-in settings are what `access on` would
+ * make them. An application that names no provider (Access then allows
+ * every provider of the team, the operator's included) reads as out of
+ * sync: `on` always writes the explicit list.
+ */
+export function signInInSync(
+  application: Pick<AccessApplication, "allowed_idps" | "auto_redirect_to_identity">,
+  providerIds: readonly string[],
+): boolean {
+  const desired = desiredSignIn(application, providerIds);
+  const current = application.allowed_idps ?? [];
+  return (
+    current.length === desired.allowedIdps.length &&
+    desired.allowedIdps.every((id) => current.includes(id)) &&
+    (application.auto_redirect_to_identity ?? false) === desired.autoRedirect
+  );
 }
 
 // --- Session durations ------------------------------------------------------

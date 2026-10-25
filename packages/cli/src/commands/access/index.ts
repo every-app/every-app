@@ -7,15 +7,17 @@
  * name, and the Gateway's settings by their names on the Worker.
  *
  * `on` reads everything first (who is a member or invited, which apps have
- * public routes, what Access has), then changes only what differs, in an
- * order that never leaves the Gateway requiring an Access login nobody can
- * get: the team, then a way to sign in, then the policy, then the two
- * applications (the apps' first), and last the Gateway's settings, all
- * three in one new version of the Worker. It never removes anyone from the
- * policy (deactivation in Every App is how someone is taken off), never
- * touches a destination it didn't make (an application that also covers
- * something else keeps that), and leaves the team's global session alone
- * unless asked.
+ * a public surface, what Access has), then changes only what differs, in
+ * an order that never leaves the Gateway requiring an Access login nobody
+ * can get: the team, then the two ways to sign in (a Cloudflare account
+ * for the members of the operator's Cloudflare account, a one-time PIN
+ * emailed to everyone else), then the policy, then the two applications
+ * (the apps' first), and last the Gateway's settings, all three in one new
+ * version of the Worker. It never removes anyone from the policy
+ * (deactivation in Every App is how someone is taken off), never takes a
+ * sign-in method off an application, never touches a destination it didn't
+ * make (an application that also covers something else keeps that), and
+ * leaves the team's global session alone unless asked.
  *
  * `off` is the reverse: the settings go first, in one version, so the
  * Gateway stops requiring Access at once; then the two applications.
@@ -27,9 +29,10 @@ import {
   createAccessApplication,
   createAccessOrganization,
   createAccessPolicy,
+  createCloudflareIdentityProvider,
   createOneTimePinProvider,
   deleteAccessApplication,
-  getAccessOrganization,
+  getAccessOrganizationOrNone,
   listAccessApplications,
   listAccessIdentityProviders,
   listAccessPolicies,
@@ -48,19 +51,27 @@ import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import {
+  allowedSignInProviders,
   appsDestinations,
+  CLOUDFLARE_IDP_TYPE,
+  describeSignInMethods,
+  desiredSignIn,
   durationSeconds,
   emailDomainRule,
   emailRule,
   findAccessApplications,
   gatewayDestination,
   managedOAuthOn,
+  MCP_PATHS,
   mergeRules,
-  peopleIdentityProviders,
+  missingSignInProviders,
+  ONE_TIME_PIN_IDP_TYPE,
   ruleDomains,
   ruleEmails,
   sameDestinations,
+  signInInSync,
   splitDestinations,
+  unrestrictedCloudflareProviders,
   UNVERIFIED_EMAIL_IDP_TYPES,
   type AccessPublicDestination,
   type AccessScope,
@@ -264,13 +275,19 @@ interface ApplicationOutcome {
   application: AccessApplication;
   /** `skipped`: left as found, with a warning saying why. */
   outcome: "created" | "updated" | "unchanged" | "skipped";
+  /** The sign-in providers this run allowed on it that it didn't allow before (ids). */
+  signInAdded: string[];
 }
 
 /** What `on` found and did, for the done event. */
 interface OnResult {
   teamDomain: string;
   organization: { created: boolean; sessionSet: string | null; globalSession: string | null };
+  /** Every provider of the team. */
   signInMethods: AccessIdentityProvider[];
+  /** The ones allowed on the applications (`allowedSignInProviders`). */
+  allowedMethods: AccessIdentityProvider[];
+  cloudflareAdded: boolean;
   pinAdded: boolean;
   policy: { id: string; name: string; created: boolean; added: string[]; emails: string[]; domains: string[] };
   gateway: ApplicationOutcome;
@@ -306,13 +323,15 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   const scope = scopeOf(install);
   const { gatewayHost, appBaseDomain: base } = scope;
 
-  // Who gets in: every read before the first write.
+  // Who gets in: every read before the first write. With no team yet there
+  // is no policy to read (and an account that never opened Zero Trust
+  // refuses every Access call but the team's creation until it exists).
   const people = await readPeople(db, now());
   const rules = [...people.members.map(emailRule), ...people.invited.map(emailRule), ...wanted.rules];
-  let organization = await getAccessOrganization(cf);
-  const providers = await listAccessIdentityProviders(cf);
-  const policies = await listAccessPolicies(cf);
-  const existingPolicy = policies.find((policy) => policy.name === POLICY_NAME) ?? null;
+  let organization = await getAccessOrganizationOrNone(cf);
+  const existingPolicy = organization
+    ? ((await listAccessPolicies(cf)).find((policy) => policy.name === POLICY_NAME) ?? null)
+    : null;
   if (rules.length === 0 && !existingPolicy) {
     throw new EveryAppError(
       "ACCESS_NOBODY_ALLOWED",
@@ -380,22 +399,56 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   }
   const teamDomain = organization.auth_domain.toLowerCase();
 
-  // 2. A way to sign in: the one-time PIN, unless people have another provider.
+  // 2. The ways to sign in, read once the team exists (a team made in
+  // Cloudflare's dashboard comes with the Cloudflare provider; one made
+  // through the API, as above, comes with none): Sign in with Cloudflare
+  // for the members of this Cloudflare account, the one-time PIN for
+  // everyone else. Both are kept; what the team has besides stays.
+  let signInMethods = await listAccessIdentityProviders(cf);
+  const missingProviders = missingSignInProviders(signInMethods);
+  let cloudflareAdded = false;
   let pinAdded = false;
-  let signInMethods = peopleIdentityProviders(providers);
-  if (signInMethods.length === 0) {
+  if (missingProviders.cloudflare) {
+    out.emit({ type: "progress", step: STEP, message: "Adding Sign in with Cloudflare (members of this Cloudflare account)" });
+    signInMethods = [...signInMethods, await createCloudflareIdentityProvider(cf)];
+    cloudflareAdded = true;
+  }
+  if (missingProviders.pin) {
     out.emit({ type: "progress", step: STEP, message: "Adding the one-time PIN identity provider" });
-    signInMethods = [await createOneTimePinProvider(cf)];
+    signInMethods = [...signInMethods, await createOneTimePinProvider(cf)];
     pinAdded = true;
   }
+  // What the applications allow: the two methods above, never the rest of
+  // the team's providers (the team is account-wide; an operator's own
+  // provider is theirs to allow in the dashboard, and never taken off).
+  const allowedMethods = allowedSignInProviders(signInMethods);
   const unverified = signInMethods.filter((provider) => UNVERIFIED_EMAIL_IDP_TYPES.includes(provider.type));
   if (unverified.length > 0) {
     out.emit({
       type: "warning",
       code: "ACCESS_IDP_UNVERIFIED_EMAILS",
       step: STEP,
-      message: `${listed(unverified.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${unverified.length === 1 ? "is a generic provider" : "are generic providers"}\nThe Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; keep only providers that verify addresses (runbook: "Verified emails").`,
+      message: `${listed(unverified.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${unverified.length === 1 ? "is a generic provider, left off the Every App applications" : "are generic providers, left off the Every App applications"}\nThe Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; allow only providers that verify addresses (runbook: "Verified emails").`,
       data: { providers: unverified.map((provider) => ({ id: provider.id, type: provider.type, name: provider.name ?? null })) },
+    });
+  }
+  warnIfOpenToAnyCloudflareAccount(out, signInMethods);
+  // Sign in with Cloudflare asserts the Cloudflare login's own address; the
+  // policy and the Gateway know members by theirs. Said now, before the
+  // operator tries it and gets Access's forbidden page.
+  const loginEmail = connection.deployer.email?.toLowerCase() ?? null;
+  if (
+    loginEmail !== null &&
+    !people.members.includes(loginEmail) &&
+    !people.invited.includes(loginEmail) &&
+    !wanted.emails.includes(loginEmail)
+  ) {
+    out.emit({
+      type: "warning",
+      code: "ACCESS_LOGIN_NOT_MEMBER",
+      step: STEP,
+      message: `Sign in with Cloudflare signs you in as ${loginEmail}, which has no account on this Gateway\nAccess asserts your Cloudflare login's address, and the Gateway refuses anyone it doesn't know. Sign in with the code Access emails to your Gateway account's address instead, or invite ${loginEmail} in Manage workspace → Users.`,
+      data: { email: loginEmail },
     });
   }
 
@@ -431,8 +484,8 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   let plan: ReturnType<typeof appsDestinations>;
   try {
     const found = findAccessApplications(await listAccessApplications(cf), scope);
-    const mcp = !managedOAuthOn(found.gateway);
-    plan = appsDestinations(base, await readPublicSurfaces(db), { mcp });
+    const managedOAuth = managedOAuthOn(found.gateway);
+    plan = appsDestinations(base, await readPublicSurfaces(db), { managedOAuth });
     combined = found.gateway !== null && found.apps !== null && found.gateway.id === found.apps.id;
     const foreign: PlanLeftovers["foreign"] = [];
     const noteForeign = (application: AccessApplication | null) => {
@@ -447,7 +500,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       policyId: policy.id,
       session,
       sessionGiven: options.session !== undefined,
-      allowedIdps: signInMethods.map((provider) => provider.id),
+      allowedIdps: allowedMethods.map((provider) => provider.id),
     };
     if (combined) {
       out.emit({
@@ -460,7 +513,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       const together = await reconcileApplication(cf, out, found.gateway, {
         ...common,
         name: found.gateway!.name ?? GATEWAY_APPLICATION_NAME,
-        destinations: [gatewayDestination(gatewayHost, !mcp), ...plan.destinations],
+        destinations: [gatewayDestination(gatewayHost, managedOAuth), ...plan.destinations],
         appLauncherVisible: true,
       });
       apps = together;
@@ -477,7 +530,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       gateway = await reconcileApplication(cf, out, found.gateway, {
         ...common,
         name: GATEWAY_APPLICATION_NAME,
-        destinations: [gatewayDestination(gatewayHost, !mcp)],
+        destinations: [gatewayDestination(gatewayHost, managedOAuth)],
         appLauncherVisible: true,
       });
     }
@@ -529,6 +582,8 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       teamDomain,
       organization: { created: organizationCreated, sessionSet, globalSession: organization.session_duration ?? null },
       signInMethods,
+      allowedMethods,
+      cloudflareAdded,
       pinAdded,
       policy: {
         id: policy.id,
@@ -545,9 +600,34 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       toLink: people.toLink,
       emailDomains: wanted.domains,
     },
-    // The plan's destinations: the wildcard, then one per app with public routes.
-    { gatewayHost, base, session, appsWithRoutes: plan.destinations.length - 1 },
+    // The plan's destinations: the wildcard, then one per app with public
+    // routes or /mcp (under Managed OAuth, with public routes only).
+    {
+      gatewayHost,
+      base,
+      session,
+      appsWithRoutes: plan.destinations.filter((d) => d.overrides.some((o) => !MCP_PATHS.includes(o.path_pattern))).length,
+      appsWithMcp: plan.destinations.filter((d) => d.overrides.some((o) => o.path_pattern === "/mcp")).length,
+    },
   );
+}
+
+/**
+ * A Cloudflare-account provider with "Restrict to account members" off
+ * lets any Cloudflare user sign in, and Cloudflare's docs don't say the
+ * address it then asserts is verified; the Gateway signs people in as that
+ * address. Said on `on` and `show`.
+ */
+function warnIfOpenToAnyCloudflareAccount(out: EventSink, providers: readonly AccessIdentityProvider[]): void {
+  const open = unrestrictedCloudflareProviders(providers);
+  if (open.length === 0) return;
+  out.emit({
+    type: "warning",
+    code: "ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT",
+    step: STEP,
+    message: `${listed(open.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${open.length === 1 ? "is" : "are"} open to any Cloudflare account, so left off the Every App applications\nRestrict to account members is off, so anyone with a Cloudflare account could sign in there, and Cloudflare doesn't promise the address it asserts is verified: someone who registers a Cloudflare account under a member's address could sign in as that member. Turn Restrict to account members on (Zero Trust → Settings → Authentication → the provider), then run access on again; an application that allowed it before keeps it.`,
+    data: { providers: open.map((provider) => ({ id: provider.id, type: provider.type, name: provider.name ?? null })) },
+  });
 }
 
 function askTeamAtTerminal(suggested: string): Promise<string> {
@@ -579,8 +659,9 @@ interface DesiredApplication {
 /**
  * Create the application, or bring the fields this command owns in line
  * (our destinations, our policy among its reusable policies, the cookie
- * settings, the session when asked) and keep everything else as found. No
- * difference, no PUT.
+ * settings, the team's sign-in providers among its allowed ones, the
+ * session when asked) and keep everything else as found. No difference,
+ * no PUT.
  */
 async function reconcileApplication(
   cf: CfRunner,
@@ -590,6 +671,7 @@ async function reconcileApplication(
 ): Promise<ApplicationOutcome> {
   if (!existing) {
     out.emit({ type: "progress", step: STEP, message: `Creating the Access application "${desired.name}"` });
+    const signIn = desiredSignIn(null, desired.allowedIdps);
     const application = await createAccessApplication(cf, {
       name: desired.name,
       type: "self_hosted",
@@ -598,11 +680,11 @@ async function reconcileApplication(
       session_duration: desired.session,
       http_only_cookie_attribute: true,
       enable_binding_cookie: true,
-      ...(desired.allowedIdps.length > 0 ? { allowed_idps: desired.allowedIdps } : {}),
-      auto_redirect_to_identity: desired.allowedIdps.length === 1,
+      ...(signIn.allowedIdps.length > 0 ? { allowed_idps: signIn.allowedIdps } : {}),
+      auto_redirect_to_identity: signIn.autoRedirect,
       app_launcher_visible: desired.appLauncherVisible,
     });
-    return { application, outcome: "created" };
+    return { application, outcome: "created", signInAdded: signIn.allowedIdps };
   }
   const current = existing.destinations ?? [];
   const destinations = [...splitDestinations(current, desired.scope).foreign, ...desired.destinations];
@@ -618,17 +700,24 @@ async function reconcileApplication(
       message: `The Access application "${existing.name ?? existing.id}" has ${inline.length === 1 ? "a policy" : "policies"} of its own: ${listed(inline.map((policy) => policy.name ?? policy.id))}\nIt is left as it is: Access takes either application policies or reusable ones, not both, so the policy "${POLICY_NAME}" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.`,
       data: { application: existing.id, policies: inline.map((policy) => policy.id) },
     });
-    return { application: existing, outcome: "skipped" };
+    return { application: existing, outcome: "skipped", signInAdded: [] };
   }
   const policyIds = found.map((policy) => policy.id);
   const policies = policyIds.includes(desired.policyId) ? policyIds : [...policyIds, desired.policyId];
   // Managed OAuth: the runbook leaves the binding cookie as the operator set it.
   const binding = managedOAuthOn(existing) ? (existing.enable_binding_cookie ?? false) : true;
+  // The team's sign-in providers join what the application allows already
+  // (an application `on` made before Sign in with Cloudflare allowed the
+  // PIN alone); none is ever taken off.
+  const signIn = desiredSignIn(existing, desired.allowedIdps);
+  const signInAdded = signIn.allowedIdps.filter((id) => !(existing.allowed_idps ?? []).includes(id));
   const changes: Partial<AccessApplicationBody> = {
     destinations: destinations as AccessApplicationBody["destinations"],
     policies,
     http_only_cookie_attribute: true,
     enable_binding_cookie: binding,
+    allowed_idps: signIn.allowedIdps,
+    auto_redirect_to_identity: signIn.autoRedirect,
     ...(desired.sessionGiven ? { session_duration: desired.session } : {}),
   };
   const unchanged =
@@ -636,18 +725,19 @@ async function reconcileApplication(
     policies.join(",") === policyIds.join(",") &&
     existing.http_only_cookie_attribute === true &&
     (existing.enable_binding_cookie ?? false) === binding &&
+    signInInSync(existing, desired.allowedIdps) &&
     (!desired.sessionGiven || existing.session_duration === desired.session);
-  if (unchanged) return { application: existing, outcome: "unchanged" };
+  if (unchanged) return { application: existing, outcome: "unchanged", signInAdded: [] };
   out.emit({ type: "progress", step: STEP, message: `Updating the Access application "${existing.name ?? desired.name}"` });
   const application = await updateAccessApplication(cf, existing.id, applicationUpdateBody(existing, changes));
-  return { application, outcome: "updated" };
+  return { application, outcome: "updated", signInAdded };
 }
 
 /** The done event of `on`: what changed, what was already so, and what to do next. */
 function reportOn(
   out: EventSink,
   result: OnResult,
-  context: { gatewayHost: string; base: string; session: string; appsWithRoutes: number },
+  context: { gatewayHost: string; base: string; session: string; appsWithRoutes: number; appsWithMcp: number },
 ): void {
   const { gatewayHost, base } = context;
   const lines: string[] = [];
@@ -660,17 +750,14 @@ function reportOn(
     lines.push(chalk.dim(line));
     said.push(line);
   };
-  // A one-time PIN provider is "a one-time PIN" whatever it was named.
-  const methods = listed(
-    result.signInMethods.map((provider) =>
-      provider.type === "onetimepin" ? "a one-time PIN" : (provider.name ?? provider.type),
-    ),
-  );
+  // What people sign in to Every App with: the allowed providers, not the team's others.
+  const methods = describeSignInMethods(result.allowedMethods);
 
-  if (result.organization.created) done(`Zero Trust team ${result.teamDomain}`, `created · sign-in through ${methods}`);
+  if (result.organization.created) done(`Zero Trust team ${result.teamDomain}`, `created · sign-in with ${methods}`);
   else if (result.organization.sessionSet) done(`Zero Trust team ${result.teamDomain}`, `global session now ${result.organization.sessionSet}, for every Access application in the account`);
-  else already(`Zero Trust team ${result.teamDomain} · sign-in through ${methods}.`);
-  if (result.pinAdded) done("One-time PIN sign-in", "added: Access emails people a code");
+  else already(`Zero Trust team ${result.teamDomain} · sign-in with ${methods}.`);
+  if (result.cloudflareAdded) done("Sign in with Cloudflare", "added: members of this Cloudflare account sign in with their Cloudflare account");
+  if (result.pinAdded) done("One-time PIN sign-in", "added: Access emails everyone else a code");
 
   const { policy } = result;
   const who = [...policy.emails, ...policy.domains.map((domain) => `@${domain}`)];
@@ -680,22 +767,27 @@ function reportOn(
 
   const routes =
     context.appsWithRoutes > 0
-      ? `public routes of ${plural(context.appsWithRoutes, "app")} let through`
-      : "no app has public routes";
-  const machine = "MCP and the OAuth endpoints let through";
+      ? `public routes of ${plural(context.appsWithRoutes, "app")} let through${context.appsWithMcp > 0 ? `, /mcp on ${plural(context.appsWithMcp, "app host")}` : ""}`
+      : context.appsWithMcp > 0
+        ? `/mcp on ${plural(context.appsWithMcp, "app host")} let through`
+        : "no app has public routes or /mcp";
+  const machine = "MCP, the OAuth endpoints and /health let through";
+  // An existing application that gained a sign-in method says so: nothing else about it may have changed.
+  const signInNote = (outcome: ApplicationOutcome) =>
+    outcome.outcome === "updated" && outcome.signInAdded.length > 0 ? " · sign-in methods added" : "";
   const skipped = (where: string) => already(`Access in front of ${where} left as it is (see the warning above).`);
   if (result.combined) {
     const where = `${gatewayHost} and *.${base}`;
     if (result.gateway.outcome === "skipped") skipped(where);
     else if (result.gateway.outcome === "unchanged") already(`Access in front of ${where} is as it should be.`);
-    else done(`Access in front of ${where}`, `${result.gateway.outcome} · ${machine} · ${routes}`);
+    else done(`Access in front of ${where}`, `${result.gateway.outcome}${signInNote(result.gateway)} · ${machine} · ${routes}`);
   } else {
     if (result.gateway.outcome === "skipped") skipped(gatewayHost);
     else if (result.gateway.outcome === "unchanged") already(`Access in front of ${gatewayHost} is as it should be.`);
-    else done(`Access in front of ${gatewayHost}`, `${result.gateway.outcome} · ${machine}`);
+    else done(`Access in front of ${gatewayHost}`, `${result.gateway.outcome}${signInNote(result.gateway)} · ${machine}`);
     if (result.apps.outcome === "skipped") skipped(`*.${base}`);
     else if (result.apps.outcome === "unchanged") already(`Access in front of *.${base} is as it should be (${routes}).`);
-    else done(`Access in front of *.${base}`, `${result.apps.outcome} · ${routes}`);
+    else done(`Access in front of *.${base}`, `${result.apps.outcome}${signInNote(result.apps)} · ${routes}`);
   }
   if (result.settings.outcome === "set") {
     const why =
@@ -707,8 +799,16 @@ function reportOn(
     done("Gateway settings", `${ACCESS_SETTINGS.join(", ")} · one new version${why}`);
   } else already("Gateway settings kept: they name these applications already (--write-settings writes them again).");
 
-  const pinOnly = result.signInMethods.every((provider) => provider.type === "onetimepin");
-  const first = pinOnly ? "Access emails them a code first" : "Access asks them to sign in first";
+  // What the first sign-in looks like: with one provider Access goes
+  // straight to it; with the Cloudflare account and the PIN it shows a
+  // chooser first.
+  const pinOnly = result.allowedMethods.every((provider) => provider.type === ONE_TIME_PIN_IDP_TYPE);
+  const chooser = result.allowedMethods.length > 1;
+  const first = chooser
+    ? "Access asks them to sign in first, with their Cloudflare account if they are a member of this Cloudflare account, otherwise with a code emailed to them"
+    : pinOnly
+      ? "Access emails them a code first"
+      : "Access asks them to sign in first";
   const signIn = result.toLink.length > 0
     ? `${listed(result.toLink)} ${result.toLink.length === 1 ? "signs" : "sign"} in once with ${result.toLink.length === 1 ? "their" : "their own"} password; ${first}. After that Access alone signs them in.`
     : null;
@@ -720,7 +820,14 @@ function reportOn(
     );
     next.push({ command: `${CLI} secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, note: `${result.emailDomains.join(", ")}: people there join as members on their first sign-in` });
   }
-  notes.push("MCP clients and personal access tokens keep working: /mcp, the OAuth endpoints and each app's public routes are let through without a login.");
+  // The team's other providers stay off the applications: said once, with the way to allow one.
+  const leftOff = result.signInMethods.filter((provider) => !result.allowedMethods.includes(provider));
+  if (leftOff.length > 0) {
+    notes.push(
+      `${listed(leftOff.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${leftOff.length === 1 ? "is" : "are"} on the team but not allowed on the Every App applications: access on allows only the one-time PIN and a Cloudflare provider restricted to this account's members. Allow another on both applications in the dashboard (Zero Trust → Access controls → Applications); access on never takes a method off.`,
+    );
+  }
+  notes.push("MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and each app's public routes are let through without a login (an app host's /mcp only where its manifest asks for it).");
   notes.push(`Once everyone has signed in through Access, passwords can go: ${CLI} secret set EMAIL_PASSWORD_SIGN_IN (false).`);
   next.push({ command: `${CLI} secret set EMAIL_PASSWORD_SIGN_IN`, note: "false, once everyone has linked Access" });
 
@@ -743,8 +850,8 @@ function reportOn(
         sessionSet: result.organization.sessionSet,
         globalSession: result.organization.globalSession,
       },
-      signInMethods: result.signInMethods.map((provider) => ({ id: provider.id, type: provider.type, name: provider.name ?? null })),
-      identityProviders: { oneTimePinAdded: result.pinAdded },
+      signInMethods: result.signInMethods.map((provider) => signInMethodData(provider, result.allowedMethods)),
+      identityProviders: { oneTimePinAdded: result.pinAdded, cloudflareAdded: result.cloudflareAdded },
       policy,
       applications: {
         gateway: applicationData(result.gateway),
@@ -752,13 +859,30 @@ function reportOn(
         combined: result.combined,
       },
       settings: { names: [...ACCESS_SETTINGS], ...result.settings },
-      signIn: { url: `https://${gatewayHost}`, pending: result.toLink, first: pinOnly ? "pin" : "idp" },
+      signIn: { url: `https://${gatewayHost}`, pending: result.toLink, first: chooser ? "both" : pinOnly ? "pin" : "idp" },
       next,
     },
   });
 }
 
-function applicationData({ application, outcome }: ApplicationOutcome) {
+/**
+ * A provider as `on` and `show` list it: whether the applications allow it
+ * (`allowedSignInProviders`), and on the Cloudflare one whether it is
+ * restricted to the account's members.
+ */
+function signInMethodData(provider: AccessIdentityProvider, allowed: readonly AccessIdentityProvider[]) {
+  return {
+    id: provider.id,
+    type: provider.type,
+    name: provider.name ?? null,
+    allowed: allowed.some((candidate) => candidate.id === provider.id),
+    ...(provider.type === CLOUDFLARE_IDP_TYPE
+      ? { restrictToAccountMembers: provider.config?.restrict_to_account_members === true }
+      : {}),
+  };
+}
+
+function applicationData({ application, outcome, signInAdded }: ApplicationOutcome) {
   return {
     id: application.id,
     aud: application.aud,
@@ -768,6 +892,8 @@ function applicationData({ application, outcome }: ApplicationOutcome) {
       uri: destination.uri ?? null,
       public: (destination.overrides ?? []).map((override) => override.path_pattern),
     })),
+    allowedIdps: application.allowed_idps ?? [],
+    signInAdded,
   };
 }
 
@@ -881,19 +1007,25 @@ export async function showAccess(options: AccessOptions): Promise<void> {
   const scope = scopeOf(install);
   const { gatewayHost, appBaseDomain: base } = scope;
   const hosted = install.deploymentMode === "hosted";
-  const organization = hosted ? null : await getAccessOrganization(cf);
+  const organization = hosted ? null : await getAccessOrganizationOrNone(cf);
   const names = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
   const settings = ACCESS_SETTINGS.filter((name) => names.includes(name));
   const record = hosted ? null : await readAccessSettingsRecord(db);
   const policy = organization
     ? ((await listAccessPolicies(cf)).find((candidate) => candidate.name === POLICY_NAME) ?? null)
     : null;
+  const providers = organization ? await listAccessIdentityProviders(cf) : [];
+  // What `on` would allow on the applications; the team's other providers are listed, never compared.
+  const allowedProviders = allowedSignInProviders(providers);
+  const providerIds = allowedProviders.map((provider) => provider.id);
+  const missingProviders = missingSignInProviders(providers);
   const found: { gateway: AccessApplication | null; apps: AccessApplication | null } = organization
     ? findAccessApplications(await listAccessApplications(cf), scope)
     : { gateway: null, apps: null };
   const people = await readPeople(db, now());
-  const mcp = !managedOAuthOn(found.gateway);
-  const plan = appsDestinations(base, await readPublicSurfaces(db), { mcp });
+  const managedOAuth = managedOAuthOn(found.gateway);
+  const plan = appsDestinations(base, await readPublicSurfaces(db), { managedOAuth });
+  if (organization) warnIfOpenToAnyCloudflareAccount(out, providers);
 
   const on = settings.length === ACCESS_SETTINGS.length && found.gateway !== null;
   // Whether the settings (unreadable) name the applications in front: known once `on` recorded them.
@@ -916,9 +1048,12 @@ export async function showAccess(options: AccessOptions): Promise<void> {
   const gatewayInSync = found.gateway
     ? sameDestinations(
         ours(found.gateway).filter((d) => (d.uri ?? "").toLowerCase() === gatewayHost),
-        [gatewayDestination(gatewayHost, !mcp)],
+        [gatewayDestination(gatewayHost, managedOAuth)],
       )
     : false;
+  // Whether the application allows the team's sign-in providers as `on` would leave it (null: no application).
+  const signInSynced = (application: AccessApplication | null): boolean | null =>
+    application === null ? null : signInInSync(application, providerIds);
   const policyAttached = (application: AccessApplication | null) =>
     application === null || policy === null || (application.policies ?? []).some((p) => p.id === policy.id);
   const notInPolicy = policy
@@ -933,10 +1068,20 @@ export async function showAccess(options: AccessOptions): Promise<void> {
       !gatewayInSync ||
       !policyAttached(found.gateway) ||
       !policyAttached(found.apps) ||
-      notInPolicy.length > 0)
+      notInPolicy.length > 0 ||
+      (organization !== null && (missingProviders.cloudflare || missingProviders.pin)) ||
+      signInSynced(found.gateway) === false ||
+      signInSynced(found.apps) === false)
   ) {
     fixes.push(`${CLI} access on`);
   }
+  // The sign-in methods as `on` would leave them: what the team lacks is named.
+  const missingMethods = [
+    ...(missingProviders.cloudflare ? ["a Cloudflare account"] : []),
+    ...(missingProviders.pin ? ["a one-time PIN"] : []),
+  ];
+  const openToAny = unrestrictedCloudflareProviders(providers);
+  const notAllowed = providers.filter((provider) => !allowedProviders.includes(provider));
   const who = policy ? [...ruleEmails(policy.include ?? []), ...ruleDomains(policy.include ?? []).map((d) => `@${d}`)] : [];
 
   const facts = [
@@ -962,16 +1107,30 @@ export async function showAccess(options: AccessOptions): Promise<void> {
         ? `${listed(who)}${notInPolicy.length > 0 ? chalk.yellow(` · not yet: ${listed(notInPolicy)}`) : ""}${chalk.dim(` (policy "${policy.name}")`)}`
         : chalk.dim(`no policy "${POLICY_NAME}" yet`),
     },
+    ...(organization
+      ? [
+          {
+            label: "Sign in",
+            value: `${allowedProviders.length > 0 ? `with ${describeSignInMethods(allowedProviders)}` : chalk.dim("no sign-in method yet")}${
+              missingMethods.length > 0 ? chalk.yellow(` · access on adds ${listed(missingMethods)}`) : ""
+            }${openToAny.length > 0 ? chalk.yellow(" · open to any Cloudflare account (see the warning)") : ""}${
+              notAllowed.length > 0
+                ? chalk.dim(` · on the team, not allowed here: ${listed(notAllowed.map((provider) => provider.name ?? provider.id))}`)
+                : ""
+            }`,
+          },
+        ]
+      : []),
     {
       label: gatewayHost,
       value: found.gateway
-        ? `${found.gateway.name ?? found.gateway.id} · ${gatewayInSync ? "paths as they should be" : chalk.yellow("paths differ")}${managedOAuthOn(found.gateway) ? " · Managed OAuth" : ""}${policyAttached(found.gateway) ? "" : chalk.yellow(" · policy not attached")}`
+        ? `${found.gateway.name ?? found.gateway.id} · ${gatewayInSync ? "paths as they should be" : chalk.yellow("paths differ")}${signInSynced(found.gateway) === false ? chalk.yellow(" · sign-in methods differ") : ""}${managedOAuthOn(found.gateway) ? " · Managed OAuth" : ""}${policyAttached(found.gateway) ? "" : chalk.yellow(" · policy not attached")}`
         : chalk.dim("no Access application"),
     },
     {
       label: `*.${base}`,
       value: found.apps
-        ? `${found.apps.name ?? found.apps.id} · ${appsInSync ? "public routes as they should be" : chalk.yellow("public routes differ")}${policyAttached(found.apps) ? "" : chalk.yellow(" · policy not attached")}`
+        ? `${found.apps.name ?? found.apps.id} · ${appsInSync ? "public routes as they should be" : chalk.yellow("public routes differ")}${signInSynced(found.apps) === false ? chalk.yellow(" · sign-in methods differ") : ""}${policyAttached(found.apps) ? "" : chalk.yellow(" · policy not attached")}`
         : chalk.dim("no Access application"),
     },
     {
@@ -1005,12 +1164,20 @@ export async function showAccess(options: AccessOptions): Promise<void> {
       policy: policy
         ? { id: policy.id, name: policy.name, emails: ruleEmails(policy.include ?? []), domains: ruleDomains(policy.include ?? []), notYet: notInPolicy }
         : null,
+      signIn: organization
+        ? {
+            methods: providers.map((provider) => signInMethodData(provider, allowedProviders)),
+            cloudflare: !missingProviders.cloudflare,
+            pin: !missingProviders.pin,
+            openToAnyCloudflareAccount: openToAny.map((provider) => provider.id),
+          }
+        : null,
       applications: {
         gateway: found.gateway
-          ? { ...applicationData({ application: found.gateway, outcome: "unchanged" }), inSync: gatewayInSync, managedOAuth: managedOAuthOn(found.gateway), policyAttached: policyAttached(found.gateway) }
+          ? { ...applicationData({ application: found.gateway, outcome: "unchanged", signInAdded: [] }), inSync: gatewayInSync, signInInSync: signInSynced(found.gateway), managedOAuth: managedOAuthOn(found.gateway), policyAttached: policyAttached(found.gateway) }
           : null,
         apps: found.apps
-          ? { ...applicationData({ application: found.apps, outcome: "unchanged" }), inSync: appsInSync, policyAttached: policyAttached(found.apps) }
+          ? { ...applicationData({ application: found.apps, outcome: "unchanged", signInAdded: [] }), inSync: appsInSync, signInInSync: signInSynced(found.apps), policyAttached: policyAttached(found.apps) }
           : null,
         combined,
       },

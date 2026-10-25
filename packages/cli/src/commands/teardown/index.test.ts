@@ -497,11 +497,11 @@ describe("teardown", () => {
         data: expect.objectContaining({ fix: expect.stringContaining("R2 Object Storage") }),
       }),
     ]);
-    // Access: the applications and the policy, not the team or its provider.
+    // Access: the applications and the policy, not the team or its providers (the Cloudflare account and the PIN).
     expect(account.zeroTrust.applications.size).toBe(0);
     expect(account.zeroTrust.policies.size).toBe(0);
     expect(account.zeroTrust.organization).not.toBeNull();
-    expect(account.zeroTrust.identityProviders.size).toBe(1);
+    expect(account.zeroTrust.identityProviders.size).toBe(2);
     // Certificates: the Universal pack alone.
     expect(account.certificatePacks.map((pack) => pack.id)).toEqual(["pack-universal"]);
     // Mail: our rule gone, the catch-all dropping, someone else's rule and routing kept.

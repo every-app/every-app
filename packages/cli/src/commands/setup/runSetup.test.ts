@@ -13,13 +13,14 @@ import { openRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { cfD1Database } from "@/lib/cf/d1";
+import { CancelledError } from "@/lib/errors";
 import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
-import { runSetup, setupDeps, type SetupDeps, type SetupFlags } from "./runSetup";
+import { runGatewayDeploy, runSetup, setupDeps, type SetupDeps, type SetupFlags } from "./runSetup";
 
 const GW = "apps.example.com";
 
@@ -73,6 +74,7 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     interactive: false,
     prompts: {
       browserDeploymentToken: async () => null,
+      accessInFront: async () => false,
       pickZone: async () => {
         throw new Error("asked a person");
       },
@@ -167,6 +169,8 @@ describe("everyapp setup", () => {
       gateway: "installed",
       ownerCreated: true,
       mode: "self_hosted",
+      // Unattended (--json): never offered.
+      accessOn: null,
     });
 
     // The gateway, its own Custom Domain in the zone (with Cloudflare's
@@ -961,6 +965,7 @@ describe("everyapp setup", () => {
         interactive: true,
         prompts: {
           browserDeploymentToken: async () => null,
+          accessInFront: async () => false,
           pickZone: async () => {
             throw new Error("asked for a zone");
           },
@@ -987,6 +992,153 @@ describe("everyapp setup", () => {
     expect(account.gatewayDomains()).toEqual(["tools.example.com"]);
   });
 
+  it("offers Cloudflare Access once the owner exists, Yes by default: Yes turns it on inside the run, No leaves it", async () => {
+    const contexts: Array<{ owner: string; cloudflareEmail: string | null }> = [];
+    let answer = false;
+    const prompts: SetupDeps["prompts"] = {
+      browserDeploymentToken: async () => null,
+      accessInFront: async (context) => {
+        contexts.push(context);
+        return answer;
+      },
+      pickZone: async () => {
+        throw new Error("asked for a zone");
+      },
+      gatewayAddress: async () => {
+        throw new Error("asked for an address");
+      },
+    };
+    const zt = account.zeroTrust;
+
+    // No: nothing at Access, the next steps still recommend it.
+    const declined = await setup({ json: false, domain: GW }, { interactive: true, prompts });
+    expect(declined.exitCode).toBe(0);
+    expect(declined.result).toMatchObject({ gateway: "installed", ownerCreated: true, accessOn: false });
+    // Asked with the owner's address and the Cloudflare login's (the fake's whoami), for the prompt's context.
+    expect(contexts).toEqual([{ owner: expect.stringContaining("@"), cloudflareEmail: expect.any(String) }]);
+    expect(zt.organization).toBeNull();
+    expect(zt.applications.size).toBe(0);
+    expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CLOUDFLARE_ACCESS_AUD");
+
+    // Yes, on the next run (the owner exists, Access isn't on): the team (named by the test, as a person would), both
+    // sign-in methods, the policy with the owner, both applications and the settings; the inner done is a step.
+    answer = true;
+    events.length = 0;
+    const agreed = await setup(
+      { json: false, domain: GW },
+      { interactive: true, prompts, askTeam: async (suggested) => `${suggested}-team` },
+    );
+    expect(agreed.exitCode).toBe(0);
+    expect(agreed.result).toMatchObject({ gateway: "up-to-date", accessOn: true });
+    expect(zt.organization).toMatchObject({ auth_domain: "example-team.cloudflareaccess.com" });
+    expect([...zt.identityProviders.values()].map((p) => p["type"]).sort()).toEqual(["cloudflare", "onetimepin"]);
+    expect(zt.applications.size).toBe(2);
+    const secrets = account.workers.get("every-app-gateway")!.secrets;
+    expect(secrets).toHaveProperty("CLOUDFLARE_ACCESS_TEAM_DOMAIN");
+    expect(secrets).toHaveProperty("CLOUDFLARE_ACCESS_AUD");
+    expect(secrets).toHaveProperty("CLOUDFLARE_ACCESS_APPS_AUD");
+    const dones = events.filter((event) => event.type === "done");
+    expect(dones).toHaveLength(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "step",
+        step: "setup.access",
+        status: "ok",
+        data: expect.objectContaining({
+          team: expect.objectContaining({ created: true }),
+          identityProviders: { oneTimePinAdded: true, cloudflareAdded: true },
+          // The fake's owner has no password account to link, so nobody is pending.
+          signIn: expect.objectContaining({ url: `https://${GW}`, first: "both" }),
+        }),
+      }),
+    );
+    expect(events.some((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toBe(false);
+
+    // On already: not asked again.
+    const again = await setup({ json: false, domain: GW }, { interactive: true, prompts });
+    expect(again.exitCode).toBe(0);
+    expect(again.result).toMatchObject({ accessOn: null });
+    expect(contexts).toHaveLength(2);
+  });
+
+  it("never offers Access with --yes, under --json, or from update; a failure is a warning and setup still ends done", async () => {
+    let asked = 0;
+    const prompts: SetupDeps["prompts"] = {
+      browserDeploymentToken: async () => null,
+      accessInFront: async () => {
+        asked += 1;
+        return true;
+      },
+      pickZone: async () => {
+        throw new Error("asked for a zone");
+      },
+      gatewayAddress: async () => {
+        throw new Error("asked for an address");
+      },
+    };
+
+    const unattended = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
+    expect(unattended.result).toMatchObject({ gateway: "installed", ownerCreated: true, accessOn: null });
+    const scripted = await setup({ domain: GW }, { interactive: false, prompts });
+    expect(scripted.result).toMatchObject({ accessOn: null });
+    expect(asked).toBe(0);
+
+    // `update` at a terminal: the Gateway's owner exists and Access is off, and still no question.
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+    const updated = await runGatewayDeploy({ json: false }, out, deps({ interactive: true, prompts }));
+    expect(updated).toMatchObject({ accessOn: null });
+    expect(asked).toBe(0);
+
+    // Yes, but Access refuses (a login without the Access permissions): a warning with the rerun, exit 0.
+    account.cf.override(["zero-trust", "organization", "get"], {
+      exitCode: 1,
+      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
+    });
+    const failed = await setup({ json: false, domain: GW }, { interactive: true, prompts });
+    expect(asked).toBe(1);
+    expect(failed.exitCode).toBe(0);
+    expect(failed.result).toMatchObject({ accessOn: false });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "ACCESS_SETUP_SKIPPED",
+        step: "setup.access",
+        message: expect.stringContaining("Cloudflare Access wasn't turned on\nThis Cloudflare login can't manage Access"),
+        data: expect.objectContaining({ rerun: expect.stringContaining("access on") }),
+      }),
+    );
+    expect(account.zeroTrust.applications.size).toBe(0);
+  });
+
+  it("ends the run when Ctrl-C answers the team name inside the Access offer, as at every other setup prompt", async () => {
+    const prompts: SetupDeps["prompts"] = {
+      browserDeploymentToken: async () => null,
+      accessInFront: async () => true,
+      pickZone: async () => {
+        throw new Error("asked for a zone");
+      },
+      gatewayAddress: async () => {
+        throw new Error("asked for an address");
+      },
+    };
+    const { exitCode, result } = await setup(
+      { json: false, domain: GW },
+      {
+        interactive: true,
+        prompts,
+        askTeam: async () => {
+          throw new CancelledError();
+        },
+      },
+    );
+    expect(result).toBeUndefined();
+    expect(exitCode).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: "error", code: "CANCELLED" }));
+    expect(events.some((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toBe(false);
+    // The name comes before the first write: nothing at Access.
+    expect(account.zeroTrust.organization).toBeNull();
+  });
+
   it("asks a person at a terminal about browser installs once the Gateway is up, unless --yes", async () => {
     let asked = 0;
     const prompts: SetupDeps["prompts"] = {
@@ -994,6 +1146,7 @@ describe("everyapp setup", () => {
         asked += 1;
         return null;
       },
+      accessInFront: async () => false,
       pickZone: async () => {
         throw new Error("asked for a zone");
       },

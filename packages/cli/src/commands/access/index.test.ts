@@ -1,9 +1,10 @@
 /**
  * `everyapp access on|off|show` end to end, in a fake Cloudflare account
  * with a deployed gateway (as secret/index.test.ts): from nothing to a team,
- * a PIN, a policy, two applications and the Gateway's settings; a rerun
- * that changes nothing; a deploy and a delete keeping the apps application
- * in step; what the command leaves alone; and the way back.
+ * both sign-in methods (a Cloudflare account, a PIN), a policy, two
+ * applications and the Gateway's settings; a rerun that changes nothing;
+ * a deploy and a delete keeping the apps application in step; what the
+ * command leaves alone; and the way back.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -44,6 +45,13 @@ const CRM: EveryAppCliManifest = {
 /** An app with none. */
 const TODO: EveryAppCliManifest = { id: "todo", resources: { d1: ["DB"] } };
 
+/** An app whose manifest asks for /mcp on its own host, and has no public route. */
+const INBOX: EveryAppCliManifest = {
+  id: "inbox",
+  resources: { d1: ["DB"] },
+  mcp: { by: "gateway", why: "A connector per inbox, pinned in Claude." },
+};
+
 let account: FakeCloudflare;
 let worker: GatewayWorker;
 let tarball: string;
@@ -74,6 +82,7 @@ const overrides = (app: Record<string, any>, uri: string) =>
     .find((d) => d.uri === uri)!
     .overrides.map((o) => o.path_pattern);
 const policy = () => [...zt().policies.values()].find((p) => p["name"] === POLICY_NAME);
+const provider = (type: string) => [...zt().identityProviders.values()].find((p) => p["type"] === type);
 const policyEmails = () =>
   ((policy()?.["include"] ?? []) as Array<{ email?: { email: string } }>).flatMap((r) => (r.email ? [r.email.email] : []));
 /** Zero Trust writes this run made. */
@@ -239,7 +248,7 @@ describe("access on, from nothing", () => {
     expect(writes()).toEqual([]);
   });
 
-  it("creates the team, the PIN, the policy, both applications and the settings, in one Worker version", async () => {
+  it("creates the team, both sign-in methods, the policy, both applications and the settings, in one Worker version", async () => {
     await seedPeople();
     const versions = gatewayWorker().versions.length;
 
@@ -248,20 +257,22 @@ describe("access on, from nothing", () => {
     expect(error()).toBeUndefined();
     // The team, with the session the applications get.
     expect(zt().organization).toMatchObject({ auth_domain: "acme.cloudflareaccess.com", session_duration: "720h" });
-    // The one way to sign in.
-    const pin = [...zt().identityProviders.values()];
-    expect(pin).toHaveLength(1);
-    expect(pin[0]).toMatchObject({ type: "onetimepin" });
+    // The two ways to sign in: a Cloudflare account (this account's members only), and a code by email.
+    expect([...zt().identityProviders.values()]).toHaveLength(2);
+    const cloudflare = provider("cloudflare")!;
+    const pin = provider("onetimepin")!;
+    expect(cloudflare).toMatchObject({ name: "Cloudflare", config: { restrict_to_account_members: true } });
+    expect(pin).toMatchObject({ name: "One-time PIN" });
     // Members who aren't deactivated, and the pending unexpired invitee.
     expect(policyEmails()).toEqual(["ben@acme.com", "jo@acme.com", "linked@acme.com", "sam@acme.com"]);
     expect(policy()).toMatchObject({ decision: "allow" });
-    // The two applications.
+    // The two applications: /health joins the Gateway's bypasses; the wildcard lets nothing through.
     const gateway = application(HOST)!;
     const apps = application(`*.${HOST}`)!;
     expect(gateway["id"]).not.toBe(apps["id"]);
-    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*"]);
+    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*", "/health"]);
     expect(uris(apps)).toEqual([`*.${HOST}`]);
-    expect(overrides(apps, `*.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
+    expect(overrides(apps, `*.${HOST}`)).toEqual([]);
     for (const app of [gateway, apps]) {
       expect(app).toMatchObject({
         type: "self_hosted",
@@ -269,8 +280,9 @@ describe("access on, from nothing", () => {
         session_duration: "720h",
         http_only_cookie_attribute: true,
         enable_binding_cookie: true,
-        allowed_idps: [pin[0]!["id"]],
-        auto_redirect_to_identity: true,
+        // Both allowed, so Access shows its chooser rather than redirecting to one.
+        allowed_idps: [cloudflare["id"], pin["id"]],
+        auto_redirect_to_identity: false,
       });
     }
     expect(gateway["app_launcher_visible"]).toBe(true);
@@ -285,20 +297,160 @@ describe("access on, from nothing", () => {
     expect(done()).toMatchObject({
       data: {
         team: { domain: "acme.cloudflareaccess.com", created: true },
-        identityProviders: { oneTimePinAdded: true },
+        signInMethods: [
+          { type: "cloudflare", restrictToAccountMembers: true, allowed: true },
+          { type: "onetimepin", allowed: true },
+        ],
+        identityProviders: { oneTimePinAdded: true, cloudflareAdded: true },
         policy: { name: POLICY_NAME, created: true },
         applications: {
-          gateway: { aud: gateway["aud"], outcome: "created" },
+          gateway: { aud: gateway["aud"], outcome: "created", allowedIdps: [cloudflare["id"], pin["id"]] },
           apps: { aud: apps["aud"], outcome: "created" },
           combined: false,
         },
         settings: { names: [...ACCESS_SETTINGS], outcome: "set", reason: "missing" },
         // Who signs in with a password once: not the one who linked already, not the deactivated.
-        signIn: { url: `https://${HOST}`, pending: ["ben@acme.com", "jo@acme.com"], first: "pin" },
+        signIn: { url: `https://${HOST}`, pending: ["ben@acme.com", "jo@acme.com"], first: "both" },
         next: [{ command: expect.stringContaining("secret set EMAIL_PASSWORD_SIGN_IN") }],
       },
     });
+    expect(done()!["message"]).toContain("sign-in with a Cloudflare account or a one-time PIN");
     expect(done()!["message"]).toContain("ben@acme.com and jo@acme.com sign in once");
+    expect(done()!["message"]).toContain("with their Cloudflare account if they are a member of this Cloudflare account");
+    expect(done()!["message"]).toContain("MCP, the OAuth endpoints and /health let through");
+    // The Cloudflare login (the fake's) is nobody on this Gateway: said, since Sign in with Cloudflare asserts it.
+    expect(warnings("ACCESS_LOGIN_NOT_MEMBER")).toEqual([
+      expect.objectContaining({ data: { email: expect.any(String) } }),
+    ]);
+  });
+
+  it("creates the team on an account that never opened Zero Trust, then everything else", async () => {
+    await seedPeople();
+    account.accessNotEnabled = true;
+
+    await on({ team: "acme" });
+
+    expect(error()).toBeUndefined();
+    expect(zt().organization).toMatchObject({ auth_domain: "acme.cloudflareaccess.com" });
+    expect(provider("cloudflare")).toBeDefined();
+    expect(provider("onetimepin")).toBeDefined();
+    expect(application(HOST)).toBeDefined();
+    expect(done()).toMatchObject({ data: { team: { created: true }, identityProviders: { oneTimePinAdded: true, cloudflareAdded: true } } });
+  });
+
+  it("keeps a team's Cloudflare provider, adds the PIN beside it, and allows both on the applications", async () => {
+    await seedPeople();
+    // As Cloudflare's dashboard onboarding leaves a new team: its own provider, restricted to the account's members.
+    zt().organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", session_duration: "24h", created_at: 0 };
+    zt().identityProviders.set("idp-cf", { id: "idp-cf", type: "cloudflare", name: "Cloudflare account members", config: { restrict_to_account_members: true } });
+
+    await on();
+
+    expect(error()).toBeUndefined();
+    expect([...zt().identityProviders.values()].map((p) => p["type"])).toEqual(["cloudflare", "onetimepin"]);
+    expect(application(HOST)!["allowed_idps"]).toEqual(["idp-cf", provider("onetimepin")!["id"]]);
+    expect(done()).toMatchObject({ data: { identityProviders: { oneTimePinAdded: true, cloudflareAdded: false }, signIn: { first: "both" } } });
+    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toEqual([]);
+  });
+
+  it("warns about a Cloudflare provider open to any Cloudflare account, on and show alike", async () => {
+    await seedPeople();
+    zt().organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", created_at: 0 };
+    zt().identityProviders.set("idp-cf", { id: "idp-cf", type: "cloudflare", name: "Any Cloudflare user", config: { restrict_to_account_members: false } });
+
+    await on();
+    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("Any Cloudflare user (cloudflare) is open to any Cloudflare account, so left off the Every App applications"),
+        data: { providers: [{ id: "idp-cf", type: "cloudflare", name: "Any Cloudflare user" }] },
+      }),
+    ]);
+    // Left off: the PIN alone signs people in, redirected to, until the operator restricts the provider.
+    expect(done()).toMatchObject({
+      data: {
+        signInMethods: [{ id: "idp-cf", restrictToAccountMembers: false, allowed: false }, { type: "onetimepin", allowed: true }],
+        signIn: { first: "pin" },
+      },
+    });
+    expect(application(HOST)).toMatchObject({ allowed_idps: [provider("onetimepin")!["id"]], auto_redirect_to_identity: true });
+
+    await show();
+    expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toHaveLength(1);
+    expect(done()).toMatchObject({ data: { signIn: { cloudflare: true, pin: true, openToAnyCloudflareAccount: ["idp-cf"] } } });
+  });
+
+  it("adds Sign in with Cloudflare to applications made before it, taking nothing off them", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    // As `access on` left them before 2026-10-25: the PIN alone, redirected to; plus one the operator allowed by hand.
+    const cloudflare = provider("cloudflare")!;
+    zt().identityProviders.delete(cloudflare["id"] as string);
+    zt().identityProviders.set("idp-okta", { id: "idp-okta", type: "okta", name: "Okta", config: {} });
+    for (const app of applications()) {
+      app["allowed_idps"] = app["id"] === application(HOST)!["id"] ? [provider("onetimepin")!["id"], "idp-okta"] : [provider("onetimepin")!["id"]];
+      app["auto_redirect_to_identity"] = true;
+    }
+
+    await show();
+    // The Gateway's names Okta beside the PIN and still redirects (two providers: it shouldn't); the apps'
+    // names the PIN alone, redirected to, which is what `on` makes of a team without Sign in with Cloudflare.
+    expect(done()).toMatchObject({
+      data: {
+        signIn: { cloudflare: false, pin: true },
+        applications: { gateway: { signInInSync: false }, apps: { signInInSync: true } },
+        fixes: [expect.stringContaining("access on")],
+      },
+    });
+
+    await on();
+
+    expect(error()).toBeUndefined();
+    // Sign in with Cloudflare joins both applications; the operator's Okta
+    // stays where they allowed it (the Gateway's) and is added nowhere: the
+    // team is account-wide, and `on` allows only the two methods it vouches for.
+    const added = provider("cloudflare")!;
+    expect(application(HOST)).toMatchObject({
+      allowed_idps: [provider("onetimepin")!["id"], "idp-okta", added["id"]],
+      auto_redirect_to_identity: false,
+    });
+    expect(application(`*.${HOST}`)).toMatchObject({
+      allowed_idps: [provider("onetimepin")!["id"], added["id"]],
+      auto_redirect_to_identity: false,
+    });
+    expect(done()).toMatchObject({
+      data: {
+        identityProviders: { cloudflareAdded: true, oneTimePinAdded: false },
+        signInMethods: [
+          { type: "onetimepin", allowed: true },
+          { id: "idp-okta", type: "okta", allowed: false },
+          { id: added["id"], type: "cloudflare", allowed: true },
+        ],
+        applications: {
+          gateway: { outcome: "updated", signInAdded: [added["id"]] },
+          apps: { outcome: "updated", signInAdded: [added["id"]] },
+        },
+      },
+    });
+    expect(done()!["message"]).toContain("sign-in methods added");
+    expect(done()!["message"]).toContain("sign-in with a Cloudflare account or a one-time PIN");
+    expect(done()!["message"]).toContain("Okta (okta) is on the team but not allowed on the Every App applications");
+
+    // `show` agrees: in sync now, Okta listed as the team's, not compared.
+    await show();
+    expect(done()).toMatchObject({
+      data: {
+        signIn: { methods: expect.arrayContaining([expect.objectContaining({ id: "idp-okta", allowed: false })]) },
+        applications: { gateway: { signInInSync: true }, apps: { signInInSync: true } },
+      },
+    });
+    expect(done()!["data"]).not.toHaveProperty("fixes");
+
+    // Then nothing more to do, and show agrees.
+    await on();
+    expect(writes()).toEqual([]);
+    await show();
+    expect(done()).toMatchObject({ data: { applications: { gateway: { signInInSync: true }, apps: { signInInSync: true } } } });
+    expect(done()!["data"]["fixes"]).toBeUndefined();
   });
 
   it("does nothing on a second run", async () => {
@@ -437,13 +589,13 @@ describe("access on, from nothing", () => {
     gateway["policies"] = ["inline-1"];
     // Something ours to put right, so each application is PUT once.
     (gateway["destinations"] as Array<{ overrides: unknown[] }>)[0]!.overrides = [];
-    (apps["destinations"] as Array<{ uri: string; overrides: unknown[] }>).find((d) => d.uri === `*.${HOST}`)!.overrides = [];
+    apps["enable_binding_cookie"] = false;
 
     await on();
 
     expect(error()).toBeUndefined();
     expect(uris(application(`*.${HOST}`)!)).toEqual(["wiki.example.org", `*.${HOST}`]);
-    expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
+    expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
     expect(warnings("ACCESS_FOREIGN_DESTINATION")[0]).toMatchObject({ data: { uris: ["wiki.example.org"] } });
     // The application with policies of its own is left alone, paths and all.
     expect(application(HOST)!["policies"]).toEqual(["inline-1"]);
@@ -451,19 +603,24 @@ describe("access on, from nothing", () => {
     expect(warnings("ACCESS_INLINE_POLICIES")).toHaveLength(1);
     expect(done()).toMatchObject({ data: { applications: { gateway: { outcome: "skipped" }, apps: { outcome: "updated" } } } });
     // The destination for something else isn't an app with public routes.
-    expect(done()!["message"]).toContain("no app has public routes");
+    expect(done()!["message"]).toContain("no app has public routes or /mcp");
   });
 
-  it("drops the MCP bypass everywhere once the Gateway's application has Managed OAuth", async () => {
+  it("drops the MCP bypass everywhere once the Gateway's application has Managed OAuth, keeping /health", async () => {
     await seedPeople();
+    await deploy(appDir(INBOX), INBOX);
     await on({ team: "acme" });
+    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
     const gateway = application(HOST)!;
     gateway["oauth_configuration"] = { enabled: true };
 
     await on();
 
-    expect(overrides(application(HOST)!, HOST)).toEqual([]);
+    expect(overrides(application(HOST)!, HOST)).toEqual(["/health"]);
     expect(overrides(application(`*.${HOST}`)!, `*.${HOST}`)).toEqual([]);
+    // An app that asked for /mcp alone loses its destination: nothing would be let through on it.
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+    expect(done()!["message"]).toContain("no app has public routes or /mcp");
     // Then nothing more to do.
     await on();
     expect(writes()).toEqual([]);
@@ -483,7 +640,8 @@ describe("access on, from nothing", () => {
   });
 });
 
-describe("access keeps the apps application in step with deploys", () => {
+// Each of these deploys (and deletes) through the fake Gateway more than once: room beyond the default 5 s.
+describe("access keeps the apps application in step with deploys", { timeout: 30_000 }, () => {
   it("lets an app's public routes through when it deploys, and takes them back when it is deleted", async () => {
     await seedPeople();
     await on({ team: "acme" });
@@ -497,10 +655,11 @@ describe("access keeps the apps application in step with deploys", () => {
     const dir = appDir(CRM);
     await deploy(dir, CRM);
     expect(steps("app.access")).toEqual([
-      expect.objectContaining({ status: "ok", data: expect.objectContaining({ appId: "crm", changed: true }) }),
+      expect.objectContaining({ status: "ok", message: "Cloudflare Access lets crm's public routes through.", data: expect.objectContaining({ appId: "crm", changed: true }) }),
     ]);
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`, `crm.${HOST}`]);
-    expect(overrides(application(`*.${HOST}`)!, `crm.${HOST}`)).toEqual(["/mcp", "/mcp/*", "/t/*", "/t/e", "/health"]);
+    // Its routes alone: the manifest doesn't ask for /mcp on its host.
+    expect(overrides(application(`*.${HOST}`)!, `crm.${HOST}`)).toEqual(["/t/*", "/t/e", "/health"]);
 
     // A redeploy with the same routes changes nothing at Access; neither does `access on`.
     events = [];
@@ -525,6 +684,74 @@ describe("access keeps the apps application in step with deploys", () => {
       expect.objectContaining({ status: "ok", message: expect.stringContaining("no longer lets crm's"), data: expect.objectContaining({ removed: true }) }),
     ]);
     expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+  });
+
+  it("lets an app's /mcp through when its manifest opts in, with no public route", async () => {
+    await seedPeople();
+    await on({ team: "acme" });
+    events = [];
+
+    const dir = appDir(INBOX);
+    await deploy(dir, INBOX);
+    expect(steps("app.access")).toEqual([
+      expect.objectContaining({ status: "ok", message: "Cloudflare Access lets inbox's /mcp through." }),
+    ]);
+    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
+
+    // `access on` agrees; `show` lists it as desired.
+    events = [];
+    account.cf.calls.length = 0;
+    await on();
+    expect(writes()).toEqual([]);
+    // No app has public routes: only the /mcp count is said.
+    expect(done()!["message"]).toContain("/mcp on 1 app host let through");
+    expect(done()!["message"]).not.toContain("public routes of");
+    await show();
+    expect(done()).toMatchObject({ data: { desired: { apps: [{ uri: `*.${HOST}`, public: [] }, { uri: `inbox.${HOST}`, public: ["/mcp", "/mcp/*"] }] } } });
+
+
+    // A deploy without the opt-in takes it back.
+    events = [];
+    const plain: EveryAppCliManifest = { id: "inbox", resources: { d1: ["DB"] } };
+    account.apps.set(dir, plain);
+    fs.writeFileSync(path.join(dir, "everyapp.config.ts"), `export default ${JSON.stringify(plain, null, 2)} as const;\n`);
+    await deploy(dir, plain);
+    expect(steps("app.access")).toEqual([expect.objectContaining({ status: "ok", data: expect.objectContaining({ changed: true }) })]);
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+
+    // Opted in again, then deleted: the delete takes /mcp back, in those words.
+    account.apps.set(dir, INBOX);
+    fs.writeFileSync(path.join(dir, "everyapp.config.ts"), `export default ${JSON.stringify(INBOX, null, 2)} as const;\n`);
+    await deploy(dir, INBOX);
+    expect(overrides(application(`*.${HOST}`)!, `inbox.${HOST}`)).toEqual(["/mcp", "/mcp/*"]);
+    events = [];
+    await removeApp({
+      appId: "inbox",
+      out: out(),
+      interactive: false,
+      purge: false,
+      createCf,
+      reconcile: { ...seams, openRelease: () => openRelease(tarball), source: () => releaseSource(tarball) },
+    });
+    expect(error()).toBeUndefined();
+    expect(steps("app.access")).toEqual([
+      expect.objectContaining({ status: "ok", message: "Cloudflare Access no longer lets inbox's /mcp through.", data: expect.objectContaining({ removed: true }) }),
+    ]);
+    expect(uris(application(`*.${HOST}`)!)).toEqual([`*.${HOST}`]);
+  });
+
+  it("says, under a login that can't read Access, that an opted-in /mcp wasn't checked", async () => {
+    await seedPeople();
+    account.cf.override(["zero-trust", "access", "applications", "list"], {
+      exitCode: 1,
+      stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
+    });
+
+    await deploy(appDir(INBOX), INBOX);
+
+    expect(error()).toBeUndefined();
+    const warning = warnings("ACCESS_NOT_CHECKED")[0]!;
+    expect(warning["message"]).toContain("inbox's /mcp need a login there");
   });
 
   it("warns, and the deploy succeeds, when Access can't be updated", async () => {
@@ -611,8 +838,9 @@ describe("access show", () => {
     await show();
     expect(done()).toMatchObject({
       data: {
-        applications: { apps: { inSync: false } },
-        desired: { apps: [{ uri: `*.${HOST}` }, { uri: `crm.${HOST}`, public: ["/mcp", "/mcp/*", "/t/*", "/t/e", "/health"] }] },
+        signIn: { cloudflare: true, pin: true, openToAnyCloudflareAccount: [] },
+        applications: { apps: { inSync: false, signInInSync: true } },
+        desired: { apps: [{ uri: `*.${HOST}`, public: [] }, { uri: `crm.${HOST}`, public: ["/t/*", "/t/e", "/health"] }] },
         fixes: [expect.stringContaining("access on")],
       },
     });
@@ -633,7 +861,7 @@ describe("access off", () => {
     expect(applications()).toEqual([]);
     expect(zt().organization).not.toBeNull();
     expect(policy()).toBeDefined();
-    expect(zt().identityProviders.size).toBe(1);
+    expect(zt().identityProviders.size).toBe(2);
     expect(done()).toMatchObject({ data: { removed: true, settings: [...ACCESS_SETTINGS], applications: { trimmed: [] } } });
 
     // Twice: nothing to do, no new version.

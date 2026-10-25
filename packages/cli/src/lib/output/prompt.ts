@@ -69,6 +69,10 @@ async function ask<T>(
 export const confirmAtTerminal: Confirm = (question, context) =>
   ask({ context }, (streams) => confirm({ message: question, default: false, theme }, streams));
 
+/** A yes/no question Enter answers Yes to: for what is recommended and undone with one command. */
+export const confirmYesAtTerminal: Confirm = (question, context) =>
+  ask({ context }, (streams) => confirm({ message: question, default: true, theme }, streams));
+
 /**
  * Ask, and go on only on Yes: No raises a `CancelledError` saying
  * `cancelled` ("Cancelled. Nothing deleted.").

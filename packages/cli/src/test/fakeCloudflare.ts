@@ -340,7 +340,9 @@ export class FakeCloudflare {
   /**
    * The account never opened Zero Trust: every Access call answers
    * `[9999] access.api.error.not_enabled` 403, as a fresh account did live
-   * on 2026-10-24 (whatever `zeroTrust` holds).
+   * on 2026-10-24 (whatever `zeroTrust` holds), except `organization
+   * create`, which works and enables Access (seen live the same day on the
+   * loop's test account).
    */
   accessNotEnabled = false;
   /** The account never enabled R2: every bucket call answers `[10042] Please enable R2 ...` 403 (seen live the same day). */
@@ -767,8 +769,12 @@ export class FakeCloudflare {
   private zeroTrustCommand(call: RecordedCfCall): FakeCfResponse {
     const [, group, second, third, fourth] = call.args;
     if (this.accessNotEnabled) {
-      const path = group === "organization" ? "organizations" : group === "identity-providers" ? "identity_providers" : (second ?? "apps");
-      return accessApiError(9999, "access.api.error.not_enabled", "403 Forbidden", path);
+      if (group === "organization" && second === "create") {
+        this.accessNotEnabled = false;
+      } else {
+        const path = group === "organization" ? "organizations" : group === "identity-providers" ? "identity_providers" : (second ?? "apps");
+        return accessApiError(9999, "access.api.error.not_enabled", "403 Forbidden", path);
+      }
     }
     const zt = this.zeroTrust;
     const body = (): Record<string, any> | null => {

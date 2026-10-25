@@ -8,6 +8,7 @@
 import chalk from "chalk";
 import type { AccessState } from "@/lib/access/settings";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
+import { describeMcp, listPublicRoutes } from "@/lib/app/publicRoutes";
 import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
@@ -176,9 +177,23 @@ function deployer(deployedBy: string | null): string {
   return deployedBy.startsWith("api-token:") ? "API token" : deployedBy;
 }
 
-/** The PUBLIC cell: how many routes the deployed manifest opens to the internet; nothing when none. */
+/** How many public routes the PUBLIC cell names before counting the rest. */
+const SHOWN_PUBLIC_ROUTES = 3;
+
+/**
+ * The PUBLIC cell: what the deployed manifest opens without a sign-in. Its
+ * routes (`GET /t/*, POST /t/e, GET /health +2 more`) and, where the
+ * manifest asks for `/mcp` on the app's host, `MCP /mcp (gateway)`;
+ * nothing when neither.
+ */
 function publicCell(app: AppState): string {
-  return app.publicRoutes.length > 0 ? plural(app.publicRoutes.length, "route") : "";
+  const parts: string[] = [];
+  if (app.publicRoutes.length > 0) {
+    const { shown, more } = listPublicRoutes(app.publicRoutes, SHOWN_PUBLIC_ROUTES);
+    parts.push(`${shown}${more > 0 ? chalk.dim(` +${more} more`) : ""}`);
+  }
+  if (app.mcp) parts.push(describeMcp(app.mcp));
+  return parts.join(chalk.dim(" · "));
 }
 
 /**

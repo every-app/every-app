@@ -29,7 +29,7 @@
  */
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
-import { listPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { listPublicRoutes, type McpSummary, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
@@ -368,6 +368,38 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
   }, verbose, now);
 }
 
+/**
+ * A sink for a command run inside another (setup running `access on`):
+ * everything passes through, except the inner run's `done`, which becomes
+ * the step `step` finishing ok with the done's message and data, so the
+ * outer run has one `done` (readers of the event log and `durationMs`
+ * count on it). The inner `display` is dropped: the step's milestone draws
+ * its own line.
+ */
+export function stepInsteadOfDone(out: EventSink, step: string): EventSink {
+  return {
+    emit(event) {
+      if (event.type !== "done") {
+        out.emit(event);
+        return;
+      }
+      out.emit({
+        type: "step",
+        step,
+        status: "ok",
+        ...(event.message ? { message: event.message } : {}),
+        ...(event.data ? { data: event.data } : {}),
+      });
+    },
+    get exitCode() {
+      return out.exitCode;
+    },
+    get verbose() {
+      return out.verbose;
+    },
+  };
+}
+
 /** Something done, as a ticked line: `Built ✓ 4.2s`, `after` dim. */
 export function ticked(done: string, after?: string): string {
   return `${done} ${chalk.green("✓")}${after ? ` ${chalk.dim(after)}` : ""}`;
@@ -517,14 +549,18 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         ].join("\n"),
       };
     },
-    // Who can open an app that has never been live, and what its manifest
-    // opens to anyone on the internet (every deploy): facts for the end.
+    // Who can open an app that has never been live, what its manifest
+    // opens to anyone on the internet, and whether its host answers /mcp
+    // (every deploy): facts for the end.
     "app.register": (event) => {
       const data = event.data ?? {};
       if (event.status !== "ok") return null;
       const routes = publicRoutesIn(data["publicRoutes"]);
-      const open: Shown[] =
-        routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : [];
+      const mcp = mcpIn(data["mcp"]);
+      const open: Shown[] = [
+        ...(routes.length > 0 ? [{ fact: { label: "Public", value: publicValue(routes) } }] : []),
+        ...(mcp ? [{ fact: { label: "MCP", value: `Serves /mcp on its own host (${mcp.by}): ${mcp.why}` } }] : []),
+      ];
       if (data["firstDeploy"] !== true) return open.length > 0 ? open : null;
       const organization = text(data["organizationName"]);
       const change = chalk.dim(`· change it at ${text(data["gatewayUrl"])}/admin/apps`);
@@ -704,6 +740,28 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // Inside `access on|off`, the settings are one line of that command's own summary.
     "secrets.gateway": (event, running) =>
       running("access.update") || running("access.off") ? null : saidByMessage(event),
+    // Access turned on from setup: `access on`'s done, as one ticked line
+    // with its sign-in methods, and who signs in once with a password.
+    "setup.access": (event) => {
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      const types = Array.isArray(data["signInMethods"])
+        ? (data["signInMethods"] as Array<{ type?: unknown }>).map((method) => method.type)
+        : [];
+      const methods = [
+        ...(types.includes("cloudflare") ? ["a Cloudflare account"] : []),
+        ...(types.includes("onetimepin") ? ["a one-time PIN"] : []),
+      ];
+      const pending = strings((data["signIn"] as { pending?: unknown } | undefined)?.pending);
+      return {
+        done: "Cloudflare Access on",
+        detail: methods.length > 0 ? `sign-in with ${methods.join(" or ")}` : undefined,
+        notes:
+          pending.length > 0
+            ? [`${listed(pending)} ${pending.length === 1 ? "signs" : "sign"} in once with ${pending.length === 1 ? "their" : "their own"} password; Access asks them to sign in first.`]
+            : [],
+      };
+    },
     "secrets.app": saidByMessage,
     "create.skill": doneWhenOk("Added the everyapp skill for coding agents"),
     "create.install": spinThenDone("Installing dependencies...", "Installed dependencies"),
@@ -968,6 +1026,13 @@ function publicRoutesIn(value: unknown): PublicRouteSummary[] {
  * The Public fact: what the manifest opens to anyone on the internet,
  * `GET /hooks/*, POST /collect`, the first few, then how many more.
  */
+/** A deploy's `data.mcp`: `{ by, why }`, or null. */
+function mcpIn(value: unknown): McpSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const { by, why } = value as { by?: unknown; why?: unknown };
+  return (by === "gateway" || by === "app") && typeof why === "string" ? { by, why } : null;
+}
+
 function publicValue(routes: readonly PublicRouteSummary[]): string {
   const { shown, more } = listPublicRoutes(routes);
   return `Open to the internet without sign-in: ${shown}${

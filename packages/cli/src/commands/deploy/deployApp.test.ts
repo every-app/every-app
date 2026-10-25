@@ -322,10 +322,20 @@ describe("deploy", () => {
     expect(account.cf.calls.some((call) => call.args.join(" ").includes("/api/"))).toBe(false);
   });
 
-  it("carries the routes the manifest opens to the internet, for the end of the run and done's data", async () => {
+  it("carries the routes the manifest opens to the internet, and its mcp, for the end of the run and done's data", async () => {
     const plain = await deploy();
     expect(plain.publicRoutes).toEqual([]);
-    expect(deployDone(plain).data["publicRoutes"]).toEqual([]);
+    expect(plain.mcp).toBeNull();
+    expect(deployDone(plain).data).toMatchObject({ publicRoutes: [], mcp: null });
+    events = [];
+
+    const connector: EveryAppCliManifest = { ...TODO, mcp: { by: "gateway", why: "A connector per todo list." } };
+    const served = await deploy(connector);
+    expect(served.mcp).toEqual({ by: "gateway", why: "A connector per todo list." });
+    expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
+      data: { appId: "todo", mcp: { by: "gateway", why: "A connector per todo list." } },
+    });
+    expect(deployDone(served).data).toMatchObject({ mcp: { by: "gateway", why: "A connector per todo list." } });
     events = [];
 
     const hooks: EveryAppCliManifest = {
@@ -341,9 +351,9 @@ describe("deploy", () => {
     // The register step carries them, so a person sees them at the end of
     // the run, first deploy or not.
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
-      data: { appId: "todo", firstDeploy: false, publicRoutes: routes },
+      data: { appId: "todo", firstDeploy: false, publicRoutes: routes, mcp: null },
     });
-    expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes });
+    expect(deployDone(result).data).toMatchObject({ url: "https://todo.example.com", publicRoutes: routes, mcp: null });
   });
 
   it("gives the deployer access once the gateway has an owner and they are a verified member", async () => {
@@ -1979,6 +1989,7 @@ describe("deploy with no Gateway in the account yet", () => {
   const setupSeams = (opened: string[] = []) => ({
     prompts: {
       browserDeploymentToken: async () => null,
+      accessInFront: async () => false,
       pickZone: async (): Promise<string> => {
         throw new Error("asked which zone");
       },
@@ -2041,6 +2052,34 @@ describe("deploy with no Gateway in the account yet", () => {
     );
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
     expect(account.gatewayDomains().sort()).toEqual(["apps.example.com", "todo.apps.example.com"]);
+  });
+
+  it("offers Cloudflare Access for the Gateway it installs, as setup does, then deploys behind it", async () => {
+    const asked: string[] = [];
+    const setup = setupSeams();
+
+    const result = await deploy(TODO, {
+      interactive: true,
+      offerInstall: {
+        confirm: async () => true,
+        setup: {
+          ...setup,
+          prompts: {
+            ...setup.prompts,
+            accessInFront: async ({ owner }) => {
+              asked.push(`Put Cloudflare Access in front of your Gateway? (${owner})`);
+              return true;
+            },
+          },
+          askTeam: async (suggested) => `${suggested}-team`,
+        },
+      },
+    });
+
+    expect(asked).toEqual([expect.stringMatching(/^Put Cloudflare Access in front of your Gateway\? \(.+@.+\)$/)]);
+    expect(events).toContainEqual(expect.objectContaining({ step: "setup.access", status: "ok" }));
+    expect(account.zeroTrust.applications.size).toBe(2);
+    expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
   });
 
   it("with --yes installs without a question, browser installs included, then deploys", async () => {

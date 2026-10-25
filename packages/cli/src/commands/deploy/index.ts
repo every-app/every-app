@@ -40,7 +40,8 @@ export async function deploy(flags: AppDeployFlags): Promise<void> {
 /**
  * `deploy`'s and `install`'s `done`, for a script: where the app is, the
  * routes its manifest opens to the internet (`publicRoutes`, empty when
- * none) and what is left to run (`next`).
+ * none), whether its host answers `/mcp` and why (`mcp`, null when the
+ * manifest sets none) and what is left to run (`next`).
  */
 export function deployDone(result: Awaited<ReturnType<typeof deployApp>>): {
   data: Record<string, unknown>;
@@ -50,6 +51,7 @@ export function deployDone(result: Awaited<ReturnType<typeof deployApp>>): {
       ...liveDone(result),
       organization: result.organizationName,
       publicRoutes: result.publicRoutes,
+      mcp: result.mcp,
       ...(result.next.length > 0 ? { next: result.next } : {}),
     },
   };

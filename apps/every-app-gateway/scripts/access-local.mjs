@@ -15,15 +15,16 @@
  *    /cdn-cgi/access/logout forgets you. The paths the runbook says to
  *    bypass pass without the header (the browser's CF_Authorization cookie
  *    still goes along): on the gateway's host /mcp, /mcp/*, /oauth/token,
- *    /oauth/register and /.well-known/*; on app hosts
- *    (<app>.localhost:<proxy port>) /mcp and /mcp/*. With --apps-aud, app
- *    hosts are a separate Access application with that AUD, as the runbook
- *    recommends.
+ *    /oauth/register, /.well-known/* and /health; on app hosts
+ *    (<app>.localhost:<proxy port>) nothing, unless --mcp-app <id> names
+ *    the app (as `access on` does for a manifest that sets `mcp`): then
+ *    its /mcp and /mcp/*. With --apps-aud, app hosts are a separate Access
+ *    application with that AUD, as the runbook recommends.
  *
  * Usage (from apps/every-app-gateway; jose comes from its node_modules):
  *   node scripts/access-local.mjs [--port 19410] [--email you@example.com]
  *     [--proxy-port 19301 --gateway http://localhost:19300]
- *     [--apps-aud local-apps-aud]
+ *     [--apps-aud local-apps-aud] [--mcp-app <app id>]...
  *
  * It prints the .dev.vars lines that point the gateway at it. With the
  * proxy, the gateway's GATEWAY_URL is the proxy's URL: the browser only ever
@@ -44,6 +45,7 @@ const { values: args } = parseArgs({
     "client-secret": { type: "string", default: "local-access-secret" },
     aud: { type: "string", default: "local-access-aud" },
     "apps-aud": { type: "string" },
+    "mcp-app": { type: "string", multiple: true, default: [] },
     label: { type: "string", default: "Company SSO (local)" },
     "proxy-port": { type: "string" },
     gateway: { type: "string" },
@@ -245,13 +247,24 @@ createServer(async (req, res) => {
 
 // ---- The outer ring: a reverse proxy that adds the assertion -------------
 
-// What the runbook lets through without a login: machine endpoints only.
+// What the runbook lets through without a login: machine endpoints and the
+// gateway's /health; on an app host, /mcp only for the apps named with
+// --mcp-app (whose manifest would set `mcp`).
 const GATEWAY_BYPASS = [
   /^\/mcp(\/|$)/,
   /^\/oauth\/(token|register)$/,
   /^\/\.well-known\//,
+  /^\/health$/,
 ];
-const APP_BYPASS = [/^\/mcp(\/|$)/];
+const MCP_APP_BYPASS = [/^\/mcp(\/|$)/];
+const mcpApps = new Set(args["mcp-app"].map((id) => id.toLowerCase()));
+const appBypass = (req) => {
+  const host = (req.headers.host ?? "").split(":")[0].toLowerCase();
+  const id = host.endsWith(".localhost")
+    ? host.slice(0, -".localhost".length)
+    : "";
+  return mcpApps.has(id) ? MCP_APP_BYPASS : [];
+};
 const COOKIE = "mock_access_email";
 const SESSION_SECONDS = 24 * 60 * 60;
 
@@ -359,7 +372,7 @@ if (proxyPort) {
       );
     }
     const email = cookieEmail(req);
-    const bypass = isGatewayHost(req) ? GATEWAY_BYPASS : APP_BYPASS;
+    const bypass = isGatewayHost(req) ? GATEWAY_BYPASS : appBypass(req);
     if (bypass.some((pattern) => pattern.test(url.pathname))) {
       return forward(req, res, null);
     }

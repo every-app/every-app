@@ -1,8 +1,9 @@
 /**
  * The apps' Access application, kept in step with the registry: which app
- * hosts have public routes, and what the application on `*.<base>` lets
- * through on each. `access on` creates and reconciles it; a deploy or a
- * delete calls `syncAppsAccessAfter` so an app's new public routes are
+ * hosts have a public surface (public routes, or `mcp` in the manifest),
+ * and what the application on `*.<base>` lets through on each. `access on`
+ * creates and reconciles it; a deploy or a delete calls
+ * `syncAppsAccessAfter` so an app's new public routes (and its `/mcp`) are
  * reachable without a login as soon as the app is, and a deleted app's
  * destination goes. With no apps application there is nothing to do:
  * Access isn't in front of the Gateway.
@@ -13,7 +14,7 @@
  * its own lease, so two deploys finishing together don't each PUT a list
  * without the other's host.
  */
-import { storedPublicRoutes } from "@/lib/app/publicRoutes";
+import { storedMcp, storedPublicRoutes } from "@/lib/app/publicRoutes";
 import type { D1Database } from "@/lib/cf/d1";
 import {
   applicationUpdateBody,
@@ -46,9 +47,9 @@ const SERVED_STATUSES = ["binding", "active", "disabled"];
 const SYNC_LEASE_WAIT_MS = 60_000;
 
 /**
- * Every served app's host and the public routes of the manifest it was
- * last deployed from, by host. A row without a hostname, or whose manifest
- * won't parse, has no public surface.
+ * Every served app's host, the public routes of the manifest it was last
+ * deployed from and whether that manifest sets `mcp`, by host. A row
+ * without a hostname, or whose manifest won't parse, has no public surface.
  */
 export async function readPublicSurfaces(db: D1Database): Promise<AppPublicSurface[]> {
   const [rows = []] = await db.run([
@@ -62,7 +63,20 @@ ORDER BY hostname`,
     appId: String(row["app_slug"]),
     hostname: String(row["hostname"]),
     publicPaths: storedPublicRoutes(row["manifest"]).map((route) => route.path),
+    mcp: storedMcp(row["manifest"]) !== null,
   }));
+}
+
+/** What an app opens without a login, as the sync after a deploy or delete names it. */
+interface PublicSurfaceFlags {
+  publicRoutes: boolean;
+  /** The manifest sets `mcp`: its host's `/mcp` is let through (unless Managed OAuth is on). */
+  mcp: boolean;
+}
+
+/** "public routes", "/mcp", or "public routes and /mcp": what the app has, for the sync's lines. */
+function surfaceWords({ publicRoutes, mcp }: PublicSurfaceFlags): string {
+  return publicRoutes && mcp ? "public routes and /mcp" : mcp ? "/mcp" : "public routes";
 }
 
 /** What the plan leaves out, for the warnings. */
@@ -140,7 +154,7 @@ async function reconcileAppsDestinations({
 }): Promise<AppsAccessSync> {
   const scope = scopeOf(install);
   const plan = appsDestinations(scope.appBaseDomain, await readPublicSurfaces(db), {
-    mcp: !managedOAuthOn(gateway),
+    managedOAuth: managedOAuthOn(gateway),
   });
   const current = application.destinations ?? [];
   const { foreign } = splitDestinations(current, scope);
@@ -185,7 +199,7 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
       type: "warning",
       code: "ACCESS_TOO_MANY_PUBLIC_ROUTES",
       step: "access.routes",
-      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map((route) => `${route.appId} ${route.path}`))}\nAccess lets through at most 25 paths per host, two of them for MCP. Merge routes under one prefix, or keep these behind the login.`,
+      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map((route) => `${route.appId} ${route.path}`))}\nAccess lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp). Merge routes under one prefix, or keep these behind the login.`,
       data: { routes: overflow },
     });
   }
@@ -214,24 +228,26 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
  * only when something changed, and never failing the run for it. Whether
  * Access is in front at all costs one list call; a login without the
  * Access permissions (a CI token) can't make it, which is said only when
- * the app has public routes, the one thing a sync would change for it, and
- * without claiming the Gateway is behind Access.
+ * the app has a public surface (public routes, or `mcp` in its manifest),
+ * the one thing a sync would change for it, and without claiming the
+ * Gateway is behind Access.
  */
 export async function syncAppsAccessAfter(
   options: { cf: CfRunner; db: D1Database; install: InstallRecord; out: EventSink },
-  { appId, publicRoutes, removing = false }: { appId: string; publicRoutes: boolean; removing?: boolean },
+  { appId, surface, removing = false }: { appId: string; surface: PublicSurfaceFlags; removing?: boolean },
 ): Promise<void> {
   const { cf, install, out } = options;
   const rerun = `${CLI} access on`;
+  const what = surfaceWords(surface);
   let applications: AccessApplication[];
   try {
     applications = await listAccessApplications(cf);
   } catch (error) {
     const permission = error instanceof EveryAppError && error.code === "ACCESS_PERMISSION_MISSING";
-    if (permission && !publicRoutes) return;
+    if (permission && !surface.publicRoutes && !surface.mcp) return;
     const until = removing
       ? `If the Gateway is behind Access, ${appId}'s host stays listed there until it is updated.`
-      : `If the Gateway is behind Access, ${appId}'s public routes need a login there until it is updated.`;
+      : `If the Gateway is behind Access, ${appId}'s ${what} need a login there until it is updated.`;
     out.emit({
       type: "warning",
       code: "ACCESS_NOT_CHECKED",
@@ -254,11 +270,11 @@ export async function syncAppsAccessAfter(
     emitPlanWarnings(out, sync);
     const message = removing
       ? sync.changed
-        ? `Cloudflare Access no longer lets ${appId}'s public routes through.`
+        ? `Cloudflare Access no longer lets ${appId}'s ${what} through.`
         : `Cloudflare Access had nothing of ${appId}'s to take back.`
       : sync.changed
-        ? `Cloudflare Access lets ${appId}'s public routes through.`
-        : `Cloudflare Access already matched ${appId}'s public routes.`;
+        ? `Cloudflare Access lets ${appId}'s ${what} through.`
+        : `Cloudflare Access already matched ${appId}'s ${what}.`;
     out.emit({
       type: "step",
       step: "app.access",
@@ -271,7 +287,7 @@ export async function syncAppsAccessAfter(
       type: "warning",
       code: "ACCESS_SYNC_FAILED",
       step: "app.access",
-      message: `Couldn't update Cloudflare Access for ${appId}'s public routes\n${errorMessage(error).split("\n")[0]}\n${removing ? `${appId}'s host stays listed there until it is updated.` : "Until it is updated, they need an Access login."}`,
+      message: `Couldn't update Cloudflare Access for ${appId}'s ${what}\n${errorMessage(error).split("\n")[0]}\n${removing ? `${appId}'s host stays listed there until it is updated.` : "Until it is updated, they need an Access login."}`,
       data: { appId, rerun },
     });
   }

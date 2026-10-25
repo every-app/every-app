@@ -45,8 +45,11 @@ export type AccessOrganization = z.infer<typeof OrganizationOutput>;
  * reads as `not_found`). An account that never opened Zero Trust answers
  * something else: `[9999] access.api.error.not_enabled` 403 (seen live on
  * a fresh account, 2026-10-24), which is `access_not_enabled` and thrown
- * here; whether `zero-trust organization create` would work on such an
- * account without the dashboard's onboarding hasn't been checked.
+ * here, so `teardown` can say the service has nothing in it; `access on`
+ * reads it as "no team yet", since `zero-trust organization create` works
+ * on such an account without the dashboard's onboarding (seen live on the
+ * loop's test account the same day, docs/onboarding-loop), after which
+ * every Access call answers normally.
  */
 export async function getAccessOrganization(cf: CfRunner): Promise<AccessOrganization | null> {
   try {
@@ -60,6 +63,20 @@ export async function getAccessOrganization(cf: CfRunner): Promise<AccessOrganiz
       return null;
     }
     throw explainAccessError(error);
+  }
+}
+
+/**
+ * The organization for `access on` and `show`: null when the account has
+ * none, an account that never opened Zero Trust included (its team is
+ * created like any other).
+ */
+export async function getAccessOrganizationOrNone(cf: CfRunner): Promise<AccessOrganization | null> {
+  try {
+    return await getAccessOrganization(cf);
+  } catch (error) {
+    if (isCfError(error, "access_not_enabled")) return null;
+    throw error;
   }
 }
 
@@ -118,9 +135,11 @@ export function setAccessOrganizationSession(
 
 const IdentityProviderOutput = z.looseObject({
   id: z.string(),
-  /** "onetimepin", "cloudflare" (account members), "google-apps", "okta", "azureAD", … */
+  /** "onetimepin", "cloudflare" (Sign in with Cloudflare), "google-apps", "okta", "azureAD", … */
   type: z.string(),
   name: z.string().nullish(),
+  /** What the provider was set up with; `restrict_to_account_members` is the Cloudflare provider's one setting. */
+  config: z.looseObject({ restrict_to_account_members: z.boolean().nullish() }).nullish(),
 });
 export type AccessIdentityProvider = z.infer<typeof IdentityProviderOutput>;
 
@@ -140,6 +159,28 @@ export function createOneTimePinProvider(cf: CfRunner): Promise<AccessIdentityPr
     {
       plane: "account",
       files: { "body.json": { name: "One-time PIN", type: "onetimepin", config: {} } },
+      args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
+    },
+    IdentityProviderOutput,
+  ));
+}
+
+/**
+ * "Sign in with Cloudflare": the person's own Cloudflare account, open to
+ * the members of this Cloudflare account only (`restrict_to_account_members`;
+ * off, any Cloudflare user could sign in, and Cloudflare doesn't promise
+ * the address it asserts is verified). A team Cloudflare's dashboard
+ * onboarding made has one already; one created through the API has none
+ * (seen live 2026-10-24: `organization create` then `identity-providers
+ * list` showed only what `access on` added). The body is Cloudflare's
+ * documented one, checked live the same day.
+ */
+export function createCloudflareIdentityProvider(cf: CfRunner): Promise<AccessIdentityProvider> {
+  return access(runCfJson(
+    cf,
+    {
+      plane: "account",
+      files: { "body.json": { name: "Cloudflare", type: "cloudflare", config: { restrict_to_account_members: true } } },
       args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
     },
     IdentityProviderOutput,

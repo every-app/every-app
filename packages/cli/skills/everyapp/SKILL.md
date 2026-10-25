@@ -143,13 +143,16 @@ Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --jso
          senders|inbound clears; email show prints both.
 Access:  pnpm everyapp access on --json   (Cloudflare Access in front of the Gateway
          and its apps: finds or creates the Zero Trust team (--team NAME when the
-         account has none: permanent, ask the user), adds the one-time PIN, keeps the
-         allow policy with every member's and invitee's email, puts two Access
-         applications in front of the hosts with MCP, OAuth and each app's public
-         routes let through, and sets the three CLOUDFLARE_ACCESS_* Gateway settings
-         in one version. Rerunnable; run again after inviting someone. access off
-         asks (--yes); access show reports. Each existing member then signs in once
-         with their password through Access; tell the user who (done.data.signIn).
+         account has none: permanent, ask the user), keeps both sign-in methods
+         (Sign in with Cloudflare for the account's members, the one-time PIN for
+         everyone else), keeps the allow policy with every member's and invitee's
+         email, puts two Access applications in front of the hosts with the
+         Gateway's MCP, OAuth and /health and each app's public routes let through
+         (an app host's /mcp only where its manifest sets mcp), and sets the three
+         CLOUDFLARE_ACCESS_* Gateway settings in one version. Rerunnable; run again
+         after inviting someone. access off asks (--yes); access show reports. Each
+         existing member then signs in once with their password through Access;
+         tell the user who (done.data.signIn).
 Set up:  what the Gateway holds for apps, end to end (the provider's side, the
          key or OAuth client, configure or secret set, the check): read
          setup/README.md in this skill first, then the file it names, each on
@@ -228,6 +231,9 @@ Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
+It then offers Cloudflare Access (Yes by default; the team name asked for
+when the account has none); under --json neither is asked, and --yes
+answers No to both.
 Handing off: stop, tell the person in one or two lines what to do (the
 action's url and code, what to click, what to come back with), and resume
 with data.rerun when they say it is done. Two more only a person can do:

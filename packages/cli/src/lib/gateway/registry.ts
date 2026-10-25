@@ -41,7 +41,7 @@ import {
   type AppEmailConfig,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
-import { storedPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { storedMcp, storedPublicRoutes, type McpSummary, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
@@ -701,6 +701,8 @@ export interface RegisteredAppInfo {
    * everyapp.config.ts), in its order; none until a deploy uploads them.
    */
   publicRoutes: PublicRouteSummary[];
+  /** That manifest's `mcp` (its host answers `/mcp`, by whom and why); null until a deploy uploads one. */
+  mcp: McpSummary | null;
   /**
    * The manifest the app was registered or last deployed from, as stored
    * (parsed, not validated: `secret set --app` validates it before it
@@ -738,6 +740,7 @@ function info(app: StoredAppRow): RegisteredAppInfo {
     email: { senders: parseEmailList(app.emailSenders), inbound: parseEmailList(app.emailInbound) },
     declaresInbound: declaresInbound(app.manifest),
     publicRoutes: storedPublicRoutes(app.manifest),
+    mcp: storedMcp(app.manifest),
     manifest: parsedManifest(app.manifest),
     secretNames: parseSecretNames(app.secretNames),
     tier: app.tier,

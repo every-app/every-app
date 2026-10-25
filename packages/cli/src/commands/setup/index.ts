@@ -40,8 +40,10 @@ export async function runGatewayCommand(
 }
 
 /**
- * What the run did, as its `done` event: where the Gateway is and, for a
- * new one or an owner just made, what to set up next (`data.next`).
+ * What the run did, as its `done` event: where the Gateway is, whether
+ * Cloudflare Access went in front (`data.accessOn`, a fact when it did)
+ * and, for a new one or an owner just made, what to set up next
+ * (`data.next`; `access on` is left out once Access is on).
  */
 export function reportGatewayResult(
   out: EventSink,
@@ -59,8 +61,12 @@ export function reportGatewayResult(
     release,
     mode,
     gateway: result.gateway,
+    accessOn: result.accessOn,
   };
   const gatewayFact = { label: "Gateway", value: gatewayUrl };
+  const accessFacts = result.accessOn
+    ? [{ label: "Access", value: "on", note: "everyone signs in through Cloudflare Access first" }]
+    : [];
 
   // An upgrade says what it upgraded to, in how long.
   if (result.gateway === "upgraded" && !result.ownerCreated) {
@@ -89,8 +95,9 @@ export function reportGatewayResult(
         facts: [
           gatewayFact,
           { label: "Admin", value: adminUrl, note: "invite people, choose who opens which app" },
+          ...accessFacts,
         ],
-        next: nextAfterInstall(mode),
+        next: nextAfterInstall(mode, result.accessOn === true),
       },
     });
     return;
@@ -100,7 +107,7 @@ export function reportGatewayResult(
     type: "done",
     data: {
       ...data,
-      facts: [gatewayFact],
+      facts: [gatewayFact, ...accessFacts],
       ...(result.gateway === "up-to-date"
         ? { next: [{ command: `${CLI} status`, note: "see apps, domains and certificates" }] }
         : {}),
@@ -110,11 +117,12 @@ export function reportGatewayResult(
 
 /**
  * What to set up once the Gateway has its owner: an app, Cloudflare Access
- * in front (recommended), AI for apps, then email, which the Gateway sends
- * only with both EMAIL_FROM and EMAIL_FROM_NAME set. A hosted Gateway
- * ignores Access (`access on` refuses it), so its list has no Access line.
+ * in front (recommended, unless setup just turned it on), AI for apps,
+ * then email, which the Gateway sends only with both EMAIL_FROM and
+ * EMAIL_FROM_NAME set. A hosted Gateway ignores Access (`access on`
+ * refuses it), so its list has no Access line.
  */
-function nextAfterInstall(mode: DeploymentMode): Array<{ command: string; note: string }> {
+function nextAfterInstall(mode: DeploymentMode, accessOn: boolean): Array<{ command: string; note: string }> {
   if (mode === "hosted") {
     return [
       { command: `${CLI} create my-app`, note: "start your first app" },
@@ -127,10 +135,14 @@ function nextAfterInstall(mode: DeploymentMode): Array<{ command: string; note: 
   }
   return [
     { command: `${CLI} create my-app`, note: "start your first app" },
-    {
-      command: `${CLI} access on`,
-      note: "put Cloudflare Access in front of your Gateway (recommended)",
-    },
+    ...(accessOn
+      ? []
+      : [
+          {
+            command: `${CLI} access on`,
+            note: "put Cloudflare Access in front of your Gateway (recommended)",
+          },
+        ]),
     {
       command: `${CLI} secret set OPENAI_API_KEY`,
       note: "AI for apps (or OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN)",

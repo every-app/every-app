@@ -222,7 +222,7 @@ describe("everyapp status", () => {
     expect(await shown()).toMatch(/\ntodo +○ live on first visit +https:\/\/todo\.example\.com +API token\n/);
   });
 
-  it("counts the routes each app's deployed manifest opens to the internet, and lists them under --json", async () => {
+  it("lists what each app's deployed manifest opens without a sign-in: its routes, and /mcp where it asks for it", async () => {
     await deployed("hooks", {
       manifest: {
         id: "hooks",
@@ -230,8 +230,12 @@ describe("everyapp status", () => {
           { path: "/hooks/*" },
           { path: "/collect", methods: ["POST"] },
           { path: "/uploads/**", methods: ["GET", "HEAD"] },
+          { path: "/t/e", methods: ["POST"] },
         ],
       },
+    });
+    await deployed("inbox", {
+      manifest: { id: "inbox", mcp: { by: "gateway", why: "A connector per inbox, pinned in Claude." } },
     });
     await deployed("todo");
 
@@ -243,14 +247,25 @@ describe("everyapp status", () => {
           { path: "/hooks/*", methods: ["GET"] },
           { path: "/collect", methods: ["POST"] },
           { path: "/uploads/**", methods: ["GET", "HEAD"] },
+          { path: "/t/e", methods: ["POST"] },
         ],
+        mcp: null,
       }),
-      expect.objectContaining({ id: "todo", publicRoutes: [] }),
+      expect.objectContaining({
+        id: "inbox",
+        publicRoutes: [],
+        mcp: { by: "gateway", why: "A connector per inbox, pinned in Claude." },
+      }),
+      expect.objectContaining({ id: "todo", publicRoutes: [], mcp: null }),
     ]);
     const report = await shown();
     expect(report).toMatch(/\nAPP +STATUS +URL +DEPLOYED BY +PUBLIC\n/);
+    // The first three routes, then how many more.
     expect(report).toMatch(
-      /\nhooks +○ live on first visit +https:\/\/hooks\.example\.com +dev@example\.com +3 routes\n/,
+      /\nhooks +○ live on first visit +https:\/\/hooks\.example\.com +dev@example\.com +GET \/hooks\/\*, POST \/collect, GET\/HEAD \/uploads\/\*\* \+1 more\n/,
+    );
+    expect(report).toMatch(
+      /\ninbox +○ live on first visit +https:\/\/inbox\.example\.com +dev@example\.com +MCP \/mcp \(gateway\)\n/,
     );
     // An app that opens nothing: an empty cell, and no blanks after its row.
     expect(report).toMatch(/\ntodo +○ live on first visit +https:\/\/todo\.example\.com +dev@example\.com\n/);

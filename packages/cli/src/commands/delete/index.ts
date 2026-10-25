@@ -132,10 +132,9 @@ export async function removeApp({
     message: `Removing ${appId} from the Gateway...`,
     data: { appId },
   });
-  // Whether Access had public routes of its to take back: read before the row is tombstoned.
-  const hadPublicRoutes = (await readPublicSurfaces(registry)).some(
-    (surface) => surface.appId === appId && surface.publicPaths.length > 0,
-  );
+  // Whether Access had public routes or an /mcp of its to take back: read before the row is tombstoned.
+  const surface = (await readPublicSurfaces(registry)).find((candidate) => candidate.appId === appId);
+  const hadSurface = { publicRoutes: (surface?.publicPaths.length ?? 0) > 0, mcp: surface?.mcp ?? false };
   const deleted = await deleteFromRegistry(registry, appId, connection.deployer);
   const live = connection.install;
   const stillServed =
@@ -156,7 +155,7 @@ export async function removeApp({
   // Behind Cloudflare Access, the app's destination goes with it.
   await syncAppsAccessAfter(
     { cf, db: registry, install: connection.install, out },
-    { appId, publicRoutes: hadPublicRoutes, removing: true },
+    { appId, surface: hadSurface, removing: true },
   );
   out.emit({
     type: "step",

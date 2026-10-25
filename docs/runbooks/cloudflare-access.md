@@ -1,7 +1,9 @@
 # Use Cloudflare Access to sign in
 
-Cloudflare Access can be how people sign in to your gateway: your company's
-identity provider, Access's one-time PIN, its MFA and device rules. It is one
+Cloudflare Access can be how people sign in to your gateway: their own
+Cloudflare account ("Sign in with Cloudflare", for the members of your
+Cloudflare account), Access's one-time PIN (a code emailed to everyone else),
+your company's identity provider, Access's MFA and device rules. It is one
 more way to sign in, not a second login system. Better Auth stays the system
 of record for users, sessions, organizations, roles, invitations, personal
 access tokens and the OAuth server that MCP clients use. An Access sign-in
@@ -110,17 +112,27 @@ whose email isn't the one Access asserts can't be used there at all, the
 owner's included: its password sign-in is refused ("You're signed in to
 Cloudflare Access as ben@acme.com, but this account is owner@acme.com").
 So claim the gateway, and invite people, with the email addresses your
-identity provider (or the one-time PIN) gives Access. To fix an account
-afterwards, see "Access says you're someone else" under Troubleshooting.
+identity provider (or the one-time PIN) gives Access. Sign in with Cloudflare
+asserts the person's Cloudflare account email: an operator whose gateway
+account has another address uses the emailed code, or invites the Cloudflare
+one (`everyapp access on` warns, `ACCESS_LOGIN_NOT_MEMBER`). To fix an
+account afterwards, see "Access says you're someone else" under
+Troubleshooting.
 
 ### Verified emails
 
 Access issues a token only after the person authenticated with one of your
 team's identity providers, and the gateway treats that email as verified. A
 token that says `email_verified: false` is refused. Enable only identity
-providers in Access that verify email addresses: one-time PIN, Google
-Workspace, Okta, Microsoft Entra ID and the like. A generic OIDC provider
-that lets users choose their own email would let them choose someone else's.
+providers in Access that verify email addresses: one-time PIN, Sign in with
+Cloudflare with **Restrict to account members** on, Google Workspace, Okta,
+Microsoft Entra ID and the like. A generic OIDC provider that lets users
+choose their own email would let them choose someone else's. Keep Restrict
+to account members on: with it off, Cloudflare says "any Cloudflare user can
+authenticate (subject to your Access policies)" and nothing about whether the
+address it asserts was verified, so someone who registers a Cloudflare
+account under a member's address could sign in as that member; `everyapp
+access on` and `show` warn when it is off (`ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT`).
 
 ## Costs and limits
 
@@ -158,8 +170,13 @@ npx cf@1.0.0-beta.14 zero-trust organization get
 npx cf@1.0.0-beta.14 zero-trust organization create \
   --name "Acme" --auth-domain acme.cloudflareaccess.com
 
-# New organizations let in only members of your Cloudflare account. Add the
-# one-time PIN so teammates can log in with their email.
+# An organization made in the dashboard comes with "Sign in with Cloudflare"
+# (type cloudflare, restricted to your account's members); one made here
+# comes with no provider at all (checked 2026-10-24). Keep both: the
+# Cloudflare account for your account's members, the one-time PIN so
+# everyone else can log in with their email.
+npx cf@1.0.0-beta.14 zero-trust identity-providers create \
+  --body '{"name":"Cloudflare","type":"cloudflare","config":{"restrict_to_account_members":true}}'
 npx cf@1.0.0-beta.14 zero-trust identity-providers create \
   --body '{"name":"One-time PIN","type":"onetimepin","config":{}}'
 
@@ -169,10 +186,10 @@ npx cf@1.0.0-beta.14 zero-trust access policies create \
   --include '[{"email_domain":{"domain":"acme.com"}}]'
 ```
 
-In the dashboard: **Zero Trust** (pick a team name and plan on first visit) →
-**Integrations → Identity providers → Add new → One-time PIN**, and
-**Access controls → Policies → Add a policy** for the people who may use
-Every App.
+In the dashboard: **Zero Trust** (pick a team name and plan on first visit;
+the Cloudflare provider comes with it) → **Integrations → Identity providers
+→ Add new → One-time PIN**, and **Access controls → Policies → Add a policy**
+for the people who may use Every App.
 
 ## OIDC sign-in
 
@@ -235,18 +252,29 @@ pnpm everyapp access on
 
 With your Cloudflare login it does the rest of this section, and nothing it
 doesn't need to: it finds or creates the Zero Trust team (asking for its
-name, which is permanent; `--team <name>` unattended), adds the one-time PIN
-when the team has no identity provider besides "Cloudflare account members",
-keeps the reusable policy **Every App gateway members** with every member's
-and pending invitee's email (plus `--email` and `--email-domain`, never
-removing anyone), puts the two applications below in front of the gateway's
-host and `*.<app base domain>` with the bypass paths of the table and each
-app's public routes as path overrides, and sets the three gateway settings
-in one new version of the Worker. New applications get a 720-hour session
-(`--session` for another), the HttpOnly and binding cookies, and every
-identity provider except the account members one. The team's global session
-is left alone unless you pass `--team-session`; it applies to every Access
-application in the account.
+name, which is permanent; `--team <name>` unattended; an account that never
+opened Zero Trust needs no dashboard step first), keeps both ways to sign in
+(Sign in with Cloudflare, created restricted to your account's members when
+the team has none, and the one-time PIN, created when none), keeps the
+reusable policy **Every App gateway members** with every member's and
+pending invitee's email (plus `--email` and `--email-domain`, never removing
+anyone), puts the two applications below in front of the gateway's host and
+`*.<app base domain>` with the bypass paths of the table and each app's
+public routes (and `/mcp` where its manifest sets `mcp`) as path overrides,
+and sets the three gateway settings in one new version of the Worker. New
+applications get a 720-hour session (`--session` for another), the HttpOnly
+and binding cookies, and the two sign-in methods the command vouches for
+(the one-time PIN and a Cloudflare provider restricted to the account's
+members; the team's other providers, your company login say, are yours to
+allow on the applications in the dashboard, and the command never takes one
+off); an existing application gains those two and never loses one, so
+applications made before Sign in with Cloudflare get it on the next run. The
+PIN is created again whenever the team lacks it: a team meant to sign in
+with an MFA provider alone gets it back on every run. With more than one
+provider Access shows a chooser page first. The team's global session is
+left alone unless you pass `--team-session`; it applies to every Access
+application in the account. Interactive `everyapp setup` offers this command
+once the owner exists (Yes by default; never with `--yes` or `--json`).
 
 Run it again any time: after inviting someone (so Access lets them in), or
 after a change by hand. It changes only what differs and reports "as it
@@ -347,6 +375,13 @@ its paths as overrides (for example `{"type": "public", "uri":
 "public"}]}`); an app whose manifest sets `mcp: { by, why }` gets one with
 `/mcp` and `/mcp/*` first, then its public routes. `everyapp access on` and
 the sync after a deploy compute the same (`packages/cli/src/lib/access/plan.ts`).
+Neither body names `allowed_idps`, so Access allows every identity provider
+of the team, Sign in with Cloudflare and the one-time PIN included, and
+whatever else the team has; `access on` writes the list explicitly (the PIN
+and the restricted Cloudflare provider, plus what the application allowed
+already) and reports such an application as `sign-in methods differ` until
+it has (with more than one provider, leave `auto_redirect_to_identity` off,
+so people get Access's chooser).
 
 In the dashboard: **Access controls → Applications → Create new application
 → Self-hosted**, twice: one with the gateway's hostname, one with
@@ -748,8 +783,12 @@ The automated tests cover the same ground without a browser:
   regardless.
 - **"You don't have an account on this gateway yet."** Invite them, or add
   their domain to `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`.
-- **Teammates can't log in at Access at all.** The organization allows only
-  Cloudflare account members: add the one-time PIN identity provider.
+- **Teammates can't log in at Access at all.** The organization's only
+  provider is Sign in with Cloudflare, restricted to your account's members:
+  `everyapp access on` adds the one-time PIN beside it, on the applications
+  too. An operator who gets Access's forbidden page after Sign in with
+  Cloudflare has a Cloudflare account email that isn't a gateway member: use
+  the emailed code, or invite that address.
 - **The 51st person is blocked by Access.** The Free plan has 50 seats.
 - **App sync breaks behind the outer ring (WebSocket 403).** The Access
   application is attached to the Worker; use hostname destinations.

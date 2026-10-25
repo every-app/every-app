@@ -41,6 +41,12 @@
  *    browser     at a terminal, optionally store a Cloudflare deploy token
  *                for browser installs (No by default, and with --yes;
  *                existing tokens stay)
+ *    access      at a terminal, once the owner exists, offer Cloudflare
+ *                Access in front of the Gateway (Yes by default: one
+ *                command, undone with `access off`; No with --yes, since a
+ *                new team's name is permanent and never picked unattended).
+ *                Yes runs `access on`'s own code; a failure there is a
+ *                warning, never a failed setup. `update` never asks
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
@@ -49,7 +55,9 @@
  */
 import { version as packageVersion } from "../../../package.json";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { turnAccessOn } from "../access";
 import { applySecretValues } from "../secret";
+import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { roughly } from "@/lib/output/time";
 import {
   deviceLoginAction,
@@ -72,7 +80,7 @@ import {
 } from "@/lib/domains/https";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
-import { ActionRequiredError, EveryAppError } from "@/lib/errors";
+import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from "@/lib/errors";
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
 import { discoverGateway, requireGateway, type Discovery } from "@/lib/gateway/discover";
@@ -94,8 +102,8 @@ import {
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
 import { CLI, thisCommand } from "@/lib/output/command";
-import type { EventSink } from "@/lib/output/events";
-import { askSecret, askText, choose, confirmAtTerminal } from "@/lib/output/prompt";
+import { stepInsteadOfDone, type EventSink } from "@/lib/output/events";
+import { askSecret, askText, choose, confirmAtTerminal, confirmYesAtTerminal } from "@/lib/output/prompt";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
@@ -107,7 +115,7 @@ export interface SetupFlags {
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
-  /** Skip everyapp's own confirmations: the browser-install question is a No. */
+  /** Skip everyapp's own confirmations: the browser-install and Access questions are a No. */
   yes?: boolean;
   verbose?: boolean;
 }
@@ -117,7 +125,8 @@ export type GatewayDeployFlags = Omit<SetupFlags, "domain">;
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
- * there is no --domain, and optional browser-deployment credentials.
+ * there is no --domain, optional browser-deployment credentials, and
+ * whether Cloudflare Access goes in front.
  */
 interface SetupPrompts {
   /** The zone a Gateway `deploy` offers to install goes under (apps.<zone>). */
@@ -126,6 +135,13 @@ interface SetupPrompts {
   gatewayAddress(zones: string[]): Promise<string>;
   /** Yes/No, then a hidden token; null when the person skips. */
   browserDeploymentToken(): Promise<string | null>;
+  /**
+   * "Put Cloudflare Access in front of your Gateway?", Yes by default.
+   * `owner` is the Gateway account Access must know the person by;
+   * `cloudflareEmail` the Cloudflare login's, which Sign in with Cloudflare
+   * asserts (null for an API token): named when they differ.
+   */
+  accessInFront(context: { owner: string; cloudflareEmail: string | null }): Promise<boolean>;
 }
 
 /** Everything setup reaches outside itself; tests swap in fakes. */
@@ -140,6 +156,8 @@ export interface SetupDeps {
   prompts: SetupPrompts;
   openBrowser: (url: string) => Promise<void>;
   cliVersion: string;
+  /** The Zero Trust team's name, when Access is offered and the account has no team yet (tests answer; else `access on`'s prompt). */
+  askTeam?: (suggested: string) => Promise<string>;
   /** Seams for the deploys' waits and requests (tests). */
   seams?: {
     sleep?: (ms: number) => Promise<void>;
@@ -179,6 +197,8 @@ export interface SetupResult {
   ownerCreated: boolean;
   /** What the Gateway is, from its install row: self_hosted for a new install. */
   mode: DeploymentMode;
+  /** Cloudflare Access was turned on by this run (true), declined or failed (false), or not offered (null). */
+  accessOn: boolean | null;
 }
 
 /** setup's own dependencies, deploying `gateway`'s release. */
@@ -229,7 +249,8 @@ export async function runGatewayDeploy(
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps);
   const found = requireGateway(discovery, whoami);
   if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
-  return installGateway({ whoami, discovery, flags, out, deps });
+  // An update asks nothing new of a person: Access is setup's offer.
+  return installGateway({ whoami, discovery, flags, out, deps, offerAccess: false });
 }
 
 /** Cloudflare: login, then the Gateway the login's accounts have. */
@@ -284,12 +305,15 @@ export async function installGateway({
   flags,
   out,
   deps,
+  offerAccess = true,
 }: {
   whoami: CfWhoami;
   discovery: Discovery;
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
+  /** Whether to offer Cloudflare Access once the owner exists (setup, and a deploy that installs a Gateway; not update). */
+  offerAccess?: boolean;
 }): Promise<SetupResult> {
   // With no Gateway, where to install one.
   const found = discovery.gateway;
@@ -386,15 +410,14 @@ export async function installGateway({
     deps,
   });
 
-  // Browser installs need a deploy token on a self-hosted Gateway: asked
-  // for once, at a terminal; --yes answers No, and a token set stays.
+  // The questions only a person answers, on a self-hosted Gateway; --yes
+  // answers No to both. What the Worker holds decides whether each is
+  // asked: a token set stays, and Access on stays on.
   const mode = live?.deploymentMode ?? "self_hosted";
-  if (
-    deps.interactive &&
-    !flags.yes &&
-    mode === "self_hosted" &&
-    !(await listWorkerSecrets(cf, GATEWAY_WORKER_NAME)).includes("CF_DEPLOY_TOKEN")
-  ) {
+  const asking = deps.interactive && !flags.yes && mode === "self_hosted";
+  const secretNames = asking ? await listWorkerSecrets(cf, GATEWAY_WORKER_NAME) : [];
+  // Browser installs need a deploy token: asked for once, at a terminal.
+  if (asking && !secretNames.includes("CF_DEPLOY_TOKEN")) {
     const token = await deps.prompts.browserDeploymentToken();
     if (token !== null) {
       await applySecretValues({
@@ -405,6 +428,21 @@ export async function installGateway({
         createCf: () => cf,
       });
     }
+  }
+  // Cloudflare Access in front, once the owner exists (the policy needs
+  // someone to let in) and unless the three settings are on the Worker.
+  let accessOn: boolean | null = null;
+  if (asking && offerAccess && owner && !ACCESS_SETTINGS.every((name) => secretNames.includes(name))) {
+    accessOn = await offerAccessInFront({
+      cf,
+      accountId: account.id,
+      gatewayUrl,
+      owner: owner.email,
+      cloudflareEmail: whoami.email ?? null,
+      flags,
+      out,
+      deps,
+    });
   }
 
   return {
@@ -417,7 +455,62 @@ export async function installGateway({
     gateway: gateway.outcome,
     ownerCreated: created,
     mode,
+    accessOn,
   };
+}
+
+/**
+ * "Put Cloudflare Access in front of your Gateway?" (Yes by default), then
+ * `access on`'s own code: the team (its name asked for when the account
+ * has none), both sign-in methods, the policy with the owner, the two
+ * applications and the three settings. It connects to the Gateway again
+ * by its URL and account (one more login check; `turnAccessOn` takes no
+ * open connection), and its `done` becomes the step `setup.access`, so the
+ * run has one `done`. Anything that fails there is the warning
+ * ACCESS_SETUP_SKIPPED with the rerun, never a failed setup: the Gateway
+ * works without Access.
+ */
+async function offerAccessInFront({
+  cf,
+  accountId,
+  gatewayUrl,
+  owner,
+  cloudflareEmail,
+  flags,
+  out,
+  deps,
+}: {
+  cf: CfRunner;
+  accountId: string;
+  gatewayUrl: string;
+  owner: string;
+  cloudflareEmail: string | null;
+  flags: SetupFlags;
+  out: EventSink;
+  deps: SetupDeps;
+}): Promise<boolean> {
+  if (!(await deps.prompts.accessInFront({ owner, cloudflareEmail }))) return false;
+  try {
+    await turnAccessOn({
+      flags: { json: flags.json, "account-id": accountId, gateway: gatewayUrl },
+      out: stepInsteadOfDone(out, "setup.access"),
+      interactive: true,
+      createCf: () => cf,
+      askTeam: deps.askTeam,
+    });
+    return true;
+  } catch (error) {
+    // Ctrl-C at the team name ends the run as at every other setup prompt.
+    if (error instanceof CancelledError) throw error;
+    out.emit({
+      type: "warning",
+      code: "ACCESS_SETUP_SKIPPED",
+      step: "setup.access",
+      message: `Cloudflare Access wasn't turned on\n${errorMessage(error).split("\n")[0]}\nThe Gateway works without it: passwords sign people in.`,
+      data: { rerun: `${CLI} access on`, rerunNote: "to try again" },
+    });
+    return false;
+  }
 }
 
 function checkToolchain(out: EventSink): void {
@@ -972,6 +1065,18 @@ async function checkReachable(
 
 /** The questions setup asks a person at the terminal. */
 const terminalPrompts: SetupPrompts = {
+  accessInFront: ({ owner, cloudflareEmail }) =>
+    confirmYesAtTerminal("Put Cloudflare Access in front of your Gateway?", [
+      "One command: people sign in at Cloudflare's edge before they reach your Gateway or its apps,",
+      "with their Cloudflare account (members of your Cloudflare account) or a code sent by email.",
+      `Cloudflare's free Zero Trust plan covers 50 people. Turn it off any time: ${CLI} access off.`,
+      ...(cloudflareEmail && cloudflareEmail.toLowerCase() !== owner.toLowerCase()
+        ? [
+            `Your Cloudflare account is ${cloudflareEmail}; your Gateway account is ${owner}:`,
+            `sign in with the code emailed to ${owner}, or invite ${cloudflareEmail} later.`,
+          ]
+        : []),
+    ]),
   browserDeploymentToken: async () => {
     const configure = await confirmAtTerminal("Configure browser app installs?", [
       "Install apps on this Gateway through your browser, without running deployment commands.",

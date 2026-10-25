@@ -170,7 +170,7 @@ outer ring configured (`CLOUDFLARE_ACCESS_TEAM_DOMAIN`,
   when their Access session ends (24 hours by default), whatever Gateway
   session they still hold.
 - **With Managed OAuth**, AI apps pass Access too: nothing on the gateway's
-  host is bypassed, and a person taken out of the policy loses MCP within
+  host but `/health` is bypassed, and a person taken out of the policy loses MCP within
   the access token's lifetime (15 minutes by default).
 
 What Access does **not** cover, by design, so the Gateway's own checks
@@ -191,7 +191,16 @@ remain the only thing between these and the data:
 - **The Access session itself.** Its cookie is Cloudflare's: keep
   `HttpOnly` and the binding cookie on (the runbook's defaults), and enable
   only identity providers that verify email addresses, since the Gateway
-  treats Access's email as verified.
+  treats Access's email as verified. `everyapp access on` allows on the two
+  Every App applications only the providers it vouches for: the one-time
+  PIN, and Sign in with Cloudflare (type `cloudflare`) with Restrict to
+  account members on, which it creates that way. A `cloudflare` provider
+  with the restriction off, a generic `oidc` or `saml` one, and any other
+  provider of the team are left off and named
+  (`ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT`, `ACCESS_IDP_UNVERIFIED_EMAILS`); the
+  Zero Trust team is account-wide, so a provider on it says nothing about
+  who may sign in here. Nothing `access on` does takes a provider off an
+  application (the register's `access.cli.allowed-idps`).
 - **One application for everything** (one AUD for the gateway's host and
   the apps' hosts) makes every app host's Access cookie a gateway login
   too. The runbook asks for two applications; the single-AUD setup is
