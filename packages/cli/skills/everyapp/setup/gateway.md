@@ -142,6 +142,89 @@ lasts 24 hours.
 - Rotate the Cloudflare login: `cf auth logout`, then `pnpm everyapp login --json`. The owner's password: **Forgot password?** on the sign-in page when the Gateway sends email, else an admin's **Users** → **⋯** → **Password reset link** (valid an hour). The Gateway's own keys: docs/runbooks/key-rotation.md: a new pair in the dashboard, the public key recorded in the install row, `setup --redeploy` at a terminal, then `pnpm everyapp deploy` from every app's directory (apps keep the old key and answer 401 until then). `CF_DEPLOY_TOKEN`: roll the token at https://dash.cloudflare.com/profile/api-tokens (**⋯** → **Roll** → **Confirm**: same permissions, new secret, the old one stops at once), then set the new value one of the three ways; or create a new token, set it, then delete the old one.
 - Remove browser installs: `pnpm everyapp secret unset CF_DEPLOY_TOKEN --json` (under `--json` it needs `--yes`, else `CONFIRMATION_REQUIRED`; add it only when the person said so), then delete the token in the dashboard; or keep the token and turn installs off: `BROWSER_APP_INSTALLS=off pnpm everyapp secret set BROWSER_APP_INSTALLS --from-env BROWSER_APP_INSTALLS --json` (`off` is a toggle, not a secret: the one value this folder puts on a command line, as docs/runbooks/browser-app-install.md does). Removing the Gateway itself is the person's, in the dashboard, and never yours to start (`delete` removes an app; `teardown` empties a dedicated test account the person names, never one in use: SKILL.md "Wipe"). Setup finds a Gateway only by its D1 database `every-app-gateway`: while that database exists, a rerun repairs the Gateway it describes (a Worker deleted by hand comes back at the same address); once it is gone, setup installs fresh, asking first when a Worker `every-app-gateway` is still in the account ("Replace it with <version>?"; unattended, `rerun_interactive`).
 
+## Optional: MCP servers worth having beside Every App
+
+Not part of setup, and never added by you unasked. Two are worth adding;
+nothing else is. When the person's task needs one, offer it in one line
+("Cloudflare's MCP server would let me read this account's DNS and Access
+settings from here. Add it to Claude Code?") and do nothing until they say
+yes.
+
+**The Gateway's own connector, first.** `https://<gateway host>/mcp` is
+every app the person can open, as tools, behind the Gateway's sign-in and
+consent; [mcp.md](../mcp.md) has the commands per client. Every member can
+have it. The one below is for the owner or operator, the person whose
+Cloudflare login ran `pnpm everyapp setup`.
+
+**Cloudflare's MCP server, `https://mcp.cloudflare.com/mcp`.** The whole
+Cloudflare API and its docs behind four tools: `search` and `execute` (the
+agent writes JavaScript against the API; it runs on Cloudflare's side),
+`docs` and `whoami`. Connecting opens Cloudflare's login and a consent
+page: choose **Minimal**; a call that needs more asks for that scope then
+(step-up, since 2026-10-19). It then acts as that person on every account
+their login reaches.
+
+- Good for, with a Gateway: reading the account the Gateway runs in when
+  `pnpm everyapp status` and `pnpm everyapp access show` don't answer the
+  question. The zone and its DNS records (`<gateway host>` and one
+  `<app>.<app base domain>` per app, each a Workers Custom Domain with its
+  own record), the Workers (`every-app-gateway` and each app's) with their
+  versions, the D1 database `every-app-gateway`, the Access team,
+  applications and policies that `pnpm everyapp access on` made, Email
+  Routing, Workers logs, the plan and the bill. "Which version is serving",
+  "is the DNS record there", "why does this app host 503", "who does the
+  Access policy let in", "what did October cost".
+- Noise for: building and deploying. `pnpm everyapp setup`, `deploy`,
+  `update`, `install`, `secret set`, `access on`, `email` and `mcp on`
+  write the Gateway's registry and the deploy ledger as well as Cloudflare,
+  and a deploy refuses to replace a Worker last changed outside everyapp
+  (`assertReplaceable` in `packages/cli/src/lib/cf/deploy.ts`: the next
+  `pnpm everyapp deploy` stops and asks a person to confirm in a
+  terminal). A Worker, secret, DNS record or Access policy changed through
+  this server is one `everyapp` doesn't know about. Look with it; change
+  with `pnpm everyapp`.
+- The rule: read before write. A write through it is a live API call on
+  the whole account, as the person, with no undo. It goes in the person's
+  own client config (Claude Code's default `local` scope or `--scope user`,
+  `~/.cursor/mcp.json`, `~/.codex/config.toml`), never in one the
+  repository shares (`.mcp.json` from `--scope project`, `.cursor/mcp.json`,
+  `.codex/config.toml`), where every clone would be offered the account.
+
+When they say yes, by client. The sign-in is the person's step every time:
+the consent page is theirs, never yours.
+
+- Claude Code. You may run it:
+
+  ```bash
+  claude mcp add --transport http cloudflare https://mcp.cloudflare.com/mcp
+  ```
+
+  Then the person types `/mcp` in Claude Code, chooses **cloudflare**,
+  **Authenticate**, and allows in the browser.
+- Codex. You run `codex mcp add cloudflare --url https://mcp.cloudflare.com/mcp`;
+  the person runs `codex mcp login cloudflare` in their own terminal.
+- claude.ai and Claude Desktop: **Settings** → **Connectors** → **Add
+  custom connector**, the URL above.
+- Cursor: in `~/.cursor/mcp.json`,
+  `{ "mcpServers": { "cloudflare": { "url": "https://mcp.cloudflare.com/mcp" } } }`,
+  then sign in when Cursor asks.
+
+Removing it: `claude mcp remove cloudflare`, `codex mcp remove cloudflare`,
+or delete the entry.
+
+**GitHub.** `pnpm everyapp install <github url>` downloads a public release
+anonymously and needs no GitHub access. For what surrounds an app's
+repository (which release, its README, an issue, the Actions runs of the
+starter's `security-review.yml`), a harness with a shell has `gh`; in
+claude.ai, turn on the GitHub connector (**Settings** → **Connectors**).
+Nothing to add.
+
+**Not worth adding.** Cloudflare's separate docs server
+(`https://docs.mcp.cloudflare.com/mcp`): the API server's `docs` tool is
+the same search. A docs server for Every App: none; the agent docs are
+Markdown at `https://everyapp.com/docs/agent/<page>.md` and
+https://everyapp.com/llms.txt, which any client reads without MCP.
+
 ## Sources
 
 Verified 2026-10-23; CLI shapes re-checked after #400, #401 and #410 merged; `data.apps[].setup`, `APP_NEEDS_SETUP`, `SETTINGS_UNKNOWN` and `secret list <app id>` after #383, #395, #396 and #397 (2026-10-24). The agent docs' version of this page: landing-page/content/agent/setup.md in the checkout, served at https://everyapp.com/docs/agent/setup.md once the site deploys with the launch.

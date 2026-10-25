@@ -210,6 +210,11 @@ sidebar (`/settings/connections`) lists each OAuth connection; revoking one
 makes the client's next request fail `invalid_token`. Removing or
 deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
+Other servers worth having beside the Gateway's (Cloudflare's API server for
+the owner, read before write; nothing else): [setup/gateway.md](setup/gateway.md),
+"Optional: MCP servers worth having beside Every App". Offer one in a line;
+never add it unasked.
+
 ## Troubleshooting
 
 Tools missing after a deploy, in order: (1) the client's cache: tools/list is

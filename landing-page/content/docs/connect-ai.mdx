@@ -31,6 +31,16 @@ Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. Allow
 
 Add an MCP server with the address above. Tools that can't sign in on their own take a personal access token instead. An owner or admin makes one for you: in the Gateway, open **Manage workspace**, then **Tokens**, select **New token**, and give the token to the tool as the `Authorization: Bearer` header.
 
+## Also worth connecting
+
+If you run the Gateway, Cloudflare's own MCP server lets your assistant read the account it runs in: DNS, Workers, Access, logs and the bill. It acts as you on your whole Cloudflare account, so add it to your own tools, not to a project file others share. Pick **Minimal** when it asks what to allow. Let it read; building and deploying stay with `everyapp`.
+
+```bash
+claude mcp add --transport http cloudflare https://mcp.cloudflare.com/mcp
+```
+
+In Claude, add it as a custom connector with that address.
+
 ## Disconnect
 
 In the account menu at the bottom of the Gateway's sidebar, open **AI connections** to see every connection and revoke one. Deactivating a person disconnects all of theirs.
