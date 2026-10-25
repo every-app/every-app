@@ -16,6 +16,19 @@ export const accountFlag = {
   optional: true,
 } as const;
 
+/**
+ * `--org` on a Gateway command that acts on one organization (`workspace`,
+ * `events`): resolved by lib/gateway/workspace.ts `resolveOrganization`.
+ */
+export const orgFlag = {
+  kind: "parsed",
+  parse: String,
+  brief:
+    "The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)",
+  placeholder: "slug",
+  optional: true,
+} as const;
+
 /** The same on every command: the event stream and its exit codes (lib/output/events.ts). */
 export const jsonFlag = {
   kind: "boolean",
@@ -87,6 +100,12 @@ export interface GatewayCommandFlags {
   "account-id"?: string;
   json?: boolean;
   verbose?: boolean;
+}
+
+/** The flags of a Gateway command that acts on one organization: the Gateway's, and `--org`. */
+export interface OrganizationCommandFlags extends GatewayCommandFlags {
+  /** `--org`: the organization by slug, id or name; the install organization without it. */
+  org?: string;
 }
 
 /** `deploy`'s and `install`'s flags: the Gateway's, the takeovers, and the two of their own. */

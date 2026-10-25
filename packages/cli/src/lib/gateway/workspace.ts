@@ -344,6 +344,28 @@ async function operatorFor(db: D1Database, deployer: Deployer): Promise<Operator
   return { actor: deployer.actor, email: deployer.email, userId: text(rows[0]?.["id"]) };
 }
 
+/** Without `--org`, before the claim: there is no install organization to act on. */
+const noOrganizationYet = () =>
+  new EveryAppError(
+    "ORGANIZATION_NOT_FOUND",
+    "The Gateway has no organization yet\nIts owner creates the first one by claiming it.",
+    { rerun: `${CLI} setup`, rerunNote: "prints the owner link" },
+  );
+
+/**
+ * The organization a Gateway command that takes `--org` acts on: the one
+ * `org` names (resolveOrganization: id, slug, then a name only one
+ * organization has), or the install one (the oldest with an owner)
+ * without it. `openWorkspace` adds who acts; `everyapp events` needs only
+ * this. Reads only.
+ */
+export async function organizationFor(db: D1Database, org?: string): Promise<Organization> {
+  if (org !== undefined) return resolveOrganization(db, org);
+  const install = await installOrganization(db);
+  if (!install) throw noOrganizationYet();
+  return install.organization;
+}
+
 /**
  * The workspace a command acts on: `--org`'s organization, or the install
  * one (the oldest with an owner) without it, and who acts.
@@ -354,13 +376,7 @@ export async function openWorkspace(
   options: { org?: string; now?: number } = {},
 ): Promise<Workspace> {
   const [install, operator] = await Promise.all([installOrganization(db), operatorFor(db, deployer)]);
-  if (options.org === undefined && !install) {
-    throw new EveryAppError(
-      "ORGANIZATION_NOT_FOUND",
-      "The Gateway has no organization yet\nIts owner creates the first one by claiming it.",
-      { rerun: `${CLI} setup`, rerunNote: "prints the owner link" },
-    );
-  }
+  if (options.org === undefined && !install) throw noOrganizationYet();
   const organization =
     options.org === undefined ? install!.organization : await resolveOrganization(db, options.org);
   return {

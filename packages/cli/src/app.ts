@@ -24,6 +24,7 @@ import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
 import { devCommand } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
+import { eventsRoutes } from "./commands/events/command";
 import { installCommand } from "./commands/install/command";
 import { loginCommand } from "./commands/login/command";
 import { mcpRoutes } from "./commands/provider/command";
@@ -56,6 +57,7 @@ const routes = buildRouteMap({
     secret: secretRoutes,
     mcp: mcpRoutes,
     email: emailRoutes,
+    events: eventsRoutes,
     workspace: workspaceRoutes,
   },
   // `everyapp provider …` was the group's name until 2026-10-24; kept through
@@ -108,6 +110,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "secret",
       "mcp",
       "email",
+      "events",
       "teardown",
     ],
   ],
@@ -123,6 +126,12 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "secret list crm",
   ],
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
+  events: [
+    "events add https://hooks.example.com/everyapp --events cap.*,member.*",
+    "events add --email admins --events cap.*",
+    "events test sub_…",
+    "events deliveries --dead",
+  ],
   access: ["access on", "access on --email-domain example.com", "access off"],
   mcp: [
     "mcp list",
@@ -149,6 +158,9 @@ const GROUP_NOTES: Readonly<Record<string, readonly string[]>> = {
   email: [
     "Invites, and apps that don't set their own senders, send as the Gateway's sender.",
     `Set it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
+  ],
+  events: [
+    "Each webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.",
   ],
   workspace: [
     "Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.",

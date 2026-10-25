@@ -135,7 +135,7 @@ export async function removeApp({
   // Whether Access had public routes or an /mcp of its to take back: read before the row is tombstoned.
   const surface = (await readPublicSurfaces(registry)).find((candidate) => candidate.appId === appId);
   const hadSurface = { publicRoutes: (surface?.publicPaths.length ?? 0) > 0, mcp: surface?.mcp ?? false };
-  const deleted = await deleteFromRegistry(registry, appId, connection.deployer);
+  const deleted = await deleteFromRegistry(registry, appId, connection.deployer, Date.now(), { purge });
   const live = connection.install;
   const stillServed =
     live.liveAppWorkers.includes(deleted.workerName) || live.liveDomains.includes(deleted.hostname);

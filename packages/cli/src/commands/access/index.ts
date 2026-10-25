@@ -21,6 +21,10 @@
  *
  * `off` is the reverse: the settings go first, in one version, so the
  * Gateway stops requiring Access at once; then the two applications.
+ *
+ * Either way, once the Gateway's settings are written, `access.changed`
+ * is queued for the install organization's event subscribers in the batch
+ * that records them (lib/gateway/events.ts).
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import chalk from "chalk";
@@ -87,7 +91,9 @@ import { emitPlanWarnings, readPublicSurfaces, scopeOf, type PlanLeftovers } fro
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import type { InstallRecord } from "@/lib/gateway/install";
+import { operatorActor, queueEventFromCli } from "@/lib/gateway/events";
 import { ACCESS_LEASE_ID, acquireLease, LeasePurpose } from "@/lib/gateway/lease";
+import { installOrganization, type Deployer } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import { ticked, type EventSink } from "@/lib/output/events";
 import { askText, canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
@@ -572,7 +578,16 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       },
       { flags: options.flags, out },
     );
-    await writeAccessSettingsRecord(db, { ...values, writtenAt: now() });
+    // A rewrite asked for with the same applications changes nothing a subscriber sees.
+    const changed =
+      reason === "asked"
+        ? []
+        : await accessChanged(db, connection.deployer, {
+            access: "on",
+            teamDomain,
+            ...(ruleDomains(policy.include ?? []).length > 0 ? { emailDomains: ruleDomains(policy.include ?? []) } : {}),
+          });
+    await writeAccessSettingsRecord(db, { ...values, writtenAt: now() }, changed);
   }
   out.emit({ type: "step", step: STEP, status: "ok" });
 
@@ -610,6 +625,26 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       appsWithMcp: plan.destinations.filter((d) => d.overrides.some((o) => o.path_pattern === "/mcp")).length,
     },
   );
+}
+
+/**
+ * The `access.changed` event (the outbox, lib/gateway/events.ts), for the
+ * batch that records the Gateway's Access settings: on the install
+ * organization, whose Gateway it is; nothing before there is one.
+ */
+async function accessChanged(
+  db: D1Database,
+  deployer: Deployer,
+  data: { access: "on" | "off"; teamDomain?: string; emailDomains?: string[] },
+) {
+  const found = await installOrganization(db);
+  if (!found) return [];
+  return queueEventFromCli(db, {
+    organizationId: found.organization.id,
+    type: "access.changed",
+    actor: operatorActor(deployer),
+    data,
+  });
 }
 
 /**
@@ -949,7 +984,7 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
       out,
     });
   }
-  await clearAccessSettingsRecord(db);
+  await clearAccessSettingsRecord(db, await accessChanged(db, connection.deployer, { access: "off" }));
   const deleted: string[] = [];
   for (const application of toDelete) {
     if (await deleteAccessApplication(cf, application.id)) deleted.push(label(application));

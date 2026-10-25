@@ -65,6 +65,7 @@ import { version as cliVersion } from "../../../package.json";
 import { manifestTierProblems } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
+import type { AppSetup } from "@every-app/sdk/internal";
 import {
   awaitLive,
   bindIfNeeded,
@@ -133,6 +134,7 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
+import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
 import {
   findRegisteredApp,
   installOrganization,
@@ -833,11 +835,15 @@ async function deploySteps(
       versionId,
       manifest,
       actor: deployer.actor,
+      email: deployer.email,
+      source: release ? "release" : "cli",
       ...(secretNames ? { secretNames } : {}),
     });
     // What the app still needs set, once its upload is on record: a
-    // warning with the one command, said again under Next.
-    await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next });
+    // warning with the one command, said again under Next; and the state
+    // on the app's row, with app.needs_setup or app.ready on a change.
+    const setup = await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next });
+    await recordSetupStateQuietly(registry, { appRowId: plan.app.id, setup, deployer }, out);
   } finally {
     await lease.release();
   }
@@ -932,7 +938,8 @@ async function deploySteps(
  * command that opens it (`everyapp configure <app>`). Nothing when the app declares nothing to set
  * (the Gateway's secrets aren't listed then). A list that fails leaves
  * its names unknown, which never blocks: with the Gateway's unlisted, a
- * secret of the app's own that is known to be unset still warns.
+ * secret of the app's own that is known to be unset still warns. Returns
+ * the setup, for the state on the app's row.
  */
 async function warnIfNeedsSetup({
   cf,
@@ -948,11 +955,12 @@ async function warnIfNeedsSetup({
   secretNames: string[] | null;
   out: EventSink;
   next: DeployAppResult["next"];
-}): Promise<void> {
-  if (!declaresSettings(manifest)) return;
+}): Promise<AppSetup> {
+  // Nothing to set: ready, with nothing to list.
+  if (!declaresSettings(manifest)) return appSetupFrom({ manifest, appId, gatewayNames: [], secretNames: [] }).setup;
   const gatewayNames = await listGatewaySecretNames(cf).catch(() => null);
   const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames });
-  if (setup.ready || !setup.command) return;
+  if (setup.ready || !setup.command) return setup;
   const names = namesToSet(setup);
   const why = setup.unmet.find((setting) => setting.why);
   out.emit({
@@ -966,6 +974,7 @@ async function warnIfNeedsSetup({
     data: { setup },
   });
   next.push({ command: setup.command.command, note: `asks for each; ${appId} opens once they are set` });
+  return setup;
 }
 
 /**

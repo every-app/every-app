@@ -494,6 +494,96 @@ The domain of an inbound address isn't in any zone of the Gateway's Cloudflare a
 
 Source: `packages/cli/src/lib/app/emailRoutes.ts` (`emailZone`), `packages/cli/src/lib/domains/zones.ts` (`resolveZone`).
 
+### EVENT_DELIVERY_NOT_FOUND
+
+`events redeliver <delivery>`: no delivery with that id in the organization the command acts on (`--org`, else the install organization), within the 30 days the log is kept: a mistyped id, another organization's, or one the hourly maintenance has deleted. Every read carries the organization's id, so another organization's delivery reads as missing. Headline: `No delivery <id> in <organization>`, then `Deliveries are kept 30 days, under the organization of their subscription.`
+
+**Fix:** `rerun`: `pnpm everyapp events deliveries` (`rerunNote` `lists the last ones`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`redeliver`).
+
+### EVENT_SECRET_INVALID
+
+`events add <url> --secret` (or `--secret-from-env <VAR>`): the signing secret read from the hidden prompt, stdin or the variable won't do: shorter than 16 or longer than 128 characters (`EVENT_SECRET_MIN_LENGTH`, `EVENT_SECRET_MAX_LENGTH` in `@every-app/sdk/internal`), or not all printable ASCII without spaces (`!` to `~`), so that every receiver's HMAC reads the same bytes. Checked after the URL and before anything is written; the secret is never shown back. Headline: `That signing secret won't do`, then `A signing secret is 16 to 128 characters (this one is <n>).` or `A signing secret is printable ASCII with no spaces, so every receiver's HMAC reads the same bytes.`
+
+**Fix:** `fix`: `leave --secret out and the CLI makes one, or give one of 16 to 128 printable characters`. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`checkedSecret`).
+
+### EVENT_SINK_CONFLICT
+
+`events add`: the arguments don't name one way to deliver. Three headlines, checked before anything connects:
+
+- A URL and `--email` together: `Give a webhook URL or --email, not both`, then `A subscription delivers one way: a signed POST to a URL, or mail to the organization's owners (and admins).`; `fix`: `add one subscription for each`.
+- `--email` with `--secret` or `--secret-from-env`: `An email subscription has no signing secret`, then `Only a webhook is signed; mail goes from the Gateway's own sender to the organization's members.`; `fix`: `leave --secret out`.
+- Neither a URL nor `--email`: `Name where events go: a webhook URL, or --email owners|admins`; `rerun`: `pnpm everyapp events add https://hooks.example.com/everyapp` (`rerunNote` `or --email admins`).
+
+**Fix:** as each says. Not retryable.
+
+Source: `packages/cli/src/commands/events/add.ts` (`addEvents`).
+
+### EVENT_SUBSCRIPTIONS_LIMIT
+
+`events add` in an organization that has 25 subscriptions already (`EVENT_SUBSCRIPTIONS_MAX`), built-in and disabled ones included. The insert counts them itself (`INSERT … SELECT … WHERE (SELECT COUNT(*) …) < 25`), so two adds at once can't make a 26th. Nothing is written. Headline: `<organization> has 25 subscriptions, the most an organization may have`, then `Nothing was added.`
+
+**Fix:** `fix`: `remove one you no longer need (pnpm everyapp events remove <id>), or widen one's --events instead of adding another`; `rerun`: `pnpm everyapp events list` (`rerunNote` `lists them`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`addSubscription`).
+
+### EVENT_SUBSCRIPTION_DISABLED
+
+`events test <id>` on a subscription that is disabled, or `events redeliver <delivery>` of a delivery whose subscription is: the Gateway drops what is queued for a disabled subscription (`subscription_gone`), so the ping or the redelivery would go nowhere. Nothing is written. Headline: `<name> (<id>) is disabled`, then `The Gateway drops what is queued for a disabled subscription, so a test|sending it again would go nowhere.`
+
+**Fix:** `rerun`: `pnpm everyapp events enable <id>` (`rerunNote` `then run this again`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`subscriptionDisabled`), `packages/cli/src/commands/events/ping.ts`.
+
+### EVENT_SUBSCRIPTION_NOT_FOUND
+
+`events remove|enable|disable|test <id>` or `events deliveries <id>`: no subscription with that id in the organization the command acts on (`--org`, else the install organization). Every read and write carries the organization's id, so another organization's subscription reads as missing. Headline: `No subscription <id> in <organization>`, then `Subscriptions belong to one organization; --org names another.` From `events redeliver <delivery>`, when the delivery's subscription was removed since: `<delivery> was for <subscription>, which is removed`, then `There is nowhere to send it again.`
+
+**Fix:** `rerun`: `pnpm everyapp events list` (`rerunNote` `lists them`, or `lists the subscriptions there are`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`findSubscription`, `redeliver`).
+
+### EVENT_TARGET_REFUSED
+
+`events add <url>`: the URL breaks the Gateway's target rules (`checkEventTarget` in `packages/cli/src/lib/gateway/eventTarget.ts`, the CLI's copy of the Gateway's `server/events/target.ts`, which checks the stored URL again before every attempt). Checked after connecting (the rules need the install row's Gateway host and apps' domain, and the names of the Gateway Worker's settings) and before a secret is read or anything is written. Headline: `The Gateway won't deliver to that URL`, then one reason; the URL is never repeated, so a password typed into one isn't shown:
+
+| The URL                                                                                                                                                 | Reason                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| longer than 2,048 characters                                                                                                                            | `A webhook URL is at most 2,048 characters.`                                                                               |
+| not a URL                                                                                                                                               | `It isn't a URL: give the whole address, like https://hooks.example.com/everyapp.`                                         |
+| `http:`                                                                                                                                                 | `A webhook URL starts with https://: the event and its signature would cross the internet in the clear.`                   |
+| another scheme                                                                                                                                          | `A webhook URL starts with https://, not <scheme>//.`                                                                      |
+| a user name or password                                                                                                                                 | `A webhook URL carries no user name or password: the subscription's secret signs each delivery instead.`                   |
+| a fragment                                                                                                                                              | `A webhook URL has no fragment (#…): it is never sent to the receiver.`                                                    |
+| an IPv4 (in any spelling) or IPv6 literal                                                                                                               | `A webhook URL names its host, not an IP address.`                                                                         |
+| the Gateway's host, or the apps' domain or anything under it                                                                                            | `<host> is the Gateway's own host, or under its apps' domain <domain>: a delivery there would loop back into the Gateway.` |
+| `localhost`, `local`, `internal`, `home.arpa`, `onion`, `localdomain`, `intranet`, `lan`, `corp`, `private` or a name under one, or a name of one label | `<host> is a local or internal name, which the Gateway's Worker can't reach.`                                              |
+
+With `EVENTS_ALLOW_PRIVATE_TARGETS` set on the Gateway Worker (the CLI can read only that it is set; the Gateway honours it when its value is `true`), `http:`, IP literals and the private names are let through; the Gateway's own hosts never are. A hosted Gateway also refuses its third-party domain (`THIRD_PARTY_DOMAIN`), a setting whose value the CLI can't read, so a URL under it is added and each attempt is refused with `target_refused`.
+
+**Fix:** for `http:`, an IP literal or a private name, `fix`: `use a public https:// receiver; for one on a private network, set EVENTS_ALLOW_PRIVATE_TARGETS on the Gateway (pnpm everyapp secret set EVENTS_ALLOW_PRIVATE_TARGETS, value true; self-host only)`; otherwise `fix`: `give the receiver's full https:// URL (Slack's, Zapier's, n8n's, your own)`. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/eventTarget.ts` (`checkEventTarget`), `packages/cli/src/lib/gateway/events.ts` (`webhookUrl`); the private names are `EVENT_PRIVATE_NAME_SUFFIXES` in `packages/sdk/src/internal/events.ts` (`isPrivateEventTargetName`), the one list the Gateway's rules use too.
+
+### EVENT_TEST_TIMEOUT
+
+`events test <id>` without `--no-wait`: the ping it queued wasn't attempted within 90 seconds (`TEST_WAIT_MS`). The CLI never calls the receiver: the Gateway's per-minute sweep sends queued deliveries, and a Gateway installed before events (no per-minute trigger) sends them hourly at best, or not at all before `update`. The ping stays queued. Headline: `The Gateway hasn't sent the test event in 1m 30s`, then `It stays queued. The Gateway sends queued events every minute; one installed before events were added sends them hourly at best until it is updated.`; `data.subscriptionId`, `data.eventId`, `data.deliveryId`.
+
+**Fix:** `fix`: `if the Gateway is older than this CLI, update it (pnpm everyapp update)`; `rerun`: `pnpm everyapp events deliveries <id>` (`rerunNote` `shows whether it went since`). Not retryable: running the test again queues another ping.
+
+Source: `packages/cli/src/commands/events/ping.ts` (`testEvents`), `packages/cli/src/lib/gateway/events.ts` (`waitForDelivery`).
+
+### EVENT_TYPE_UNKNOWN
+
+`events add --events <types>`: an entry that is no event type in the catalogue (`EVENT_TYPES` in `@every-app/sdk/internal`), no prefix of one (`member.*`), not an app's own events (`app.<app id>.*`, `app.<app id>.<name>`) and not `*` (`eventPatternProblem`). Every entry is checked before anything connects, and all the refused ones are named. Headline: `<entry> isn't an event type` (or `<n> of --events aren't event types`), then each entry's reason; `data.patterns` lists them.
+
+**Fix:** `fix`: `name types (member.joined), prefixes (member.*), an app's own events (app.crm.*) or * for everything`; `rerun`: `pnpm everyapp events types` (`rerunNote` `lists the types`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`eventPatterns`), `packages/sdk/src/internal/events.ts` (`eventPatternProblem`).
+
 ## Error codes F–R
 
 The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` included when the run had it, built by `thisCommand()`: run it as it is); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
@@ -516,7 +606,7 @@ Source: `packages/cli/src/lib/gateway/checkoutRelease.ts` (`buildReleaseFromChec
 
 ### GATEWAY_NOT_FOUND
 
-`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `install`, `delete`, `db query` without `--local`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand)), by `status`, and by `update`. When the login lists accounts and none has a Gateway, `deploy` and `install` offer to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` or `install` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
+`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `install`, `delete`, `db query` without `--local`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `events` but `events types`), by `status`, and by `update`. When the login lists accounts and none has a Gateway, `deploy` and `install` offer to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` or `install` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
 
 | Situation                                                                                                                 | Message                                                                                                                                                                                                              | `data.fix` / `data.rerun`                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -541,9 +631,17 @@ The Gateway's D1 database exists but its install never finished. Four raise site
 
 Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway/connect.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/lib/gateway/reconcile.ts`
 
+### GATEWAY_OUTDATED
+
+An `events` command (every one but `events types`) against a Gateway whose D1 predates migration `0012_events` (2026-10-25): it has no `events`, `event_subscriptions` or `event_deliveries` table (`hasEventsTables`, one `PRAGMA table_info(events)` per run). Raised after connecting, before anything is read or written. The commands that only queue an event alongside their own change (`deploy`, `install`, `delete`, `access on|off`, `mcp on|off`, `configure`, `secret set|unset`) never raise it: on such a Gateway they queue nothing and go on. Headline: `The Gateway predates events`, then `Its database has no event tables until the Gateway is updated to a release that has them.`
+
+**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`).
+
 ### GATEWAY_URL_MISMATCH
 
-`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand)). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
+`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `events` but `events types`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
 
 **Fix:** when the host came from `--gateway` on the command line, `data.rerun` is this command without `--gateway` and its value (`thisCommandWithout()`), `data.rerunNote` `to use <found host>`; when it came from the environment, `data.fix` is `unset EVERYAPP_GATEWAY_URL to use <found host>`. Not retryable.
 
@@ -865,19 +963,19 @@ Source: `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/lib/migrati
 
 ### ORG_AMBIGUOUS
 
-Every `workspace …` command that takes `--org`, when the value is no organization's id or slug and matches more than one by name (letter case aside). Names aren't unique (the `organizations` table is unique on `slug` only) and any owner or admin can rename their organization, so a script's `--org <name>` could land on an organization someone renamed; the command refuses rather than take the older one. Headline: `<n> organizations are named <x>: <slug> (<id>) and <slug> (<id>)`, then `A name isn't unique, and any owner or admin can rename their organization; a slug or id is one organization's.`; `fix`: `name it by its slug or id with --org`; `data.organizations` lists the candidates (`id`, `name`, `slug`). Nothing is read or written past this. Scripts should pass the slug or the id.
+Every `workspace …` command that takes `--org`, and every `events …` command but `events types`, when the value is no organization's id or slug and matches more than one by name (letter case aside). Names aren't unique (the `organizations` table is unique on `slug` only) and any owner or admin can rename their organization, so a script's `--org <name>` could land on an organization someone renamed; the command refuses rather than take the older one. Headline: `<n> organizations are named <x>: <slug> (<id>) and <slug> (<id>)`, then `A name isn't unique, and any owner or admin can rename their organization; a slug or id is one organization's.`; `fix`: `name it by its slug or id with --org`; `data.organizations` lists the candidates (`id`, `name`, `slug`). Nothing is read or written past this. Scripts should pass the slug or the id.
 
 **Fix:** as above. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`resolveOrganization`).
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`resolveOrganization`, through `openWorkspace` and `organizationFor`).
 
 ### ORGANIZATION_NOT_FOUND
 
-Every `workspace …` command, when the organization it acts on can't be found. Without `--org`, the install organization (the oldest with an owner, or the oldest of all) and the Gateway has none yet: headline `The Gateway has no organization yet`, then `Its owner creates the first one by claiming it.`; `rerun`: `pnpm everyapp setup`, `rerunNote`: `prints the owner link`. With `--org <x>`, no organization has that id, slug or name (letter case aside): headline `No organization named <x> on this Gateway`, then `The Gateway has: <slug> (<name>) and …`; `fix`: `name one by its slug, id or name with --org`; `data.organizations` lists them (`id`, `name`, `slug`). A name two organizations share is `ORG_AMBIGUOUS` instead.
+Every `workspace …` command, and every `events …` command but `events types`, when the organization it acts on can't be found. Raised after connecting (for `events`, after the event tables are checked), before anything else is read or written. Without `--org`, the install organization (the oldest with an owner, or the oldest of all) and the Gateway has none yet: headline `The Gateway has no organization yet`, then `Its owner creates the first one by claiming it.`; `rerun`: `pnpm everyapp setup`, `rerunNote`: `prints the owner link`. With `--org <x>`, no organization has that id, slug or name (letter case aside): headline `No organization named <x> on this Gateway`, then `The Gateway has: <slug> (<name>) and …`; `fix`: `name one by its slug, id or name with --org`; `data.organizations` lists them (`id`, `name`, `slug`). A name two organizations share is `ORG_AMBIGUOUS` instead.
 
 **Fix:** as above. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`openWorkspace`, `resolveOrganization`).
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`openWorkspace` for `workspace`, `organizationFor` for `events`, `resolveOrganization` for both).
 
 ### PASSWORD_RESET_REQUIRES_ACTIVE_USER
 
@@ -1083,11 +1181,11 @@ Source: `packages/cli/src/commands/secret/index.ts`
 
 ### SECRET_EMPTY
 
-`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found. `mcp add <url> --from-env <VAR>` reads the credential the same way (`readSecretValue`), before it connects or writes anything, so an empty variable adds nothing. From `configure <app>`, a `NAME=` line on stdin with nothing after it: `<NAME> is empty in the piped lines`, before anything is written (`configure --from-env` skips an unset or empty variable instead).
+`secret set <name> --from-env <VAR>` where `$VAR` is unset or empty: `$<VAR> is empty or not set`. Raised when the value is read, after the names were routed and the app found. `mcp add <url> --from-env <VAR>` reads the credential the same way (`readSecretValue`), before it connects or writes anything, so an empty variable adds nothing. `events add <url> --secret-from-env <VAR>` raises the same, after the URL is checked, with `fix` `export <VAR> first, or name another variable with --secret-from-env`. From `configure <app>`, a `NAME=` line on stdin with nothing after it: `<NAME> is empty in the piped lines`, before anything is written (`configure --from-env` skips an unset or empty variable instead).
 
 **Fix:** `fix`: `export <VAR> first, or name another variable with --from-env`; from `configure`: `give <NAME> a value, or leave the line out`.
 
-Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`
 
 ### SECRET_NAME_INVALID
 
@@ -1137,11 +1235,13 @@ Source: `packages/cli/src/lib/secretValue.ts`
 
 `secret set <name>` with no way to get a value: stdin was piped but empty, or there is no terminal to prompt at (`canPromptInTerminal` in `packages/cli/src/lib/output/prompt.ts`: stdin or stderr isn't a TTY, `--json`, or `CI` is set). Message: `Can't ask for <name>'s value without a terminal` / `Or pipe it in: echo "$<name>" | pnpm everyapp secret set <name>`. A value never comes from the command line.
 
+`events add <url> --secret` raises it when stdin was piped but empty, or there is no terminal to prompt at: `Can't ask for the signing secret without a terminal` / `Pipe it in, or name the environment variable holding it with --secret-from-env.`; `fix`: `leave --secret out to have one made, or add --secret-from-env <VAR>`.
+
 `configure <app>` raises it too, when nothing could be read (no terminal, nothing piped, and `--from-env` found no variable) and a required setting is unset: `Can't ask for <app>'s settings without a terminal` / `<app> needs <names>. Run this at a terminal, pipe NAME=value lines in (one per line), or export them under those names and add --from-env (which also takes the variable of any unset optional setting).`; `data.names` lists the names still missing (of a setting with several names, only the ones not set). An app that is ready ends `done` instead.
 
 **Fix:** `rerun`: `pnpm everyapp secret set <name> --from-env <name>`; from `configure`: `pnpm everyapp configure <app> --from-env` (`rerunNote` `with the variables exported`), or before the app's first deploy `pnpm everyapp configure --from-env` with `in the app's directory, with the variables exported` (the name form is refused until then).
 
-Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`
+Source: `packages/cli/src/lib/secretValue.ts`, `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/commands/events/add.ts`
 
 ### SETTING_VALUE_INVALID
 
@@ -1319,11 +1419,15 @@ Source: `packages/cli/src/lib/gateway/workspace.ts` (`findMember`), `packages/cl
 
 ### VALUE_ON_COMMAND_LINE
 
-`configure NAME=value`: the app argument looks like a value on the command line, which `configure` never takes: a value there lands in the shell's history and the process list. Message: `<NAME>=… looks like a value on the command line, which configure never takes` / `It lands in the shell's history and the process list: rotate it if it was real. Nothing was set.` Checked before the Gateway is reached.
+A value typed on the command line where everyapp never takes one: it lands in the shell's history and the process list, and it is never shown back. Three raise sites, each before the Gateway is reached:
 
-**Fix:** `fix`: `pipe NAME=value lines in (one per line), or export <NAME> and add --from-env`. No rerun.
+- `configure NAME=value`: the app argument looks like a value. Message: `<NAME>=… looks like a value on the command line, which configure never takes` / `It lands in the shell's history and the process list: rotate it if it was real. Nothing was set.`; `fix`: `pipe NAME=value lines in (one per line), or export <NAME> and add --from-env`. Exit 1.
+- `events add --secret <value> …` or `events add <url> --secret=<value>`, caught by the argument parser (`VALUE_SWITCHES` in `packages/cli/src/argumentErrors.ts`: a switch that stands for a value read elsewhere): `--secret takes no value on the command line`, then the note the argument errors give a value (`A value never goes on the command line: …`); `fix`: `give --secret alone: it asks at a hidden prompt, or reads the value piped in or from --secret-from-env <VAR>`. Exit 252, like the [argument errors](#argument-errors-exit-251-and-252).
+- `events add --secret <value>` with no URL, so the value took the URL's place: `--secret takes no value on the command line` / `It lands in the shell's history and the process list: rotate it if it was real. Nothing was added.`; the same `fix`. Exit 1.
 
-Source: `packages/cli/src/commands/configure/index.ts`
+**Fix:** as each says. No rerun; rotate the value if it was real.
+
+Source: `packages/cli/src/commands/configure/index.ts`, `packages/cli/src/argumentErrors.ts`, `packages/cli/src/commands/events/add.ts`
 
 ### VERSION_UNKNOWN
 
@@ -1573,7 +1677,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 
 ## Argument errors (exit 251 and 252)
 
-What stricli's router and parser refuse, reported as an `error` event through the run's sink (so `--json` gets NDJSON) with a code from `ArgumentErrorCode`, a headline, and in `data`: `didYouMean` (a close match: within two edits, case-insensitive), `usage` (`pnpm everyapp <command> <args> [flags]`), `help` (`pnpm everyapp <command> --help`) or `fix`. The exit code stays stricli's: 251 for a command it can't find, 252 for arguments. None has a rerun.
+What stricli's router and parser refuse, reported as an `error` event through the run's sink (so `--json` gets NDJSON) with a code from `ArgumentErrorCode`, a headline, and in `data`: `didYouMean` (a close match: within two edits, case-insensitive), `usage` (`pnpm everyapp <command> <args> [flags]`), `help` (`pnpm everyapp <command> --help`) or `fix`. The exit code stays stricli's: 251 for a command it can't find, 252 for arguments. None has a rerun. A value typed with `events add --secret` is [`VALUE_ON_COMMAND_LINE`](#value_on_command_line) from the parser too (exit 252), described with the command's own raise.
 
 ### UNKNOWN_COMMAND
 
@@ -2082,6 +2186,12 @@ Source: `packages/cli/src/commands/dev/gatewayServer.ts`
 `preflightDomains` with `--force-dns`: the A, AAAA, CNAME or NS record(s) that answer a new hostname (at the name, or a wildcard over a name with no records of its own) are being replaced instead of refused (`DNS_RECORD_CONFLICT` above): `Replacing <host>'s DNS record (<records>)` or `Replacing the DNS records of <n> hostnames` / `<host> (<records>); …`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard was involved. `data.conflicts`: `[{ host, records }]`.
 
 Source: `packages/cli/src/lib/domains/preflight.ts`
+
+### EVENT_EMAIL_NOT_CONFIGURED
+
+`events add --email owners|admins`, step `events.add`: the Gateway Worker has no `EMAIL_FROM` setting (read by name only), so it can't send the mails yet: each delivery is dead at once with `email_not_configured` until a sender is set. The subscription is added all the same. `The Gateway has no sender (EMAIL_FROM), so these mails can't go out yet` / `Each one is dead at once with email_not_configured until a sender is set.`; `data.rerun`: `pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME`.
+
+Source: `packages/cli/src/commands/events/add.ts`
 
 ### GATEWAY_AT_ZONE_APEX
 

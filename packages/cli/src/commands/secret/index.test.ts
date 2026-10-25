@@ -1040,3 +1040,45 @@ describe("secret list", () => {
     });
   });
 });
+
+describe("the setup state on each app's row, and its events", () => {
+  const state = async (appId: string) =>
+    ((await db().run([{ sql: "SELECT setup_state FROM apps WHERE app_slug = ?", params: [appId] }]))[0] ?? [])[0]?.["setup_state"];
+  const queued = async () =>
+    ((await db().run([{ sql: "SELECT type, data FROM events ORDER BY rowid" }]))[0] ?? []).map((row) => ({
+      type: row["type"],
+      data: JSON.parse(String(row["data"])),
+    }));
+
+  it("records needs_setup on deploy, ready once the last setting is set, and needs_setup again when one goes, each change an event", async () => {
+    const crm = appDir(CRM);
+    await deploy(crm, CRM);
+    await deploy(appDir(NOTES), NOTES);
+    expect(await state("crm")).toBe("needs_setup");
+    // Nothing to set: ready from the first evaluation, which says nothing.
+    expect(await state("notes")).toBe("ready");
+    const row = await readApp(db(), "crm");
+    const app = { id: "crm", rowId: row.id, name: "crm" };
+    expect(await queued()).toEqual([
+      { type: "app.installed", data: expect.objectContaining({ app, source: "cli" }) },
+      { type: "app.needs_setup", data: { app, unmet: ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "TOKEN_ENCRYPTION_KEY"] } },
+      { type: "app.installed", data: expect.objectContaining({ app: expect.objectContaining({ id: "notes" }) }) },
+    ]);
+
+    // Still short of its own key: the same state, no event.
+    await set(emptyDir(), "OPENROUTER_API_KEY");
+    expect(await state("crm")).toBe("needs_setup");
+    expect(await queued()).toHaveLength(3);
+
+    await setFor("crm", emptyDir(), "TOKEN_ENCRYPTION_KEY");
+    expect(await state("crm")).toBe("ready");
+    expect((await queued()).slice(3)).toEqual([{ type: "app.ready", data: { app } }]);
+
+    await unset(emptyDir(), "OPENROUTER_API_KEY");
+    expect(await state("crm")).toBe("needs_setup");
+    expect((await queued()).slice(4)).toEqual([
+      { type: "app.needs_setup", data: { app, unmet: ["OPENAI_API_KEY", "OPENROUTER_API_KEY"] } },
+    ]);
+    expect(await state("notes")).toBe("ready");
+  });
+});

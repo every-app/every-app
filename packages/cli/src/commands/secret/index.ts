@@ -29,7 +29,10 @@
  * `live_version_id`), so the next `deploy` or `setup` replaces it
  * unattended. After a change to an app's Worker its secret names are
  * recorded on the app's row (`secret_names`), so the gateway knows what is
- * set. The secret is live at once. `unset` asks first (`--yes` doesn't),
+ * set, and every app the change can move gets its setup state recorded
+ * (`apps.setup_state`, with `app.needs_setup` or `app.ready` on a
+ * transition: lib/gateway/setupState.ts). The secret is live at once.
+ * `unset` asks first (`--yes` doesn't),
  * and a name nobody holds is no change. `list` prints names, never values:
  * one app's settings (the app here, or `list <app>`) as the settings model
  * sees them, set or not, with the one command that opens the app; or
@@ -80,6 +83,7 @@ import { errorMessage, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
 import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
+import { refreshSetupStates } from "@/lib/gateway/setupState";
 import {
   bindRemoteMcpCredentials,
   remoteMcpCredentialNames,
@@ -121,6 +125,8 @@ interface SecretOptions {
   cwd?: string;
   /** cf per account (tests). */
   createCf?: (accountId?: string) => CfRunner;
+  /** The app row whose setup state the caller records itself (`configure`), left out of the refresh. */
+  setupRecordedBy?: string;
 }
 
 interface SetSecretsOptions extends SecretOptions {
@@ -229,7 +235,7 @@ export async function applyAppSettings(
     app: { workerName: string; rowId: string } | null;
   },
   changes: Readonly<Record<string, string>>,
-  options: Pick<SecretOptions, "flags" | "out">,
+  options: Pick<SecretOptions, "flags" | "out" | "setupRecordedBy">,
 ): Promise<Applied> {
   const route = routeNames(Object.keys(changes), target.manifest, target.source, SecretAction.Set);
   if (route.app && !target.app) {
@@ -1015,6 +1021,13 @@ async function apply(
           data: { action, names, versions },
         });
       }
+      // Whether each app the change can move opens now, on its row, with
+      // app.needs_setup or app.ready on a change (never failing the run).
+      await refreshSetupStates(
+        { cf, db, deployer },
+        { gateway: applied.gateway?.names ?? [], appRowId: applied.app && app ? app.rowId : null, except: options.setupRecordedBy },
+        out,
+      );
       return applied;
     } finally {
       await appLease?.release();

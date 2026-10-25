@@ -247,7 +247,7 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Events → Send test | `events.testEventSubscription` | `events test` | `everyapp_workspace_events_test` | pending: as above; a `ping` to that one subscription, paused or not |
 | Admin → Events → Deliveries (and the Dead filter) | `events.listEventDeliveries` | `events deliveries` | `everyapp_workspace_event_deliveries` | pending: as above |
 | Admin → Events → Deliveries → Redeliver | `events.redeliverEvent` | `events redeliver` | `everyapp_workspace_event_redeliver` | pending: as above; resets a failed or dead delivery to pending with the schedule starting over |
-| Admin → Events → Add subscription: the event types to pick from | `events.listEventTypes` | `events types` | — | pending: as above; no MCP: the add and set tools take type names and patterns in `events`, and the agent page lists the catalogue |
+| Admin → Events → Add subscription: the event types to pick from | `events.listEventTypes` | `events types` | — | no MCP: the add and set tools take type names and patterns in `events`, and the agent page lists the catalogue |
 | Home: the apps I can open | `apps.getMyApps` | `status` | `everyapp_list_apps` | |
 | Account menu → AI connections: the list | `mcpConnections.listMyMcpConnections` | `workspace connections` | `everyapp_my_connections` | any signed-in user, across every organization they belong to; the operator sees every member's (`--user` narrows) |
 | AI connections → Revoke | `mcpConnections.revokeMyMcpConnection` | `workspace connection revoke` | `everyapp_revoke_connection` | |

@@ -1,16 +1,7 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
 import { ACTIVITY_PAGE_MAX, MONTH, MONTHLY_CALL_CAP_MAX, appName } from "@/lib/gateway/workspace";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
-
-const orgFlag = {
-  kind: "parsed",
-  parse: String,
-  brief:
-    "The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)",
-  placeholder: "slug",
-  optional: true,
-} as const;
+import { accountFlag, gatewayFlag, jsonFlag, orgFlag, verboseFlag } from "../flags";
 
 /** Every workspace command: where the Gateway is, which organization, and how to print. */
 const workspaceFlags = {

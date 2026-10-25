@@ -55,6 +55,7 @@ RUN A GATEWAY
   secret     Set, remove and list secrets and Gateway settings
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
+  events     Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
   teardown   Delete everything Every App created in a dedicated test Cloudflare account
 
 MANAGE THE WORKSPACE
@@ -1681,6 +1682,382 @@ FLAGS
 
 ARGUMENTS
   senders|inbound...  List to clear: senders or inbound
+```
+
+### `everyapp events add`
+
+Send the organization's events to a URL (a signed POST) or by email to its owners and admins.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<url>` | no | The webhook's https:// URL (leave it out with --email) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--events` | `<types>` (repeatable) | no |  | The events to send, comma separated: types (member.joined), prefixes (cap.*, app.crm.*) or * (repeat to add more; default: every event but test pings) |
+| `--name` | `<text>` | no |  | What to call it, like 'Slack #ops' (default: the URL's host, or Email owners and admins) |
+| `--email` | `owners`, `admins` | no |  | Mail each event to the organization's owners, or its owners and admins (admins), instead of a webhook |
+| `--secret` | switch | no |  | Give the webhook's signing secret yourself, 16 to 128 characters: asked at a hidden prompt, or read piped in, never typed on the command line (default: one is made and shown once) |
+| `--secret-from-env` | `<VAR>` | no |  | Read the signing secret from this environment variable |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events add [--events types]... [--name text] [--email owners|admins] [--secret] [--secret-from-env VAR] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<url>]
+  pnpm everyapp events add --help
+
+A webhook gets each event as a JSON POST, signed with the subscription's secret:
+X-EveryApp-Signature: t=<seconds>,v1=<hex>, HMAC-SHA256 over <t>.<body>; the receiver checks
+it (/docs/events has the code). Without --secret one is made and shown once: copy it then.
+Slack's Workflow Builder, Zapier, n8n, Make and your own endpoint all take one; the body's
+top-level summary is a line a person reads.
+
+The URL must be https:// on a public hostname: not an IP address, not a local or internal
+name, not the Gateway or one of its apps. For a receiver on a private network, set
+EVENTS_ALLOW_PRIVATE_TARGETS on the Gateway with the value "true" (self-host only;
+pnpm everyapp secret set EVENTS_ALLOW_PRIVATE_TARGETS): then http://, IP addresses and private names are let through.
+
+--email mails each event to the organization's owners (owners) or owners and admins
+(admins), from the Gateway's sender (EMAIL_FROM); it takes no address. An organization has at
+most 25 subscriptions. The Gateway sends each event within a minute.
+
+Examples:
+  pnpm everyapp events add https://hooks.example.com/everyapp --events cap.*,member.*
+  pnpm everyapp events add https://hooks.zapier.com/hooks/catch/1/abc --name Zapier --secret
+  pnpm everyapp events add --email admins --events cap.*
+  pnpm everyapp events add https://n8n.example.com/webhook/x --secret-from-env N8N_SECRET --json
+
+FLAGS
+     [--events]...             The events to send, comma separated: types (member.joined), prefixes (cap.*, app.crm.*) or * (repeat to add more; default: every event but test pings)
+     [--name]                  What to call it, like 'Slack #ops' (default: the URL's host, or Email owners and admins)
+     [--email]                 Mail each event to the organization's owners, or its owners and admins (admins), instead of a webhook                                                                               [owners|admins]
+     [--secret/--no-secret]    Give the webhook's signing secret yourself, 16 to 128 characters: asked at a hidden prompt, or read piped in, never typed on the command line (default: one is made and shown once)
+     [--secret-from-env]       Read the signing secret from this environment variable
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [url]  The webhook's https:// URL (leave it out with --email)
+```
+
+### `everyapp events list`
+
+List the organization's subscriptions: where each goes, what it takes, how its last delivery went.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events list [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp events list --help
+
+A webhook shows its URL's host and path (never its query or secret); an email one, whom it
+mails. Nothing is changed.
+
+Example:
+  pnpm everyapp events list
+
+ALIASES
+  pnpm everyapp events ls
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp events remove`
+
+Remove a subscription (a built-in one is disabled instead).
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The subscription, by its sub_ id (events list names them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events remove [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp events remove --help
+
+Nothing more is delivered to it; its delivery log stays for 30 days. The Gateway's built-in
+cap alerts are disabled instead of removed, so the Gateway never makes them again.
+
+Example:
+  pnpm everyapp events remove sub_0123456789abcdef01234567
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The subscription, by its sub_ id (events list names them)
+```
+
+### `everyapp events enable`
+
+Resume a subscription: new events are queued for it again.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The subscription, by its sub_ id (events list names them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events enable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp events enable --help
+
+What happened while it was disabled isn't sent. Safe to repeat.
+
+Example:
+  pnpm everyapp events enable sub_0123456789abcdef01234567
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The subscription, by its sub_ id (events list names them)
+```
+
+### `everyapp events disable`
+
+Pause a subscription: no new events are queued for it, and what is queued is dropped.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The subscription, by its sub_ id (events list names them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events disable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp events disable --help
+
+Turn the built-in cap alerts off this way. Safe to repeat; events enable resumes it.
+
+Example:
+  pnpm everyapp events disable sub_0123456789abcdef01234567
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The subscription, by its sub_ id (events list names them)
+```
+
+### `everyapp events test`
+
+Send a test event (ping) to one subscription and wait to see whether it was delivered.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The subscription, by its sub_ id (events list names them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--no-wait` | switch | no |  | Return once the test event is queued; events deliveries shows how it went |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events test [--no-wait] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp events test --help
+
+Queues a ping for that subscription only, then waits up to 90 seconds while the Gateway
+sends it (it sends queued events every minute), and says delivered or failed with the
+receiver's status code or the error. A failed test is retried like any delivery.
+
+Examples:
+  pnpm everyapp events test sub_0123456789abcdef01234567
+  pnpm everyapp events test sub_0123456789abcdef01234567 --no-wait --json
+
+FLAGS
+     [--no-wait/--no-no-wait]  Return once the test event is queued; events deliveries shows how it went
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The subscription, by its sub_ id (events list names them)
+```
+
+### `everyapp events deliveries`
+
+List the last deliveries (30 days): the event, its subscription, attempts, status, next attempt, last error.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | no | Only this subscription's (default: every subscription's) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--dead` | switch | no |  | Only deliveries that ran out of attempts (dead), to redeliver |
+| `--limit` | `<n>` | no |  | How many to show, newest first: 1 to 200 (default 20) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events deliveries [--dead] [--limit n] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<id>]
+  pnpm everyapp events deliveries --help
+
+A delivery is retried after 1, 5 and 30 minutes, then 2, 8 and 24 hours; the seventh failure
+is dead. Nothing is changed.
+
+Examples:
+  pnpm everyapp events deliveries
+  pnpm everyapp events deliveries sub_0123456789abcdef01234567 --limit 50
+  pnpm everyapp events deliveries --dead
+
+FLAGS
+     [--dead/--no-dead]        Only deliveries that ran out of attempts (dead), to redeliver
+     [--limit]                 How many to show, newest first: 1 to 200 (default 20)
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [id]  Only this subscription's (default: every subscription's)
+```
+
+### `everyapp events redeliver`
+
+Send a failing or dead delivery again: the Gateway sends it within a minute, with the full retry schedule.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<delivery>` | yes | The delivery, by its dlv_ id (events deliveries names them) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events redeliver [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <delivery>
+  pnpm everyapp events redeliver --help
+
+Its attempts start over at 0. A delivered one is left alone. The receiver may get the same
+event id again: receivers deduplicate on it.
+
+Example:
+  pnpm everyapp events redeliver dlv_0123456789abcdef01234567
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  delivery  The delivery, by its dlv_ id (events deliveries names them)
+```
+
+### `everyapp events types`
+
+List the event types --events takes, with their versions.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp events types [--json] [--verbose]
+  pnpm everyapp events types --help
+
+The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *). No
+Gateway is needed.
+
+Example:
+  pnpm everyapp events types
+
+FLAGS
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp workspace show`

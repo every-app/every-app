@@ -3,7 +3,8 @@
  * fake Cloudflare account with a deployed gateway (as secret/index.test.ts):
  * the rows, the access, the probe's warnings, the credential offered and
  * pinned, each key's state as a warning and in the list, the tools a show
- * reads, and how secret set, secret list, delete and status treat MCP apps.
+ * reads, how secret set, secret list, delete and status treat MCP apps, and
+ * the `mcp_app.*` event each change queues for the Gateway to deliver.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -713,6 +714,48 @@ describe("secret set and unset with a remote MCP credential", () => {
       status: "needs setup",
       key: { name: "TREG_MCP_TOKEN", set: true, bound: false, boundOrigin: "https://treg.to" },
     });
+  });
+});
+
+describe("the events the mcp commands queue", () => {
+  const queued = async () =>
+    (await query("SELECT type, actor, data FROM events ORDER BY time, rowid")).map((event) => ({
+      type: event["type"],
+      actor: JSON.parse(String(event["actor"])),
+      data: JSON.parse(String(event["data"])),
+    }));
+
+  it("queues one event per change as the login, kind builtin or remote, and none for a run that changes nothing", async () => {
+    let clock = Date.parse("2026-10-25T12:00:00Z");
+    const tick = { now: () => (clock += 1000) };
+    await turnOn(options(tick), "dataforseo");
+    await turnOn(options(tick), "dataforseo");
+    await turnOff(options(tick), "dataforseo");
+    await turnOff(options(tick), "dataforseo");
+    await turnOn(options(tick), "dataforseo");
+    await removeApp(options(tick), "dataforseo");
+    await removeApp(options(tick), "dataforseo");
+    await addTreg({ now: tick.now });
+    await turnOff(options(tick), "treg");
+    await turnOn(options(tick), "treg");
+    await removeApp(options(tick), "treg");
+
+    const [dataforseo, treg] = await query(
+      "SELECT id, app_slug, name FROM apps WHERE app_slug IN ('dataforseo', 'treg') ORDER BY app_slug",
+    );
+    const builtin = { app: { id: "dataforseo", rowId: dataforseo!["id"], name: "DataForSEO" }, kind: "builtin" };
+    const remote = { app: { id: "treg", rowId: treg!["id"], name: treg!["name"] }, kind: "remote" };
+    const actor = { kind: "operator", id: ACTOR, email: ACTOR };
+    expect(await queued()).toEqual([
+      { type: "mcp_app.added", actor, data: builtin },
+      { type: "mcp_app.disabled", actor, data: builtin },
+      { type: "mcp_app.enabled", actor, data: builtin },
+      { type: "mcp_app.removed", actor, data: builtin },
+      { type: "mcp_app.added", actor, data: remote },
+      { type: "mcp_app.disabled", actor, data: remote },
+      { type: "mcp_app.enabled", actor, data: remote },
+      { type: "mcp_app.removed", actor, data: remote },
+    ]);
   });
 });
 

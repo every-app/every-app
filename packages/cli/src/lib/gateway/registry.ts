@@ -15,7 +15,9 @@
  * organization's members may open) is one of its apps that only its owners
  * and admins register. Who deploys is recorded on the row
  * (`deployed_by_actor`): the Cloudflare login's email, or
- * `api-token:<account id>` for an API token.
+ * `api-token:<account id>` for an API token. A write that changes what an
+ * app is (its first upload, a new version, its tombstone) queues the event
+ * the Gateway's subscribers get in the same batch (the outbox, ./events.ts).
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -46,6 +48,7 @@ import { storedMcp, storedPublicRoutes, type McpSummary, type PublicRouteSummary
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
+import { operatorActor, queueEventFromCli, type EventApp } from "./events";
 
 type D1Row = Record<string, unknown>;
 
@@ -616,12 +619,64 @@ export async function readAppById(db: D1Database, id: string): Promise<StoredApp
 
 const MARK_DEPLOYED_ATTEMPTS = 3;
 
+/** Where a deploy's code came from, as `app.installed` says it: this machine, or a release (`everyapp install`). */
+type DeploySource = "cli" | "release";
+
+/** The catalogue's `app` for a registry row. */
+const eventApp = (app: Pick<AppRow, "id" | "appSlug" | "name">): EventApp => ({
+  id: app.appSlug,
+  rowId: app.id,
+  name: app.name,
+});
+
+/**
+ * What a recorded upload tells subscribers (the outbox, lib/gateway/events.ts):
+ * the first upload of a `pending` row is the app's install (`app.installed`:
+ * its code is on Cloudflare and the Gateway is about to serve it, which a
+ * registration alone isn't, since the build and the upload may still fail);
+ * a new version of a row already uploaded is `app.updated`. `version` and
+ * `previousVersion` are Worker version ids, what the registry records
+ * (`apps.version_id`). Queued only if the update below lands: the row then
+ * holds the new version.
+ */
+async function deployedEvents(
+  db: D1Database,
+  app: StoredAppRow,
+  deployed: { versionId: string; actor: string; email?: string | null; source?: DeploySource },
+  now: number,
+): Promise<D1Statement[]> {
+  const first = app.status === "pending";
+  if (!first && app.versionId === deployed.versionId) return [];
+  return queueEventFromCli(db, {
+    organizationId: app.organizationId,
+    type: first ? "app.installed" : "app.updated",
+    actor: operatorActor({ actor: deployed.actor, email: deployed.email ?? null }),
+    data: first
+      ? {
+          app: eventApp(app),
+          version: deployed.versionId,
+          ...(app.hostname ? { hostname: app.hostname } : {}),
+          scope: app.scope === "shared" ? "shared" : "org",
+          source: deployed.source ?? "cli",
+        }
+      : {
+          app: eventApp(app),
+          version: deployed.versionId,
+          ...(app.versionId ? { previousVersion: app.versionId } : {}),
+        },
+    appRowId: app.id,
+    onlyIf: { sql: "EXISTS (SELECT 1 FROM apps WHERE id = ? AND version_id = ?)", params: [app.id, deployed.versionId] },
+    now,
+  });
+}
+
 /**
  * The app's new Worker version is uploaded: record it, with the manifest it
  * was built from (its route policy goes live now), who deployed it and,
  * when the deploy listed them, the names of the secrets on the app's
  * Worker (`secret_names`; left as they were otherwise). A new app moves on
- * to `binding`, for the gateway to activate. Returns the app's status now.
+ * to `binding`, for the gateway to activate. In the same batch, the event
+ * the upload is (`deployedEvents`). Returns the app's status now.
  */
 export function markDeployed(
   db: D1Database,
@@ -630,6 +685,10 @@ export function markDeployed(
     versionId: string;
     manifest: unknown;
     actor: string;
+    /** The login's email, for the event's actor; null for an API token. */
+    email?: string | null;
+    /** Where the code came from, for `app.installed` (default: `cli`). */
+    source?: DeploySource;
     now?: number;
     /** The app Worker's own secret names, everyapp's left out, as `secret set` and `status` record them. */
     secretNames?: readonly string[];
@@ -647,6 +706,7 @@ export function markDeployed(
         });
       }
       const update = markDeployedUpdate(app, deployed);
+      const events = await deployedEvents(db, app, deployed, update.deployedAt);
       // Only over the status it was read with: an admin switching the app
       // off meanwhile keeps it off. A null for the names keeps the column.
       const [changed = []] = await db.run([
@@ -666,6 +726,7 @@ WHERE id = ? AND status = ? RETURNING status`,
             app.status,
           ],
         },
+        ...events,
       ]);
       if (changed.length > 0) return update.status;
       if (attempt >= MARK_DEPLOYED_ATTEMPTS) {
@@ -979,13 +1040,16 @@ export async function listAppRows(db: D1Database): Promise<AppRowNames[]> {
  * connections left. An app deleted already writes nothing, so a delete
  * that stopped part-way can run again. A shared app is every
  * organization's: only the platform organization's owners and admins delete
- * it. Returns the app as it was named, and whether it was deleted already.
+ * it. The tombstone queues `app.removed` in the same batch. Returns the app
+ * as it was named, and whether it was deleted already.
  */
 export async function deleteApp(
   db: D1Database,
   appSlug: string,
   deployer: Deployer,
   now = Date.now(),
+  /** The delete goes on to delete the app's Worker and data (`--purge`), for `app.removed`. */
+  { purge = false }: { purge?: boolean } = {},
 ): Promise<RegisteredAppInfo & { alreadyDeleted: boolean }> {
   const found = await findAppIn(db, appSlug);
   if (found && found.app.tier === PROVIDER_APP_TIER && found.app.status !== DELETED_APP_STATUS) {
@@ -1013,6 +1077,14 @@ export async function deleteApp(
         params: [update.status, update.isDefault ? 1 : 0, now, app.id],
       },
       ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
+      ...(await queueEventFromCli(db, {
+        organizationId: app.organizationId,
+        type: "app.removed",
+        actor: operatorActor(deployer),
+        data: { app: eventApp(app), purged: purge },
+        appRowId: app.id,
+        now,
+      })),
     ]);
   }
   return { ...info(app), status: DELETED_APP_STATUS, alreadyDeleted: update === null };

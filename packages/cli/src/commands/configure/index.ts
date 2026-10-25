@@ -20,7 +20,8 @@
  * replaceable-version check, one Worker version per destination, the
  * app's secret names recorded). An app that is ready gets a menu to
  * change one setting at a time instead. It ends by saying whether the app
- * is ready, or what it still needs.
+ * is ready, or what it still needs, and records that on the app's row
+ * (`apps.setup_state`, with `app.needs_setup` or `app.ready` on a change).
  *
  * A script or a coding agent can't answer a prompt, so values also come
  * from NAME=value lines on stdin (dotenv syntax: what a command produced,
@@ -54,6 +55,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { findRegisteredApp } from "@/lib/gateway/registry";
+import { recordSetupStateQuietly, refreshSetupStates } from "@/lib/gateway/setupState";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -207,6 +209,19 @@ export async function configureApp(options: ConfigureOptions): Promise<void> {
   }
   const applied = names.length > 0 ? await applyChanges(target, changes, options) : null;
   const after = applied ? await readState(target) : before;
+  // The app's state on its row, with app.needs_setup or app.ready on a
+  // change, never failing the run: from what was just read when the
+  // manifest is the deployed one; from the deployed one, as the Gateway
+  // reads it, when configure read the everyapp.config.ts here.
+  if (target.deployed && target.source === ManifestSource.Registry) {
+    await recordSetupStateQuietly(
+      target.connection.db,
+      { appRowId: target.deployed.rowId, setup: after.setup, deployer: target.connection.deployer },
+      out,
+    );
+  } else if (target.deployed) {
+    await refreshSetupStates(target.connection, { gateway: [], appRowId: target.deployed.rowId }, out);
+  }
   finish(target, after, plan, names, applied, out);
 }
 
@@ -226,7 +241,11 @@ async function applyChanges(
       target.connection,
       { manifest: target.manifest, source: target.source, app: target.deployed },
       changes,
-      options,
+      // This app's state is recorded from the state configure reads after; the others' by the refresh.
+      {
+        ...options,
+        ...(target.deployed && target.source === ManifestSource.Registry ? { setupRecordedBy: target.deployed.rowId } : {}),
+      },
     );
   } catch (error) {
     if (!(error instanceof EveryAppError) || error.code !== "SECRETS_PARTIALLY_APPLIED") throw error;

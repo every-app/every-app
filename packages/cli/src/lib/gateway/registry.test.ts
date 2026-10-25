@@ -794,3 +794,90 @@ describe("a Gateway from before apps.secret_names (migration 0004)", () => {
     await db().run(statements);
   });
 });
+
+describe("the events a registry change queues (the outbox)", () => {
+  /** A webhook subscription of the install organization's, taking `events`. */
+  function subscribe(events: string[]): void {
+    const organizationId = String(sqlite.all("SELECT id FROM organizations ORDER BY created_at LIMIT 1")[0]!["id"]);
+    sqlite.sqlite
+      .prepare(
+        "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, created_at, updated_at) VALUES ('sub_1', ?, 'Slack', 'webhook', 'https://hooks.example.org/x', 'whsec_x', ?, 0, 0)",
+      )
+      .run(organizationId, JSON.stringify(events));
+  }
+  const queued = () =>
+    sqlite.all("SELECT type, version, actor, data, app_row_id FROM events ORDER BY rowid").map((row) => ({
+      type: row["type"],
+      actor: JSON.parse(String(row["actor"])),
+      data: JSON.parse(String(row["data"])),
+      appRowId: row["app_row_id"],
+    }));
+  const deliveries = () => sqlite.all("SELECT subscription_id, status FROM event_deliveries");
+
+  it("says nothing on registration: an app is installed once its first upload is recorded, from this machine or a release", async () => {
+    const { plan } = await registerApp("todo", { name: "Todo" });
+    subscribe(["app.*"]);
+    expect(queued()).toEqual([]);
+
+    await markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: DEPLOYER.actor, email: DEPLOYER.email });
+    expect(queued()).toEqual([
+      {
+        type: "app.installed",
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { app: { id: "todo", rowId: plan.app.id, name: "Todo" }, version: "v1", hostname: `todo.${BASE}`, scope: "org", source: "cli" },
+        appRowId: plan.app.id,
+      },
+    ]);
+    expect(deliveries()).toEqual([{ subscription_id: "sub_1", status: "pending" }]);
+
+    const second = await registerApp("crm");
+    await markDeployed(db(), second.plan.app.id, { versionId: "c1", manifest: { id: "crm" }, actor: "api-token:acct", source: "release" });
+    expect(queued()[1]).toMatchObject({ type: "app.installed", actor: { kind: "operator", id: "api-token:acct" }, data: { source: "release" } });
+  });
+
+  it("queues app.updated for a new version of an uploaded app, with the one before, and nothing for the same version", async () => {
+    const { plan } = await registerApp("todo");
+    await markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" });
+    sqlite.sqlite.exec("UPDATE apps SET status = 'active'");
+    await markDeployed(db(), plan.app.id, { versionId: "v2", manifest: { id: "todo" }, actor: "x" });
+    await markDeployed(db(), plan.app.id, { versionId: "v2", manifest: { id: "todo" }, actor: "x" });
+
+    expect(queued().map((event) => [event.type, event.data])).toEqual([
+      ["app.installed", expect.objectContaining({ version: "v1" })],
+      ["app.updated", { app: { id: "todo", rowId: plan.app.id, name: "todo" }, version: "v2", previousVersion: "v1" }],
+    ]);
+  });
+
+  it("queues app.removed with the tombstone, saying whether the delete purges, and nothing for one deleted already", async () => {
+    const { plan } = await registerApp("todo");
+    await deleteApp(db(), "todo", DEPLOYER, 1_000, { purge: true });
+    await deleteApp(db(), "todo", DEPLOYER, 2_000);
+    expect(queued()).toEqual([
+      expect.objectContaining({ type: "app.removed", data: { app: { id: "todo", rowId: plan.app.id, name: "todo" }, purged: true } }),
+    ]);
+  });
+
+  it("queues nothing for an upload whose record didn't land, nor on a Gateway from before the event tables", async () => {
+    const { plan } = await registerApp("todo");
+    // An admin switches the app off between each read and its write: the
+    // record is refused (APP_CHANGING), and so is its event.
+    const run = db().run;
+    const database = {
+      run: async (statements: Parameters<typeof run>[0]) => {
+        if (statements.some((statement) => statement.sql.startsWith("UPDATE apps SET manifest"))) {
+          sqlite.sqlite.exec("UPDATE apps SET status = CASE status WHEN 'disabled' THEN 'pending' ELSE 'disabled' END");
+        }
+        return run(statements);
+      },
+    };
+    await expect(
+      markDeployed(database, plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" }),
+    ).rejects.toMatchObject({ code: "APP_CHANGING" });
+    expect(queued()).toEqual([]);
+
+    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
+    sqlite.sqlite.exec("UPDATE apps SET status = 'pending'");
+    await expect(markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" })).resolves.toBe("binding");
+    await expect(deleteApp(db(), "todo", DEPLOYER)).resolves.toMatchObject({ status: "deleted" });
+  });
+});

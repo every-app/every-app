@@ -289,6 +289,15 @@ describe("everyapp install <release>", () => {
     const fromRelease = upload().config;
     expect(JSON.stringify(fromRelease)).not.toContain("sentinel");
     expect(fromRelease["name"]).toBe("every-acme-todo");
+    // Its first recorded upload is the app's install, from a release.
+    const queued = () =>
+      account
+        .database("every-app-gateway")
+        .all("SELECT type, data FROM events ORDER BY rowid")
+        .map((row) => ({ type: row["type"], data: JSON.parse(String(row["data"])) }));
+    expect(queued()).toEqual([
+      { type: "app.installed", data: expect.objectContaining({ app: expect.objectContaining({ id: "todo" }), source: "release" }) },
+    ]);
 
     // The same app deployed from its directory uploads the same Worker.
     account.apps.set(appDir, TODO);
@@ -302,6 +311,7 @@ describe("everyapp install <release>", () => {
       live: live(),
     });
     expect(upload().config).toEqual(fromRelease);
+    expect(queued().map((event) => event.type)).toEqual(["app.installed", "app.updated"]);
   });
 
   it("takes a GitHub repository's latest release, and sends a repository without one to its clone", async () => {

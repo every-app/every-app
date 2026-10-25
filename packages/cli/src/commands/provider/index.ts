@@ -493,7 +493,7 @@ export async function turnOn(options: McpOptions, id: string): Promise<void> {
     if (was === "new" || was === "revived") accessText = accessLine(result.actorGranted, result.hasOwner);
   } else {
     const app = liveRemote(ref);
-    const { changed } = await setMcpAppStatus(gateway.db, app, "active", options.now?.());
+    const { changed } = await setMcpAppStatus(gateway.db, app, "active", gateway.deployer, options.now?.());
     was = changed ? "off" : "existing";
     organization = ref.organization!;
   }
@@ -547,7 +547,7 @@ export async function turnOff(options: McpOptions, id: string): Promise<void> {
   out.emit({ type: "step", step: STEP, status: "start", message: `Turning ${id} off...` });
   const name = nameOf(ref);
   const live = ref.app && ref.app.status !== "deleted" ? ref.app : null;
-  const wasOn = live ? (await setMcpAppStatus(gateway.db, live, "disabled", options.now?.())).changed : false;
+  const wasOn = live ? (await setMcpAppStatus(gateway.db, live, "disabled", gateway.deployer, options.now?.())).changed : false;
   const where = ref.organization ? ` for ${ref.organization.name}` : "";
   const message = wasOn
     ? `${name} is off${where}`
@@ -574,7 +574,7 @@ export async function removeApp(options: McpOptions, id: string): Promise<void> 
   const ref = await resolveMcpApp(gateway.db, id);
   out.emit({ type: "step", step: "mcp.remove", status: "start", message: `Removing ${id}...` });
   const name = nameOf(ref);
-  const { removed } = await removeMcpApp(gateway.db, ref.app, options.now?.());
+  const { removed } = await removeMcpApp(gateway.db, ref.app, gateway.deployer, options.now?.());
   const where = ref.organization ? ` from ${ref.organization.name}` : "";
   const message = removed
     ? `${name} is removed${where}`

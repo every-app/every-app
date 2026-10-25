@@ -17,13 +17,10 @@ import {
 } from "@/lib/gateway/workspace";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
-import type { GatewayCommandFlags } from "../flags";
+import type { OrganizationCommandFlags } from "../flags";
 
 /** The flags every workspace command takes. */
-export interface WorkspaceFlags extends GatewayCommandFlags {
-  /** `--org`: the organization by slug, id or name; the install organization without it. */
-  org?: string;
-}
+export type WorkspaceFlags = OrganizationCommandFlags;
 
 /** What the handlers take from the command line, and the seams tests use. */
 export interface WorkspaceOptions<F extends WorkspaceFlags = WorkspaceFlags> {

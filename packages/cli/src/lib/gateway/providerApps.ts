@@ -13,7 +13,10 @@
  * after `mcp off` (status `disabled`) serves it again with everything kept;
  * `on` after `mcp remove` (a tombstone) brings it back as new. Off and
  * remove are lib/gateway/remoteMcpApps.ts's, the same for both kinds of MCP
- * app. The Gateway reads a change within 30 seconds.
+ * app. The Gateway reads a change within 30 seconds. `on` queues its event
+ * in the same batch (the outbox, ./events.ts), kind `builtin`:
+ * `mcp_app.added` for a row that is new or revived, `mcp_app.enabled` for
+ * one that was off, nothing for one on already.
  */
 import {
   DELETED_APP_STATUS,
@@ -22,6 +25,7 @@ import {
   type ProviderAppPlan,
 } from "@every-app/perimeter/registry";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
+import { operatorActor, queueEventFromCli } from "./events";
 import {
   appColumns,
   hasSecretNamesColumn,
@@ -164,9 +168,24 @@ export function turnProviderAppOn(
     });
     const was =
       plan.kind === "existing" ? (existingApp?.status === "active" ? "existing" : "off") : plan.kind;
-    // events: mcp_app.added (kind "builtin", when was is new or revived)
-    // events: mcp_app.enabled (kind "builtin", when was is off)
-    await db.run(onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }));
+    // A new or revived row is an MCP app added, one that was off enabled; one on already, nothing.
+    const event =
+      was === "existing"
+        ? []
+        : await queueEventFromCli(db, {
+            organizationId: organization.id,
+            type: was === "off" ? "mcp_app.enabled" : "mcp_app.added",
+            actor: operatorActor(input.deployer),
+            data: { app: { id: plan.app.appSlug, rowId: plan.app.id, name: plan.app.name }, kind: "builtin" },
+            appRowId: plan.app.id,
+            // The revival is conditional on the tombstone: only if the row was written now, and serves.
+            onlyIf: {
+              sql: "EXISTS (SELECT 1 FROM apps WHERE id = ? AND status = ? AND updated_at = ?)",
+              params: [plan.app.id, plan.app.status, now],
+            },
+            now,
+          });
+    await db.run([...onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }), ...event]);
     const actorGranted =
       actorUserId !== null &&
       (plan.grants.some((grant) => grant.userId === actorUserId) ||

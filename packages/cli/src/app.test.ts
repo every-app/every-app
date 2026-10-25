@@ -94,6 +94,24 @@ describe("argument problems", () => {
     );
     expect(switched!.message).not.toContain("sk-live");
   });
+
+  it("refuses a value typed with --secret, wherever it lands, and never shows it back", async () => {
+    for (const args of [
+      ["events", "add", "https://hooks.example.com/x", "--secret", "hunter2-hunter2-hunter2"],
+      ["events", "add", "--secret", "hunter2-hunter2-hunter2", "https://hooks.example.com/x"],
+      ["events", "add", "https://hooks.example.com/x", "--secret=hunter2-hunter2-hunter2"],
+    ]) {
+      const { problems, exitCode } = await parse(...args);
+      expect(problems[0]).toMatchObject({
+        code: "VALUE_ON_COMMAND_LINE",
+        message: expect.stringMatching(/^--secret takes no value on the command line\nA value never goes on the command line/),
+        data: { fix: expect.stringContaining("--secret-from-env <VAR>") },
+      });
+      expect(JSON.stringify(problems)).not.toContain("hunter2");
+      expect(exitCode).toBe(ExitCode.InvalidArgument);
+    }
+  });
+
   it("tells a required flag never given from a flag typed without a value, and names it in the usage", async () => {
     expect((await parse("teardown", "--dry-run")).problems[0]).toEqual({
       code: "MISSING_FLAG_VALUE",
@@ -142,7 +160,7 @@ describe("argument problems", () => {
 describe("the command tree", () => {
   it("has the build verbs, the run verbs, and nothing hidden", () => {
     const paths = commandPaths();
-    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "configure", "status", "delete", "access on", "secret set", "email show", "workspace rename", "workspace role"]) {
+    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "configure", "status", "delete", "access on", "secret set", "email show", "events add", "events list", "events remove", "events enable", "events disable", "events test", "events deliveries", "events redeliver", "events types", "workspace rename", "workspace role"]) {
       expect(paths).toContain(route);
     }
     for (const gone of ["gateway", "gateway deploy", "workflow", "completion"]) {
@@ -156,6 +174,10 @@ describe("help", () => {
     const help = rootHelp();
     expect(help).toMatch(/\nBUILD AN APP\n  create {2,}Create .*\n  dev /);
     expect(help).toMatch(/\nRUN A GATEWAY\n  login {2,}Log in .*\n  setup {2,}Install or repair the Gateway\n  update {2,}Update the Gateway to this checkout \(after git pull\)\n  install /);
+    expect(help).toMatch(
+      /\n  email {2,}.*\n  events {2,}Send the Gateway's events to Slack, Zapier, n8n or your own endpoint \(signed\), or by email\n  teardown /,
+    );
+    expect(help).toMatch(/\nMANAGE THE WORKSPACE\n  workspace /);
     expect(help).toContain(`USAGE\n  ${CLI} <command> [flags]`);
     expect(help).toContain(`  $ ${CLI} install https://github.com/<owner>/<repo>`);
     expect(help).not.toContain("completion");
@@ -182,6 +204,24 @@ describe("help", () => {
         `.\n\nInvites, and apps that don't set their own senders, send as the Gateway's sender.\nSet it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME\n\nUSAGE\n  ${CLI} email <command> [flags]\n\nCOMMANDS\n`,
       );
     }
+  });
+
+  it("says under events how a webhook is signed, with the four examples", () => {
+    const help = groupHelp(["events"])!;
+    expect(help).toContain(
+      `.\n\nEach webhook is signed: X-EveryApp-Signature, HMAC-SHA256 over <t>.<body>; verify it with the snippet on /docs/events.\n\nUSAGE\n  ${CLI} events <command> [flags]\n\nCOMMANDS\n`,
+    );
+    for (const example of [
+      "events add https://hooks.example.com/everyapp --events cap.*,member.*",
+      "events add --email admins --events cap.*",
+      "events test sub_…",
+      "events deliveries --dead",
+    ]) {
+      expect(help).toContain(`  $ ${CLI} ${example}\n`);
+    }
+    expect(help).toMatch(
+      /\n {2}add {2,}.*\n {2}list {2,}.*\n {2}remove {2,}.*\n {2}enable {2,}.*\n {2}disable {2,}.*\n {2}test {2,}.*\n {2}deliveries {2,}.*\n {2}redeliver {2,}.*\n {2}types {2,}/,
+    );
   });
 
   it("names the tool with its version", () => {

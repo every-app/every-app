@@ -18,6 +18,12 @@
  * set for, and `remote_mcp_tools` is what the Gateway last listed, tool by
  * tool. A Gateway whose D1 predates migration 0011 has neither table until
  * `everyapp update`: reads treat them as empty and writes leave them alone.
+ *
+ * Each change queues its event in the batch that writes it (the outbox,
+ * ./events.ts; nothing on a Gateway from before migration 0012):
+ * `mcp_app.added` for a remote app added or revived (a built-in's is
+ * providerApps.ts's), `mcp_app.enabled` and `mcp_app.disabled` for `on` and
+ * `off`, `mcp_app.removed` for the tombstone, with the app and its kind.
  */
 import {
   DELETED_APP_STATUS,
@@ -50,6 +56,7 @@ import {
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
+import { operatorActor, queueEventFromCli, type EventApp } from "./events";
 import {
   appColumns,
   ensureInstallOrganization,
@@ -113,6 +120,11 @@ export interface McpAppRef {
   organization: Organization | null;
   /** Its row, tombstones included; null when it was never added (a built-in only). */
   app: StoredAppRow | null;
+}
+
+/** What an `mcp_app.*` event says of a row: the catalogue's `app` and its kind. */
+function mcpAppEventData(app: StoredAppRow): { app: EventApp; kind: McpAppRef["kind"] } {
+  return { app: { id: app.appSlug, rowId: app.id, name: app.name }, kind: isRemoteMcpRow(app) ? "remote" : "builtin" };
 }
 
 /** The URL of a row's `remote` block, read even from a tombstone. */
@@ -364,10 +376,23 @@ export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promi
       now,
     });
     const tables = await remoteMcpTables(db);
-    // events: mcp_app.added (kind "remote"; data: id, url, auth.kind, was new|revived)
-    await db.run(
-      addWrites(plan, now, { secretNames: await hasSecretNamesColumn(db), remoteTools: tables.tools }),
-    );
+    const added = await queueEventFromCli(db, {
+      organizationId: organization.id,
+      type: "mcp_app.added",
+      actor: operatorActor(input.deployer),
+      data: { app: { id: plan.app.appSlug, rowId: plan.app.id, name: plan.app.name }, kind: "remote" },
+      appRowId: plan.app.id,
+      // The revival is conditional on the tombstone: only if the row was written now.
+      onlyIf: {
+        sql: "EXISTS (SELECT 1 FROM apps WHERE id = ? AND status = ? AND updated_at = ?)",
+        params: [plan.app.id, plan.app.status, now],
+      },
+      now,
+    });
+    await db.run([
+      ...addWrites(plan, now, { secretNames: await hasSecretNamesColumn(db), remoteTools: tables.tools }),
+      ...added,
+    ]);
     return {
       plan,
       organization,
@@ -381,25 +406,40 @@ export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promi
  * Turn an MCP app on or off (`active` ↔ `disabled`), either kind, by its
  * row; a built-in's first `on` is `turnProviderAppOn` instead (it creates
  * the row). Off keeps everyone's access, the tokens and the snapshot, so on
- * is instant. Whether it changed (false: it was in that state already).
+ * is instant. The change queues `mcp_app.enabled` or `mcp_app.disabled`
+ * in the same batch, as `deployer`. Whether it changed (false: it was in
+ * that state already).
  */
 export function setMcpAppStatus(
   db: D1Database,
   app: StoredAppRow,
   status: McpAppStatus,
+  deployer: Deployer,
   now = Date.now(),
 ): Promise<{ changed: boolean }> {
   return registryCall(async () => {
     const update = mcpAppStatusUpdate(app, status);
     if (!update) return { changed: false };
+    const event = await queueEventFromCli(db, {
+      organizationId: app.organizationId,
+      type: update.status === "active" ? "mcp_app.enabled" : "mcp_app.disabled",
+      actor: operatorActor(deployer),
+      data: mcpAppEventData(app),
+      appRowId: app.id,
+      // Only if the update below landed.
+      onlyIf: {
+        sql: "EXISTS (SELECT 1 FROM apps WHERE id = ? AND status = ? AND updated_at = ?)",
+        params: [app.id, update.status, now],
+      },
+      now,
+    });
     // Only over the status it was read with: a remove meanwhile stays a remove.
-    // events: mcp_app.enabled (status "active"; kind from the row)
-    // events: mcp_app.disabled (status "disabled"; kind from the row)
     const [changed = []] = await db.run([
       {
         sql: "UPDATE apps SET status = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING id",
         params: [update.status, now, app.id, app.status],
       },
+      ...event,
     ]);
     if (changed.length === 0) {
       throw new EveryAppError(
@@ -416,19 +456,20 @@ export function setMcpAppStatus(
  * Remove an MCP app of either kind: the tombstone a deleted app leaves,
  * with everyone's access, the tokens bound to it, its snapshot, its
  * listing and its place in AI connections gone. The credential (a Gateway
- * setting) and its binding stay; `secret unset` removes them. Whether
- * anything was removed (false: no row, or a tombstone already).
+ * setting) and its binding stay; `secret unset` removes them. The
+ * tombstone queues `mcp_app.removed` in the same batch, as `deployer`.
+ * Whether anything was removed (false: no row, or a tombstone already).
  */
 export function removeMcpApp(
   db: D1Database,
   app: StoredAppRow | null,
+  deployer: Deployer,
   now = Date.now(),
 ): Promise<{ removed: boolean }> {
   return registryCall(async () => {
     const update = mcpAppRemoveUpdate(app);
     if (!app || !update) return { removed: false };
     const tables = await remoteMcpTables(db);
-    // events: mcp_app.removed (kind from the row)
     await db.run([
       {
         sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
@@ -436,6 +477,14 @@ export function removeMcpApp(
       },
       ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
       ...(tables.tools ? [remoteToolsDelete(app)] : []),
+      ...(await queueEventFromCli(db, {
+        organizationId: app.organizationId,
+        type: "mcp_app.removed",
+        actor: operatorActor(deployer),
+        data: mcpAppEventData(app),
+        appRowId: app.id,
+        now,
+      })),
     ]);
     return { removed: true };
   });

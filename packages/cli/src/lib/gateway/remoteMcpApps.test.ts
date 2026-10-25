@@ -3,7 +3,8 @@
  * on SQLite through `cf d1 query` as the CLI sends it: add (new, revived,
  * every refusal), on and off, remove, the refusals for ids that aren't MCP
  * apps, refresh, one tool's override, what `show` reads, the state `list`
- * gives, and the credential's pin to its origin.
+ * gives, the credential's pin to its origin, and the `mcp_app.*` event each
+ * change queues.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -177,7 +178,7 @@ describe("addRemoteMcpApp", () => {
     const { organization, plan } = await add();
     addUser("ben", organization.id);
     seedListing("treg");
-    await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, NOW + 1);
+    await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN, NOW + 1);
     sqlite.sqlite
       .prepare("INSERT INTO remote_mcp_tools (app_row_id, organization_id, upstream_name, risk_hint, listed, listed_at) VALUES (?, ?, 'stale', 'unknown', 1, 0)")
       .run(plan.app.id, organization.id);
@@ -205,17 +206,17 @@ describe("on, off and remove", () => {
     const ref = await resolveMcpApp(db(), "treg");
     expect(ref).toMatchObject({ kind: "remote", id: "treg", app: { status: "active" } });
 
-    expect(await setMcpAppStatus(db(), ref.app!, "disabled", NOW + 1)).toEqual({ changed: true });
+    expect(await setMcpAppStatus(db(), ref.app!, "disabled", BEN, NOW + 1)).toEqual({ changed: true });
     expect(row("treg")).toMatchObject({ status: "disabled" });
     expect(grantees("treg")).toEqual(["ben"]);
     const off = (await resolveMcpApp(db(), "treg")).app!;
-    expect(await setMcpAppStatus(db(), off, "disabled")).toEqual({ changed: false });
+    expect(await setMcpAppStatus(db(), off, "disabled", BEN)).toEqual({ changed: false });
     // A row read before someone else turned it on writes nothing.
     sqlite.sqlite.prepare("UPDATE apps SET status = 'active' WHERE app_slug = 'treg'").run();
-    await expect(setMcpAppStatus(db(), off, "active")).rejects.toMatchObject({ code: "APP_CHANGING" });
+    await expect(setMcpAppStatus(db(), off, "active", BEN)).rejects.toMatchObject({ code: "APP_CHANGING" });
 
     const live = (await resolveMcpApp(db(), "treg")).app!;
-    expect(await removeMcpApp(db(), live, NOW + 2)).toEqual({ removed: true });
+    expect(await removeMcpApp(db(), live, BEN, NOW + 2)).toEqual({ removed: true });
     expect(row("treg")).toMatchObject({ status: "deleted" });
     expect(grantees("treg")).toEqual([]);
     expect(sqlite.all("SELECT * FROM remote_mcp_tools")).toEqual([]);
@@ -223,7 +224,7 @@ describe("on, off and remove", () => {
     expect(sqlite.all("SELECT name, origin FROM remote_mcp_credentials")).toEqual([
       { name: "TREG_MCP_TOKEN", origin: "https://treg.to" },
     ]);
-    expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, NOW + 3)).toEqual({ removed: false });
+    expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN, NOW + 3)).toEqual({ removed: false });
     // The tombstone still resolves, so on and show can say how to add it again.
     expect(await resolveMcpApp(db(), "treg")).toMatchObject({ kind: "remote", app: { status: "deleted" } });
   });
@@ -399,7 +400,7 @@ describe("the credential's pin", () => {
       ["TREG_MCP_TOKEN", { origin: "https://treg.to", boundBy: "ben@example.com", boundAt: NOW }],
     ]);
     // Set again after the app is gone: the old pin stays.
-    await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, NOW);
+    await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN, NOW);
     expect((await bindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"], "ben@example.com", NOW + 1)).undeclared).toEqual([
       { name: "TREG_MCP_TOKEN", kept: "https://treg.to" },
     ]);
@@ -431,6 +432,67 @@ describe("the credential's pin", () => {
     });
     expect(await unbindRemoteMcpCredentials(db(), ["TREG_MCP_TOKEN"])).toEqual([]);
     expect(await readCredentialBindings(db())).toEqual(new Map());
-    expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app)).toEqual({ removed: true });
+    expect(await removeMcpApp(db(), (await resolveMcpApp(db(), "treg")).app, BEN)).toEqual({ removed: true });
+  });
+});
+
+describe("the events adding, turning on and off and removing a remote MCP app queues", () => {
+  const queued = () =>
+    sqlite.all("SELECT type, actor, data, app_row_id FROM events ORDER BY rowid").map((event) => ({
+      type: event["type"],
+      actor: JSON.parse(String(event["actor"])),
+      data: JSON.parse(String(event["data"])),
+      appRowId: event["app_row_id"],
+    }));
+  const current = async () => (await resolveMcpApp(db(), "treg")).app!;
+
+  it("queues exactly one event per change, kind remote, and none for a no-op or a write that didn't land", async () => {
+    const { plan, organization } = await add();
+    sqlite.sqlite
+      .prepare(
+        "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, created_at, updated_at) VALUES ('sub_1', ?, 'Slack', 'webhook', 'https://hooks.example.org/x', 'whsec_x', '[\"mcp_app.*\"]', 0, 0)",
+      )
+      .run(organization.id);
+    const token = { actor: "api-token:acct", email: null };
+    expect(await setMcpAppStatus(db(), await current(), "disabled", token, NOW + 1)).toEqual({ changed: true });
+    expect(await setMcpAppStatus(db(), await current(), "disabled", BEN, NOW + 2)).toEqual({ changed: false });
+    // A row read before someone else turned it on writes nothing, and queues nothing.
+    const stale = await current();
+    sqlite.sqlite.prepare("UPDATE apps SET status = 'active' WHERE app_slug = 'treg'").run();
+    await expect(setMcpAppStatus(db(), stale, "active", BEN, NOW + 3)).rejects.toMatchObject({ code: "APP_CHANGING" });
+    sqlite.sqlite.prepare("UPDATE apps SET status = 'disabled' WHERE app_slug = 'treg'").run();
+    expect(await setMcpAppStatus(db(), await current(), "active", BEN, NOW + 4)).toEqual({ changed: true });
+    expect(await removeMcpApp(db(), await current(), BEN, NOW + 5)).toEqual({ removed: true });
+    expect(await removeMcpApp(db(), await current(), BEN, NOW + 6)).toEqual({ removed: false });
+    await add({ url: "https://treg.to/v2/mcp", now: NOW + 7 });
+
+    const app = { id: "treg", rowId: plan.app.id, name: "treg" };
+    const ben = { kind: "operator", id: "ben@example.com", email: "ben@example.com" };
+    const data = { app, kind: "remote" };
+    expect(queued()).toEqual([
+      { type: "mcp_app.added", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.disabled", actor: { kind: "operator", id: "api-token:acct" }, data, appRowId: plan.app.id },
+      { type: "mcp_app.enabled", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.removed", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.added", actor: ben, data, appRowId: plan.app.id },
+    ]);
+    // The subscription came after the first: the four after it are delivered.
+    expect(sqlite.all("SELECT subscription_id FROM event_deliveries")).toHaveLength(4);
+  });
+
+  it("queues nothing when the registry refuses the add", async () => {
+    await add();
+    await expect(add()).rejects.toMatchObject({ code: "REMOTE_MCP_EXISTS" });
+    expect(queued().map((event) => event.type)).toEqual(["mcp_app.added"]);
+  });
+
+  it("queues nothing, and still writes, on a Gateway whose D1 has no event tables", async () => {
+    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
+    await add();
+    expect(await setMcpAppStatus(db(), await current(), "disabled", BEN, NOW + 1)).toEqual({ changed: true });
+    expect(await setMcpAppStatus(db(), await current(), "active", BEN, NOW + 2)).toEqual({ changed: true });
+    expect(await removeMcpApp(db(), await current(), BEN, NOW + 3)).toEqual({ removed: true });
+    expect(row("treg")).toMatchObject({ status: "deleted" });
+    expect(sqlite.all("SELECT name FROM sqlite_master WHERE name LIKE 'event%'")).toEqual([]);
   });
 });

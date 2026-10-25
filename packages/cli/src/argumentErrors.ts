@@ -32,6 +32,8 @@ export enum ArgumentErrorCode {
   TooManyArguments = "TOO_MANY_ARGUMENTS",
   RepeatedFlag = "REPEATED_FLAG",
   CommandFailed = "COMMAND_FAILED",
+  /** A value typed after a switch that reads it elsewhere (`events add --secret <value>`). */
+  ValueOnCommandLine = "VALUE_ON_COMMAND_LINE",
 }
 
 export interface ArgumentProblem {
@@ -45,6 +47,35 @@ type RoutingTarget<CONTEXT extends CommandContext> = Command<CONTEXT> | RouteMap
 
 /** Said when an argument may have carried a value: it is in the shell's history already. */
 const VALUE_NOTE = "\nA value never goes on the command line: it lands in the shell's history and the process list. Rotate it if it was real.";
+
+/**
+ * Switches that stand for a value read elsewhere (a hidden prompt, stdin,
+ * an environment variable), as `events add --secret` does: whatever is
+ * typed with one, or right after it, is that value. It is refused as
+ * VALUE_ON_COMMAND_LINE and never shown back.
+ */
+const VALUE_SWITCHES = new Set(["secret"]);
+
+/** The value switch typed with a value after it (`--secret abc`), if one was. */
+function valueSwitchWithValue(args: readonly string[]): string | undefined {
+  for (const [index, arg] of args.entries()) {
+    const name = arg.startsWith("--") ? arg.slice(2) : "";
+    const next = args[index + 1];
+    if (VALUE_SWITCHES.has(name) && next !== undefined && !next.startsWith("-")) return name;
+  }
+  return undefined;
+}
+
+/** The refusal of a value typed for a value switch. */
+function valueOnCommandLine(flag: string): ArgumentProblem {
+  return {
+    code: ArgumentErrorCode.ValueOnCommandLine,
+    message: `--${flag} takes no value on the command line${VALUE_NOTE}`,
+    data: {
+      fix: `give --${flag} alone: it asks at a hidden prompt, or reads the value piped in or from --${flag}-from-env <VAR>`,
+    },
+  };
+}
 
 /** An argument as a message shows it: `NAME=value` cut at its `=`, since the value may be a secret. */
 function shownInput(input: string): string {
@@ -187,6 +218,7 @@ export function argumentProblem(
     const reason = exc.exception instanceof Error ? exc.exception.message : String(exc.exception);
     const flag = exc.externalFlagNameOrPlaceholder;
     const isFlag = Object.keys(flags).map(kebab).includes(flag);
+    if (isFlag && VALUE_SWITCHES.has(flag)) return valueOnCommandLine(flag);
     if (isFlag && flags[Object.keys(flags).find((key) => kebab(key) === flag)!]?.kind === "boolean") {
       // What was typed after `=` is never shown: a switch takes no value,
       // so whatever it got may be one (`--from-env=<key>`).
@@ -250,6 +282,9 @@ export function argumentProblem(
     };
   }
   if (exc instanceof UnexpectedPositionalError) {
+    // `--secret abc`: the extra argument is the value, wherever it landed.
+    const valueSwitch = valueSwitchWithValue(args);
+    if (valueSwitch) return valueOnCommandLine(valueSwitch);
     const takes = exc.expectedCount === 1 ? "one argument" : `${exc.expectedCount} arguments`;
     return {
       code: ArgumentErrorCode.TooManyArguments,

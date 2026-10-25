@@ -155,14 +155,14 @@ describe("turnProviderAppOn", () => {
 });
 
 /** `mcp off` on the built-in's row, as the command runs it. */
-async function off(id = "dataforseo", now = NOW) {
+async function off(id = "dataforseo", now = NOW, deployer = BEN) {
   const ref = await resolveMcpApp(db(), id);
-  return ref.app ? setMcpAppStatus(db(), ref.app, "disabled", now) : { changed: false };
+  return ref.app ? setMcpAppStatus(db(), ref.app, "disabled", deployer, now) : { changed: false };
 }
 
 /** `mcp remove` on the built-in's row, as the command runs it. */
-async function remove(id = "dataforseo", now = NOW) {
-  return removeMcpApp(db(), (await resolveMcpApp(db(), id)).app, now);
+async function remove(id = "dataforseo", now = NOW, deployer = BEN) {
+  return removeMcpApp(db(), (await resolveMcpApp(db(), id)).app, deployer, now);
 }
 
 describe("off and on again", () => {
@@ -232,5 +232,56 @@ describe("listMcpApps", () => {
     expect((await listMcpApps(db()))[0]!.app).toMatchObject({ status: "disabled" });
     await remove();
     expect((await listMcpApps(db()))[0]!.app).toBeNull();
+  });
+});
+
+describe("the events turning a built-in MCP app on, off and removing it queues", () => {
+  const queued = () =>
+    sqlite.all("SELECT type, actor, data, app_row_id FROM events ORDER BY rowid").map((event) => ({
+      type: event["type"],
+      actor: JSON.parse(String(event["actor"])),
+      data: JSON.parse(String(event["data"])),
+      appRowId: event["app_row_id"],
+    }));
+
+  it("queues one event per change: added for a new row and a revived one, enabled and disabled for on and off, removed for the tombstone, nothing for a no-op", async () => {
+    const { plan, organization } = await on();
+    sqlite.sqlite
+      .prepare(
+        "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, created_at, updated_at) VALUES ('sub_1', ?, 'Slack', 'webhook', 'https://hooks.example.org/x', 'whsec_x', '[\"mcp_app.*\"]', 0, 0)",
+      )
+      .run(organization.id);
+    await on("dataforseo", BEN, NOW + 1); // on already: nothing
+    await off("dataforseo", NOW + 2, { actor: "api-token:acct", email: null });
+    await off("dataforseo", NOW + 3); // off already: nothing
+    await on("dataforseo", BEN, NOW + 4);
+    await remove("dataforseo", NOW + 5);
+    await remove("dataforseo", NOW + 6); // removed already: nothing
+    await on("dataforseo", BEN, NOW + 7);
+
+    const app = { id: "dataforseo", rowId: plan.app.id, name: "DataForSEO" };
+    const ben = { kind: "operator", id: "ben@example.com", email: "ben@example.com" };
+    const data = { app, kind: "builtin" };
+    expect(queued()).toEqual([
+      { type: "mcp_app.added", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.disabled", actor: { kind: "operator", id: "api-token:acct" }, data, appRowId: plan.app.id },
+      { type: "mcp_app.enabled", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.removed", actor: ben, data, appRowId: plan.app.id },
+      { type: "mcp_app.added", actor: ben, data, appRowId: plan.app.id },
+    ]);
+    // The subscription came after the first: the four after it are delivered.
+    expect(sqlite.all("SELECT subscription_id FROM event_deliveries")).toHaveLength(4);
+  });
+
+  it("queues nothing, and still writes, on a Gateway whose D1 has no event tables", async () => {
+    sqlite.sqlite.exec("DROP TABLE event_deliveries; DROP TABLE event_subscriptions; DROP TABLE events;");
+    await on();
+    await off("dataforseo", NOW + 1);
+    expect(row("dataforseo")).toMatchObject({ status: "disabled" });
+    await on("dataforseo", BEN, NOW + 2);
+    expect(row("dataforseo")).toMatchObject({ status: "active" });
+    expect(await remove("dataforseo", NOW + 3)).toEqual({ removed: true });
+    expect(row("dataforseo")).toMatchObject({ status: "deleted" });
+    expect(sqlite.all("SELECT name FROM sqlite_master WHERE name LIKE 'event%'")).toEqual([]);
   });
 });

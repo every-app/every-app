@@ -8,7 +8,7 @@
  * old one locks everyone out) without writing a new Worker version every
  * time. `access off` clears it.
  */
-import type { D1Database } from "@/lib/cf/d1";
+import type { D1Database, D1Statement } from "@/lib/cf/d1";
 
 const CREATE_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_access (
   id TEXT PRIMARY KEY CHECK (id = 'access'),
@@ -45,7 +45,12 @@ export async function readAccessSettingsRecord(db: D1Database): Promise<AccessSe
   };
 }
 
-export async function writeAccessSettingsRecord(db: D1Database, record: AccessSettingsRecord): Promise<void> {
+/** Record what was written; `also` rides in the same batch (the `access.changed` event). */
+export async function writeAccessSettingsRecord(
+  db: D1Database,
+  record: AccessSettingsRecord,
+  also: readonly D1Statement[] = [],
+): Promise<void> {
   await db.run([
     { sql: CREATE_TABLE },
     {
@@ -55,11 +60,13 @@ ON CONFLICT(id) DO UPDATE SET team_domain = excluded.team_domain,
   gateway_aud = excluded.gateway_aud, apps_aud = excluded.apps_aud, written_at = excluded.written_at`,
       params: [record.teamDomain, record.gatewayAud, record.appsAud, record.writtenAt],
     },
+    ...also,
   ]);
 }
 
-export async function clearAccessSettingsRecord(db: D1Database): Promise<void> {
-  await db.run([{ sql: CREATE_TABLE }, { sql: "DELETE FROM _everyapp_access WHERE id = 'access'" }]);
+/** Forget what was written; `also` rides in the same batch (the `access.changed` event). */
+export async function clearAccessSettingsRecord(db: D1Database, also: readonly D1Statement[] = []): Promise<void> {
+  await db.run([{ sql: CREATE_TABLE }, { sql: "DELETE FROM _everyapp_access WHERE id = 'access'" }, ...also]);
 }
 
 /** Whether the settings as recorded name this team and these applications. */

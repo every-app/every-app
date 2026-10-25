@@ -910,3 +910,41 @@ describe("access off", () => {
     expect(applications()).toHaveLength(2);
   });
 });
+
+describe("the access.changed events", () => {
+  const queued = async () =>
+    ((await db().run([{ sql: "SELECT organization_id, type, actor, data FROM events ORDER BY rowid" }]))[0] ?? []).map((row) => ({
+      organization: row["organization_id"],
+      type: row["type"],
+      actor: JSON.parse(String(row["actor"])),
+      data: JSON.parse(String(row["data"])),
+    }));
+
+  it("queues one when on writes the Gateway's settings and one when off removes them, never on a run that changes nothing", async () => {
+    await seedPeople();
+    await db().run([
+      {
+        sql: "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, created_at, updated_at) VALUES ('sub_1', 'org-1', 'Slack', 'webhook', 'https://hooks.example.org/x', 'whsec_x', '[\"access.*\"]', 0, 0)",
+      },
+    ]);
+    await on({ team: "acme", emailDomains: ["acme.com"] });
+    await on();
+    await off();
+    await off();
+
+    expect(await queued()).toEqual([
+      {
+        organization: "org-1",
+        type: "access.changed",
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { access: "on", teamDomain: "acme.cloudflareaccess.com", emailDomains: ["acme.com"] },
+      },
+      expect.objectContaining({ type: "access.changed", data: { access: "off" } }),
+    ]);
+    const [deliveries = []] = await db().run([{ sql: "SELECT subscription_id, status FROM event_deliveries" }]);
+    expect(deliveries).toEqual([
+      { subscription_id: "sub_1", status: "pending" },
+      { subscription_id: "sub_1", status: "pending" },
+    ]);
+  });
+});
