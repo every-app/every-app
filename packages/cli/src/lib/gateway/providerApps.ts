@@ -1,38 +1,31 @@
 /**
- * Provider apps in the Gateway's registry (`@every-app/sdk/internal`
- * providerApps.ts): a data provider the operator turns on as an app with
- * no Worker, written the way every registry change is (ADR-0003: the CLI
- * writes the Gateway's D1 itself under the operator's Cloudflare login).
- * The rules are `@every-app/perimeter/registry`'s (providerApps.ts); this
- * reads the rows they need and writes what they return in one batch.
+ * Built-in provider apps in the Gateway's registry (`@every-app/sdk/internal`
+ * providerApps.ts): a data provider the Gateway serves as an MCP app of its
+ * own (DataForSEO), turned on the way every registry change is written
+ * (ADR-0003: the CLI writes the Gateway's D1 itself under the operator's
+ * Cloudflare login). The rules are `@every-app/perimeter/registry`'s
+ * (providerApps.ts); this reads the rows they need and writes what they
+ * return in one batch.
  *
- * A provider app is the install organization's: `on` creates the row
- * `active` at once (nothing to upload or bind) and grants it to the person
- * turning it on and the organization's owners and admins; `off` leaves a
- * tombstone like `everyapp delete`, with everyone's access, its tokens, its
- * tools snapshot and its place in AI connections gone. The Gateway reads a
- * change within 30 seconds.
+ * A provider app is the install organization's: its first `on` creates the
+ * row `active` at once (nothing to upload or bind) and grants it to the
+ * person turning it on and the organization's owners and admins; `on`
+ * after `mcp off` (status `disabled`) serves it again with everything kept;
+ * `on` after `mcp remove` (a tombstone) brings it back as new. Off and
+ * remove are lib/gateway/remoteMcpApps.ts's, the same for both kinds of MCP
+ * app. The Gateway reads a change within 30 seconds.
  */
 import {
   DELETED_APP_STATUS,
   planProviderAppOn,
   providerAppId,
-  providerAppOffUpdate,
   type ProviderAppPlan,
 } from "@every-app/perimeter/registry";
-import {
-  PROVIDER_APP_IDS,
-  PROVIDER_APP_TIER,
-  PROVIDER_APPS,
-  providerAppKeySetting,
-  type ProviderAppId,
-} from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import {
   appColumns,
   hasSecretNamesColumn,
   ensureInstallOrganization,
-  installOrganization,
   memberQueries,
   registryCall,
   text,
@@ -41,19 +34,7 @@ import {
   withoutAppData,
   type Deployer,
   type Organization,
-  type StoredAppRow,
 } from "./registry";
-
-/** One provider app as `provider list` reports it. */
-interface ProviderAppState {
-  id: ProviderAppId;
-  name: string;
-  description: string;
-  /** The Gateway setting holding its key (`DATAFORSEO_API_KEY`). */
-  keySetting: string;
-  /** Whether the install organization has it on. */
-  on: boolean;
-}
 
 interface ProviderAppOnInput {
   id: string;
@@ -65,26 +46,16 @@ interface ProviderAppOnInput {
 
 interface ProviderAppOn {
   plan: ProviderAppPlan;
+  /**
+   * What it was before: `new` (no row), `revived` (removed), `off`
+   * (`mcp off`, now served again) or `existing` (on already).
+   */
+  was: "new" | "revived" | "off" | "existing";
   organization: Organization;
   /** The gateway has an owner. */
   hasOwner: boolean;
   /** The person turning it on is a member and was granted it (or had it). */
   actorGranted: boolean;
-}
-
-/** The install organization's row for a provider app id, tombstones included. */
-async function providerRow(
-  db: D1Database,
-  organizationId: string,
-  id: string,
-): Promise<StoredAppRow | null> {
-  const [rows = []] = await db.run([
-    {
-      sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
-      params: [organizationId, id],
-    },
-  ]);
-  return rows[0] ? toAppRow(rows[0]) : null;
 }
 
 /** What turning a provider app on writes, in one batch. */
@@ -95,10 +66,11 @@ function onWrites(
 ): D1Statement[] {
   const { app } = plan;
   if (plan.kind === "existing") {
+    // On already, or off: served again, with the registry's name and description.
     return [
       {
-        sql: "UPDATE apps SET name = ?, description = ?, manifest = ?, updated_at = ? WHERE id = ?",
-        params: [app.name, app.description, app.manifest, now, app.id],
+        sql: "UPDATE apps SET name = ?, description = ?, manifest = ?, status = ?, updated_at = ? WHERE id = ?",
+        params: [app.name, app.description, app.manifest, app.status, now, app.id],
       },
     ];
   }
@@ -157,8 +129,8 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
 /**
  * Turn a provider app on in the install organization (created when the
  * gateway has none yet, as a deploy does): a new row, its own tombstone
- * revived, or one that is on already, which only gets the registry's
- * current name and description.
+ * revived, one that was off served again, or one that is on already,
+ * which only gets the registry's current name and description.
  */
 export function turnProviderAppOn(
   db: D1Database,
@@ -190,12 +162,16 @@ export function turnProviderAppOn(
       actor: input.deployer.actor,
       now,
     });
+    const was =
+      plan.kind === "existing" ? (existingApp?.status === "active" ? "existing" : "off") : plan.kind;
+    // events: mcp_app.added (kind "builtin", when was is new or revived)
+    // events: mcp_app.enabled (kind "builtin", when was is off)
     await db.run(onWrites(plan, now, { secretNames: await hasSecretNamesColumn(db) }));
     const actorGranted =
       actorUserId !== null &&
       (plan.grants.some((grant) => grant.userId === actorUserId) ||
         (plan.kind === "existing" && (await hasAccess(db, plan.app.id, actorUserId))));
-    return { plan, organization, hasOwner, actorGranted };
+    return { plan, was, organization, hasOwner, actorGranted };
   });
 }
 
@@ -207,58 +183,4 @@ async function hasAccess(db: D1Database, appRowId: string, userId: string): Prom
     },
   ]);
   return rows.length > 0;
-}
-
-/**
- * Turn a provider app off: a tombstone, as `everyapp delete` leaves (its
- * access, tokens, tools snapshot and AI connections gone). An app that is
- * off writes nothing, so this can run again. Whether it was on.
- */
-export function turnProviderAppOff(
-  db: D1Database,
-  id: string,
-  now = Date.now(),
-): Promise<{ id: ProviderAppId; wasOn: boolean; organization: Organization | null }> {
-  return registryCall(async () => {
-    const providerId = providerAppId(id);
-    const found = await installOrganization(db);
-    if (!found) return { id: providerId, wasOn: false, organization: null };
-    const app = await providerRow(db, found.organization.id, providerId);
-    const update = providerAppOffUpdate(providerId, app);
-    if (app && update) {
-      await db.run([
-        {
-          sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
-          params: [update.status, update.isDefault ? 1 : 0, now, app.id],
-        },
-        ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
-      ]);
-    }
-    return { id: providerId, wasOn: update !== null, organization: found.organization };
-  });
-}
-
-/**
- * Every provider app the Gateway offers, with whether the install
- * organization has it on. Reads only.
- */
-export async function listProviderApps(db: D1Database): Promise<ProviderAppState[]> {
-  const found = await installOrganization(db);
-  const on = new Set<string>();
-  if (found) {
-    const [rows = []] = await db.run([
-      {
-        sql: `SELECT app_slug FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}'`,
-        params: [found.organization.id, PROVIDER_APP_TIER],
-      },
-    ]);
-    for (const row of rows) on.add(String(row["app_slug"]));
-  }
-  return PROVIDER_APP_IDS.map((id) => ({
-    id,
-    name: PROVIDER_APPS[id].name,
-    description: PROVIDER_APPS[id].description,
-    keySetting: providerAppKeySetting(id),
-    on: on.has(id),
-  }));
 }

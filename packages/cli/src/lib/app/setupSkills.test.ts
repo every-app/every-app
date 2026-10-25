@@ -11,7 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { SETTABLE_GATEWAY_SETTINGS } from "@every-app/sdk/internal";
+import { isSettableGatewaySetting } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
 import { checkoutRoot } from "@/lib/checkout";
@@ -43,8 +43,6 @@ const REQUIRED_HEADINGS = [
 ];
 
 const FORBIDDEN_PHRASES = ["paste the key", "paste it here", "send me the", "what is your key"];
-
-const settable: ReadonlySet<string> = new Set(SETTABLE_GATEWAY_SETTINGS);
 
 /** `NAME`, `<name>`, `NAME…`: a placeholder, not a setting. */
 function isPlaceholder(token: string): boolean {
@@ -107,7 +105,8 @@ describe("every setup file", () => {
     for (const file of allFiles) {
       for (const call of secretCalls(file.text)) {
         for (const name of call.names) {
-          if (isPlaceholder(name) || settable.has(name) || call.app) continue;
+          // A fixed Gateway setting, or a remote MCP app's credential (any name ending in _MCP_TOKEN).
+          if (isPlaceholder(name) || isSettableGatewaySetting(name) || call.app) continue;
           problems.push(`${file.name}:${call.line} secret ${call.action} ${name}: not a settable Gateway setting`);
         }
       }

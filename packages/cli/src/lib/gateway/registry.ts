@@ -37,6 +37,7 @@ import {
 } from "@every-app/perimeter/registry";
 import {
   parseEmailList,
+  PROVIDER_APP_TIER,
   storedEmailList,
   type AppEmailConfig,
   type SettingsManifestLike,
@@ -987,6 +988,13 @@ export async function deleteApp(
   now = Date.now(),
 ): Promise<RegisteredAppInfo & { alreadyDeleted: boolean }> {
   const found = await findAppIn(db, appSlug);
+  if (found && found.app.tier === PROVIDER_APP_TIER && found.app.status !== DELETED_APP_STATUS) {
+    // An MCP app (built in, or a remote server added by URL) has no Worker to delete.
+    throw new EveryAppError("APP_NOT_FOUND", `${appSlug} is an MCP app, not an app deployed to this Gateway`, {
+      rerun: `${CLI} mcp remove ${appSlug}`,
+      rerunNote: "removes an MCP app",
+    });
+  }
   if (!found || !found.app.workerName) {
     throw new EveryAppError("APP_NOT_FOUND", `No app named ${appSlug} on this Gateway`, {
       rerun: `${CLI} status`,

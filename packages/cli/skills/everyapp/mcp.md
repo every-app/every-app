@@ -95,10 +95,18 @@ A bad definition throws at module load (`defineTools: tool "<name>" needs a risk
 so the Worker fails rather than serving a catalog without the tool; a schema with
 no object JSON Schema form only skips that tool with a warning (`TOOLS_CATALOG` in dev).
 
-MCP apps: the Gateway also serves a data provider's tools of its own
-(DataForSEO: `dataforseo_<tool>`) once the operator runs
-`pnpm everyapp mcp on dataforseo` and sets DATAFORSEO_API_KEY; no page,
-nothing to deploy, same /mcp, same access rules (SKILL.md "MCP apps").
+MCP apps: the Gateway also serves tools that aren't any app's, with no page
+and nothing to deploy, on the same /mcp under the same access rules: a data
+provider's built in (DataForSEO: `dataforseo_<tool>`, once the operator runs
+`pnpm everyapp mcp on dataforseo` and sets DATAFORSEO_API_KEY), and any remote
+MCP server added by URL (`pnpm everyapp mcp add <url> --auth bearer`, its tools
+`<id>_<tool>`). For a remote server the Gateway holds the credential (the
+Gateway setting `<ID>_MCP_TOKEN`, pinned to the URL's origin), forwards each
+call, and decides each tool's risk from the server's annotations (no hint
+counts as `write`; `mcp tool <id> <tool> --risk …` overrides one). `mcp off`
+stops serving and keeps access; `mcp remove` deletes it. Never wrap a
+remote MCP server in an app of your own to put it behind the Gateway: add it
+(setup/remote-mcp.md, SKILL.md "MCP apps").
 
 ## What the Gateway does with them
 

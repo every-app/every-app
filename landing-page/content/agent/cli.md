@@ -53,7 +53,7 @@ RUN A GATEWAY
   delete     Remove an app from the Gateway
   access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
   secret     Set, remove and list secrets and Gateway settings
-  mcp        Offer DataForSEO to members' AI clients as an MCP app, with the Gateway's key
+  mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
   teardown   Delete everything Every App created in a dedicated test Cloudflare account
 
@@ -143,20 +143,27 @@ Run pnpm everyapp secret <command> --help for its flags.
 ### `everyapp mcp`
 
 ```text
-Offer DataForSEO to members' AI clients as an MCP app, with the Gateway's key.
+Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key.
 
 USAGE
   pnpm everyapp mcp <command> [flags]
 
 COMMANDS
-  on    Turn an MCP app on: its tools reach members' AI clients through the Gateway's /mcp
-  off   Turn an MCP app off: it leaves /mcp and the home page, and everyone's access to it goes
-  list  List the MCP apps the Gateway offers: which are on, and whether each one's key is set
+  add      Add any remote MCP server as an MCP app: its tools reach members' AI clients through the Gateway's /mcp
+  remove   Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it goes
+  on       Turn an MCP app on: its tools reach members' AI clients through the Gateway's /mcp
+  off      Turn an MCP app off: its tools leave /mcp, and everyone's access is kept for on
+  list     List the MCP apps: built-in and added, on or off, their tools and whether each key is set
+  show     Show an MCP app: its address, credential, status, last tool listing and every tool with its risk
+  refresh  Drop an MCP app's tools snapshot, so the Gateway lists its tools again
+  tool     Override one tool of a remote MCP app: its risk, or whether it is listed at all
 
 EXAMPLES
   $ pnpm everyapp mcp list
   $ pnpm everyapp mcp on dataforseo
-  $ pnpm everyapp mcp off dataforseo
+  $ pnpm everyapp mcp add https://treg.to/mcp/ --auth bearer
+  $ pnpm everyapp mcp show treg
+  $ pnpm everyapp mcp off treg
 
 Run pnpm everyapp mcp <command> --help for its flags.
 ```
@@ -1180,13 +1187,127 @@ ARGUMENTS
   [app]  An app id (default: the app in this directory; elsewhere, every app)
 ```
 
+### `everyapp mcp add`
+
+Add any remote MCP server as an MCP app: its tools reach members' AI clients through the Gateway's /mcp.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<url>` | yes | The server's MCP address (https://, the one URL the Gateway ever sends its credential to) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--name` | `<value>` | no |  | The app's id and tool prefix (default: from the URL's host, https://mcp.treg.to/mcp → treg) |
+| `--auth` | `none`, `bearer`, `header`, `basic`, `oauth` | no |  | How the Gateway authenticates to the server (default: none; bearer with --secret, header with --header) |
+| `--header` | `<value>` | no |  | With --auth header: the header the server reads the credential from (X-Api-Key) |
+| `--secret` | `<value>` | no |  | The Gateway setting holding the credential, ending in _MCP_TOKEN (default: <ID>_MCP_TOKEN) |
+| `--risk` | `annotations`, `read`, `write` | no |  | How a tool's risk is decided: from the server's hints, unknown as write (annotations, the default), or every tool read or write |
+| `--description` | `<value>` | no |  | What the app is for, as Admin → Apps and everyapp_list_apps say it (default: from the URL) |
+| `--from-env` | `<VAR>` | no |  | Set the credential from this environment variable once the app is added (as secret set --from-env) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp mcp add [--name value] [--auth none|bearer|header|basic|oauth] [--header value] [--secret value] [--risk annotations|read|write] [--description value] [--from-env VAR] [--gateway value] [--account-id value] [--json] [--verbose] <url>
+  pnpm everyapp mcp add --help
+
+The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the
+server's credential itself: every call is attributed to the member, audited, counted and
+capped like an app's, and read tools are told apart from write tools (a read-only
+connection sees only the read ones). You, the owners and the admins get it at once; an
+admin grants others in Admin → Apps → Manage access. Nothing is deployed.
+
+The credential is a Gateway setting named <ID>_MCP_TOKEN (--secret picks another name
+ending in _MCP_TOKEN), pinned to the URL's origin when it is set: the Gateway never sends
+it anywhere else. At a terminal, add offers to set it right away (hidden input, as secret
+set asks); --from-env VAR sets it from an environment variable; otherwise, afterwards:
+  pnpm everyapp secret set TREG_MCP_TOKEN
+
+--auth bearer sends Authorization: Bearer <value>; header sends <header>: <value>; basic
+takes user:password; none sends nothing. oauth is recorded but not served yet: the Gateway
+doesn't sign in to MCP servers with OAuth this week.
+
+add looks at the URL once from this machine, without the credential, and says what it
+found (MCP, a 401, a redirect, or nothing); that is a warning, never a refusal, since the
+Gateway, not this machine, is what fetches it. The Gateway follows no redirects.
+
+Examples:
+  pnpm everyapp mcp add https://mcp.deepwiki.com/mcp
+  pnpm everyapp mcp add https://treg.to/mcp/ --auth bearer
+  pnpm everyapp mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read
+
+FLAGS
+     [--name]                  The app's id and tool prefix (default: from the URL's host, https://mcp.treg.to/mcp → treg)
+     [--auth]                  How the Gateway authenticates to the server (default: none; bearer with --secret, header with --header)                         [none|bearer|header|basic|oauth]
+     [--header]                With --auth header: the header the server reads the credential from (X-Api-Key)
+     [--secret]                The Gateway setting holding the credential, ending in _MCP_TOKEN (default: <ID>_MCP_TOKEN)
+     [--risk]                  How a tool's risk is decided: from the server's hints, unknown as write (annotations, the default), or every tool read or write [annotations|read|write]
+     [--description]           What the app is for, as Admin → Apps and everyapp_list_apps say it (default: from the URL)
+     [--from-env]              Set the credential from this environment variable once the app is added (as secret set --from-env)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  url  The server's MCP address (https://, the one URL the Gateway ever sends its credential to)
+```
+
+### `everyapp mcp remove`
+
+Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it goes.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp mcp remove [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp mcp remove --help
+
+Like deleting an app: the Gateway stops serving its tools within 30 seconds, and
+everyone's access to it, the personal tokens bound to it, its tools snapshot and its
+place in AI connections go with it. Adding it again starts fresh. To stop serving it
+and keep all that, turn it off instead: pnpm everyapp mcp off <id>.
+
+The Gateway setting holding its key or credential stays, and so does a credential's pin
+to its origin; pnpm everyapp secret unset <NAME> removes both.
+
+Example:
+  pnpm everyapp mcp remove treg
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The MCP app (mcp list names them): dataforseo, or the id a server was added as
+```
+
 ### `everyapp mcp on`
 
 Turn an MCP app on: its tools reach members' AI clients through the Gateway's /mcp.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
-| `<id>` | yes | The MCP app (mcp list names them): dataforseo |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1200,20 +1321,23 @@ USAGE
   pnpm everyapp mcp on [--gateway value] [--account-id value] [--json] [--verbose] <id>
   pnpm everyapp mcp on --help
 
-An MCP app is a data provider (DataForSEO) offered as an app of the Gateway's own, with
-no page and nothing to deploy: the Gateway serves the provider's tools on its /mcp under
-<id>_<tool> names, with its own key, and counts and audits every call like an app's.
-It appears in Admin → Apps and under MCP apps on the home page; you, the owners and the
-admins get it at once, and an admin grants other members with Manage access.
+An MCP app is a data provider (DataForSEO, built in) or any remote MCP server added with
+pnpm everyapp mcp add <url>, offered as an app of the Gateway's own with no page and nothing to
+deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with its own key,
+and counts and audits every call like an app's. It appears in Admin → Apps and under MCP
+apps on the home page.
 
-The provider's key is a Gateway setting the tools need (mcp list names it):
+A built-in's first on adds it: you, the owners and the admins get it at once, and an
+admin grants other members with Manage access. On after off serves it again at once,
+with everyone's access kept. The key is a Gateway setting the tools need (mcp list names
+it):
   pnpm everyapp secret set DATAFORSEO_API_KEY
 
 Safe to repeat: an app that is on stays on, with its access.
 
 Examples:
   pnpm everyapp mcp on dataforseo
-  pnpm everyapp mcp on dataforseo --json
+  pnpm everyapp mcp on treg --json
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1224,16 +1348,16 @@ FLAGS
       --                       All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
-  id  The MCP app (mcp list names them): dataforseo
+  id  The MCP app (mcp list names them): dataforseo, or the id a server was added as
 ```
 
 ### `everyapp mcp off`
 
-Turn an MCP app off: it leaves /mcp and the home page, and everyone's access to it goes.
+Turn an MCP app off: its tools leave /mcp, and everyone's access is kept for on.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
-| `<id>` | yes | The MCP app (mcp list names them): dataforseo |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1247,10 +1371,12 @@ USAGE
   pnpm everyapp mcp off [--gateway value] [--account-id value] [--json] [--verbose] <id>
   pnpm everyapp mcp off --help
 
-Like deleting an app: the Gateway stops serving the provider's tools within 30 seconds, and
-everyone's access to it, the personal tokens bound to it and its place in AI connections go
-with it. The Gateway setting holding the provider's key stays; unset it with
-pnpm everyapp secret unset <NAME> if nothing else needs it. Turning it on again starts fresh.
+The Gateway stops serving the app's tools within 30 seconds and the home page stops
+listing it. Everyone's access, the personal tokens bound to it and its tools snapshot
+are kept, so pnpm everyapp mcp on <id> serves it again at once. To remove it for good, with
+all of that: pnpm everyapp mcp remove <id>.
+
+(Until 2026-10-25 off removed the app; that is remove now.)
 
 Example:
   pnpm everyapp mcp off dataforseo
@@ -1264,12 +1390,12 @@ FLAGS
       --                       All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
-  id  The MCP app (mcp list names them): dataforseo
+  id  The MCP app (mcp list names them): dataforseo, or the id a server was added as
 ```
 
 ### `everyapp mcp list`
 
-List the MCP apps the Gateway offers: which are on, and whether each one's key is set.
+List the MCP apps: built-in and added, on or off, their tools and whether each key is set.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1283,7 +1409,7 @@ USAGE
   pnpm everyapp mcp list [--gateway value] [--account-id value] [--json] [--verbose]
   pnpm everyapp mcp list --help
 
-Nothing is changed. The key's value can't be read back; only whether it is set.
+Nothing is changed. A key's value can't be read back; only whether it is set.
 
 Example:
   pnpm everyapp mcp list
@@ -1298,6 +1424,138 @@ FLAGS
      [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
   -h  --help                   Print help information and exit
       --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp mcp show`
+
+Show an MCP app: its address, credential, status, last tool listing and every tool with its risk.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp mcp show [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp mcp show --help
+
+For a remote server: the URL, how the Gateway authenticates, the credential's name, whether
+it is set and the origin it is pinned to, the risk default, when the tools were last listed
+(and the error if that failed), then every tool the server listed: its name on the Gateway,
+the server's own name, its risk and where that comes from (the server's hint, the app's
+default, your override), and whether it is on. Nothing is changed.
+
+Examples:
+  pnpm everyapp mcp show treg
+  pnpm everyapp mcp show dataforseo --json
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The MCP app (mcp list names them): dataforseo, or the id a server was added as
+```
+
+### `everyapp mcp refresh`
+
+Drop an MCP app's tools snapshot, so the Gateway lists its tools again.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp mcp refresh [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp mcp refresh --help
+
+Only the snapshot goes (the Gateway's copy of the tool list); the app, its access and its
+settings stay. The Gateway lists the tools again on the next request to its /mcp, or
+within the hour. Use it after the server changed its tools.
+
+Example:
+  pnpm everyapp mcp refresh treg
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The MCP app (mcp list names them): dataforseo, or the id a server was added as
+```
+
+### `everyapp mcp tool`
+
+Override one tool of a remote MCP app: its risk, or whether it is listed at all.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The MCP app (mcp list names them): dataforseo, or the id a server was added as |
+| `<tool>` | yes | The tool: the server's name for it, or its name on the Gateway (mcp show lists both) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--risk` | `read`, `write`, `destructive`, `annotations` | no |  | The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override |
+| `--on` | switch | no |  | List the tool (the default) |
+| `--off` | switch | no |  | Leave the tool out: it isn't listed, and a call answers Unknown tool |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp mcp tool [--risk read|write|destructive|annotations] [--on] [--off] [--gateway value] [--account-id value] [--json] [--verbose] <id> <tool>
+  pnpm everyapp mcp tool --help
+
+A tool's risk decides who can call it: read tools every connection, write tools only
+read & write ones, destructive tools nobody until approvals exist. The server's hints
+decide it unless the app's --risk default or this override says otherwise. The Gateway
+lists the tools again on first use. A built-in MCP app's tools are its own and can't be
+changed here.
+
+Examples:
+  pnpm everyapp mcp tool treg delete_everything --risk destructive
+  pnpm everyapp mcp tool treg treg_noisy_tool --off
+  pnpm everyapp mcp tool treg search --risk annotations
+
+FLAGS
+     [--risk]                  The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override                [read|write|destructive|annotations]
+     [--on/--no-on]            List the tool (the default)
+     [--off/--no-off]          Leave the tool out: it isn't listed, and a call answers Unknown tool
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id    The MCP app (mcp list names them): dataforseo, or the id a server was added as
+  tool  The tool: the server's name for it, or its name on the Gateway (mcp show lists both)
 ```
 
 ### `everyapp email show`

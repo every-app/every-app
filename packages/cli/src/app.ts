@@ -124,7 +124,13 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   ],
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
-  mcp: ["mcp list", "mcp on dataforseo", "mcp off dataforseo"],
+  mcp: [
+    "mcp list",
+    "mcp on dataforseo",
+    "mcp add https://treg.to/mcp/ --auth bearer",
+    "mcp show treg",
+    "mcp off treg",
+  ],
   db: ["db migrate", "db query 'select count(*) from todos'"],
   workspace: [
     "workspace rename 'Acme Corp'",

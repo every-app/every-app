@@ -170,8 +170,18 @@ MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
          tools (dataforseo_<tool>) to members' AI clients through the Gateway's
          /mcp with the Gateway's key (DATAFORSEO_API_KEY, setup/dataforseo.md);
          no page, nothing to deploy (the launcher lists it under "MCP apps").
-         mcp list shows on/off and whether the key is set; mcp off <id>
-         removes it (provider on|off|list is an alias). You, owners and admins get it;
+         pnpm everyapp mcp add <url> --auth bearer --json   does the same for
+         any remote MCP server (Streamable HTTP): <id>_<tool>, its credential
+         a Gateway setting <ID>_MCP_TOKEN set with secret set and pinned to
+         the URL's origin (setup/remote-mcp.md). add looks at the server once
+         and only warns. mcp list shows each app's kind, on/off/needs setup,
+         tools and key; mcp show <id> its URL, credential and every tool with
+         its risk; mcp tool <id> <tool> --risk read|write|destructive or --off
+         overrides one tool; mcp refresh <id> re-lists. mcp off <id> stops
+         serving and keeps access (mcp on is instant); mcp remove <id> deletes
+         it (the key stays; before 2026-10-25 off deleted it). The credential
+         never goes through the chat (setup/README.md's three ways). provider
+         … is an alias. You, owners and admins get it;
          others are granted in Admin → Apps → Manage access. An owner or admin
          caps an app's provider calls per month in Admin → Usage (off by
          default): past it a provider tool answers a tool error naming the

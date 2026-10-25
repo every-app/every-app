@@ -35,7 +35,7 @@ Run these in a terminal, inside your `every-app` folder. Add `--help` to any com
 | `pnpm run db:generate`     | Writes a migration after what the app stores changes.                                     |
 | `pnpm everyapp db restore` | Puts the app's database back to before its last migration, losing anything written since. |
 
-There's also `email` for the addresses an app sends from and receives at, `secret list` and `secret unset` for what an app needs set, `mcp on` to offer DataForSEO to AI assistants as an MCP app, `workspace` to do from a terminal what Manage workspace does (rename it, invite and remove people, make someone an owner, admin or member, groups, who can open which app, caps, usage and activity), `access off` and `access show` for [Cloudflare Access](/docs/access), `db` for looking inside a database, and `teardown`, which empties a Cloudflare account set aside for testing and refuses any other.
+There's also `email` for the addresses an app sends from and receives at, `secret list` and `secret unset` for what an app needs set, `mcp add <url>` to offer any MCP server to AI assistants through your Gateway as an MCP app (and `mcp on` for DataForSEO; `mcp off` pauses one, `mcp remove` deletes it), `workspace` to do from a terminal what Manage workspace does (rename it, invite and remove people, make someone an owner, admin or member, groups, who can open which app, caps, usage and activity), `access off` and `access show` for [Cloudflare Access](/docs/access), `db` for looking inside a database, and `teardown`, which empties a Cloudflare account set aside for testing and refuses any other.
 
 ## For coding agents
 

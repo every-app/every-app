@@ -1,7 +1,8 @@
 /**
- * Provider apps in the Gateway's registry on SQLite through `cf d1 query`
- * as the CLI sends it: on (new, again, revived), the initial access, off
- * (a tombstone like a delete's), the refusals, and the list.
+ * Built-in provider apps in the Gateway's registry on SQLite through `cf
+ * d1 query` as the CLI sends it: on (new, again, after off, revived), the
+ * initial access, off (status `disabled`, everything kept), remove (a
+ * tombstone like a delete's), the refusals, and the list.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -12,12 +13,9 @@ import {
   sqliteD1Script,
   type SqliteD1,
 } from "@/test/sqliteD1";
-import {
-  listProviderApps,
-  turnProviderAppOff,
-  turnProviderAppOn,
-} from "./providerApps";
+import { turnProviderAppOn } from "./providerApps";
 import { register, type Deployer } from "./registry";
+import { listMcpApps, removeMcpApp, resolveMcpApp, setMcpAppStatus } from "./remoteMcpApps";
 
 const DB_ID = "0123456789abcdef0123456789abcdef";
 const BEN: Deployer = { actor: "ben@example.com", email: "ben@example.com" };
@@ -103,10 +101,11 @@ describe("turnProviderAppOn", () => {
     addUser("owner", { organization: organization.id, role: "owner" });
     addUser("admin", { organization: organization.id, role: "admin" });
     addUser("member", { organization: organization.id, role: "member" });
-    await turnProviderAppOff(db(), "dataforseo", NOW + 1);
+    await remove("dataforseo", NOW + 1);
 
     const result = await on("dataforseo", BEN, NOW + 2);
     expect(result.plan.kind).toBe("revived");
+    expect(result.was).toBe("revived");
     expect(result.hasOwner).toBe(true);
     expect(result.actorGranted).toBe(true);
     expect(grantees("dataforseo")).toEqual(["admin", "ben", "owner"]);
@@ -125,6 +124,7 @@ describe("turnProviderAppOn", () => {
 
     const again = await on("dataforseo", BEN, NOW + 5);
     expect(again.plan.kind).toBe("existing");
+    expect(again.was).toBe("existing");
     expect(again.actorGranted).toBe(true);
     expect(again.plan.app.id).toBe(plan.app.id);
     expect(grantees("dataforseo")).toEqual(["ben"]);
@@ -154,8 +154,19 @@ describe("turnProviderAppOn", () => {
   });
 });
 
-describe("turnProviderAppOff", () => {
-  it("leaves a tombstone with nothing of its access, and says when it was off already", async () => {
+/** `mcp off` on the built-in's row, as the command runs it. */
+async function off(id = "dataforseo", now = NOW) {
+  const ref = await resolveMcpApp(db(), id);
+  return ref.app ? setMcpAppStatus(db(), ref.app, "disabled", now) : { changed: false };
+}
+
+/** `mcp remove` on the built-in's row, as the command runs it. */
+async function remove(id = "dataforseo", now = NOW) {
+  return removeMcpApp(db(), (await resolveMcpApp(db(), id)).app, now);
+}
+
+describe("off and on again", () => {
+  it("stops serving with everything kept, and on serves it again with the same access", async () => {
     const { organization, plan } = await on();
     addUser("ben", { organization: organization.id });
     sqlite.sqlite
@@ -164,21 +175,38 @@ describe("turnProviderAppOff", () => {
       )
       .run(plan.app.id, organization.id);
 
-    expect(await turnProviderAppOff(db(), "dataforseo", NOW + 1)).toMatchObject({
-      id: "dataforseo",
-      wasOn: true,
-    });
+    expect(await off("dataforseo", NOW + 1)).toEqual({ changed: true });
+    expect(row("dataforseo")).toMatchObject({ status: "disabled", tier: "provider" });
+    expect(grantees("dataforseo")).toEqual(["ben"]);
+    expect(await off("dataforseo", NOW + 2)).toEqual({ changed: false });
+
+    const back = await on("dataforseo", BEN, NOW + 3);
+    expect(back.plan.kind).toBe("existing");
+    expect(back.was).toBe("off");
+    expect(back.plan.app.id).toBe(plan.app.id);
+    expect(row("dataforseo")).toMatchObject({ status: "active" });
+    expect(grantees("dataforseo")).toEqual(["ben"]);
+  });
+});
+
+describe("remove", () => {
+  it("leaves a tombstone with nothing of its access, and says when it was removed already", async () => {
+    const { organization, plan } = await on();
+    addUser("ben", { organization: organization.id });
+    sqlite.sqlite
+      .prepare(
+        "INSERT INTO user_app_access (id, user_id, app_row_id, organization_id) VALUES ('g1', 'ben', ?, ?)",
+      )
+      .run(plan.app.id, organization.id);
+
+    expect(await remove("dataforseo", NOW + 1)).toEqual({ removed: true });
     expect(row("dataforseo")).toMatchObject({ status: "deleted", tier: "provider" });
     expect(grantees("dataforseo")).toEqual([]);
-    expect(await turnProviderAppOff(db(), "dataforseo", NOW + 2)).toMatchObject({ wasOn: false });
+    expect(await remove("dataforseo", NOW + 2)).toEqual({ removed: false });
   });
 
   it("never touches a deployed app's row, and is a no-op before any organization exists", async () => {
-    expect(await turnProviderAppOff(db(), "dataforseo")).toEqual({
-      id: "dataforseo",
-      wasOn: false,
-      organization: null,
-    });
+    expect(await remove()).toEqual({ removed: false });
     await register(db(), {
       appSlug: "dataforseo",
       name: "dataforseo",
@@ -188,25 +216,21 @@ describe("turnProviderAppOff", () => {
       deployer: BEN,
       organizationName: "Acme",
     });
-    expect(await turnProviderAppOff(db(), "dataforseo")).toMatchObject({ wasOn: false });
+    expect(await remove()).toEqual({ removed: false });
     expect(row("dataforseo")).toMatchObject({ status: "pending" });
   });
 });
 
-describe("listProviderApps", () => {
-  it("lists every MCP app the Gateway offers with whether it is on", async () => {
-    expect(await listProviderApps(db())).toEqual([
-      {
-        id: "dataforseo",
-        name: "DataForSEO",
-        description: expect.stringContaining("SEO data"),
-        keySetting: "DATAFORSEO_API_KEY",
-        on: false,
-      },
+describe("listMcpApps", () => {
+  it("lists every built-in MCP app with its row, if it has one", async () => {
+    expect(await listMcpApps(db())).toEqual([
+      expect.objectContaining({ id: "dataforseo", name: "DataForSEO", kind: "builtin", app: null, keyName: "DATAFORSEO_API_KEY" }),
     ]);
     await on();
-    expect((await listProviderApps(db()))[0]).toMatchObject({ on: true });
-    await turnProviderAppOff(db(), "dataforseo");
-    expect((await listProviderApps(db()))[0]).toMatchObject({ on: false });
+    expect((await listMcpApps(db()))[0]!.app).toMatchObject({ status: "active" });
+    await off();
+    expect((await listMcpApps(db()))[0]!.app).toMatchObject({ status: "disabled" });
+    await remove();
+    expect((await listMcpApps(db()))[0]!.app).toBeNull();
   });
 });
