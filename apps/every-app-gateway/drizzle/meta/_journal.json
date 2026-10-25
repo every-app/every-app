@@ -99,6 +99,13 @@
       "when": 1792906701853,
       "tag": "0015_audit_actor",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1792908011716,
+      "tag": "0016_oauth_providers",
+      "breakpoints": true
     }
   ]
 }

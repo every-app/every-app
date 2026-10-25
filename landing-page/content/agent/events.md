@@ -461,12 +461,16 @@ From `everyapp signin add` and `signin remove` ([/docs/agent/secrets](/docs/agen
 
 ### Providers
 
-| Type               | v   | Summary                 | `data`                       |
-| ------------------ | --- | ----------------------- | ---------------------------- |
-| `provider.added`   | 1   | "Resend was registered" | `{ provider: { id, name } }` |
-| `provider.removed` | 1   | "Resend was removed"    | `{ provider: { id, name } }` |
+| Type                          | v   | Summary                                                              | `data`                                                                          |
+| ----------------------------- | --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `provider.added`              | 1   | "Resend was registered"                                              | `{ provider: { id, name, kind? } }`                                             |
+| `provider.removed`            | 1   | "Resend was removed"                                                 | `{ provider: { id, name, kind? } }`                                             |
+| `provider.updated`            | 1   | "GitHub's OAuth client was replaced"                                 | `{ provider, change: "spec" \| "client" }`                                      |
+| `provider.connected`          | 1   | "ben@example.com connected GitHub"                                   | `{ provider, account: { kind, user?, label? }, scopeSets: [...], reconnected }` |
+| `provider.disconnected`       | 1   | "ben@example.com's GitHub account was disconnected"                  | `{ provider, account, revoked }`                                                |
+| `provider.connection_expired` | 1   | "ben@example.com's GitHub connection expired and needs reconnecting" | `{ provider, account }`, deduped per connection until it is connected again     |
 
-Reserved for the provider registry ([providers](/docs/agent/providers)): `everyapp provider add` and `provider remove` carry the place for them in their D1 batch, and nothing emits them yet.
+`provider.kind` is `api_key` or `oauth`. `account.kind` is `user` (with `user: { id, email?, name? }`) or `organization` (the workspace's own account, the one background work uses); `label` is how the provider names the account ("ben" at GitHub). `scopeSets` lists the scope set names the connection was asked for, never a token or a scope string. `provider.added` and `provider.removed` are emitted by `everyapp provider add` and `provider remove` (in their D1 batch) and by the provider tools; the OAuth ones by the Gateway-owned flow ([providers](/docs/agent/providers); the design is docs/design/2026-10-oauth-providers.md).
 
 ### Test
 

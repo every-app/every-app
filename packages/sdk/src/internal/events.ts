@@ -93,8 +93,28 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("mcp_app", "mcp_app.removed", "An MCP app was removed"),
   entry("mcp_app", "mcp_app.enabled", "An MCP app is being served again"),
   entry("mcp_app", "mcp_app.disabled", "An MCP app stopped being served"),
-  entry("provider", "provider.added", "An API provider was registered"),
-  entry("provider", "provider.removed", "An API provider was removed"),
+  entry("provider", "provider.added", "A provider was registered"),
+  entry("provider", "provider.removed", "A provider was removed"),
+  entry(
+    "provider",
+    "provider.updated",
+    "A provider's spec or OAuth client was replaced",
+  ),
+  entry(
+    "provider",
+    "provider.connected",
+    "Someone connected an account at an OAuth provider",
+  ),
+  entry(
+    "provider",
+    "provider.disconnected",
+    "An OAuth provider account was disconnected",
+  ),
+  entry(
+    "provider",
+    "provider.connection_expired",
+    "An OAuth provider refused to refresh a connection; it needs reconnecting",
+  ),
   entry("ping", "ping", "A test event, sent to one subscription on request"),
 ];
 

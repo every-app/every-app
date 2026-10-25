@@ -1279,6 +1279,29 @@ describe("the event bus (SQLite)", () => {
       "provider.removed": catalogue.providerRemoved({
         provider: { id: "p", name: "P" },
       }),
+      "provider.updated": catalogue.providerUpdated({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        change: "client",
+      }),
+      "provider.connected": catalogue.providerConnected({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        account: {
+          kind: "user",
+          user: { id: "u2", email: "jo@acme.example" },
+          label: "jo",
+        },
+        scopeSets: ["identity", "repo.read"],
+      }),
+      "provider.disconnected": catalogue.providerDisconnected({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        account: { kind: "organization", label: "acme" },
+        revoked: true,
+      }),
+      "provider.connection_expired": catalogue.providerConnectionExpired({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        account: { kind: "user", user: { id: "u2", email: "jo@acme.example" } },
+        connectionId: "conn_1",
+      }),
       ping: catalogue.ping({ subscription: { id: "sub_x", name: "Slack" } }),
     };
 
@@ -1386,6 +1409,21 @@ describe("the event bus (SQLite)", () => {
         "Google sign-in was removed",
       );
       expect(line("mcp_app.added")).toBe("CRM was added as an MCP app");
+      expect(line("provider.updated")).toBe(
+        "GitHub's OAuth client was replaced",
+      );
+      expect(line("provider.connected")).toBe(
+        "jo@acme.example connected GitHub",
+      );
+      expect(line("provider.disconnected")).toBe(
+        "The workspace's GitHub account was disconnected",
+      );
+      expect(line("provider.connection_expired")).toBe(
+        "jo@acme.example's GitHub connection expired and needs reconnecting",
+      );
+      expect(samples["provider.connection_expired"]!.dedupeKey).toBe(
+        "provider.connection_expired:conn_1",
+      );
       expect(line("ping")).toBe("Test event from Every App");
       expect(summarize("app.crm.invoice.paid", { total: 1 }, ada)).toBe(
         "crm: invoice.paid",

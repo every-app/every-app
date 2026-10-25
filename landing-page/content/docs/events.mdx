@@ -243,41 +243,45 @@ Deliveries are kept for 30 days.
 
 ## The events
 
-| Event                     | When                                                       |
-| ------------------------- | ---------------------------------------------------------- |
-| `member.invited`          | Someone was invited to the workspace                       |
-| `member.joined`           | Someone joined the workspace                               |
-| `member.role_changed`     | A member's role changed                                    |
-| `member.deactivated`      | A member was deactivated                                   |
-| `member.reactivated`      | A member was reactivated                                   |
-| `member.removed`          | A member was removed                                       |
-| `member.password_reset`   | A member reset their password                              |
-| `app.installed`           | An app was installed on the Gateway                        |
-| `app.updated`             | An app was redeployed                                      |
-| `app.removed`             | An app was removed from the Gateway                        |
-| `app.needs_setup`         | An app needs a setting before it opens                     |
-| `app.ready`               | An app has every setting it needs                          |
-| `app.paused_cap`          | An app is paused: its monthly cap is reached               |
-| `app.tools_changed`       | An app's AI tools changed                                  |
-| `cap.warning`             | An app is at 80% of its monthly cap                        |
-| `cap.reached`             | An app reached its monthly cap                             |
-| `cap.raised`              | An app's monthly cap was raised or removed                 |
-| `tool.blocked`            | An AI client's tool call was blocked                       |
-| `tool.error`              | An AI client's tool call failed                            |
-| `connection.created`      | An AI app was connected                                    |
-| `connection.revoked`      | An AI app connection was revoked                           |
-| `token.created`           | A personal access token was created                        |
-| `token.revoked`           | A personal access token was revoked                        |
-| `access.changed`          | Cloudflare Access was turned on or off                     |
-| `signin_provider.added`   | A sign-in provider (Continue with Google, …) was turned on |
-| `signin_provider.removed` | A sign-in provider was turned off                          |
-| `mcp_app.added`           | An MCP app was added                                       |
-| `mcp_app.removed`         | An MCP app was removed                                     |
-| `mcp_app.enabled`         | An MCP app is being served again                           |
-| `mcp_app.disabled`        | An MCP app stopped being served                            |
-| `provider.added`          | An API provider was registered                             |
-| `provider.removed`        | An API provider was removed                                |
-| `ping`                    | A test event, sent to one subscription on request          |
+| Event                         | When                                                       |
+| ----------------------------- | ---------------------------------------------------------- |
+| `member.invited`              | Someone was invited to the workspace                       |
+| `member.joined`               | Someone joined the workspace                               |
+| `member.role_changed`         | A member's role changed                                    |
+| `member.deactivated`          | A member was deactivated                                   |
+| `member.reactivated`          | A member was reactivated                                   |
+| `member.removed`              | A member was removed                                       |
+| `member.password_reset`       | A member reset their password                              |
+| `app.installed`               | An app was installed on the Gateway                        |
+| `app.updated`                 | An app was redeployed                                      |
+| `app.removed`                 | An app was removed from the Gateway                        |
+| `app.needs_setup`             | An app needs a setting before it opens                     |
+| `app.ready`                   | An app has every setting it needs                          |
+| `app.paused_cap`              | An app is paused: its monthly cap is reached               |
+| `app.tools_changed`           | An app's AI tools changed                                  |
+| `cap.warning`                 | An app is at 80% of its monthly cap                        |
+| `cap.reached`                 | An app reached its monthly cap                             |
+| `cap.raised`                  | An app's monthly cap was raised or removed                 |
+| `tool.blocked`                | An AI client's tool call was blocked                       |
+| `tool.error`                  | An AI client's tool call failed                            |
+| `connection.created`          | An AI app was connected                                    |
+| `connection.revoked`          | An AI app connection was revoked                           |
+| `token.created`               | A personal access token was created                        |
+| `token.revoked`               | A personal access token was revoked                        |
+| `access.changed`              | Cloudflare Access was turned on or off                     |
+| `signin_provider.added`       | A sign-in provider (Continue with Google, …) was turned on |
+| `signin_provider.removed`     | A sign-in provider was turned off                          |
+| `mcp_app.added`               | An MCP app was added                                       |
+| `mcp_app.removed`             | An MCP app was removed                                     |
+| `mcp_app.enabled`             | An MCP app is being served again                           |
+| `mcp_app.disabled`            | An MCP app stopped being served                            |
+| `provider.added`              | An API provider was registered                             |
+| `provider.removed`            | An API provider was removed                                |
+| `provider.updated`            | A provider's spec or OAuth client was replaced             |
+| `provider.connected`          | Someone connected an account at an OAuth provider          |
+| `provider.disconnected`       | An OAuth provider account was disconnected                 |
+| `provider.connection_expired` | An OAuth connection needs reconnecting                     |
+| `ping`                        | A test event, sent to one subscription on request          |
 
 Apps can send their own events too, named `app.<app id>.<name>`, like `app.crm.invoice.paid`. To get every event one app sends, subscribe to `app.crm.*`.
 

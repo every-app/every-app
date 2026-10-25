@@ -43,6 +43,25 @@ export interface EventApp {
   name: string;
 }
 
+/** The provider an event is about: its id, its name, and what kind it is. */
+interface EventProvider {
+  id: string;
+  name: string;
+  /** An API key the Gateway holds, or an OAuth client it runs the flow for. */
+  kind?: "api_key" | "oauth";
+}
+
+/** Whose account at a provider: a person's (with who) or the organization's. */
+interface EventProviderAccount {
+  kind: "user" | "organization";
+  /** The member whose account it is, for a person's. */
+  user?:
+    | { id: string; email?: string | null; name?: string | null }
+    | undefined;
+  /** How the provider names the account ("ben" at GitHub). */
+  label?: string | null | undefined;
+}
+
 /** What a builder returns: everything emit() stores, minus who and where. */
 export interface BuiltEvent {
   type: string;
@@ -78,6 +97,30 @@ function built(
 /** A user as `data` carries it: the three fields, nulls kept. */
 function user(member: EventUser): EventUser {
   return { id: member.id, email: member.email, name: member.name };
+}
+
+function provider(input: EventProvider): Data {
+  return {
+    id: input.id,
+    name: input.name,
+    ...(input.kind ? { kind: input.kind } : {}),
+  };
+}
+
+function account(input: EventProviderAccount): Data {
+  return {
+    kind: input.kind,
+    ...(input.user
+      ? {
+          user: {
+            id: input.user.id,
+            ...(input.user.email ? { email: input.user.email } : {}),
+            ...(input.user.name ? { name: input.user.name } : {}),
+          },
+        }
+      : {}),
+    ...(input.label ? { label: input.label } : {}),
+  };
 }
 
 function app(subject: EventApp): EventApp {
@@ -559,18 +602,69 @@ export const catalogue = {
     );
   },
 
-  providerAdded(input: { provider: { id: string; name: string } }): BuiltEvent {
-    return built("provider.added", {
-      provider: { id: input.provider.id, name: input.provider.name },
+  providerAdded(input: { provider: EventProvider }): BuiltEvent {
+    return built("provider.added", { provider: provider(input.provider) });
+  },
+
+  providerRemoved(input: { provider: EventProvider }): BuiltEvent {
+    return built("provider.removed", { provider: provider(input.provider) });
+  },
+
+  /** A provider's spec was replaced, or its OAuth client uploaded again. */
+  providerUpdated(input: {
+    provider: EventProvider;
+    /** What changed: the spec, or the client (never its value). */
+    change: "spec" | "client";
+  }): BuiltEvent {
+    return built("provider.updated", {
+      provider: provider(input.provider),
+      change: input.change,
     });
   },
 
-  providerRemoved(input: {
-    provider: { id: string; name: string };
+  /** Someone connected their account, or the organization's, at an OAuth provider. */
+  providerConnected(input: {
+    provider: EventProvider;
+    account: EventProviderAccount;
+    scopeSets: readonly string[];
+    /** True when the connection replaced an earlier one. */
+    reconnected?: boolean;
   }): BuiltEvent {
-    return built("provider.removed", {
-      provider: { id: input.provider.id, name: input.provider.name },
+    return built("provider.connected", {
+      provider: provider(input.provider),
+      account: account(input.account),
+      scopeSets: [...input.scopeSets],
+      reconnected: input.reconnected ?? false,
     });
+  },
+
+  providerDisconnected(input: {
+    provider: EventProvider;
+    account: EventProviderAccount;
+    /** Whether the Gateway revoked the grant at the provider too. */
+    revoked: boolean;
+  }): BuiltEvent {
+    return built("provider.disconnected", {
+      provider: provider(input.provider),
+      account: account(input.account),
+      revoked: input.revoked,
+    });
+  },
+
+  /** The provider refused a refresh; once per connection until it is connected again. */
+  providerConnectionExpired(input: {
+    provider: EventProvider;
+    account: EventProviderAccount;
+    connectionId: string;
+  }): BuiltEvent {
+    return built(
+      "provider.connection_expired",
+      {
+        provider: provider(input.provider),
+        account: account(input.account),
+      },
+      { dedupeKey: `provider.connection_expired:${input.connectionId}` },
+    );
   },
 
   ping(input: {
@@ -609,6 +703,17 @@ function obj(value: unknown): Data {
 
 function list(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+
+/** Whose provider account: the person named in it, "the workspace" for the organization's, else the actor. */
+function accountLabel(
+  value: unknown,
+  actor: EventActor | Data | null | undefined,
+): string {
+  const account = obj(value);
+  if (account.kind === "organization") return "The workspace";
+  const who = obj(account.user);
+  return str(who.email) ?? str(who.name) ?? actorLabel(actor);
 }
 
 /** A member as a summary names them: the address, else the name, else the id. */
@@ -744,6 +849,14 @@ export function summarize(
       return `${str(obj(d.provider).name) ?? "A provider"} was registered`;
     case "provider.removed":
       return `${str(obj(d.provider).name) ?? "A provider"} was removed`;
+    case "provider.updated":
+      return `${str(obj(d.provider).name) ?? "A provider"}'s ${str(d.change) === "client" ? "OAuth client" : "spec"} was replaced`;
+    case "provider.connected":
+      return `${accountLabel(d.account, actor)} connected ${str(obj(d.provider).name) ?? "a provider"}`;
+    case "provider.disconnected":
+      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected`;
+    case "provider.connection_expired":
+      return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} connection expired and needs reconnecting`;
     case "ping":
       return "Test event from Every App";
     default:
@@ -764,6 +877,7 @@ export function adminPathFor(type: string): string {
   if (type.startsWith("tool.")) return "/admin/activity";
   if (type.startsWith("token.")) return "/admin/tokens";
   if (type.startsWith("connection.")) return "/settings/connections";
+  if (type.startsWith("provider.")) return "/admin/providers";
   if (type.startsWith("app.") || type.startsWith("mcp_app.")) {
     return "/admin/apps";
   }

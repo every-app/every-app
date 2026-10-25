@@ -324,7 +324,7 @@
       "type": "json",
       "value": {
         "version": "0.2.0",
-        "sha256": "8b421898dab1af278ffa5af6feeae61303c7a41750125314f98836b9c7048709"
+        "sha256": "cfe4f59cb0ab0ca6b68f6d10720321a4b36d5984b33537c84450e69f41cdb87f"
       }
     },
     "APP_BASE_DOMAIN": {
@@ -620,7 +620,7 @@
       "type": "json",
       "value": {
         "version": "0.2.0",
-        "sha256": "8b421898dab1af278ffa5af6feeae61303c7a41750125314f98836b9c7048709"
+        "sha256": "cfe4f59cb0ab0ca6b68f6d10720321a4b36d5984b33537c84450e69f41cdb87f"
       }
     },
     "APP_BASE_DOMAIN": {
