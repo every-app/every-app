@@ -8,9 +8,10 @@ export const createCommand = buildCommand({
       kind: "tuple",
       parameters: [
         {
-          brief: "Lowercase letters, digits and dashes, e.g. my-app (asked for when missing)",
+          brief:
+            "An app name (lowercase letters, digits and dashes, e.g. my-app; asked for when missing), or the path of the folder to make, named after its last part (../my-app)",
           parse: String,
-          placeholder: "name",
+          placeholder: "name or path",
           optional: true,
         },
       ],
@@ -35,12 +36,16 @@ export const createCommand = buildCommand({
   docs: {
     brief: "Create a new app from the starter template",
     fullDescription: [
-      "Inside your Every App checkout the app goes in apps/<name>; anywhere else in ./<name>,",
-      "with its own git repository. Dependencies are installed and the local database is ready,",
-      "so `pnpm dev` works straight away. Then: cd into it and `pnpm run deploy`.",
+      "A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:",
+      "outside your Every App checkout it is its own git repository, linked to the checkout;",
+      "inside it only apps/<name> is allowed. A bare name goes in apps/<name> when run from",
+      "the checkout, in ./<name> anywhere else. Dependencies are installed and the local",
+      "database is ready, so `pnpm dev` works straight away. Then: cd into it and",
+      "`pnpm run deploy`.",
       "",
-      "Example:",
-      "  pnpm everyapp create analytics",
+      "Examples:",
+      "  pnpm everyapp create ../my-app    beside the checkout, its own repository",
+      "  pnpm everyapp create analytics    apps/analytics, from the checkout",
     ].join("\n"),
   },
 });

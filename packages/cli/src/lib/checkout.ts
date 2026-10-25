@@ -47,16 +47,18 @@ function packageDir(dir: string): string {
   return dir;
 }
 
+/** `file`'s real path (symlinks followed), or the path resolved when it doesn't exist yet. */
+export function realpathOr(file: string): string {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return path.resolve(file);
+  }
+}
+
 /** Whether `dir` is the checkout's root or somewhere inside it. */
 export function isInCheckout(dir: string, root: string = checkoutRoot()): boolean {
-  const real = (file: string) => {
-    try {
-      return fs.realpathSync(file);
-    } catch {
-      return path.resolve(file);
-    }
-  };
-  const relative = path.relative(real(root), real(dir));
+  const relative = path.relative(realpathOr(root), realpathOr(dir));
   return (
     relative === "" ||
     (relative !== ".." &&

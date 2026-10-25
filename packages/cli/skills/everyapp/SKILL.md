@@ -65,8 +65,10 @@ Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
          waiting for the owner link, so give it a long timeout or background
          it and keep reading; run data.rerun as given (a needsTerminal rerun
          goes to the person))
-New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
-         manifest is everyapp.config.ts
+New app: pnpm everyapp create ../<id> --json   (from the every-app folder: the
+         app is its own repository beside it, linked to the checkout; a bare
+         <id> makes apps/<id> inside the checkout instead) then cd into it and
+         edit src/; the manifest is everyapp.config.ts
 Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
          background and read the printed URL; no --json; --port when 8787 is
          taken; stop it with Ctrl-C/SIGINT to the everyapp process, never a

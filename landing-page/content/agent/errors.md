@@ -127,9 +127,17 @@ Source: `packages/cli/src/lib/gateway/registry.ts` (`markDeployed`), `packages/c
 
 ### APP_DIR_EXISTS
 
-`create <name>` found the directory the new app would go in already there: `apps/<name>` inside the Every App checkout, `./<name>` anywhere else. Headline: `<dir> already exists` (`./<name>` for a directory under the current one, a relative path otherwise).
+`create <name or path>` found the directory the new app would go in already there: `apps/<name>` inside the Every App checkout, `./<name>` anywhere else, or the directory a path named. Headline: `<dir> already exists` (`./<name>` for a directory under the current one, a relative path otherwise, the whole path when it was given absolute or from `~`).
 
 **Fix:** `fix`: `pick another name, or move <dir> away`. No rerun; not retryable.
+
+Source: `packages/cli/src/commands/create/index.ts`.
+
+### APP_DIR_IN_CHECKOUT
+
+`create <path>` was given a path that resolves inside the Every App checkout but not directly in its `apps/` folder (`placeOf` in `packages/cli/src/lib/app/starter.ts`): `./my-app` from the checkout's root, `../my-app` from `packages/cli`, `apps/` itself. Headline: `<dir> is inside your Every App checkout but not in its apps/ folder`, then `An app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.` Nothing is created. A bare name never raises it: from inside the checkout it goes in `apps/<name>` wherever it is run.
+
+**Fix:** `fix`: `use <apps/name> (inside the checkout) or <../name> (beside it)`, both said from the current directory (whole when the path was given absolute or from `~`). No rerun; not retryable.
 
 Source: `packages/cli/src/commands/create/index.ts`.
 
@@ -631,7 +639,7 @@ Source: `packages/cli/src/lib/gateway/patchBuildOutput.ts`, `packages/cli/src/li
 
 ### INVALID_APP_ID
 
-`everyapp create <name>`: the name given isn't a valid app id (without a name, the prompt validates inline instead). Rules: at most 64 characters; no `--` (it separates a Worker's name from its resources' names); `^[a-z]([a-z0-9-]*[a-z0-9])?$`; not reserved (`everyapp`, which prefixes the Gateway's own MCP tools, or a name whose Worker name is the Gateway's `every-app-gateway`: `workerNameFor()` prefixes `every-` unless the name already starts with it, so `app-gateway` and `every-app-gateway` are both reserved). Headline `"<name>" isn't a valid app name`, or `"<name>" is reserved for the platform`.
+`everyapp create <name or path>`: the name given isn't a valid app id (without a name, the prompt validates inline instead). A path (`../My_App`) is named after its last part, checked the same way; the message then has a second line, `An app is named after the last part of its path, <path as given>.` Rules: at most 64 characters; no `--` (it separates a Worker's name from its resources' names); `^[a-z]([a-z0-9-]*[a-z0-9])?$`; not reserved (`everyapp`, which prefixes the Gateway's own MCP tools, or a name whose Worker name is the Gateway's `every-app-gateway`: `workerNameFor()` prefixes `every-` unless the name already starts with it, so `app-gateway` and `every-app-gateway` are both reserved). Headline `"<name>" isn't a valid app name`, or `"<name>" is reserved for the platform`.
 
 **Fix:** `data.fix` names the rule: `use 64 characters or fewer`; `don't put two dashes in a row, e.g. <name with each dash run collapsed>`; `use lowercase letters, digits and dashes, e.g. <slug>` when a slug can be made, else `use lowercase letters, digits and dashes, starting with a letter`; `pick another name` for a reserved one. No rerun, not retryable.
 

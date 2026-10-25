@@ -2,7 +2,8 @@
  * The starter app, `starter/` in the checkout this CLI runs
  * from, and where `everyapp create` puts a copy of it: apps/<id> in the
  * checkout, as a workspace package, when it runs inside the checkout;
- * ./<id> in the current directory anywhere else.
+ * ./<id> in the current directory anywhere else; or the directory a path
+ * argument names, which is one of those two places or is refused.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -11,7 +12,7 @@ import {
   updatePackageJson,
   updateReadme,
 } from "@/commands/create/steps/updateConfiguration";
-import { isInCheckout } from "@/lib/checkout";
+import { isInCheckout, realpathOr } from "@/lib/checkout";
 import { copyDirectory } from "@/lib/file-operations";
 
 /** Never copied into a new app: local state, build output, installs. */
@@ -38,7 +39,7 @@ export function starterTemplateDir(root: string): string {
   return path.join(root, "starter");
 }
 
-/** Where app create puts app `appId` when run from `cwd`. */
+/** Where app create puts app `appId` when run from `cwd` with a bare name. */
 export function newAppDir({
   appId,
   cwd,
@@ -51,6 +52,17 @@ export function newAppDir({
   return isInCheckout(cwd, root)
     ? path.join(root, "apps", appId)
     : path.join(cwd, appId);
+}
+
+/**
+ * Where `dir` stands to the checkout at `root`: outside it (an app there is
+ * its own repository), directly in its apps/ (where an app inside the
+ * checkout belongs), or somewhere else inside it (refused by create).
+ */
+export function placeOf(dir: string, root: string): "outside" | "apps" | "inside" {
+  if (!isInCheckout(dir, root)) return "outside";
+  const parent = realpathOr(path.dirname(dir));
+  return parent === realpathOr(path.join(root, "apps")) ? "apps" : "inside";
 }
 
 /**

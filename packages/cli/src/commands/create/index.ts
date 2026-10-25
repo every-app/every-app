@@ -1,10 +1,13 @@
 /**
- * `everyapp create [name]`: a new app from the starter template, ready
- * for `everyapp dev`, without contacting the Gateway.
+ * `everyapp create [name or path]`: a new app from the starter template,
+ * ready for `everyapp dev`, without contacting the Gateway.
  *
- * 1. Copy `starter/` from this checkout: to apps/<name> inside
- *    the checkout, or ./<name> anywhere else (lib/app/starter.ts), named
- *    after the app in package.json, everyapp.config.ts and README.md.
+ * 1. Copy `starter/` from this checkout: a bare name goes to apps/<name>
+ *    inside the checkout, or ./<name> anywhere else (lib/app/starter.ts);
+ *    a path (../my-app, ~/apps/my-app, /srv/my-app) goes where it says,
+ *    named after its last part, as long as that is outside the checkout
+ *    or in its apps/ (steps/appId.ts). The copy is named after the app in
+ *    package.json, everyapp.config.ts and README.md.
  * 2. Put the everyapp skill where coding agents look (lib/app/skill.ts).
  * 3. Install its dependencies; when that fails, the app is there and only
  *    the install is left, so the error says to finish it in place.
@@ -18,7 +21,7 @@
 import path from "node:path";
 import { applyLocalMigrations } from "@/lib/app/localD1";
 import { linkSkill } from "@/lib/app/skill";
-import { copyStarter, newAppDir } from "@/lib/app/starter";
+import { copyStarter, newAppDir, placeOf } from "@/lib/app/starter";
 import { generateWorkerTypes } from "@/lib/app/workerTypes";
 import { checkoutRoot, isInCheckout } from "@/lib/checkout";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
@@ -32,7 +35,7 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { strings, text } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
-import { resolveAppId } from "./steps/appId";
+import { resolveAppTarget } from "./steps/appId";
 
 interface CreateCommandFlags {
   yes?: boolean;
@@ -57,6 +60,8 @@ interface CreateAppOptions {
   /** Seams for tests. */
   install?: typeof installDependencies;
   git?: typeof initRepository;
+  /** What `~` in a path argument means. */
+  home?: string;
 }
 
 export async function createApp({
@@ -68,6 +73,7 @@ export async function createApp({
   cf = createCfRunner(),
   install = installDependencies,
   git = initRepository,
+  home,
 }: CreateAppOptions): Promise<void> {
   const verbose = flags.verbose ?? false;
 
@@ -79,14 +85,30 @@ export async function createApp({
     );
   }
   // Questions only for a person at the terminal, never under --yes or --json.
-  const appId = await resolveAppId(appIdArg, {
+  const target = await resolveAppTarget(appIdArg, {
     interactive: !flags.yes && canPromptInTerminal(flags.json ?? false),
     yes: flags.yes ?? false,
+    cwd,
+    ...(home === undefined ? {} : { home }),
   });
-  const targetDir = newAppDir({ appId, cwd, root });
-  // `cd` takes it as is; messages say ./ for a directory under this one.
+  const { appId } = target;
+  const targetDir = target.dir ?? newAppDir({ appId, cwd, root });
+  // `cd` takes it as is: relative to here, or whole when the path was given
+  // so; messages say ./ for a directory under this one.
   const relative = path.relative(cwd, targetDir);
-  const shown = relative.startsWith("..") ? relative : `./${relative}`;
+  const cdTo = target.absolute ? targetDir : relative;
+  const shown = target.absolute || relative.startsWith("..") ? cdTo : `./${relative}`;
+  if (target.dir !== null && placeOf(target.dir, root) === "inside") {
+    // The two places it can go, said the way the path was given.
+    const said = (dir: string) => (target.absolute ? dir : path.relative(cwd, dir));
+    throw new EveryAppError(
+      "APP_DIR_IN_CHECKOUT",
+      `${shown} is inside your Every App checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.`,
+      {
+        fix: `use ${said(path.join(root, "apps", appId))} (inside the checkout) or ${said(path.join(path.dirname(root), appId))} (beside it)`,
+      },
+    );
+  }
   if (await directoryExists(targetDir)) {
     throw new EveryAppError("APP_DIR_EXISTS", `${shown} already exists`, {
       fix: `pick another name, or move ${shown} away`,
@@ -98,8 +120,9 @@ export async function createApp({
     step: "create.copy",
     status: "start",
     message: "Copying the starter template",
-    // Run in the checkout away from its root, the app isn't where they are.
-    data: { appId, shown, elsewhere: relative.startsWith("..") },
+    // A bare name, run in the checkout away from its root: the app isn't
+    // where they are.
+    data: { appId, shown, elsewhere: target.dir === null && relative.startsWith("..") },
   });
   await copyStarter({ root, targetDir, appId });
   out.emit({
@@ -122,7 +145,7 @@ export async function createApp({
     try {
       await install({ cwd: targetDir, description: "Installing dependencies", verbose });
     } catch (error) {
-      throw installFailed(error, { shown, relative });
+      throw installFailed(error, { shown, cdTo });
     }
   });
 
@@ -195,7 +218,7 @@ export async function createApp({
   // The app's own scripts, as the docs and its AGENTS.md say them: `pnpm
   // dev` and `pnpm run deploy` work in its directory wherever it was made.
   const next = [
-    { command: `cd ${relative}` },
+    { command: `cd ${cdTo}` },
     { command: "pnpm dev", note: "run it locally" },
     { command: "pnpm run deploy", note: "put it live" },
   ];
@@ -232,7 +255,7 @@ const TAIL_LINES = 5;
  * A failed install, said for a new app: it exists, only the install is
  * left, so the way on is to finish it there, not to create it again.
  */
-function installFailed(error: unknown, { shown, relative }: { shown: string; relative: string }): unknown {
+function installFailed(error: unknown, { shown, cdTo }: { shown: string; cdTo: string }): unknown {
   if (!(error instanceof EveryAppError) || error.code !== "INSTALL_FAILED") return error;
   const data = error.data ?? {};
   const tail = strings(data["tail"]).slice(-TAIL_LINES);
@@ -245,6 +268,6 @@ function installFailed(error: unknown, { shown, relative }: { shown: string; rel
       `Full log: ${text(data["log"])}`,
       `${shown} is created; only the install is left.`,
     ].join("\n"),
-    { rerun: `cd ${relative} && pnpm install`, data },
+    { rerun: `cd ${cdTo} && pnpm install`, data },
   );
 }

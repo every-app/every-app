@@ -11,13 +11,13 @@ Run these from your `every-app` folder.
 ### Create it
 
 ```bash
-pnpm everyapp create my-app
-cd apps/my-app
+pnpm everyapp create ../my-app
+cd ../my-app
 ```
 
-This copies the starter app, a simple todo list, into `apps/my-app`. Each person sees only their own todos. What an app shares between people is up to the app (the Gateway only decides who can open it), so ask your agent for sharing, as the example below does.
+This copies the starter app, a simple todo list, into a `my-app` folder beside `every-app`, as a git repository of its own. It links to your `every-app` folder, so keep the two side by side. Each person sees only their own todos. What an app shares between people is up to the app (the Gateway only decides who can open it), so ask your agent for sharing, as the example below does.
 
-`apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from any folder outside `every-app`: it goes in `./my-app` with its own git repository, linked to your `every-app` folder, so don't move either one.
+Making many apps? `pnpm everyapp create my-app` keeps them inside `every-app` instead, in `apps/my-app`: git there neither tracks nor ignores them, and `git pull` leaves them alone.
 
 The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes, starting with a letter and ending with a letter or number.
 
@@ -26,7 +26,7 @@ The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use l
 
 ### Tell your agent what you want
 
-Open the `apps/my-app` folder in your coding agent and describe the app. A few sentences is enough:
+Open the `my-app` folder in your coding agent and describe the app. A few sentences is enough:
 
 ```text
 Turn this into a shared todo list for my household. I want separate lists

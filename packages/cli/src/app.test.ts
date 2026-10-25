@@ -66,7 +66,7 @@ describe("argument problems", () => {
     expect((await parse("create", "a", "b")).problems[0]).toEqual({
       code: "TOO_MANY_ARGUMENTS",
       message: 'create takes one argument, but got another: "b"',
-      data: { usage: "pnpm everyapp create [<name>] [flags]" },
+      data: { usage: "pnpm everyapp create [<name or path>] [flags]" },
     });
     expect((await parse("deploy", "https://github.com/acme/todo")).problems[0]).toEqual({
       code: "TOO_MANY_ARGUMENTS",

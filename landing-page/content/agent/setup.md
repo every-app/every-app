@@ -156,18 +156,20 @@ Handoffs and stops:
 ### Create
 
 ```bash
-pnpm everyapp create <name> --json
+pnpm everyapp create ../<name> --json
 ```
 
 From `packages/cli/src/commands/create/index.ts`, `command.ts` and `steps/appId.ts`:
 
-- The name becomes the app id and part of its address, `<name>.<app base domain>`. Rules: `^[a-z]([a-z0-9-]*[a-z0-9])?$`, 64 characters or fewer, no `--`, not reserved for the platform. A bad name is `error` `INVALID_APP_ID` with a `data.fix` that suggests a slug ("Analytics_App" becomes `analytics-app`). Under `--json` the name is required: `APP_ID_REQUIRED`.
-- Inside the checkout the app goes in `apps/<name>`; anywhere else in `./<name>` with its own git repository. Run from inside an app: `NESTED_APP`. The directory exists: `APP_DIR_EXISTS`.
+- The default: run it from the every-app folder with a path beside it, `../<name>`. The app is made there as its own git repository (one repository per app), linked to the checkout: its `package.json` takes the SDK and the CLI by `link:` path, so neither folder moves. For someone with many apps, a folder of apps inside the checkout also works: a bare `pnpm everyapp create <name>` from anywhere in the checkout makes `apps/<name>`, untracked by git, no repository of its own.
+- The argument is a path when it has a slash or starts with `.`, `~` or `/` (`isPathArgument` in `steps/appId.ts`): resolved from the current directory, `~` being the home directory, and its last part is the name. A path outside the checkout is the "anywhere else" rule above; `apps/<name>` inside it (or `../../apps/<name>` from `packages/cli`) is the inside rule; any other place inside the checkout is refused, `APP_DIR_IN_CHECKOUT`, with a `data.fix` naming the two places it can go. A bare name goes in `apps/<name>` inside the checkout and in `./<name>` anywhere else.
+- The name becomes the app id and part of its address, `<name>.<app base domain>`. Rules: `^[a-z]([a-z0-9-]*[a-z0-9])?$`, 64 characters or fewer, no `--`, not reserved for the platform. A bad name is `error` `INVALID_APP_ID` with a `data.fix` that suggests a slug ("Analytics_App" becomes `analytics-app`; for a path, its last part). Under `--json` the name is required: `APP_ID_REQUIRED`.
+- Run from inside an app: `NESTED_APP`. The directory exists: `APP_DIR_EXISTS`.
 - Steps: `create.copy` (the starter, `starter`), `create.skill` (the everyapp skill copied to `.claude/skills/everyapp` and `.agents/skills/everyapp`, and `AGENTS.md` pointing at it: "Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md`"), `create.install` (a failure is `INSTALL_FAILED` with rerun `cd <dir> && pnpm install`: the app exists, only the install is left), `create.types` (warning `WORKER_TYPES_FAILED`; `pnpm dev` tries again), `migrations.local` (warning `MIGRATIONS_FAILED`), and outside the checkout `create.git` (warning `GIT_FAILED`).
-- `done.data`: `appId`, `dir`, `next` (`cd <dir>`, `pnpm dev` "run it locally", `pnpm run deploy` "put it live"; the app's `package.json` scripts `dev` and `deploy` run `everyapp dev` and `everyapp deploy`, `starter/package.json`). Nothing is deployed: the deploy is the next command, from the app's directory ([Deploy](#deploy)).
+- `done.data`: `appId`, `dir` (absolute), `next` (`cd <dir>` with the path to type from where create ran, `cd ../<name>` for the default and the whole path when it was given absolute or from `~`; `pnpm dev` "run it locally"; `pnpm run deploy` "put it live"; the app's `package.json` scripts `dev` and `deploy` run `everyapp dev` and `everyapp deploy`, `starter/package.json`). Nothing is deployed: the deploy is the next command, from the app's directory ([Deploy](#deploy)).
 - `--yes` asks nothing (a name is then required). `--verbose` streams the install and git output to stderr.
 
-Then work in the app's `src/`; the manifest is `everyapp.config.ts`. The Gateway handles sign-in: never add a login page.
+Then `cd` into it (the `next` line) and work in its `src/`; the manifest is `everyapp.config.ts`; `pnpm dev` runs it ([Run locally](#run-locally)). The Gateway handles sign-in: never add a login page.
 
 ### Run locally
 

@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import {
   GATEWAY_WORKER_NAME,
   isReservedAppId,
@@ -53,18 +55,67 @@ function slugify(input: string): string | null {
   return slug && slug.length <= 64 && KEBAB_CASE.test(slug) ? slug : null;
 }
 
+/** Where the new app goes, and what it is called. */
+interface AppTarget {
+  appId: string;
+  /**
+   * The directory a path argument named, resolved; null for a bare name
+   * (then `newAppDir` in lib/app/starter.ts decides).
+   */
+  dir: string | null;
+  /**
+   * The path was given from the root or from `~`: messages show it whole,
+   * not relative to the current directory.
+   */
+  absolute: boolean;
+}
+
 /**
- * The new app's name (its id): the one given, once it is valid; otherwise
- * asked for, but only at a terminal (never under --json or --yes).
+ * Whether `given` names a directory rather than an app: it has a slash, or
+ * starts with `.`, `~` or `/`. A name has none of these.
  */
-export async function resolveAppId(
+export function isPathArgument(given: string): boolean {
+  return given.includes("/") || given.startsWith(".") || given.startsWith("~") || path.isAbsolute(given);
+}
+
+/** `given` as an absolute directory: `~` is the home directory, a relative path is from `cwd`. */
+export function resolvePathArgument(given: string, { cwd, home }: { cwd: string; home: string }): string {
+  if (given === "~" || given.startsWith("~/")) return path.resolve(home, given.slice(2));
+  return path.resolve(cwd, given);
+}
+
+/**
+ * The new app's name (its id) and, when a path was given, its directory.
+ * A bare name is checked as given; a path is resolved and its last part is
+ * the name, checked the same way. No argument: asked for, but only at a
+ * terminal (never under --json or --yes).
+ */
+export async function resolveAppTarget(
   given: string | undefined,
-  { interactive, yes }: { interactive: boolean; yes: boolean },
-): Promise<string> {
+  {
+    interactive,
+    yes,
+    cwd,
+    home = os.homedir(),
+  }: { interactive: boolean; yes: boolean; cwd: string; home?: string },
+): Promise<AppTarget> {
+  if (given !== undefined && isPathArgument(given)) {
+    const dir = resolvePathArgument(given, { cwd, home });
+    const appId = path.basename(dir);
+    const problem = nameProblem(appId);
+    if (problem) {
+      throw new EveryAppError(
+        "INVALID_APP_ID",
+        `${problem.headline}\nAn app is named after the last part of its path, ${given}.`,
+        { fix: problem.fix },
+      );
+    }
+    return { appId, dir, absolute: path.isAbsolute(given) || given.startsWith("~") };
+  }
   if (given !== undefined) {
     const problem = nameProblem(given);
     if (problem) throw new EveryAppError("INVALID_APP_ID", problem.headline, { fix: problem.fix });
-    return given;
+    return { appId: given, dir: null, absolute: false };
   }
   if (!interactive) {
     throw new EveryAppError(
@@ -73,7 +124,7 @@ export async function resolveAppId(
       { rerun: `${CLI} create <name>${yes ? " --yes" : ""}` },
     );
   }
-  return askText("App name", {
+  const appId = await askText("App name", {
     context: ["Lowercase letters, digits and dashes. It becomes part of the app's URL."],
     initial: DEFAULT_NAME,
     validate: (input) => {
@@ -84,4 +135,5 @@ export async function resolveAppId(
       return `Use lowercase letters, digits and dashes.${slug && !nameProblem(slug) ? ` Try ${slug}` : ""}`;
     },
   });
+  return { appId, dir: null, absolute: false };
 }

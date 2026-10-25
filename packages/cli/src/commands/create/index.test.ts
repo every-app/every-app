@@ -21,8 +21,8 @@ const tmp = () => {
 };
 
 /** A checkout with the real template and the workspace packages it links. */
-function fakeCheckout(): string {
-  const root = tmp();
+function fakeCheckout(root: string = tmp()): string {
+  fs.mkdirSync(root, { recursive: true });
   fs.cpSync(
     starterTemplateDir(checkoutRoot()),
     path.join(root, "starter"),
@@ -344,5 +344,125 @@ describe("everyapp create", () => {
       message: "./my-app already exists",
       fix: "pick another name, or move ./my-app away",
     });
+  });
+
+  it("makes the app beside the checkout from ../my-app, as its own repository linked to the checkout", async () => {
+    const outer = tmp();
+    const root = fakeCheckout(path.join(outer, "every-app"));
+    const { cf, install } = seams();
+
+    await createApp({ flags: { json: true }, appIdArg: "../my-app", out, cwd: root, root, cf, install });
+
+    const app = path.join(outer, "my-app");
+    expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(app, ".git"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "apps"))).toBe(false);
+    // Linked to the checkout by path, as an app made anywhere else is.
+    const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe("link:../every-app/packages/sdk");
+    expect(fs.existsSync(path.join(app, "pnpm-workspace.yaml"))).toBe(true);
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ cwd: app }));
+    // Said as the path was given: no note about apps/, and `cd ../my-app`.
+    expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
+      data: { appId: "my-app", shown: "../my-app", elsewhere: false },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      data: { appId: "my-app", dir: app, next: [{ command: "cd ../my-app" }, { command: "pnpm dev" }, { command: "pnpm run deploy" }] },
+    });
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+  });
+
+  it("takes an absolute path, or one from ~, and says it whole", async () => {
+    const root = fakeCheckout();
+    const cwd = tmp();
+    const { cf, install } = seams();
+
+    // A parent that isn't there yet is made.
+    const absolute = path.join(tmp(), "team", "my-app");
+    await createApp({ flags: { json: true }, appIdArg: absolute, out, cwd, root, cf, install });
+    expect(fs.existsSync(path.join(absolute, "everyapp.config.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(absolute, ".git"))).toBe(true);
+    expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
+      data: { shown: absolute, elsewhere: false },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      data: { appId: "my-app", dir: absolute, next: [{ command: `cd ${absolute}` }, { command: "pnpm dev" }, { command: "pnpm run deploy" }] },
+    });
+
+    events.length = 0;
+    const home = tmp();
+    await createApp({ flags: { json: true }, appIdArg: "~/apps/my-app", out, cwd, root, cf, install, home });
+    const fromHome = path.join(home, "apps", "my-app");
+    expect(fs.existsSync(path.join(fromHome, "everyapp.config.ts"))).toBe(true);
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      data: { appId: "my-app", dir: fromHome, next: [{ command: `cd ${fromHome}` }, { command: "pnpm dev" }, { command: "pnpm run deploy" }] },
+    });
+    expect(fs.readdirSync(cwd)).toEqual([]);
+  });
+
+  it("puts a path into the checkout's apps/ by the inside rule, from wherever it is said", async () => {
+    const root = fakeCheckout();
+    const { cf, install } = seams();
+    const app = path.join(root, "apps", "my-app");
+
+    await createApp({ flags: { json: true }, appIdArg: "apps/my-app", out, cwd: root, root, cf, install });
+    expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(app, ".git"))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).dependencies["@every-app/sdk"]).toBe(
+      "workspace:*",
+    );
+    expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
+      data: { shown: "./apps/my-app", elsewhere: false },
+    });
+    expect(events.at(-1)).toMatchObject({ type: "done", data: { dir: app, next: [{ command: "cd apps/my-app" }, {}, {}] } });
+    expect(events.flatMap((event) => (event["step"] === "create.git" ? [event] : []))).toEqual([]);
+
+    fs.rmSync(app, { recursive: true });
+    events.length = 0;
+    const from = path.join(root, "packages", "cli");
+    await createApp({ flags: { json: true }, appIdArg: "../../apps/my-app", out, cwd: from, root, cf, install });
+    expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
+    expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
+      data: { shown: "../../apps/my-app", elsewhere: false },
+    });
+    expect(events.at(-1)).toMatchObject({ type: "done", data: { dir: app, next: [{ command: "cd ../../apps/my-app" }, {}, {}] } });
+  });
+
+  it("refuses a path inside the checkout outside apps/, or whose last part isn't a name, before copying anything", async () => {
+    const outer = tmp();
+    const root = fakeCheckout(path.join(outer, "every-app"));
+    const { cf, install } = seams();
+    const run = (appIdArg: string, from = root) =>
+      createApp({ flags: { json: true }, appIdArg, out, cwd: from, root, cf, install });
+
+    await expect(run("./my-app")).rejects.toMatchObject({
+      code: "APP_DIR_IN_CHECKOUT",
+      message:
+        "./my-app is inside your Every App checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.",
+      fix: "use apps/my-app (inside the checkout) or ../my-app (beside it)",
+      rerun: undefined,
+    });
+    // From a directory of the checkout, ../my-app lands in the checkout: said from there.
+    await expect(run("../my-app", path.join(root, "packages", "cli"))).rejects.toMatchObject({
+      code: "APP_DIR_IN_CHECKOUT",
+      message: expect.stringMatching(/^\.\.\/my-app is inside your Every App checkout/),
+      fix: "use ../../apps/my-app (inside the checkout) or ../../../my-app (beside it)",
+    });
+    await expect(run(path.join(root, "tools", "my-app"), tmp())).rejects.toMatchObject({
+      code: "APP_DIR_IN_CHECKOUT",
+      fix: `use ${path.join(root, "apps", "my-app")} (inside the checkout) or ${path.join(outer, "my-app")} (beside it)`,
+    });
+    await expect(run("apps/")).rejects.toMatchObject({ code: "APP_DIR_IN_CHECKOUT" });
+    await expect(run("../My_App")).rejects.toMatchObject({
+      code: "INVALID_APP_ID",
+      message: '"My_App" isn\'t a valid app name\nAn app is named after the last part of its path, ../My_App.',
+      fix: "use lowercase letters, digits and dashes, e.g. my-app",
+    });
+    expect(fs.readdirSync(outer)).toEqual(["every-app"]);
+    expect(fs.readdirSync(root).sort()).toEqual(["packages", "starter"]);
+    expect(install).not.toHaveBeenCalled();
   });
 });

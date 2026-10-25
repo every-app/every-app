@@ -251,7 +251,7 @@ Create a new app from the starter template.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
-| `<name>` | no | Lowercase letters, digits and dashes, e.g. my-app (asked for when missing) |
+| `<name or path>` | no | An app name (lowercase letters, digits and dashes, e.g. my-app; asked for when missing), or the path of the folder to make, named after its last part (../my-app) |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -261,15 +261,19 @@ Create a new app from the starter template.
 
 ```text
 USAGE
-  pnpm everyapp create [--yes] [--json] [--verbose] [<name>]
+  pnpm everyapp create [--yes] [--json] [--verbose] [<name or path>]
   pnpm everyapp create --help
 
-Inside your Every App checkout the app goes in apps/<name>; anywhere else in ./<name>,
-with its own git repository. Dependencies are installed and the local database is ready,
-so `pnpm dev` works straight away. Then: cd into it and `pnpm run deploy`.
+A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:
+outside your Every App checkout it is its own git repository, linked to the checkout;
+inside it only apps/<name> is allowed. A bare name goes in apps/<name> when run from
+the checkout, in ./<name> anywhere else. Dependencies are installed and the local
+database is ready, so `pnpm dev` works straight away. Then: cd into it and
+`pnpm run deploy`.
 
-Example:
-  pnpm everyapp create analytics
+Examples:
+  pnpm everyapp create ../my-app    beside the checkout, its own repository
+  pnpm everyapp create analytics    apps/analytics, from the checkout
 
 FLAGS
   -y [--yes/--no-yes]          Don't ask anything (a name is then required)
@@ -279,7 +283,7 @@ FLAGS
       --                       All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
-  [name]  Lowercase letters, digits and dashes, e.g. my-app (asked for when missing)
+  [name or path]  An app name (lowercase letters, digits and dashes, e.g. my-app; asked for when missing), or the path of the folder to make, named after its last part (../my-app)
 ```
 
 ### `everyapp dev`
