@@ -10,6 +10,7 @@ import {
   registryWorkerNameFor,
   resourceNameFor,
   bucketNameFor,
+  analyticsDatasetFor,
   storeSecretNameFor,
   queueNameFor,
   isValidQueueName,
@@ -2398,5 +2399,102 @@ describe("AI Gateways (resources.aiGateway)", () => {
         resources: { aiGateway: [{ name: "AI_GATEWAY", guardrails: true }] },
       }).resources?.aiGateway,
     ).toEqual([{ name: "AI_GATEWAY" }]);
+  });
+});
+
+describe("Analytics Engine (resources.analyticsEngine)", () => {
+  const shop = {
+    id: "shop",
+    resources: {
+      d1: ["DB"],
+      analyticsEngine: [
+        { name: "EVENTS" },
+        { name: "AUDIT", dataset: "audit_log" },
+      ],
+    },
+  };
+
+  it("accepts datasets by binding, named or not, in both schemas", () => {
+    expect(validateManifestStrict(shop)).toEqual(shop);
+    expect(validateManifest(shop)).toEqual(shop);
+  });
+
+  it("names a dataset after the Worker unless the manifest names one", () => {
+    expect(analyticsDatasetFor("every-acme-shop", "EVENTS")).toBe(
+      "every-acme-shop--events",
+    );
+    expect(analyticsDatasetFor("every-acme-shop", "PAGE_VIEWS")).toBe(
+      "every-acme-shop--page-views",
+    );
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { analyticsEngine: [{ name: "page-views" }] } },
+      /resources\.analyticsEngine\.0\.name/,
+    ],
+    [
+      "a binding too long for the dataset named after the Worker",
+      { resources: { analyticsEngine: [{ name: "E".repeat(64) }] } },
+      /at most 63 characters, so the dataset named after the Worker fits Cloudflare's 128/,
+    ],
+    [
+      "a dataset with a character Cloudflare refuses",
+      { resources: { analyticsEngine: [{ name: "EVENTS", dataset: "a.b" }] } },
+      /dataset names are letters, digits, dashes and underscores, at most 128 characters/,
+    ],
+    [
+      "a dataset longer than Cloudflare's 128 characters",
+      {
+        resources: {
+          analyticsEngine: [{ name: "EVENTS", dataset: "d".repeat(129) }],
+        },
+      },
+      /at most 128 characters/,
+    ],
+    [
+      "an unknown key",
+      {
+        resources: { analyticsEngine: [{ name: "EVENTS", retention: 90 }] },
+      },
+      /Unrecognized key/,
+    ],
+    [
+      "a binding named like a KV namespace",
+      { resources: { kv: ["EVENTS"], analyticsEngine: [{ name: "EVENTS" }] } },
+      /the binding EVENTS is declared twice/,
+    ],
+    [
+      "a secret named like the binding",
+      {
+        resources: { analyticsEngine: [{ name: "EVENTS" }] },
+        secrets: ["EVENTS"],
+      },
+      /secrets: EVENTS is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...shop, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("stays tolerant of entries at registration", () => {
+    expect(
+      validateManifest({
+        id: "shop",
+        resources: { analyticsEngine: [{ name: "page-views", retention: 90 }] },
+      }).resources?.analyticsEngine,
+    ).toEqual([{ name: "page-views" }]);
+  });
+
+  it("is refused on the dispatch tier", () => {
+    expect(manifestTierProblems(shop, "dispatch")).toEqual([
+      "resources.analyticsEngine: Analytics Engine datasets aren't available to apps in a dispatch namespace (their names are account-wide and their writes bill the platform's account)",
+    ]);
+    expect(manifestTierProblems(shop, "service_binding")).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { analyticsEngine: [] } }, "dispatch"),
+    ).toEqual([]);
   });
 });

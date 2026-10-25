@@ -26,6 +26,7 @@ export {
   localD1Path,
   workflowNameFor,
   type AiBinding,
+  type AnalyticsEngineDatasetBinding,
   type BrowserBinding,
   type AiGatewayBinding,
   type D1Binding,

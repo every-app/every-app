@@ -81,6 +81,12 @@ interface SendEmailResource {
   readonly allowedDestinationAddresses?: readonly string[];
 }
 
+/** An Analytics Engine dataset, by binding, and its name when not the default. */
+interface AnalyticsEngineResource {
+  readonly name: string;
+  readonly dataset?: string;
+}
+
 /** Cloudflare's limits for one of the app's Workers. */
 interface WorkerLimits {
   readonly cpuMs?: number;
@@ -151,6 +157,12 @@ export interface EveryAppWorkerManifest {
      * {@link SecretsStoreSecretBinding}).
      */
     secretsStore?: readonly { readonly name: string }[];
+    /**
+     * Analytics Engine datasets every one of the app's Workers writes to, by
+     * binding: `dataset` as written, else `<app worker>--<binding>`.
+     * Nothing to create; `writeDataPoint()` does nothing in development.
+     */
+    analyticsEngine?: readonly AnalyticsEngineResource[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -358,6 +370,16 @@ export interface SecretsStoreSecretBinding {
   secretName: string;
 }
 /**
+ * An Analytics Engine dataset (`env.EVENTS.writeDataPoint({ blobs,
+ * doubles, indexes })`), which cf types as `AnalyticsEngineDataset`.
+ * Deployed, the dataset exists once written to. In development Miniflare
+ * accepts every write and keeps none. cf's shape takes no `dev` options.
+ */
+export interface AnalyticsEngineDatasetBinding {
+  type: "analytics-engine-dataset";
+  name: string;
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -426,6 +448,7 @@ export type EveryAppBinding =
   | AiGatewayBinding
   | SendEmailBinding
   | SecretsStoreSecretBinding
+  | AnalyticsEngineDatasetBinding
   | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
@@ -475,6 +498,13 @@ type AiGatewayNames<M> = M extends {
   resources: { aiGateway: readonly (infer G)[] };
 }
   ? G extends { name: infer N extends string }
+    ? N
+    : never
+  : never;
+type AnalyticsEngineNames<M> = M extends {
+  resources: { analyticsEngine: readonly (infer A)[] };
+}
+  ? A extends { name: infer N extends string }
     ? N
     : never
   : never;
@@ -707,6 +737,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in SendEmailNames<M>]: SendEmailBinding;
 } & {
   [B in SecretsStoreNames<M>]: SecretsStoreSecretBinding;
+} & {
+  [B in AnalyticsEngineNames<M>]: AnalyticsEngineDatasetBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -1073,6 +1105,7 @@ export function everyAppWorker<
   addAiGatewayBindings(env, manifest, name, deploy);
   addSendEmailBindings(env, manifest);
   addSecretsStoreBindings(env, manifest, name, deploy);
+  addAnalyticsEngineBindings(env, manifest, name);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -1171,6 +1204,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
+ * binds the app's  and Analytics Engine datasets, the classes it defines, and
  * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI,
  * Browser Rendering, Images, Vectorize indexes, AI Gateways, `send_email`
  * bindings and Secrets Store secrets, the classes it defines, and
@@ -1225,6 +1259,7 @@ export function everyAppAuxiliaryWorker<
   addImagesBindings(env, manifest);
   addAiGatewayBindings(env, manifest, appWorker, deploy);
   addSecretsStoreBindings(env, manifest, appWorker, deploy);
+  addAnalyticsEngineBindings(env, manifest, appWorker);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1661,6 +1696,31 @@ function addSecretsStoreBindings(
         secretName: suffixedName(appWorker, binding),
       };
     }
+  }
+}
+
+/**
+ * The manifest's Analytics Engine datasets, which every one of the app's
+ * Workers writes to: the `dataset` an entry names, or
+ * `<app worker>--<binding>`. Deployed, the app's Worker name is the build's
+ * placeholder, which the install rewrites like every other; a named
+ * dataset holds none and stays as written.
+ */
+function addAnalyticsEngineBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+): void {
+  for (const entry of manifest.resources?.analyticsEngine ?? []) {
+    if (env[entry.name]) {
+      throw new Error(
+        `analyticsEngine: ${entry.name} reuses a binding name the Worker already has.`,
+      );
+    }
+    env[entry.name] = {
+      type: "analytics-engine-dataset",
+      name: entry.dataset ?? suffixedName(appWorker, entry.name),
+    };
   }
 }
 

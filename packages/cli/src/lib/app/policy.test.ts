@@ -865,3 +865,124 @@ describe("with resources.images", () => {
     ]);
   });
 });
+
+describe("with resources.analyticsEngine", () => {
+  const DECLARED = [{ name: "EVENTS" }, { name: "AUDIT", dataset: "audit_log" }];
+  const WITH_DATASETS: InstallTarget = {
+    ...INPUTS,
+    declared: { analyticsEngine: DECLARED },
+  };
+
+  it("accepts the datasets everyAppWorker() builds once installed, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, analyticsEngine: DECLARED },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_DATASETS);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      // The install rewrote the placeholder Worker name in the default dataset.
+      expect(config["env"]["EVENTS"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: "every-acme-todo--events",
+      });
+      expect(config["env"]["AUDIT"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: "audit_log",
+      });
+    }
+    const inputs = { ...WITH_DATASETS, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    const undeclared = { ...inputs, declared: undefined };
+    expect(appPolicyProblems(app, undeclared)).toEqual([
+      "EVENTS is an Analytics Engine binding, which everyapp.config.ts doesn't declare; list it in resources.analyticsEngine",
+      "AUDIT is an Analytics Engine binding, which everyapp.config.ts doesn't declare; list it in resources.analyticsEngine",
+    ]);
+  });
+
+  it("checks the release build's datasets against the placeholder Worker name", async () => {
+    const config = await builtConfig();
+    const { entrypoint: _entrypoint, ...sentinelBuild } = everyAppWorker({
+      manifest: { id: "todo", resources: { analyticsEngine: [{ name: "EVENTS" }] } },
+      entrypoint: "./src/entry.worker.ts",
+      ctx: { mode: "production" },
+      root: appDir,
+    });
+    config["env"].EVENTS = (sentinelBuild["env"] as Record<string, unknown>)["EVENTS"];
+    expect(
+      appPolicyProblems(
+        { ...config, name: "every-hosted--sentinel" },
+        { ...INPUTS, workerName: "every-hosted--sentinel", declared: { analyticsEngine: [{ name: "EVENTS" }] } },
+      ).filter((problem) => problem.includes("EVENTS")),
+    ).toEqual([]);
+  });
+
+  it("refuses a dataset the manifest doesn't declare", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "analytics-engine-dataset", name: "every-acme-todo--extra" };
+    const problem =
+      "EXTRA is an Analytics Engine binding, which everyapp.config.ts doesn't declare; list it in resources.analyticsEngine";
+    expect(appPolicyProblems(config, INPUTS)).toEqual([problem]);
+    expect(appPolicyProblems(config, { ...INPUTS, declared: { analyticsEngine: [] } })).toEqual([problem]);
+  });
+
+  it("refuses one under a name resources.analyticsEngine doesn't list", async () => {
+    const config = await builtConfig();
+    config["env"].EVENTS = { type: "analytics-engine-dataset", name: "every-acme-todo--events" };
+    config["env"].MORE = { type: "analytics-engine-dataset", name: "every-acme-todo--more" };
+    expect(appPolicyProblems(config, WITH_DATASETS)).toEqual([
+      "MORE is an Analytics Engine binding, which isn't one of the app's in resources.analyticsEngine (EVENTS, AUDIT)",
+    ]);
+  });
+
+  it("refuses a named dataset that takes another app's name, and allows the app's own", async () => {
+    const config = await builtConfig();
+    config["env"].EVENTS = { type: "analytics-engine-dataset", name: "every-other-shop--events" };
+    expect(
+      appPolicyProblems(config, {
+        ...INPUTS,
+        declared: { analyticsEngine: [{ name: "EVENTS", dataset: "every-other-shop--events" }] },
+      }),
+    ).toEqual([
+      'EVENTS writes to dataset "every-other-shop--events", which is named like another app\'s; a dataset resources.analyticsEngine names starts with "every-" only as every-acme-todo--<name>',
+    ]);
+    config["env"].EVENTS = { type: "analytics-engine-dataset", name: "every-acme-todo--clicks" };
+    expect(
+      appPolicyProblems(config, {
+        ...INPUTS,
+        declared: { analyticsEngine: [{ name: "EVENTS", dataset: "every-acme-todo--clicks" }] },
+      }),
+    ).toEqual([]);
+  });
+
+  it("refuses a declared binding pointed at another dataset: another app's, or a name other than the declared one", async () => {
+    const config = await builtConfig();
+    config["env"].EVENTS = { type: "analytics-engine-dataset", name: "every-other-shop--events" };
+    config["env"].AUDIT = { type: "analytics-engine-dataset", name: "every-acme-todo--audit" };
+    expect(appPolicyProblems(config, WITH_DATASETS)).toEqual([
+      'EVENTS writes to dataset "every-other-shop--events", not "every-acme-todo--events", which resources.analyticsEngine declares',
+      'AUDIT writes to dataset "every-acme-todo--audit", not "audit_log", which resources.analyticsEngine declares',
+    ]);
+  });
+});

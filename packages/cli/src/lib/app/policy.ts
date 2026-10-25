@@ -20,6 +20,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  analyticsDatasetFor,
   GATEWAY_WORKER_NAME,
   RESOURCE_SEPARATOR,
   type Resources,
@@ -44,24 +45,27 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * The binding types an app may use. Everything else is refused until the
  * model covers it: most reach account-wide resources by id or name (a
  * dispatch namespace, private network, rate-limit counters, …), or
- * account-wide capabilities the gateway is meant to broker (email).
- * Buckets and Workflows are allowed only under the app's own names (buckets
- * only as the manifest's `resources.r2`, when it declares any), and
- * Hyperdrive configs, queues and Vectorize indexes only as the ones the
- * deploy provisioned. Workers AI is account-wide inference billed to the
- * account, outside the Gateway's budgets, caps and usage tap (its
- * `workers-ai` provider is the brokered path), and the deploy provisions
- * nothing to check it against: so only under a binding name the manifest
- * declares in `resources.ai`, never one cloudflare.config.ts adds on its
- * own. Browser Rendering is the same: account-wide browser time billed to
- * the account, so only under a name `resources.browser` declares. Images
- * the same, under `resources.images`: transformations bill the account.
- * `send-email` (Cloudflare's own email sending, beside the Gateway's email
- * capability, sending past its budgets and sender list) likewise, and only
- * with the addresses `resources.sendEmail` declares for it. A Secrets
- * Store secret holds a credential in the account's store: only the store
- * and secret the deploy provisioned for a binding `resources.secretsStore`
- * declares, under that binding's name.
+ * account-wide capabilities the gateway is meant to broker (email). Buckets
+ * and Workflows are allowed only under the app's own names (buckets only as
+ * the manifest's `resources.r2`, when it declares any), and Hyperdrive
+ * configs, queues and Vectorize indexes only as the ones the deploy
+ * provisioned. Workers AI is account-wide inference billed to the account,
+ * outside the Gateway's budgets, caps and usage tap (its `workers-ai`
+ * provider is the brokered path), and the deploy provisions nothing to check
+ * it against: so only under a binding name the manifest declares in
+ * `resources.ai`, never one cloudflare.config.ts adds on its own. Browser
+ * Rendering is the same: account-wide browser time billed to the account, so
+ * only under a name `resources.browser` declares. Images the same, under
+ * `resources.images`: transformations bill the account. `send-email`
+ * (Cloudflare's own email sending, beside the Gateway's email capability,
+ * sending past its budgets and sender list) likewise, and only with the
+ * addresses `resources.sendEmail` declares for it. A Secrets Store secret
+ * holds a credential in the account's store: only the store and secret the
+ * deploy provisioned for a binding `resources.secretsStore` declares, under
+ * that binding's name. An Analytics Engine dataset only under a binding
+ * `resources.analyticsEngine` declares, and only the dataset it declares
+ * (named after the Worker unless it names one, and never one named like
+ * another app's): a dataset's name is account-wide.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -83,6 +87,7 @@ const ALLOWED_BINDINGS = new Set([
   "images",
   "send-email",
   "secrets-store-secret",
+  "analytics-engine-dataset",
 ]);
 
 /**
@@ -334,6 +339,8 @@ function bindingProblems(
   const imagesBindings = declared?.images ?? [];
   // Secrets Store secrets only as the deploy provisioned them, by binding.
   const storeSecrets = resources.secretsStore ?? {};
+  // Analytics Engine only as resources.analyticsEngine declares it.
+  const datasets = declared?.analyticsEngine ?? [];
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -424,6 +431,34 @@ function bindingProblems(
         ) {
           problems.push(
             `${name} is Secrets Store secret "${String(binding["secretName"])}" in store "${String(binding["storeId"])}", which isn't the one the deploy provisioned for a binding in resources.secretsStore`,
+          );
+        }
+        break;
+      }
+      case "analytics-engine-dataset": {
+        const entry = datasets.find((dataset) => dataset.name === name);
+        if (!entry) {
+          problems.push(
+            datasets.length > 0
+              ? `${name} is an Analytics Engine binding, which isn't one of the app's in resources.analyticsEngine (${datasets.map((dataset) => dataset.name).join(", ")})`
+              : `${name} is an Analytics Engine binding, which everyapp.config.ts doesn't declare; list it in resources.analyticsEngine`,
+          );
+          break;
+        }
+        const expected = entry.dataset ?? analyticsDatasetFor(workerName, name);
+        const dataset = String(binding["name"] ?? "");
+        if (dataset !== expected) {
+          problems.push(
+            `${name} writes to dataset "${dataset}", not "${expected}", which resources.analyticsEngine declares`,
+          );
+        } else if (
+          dataset.startsWith("every-") &&
+          !isOwnResourceName(dataset, workerName)
+        ) {
+          // Every app's default dataset is `every-…`: a named one may not
+          // take another app's.
+          problems.push(
+            `${name} writes to dataset "${dataset}", which is named like another app's; a dataset resources.analyticsEngine names starts with "every-" only as ${workerName}${RESOURCE_SEPARATOR}<name>`,
           );
         }
         break;

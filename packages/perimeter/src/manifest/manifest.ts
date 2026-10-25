@@ -184,6 +184,19 @@ const SendEmailResourceSchema = z.object({
  */
 const SecretsStoreResourceSchema = z.object({ name: z.string() });
 
+/** Cloudflare's limit on an Analytics Engine dataset's name. */
+const MAX_DATASET_NAME_LENGTH = 128;
+
+/**
+ * An Analytics Engine dataset the app's Workers write to, by binding:
+ * `dataset` as written, or named after the app's Worker
+ * ({@link analyticsDatasetFor}).
+ */
+const AnalyticsEngineResourceSchema = z.object({
+  name: z.string(),
+  dataset: z.string().optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -235,6 +248,13 @@ export const ResourcesSchema = z
      * each a secret in the account's store, named `<worker>--<binding>`.
      */
     secretsStore: z.array(SecretsStoreResourceSchema).optional(),
+    /**
+     * Analytics Engine datasets, by binding, which every one of the app's
+     * Workers writes to: nothing to create (a dataset exists once written
+     * to), nothing to delete (Cloudflare has none; data expires after 90
+     * days).
+     */
+    analyticsEngine: z.array(AnalyticsEngineResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -1157,6 +1177,25 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   ai: z.array(BindingNameSchema).optional(),
   browser: z.array(BindingNameSchema).optional(),
   images: z.array(BindingNameSchema).optional(),
+  analyticsEngine: z
+    .array(
+      AnalyticsEngineResourceSchema.extend({
+        // A Worker name is at most 63 characters, so the default dataset,
+        // `<worker>--<binding>`, fits Cloudflare's 128 with one this long.
+        name: BindingNameSchema.max(
+          63,
+          `Analytics Engine binding names are at most 63 characters, so the dataset named after the Worker fits Cloudflare's ${MAX_DATASET_NAME_LENGTH}`,
+        ),
+        dataset: z
+          .string()
+          .regex(
+            new RegExp(`^[A-Za-z0-9_-]{1,${MAX_DATASET_NAME_LENGTH}}$`),
+            `dataset names are letters, digits, dashes and underscores, at most ${MAX_DATASET_NAME_LENGTH} characters (Cloudflare's rule)`,
+          )
+          .optional(),
+      }).strict(),
+    )
+    .optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -1515,6 +1554,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
     ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
+    ...(manifest.resources?.analyticsEngine ?? []).map((a) => a.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1548,6 +1588,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
     ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
+    ...(manifest.resources?.analyticsEngine ?? []).map((a) => a.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1564,11 +1605,13 @@ export function bindingNamesOf(
  * provider is the brokered path). Nor Browser Rendering: the browser time
  * bills the platform's account the same way, nor Images, whose
  * transformations do too. Nor Vectorize indexes: the hosted deployer makes
- * none. Nor AI Gateways yet. Nor a `send_email` binding: it would send
- * from the platform's account, past the Gateway's budgets and sender list.
- * Nor Secrets Store secrets: the store is the platform account's.
- * Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets of its own: a third-party Worker
- * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
+ * none. Nor AI Gateways yet. Nor a `send_email` binding: it would send from
+ * the platform's account, past the Gateway's budgets and sender list. Nor
+ * Secrets Store secrets: the store is the platform account's. Nor Analytics
+ * Engine: a dataset's name is account-wide, and its writes bill the account.
+ * Nor inbound mail: the platform's zones aren't an organization's to route.
+ * Nor secrets of its own: a third-party Worker gets GATEWAY_URL and
+ * EVERY_APP_ORG_ID only, and nothing sets another.
  */
 export function manifestTierProblems(
   manifest: Pick<Manifest, "resources" | "email" | "secrets">,
@@ -1625,6 +1668,11 @@ export function manifestTierProblems(
   if (manifest.resources?.secretsStore?.length) {
     problems.push(
       "resources.secretsStore: Secrets Store secrets aren't available to apps in a dispatch namespace (the store is the platform account's)",
+    );
+  }
+  if (manifest.resources?.analyticsEngine?.length) {
+    problems.push(
+      "resources.analyticsEngine: Analytics Engine datasets aren't available to apps in a dispatch namespace (their names are account-wide and their writes bill the platform's account)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
@@ -1814,6 +1862,20 @@ export function aiGatewayIdFor(workerName: string, binding: string): string {
  * (`every-acme-shop--stripe-key`), so the teardown's `every-` scan finds it.
  */
 export function storeSecretNameFor(
+  workerName: string,
+  binding: string,
+): string {
+  return suffixedName(workerName, binding);
+}
+
+/**
+ * The Analytics Engine dataset an app Worker's binding writes to when the
+ * manifest names none: the binding after {@link RESOURCE_SEPARATOR}, as
+ * every other account-wide name (`every-acme-shop--events`). SQL reads it
+ * double-quoted (`FROM "every-acme-shop--events"`): the API's parser takes
+ * an unquoted `-` as minus.
+ */
+export function analyticsDatasetFor(
   workerName: string,
   binding: string,
 ): string {

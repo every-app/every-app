@@ -20,6 +20,7 @@ import {
   resourceSentinel,
   sentinelDeployTarget,
   type AiBinding,
+  type AnalyticsEngineDatasetBinding,
   type BrowserBinding,
   type ImagesBinding,
   type D1Binding,
@@ -2495,5 +2496,104 @@ describe("Secrets Store secrets (resources.secretsStore)", () => {
       ),
     ).toEqual([]);
     expect(sentinelDeployTarget(manifest).resources.secretsStore).toEqual({});
+  });
+});
+
+describe("Analytics Engine (resources.analyticsEngine)", () => {
+  const shop = {
+    id: "shop",
+    resources: {
+      d1: ["DB"],
+      analyticsEngine: [
+        { name: "EVENTS" },
+        { name: "AUDIT", dataset: "audit_log" },
+      ],
+    },
+    workers: [{ name: "ingest", binding: "INGEST" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: shop,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _ingest, ...ingest } = everyAppAuxiliaryWorker({
+      manifest: shop,
+      worker: "ingest",
+      entrypoint: "/app/src/ingest.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, ingest };
+  };
+
+  it("binds each dataset on the app's Worker and every helper, named after the build's placeholder Worker unless the manifest names one", () => {
+    const { app, ingest } = build("production");
+    for (const env of [app.env, ingest.env] as Record<string, unknown>[]) {
+      expect(env["EVENTS"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: `${BUILD_SENTINEL.workerName}--events`,
+      });
+      expect(env["AUDIT"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: "audit_log",
+      });
+    }
+    // Nothing to provision: the install rewrites the Worker name in it.
+    expect(sentinelDeployTarget(shop).resources).not.toHaveProperty(
+      "analyticsEngine",
+    );
+  });
+
+  it("names the default dataset after the dev Worker in development, with no dev options", () => {
+    const { app, ingest } = build("development");
+    for (const env of [app.env, ingest.env] as Record<string, unknown>[]) {
+      expect(env["EVENTS"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: "every-shop--events",
+      });
+      expect(env["AUDIT"]).toEqual({
+        type: "analytics-engine-dataset",
+        name: "audit_log",
+      });
+    }
+  });
+
+  it("types each binding as a dataset, which cf turns into AnalyticsEngineDataset", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.EVENTS).toEqualTypeOf<AnalyticsEngineDatasetBinding>();
+    expectTypeOf(app.env.AUDIT).toEqualTypeOf<AnalyticsEngineDatasetBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "shop",
+          resources: { kv: ["EVENTS"], analyticsEngine: [{ name: "EVENTS" }] },
+        },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow(
+      "analyticsEngine: EVENTS reuses a binding name the Worker already has.",
+    );
+  });
+
+  it("leaves a manifest without resources.analyticsEngine with no dataset binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "analytics-engine-dataset",
+      ),
+    ).toEqual([]);
   });
 });

@@ -1490,6 +1490,24 @@ The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners
 - [ ] **A live run with a store:** loop-1 has none; once Ben makes one (Secrets Store → Create store on loop-1), run `EVERYAPP_LIVE_PROVISIONERS=1 pnpm -C packages/cli exec vitest run test/provisioners/secrets-store.live.test.ts`; it confirms the secret name rule, the duplicate-name error text and the token permission a deploy needs (Cloudflare documents **Account Secrets Store Edit** to bind a secret).
 - [ ] **The hosted deployer's manifest check** doesn't name `resources.secretsStore`; its bundle check refuses the binding type.
 
+### Provisioners: Analytics Engine (2026-10-25)
+
+`resources.analyticsEngine: [{ name: "EVENTS", dataset? }]` binds an Analytics Engine dataset on every Worker of an app, named `<worker>--<binding>` unless the entry names one: nothing created, recorded or purged; Cloudflare has no delete (data expires after 90 days) ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `analyticsEngine` row; `landing-page/content/agent/manifest.md`, "Analytics Engine").
+
+**Defaults to confirm**
+
+- [ ] **A named `dataset` is used as written,** any name Cloudflare accepts, except one named like another app's: the policy refuses a named dataset that starts with `every-` unless it is `<worker>--<name>`, so two apps share a dataset only under a name of their own choosing. Walk-back: any name Cloudflare accepts.
+- [ ] **Declared or refused, and only to the declared dataset.** The policy allows an `analytics-engine-dataset` binding only under a declared binding name and only with the declared (or default) dataset. Walk-back: by type alone.
+- [ ] **Binding names under `analyticsEngine` are capped at 63 characters,** so the default `<worker>--<binding>` (Worker names are at most 63) fits Cloudflare's 128. Walk-back: check the installed name instead.
+- [ ] **Purge and teardown leave datasets,** the app's default ones included: Cloudflare has no delete. The data expires after 90 days.
+- [ ] **Refused on the dispatch tier:** names are account-wide and the writes would bill the platform's account.
+
+**Follow-ups**
+
+- [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.analyticsEngine`; its bundle check refuses the binding type (`EVENTS is a analytics-engine-dataset binding, which third-party apps can't have`).
+- [ ] **A Gateway reader for an app's datasets** (the SQL API needs an account token the app doesn't hold): an `analytics` capability, or a page in Admin → Usage. None today.
+- [ ] **`everyapp status`'s RESOURCES cell** gains `Analytics Engine` once the first lane's cell is on main.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).
