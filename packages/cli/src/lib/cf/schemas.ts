@@ -292,3 +292,29 @@ export const AiGatewayOutput = z.looseObject({
 });
 export type AiGateway = z.infer<typeof AiGatewayOutput>;
 export const AiGatewayListOutput = z.array(AiGatewayOutput);
+
+/**
+ * Each entry of `cf secrets-store stores list`: a store by its id and
+ * name, per Cloudflare's API documentation.
+ */
+const SecretsStoreOutput = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+});
+export type SecretsStore = z.infer<typeof SecretsStoreOutput>;
+export const SecretsStoreListOutput = z.array(SecretsStoreOutput);
+
+/**
+ * Each entry of `cf secrets-store secrets list`, and what `secrets create`
+ * answers (a list: the API creates several at once). Never a value: the
+ * API doesn't return one.
+ */
+const SecretsStoreSecretOutput = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  store_id: z.string().nullish(),
+  status: z.string().nullish(),
+  scopes: z.array(z.string()).nullish(),
+});
+export type SecretsStoreSecret = z.infer<typeof SecretsStoreSecretOutput>;
+export const SecretsStoreSecretListOutput = z.array(SecretsStoreSecretOutput);

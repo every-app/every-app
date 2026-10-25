@@ -20,6 +20,7 @@ import {
 } from "@/lib/cf/resources";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
+import { deleteStoreSecret } from "@/lib/cf/secretsStore";
 import { deleteVectorizeIndex, getVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
@@ -252,6 +253,7 @@ const KINDS = [
   "Queue",
   "Vectorize index",
   "AI Gateway",
+  "Secrets Store secret",
   "mail route",
 ] as const;
 type Kind = (typeof KINDS)[number];
@@ -369,6 +371,10 @@ async function purgeApp(
       } else if (resource.kind === "ai-gateway") {
         // Its stored logs go with it.
         await deleteAiGateway(cf, resource.resourceId);
+      } else if (resource.kind === "secrets-store-secret") {
+        // Recorded as <store id>/<secret id>; the store itself stays.
+        const [storeId = "", secretId = ""] = resource.resourceId.split("/");
+        await deleteStoreSecret(cf, storeId, secretId);
       } else {
         await deleteKv(cf, resource.resourceId);
       }

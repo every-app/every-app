@@ -14,6 +14,8 @@
  *   - its AI Gateways' `json` bindings get the gateway's `{ id, accountId,
  *     url }`: only a json binding whose `value.id` is its own binding's
  *     placeholder, never any other json binding;
+ *   - its Secrets Store secrets get the store and secret the deploy made:
+ *     only a binding whose `secretName` is its own binding's placeholder;
  *   - then every remaining placeholder string: the gateway URL (the
  *     identity issuer), the account, the organization, the identity keys, and the
  *     Worker name wherever it appears (the Worker's own name, its audience,
@@ -175,6 +177,10 @@ function installResource(
     installAiGateway(name, binding, target);
     return;
   }
+  if (binding.type === "secrets-store-secret") {
+    installStoreSecret(name, binding, target);
+    return;
+  }
   const kind = String(binding.type);
   if (kind === "queue") {
     if (binding["name"] !== resourceSentinel(name)) return;
@@ -267,6 +273,30 @@ function installAiGateway(
     accountId: gateway.accountId,
     url: gateway.url,
   };
+}
+
+/**
+ * A Secrets Store binding, `{ type: "secrets-store-secret", storeId,
+ * secretName }`, gets the store and secret the deploy provisioned: only
+ * when `secretName` is this binding's placeholder. One written by hand in
+ * cloudflare.config.ts stays as it is, for the policy to refuse.
+ */
+function installStoreSecret(
+  name: string,
+  binding: Binding,
+  target: InstallTarget,
+): void {
+  if (binding["secretName"] !== resourceSentinel(name)) return;
+  const secret = target.resources.secretsStore?.[name];
+  if (!secret) {
+    throw new EveryAppError(
+      "INSTALL_INPUTS_MISSING",
+      `The build binds ${RESOURCE_LABELS["secrets-store-secret"]} ${name}, which the deploy didn't provision`,
+      { fix: "declare it in everyapp.config.ts's resources.secretsStore" },
+    );
+  }
+  binding["storeId"] = secret.storeId;
+  binding["secretName"] = secret.secretName;
 }
 
 /** `value` with `fn` applied to every string in it (not to keys). */

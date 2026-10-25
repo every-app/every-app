@@ -1468,6 +1468,28 @@ The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners
 - [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.images`; its bundle check refuses the binding type (`IMAGES is a images binding, which third-party apps can't have`).
 - [ ] **`everyapp status`'s RESOURCES cell** gains `Images` once the first lane's cell is on main.
 
+### Provisioners: Secrets Store (2026-10-25)
+
+`resources.secretsStore: [{ name: "STRIPE_KEY" }]` binds a Cloudflare Secrets Store secret, `<worker>--<binding>` in the account's store, on every Worker of an app; the deploy creates it from `STRIPE_KEY` in `.everyapp/secrets.env` through the ledger and `delete --purge` deletes it ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `secretsStore` row; `landing-page/content/agent/manifest.md`, "Secrets Store").
+
+**Defaults to confirm**
+
+- [ ] **The store is the person's to make once** (dashboard: Secrets Store → Create store): cf 1.0.0-beta.14 has no `stores create`, though the API does (`POST /accounts/{id}/secrets_store/stores`). Without one the deploy stops with `SECRETS_STORE_MISSING` before anything is created. Walk-back: one REST call for that endpoint (design section 6).
+- [ ] **Which store:** the account's only one; with several, the one named `everyapp`, else the first listed; an app keeps the store it recorded a secret in.
+- [ ] **Ledger, not adopt:** a secret of the app's name that no deploy recorded is `RESOURCE_NAME_TAKEN` (it may hold someone's credential).
+- [ ] **The deploy never rewrites a value:** a recorded secret is bound as it is; a changed `STRIPE_KEY` in `.everyapp/secrets.env` does nothing once the secret exists. Rotation is the dashboard's for now.
+- [ ] **Secrets go first:** the store and every value a missing secret needs are checked, and the secrets created, before D1, KV and Hyperdrive, so a missing store or value stops the deploy with nothing created.
+- [ ] **Scope `workers` only** on the secrets the deploy creates (not `ai_gateway`).
+- [ ] **Refused on the dispatch tier** (the store is the platform account's).
+
+**Follow-ups**
+
+- [ ] **`everyapp dev` seeds the local store** from `<BINDING>` in `.dev.vars` before the app starts: Miniflare's admin API through the CLI's own `cf` dependency works (prototype 2026-10-25: ~5 s per start; the seed script is in `landing-page/content/agent/dev.md`); skip when unchanged (a hash under `.cloudflare/state`). Until then the ready block says the binding is empty.
+- [ ] **`everyapp secret set <BINDING>`** routes a `resources.secretsStore` name to the store (`secrets-store secrets edit`, value in a body file), so rotation needs no dashboard.
+- [ ] **`RESOURCES_KEPT` on purge** for a secret of the app's name that no deploy recorded (today only the recorded ones are looked at).
+- [ ] **A live run with a store:** loop-1 has none; once Ben makes one (Secrets Store → Create store on loop-1), run `EVERYAPP_LIVE_PROVISIONERS=1 pnpm -C packages/cli exec vitest run test/provisioners/secrets-store.live.test.ts`; it confirms the secret name rule, the duplicate-name error text and the token permission a deploy needs (Cloudflare documents **Account Secrets Store Edit** to bind a secret).
+- [ ] **The hosted deployer's manifest check** doesn't name `resources.secretsStore`; its bundle check refuses the binding type.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).

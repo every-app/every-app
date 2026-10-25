@@ -8,7 +8,8 @@
  * hostnames' certificate packs (Cloudflare removes a hostname's pack with
  * its Custom Domain, so a refusal for one it no longer lists is counted as
  * removed), the apps' D1, KV, R2, Hyperdrive, queues (once no Worker binds
- * them), Vectorize, AI Gateways, the DNS records left at our names once the
+ * them), Vectorize, AI Gateways, Secrets Store secrets (their stores stay),
+ * the DNS records left at our names once the
  * Custom Domains went with their Workers, and last of all the Gateway's D1:
  * it is where the inventory reads the hostnames, so while a DNS record of
  * theirs is kept it stays too, and a second run finds the record again. A
@@ -27,6 +28,7 @@ import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
 import { deleteAiGateway } from "@/lib/cf/aiGateway";
 import { deleteR2Bucket } from "@/lib/cf/r2";
+import { deleteStoreSecret } from "@/lib/cf/secretsStore";
 import { deleteD1, deleteKv } from "@/lib/cf/resources";
 import { deleteVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -311,6 +313,15 @@ export async function executeTeardown({
   await kindStep("aiGateway", plan.aiGateway.length, async () => {
     for (const id of plan.aiGateway) {
       await attempt("aiGateway", describe.aiGateway(id), () => deleteAiGateway(cf, id));
+    }
+  });
+
+  // 9e. Secrets Store secrets (their stores stay).
+  await kindStep("secretsStore", plan.secretsStore.length, async () => {
+    for (const secret of plan.secretsStore) {
+      await attempt("secretsStore", describe.secretsStore(secret.name), () =>
+        deleteStoreSecret(cf, secret.storeId, secret.id),
+      );
     }
   });
 

@@ -43,8 +43,8 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
 /**
  * The binding types an app may use. Everything else is refused until the
  * model covers it: most reach account-wide resources by id or name (a
- * dispatch namespace, private network, secrets store, rate-limit counters,
- * …), or account-wide capabilities the gateway is meant to broker (email).
+ * dispatch namespace, private network, rate-limit counters, …), or
+ * account-wide capabilities the gateway is meant to broker (email).
  * Buckets and Workflows are allowed only under the app's own names (buckets
  * only as the manifest's `resources.r2`, when it declares any), and
  * Hyperdrive configs, queues and Vectorize indexes only as the ones the
@@ -58,7 +58,10 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * the same, under `resources.images`: transformations bill the account.
  * `send-email` (Cloudflare's own email sending, beside the Gateway's email
  * capability, sending past its budgets and sender list) likewise, and only
- * with the addresses `resources.sendEmail` declares for it.
+ * with the addresses `resources.sendEmail` declares for it. A Secrets
+ * Store secret holds a credential in the account's store: only the store
+ * and secret the deploy provisioned for a binding `resources.secretsStore`
+ * declares, under that binding's name.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -79,6 +82,7 @@ const ALLOWED_BINDINGS = new Set([
   "browser",
   "images",
   "send-email",
+  "secrets-store-secret",
 ]);
 
 /**
@@ -328,6 +332,8 @@ function bindingProblems(
   const browserBindings = declared?.browser ?? [];
   // Images only under the names resources.images declares.
   const imagesBindings = declared?.images ?? [];
+  // Secrets Store secrets only as the deploy provisioned them, by binding.
+  const storeSecrets = resources.secretsStore ?? {};
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -409,6 +415,19 @@ function bindingProblems(
           );
         }
         break;
+      case "secrets-store-secret": {
+        const secret = Object.hasOwn(storeSecrets, name) ? storeSecrets[name] : undefined;
+        if (
+          !secret ||
+          binding["storeId"] !== secret.storeId ||
+          binding["secretName"] !== secret.secretName
+        ) {
+          problems.push(
+            `${name} is Secrets Store secret "${String(binding["secretName"])}" in store "${String(binding["storeId"])}", which isn't the one the deploy provisioned for a binding in resources.secretsStore`,
+          );
+        }
+        break;
+      }
       case "r2": {
         const bucket = String(binding["name"] ?? "");
         if (buckets.length > 0) {

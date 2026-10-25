@@ -29,6 +29,7 @@ import {
   type EveryAppWorkerReference,
   type HyperdriveBinding,
   type KvBinding,
+  type SecretsStoreSecretBinding,
   type SendEmailBinding,
   type QueueBinding,
   type ServiceBinding,
@@ -2402,5 +2403,97 @@ describe("Email sending bindings (resources.sendEmail)", () => {
         (binding) => binding.type === "send-email",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("Secrets Store secrets (resources.secretsStore)", () => {
+  const shop = {
+    id: "shop",
+    resources: { d1: ["DB"], secretsStore: [{ name: "STRIPE_KEY" }] },
+    workers: [{ name: "billing", binding: "BILLING" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: shop,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _billing, ...billing } = everyAppAuxiliaryWorker({
+      manifest: shop,
+      worker: "billing",
+      entrypoint: "/app/src/billing.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, billing };
+  };
+
+  it("binds the secret's placeholders on the app's Worker and every helper, for the deploy to install", () => {
+    const { app, billing } = build("production");
+    for (const env of [app.env, billing.env] as Record<string, unknown>[]) {
+      expect(env["STRIPE_KEY"]).toEqual({
+        type: "secrets-store-secret",
+        storeId: resourceSentinel("STRIPE_KEY"),
+        secretName: resourceSentinel("STRIPE_KEY"),
+      });
+    }
+    expect(sentinelDeployTarget(shop).resources.secretsStore).toEqual({
+      STRIPE_KEY: {
+        storeId: resourceSentinel("STRIPE_KEY"),
+        secretName: resourceSentinel("STRIPE_KEY"),
+      },
+    });
+  });
+
+  it("binds the local store in development, under the name the deploy gives the secret", () => {
+    const { app, billing } = build("development");
+    for (const env of [app.env, billing.env] as Record<string, unknown>[]) {
+      expect(env["STRIPE_KEY"]).toEqual({
+        type: "secrets-store-secret",
+        storeId: "local",
+        secretName: "every-shop--stripe-key",
+      });
+    }
+  });
+
+  it("types each binding as a Secrets Store secret, which cf turns into SecretsStoreSecret", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.STRIPE_KEY).toEqualTypeOf<SecretsStoreSecretBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "shop",
+          resources: {
+            kv: ["STRIPE_KEY"],
+            secretsStore: [{ name: "STRIPE_KEY" }],
+          },
+        },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow(
+      "secretsStore: STRIPE_KEY reuses a binding name the Worker already has.",
+    );
+  });
+
+  it("leaves a manifest without resources.secretsStore with no such binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "secrets-store-secret",
+      ),
+    ).toEqual([]);
+    expect(sentinelDeployTarget(manifest).resources.secretsStore).toEqual({});
   });
 });

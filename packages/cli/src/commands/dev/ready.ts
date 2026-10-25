@@ -87,6 +87,7 @@ export function readyBlock({
         ]
       : []),
     ...emailHint(manifest, appPort),
+    ...secretsStoreHint(manifest),
     // Crons (everyAppWorker's `crons`) run on demand through the gateway-lite.
     ...(crons
       ? [
@@ -115,6 +116,27 @@ export function emailHint(
     {
       label: "Email",
       value: `curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
+    },
+  ];
+}
+
+/**
+ * What a Secrets Store binding does locally, when the manifest declares
+ * one: it reads Miniflare's local store, which nothing seeds yet (`.dev.vars`
+ * doesn't reach the binding, and cf has no local `secrets create`), so
+ * `get()` throws until the secret is put there (dev.md, "Secrets Store").
+ */
+export function secretsStoreHint(
+  manifest: Pick<EveryAppCliManifest, "resources">,
+): Array<{ label: string; value: string }> {
+  const bindings = (manifest.resources?.secretsStore ?? []).map((entry) => entry.name);
+  if (bindings.length === 0) return [];
+  return [
+    {
+      label: "Secrets Store",
+      value: `${bindings.join(", ")} ${chalk.dim(
+        `${bindings.length === 1 ? "is" : "are"} empty locally: get() throws until seeded (https://everyapp.com/docs/agent/dev#secrets-store-in-development)`,
+      )}`,
     },
   ];
 }

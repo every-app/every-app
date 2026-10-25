@@ -1254,7 +1254,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/manifes
 
 ### RESOURCE_NAME_TAKEN
 
-Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1, KV, Vectorize or AI Gateway: `A <D1 database|KV namespace|Vectorize index> named "<name>" already exists in this Cloudflare account` (`An AI Gateway named "<id>" …`) then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it` (a Vectorize index is refused whatever its shape: its vectors are whoever wrote them's). Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
+Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1, KV, Vectorize, AI Gateway or a Secrets Store secret (`resources.secretsStore`, in the account's store): `A <D1 database|KV namespace|Vectorize index|Secrets Store secret> named "<name>" already exists in this Cloudflare account` (`An AI Gateway named "<id>" …`) then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it` (a Vectorize index is refused whatever its shape: its vectors are whoever wrote them's). Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
 
 **Fix:** as above; each sets `data.rerun` to this same command. Not retryable.
 
@@ -1317,6 +1317,22 @@ Source: `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
 **Fix:** `retryable: true`; `rerun`: `pnpm everyapp secret <set|unset> <left names>`, with ` --app <id>` when the command ran with `--app` and a name of the app's own is left. Raised through `configure <app>` the message and `data` are the same, but the rerun is `pnpm everyapp configure <app>` (`rerunNote` `to set what is left`; before the app's first deploy, `pnpm everyapp configure` with `in the app's directory, to set what is left`), which reads what is set and asks only for what is still missing.
 
 Source: `packages/cli/src/commands/secret/index.ts`
+
+### SECRETS_STORE_MISSING
+
+Self-host `deploy` and `install` (step `app.resources`, before anything is created) for an app that declares `resources.secretsStore`, in a Cloudflare account with no Secrets Store: `cf secrets-store stores list` answered none, and cf 1.0.0-beta.14 can't create one. `This Cloudflare account has no Secrets Store, and <app> binds a Secrets Store secret (<BINDING>)` then `Make one once in the dashboard: Secrets Store → Create store (cf can't create a store).`, `data.fix` `create a store in the Cloudflare dashboard (Secrets Store)`, `data.rerun` this same command.
+
+**Fix:** make a store once in the Cloudflare dashboard (Secrets Store → Create store; any name, `everyapp` if the account will have several), then run the command again. Not retryable until then.
+
+Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/cf/secretsStore.ts`
+
+### SECRETS_STORE_VALUE_MISSING
+
+Self-host `deploy` and `install` (step `app.resources`, before anything is created) have to create the Secrets Store secret for a `resources.secretsStore` binding (none of its name is in the store: never created, or the recorded one was deleted) and the app's secrets file `.everyapp/secrets.env` holds no value for it under the binding's own name. `<BINDING> needs its Secrets Store secret's value` (several: `<A>, <B> need their Secrets Store secrets' values`) then `Creating the secret in the store "<store>" needs it.`, `data.fix` `set <BINDING> in .everyapp/secrets.env` (every missing name), `data.rerun` this same command. A secret that exists needs no value: a redeploy binds it as it is.
+
+**Fix:** add `<BINDING>=<value>` to `.everyapp/secrets.env` (kept out of git; the value goes to Cloudflare in a private body file and is never printed or recorded), then run the command again. Not retryable until then.
+
+Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/app/deploySecrets.ts`
 
 ### SECRET_EMPTY
 

@@ -58,17 +58,18 @@ Requests the gateway-lite cannot complete answer `502 {"error":"dev_gateway_erro
 
 Printed as step `dev.app` once the app answers (`packages/cli/src/commands/dev/ready.ts`), one fact per line:
 
-| Label       | Value                                                                                                                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `App`       | `http://<app-id>.localhost:<port>` (mirror: on the base host)                                                                                                                                                      |
-| `MCP`       | `<app url>/mcp`, then `any bearer token acts as the dev user` (stub) or `bearer: a personal access token from the local Gateway` (mirror)                                                                          |
-| `Dev user`  | Stub only: `dev@everyapp.localhost (owner of dev-org)`                                                                                                                                                             |
-| `Log in`    | Mirror only: `http://<base-host>:<port>` `the session carries to the app`                                                                                                                                          |
-| `Gateway`   | Mirror only: the `--gateway` URL `(real login and launcher)`                                                                                                                                                       |
-| `Workflows` | `http://127.0.0.1:<app port>/cdn-cgi/local/explorer`, when the manifest declares Workflows                                                                                                                         |
-| `Email`     | The `curl … /cdn-cgi/local/email …` command, when `email.inbound` is `true`                                                                                                                                        |
-| `Cron`      | `curl -X POST <app url>/__everyapp/cron -d '<schedule>'`, when `cloudflare.config.ts` declares `crons:`                                                                                                            |
-| `Dev vars`  | Last: `.dev.vars is missing <names>` or `no .dev.vars yet: add <names>`, then dimmed `(the app's keys for local runs; see pnpm everyapp dev --help)`; only when a name the app cannot run without is unset (below) |
+| Label           | Value                                                                                                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `App`           | `http://<app-id>.localhost:<port>` (mirror: on the base host)                                                                                                                                                                             |
+| `MCP`           | `<app url>/mcp`, then `any bearer token acts as the dev user` (stub) or `bearer: a personal access token from the local Gateway` (mirror)                                                                                                 |
+| `Dev user`      | Stub only: `dev@everyapp.localhost (owner of dev-org)`                                                                                                                                                                                    |
+| `Log in`        | Mirror only: `http://<base-host>:<port>` `the session carries to the app`                                                                                                                                                                 |
+| `Gateway`       | Mirror only: the `--gateway` URL `(real login and launcher)`                                                                                                                                                                              |
+| `Workflows`     | `http://127.0.0.1:<app port>/cdn-cgi/local/explorer`, when the manifest declares Workflows                                                                                                                                                |
+| `Email`         | The `curl … /cdn-cgi/local/email …` command, when `email.inbound` is `true`                                                                                                                                                               |
+| `Secrets Store` | The `resources.secretsStore` bindings, then dimmed `is empty locally: get() throws until seeded (https://everyapp.com/docs/agent/dev#secrets-store-in-development)`, when the manifest declares any (Secrets Store in development, below) |
+| `Cron`          | `curl -X POST <app url>/__everyapp/cron -d '<schedule>'`, when `cloudflare.config.ts` declares `crons:`                                                                                                                                   |
+| `Dev vars`      | Last: `.dev.vars is missing <names>` or `no .dev.vars yet: add <names>`, then dimmed `(the app's keys for local runs; see pnpm everyapp dev --help)`; only when a name the app cannot run without is unset (below)                        |
 
 Then `Every request goes through the real perimeter. Ctrl+C to stop.`
 
@@ -186,6 +187,7 @@ What this means for curl (verified in `docs/TESTING.md`, the rules are in `csrf.
 | Identity key                                         | The public dev keypair, dev kid, dev issuer, `aud` = app id                                                                                                                                                                                                                                                                                                                                                                                                                       | The Gateway's keypair, `aud` = Worker name                                                                                                                                                                                                                                                                                                                          |
 | Vectorize                                            | The account's own index `every-<id>--<binding>`, bound with `dev: { remote: true }`: Cloudflare has no local Vectorize, so every call throws until the Vite plugin's `remoteBindings` is on and `cf auth login` has run ([Vectorize in development](#vectorize-in-development))                                                                                                                                                                                                   | The index the deploy provisioned                                                                                                                                                                                                                                                                                                                                    |
 | AI Gateway (`resources.aiGateway`)                   | The json binding is there with the production id rule's `id` (`every-<id>-<binding>`, one hyphen) and an empty `accountId` and `url`: there is no gateway in development (none is created), so an app treats an empty `url` as "call the provider directly" with the key in `.dev.vars`                                                                                                                                                                                           | `{ id, accountId, url }` of the gateway the deploy provisioned, `url` = `https://gateway.ai.cloudflare.com/v1/<account>/<id>`                                                                                                                                                                                                                                       |
+| Secrets Store (`resources.secretsStore`)             | `{ type: "secrets-store-secret", storeId: "local", secretName: "every-<id>--<binding>" }`, Miniflare's local store under `.cloudflare/state/v3/secrets-store`, empty until seeded: `get()` throws `Secret "<name>" not found`                                                                                                                                                                                                                                                     | The secret the deploy made in the account's store from `.everyapp/secrets.env`                                                                                                                                                                                                                                                                                      |
 
 ### The development build's env
 
@@ -217,6 +219,7 @@ What this means for curl (verified in `docs/TESTING.md`, the rules are in `csrf.
 | `EVERYAPP_EMAIL_SENDERS`                    | `{ type: "secret" }` when the manifest lists the `email` capability and it is set locally                                                                                                                                                                                                                                                                                                 |
 | Each `resources.vectorize` binding          | `{ type: "vectorize", name, dev: { remote: true } }`, `name` = `every-<id>--<binding>` with the binding lowercased and `_` as `-` (the deploy's rule, `vectorizeNameFor`, applied to the dev Worker; over 64 characters throws `vectorize: <NAME> would be the Vectorize index "<name>", longer than Cloudflare's 64 characters; shorten the binding name.`); bound on helper Workers too |
 | Each `resources.aiGateway` entry            | `{ type: "json", value: { id, accountId: "", url: "" } }`, `id` = `every-<id>-<binding>` with the binding lowercased and `_` as `-` (one hyphen: `aiGatewayIdFor`); cf returns a json binding to the Worker as given, so `env.<NAME>.url` is `""`                                                                                                                                         |
+| Each `resources.secretsStore` binding       | `{ type: "secrets-store-secret", storeId: "local", secretName }`, `secretName` = `every-<id>--<binding>` with the binding lowercased and `_` as `-` (the deploy's name), on helper Workers too (Secrets Store in development, below)                                                                                                                                                      |
 
 Durable Objects, Workflows and helper Workers are built the same way as in production; only resource ids and names differ. A development build has no `EVERYAPP_AUDIENCE`, `EVERY_APP_GATEWAY`, `GATEWAY_URL`, `EVERY_APP_ORG_ID` or `EVERYAPP_SHARED`.
 
@@ -293,6 +296,58 @@ Cloudflare has no local Vectorize: Miniflare can't emulate an index, so a `resou
 3. Make the dev index once, as the deploy would but under the dev Worker's name: `cf vectorize create --body @index.json` with `{ "name": "every-<id>--<binding>", "config": { "dimensions": 768, "metric": "cosine" } }` (or `"config": { "preset": "@cf/baai/bge-base-en-v1.5" }`; a body file, since cf reads a flag value starting with `@` as a file). `everyapp dev` makes nothing in the account.
 
 Until all three hold, the binding is there but every call on it throws (`Binding VECTORS needs to be run remotely` while `remoteBindings` is off; Cloudflare's refusal without a login or an index). The rest of the app runs as usual: keep the Vectorize calls behind a check, or turn remote bindings on while working on them. The vectors written in development are real, in the dev index, which `everyapp deploy` never touches; delete it with `cf vectorize delete every-<id>--<binding> --force` when done.
+
+### Secrets Store in development
+
+An app that declares `resources.secretsStore` gets each binding under `everyapp dev` as `{ type: "secrets-store-secret", storeId: "local", secretName: "every-<id>--<binding>" }` on every Worker (`addSecretsStoreBindings()` in `packages/sdk/src/cloudflare/worker.ts`). Miniflare keeps a local store per `storeId` under `.cloudflare/state/v3/secrets-store` (any id works locally), and it starts empty: `await env.STRIPE_KEY.get()` throws `Secret "every-shop--stripe-key" not found` until the secret is put there. What doesn't fill it: `everyapp dev` (not yet; the ready block's `Secrets Store` line says the binding is empty), `.dev.vars` (never read for this binding; a `.dev.vars` entry of the same name doesn't shadow it either), and `cf secrets-store secrets create --local` ("This command has no local equivalent" on cf 1.0.0-beta.14). What does: Miniflare's admin API, writing to the same state directory, once, with dev stopped. From the app's root, with the value on stdin:
+
+```js
+// seed-secret.mjs: node seed-secret.mjs every-shop--stripe-key < value.txt
+import { createRequire } from "node:module";
+import path from "node:path";
+const [secretName] = process.argv.slice(2);
+const app = createRequire(path.resolve("package.json"));
+const { Miniflare } = createRequire(app.resolve("cf/package.json"))(
+  "miniflare",
+);
+let value = "";
+for await (const chunk of process.stdin) value += chunk;
+const mf = new Miniflare({
+  resourcePersistencePath: path.resolve(".cloudflare/state/v3"),
+  workers: [
+    {
+      config: {
+        name: "seed",
+        compatibilityDate: "2026-06-01",
+        manifest: {
+          mainModule: "m.mjs",
+          modules: {
+            "m.mjs": {
+              type: "esm",
+              contents: "export default { fetch: () => new Response('') }",
+            },
+          },
+        },
+        env: {
+          S: { type: "secrets-store-secret", storeId: "local", secretName },
+        },
+      },
+    },
+  ],
+});
+try {
+  const admin = (await mf.getSecretsStoreSecretAPI("S"))();
+  const existing = (await admin.list()).find(
+    (secret) => secret.name === secretName,
+  );
+  if (existing) await admin.update(value.trimEnd(), existing.metadata.uuid);
+  else await admin.create(value.trimEnd());
+} finally {
+  await mf.dispose();
+}
+```
+
+`cf` resolves `miniflare` from its own dependencies (cf 1.0.0-beta.14 pins Miniflare 5), which is why the script loads it through `cf/package.json`. The seeded secret stays until `.cloudflare/state` is deleted. Deployed, the binding reads the secret the deploy created from `.everyapp/secrets.env` ([`/docs/agent/manifest`](/docs/agent/manifest), "Secrets Store").
 
 ## Data in development: the local D1 database
 
@@ -375,6 +430,7 @@ curl --resolve todo.localhost:8787:127.0.0.1 -X POST http://todo.localhost:8787/
 - **Stopping.** Ctrl+C, or a `SIGINT`/`SIGTERM` to the `everyapp` process, stops the whole process group (exit `130`/`143`). `pkill -f <path>` can leave the `pnpm vite dev` and workerd children running, since their command lines do not name the path (`TODO.md`); a pattern kill on `vite` or `workerd` stops other projects' processes too. Under the template's `pnpm dev`, pnpm follows a clean Ctrl+C with its `ELIFECYCLE` line for exit code `130`: nothing failed.
 - **The SDK rebuilt under a running dev.** `pnpm install` (root `postinstall`: `pnpm -C packages/sdk build`) or any `pnpm everyapp` command, a deploy included, whose launcher finds the SDK's source newer than its `dist/` (`packages/cli/bin/everyapp.js`) rewrites `packages/sdk/dist`, which the app loads; dev breaks for a few seconds until the build is done.
 - **`cf dev` alone** answers `401` on every SDK-protected route: nothing mints the identity; run the app with `pnpm dev`.
+- **`Secret "<name>" not found`.** A Secrets Store binding's `get()` under `everyapp dev`: the local store is empty until seeded (Secrets Store in development, above).
 - **`Binding AI needs to be run remotely`.** A Workers AI call under the starter's `remoteBindings: false`; set it to `true` in `vite.config.ts` and run `cf auth login` (Workers AI in development, above).
 - **`Binding VECTORS needs to be run remotely`.** The same for a Vectorize index, which also needs the dev index made once (Vectorize in development, above).
 - **Stale `Env` types** after adding a resource or secret: `everyapp dev` regenerates `.cloudflare/types` only when the file is missing; run `pnpm types:check`. A secret that is not set locally at generation time is absent from `Env` altogether: declare it optional in your own `.d.ts` (see Typing app secrets).

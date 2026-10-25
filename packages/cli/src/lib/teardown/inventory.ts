@@ -36,6 +36,7 @@ import { listHyperdrive } from "@/lib/cf/hyperdrive";
 import { listQueues } from "@/lib/cf/queues";
 import { listAiGateways } from "@/lib/cf/aiGateway";
 import { listR2Buckets } from "@/lib/cf/r2";
+import { listSecretsStores, listStoreSecrets } from "@/lib/cf/secretsStore";
 import { listVectorizeIndexes } from "@/lib/cf/vectorize";
 import { listAll, type CfRunner } from "@/lib/cf/runner";
 import { D1DatabaseListOutput, KvNamespaceListOutput } from "@/lib/cf/schemas";
@@ -244,6 +245,23 @@ export async function inventoryAccount({
     .sort();
   found("aiGateway", aiGateway.length, aiGateway);
 
+  // 7e. Secrets Store secrets named like ours, in every store the account
+  // has (the stores themselves stay: a person made each in the dashboard).
+  const secretsStore = (
+    await read("the Secrets Store secrets", [], async () => {
+      const secrets: TeardownPlan["secretsStore"] = [];
+      for (const store of await listSecretsStores(cf)) {
+        for (const secret of await listStoreSecrets(cf, store.id, EVERY_APP_PREFIX)) {
+          if (ours("secrets-store-secret", secret.name)) {
+            secrets.push({ storeId: store.id, name: secret.name, id: secret.id });
+          }
+        }
+      }
+      return secrets;
+    })
+  ).sort((a, b) => a.name.localeCompare(b.name));
+  found("secretsStore", secretsStore.length, secretsStore.map((secret) => secret.name));
+
   // 8. Access: the applications by what they cover (with an install row to
   // say what that is) and by name, and the policy by name. The team and
   // its identity providers are kept: Cloudflare has no API to delete a team.
@@ -415,6 +433,7 @@ export async function inventoryAccount({
     queueConsumers,
     vectorize,
     aiGateway,
+    secretsStore,
     access,
     email,
     certificates,

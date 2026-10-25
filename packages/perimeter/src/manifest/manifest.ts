@@ -176,6 +176,14 @@ const SendEmailResourceSchema = z.object({
   allowedDestinationAddresses: z.array(z.string()).optional(),
 });
 
+/**
+ * A Cloudflare Secrets Store secret every one of the app's Workers binds:
+ * a secret in the account's store named `<worker>--<binding>`
+ * ({@link storeSecretNameFor}), created by the deploy from the binding's
+ * value in the app's `.everyapp/secrets.env`.
+ */
+const SecretsStoreResourceSchema = z.object({ name: z.string() });
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -221,6 +229,12 @@ export const ResourcesSchema = z
     aiGateway: z.array(AiGatewayResourceSchema).optional(),
     /** Cloudflare `send_email` bindings, by binding, with the addresses each may use. */
     sendEmail: z.array(SendEmailResourceSchema).optional(),
+    /**
+     * Secrets Store secrets, by binding (`[{ name: "STRIPE_KEY" }]`), which
+     * every one of the app's Workers binds (`await env.STRIPE_KEY.get()`):
+     * each a secret in the account's store, named `<worker>--<binding>`.
+     */
+    secretsStore: z.array(SecretsStoreResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -1181,6 +1195,11 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
     )
     .optional(),
   sendEmail: z.array(SendEmailResourceSchemaStrict).optional(),
+  secretsStore: z
+    .array(
+      SecretsStoreResourceSchema.extend({ name: BindingNameSchema }).strict(),
+    )
+    .optional(),
 }).strict();
 /** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
 export interface StrictManifestOptions {
@@ -1495,6 +1514,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
+    ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1527,6 +1547,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
+    ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1545,6 +1566,7 @@ export function bindingNamesOf(
  * transformations do too. Nor Vectorize indexes: the hosted deployer makes
  * none. Nor AI Gateways yet. Nor a `send_email` binding: it would send
  * from the platform's account, past the Gateway's budgets and sender list.
+ * Nor Secrets Store secrets: the store is the platform account's.
  * Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets of its own: a third-party Worker
  * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
  */
@@ -1598,6 +1620,11 @@ export function manifestTierProblems(
   if (manifest.resources?.sendEmail?.length) {
     problems.push(
       "resources.sendEmail: Email sending bindings aren't available to apps in a dispatch namespace (they send through the Gateway's email capability)",
+    );
+  }
+  if (manifest.resources?.secretsStore?.length) {
+    problems.push(
+      "resources.secretsStore: Secrets Store secrets aren't available to apps in a dispatch namespace (the store is the platform account's)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
@@ -1779,6 +1806,18 @@ export function isAiGatewayId(id: string): boolean {
  */
 export function aiGatewayIdFor(workerName: string, binding: string): string {
   return `${workerName}-${binding.toLowerCase().replaceAll("_", "-")}`;
+}
+
+/**
+ * The Secrets Store secret an app Worker's binding uses, in the account's
+ * store: `<worker>--<binding lowercased, _ as ->` for every binding
+ * (`every-acme-shop--stripe-key`), so the teardown's `every-` scan finds it.
+ */
+export function storeSecretNameFor(
+  workerName: string,
+  binding: string,
+): string {
+  return suffixedName(workerName, binding);
 }
 
 function suffixedName(workerName: string, binding: string): string {

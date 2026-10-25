@@ -10,6 +10,7 @@ import {
   registryWorkerNameFor,
   resourceNameFor,
   bucketNameFor,
+  storeSecretNameFor,
   queueNameFor,
   isValidQueueName,
   MAX_QUEUE_NAME_LENGTH,
@@ -1872,6 +1873,91 @@ describe("Email sending bindings (resources.sendEmail)", () => {
     expect(manifestTierProblems(notifier, "dispatch")).toEqual([
       "resources.sendEmail: Email sending bindings aren't available to apps in a dispatch namespace (they send through the Gateway's email capability)",
     ]);
+  });
+});
+
+describe("Secrets Store secrets (resources.secretsStore)", () => {
+  const shop = {
+    id: "shop",
+    resources: { d1: ["DB"], secretsStore: [{ name: "STRIPE_KEY" }] },
+  };
+
+  it("accepts Secrets Store secrets in both schemas", () => {
+    expect(validateManifestStrict(shop)).toEqual(shop);
+    expect(validateManifest(shop)).toEqual(shop);
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { secretsStore: [{ name: "stripe-key" }] } },
+      /resources\.secretsStore\.0\.name/,
+    ],
+    [
+      "an entry with a field it doesn't know",
+      { resources: { secretsStore: [{ name: "STRIPE_KEY", storeId: "s" }] } },
+      /resources\.secretsStore\.0/,
+    ],
+    [
+      "a binding named like a KV namespace",
+      {
+        resources: {
+          kv: ["STRIPE_KEY"],
+          secretsStore: [{ name: "STRIPE_KEY" }],
+        },
+      },
+      /the binding STRIPE_KEY is declared twice/,
+    ],
+    [
+      "the same binding twice",
+      {
+        resources: {
+          secretsStore: [{ name: "STRIPE_KEY" }, { name: "STRIPE_KEY" }],
+        },
+      },
+      /the binding STRIPE_KEY is declared twice/,
+    ],
+    [
+      "an app secret named like the binding",
+      {
+        resources: { secretsStore: [{ name: "STRIPE_KEY" }] },
+        secrets: ["STRIPE_KEY"],
+      },
+      /secrets: STRIPE_KEY is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...shop, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("stays tolerant of entries at registration", () => {
+    expect(
+      validateManifest({
+        id: "shop",
+        resources: { secretsStore: [{ name: "stripe-key", more: 1 }] },
+      }).resources?.secretsStore,
+    ).toEqual([{ name: "stripe-key" }]);
+  });
+
+  it("names the secret after the app's Worker, as the teardown's every- scan finds it", () => {
+    expect(storeSecretNameFor("every-acme-shop", "STRIPE_KEY")).toBe(
+      "every-acme-shop--stripe-key",
+    );
+    // No binding takes the Worker's own name, unlike DB, KV and R2.
+    expect(storeSecretNameFor("every-acme-shop", "DB")).toBe(
+      "every-acme-shop--db",
+    );
+  });
+
+  it("is refused on the dispatch tier, where the store is the platform account's", () => {
+    expect(manifestTierProblems(shop, "dispatch")).toEqual([
+      "resources.secretsStore: Secrets Store secrets aren't available to apps in a dispatch namespace (the store is the platform account's)",
+    ]);
+    expect(manifestTierProblems(shop, "service_binding")).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { secretsStore: [] } }, "dispatch"),
+    ).toEqual([]);
   });
 });
 

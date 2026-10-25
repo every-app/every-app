@@ -144,6 +144,13 @@ export interface EveryAppWorkerManifest {
      * gets, with their addresses; nothing is made in the account.
      */
     sendEmail?: readonly SendEmailResource[];
+    /**
+     * Secrets Store secrets, by binding (`[{ name: "STRIPE_KEY" }]`), which
+     * every one of the app's Workers binds: each a secret in the account's
+     * store named `<app worker>--<binding>`, made by the deploy (see
+     * {@link SecretsStoreSecretBinding}).
+     */
+    secretsStore?: readonly { readonly name: string }[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -338,6 +345,19 @@ export type SendEmailBinding = SendEmailDestination & {
   allowedSenderAddresses?: string[];
 };
 /**
+ * A Secrets Store secret (`await env.STRIPE_KEY.get()`), which cf types as
+ * `SecretsStoreSecret`. Deployed, the secret the deploy made in the
+ * account's store; in development, the local store `local` that Miniflare
+ * keeps under `.cloudflare/state`, where `get()` throws `Secret "<name>"
+ * not found` until the secret is seeded there (`.dev.vars` doesn't reach
+ * this binding).
+ */
+export interface SecretsStoreSecretBinding {
+  type: "secrets-store-secret";
+  storeId: string;
+  secretName: string;
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -405,6 +425,7 @@ export type EveryAppBinding =
   | VectorizeBinding
   | AiGatewayBinding
   | SendEmailBinding
+  | SecretsStoreSecretBinding
   | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
@@ -478,6 +499,14 @@ type QueueNames<M> = M extends {
 
 type SendEmailNames<M> = M extends {
   resources: { sendEmail: readonly (infer S)[] };
+}
+  ? S extends { name: infer N extends string }
+    ? N
+    : never
+  : never;
+
+type SecretsStoreNames<M> = M extends {
+  resources: { secretsStore: readonly (infer S)[] };
 }
   ? S extends { name: infer N extends string }
     ? N
@@ -676,6 +705,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in AiGatewayNames<M>]: AiGatewayBinding;
 } & {
   [B in SendEmailNames<M>]: SendEmailBinding;
+} & {
+  [B in SecretsStoreNames<M>]: SecretsStoreSecretBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -963,6 +994,11 @@ function devProviderKeys(
 }
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
+/**
+ * The store development binds Secrets Store secrets in: Miniflare keeps
+ * one per id under `.cloudflare/state`, and any id works locally.
+ */
+const LOCAL_SECRETS_STORE_ID = "local";
 /** Cloudflare's limit on a Vectorize index's name. */
 const MAX_VECTORIZE_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
@@ -1036,6 +1072,7 @@ export function everyAppWorker<
   addImagesBindings(env, manifest);
   addAiGatewayBindings(env, manifest, name, deploy);
   addSendEmailBindings(env, manifest);
+  addSecretsStoreBindings(env, manifest, name, deploy);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -1135,8 +1172,8 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
  * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI,
- * Browser Rendering, Images, Vectorize indexes, AI Gateways and
- * `send_email` bindings, the classes it defines, and
+ * Browser Rendering, Images, Vectorize indexes, AI Gateways, `send_email`
+ * bindings and Secrets Store secrets, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -1187,6 +1224,7 @@ export function everyAppAuxiliaryWorker<
   addBrowserBindings(env, manifest);
   addImagesBindings(env, manifest);
   addAiGatewayBindings(env, manifest, appWorker, deploy);
+  addSecretsStoreBindings(env, manifest, appWorker, deploy);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1591,6 +1629,42 @@ function addSendEmailBindings(
 }
 
 /**
+ * The manifest's Secrets Store secrets, which every one of the app's
+ * Workers binds. Deployed, the store and secret the deploy provisioned
+ * (placeholders until installed); in development the local store `local`,
+ * under the name the deploy would give the secret, so a seeded local
+ * secret is named like a deployed one.
+ */
+function addSecretsStoreBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  deploy: EveryAppDeployTarget | undefined,
+): void {
+  for (const { name: binding } of manifest.resources?.secretsStore ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `secretsStore: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    if (deploy) {
+      const secret = provisioned(deploy.resources.secretsStore, binding);
+      env[binding] = {
+        type: "secrets-store-secret",
+        storeId: secret.storeId,
+        secretName: secret.secretName,
+      };
+    } else {
+      env[binding] = {
+        type: "secrets-store-secret",
+        storeId: LOCAL_SECRETS_STORE_ID,
+        secretName: suffixedName(appWorker, binding),
+      };
+    }
+  }
+}
+
+/**
  * DATABASE_PROVIDER and the Hyperdrive configs one of the app's Workers
  * binds: each config every Worker shares, and those a helper (`forWorker`)
  * alone takes. Deployed, each is the config the deploy provisioned; in
@@ -1925,9 +1999,10 @@ function workerNameFor(appId: string): string {
 
 /**
  * Copies of the gateway's naming rules (@every-app/perimeter/manifest's
- * resourceNameFor, bucketNameFor and vectorizeNameFor): `DB` and `KV` (`R2`
- * for a bucket) take the Worker's name, any other binding (and every
- * Vectorize index) `<worker>--<binding>`.
+ * resourceNameFor, bucketNameFor, vectorizeNameFor and storeSecretNameFor):
+ * `DB` and `KV` (`R2` for a bucket) take the Worker's name, any other
+ * binding (and every Vectorize index and Secrets Store secret)
+ * `<worker>--<binding>`.
  */
 function resourceNameFor(workerName: string, binding: string): string {
   return binding === "DB" || binding === "KV"

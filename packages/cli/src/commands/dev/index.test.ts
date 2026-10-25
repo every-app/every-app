@@ -13,7 +13,7 @@ import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { getFreePort } from "./proxy";
 import { handleInterrupt } from "@/lib/interrupt";
 import { runDev } from "./index";
-import { devVarsHint, emailHint } from "./ready";
+import { devVarsHint, emailHint, secretsStoreHint } from "./ready";
 
 const manifest = {
   id: "todo",
@@ -230,6 +230,16 @@ describe("everyapp dev", () => {
     expect(emailHint({}, 5173)).toEqual([]);
     expect(emailHint({ email: { inbound: false } }, 5173)).toEqual([]);
     expect(emailHint({ email: { inbound: true } }, 5173)[0]?.value).toContain("to=hello@example.com");
+  });
+
+  it("says a Secrets Store binding is empty locally, and nothing for an app without one", () => {
+    expect(secretsStoreHint({})).toEqual([]);
+    expect(secretsStoreHint({ resources: { secretsStore: [] } })).toEqual([]);
+    const [fact] = secretsStoreHint({ resources: { secretsStore: [{ name: "STRIPE_KEY" }] } });
+    expect(fact?.label).toBe("Secrets Store");
+    expect(fact?.value).toContain("STRIPE_KEY");
+    expect(fact?.value).toContain("get() throws until seeded");
+    expect(fact?.value).toContain("/docs/agent/dev#secrets-store-in-development");
   });
 
   it("says what .dev.vars should hold for the app's keys when there is none yet", async () => {

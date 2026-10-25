@@ -242,7 +242,6 @@ describe("appPolicyProblems", () => {
   it.each([
     ["a dispatch namespace", { type: "dispatch-namespace", namespace: "n" }],
     ["a private network", { type: "vpc-service", serviceId: "s1" }],
-    ["a secrets store", { type: "secrets-store-secret", storeId: "s", secretName: "x" }],
     ["shared rate-limit counters", { type: "rate-limit", namespace: "4180", simple: { limit: 1, period: 60 } }],
   ])("refuses %s, a binding type apps can't use", async (_case, binding) => {
     const config = await builtConfig();
@@ -506,6 +505,88 @@ describe("with resources.ai", () => {
     config["env"].MORE_AI = { type: "ai" };
     expect(appPolicyProblems(config, WITH_AI)).toEqual([
       "MORE_AI is a Workers AI binding, which isn't one of the app's in resources.ai (AI)",
+    ]);
+  });
+});
+
+describe("with resources.secretsStore", () => {
+  const STORE = "0123456789abcdef0123456789abcd99";
+  const WITH_SECRET: InstallTarget = {
+    ...INPUTS,
+    resources: {
+      ...INPUTS.resources,
+      secretsStore: { STRIPE_KEY: { storeId: STORE, secretName: "every-acme-todo--stripe-key" } },
+    },
+    declared: { secretsStore: [{ name: "STRIPE_KEY" }] },
+  };
+
+  it("accepts the secret everyAppWorker() builds, installed, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, secretsStore: [{ name: "STRIPE_KEY" }] },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_SECRET);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      expect(config["env"]["STRIPE_KEY"]).toEqual({
+        type: "secrets-store-secret",
+        storeId: STORE,
+        secretName: "every-acme-todo--stripe-key",
+      });
+    }
+    const inputs = { ...WITH_SECRET, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+  });
+
+  it.each([
+    ["another store", { storeId: "ffffffffffffffffffffffffffffffff", secretName: "every-acme-todo--stripe-key" }],
+    ["another secret in the store", { storeId: STORE, secretName: "every-acme-billing--stripe-key" }],
+  ])("refuses the binding to %s", async (_case, target) => {
+    const config = await builtConfig();
+    config["env"].STRIPE_KEY = { type: "secrets-store-secret", ...target };
+    expect(appPolicyProblems(config, WITH_SECRET)).toEqual([
+      `STRIPE_KEY is Secrets Store secret "${target.secretName}" in store "${target.storeId}", which isn't the one the deploy provisioned for a binding in resources.secretsStore`,
+    ]);
+  });
+
+  it("refuses the provisioned secret under a name resources.secretsStore doesn't declare", async () => {
+    const config = await builtConfig();
+    config["env"].STOLEN = {
+      type: "secrets-store-secret",
+      storeId: STORE,
+      secretName: "every-acme-todo--stripe-key",
+    };
+    expect(appPolicyProblems(config, WITH_SECRET)).toEqual([
+      `STOLEN is Secrets Store secret "every-acme-todo--stripe-key" in store "${STORE}", which isn't the one the deploy provisioned for a binding in resources.secretsStore`,
+    ]);
+  });
+
+  it("refuses any secret when the manifest declares none", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "secrets-store-secret", storeId: "s", secretName: "x" };
+    expect(appPolicyProblems(config, INPUTS)).toEqual([
+      'EXTRA is Secrets Store secret "x" in store "s", which isn\'t the one the deploy provisioned for a binding in resources.secretsStore',
     ]);
   });
 });

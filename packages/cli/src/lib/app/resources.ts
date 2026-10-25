@@ -7,7 +7,10 @@
  * made after the Build Output is installed (./buckets.ts; cf's prebuilt
  * deploy creates none), never recorded, and purging them is a later change.
  * Its AI Gateways are `<worker>-<binding>` (one hyphen: an id can't hold
- * `--`), with their logging and caching kept as the manifest says.
+ * `--`), with their logging and caching kept as the manifest says. Its
+ * Secrets Store secrets (`resources.secretsStore`) are `<worker>--<binding>`
+ * in the account's store, created from the app's secrets file and never
+ * rewritten.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -25,6 +28,7 @@ import {
   MAX_VECTORIZE_NAME_LENGTH,
   MAX_AI_GATEWAY_ID_LENGTH,
   RESOURCE_SEPARATOR,
+  storeSecretNameFor,
   vectorizeNameFor,
 } from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
@@ -54,7 +58,19 @@ import {
 } from "@/lib/cf/hyperdrive";
 import { createQueue, getQueue, listQueues } from "@/lib/cf/queues";
 import type { CfRunner } from "@/lib/cf/runner";
-import type { AiGateway, HyperdriveConfig, Queue, VectorizeIndex } from "@/lib/cf/schemas";
+import type {
+  AiGateway,
+  HyperdriveConfig,
+  Queue,
+  SecretsStoreSecret,
+  VectorizeIndex,
+} from "@/lib/cf/schemas";
+import {
+  chooseSecretsStore,
+  createStoreSecret,
+  findStoreSecret,
+  listSecretsStores,
+} from "@/lib/cf/secretsStore";
 import {
   createVectorizeIndex,
   describeVectorizeShape,
@@ -74,6 +90,7 @@ import {
   hyperdriveOriginVariable,
   hyperdriveOriginVariables,
   parseOriginUrl,
+  storeSecretVariable,
   type AppSecrets,
   type HyperdriveOrigin,
 } from "./deploySecrets";
@@ -145,7 +162,7 @@ export async function claimAppWorker(
 export async function provisionAppResources(
   options: ProvisionOptions & {
     manifest: EveryAppCliManifest;
-    /** The app's secrets file: the origins of its Hyperdrive configs. */
+    /** The app's secrets file: the origins of its Hyperdrive configs, the values of its Secrets Store secrets. */
     secrets?: AppSecrets;
     /** The Cloudflare account: an AI Gateway's URL holds it. */
     accountId: string;
@@ -158,6 +175,8 @@ export async function provisionAppResources(
     options.gatewayDb,
     registration.workerName,
   );
+  // First: a missing store or value stops the deploy before anything is created.
+  const secretsStore = await provisionSecretsStore({ ...options, owned });
   /** The app's AI Gateways, provisioned after everything else. */
   const withGateways = async () => {
     const gateways = manifest.resources?.aiGateway ?? [];
@@ -218,6 +237,7 @@ export async function provisionAppResources(
       ...(await provisionQueues(options, owned)),
       ...(await vectorize()),
       ...(await withGateways()),
+      ...secretsStore,
     };
   }
   // Every origin is checked before any config is created or changed.
@@ -252,7 +272,87 @@ export async function provisionAppResources(
     ...(await provisionQueues(options, owned)),
     ...(await vectorize()),
     ...(await withGateways()),
+    ...secretsStore,
   };
+}
+
+/**
+ * The app's Secrets Store secrets, one per `resources.secretsStore`
+ * binding, in the account's store: the one store the account has (with
+ * several, the one named `everyapp`, else the first; an app keeps the store
+ * it recorded a secret in). Each goes through the ledger as a D1 database
+ * does ({@link provisionOne}): one of the name not recorded as the app's is
+ * refused (it holds someone's credential), and a recorded one is bound as
+ * it is, its value never rewritten. A new one is created with the value of
+ * `<BINDING>` in the app's secrets file, which never reaches argv, output
+ * or the ledger. Every binding is checked (the store, then each value it
+ * needs) before any secret is created.
+ */
+async function provisionSecretsStore(
+  options: ProvisionOptions & {
+    owned: OwnedResource[];
+    manifest: EveryAppCliManifest;
+    secrets?: AppSecrets;
+  },
+): Promise<Pick<InstallTarget["resources"], "secretsStore">> {
+  const { cf, registration, owned, manifest } = options;
+  const bindings = (manifest.resources?.secretsStore ?? []).map((entry) => entry.name);
+  if (bindings.length === 0) return {};
+  const stores = await listSecretsStores(cf);
+  const recordedStore = owned
+    .find((entry) => entry.kind === "secrets-store-secret" && entry.resourceId)
+    ?.resourceId?.split("/")[0];
+  const store =
+    stores.find((candidate) => candidate.id === recordedStore) ?? chooseSecretsStore(stores);
+  if (!store) {
+    throw new EveryAppError(
+      "SECRETS_STORE_MISSING",
+      `This Cloudflare account has no Secrets Store, and ${manifest.id} binds a Secrets Store secret (${bindings[0]})
+Make one once in the dashboard: Secrets Store → Create store (cf can't create a store).`,
+      { fix: "create a store in the Cloudflare dashboard (Secrets Store)", rerun: thisCommand() },
+    );
+  }
+  const secretValues = options.secrets ?? {};
+  const found = new Map<string, SecretsStoreSecret | null>();
+  for (const binding of bindings) {
+    const name = storeSecretNameFor(registration.workerName, binding);
+    found.set(name, await findStoreSecret(cf, store.id, name));
+  }
+  const missing = bindings.filter(
+    (binding) =>
+      !found.get(storeSecretNameFor(registration.workerName, binding)) &&
+      !secretValues[storeSecretVariable(binding)],
+  );
+  if (missing.length > 0) {
+    const variables = missing.map(storeSecretVariable);
+    throw new EveryAppError(
+      "SECRETS_STORE_VALUE_MISSING",
+      `${missing.join(", ")} ${missing.length === 1 ? "needs its" : "need their"} Secrets Store ${missing.length === 1 ? "secret's value" : "secrets' values"}
+Creating ${missing.length === 1 ? "the secret" : "each secret"} in the store "${store.name}" needs ${missing.length === 1 ? "it" : "them"}.`,
+      {
+        fix: `set ${variables.join(", ")} in ${APP_SECRETS_FILE}`,
+        rerun: thisCommand(),
+      },
+    );
+  }
+  const secretsStore: NonNullable<InstallTarget["resources"]["secretsStore"]> = {};
+  for (const binding of bindings) {
+    const secretName = storeSecretNameFor(registration.workerName, binding);
+    await provisionOne({
+      ...options,
+      kind: "secrets-store-secret",
+      binding,
+      name: secretName,
+      find: async (name) => {
+        const secret = found.get(name);
+        return secret ? `${store.id}/${secret.id}` : null;
+      },
+      create: async (name) =>
+        `${store.id}/${await createStoreSecret(cf, store.id, name, secretValues[storeSecretVariable(binding)]!)}`,
+    });
+    secretsStore[binding] = { storeId: store.id, secretName };
+  }
+  return { secretsStore };
 }
 
 /**
@@ -612,7 +712,7 @@ function assignedName(
 async function provisionOne(
   options: ProvisionOptions & {
     owned: OwnedResource[];
-    kind: "d1" | "kv" | "queue" | "vectorize" | "ai-gateway";
+    kind: "d1" | "kv" | "queue" | "vectorize" | "ai-gateway" | "secrets-store-secret";
     binding: string;
     name: string;
     find: (name: string) => Promise<string | null>;

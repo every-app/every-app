@@ -5,8 +5,8 @@
  * the gateway's schema).
  *
  * A resource's name proves nothing: anyone with the account can create a
- * D1 database, Hyperdrive config, Vectorize index or Worker named like an app's, and a failed first deploy
- * D1 database, Hyperdrive config, AI Gateway or Worker named like an app's, and a failed first deploy
+ * D1 database, Hyperdrive config, queue, Vectorize index, AI Gateway,
+ * Secrets Store secret or Worker named like an app's, and a failed first deploy
  * leaves the app registered without having created anything. So an app
  * deploy uses an existing Worker, database or namespace only when it is
  * recorded here as the app's, and `app delete --purge` deletes only what is
@@ -46,6 +46,7 @@ type ResourceKind =
   | "queue"
   | "vectorize"
   | "ai-gateway"
+  | "secrets-store-secret"
   | "email-route";
 
 /** Each kind of app resource as a person reads it (R2 buckets are named, never recorded). */
@@ -57,6 +58,7 @@ export const RESOURCE_LABELS: Readonly<Record<ResourceKind | "r2", string>> = {
   queue: "Queue",
   vectorize: "Vectorize index",
   "ai-gateway": "AI Gateway",
+  "secrets-store-secret": "Secrets Store secret",
   r2: "R2 bucket",
   "email-route": "Email Routing route for",
 };
@@ -69,12 +71,12 @@ export interface OwnedResource {
    * route, its address in the app's inbound list (`apps.email_inbound`).
    */
   binding: string;
-  /** D1 name, KV title, Hyperdrive config, queue, Vectorize index or AI Gateway name, Worker name or the route's address. */
+  /** D1 name, KV title, Hyperdrive config, queue, Vectorize index, AI Gateway or Secrets Store secret name, Worker name or the route's address. */
   name: string;
   /**
    * D1 uuid, KV id, Hyperdrive config id, queue id (`queue_id`), Vectorize
    * index name (an index has no other id), AI Gateway id or Worker name; for
-   * a route, its
+   * a Secrets Store secret, `<store id>/<secret id>`; for a route, its
    * rule as `<zone id>/<rule id>`, or `catch_all:<zone id>` for a zone's
    * catch-all (lib/app/emailRoutes.ts). Null while a create is in flight: the
    * name was free when the claim was written, so a resource that has the

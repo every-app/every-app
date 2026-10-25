@@ -616,15 +616,16 @@ USAGE
   pnpm everyapp teardown --help
 
 For the accounts the onboarding loop installs into, over and over: removes every Worker,
-Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config and Vectorize index named
-every-*, the Gateway's own included, the two Cloudflare Access applications and the allow
-policy, the Email Routing rules that send mail to those Workers (a catch-all drops mail
-again, and routing is turned off once no rule and no catch-all of anyone else's needs it),
-the certificate packs of the hostnames the Gateway published, and the Custom Domain records
-(A, AAAA, CNAME) left at exactly those names. Never the zone, the Workers Paid subscription,
-the workers.dev subdomain, the Zero Trust team and its identity providers, any other DNS
-record (MX, TXT, CAA...) even at those names, R2 buckets outside the default jurisdiction,
-or anything whose name doesn't start with every- and that no app recorded.
+Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config, queue, Vectorize index,
+AI Gateway and Secrets Store secret named every-*, the Gateway's own included, the two
+Cloudflare Access applications and the allow policy, the Email Routing rules that send mail
+to those Workers (a catch-all drops mail again, and routing is turned off once no rule and no
+catch-all of anyone else's needs it), the certificate packs of the hostnames the Gateway
+published, and the Custom Domain records (A, AAAA, CNAME) left at exactly those names. Never
+the zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Trust team and
+its identity providers, a Secrets Store itself, any other DNS record (MX, TXT, CAA...) even
+at those names, R2 buckets outside the default jurisdiction, or anything whose name doesn't
+start with every- and that no app recorded.
 
 It is destructive and exists for dedicated test accounts only. The account must be on the
 allowlist (EVERYAPP_TEST_ACCOUNTS, or one id per line in ~/.config/everyapp/test-accounts),

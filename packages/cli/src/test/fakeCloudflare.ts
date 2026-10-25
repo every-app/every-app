@@ -146,6 +146,13 @@ const VECTORIZE_PRESET_SHAPES: Record<string, { dimensions: number; metric: stri
 };
 
 /** A routing rule or a zone's catch-all, as Email Routing keeps it. */
+/** A Secrets Store secret, with the value Cloudflare never returns. */
+interface FakeStoreSecret {
+  name: string;
+  value: string;
+  scopes: string[];
+}
+
 interface FakeEmailRule {
   id: string;
   name: string;
@@ -382,6 +389,12 @@ export class FakeCloudflare {
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
   /** R2 buckets by name, each with how many objects it holds. */
   readonly buckets = new Map<string, { objects: number }>();
+  /**
+   * Secrets Store stores by id, each with its secrets by id. None to begin
+   * with, as on an account whose dashboard never opened Secrets Store
+   * (cf can't make one): {@link addSecretsStore}.
+   */
+  readonly secretsStores = new Map<string, { name: string; secrets: Map<string, FakeStoreSecret> }>();
   /** Queues by id. */
   readonly queues = new Map<string, FakeQueue>();
   /**
@@ -772,6 +785,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["secrets-store"], (call) => this.secretsStoreCommand(call))
       .on(["queues"], (call) => this.queuesCommand(call))
       .on(["vectorize"], (call) => this.vectorizeCommand(call))
       .on(["ai-gateway", "gateways"], (call) => this.aiGatewayCommand(call))
@@ -833,6 +847,23 @@ export class FakeCloudflare {
   hyperdriveConfig(name: string): (FakeHyperdrive & { id: string }) | undefined {
     const entry = [...this.hyperdrive].find(([, config]) => config.name === name);
     return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /** Make a Secrets Store, as a person does once in the dashboard; returns its id. */
+  addSecretsStore(name = "default_secrets_store"): string {
+    const id = (this.counter += 1).toString(16).padStart(32, "0");
+    this.secretsStores.set(id, { name, secrets: new Map() });
+    return id;
+  }
+
+  /** A Secrets Store secret by name, in any store, with its store's id and its own. */
+  storeSecret(name: string): (FakeStoreSecret & { id: string; storeId: string }) | undefined {
+    for (const [storeId, store] of this.secretsStores) {
+      for (const [id, secret] of store.secrets) {
+        if (secret.name === name) return { id, storeId, ...secret };
+      }
+    }
+    return undefined;
   }
 
   /** A zone's Email Routing, as the API has it before anyone changes it. */
@@ -1577,6 +1608,91 @@ export class FakeCloudflare {
       return { stdout: JSON.stringify(gateway) };
     }
     return cfError(`unknown command ai-gateway gateways ${action}`);
+  }
+
+  /**
+   * `cf secrets-store stores list` and `cf secrets-store secrets
+   * list|create|get|delete`, as Cloudflare's API answers them: a list
+   * filters by `--search` across name and comment, a create reads its list
+   * of secrets from the `--body @<file>` cf is handed (the value never on
+   * the command line) and refuses a name the store has, and nothing listed
+   * ever carries a value.
+   */
+  private secretsStoreCommand(call: RecordedCfCall): FakeCfResponse {
+    const [, group, action] = call.args;
+    const page = <T>(items: T[]): T[] => {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const at = Number(flag(call.args, "--page") ?? "1");
+      return items.slice((at - 1) * perPage, at * perPage);
+    };
+    const shown = (storeId: string, id: string, secret: FakeStoreSecret) => ({
+      id,
+      name: secret.name,
+      store_id: storeId,
+      scopes: secret.scopes,
+      status: "active",
+      comment: "",
+      created: "2026-10-24T00:00:00.000Z",
+      modified: "2026-10-24T00:00:00.000Z",
+    });
+    if (group === "stores" && action === "list") {
+      return {
+        stdout: JSON.stringify(
+          page([...this.secretsStores].map(([id, store]) => ({ id, name: store.name }))),
+        ),
+      };
+    }
+    if (group !== "secrets") return cfError(`unknown command secrets-store ${group} ${action}`);
+    const storeId = action === "create" ? call.args[3]! : (flag(call.args, "--store-id") ?? "");
+    const store = this.secretsStores.get(storeId);
+    if (!store) {
+      return apiError(1001, "secrets_store.store_not_found", "404 Not Found", `secrets_store/stores/${storeId}`);
+    }
+    if (action === "list") {
+      const search = flag(call.args, "--search") ?? "";
+      return {
+        stdout: JSON.stringify(
+          page(
+            [...store.secrets]
+              .filter(([, secret]) => secret.name.includes(search))
+              .map(([id, secret]) => shown(storeId, id, secret)),
+          ),
+        ),
+      };
+    }
+    if (action === "create") {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return cfError("A body is required");
+      const request = JSON.parse(call.files[path.basename(file.slice(1))]!) as Array<{
+        name: string;
+        value: string;
+        scopes?: string[];
+      }>;
+      const created: Array<ReturnType<typeof shown>> = [];
+      for (const entry of request) {
+        if ([...store.secrets.values()].some((secret) => secret.name === entry.name)) {
+          return cfError(`A secret named ${entry.name} already exists in this store`);
+        }
+        const id = (this.counter += 1).toString(16).padStart(32, "0");
+        const secret = { name: entry.name, value: entry.value, scopes: entry.scopes ?? [] };
+        store.secrets.set(id, secret);
+        created.push(shown(storeId, id, secret));
+      }
+      return { stdout: JSON.stringify(created) };
+    }
+    const id = call.args[3]!;
+    const secret = store.secrets.get(id);
+    if (!secret) {
+      return apiError(1002, "secrets_store.secret_not_found", "404 Not Found", `secrets_store/stores/${storeId}/secrets/${id}`);
+    }
+    if (action === "get") return { stdout: JSON.stringify(shown(storeId, id, secret)) };
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the secret.");
+      if (declined) return declined;
+      store.secrets.delete(id);
+      return { stdout: "null" };
+    }
+    return cfError(`unknown command secrets-store secrets ${action}`);
   }
 
   /**

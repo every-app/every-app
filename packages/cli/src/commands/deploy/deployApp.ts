@@ -270,7 +270,9 @@ async function deploySteps(
   // What reaches the app's Postgres database, checked before anything is created.
   const postgresMigrations = manifest.migrations?.dialect === "postgresql";
   const appSecrets: AppSecrets =
-    postgresMigrations || manifest.resources?.hyperdrive?.length
+    postgresMigrations ||
+    manifest.resources?.hyperdrive?.length ||
+    manifest.resources?.secretsStore?.length
       ? await readAppSecrets(cwd)
       : {};
   if (postgresMigrations && !appSecrets[POSTGRES_URL_VARIABLE]) {

@@ -90,6 +90,8 @@ export interface TeardownPlan {
   vectorize: string[];
   /** AI Gateways, by id. */
   aiGateway: string[];
+  /** Secrets Store secrets, in whichever of the account's stores holds each (the stores stay). */
+  secretsStore: Array<{ storeId: string; name: string; id: string }>;
   access: {
     applications: Array<{ id: string; name: string }>;
     policy: { id: string; name: string } | null;
@@ -116,6 +118,7 @@ export const KINDS = [
   ["queues", "Queue", "Queues"],
   ["vectorize", "Vectorize index", "Vectorize indexes"],
   ["aiGateway", "AI Gateway", "AI Gateways"],
+  ["secretsStore", "Secrets Store secret", "Secrets Store secrets"],
   ["dns", "DNS record", "DNS records"],
 ] as const;
 export type Kind = (typeof KINDS)[number][0];
@@ -135,6 +138,7 @@ export const PLACES: Readonly<Record<Kind, string>> = {
   queues: "Compute (Workers) → Queues",
   vectorize: "AI → Vectorize",
   aiGateway: "AI → AI Gateway",
+  secretsStore: "Secrets Store",
   dns: "the zone → DNS → Records",
 };
 
@@ -165,6 +169,7 @@ export function planCounts(plan: TeardownPlan): Record<Kind, number> {
     queues: plan.queues.length,
     vectorize: plan.vectorize.length,
     aiGateway: plan.aiGateway.length,
+    secretsStore: plan.secretsStore.length,
     dns: dnsRecordCount(plan.dns),
   };
 }
@@ -185,6 +190,7 @@ export const describe = {
   consumer: (script: string, queueName: string) => `consumer ${script} of Queue "${queueName}"`,
   vectorize: (name: string) => `${RESOURCE_LABELS.vectorize} "${name}"`,
   aiGateway: (id: string) => `${RESOURCE_LABELS["ai-gateway"]} "${id}"`,
+  secretsStore: (name: string) => `${RESOURCE_LABELS["secrets-store-secret"]} "${name}"`,
   application: (name: string) => `Access application "${name}"`,
   policy: (name: string) => `Access policy "${name}"`,
   rule: (address: string | null, zoneName: string) =>
@@ -221,6 +227,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
     queues: plan.queues.map((queue) => queue.name),
     vectorize: plan.vectorize,
     aiGateway: plan.aiGateway,
+    secretsStore: plan.secretsStore.map((secret) => secret.name),
     dns: plan.dns.flatMap((name) => name.records.map((record) => `${record.type} at ${name.name}`)),
   };
   return KINDS.flatMap(([kind, , many]) =>
@@ -263,6 +270,7 @@ export function planData(plan: TeardownPlan): Record<string, unknown> {
     queueConsumers: plan.queueConsumers,
     vectorize: plan.vectorize,
     aiGateway: plan.aiGateway,
+    secretsStore: plan.secretsStore,
     access: plan.access,
     email: plan.email,
     certificates: plan.certificates,

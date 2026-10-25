@@ -31,10 +31,8 @@ export const BUILD_SENTINEL = Object.freeze({
 
 /**
  * A manifest binding's placeholder: a D1 database's name and id, an R2
- * bucket's, queue's or Vectorize index's name, a KV namespace's or Hyperdrive
- * config's id. The installer
- * rewrites each by its binding name; the value only has to be recognizable.
- * bucket's name, a KV namespace's, Hyperdrive config's or AI Gateway's id.
+ * bucket's, queue's or Vectorize index's name, a KV namespace's, Hyperdrive
+ * config's or AI Gateway's id, a Secrets Store secret's store id and name.
  * The installer rewrites each by its binding name; the value only has to
  * be recognizable.
  */
@@ -52,6 +50,7 @@ interface SentinelManifest {
     queues?: readonly { readonly name: string }[];
     vectorize?: readonly { readonly name: string }[];
     aiGateway?: readonly { readonly name: string }[];
+    secretsStore?: readonly { readonly name: string }[];
   };
 }
 
@@ -94,6 +93,11 @@ export interface EveryAppDeployTarget {
     vectorize?: Record<string, { name: string }>;
     /** AI Gateways by binding: each binding's whole value. */
     aiGateway?: Record<string, AiGatewayValue>;
+    /**
+     * Secrets Store secrets by binding: the account's store and the
+     * secret the deploy made in it.
+     */
+    secretsStore?: Record<string, { storeId: string; secretName: string }>;
   };
 }
 
@@ -145,6 +149,10 @@ export function sentinelDeployTarget(
           accountId: BUILD_SENTINEL.accountId,
           url: aiGatewayUrl(BUILD_SENTINEL.accountId, id),
         }),
+      ),
+      secretsStore: byBinding(
+        resources?.secretsStore?.map((secret) => secret.name),
+        (placeholder) => ({ storeId: placeholder, secretName: placeholder }),
       ),
     },
   };

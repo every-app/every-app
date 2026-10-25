@@ -9,10 +9,13 @@
  *   <BINDING>_ORIGIN_URL    the origin a new Hyperdrive config for that
  *                           binding connects to; an app with one config may
  *                           leave it to POSTGRES_DATABASE_URL
+ *   <BINDING>               the value a new Secrets Store secret for that
+ *                           `resources.secretsStore` binding is created with
  *
  * Unlike the app's own secrets (`everyapp secret set`), nothing here
- * reaches the Worker: it binds the Hyperdrive config, which holds the
- * origin's credentials in Cloudflare.
+ * reaches the Worker as a value: it binds the Hyperdrive config, which
+ * holds the origin's credentials in Cloudflare, and the Secrets Store
+ * secret, which holds its value in the account's store.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -47,6 +50,11 @@ export async function readAppSecrets(cwd: string): Promise<AppSecrets> {
 /** The variable holding the origin of a Hyperdrive binding's config. */
 export function hyperdriveOriginVariable(binding: string): string {
   return `${binding}_ORIGIN_URL`;
+}
+
+/** The variable holding the value a Secrets Store binding's secret is created with: the binding's own name. */
+export function storeSecretVariable(binding: string): string {
+  return binding;
 }
 
 /**

@@ -151,11 +151,9 @@ async function deploy(manifest: EveryAppCliManifest): Promise<string> {
  * Everything the loop's run leaves behind, and what isn't Every App's:
  * the app, Access on, mail routed to the app (and a rule of someone
  * else's), the zone's Universal certificate, R2 buckets (one not empty), a
- * Hyperdrive config, a Vectorize index, DNS left at our names, and a
- * Worker, database, namespace, bucket, config, index and record that are
- * someone else's.
- * Hyperdrive config, an AI Gateway, DNS left at our names, and a Worker,
- * database, namespace, bucket, config, gateway and record that are
+ * Hyperdrive config, a Vectorize index, an AI Gateway, a Secrets Store
+ * secret, DNS left at our names, and a Worker, database, namespace,
+ * bucket, config, index, gateway, store secret and record that are
  * someone else's (a gateway named `everyapp` among them: not every-*).
  */
 async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean } = {}): Promise<void> {
@@ -206,6 +204,17 @@ async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean 
   for (const id of [`${TODO_WORKER}-ai-gateway`, "support-bot", "everyapp"]) {
     account.aiGateways.set(id, { id, collect_logs: true, cache_ttl: 0 });
   }
+  const store = account.addSecretsStore();
+  account.secretsStores.get(store)!.secrets.set("ss-ours", {
+    name: `${TODO_WORKER}--stripe-key`,
+    value: "sk_test_ours",
+    scopes: ["workers"],
+  });
+  account.secretsStores.get(store)!.secrets.set("ss-theirs", {
+    name: "payroll-api-key",
+    value: "theirs",
+    scopes: ["workers"],
+  });
   // At the app's host: a record a Custom Domain's kind (ours to clear once
   // the domain is gone) and a TXT that isn't; a wildcard and www that are
   // someone else's.
@@ -489,12 +498,10 @@ describe("teardown --dry-run", () => {
       [`AAAA ${HOST}`, `AAAA todo.${HOST}`, `A todo.${HOST}`],
     );
     expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which Every App never created`);
-    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, access: 3, email: 2, dns: 3 });
+    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, aiGateway: 1, secretsStore: 1, access: 3, email: 2, dns: 3 });
+    expect(plan.secretsStore).toEqual([{ storeId: expect.any(String), name: `${TODO_WORKER}--stripe-key`, id: "ss-ours" }]);
     // Nothing of what isn't ours.
-    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|product-search|www\.|\*\./);
-    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, aiGateway: 1, access: 3, email: 2, dns: 3 });
-    // Nothing of what isn't ours.
-    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|support-bot|"everyapp"|www\.|\*\./);
+    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|product-search|support-bot|"everyapp"|payroll-api-key|www\.|\*\./);
   });
 });
 
@@ -515,6 +522,8 @@ describe("teardown", () => {
     expect([...account.hyperdrive.keys()]).toEqual(["hd-theirs"]);
     expect([...account.vectorizeIndexes.keys()]).toEqual(["product-search"]);
     expect([...account.aiGateways.keys()].sort()).toEqual(["everyapp", "support-bot"]);
+    // Secrets Store: our secret went, theirs and the store stay.
+    expect([...account.secretsStores.values()].map((store) => [...store.secrets.keys()])).toEqual([["ss-theirs"]]);
     // R2: the empty bucket went; the one with objects is kept, and said.
     expect([...account.buckets.keys()].sort()).toEqual(["customer-backups", `${TODO_WORKER}--uploads`]);
     expect(warnings("TEARDOWN_DELETE_FAILED")).toEqual([
@@ -1016,6 +1025,8 @@ describe("teardown review: what it must leave alone", () => {
       /^kv namespaces list/,
       /^r2 buckets list/,
       /^hyperdrive list/,
+      /^secrets-store stores list/,
+      /^secrets-store secrets list/,
       /^queues list/,
       /^vectorize list/,
       /^ai-gateway gateways list/,
