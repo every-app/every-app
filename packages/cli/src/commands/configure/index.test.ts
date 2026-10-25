@@ -757,7 +757,7 @@ describe("configure from a script", () => {
       auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
       hint: "A restricted key from the Stripe dashboard.",
     };
-    await addProvider(db(), { spec: stripe, actor: "ops@example.com", install: (await readInstall(db()))! });
+    await addProvider(db(), { spec: stripe, deployer: { actor: "ops@example.com", email: "ops@example.com" }, install: (await readInstall(db()))! });
     const shop: EveryAppCliManifest = { id: "shop", resources: { d1: ["DB"] }, capabilities: { stripe: { access: "read" } } };
     await deploy(appDir(shop), shop);
 

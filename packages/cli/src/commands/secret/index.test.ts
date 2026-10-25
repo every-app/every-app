@@ -648,7 +648,7 @@ describe("a registered provider's key", () => {
     capabilities: { stripe: { access: "read", why: "Shows the last charges." } },
   };
   const register = async (spec: Record<string, unknown> = STRIPE, replace = false) =>
-    addProvider(db(), { spec, actor: "ops@example.com", replace, install: (await readInstall(db()))! });
+    addProvider(db(), { spec, deployer: { actor: "ops@example.com", email: "ops@example.com" }, replace, install: (await readInstall(db()))! });
   const row = async () =>
     (await db().run([{ sql: "SELECT added_at, bound_to, bound_at FROM providers WHERE id = 'stripe'" }]))[0]![0]!;
   const keyOf = (spec: Record<string, unknown>) => {
@@ -721,7 +721,7 @@ describe("a registered provider's key", () => {
   it("is removed from the Gateway by secret unset once its row is gone", async () => {
     await register();
     await set(emptyDir(), "STRIPE_API_KEY");
-    await removeProvider(db(), "stripe");
+    await removeProvider(db(), "stripe", { actor: "ops@example.com", email: "ops@example.com" });
     events = [];
     await unset(emptyDir(), "STRIPE_API_KEY");
     expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBeUndefined();

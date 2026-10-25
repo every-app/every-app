@@ -253,7 +253,7 @@ export async function addFromSpec(
   out.emit({ type: "step", step: "provider.add", status: "start", message: `Registering ${named}...` });
   const added = await addProvider(gateway.db, {
     spec,
-    actor: gateway.deployer.actor,
+    deployer: gateway.deployer,
     replace: flags.replace ?? false,
     install: gateway.install,
     now: options.now?.(),
@@ -606,7 +606,10 @@ export async function removeRegistered(
   const { out, flags } = options;
   const gateway = await connect(options);
   out.emit({ type: "step", step: "provider.remove", status: "start", message: `Removing ${id}...` });
-  const removed = await removeProvider(gateway.db, id, { force: flags.force ?? false });
+  const removed = await removeProvider(gateway.db, id, gateway.deployer, {
+    force: flags.force ?? false,
+    now: options.now?.(),
+  });
   const gatewayNames = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
   const settings = removed.settings.map((name) => ({ name, set: gatewayNames.includes(name) }));
   const stays = settings.filter((setting) => setting.set).map((setting) => setting.name);

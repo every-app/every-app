@@ -521,6 +521,111 @@ describe("provider remove", () => {
   });
 });
 
+describe("provider events", () => {
+  const ORG = "org-1";
+
+  /** The install organization, and a webhook subscribed to everything. */
+  async function organizationWithSubscriber() {
+    await db().run([
+      { sql: "INSERT INTO organizations (id, name, slug, created_at) VALUES (?, 'Acme', 'acme', 0)", params: [ORG] },
+      {
+        sql: "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, events, enabled, created_at, updated_at) VALUES ('sub_all', ?, 'all', 'webhook', 'https://hooks.example.org/x', 'whsec_x', '[\"*\"]', 1, 0, 0)",
+        params: [ORG],
+      },
+    ]);
+  }
+
+  const eventRows = async () =>
+    ((await db().run([{ sql: "SELECT id, organization_id, type, actor, data FROM events ORDER BY time, id" }]))[0] ?? []).map(
+      (row) => ({
+        id: row["id"],
+        organization: row["organization_id"],
+        type: row["type"],
+        actor: JSON.parse(String(row["actor"])),
+        data: JSON.parse(String(row["data"])),
+      }),
+    );
+  const deliveryRows = async () =>
+    (await db().run([{ sql: "SELECT event_id, subscription_id, status FROM event_deliveries ORDER BY created_at, id" }]))[0] ?? [];
+
+  it("provider add queues one provider.added in its batch, a replace another, and a refused add nothing", async () => {
+    await organizationWithSubscriber();
+    await add(specDir(STRIPE));
+
+    const [added, ...none] = await eventRows();
+    expect(none).toEqual([]);
+    expect(added).toMatchObject({
+      organization: ORG,
+      type: "provider.added",
+      actor: { kind: "operator", id: "dev@example.com" },
+      data: { provider: { id: "stripe", name: "Stripe" } },
+    });
+    expect(await deliveryRows()).toEqual([{ event_id: added!.id, subscription_id: "sub_all", status: "pending" }]);
+
+    // Refused: the id has a row, a built-in id, a setting another row holds.
+    await expect(add(specDir(STRIPE))).rejects.toMatchObject({ code: "PROVIDER_EXISTS" });
+    await expect(add(specDir({ ...STRIPE, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
+      code: "PROVIDER_BUILTIN",
+    });
+    await expect(
+      add(specDir({ ...STRIPE, id: "stripe-connect", auth: { kind: "bearer", secret: "STRIPE_API_KEY" } })),
+    ).rejects.toMatchObject({ code: "PROVIDER_SECRET_TAKEN" });
+    expect(await eventRows()).toHaveLength(1);
+
+    await add(specDir({ ...STRIPE, name: "Stripe Billing" }), "stripe.json", { replace: true });
+    expect((await eventRows()).map((event) => [event.type, event.data])).toEqual([
+      ["provider.added", { provider: { id: "stripe", name: "Stripe" } }],
+      ["provider.added", { provider: { id: "stripe", name: "Stripe Billing" } }],
+    ]);
+  });
+
+  it("provider remove queues one provider.removed in its batch, and a refused remove nothing", async () => {
+    await organizationWithSubscriber();
+    await add(specDir(STRIPE));
+    await registerApp("shop", { capabilities: { stripe: { access: "read" } } });
+
+    // Refused: a built-in id, an id with no row, a row an app lists without --force.
+    await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
+    await expect(remove("stripe-connect")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await expect(remove("stripe")).rejects.toMatchObject({ code: "PROVIDER_IN_USE" });
+    expect((await eventRows()).map((event) => event.type)).toEqual(["provider.added"]);
+
+    await remove("stripe", true);
+    expect(await rows()).toEqual([]);
+    const removed = (await eventRows()).filter((event) => event.type === "provider.removed");
+    expect(removed).toEqual([
+      expect.objectContaining({
+        organization: ORG,
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { provider: { id: "stripe", name: "Stripe" } },
+      }),
+    ]);
+    expect((await deliveryRows()).filter((delivery) => delivery["event_id"] === removed[0]!.id)).toEqual([
+      { event_id: removed[0]!.id, subscription_id: "sub_all", status: "pending" },
+    ]);
+
+    // Gone: a second remove is refused and queues nothing.
+    await expect(remove("stripe", true)).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    expect((await eventRows()).filter((event) => event.type === "provider.removed")).toHaveLength(1);
+  });
+
+  it("writes the row and queues nothing on a Gateway without the event tables, or before it has an organization", async () => {
+    // No organization yet: the registry changes, nothing is queued.
+    await add(specDir(STRIPE));
+    await remove("stripe");
+    expect(await eventRows()).toEqual([]);
+
+    await organizationWithSubscriber();
+    await db().run([{ sql: "DROP TABLE event_deliveries" }, { sql: "DROP TABLE events" }, { sql: "DROP TABLE event_subscriptions" }]);
+    await add(specDir(STRIPE));
+    expect((await rows()).map((row) => row["id"])).toEqual(["stripe"]);
+    await remove("stripe");
+    expect(await rows()).toEqual([]);
+    const [tables = []] = await db().run([{ sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'event%'" }]);
+    expect(tables).toEqual([]);
+  });
+});
+
 describe("provider on|off", () => {
   it("say they are mcp on|off now, then run them", async () => {
     await runMcpAlias({ flags, out: out(), createCf }, "on", "dataforseo");

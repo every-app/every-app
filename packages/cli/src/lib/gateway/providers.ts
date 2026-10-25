@@ -11,6 +11,12 @@
  * A Gateway from before migration 0013 has no table: `add` and `remove`
  * refuse with the command that brings it up to date, and every reader
  * reads it as no rows.
+ *
+ * `add` and `remove` queue `provider.added` and `provider.removed` (the
+ * outbox, events.ts) in the batch that writes the row, on the install
+ * organization, whose Gateway the registry is, as the operator: only when
+ * the write lands, and nothing on a Gateway without the event tables or
+ * before it has an organization.
  */
 import {
   capabilitySettings,
@@ -27,12 +33,13 @@ import {
   type ProviderRow,
   type RegisteredProvider,
 } from "@every-app/sdk/internal";
-import type { D1Database } from "@/lib/cf/d1";
+import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
 import type { InstallRecord } from "./install";
-import { listApps, text } from "./registry";
+import { operatorActor, queueEventFromCli } from "./events";
+import { installOrganization, listApps, text, type Deployer } from "./registry";
 
 /** What the host rule needs of the install: the Gateway's host and its apps' base domain. */
 type ProviderInstall = Pick<InstallRecord, "gatewayHost" | "appBaseDomain">;
@@ -134,8 +141,8 @@ function isBuiltinId(id: string): boolean {
 interface AddProviderInput {
   /** The spec as JSON parsed it (from the file or URL `provider add` was given). */
   spec: unknown;
-  /** Who registers it: the Cloudflare login's email, or `api-token:<account id>`. */
-  actor: string;
+  /** Who registers it: the Cloudflare login (its actor is the row's `added_by`). */
+  deployer: Deployer;
   /** Replace the row with the same id, unbinding its key. */
   replace?: boolean;
   install: ProviderInstall;
@@ -224,7 +231,11 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
   }
   const now = input.now ?? Date.now();
   const stored = JSON.stringify(input.spec);
-  // events: provider.added (the events-out thread queues it in this batch).
+  // Only if the write below landed: the row as written now. A replace is a registration too.
+  const event = await providerEvent(db, "provider.added", { id, name: capability.label }, input.deployer, now, {
+    sql: "EXISTS (SELECT 1 FROM providers WHERE id = ? AND spec = ? AND updated_at = ?)",
+    params: [id, stored, now],
+  });
   const [written = []] = await db.run([
     existing
       ? {
@@ -234,8 +245,9 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
       : {
           sql: `INSERT INTO providers (id, spec, added_by, added_at, updated_at, bound_to, bound_at)
 VALUES (?1, ?2, ?3, ?4, ?4, NULL, NULL) ON CONFLICT(id) DO NOTHING RETURNING id`,
-          params: [id, stored, input.actor, now],
+          params: [id, stored, input.deployer.actor, now],
         },
+    ...event,
   ]);
   if (written.length === 0) {
     // Another run added or removed it between the read and the write.
@@ -266,7 +278,8 @@ interface RemovedProvider {
 export async function removeProvider(
   db: D1Database,
   id: string,
-  { force = false }: { force?: boolean } = {},
+  deployer: Deployer,
+  { force = false, now = Date.now() }: { force?: boolean; now?: number } = {},
 ): Promise<RemovedProvider> {
   if (isBuiltinId(id)) {
     throw new EveryAppError("PROVIDER_BUILTIN", `${id} is built in\nOnly a provider registered with ${CLI} provider add can be removed.`, {
@@ -293,14 +306,46 @@ export async function removeProvider(
       { rerun: thisCommand(["--force"]), rerunNote: "removes it anyway", authorize: true },
     );
   }
-  // events: provider.removed (the events-out thread queues it in this batch).
-  await db.run([{ sql: "DELETE FROM providers WHERE id = ?", params: [id] }]);
+  const name = parsed.ok ? parsed.capability.label : id;
+  // Queued before the delete, only while the row is there: a second remove
+  // racing this one finds none and queues nothing.
+  const event = await providerEvent(db, "provider.removed", { id, name }, deployer, now, {
+    sql: "EXISTS (SELECT 1 FROM providers WHERE id = ?)",
+    params: [id],
+  });
+  await db.run([...event, { sql: "DELETE FROM providers WHERE id = ?", params: [id] }]);
   return {
     id,
-    name: parsed.ok ? parsed.capability.label : id,
+    name,
     settings: parsed.ok ? [...capabilitySettings(parsed.capability)] : [],
     apps,
   };
+}
+
+/**
+ * The outbox statements for a registry change: the catalogue's
+ * `{ provider: { id, name } }` on the install organization, as the
+ * operator, written only when `onlyIf` holds when the batch runs. None
+ * before the Gateway has an organization.
+ */
+async function providerEvent(
+  db: D1Database,
+  type: "provider.added" | "provider.removed",
+  provider: { id: string; name: string },
+  deployer: Deployer,
+  now: number,
+  onlyIf: { sql: string; params: Array<string | number> },
+): Promise<D1Statement[]> {
+  const found = await installOrganization(db);
+  if (!found) return [];
+  return queueEventFromCli(db, {
+    organizationId: found.organization.id,
+    type,
+    actor: operatorActor(deployer),
+    data: { provider: { id: provider.id, name: provider.name } },
+    onlyIf,
+    now,
+  });
 }
 
 function safeJson(text: string): unknown {

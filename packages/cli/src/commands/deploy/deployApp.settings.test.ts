@@ -240,7 +240,7 @@ describe("deploy and the Gateway's registered providers", () => {
     capabilities: { stripe: { access: "read", why: "Shows the last charges." } },
   };
   const registerStripe = async () =>
-    addProvider(registry(), { spec: STRIPE, actor: "ops@example.com", install: (await readInstall(registry()))! });
+    addProvider(registry(), { spec: STRIPE, deployer: { actor: "ops@example.com", email: "ops@example.com" }, install: (await readInstall(registry()))! });
 
   it("refuses a capability neither the catalog nor the Gateway's rows have, before registering anything", async () => {
     await expect(deploy(SHOP)).rejects.toMatchObject({
