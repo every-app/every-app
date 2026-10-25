@@ -30,6 +30,21 @@ export function selfHostedInstallEnabled(env: BrowserInstallEnv): boolean {
   );
 }
 
+/**
+ * The install organization, as the CLI names it (`installOrganization`,
+ * packages/cli/src/lib/gateway/registry.ts): the oldest organization with an
+ * owner. It gets the bare `<appId>.<base>` hostname, and on a self-hosted
+ * Gateway it is the only organization whose owners and admins may spend the
+ * account-wide CF_DEPLOY_TOKEN from the browser. Null before the Gateway
+ * has an owner, so a browser install fails closed then.
+ */
+export async function installOrganizationId(): Promise<string | null> {
+  const rows = (await db.all(
+    sql`SELECT id FROM organizations WHERE EXISTS (SELECT 1 FROM members WHERE members.organization_id = organizations.id AND members.role = 'owner') ORDER BY created_at, id LIMIT 1`,
+  )) as Array<{ id: string }>;
+  return rows[0]?.id ?? null;
+}
+
 /** Keep CLI reconciliation aware of the Gateway settings this install published. */
 export async function recordBrowserGatewayDeployment(
   versionId: string,

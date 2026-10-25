@@ -276,13 +276,17 @@ in the gateway's Cloudflare account **is** operator authority.
   Worker is the browser install (`POST /api/admin/apps/install`, #371):
   once the operator has given the gateway a `CF_DEPLOY_TOKEN` and
   `CLOUDFLARE_ACCOUNT_ID` (`everyapp setup` asks; default off) and
-  `BROWSER_APP_INSTALLS` isn't `off`, any signed-in owner or admin of an
-  active organization can have the gateway download a public GitHub or
-  oss.new release and upload it as an account Worker with that token,
-  under the same release intake and policy subset as the hosted install
-  (docs/runbooks/browser-app-install.md). That makes an admin session plus
-  the gateway's token a second deploy authority; docs/threat-model.md B7
-  records it, and the token's account-wide reach, as open.
+  `BROWSER_APP_INSTALLS` isn't `off`, a signed-in owner or admin of the
+  install organization (the oldest with an owner, the one the setup claim
+  made; any other organization is refused before the download and logged as
+  `app_install.refused`, and nobody installs before the gateway has an
+  owner) can have the gateway download
+  a public GitHub or oss.new release and upload it as an account Worker
+  with that token, under the same release intake and policy subset as the
+  hosted install (docs/runbooks/browser-app-install.md). That makes an
+  admin session plus the gateway's token a second deploy authority;
+  docs/threat-model.md B7 records it, and the token's account-wide reach,
+  as open.
 - The registration rules live once, as pure functions in
   `@every-app/perimeter/registry`, and the CLI runs them before every write:
   reserved and malformed app ids, the Worker name `every-<orgKey>-<appId>`

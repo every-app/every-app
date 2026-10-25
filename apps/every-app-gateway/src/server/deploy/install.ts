@@ -12,6 +12,14 @@
  *
  * Hosted deploys retain their launch gate. Self-hosted browser installs are
  * on by default with configured credentials; BROWSER_APP_INSTALLS=off opts out.
+ * On a self-hosted Gateway the token is the account's, so only the install
+ * organization's owners and admins may spend it: any other organization is
+ * refused before anything is downloaded (one warn line names who asked for
+ * which organization), and the context offers it nothing. Availability and
+ * the context go by the person, not the session's active workspace: an
+ * admin of the install organization whose sidebar is in another one still
+ * sees Install app and is offered the install organization. The install
+ * and the poll check the workspace they name.
  * Session-authenticated, so these are control-plane routes
  * (src/routes/api/admin/), behind its CSRF guard.
  */
@@ -28,7 +36,10 @@ import { isUserBanned } from "@/server/user-ban";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
 import { bundleRefused, DeployError } from "./errors";
 import { fetchAppRelease, fetchReleaseUrl, parseRepoUrl } from "./release";
-import { selfHostedInstallEnabled } from "./browser-install";
+import {
+  installOrganizationId,
+  selfHostedInstallEnabled,
+} from "./browser-install";
 import { bundleProblems } from "./metadata";
 import {
   deployerSettings,
@@ -46,6 +57,10 @@ interface InstallCaller {
   email: string;
   organizationId: string;
 }
+
+const ADMINS_ONLY = "Only the organization's owners and admins install apps.";
+const INSTALL_ORGANIZATION_ONLY =
+  "On a self-hosted Gateway only the install organization's owners and admins install apps.";
 
 async function authenticateSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -83,10 +98,25 @@ async function authenticateAdmin(
     );
   }
   if (role !== "owner" && role !== "admin") {
+    throw new DeployError("APP_INSTALL_FORBIDDEN", 403, ADMINS_ONLY);
+  }
+  if (!(await mayInstallForOrganization(org.orgId))) {
+    // An admin elsewhere reaching for the account-wide token: the one
+    // refusal here the operator should see. Ids only, never the token.
+    logEvent(
+      "app_install.refused",
+      {
+        org: org.orgId,
+        installOrg: await installOrganizationId(),
+        user: session.user.id,
+        role,
+      },
+      "warn",
+    );
     throw new DeployError(
       "APP_INSTALL_FORBIDDEN",
       403,
-      "Only the organization's owners and admins install apps.",
+      INSTALL_ORGANIZATION_ONLY,
     );
   }
   if (!(await isOrganizationActive(org.orgId))) {
@@ -101,6 +131,19 @@ async function authenticateAdmin(
     email: session.user.email,
     organizationId: org.orgId,
   };
+}
+
+/**
+ * Whether an organization may spend the Gateway's deploy token. Hosted:
+ * every organization, into its own dispatch app. Self-hosted: the install
+ * organization only (the token is account-wide), and nobody before the
+ * Gateway has an owner.
+ */
+async function mayInstallForOrganization(
+  organizationId: string,
+): Promise<boolean> {
+  if (platformPolicy(env).mode !== "self_hosted") return true;
+  return (await installOrganizationId()) === organizationId;
 }
 
 function installAvailable(): boolean {
@@ -130,10 +173,39 @@ async function serve(work: () => Promise<Response>): Promise<Response> {
   }
 }
 
+/**
+ * The active organizations this person owns or administers that the
+ * install would accept: on self-host the install organization alone, so
+ * the page never offers a workspace the install refuses.
+ */
+async function installableWorkspaces(
+  userId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const administered =
+    await OrganizationRepository.findAdminSummariesForUser(userId);
+  if (platformPolicy(env).mode !== "self_hosted") return administered;
+  const installOrganization = await installOrganizationId();
+  return administered.filter(
+    (workspace) => workspace.id === installOrganization,
+  );
+}
+
 /** GET /api/admin/apps/install */
 export function serveInstallAvailability(request: Request): Promise<Response> {
   return serve(async () => {
-    await authenticateAdmin(await authenticateSession(request));
+    const session = await authenticateSession(request);
+    // By the person, not the session's active workspace: an admin of the
+    // install organization whose sidebar is in another one still sees
+    // Install app. The install itself checks the workspace it names.
+    if ((await installableWorkspaces(session.user.id)).length === 0) {
+      throw new DeployError(
+        "APP_INSTALL_FORBIDDEN",
+        403,
+        platformPolicy(env).mode === "self_hosted"
+          ? INSTALL_ORGANIZATION_ONLY
+          : ADMINS_ONLY,
+      );
+    }
     return json({ available: installAvailable() });
   });
 }
@@ -142,9 +214,7 @@ export function serveInstallAvailability(request: Request): Promise<Response> {
 export function serveInstallContext(request: Request): Promise<Response> {
   return serve(async () => {
     const session = await authenticateSession(request);
-    const workspaces = await OrganizationRepository.findAdminSummariesForUser(
-      session.user.id,
-    );
+    const workspaces = await installableWorkspaces(session.user.id);
     const active = session.session.activeOrganizationId;
     return json({
       available: installAvailable(),

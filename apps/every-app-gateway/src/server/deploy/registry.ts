@@ -12,7 +12,7 @@
  * Self-hosted installs use service_binding and the CLI's install-org
  * naming rules on APP_BASE_DOMAIN instead.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   appNames,
   markDeployedUpdate,
@@ -30,6 +30,7 @@ import {
   organizations,
   userAppAccess,
 } from "@/db/schema";
+import { installOrganizationId } from "./browser-install";
 import { DeployError } from "./errors";
 
 type StoredApp = typeof apps.$inferSelect;
@@ -195,13 +196,9 @@ async function register(
       503,
       "Set APP_BASE_DOMAIN before installing apps.",
     );
-  const owned = input.serviceBinding
-    ? ((await db.all(
-        sql`SELECT id FROM organizations WHERE EXISTS (SELECT 1 FROM members WHERE members.organization_id = organizations.id AND members.role = 'owner') ORDER BY created_at, id LIMIT 1`,
-      )) as Array<{ id: string }>)
-    : [];
   const isInstallOrganization =
-    input.serviceBinding === true && owned[0]?.id === organizationId;
+    input.serviceBinding === true &&
+    (await installOrganizationId()) === organizationId;
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;

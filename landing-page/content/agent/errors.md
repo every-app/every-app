@@ -1645,9 +1645,9 @@ Source: `apps/every-app-gateway/src/server/deploy/release.ts`, `apps/every-app-g
 
 ### APP_INSTALL_FORBIDDEN
 
-Status 403, browser install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.`
+Status 403, browser install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.` On a self-hosted Gateway also when the chosen organization isn't the install organization (the oldest with an owner), the only one whose owners and admins may spend the account-wide `CF_DEPLOY_TOKEN`, or when no organization has an owner yet: `On a self-hosted Gateway only the install organization's owners and admins install apps.` `GET /api/admin/apps/install` answers it when the signed-in person owns or administers no organization the install accepts (by the person, not the session's active workspace); the install and the job poll check the workspace they name, and a refusal of another organization is logged as `app_install.refused` (warn).
 
-**Fix:** ask an owner or admin.
+**Fix:** ask an owner or admin; on a self-hosted Gateway, one of the install organization, or deploy with `pnpm everyapp install <url>` from the terminal.
 
 Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 

@@ -1008,7 +1008,7 @@ version everyapp didn't record. A release that was tampered with, or a
 repository being built from its URL on the operator's machine. Two deploys
 racing.
 
-**Invariants.** The register has 38.
+**Invariants.** The register has 39.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1039,7 +1039,8 @@ racing.
 | `release.never-built-from-url` | A GitHub URL fetches only the release's `everyapp-release.tar.gz`, anonymously, over HTTPS with HTTPS-only redirects, a 200 MB cap and a timeout, into a private temp file; a repository without a release is never built from its URL. | `packages/cli/src/lib/release/github.ts:46-98` | `packages/cli/src/commands/install/release.test.ts` :: takes a GitHub repository's latest release, and sends a repository without one to its clone |
 | `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `packages/cli/src/commands/install/release.test.ts` :: refuses local state, a build that isn't production's, and Prisma migrations |
 | `gateway.no-deploy-api-on-self-host` | The HTTP deploy API (`/api/v1/*`) is served only when `thirdPartyDeploys` holds, which is false in `self_hosted` and invalid modes. | `apps/every-app-gateway/src/server.ts:151-157` | `platform-policy.test.ts` :: opens third-party deploys only on a hosted gateway whose gate is on |
-| `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
+| `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:65-134` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
+| `deploy.browser-install-install-org-only` | On self-host the browser install spends the account-wide `CF_DEPLOY_TOKEN` only for the install organization's owners and admins (the oldest organization with an owner, as the CLI names it); any other chosen workspace is refused before any download (the install and the poll; each refusal is one `app_install.refused` warn line), availability and the page's workspaces go by the person rather than the session's active workspace, and nobody installs before the Gateway has an owner. | `apps/every-app-gateway/src/server/deploy/install.ts:74-147` (`authenticateAdmin`, `mayInstallForOrganization`), `install.ts:181-228` (`installableWorkspaces`), `browser-install.ts:41-46` (`installOrganizationId`) | `install-api.sqlite.test.ts` :: spends the account-wide token only for the install organization's owners and admins; `install-api.sqlite.test.ts` :: shows Install app to an admin of the install organization whose session is active elsewhere; `install-api.sqlite.test.ts` :: installs for a second organization's owner too: hosted, every organization has its own dispatch app |
 | `browser-install.policy-subset-and-intake` | A browser-installed release must be a tenant-neutral build with only the allowed keys, no `workers.dev`, no triggers, no `EVERYAPP_DEV`, bindings from the allowlist (D1, own Durable Objects, assets); helpers, Workflows, KV, R2, Hyperdrive, secrets and crons are refused before anything is provisioned. | `apps/every-app-gateway/src/server/deploy/metadata.ts:119-312` | `metadata.test.ts` :: refuses helper Workers, Workflows, KV, secrets and too many Durable Object classes (partial on self-host, see gaps) |
 
 **Not this boundary's job.** Keeping the operator's Cloudflare login
@@ -1051,24 +1052,27 @@ intent).
 **Gaps.**
 
 - *The browser install is a deploy path on the public Worker, open to
-  every organization owner and admin, untested on self-host* (high, medium
-  fix). `docs/security-model.md` "Operator Authority" records it as the
-  second deploy authority; ADR-0003 predates #371. Once `CF_DEPLOY_TOKEN`,
-  `CLOUDFLARE_ACCOUNT_ID` and `APP_BASE_DOMAIN` are set and
-  `BROWSER_APP_INSTALLS` isn't `off`, `POST /api/admin/apps/install`
-  registers and uploads an account Worker from a public GitHub release or
-  an oss.new URL for any signed-in owner or admin of any active
-  organization, not only the install organization
-  (`install.ts:59-104`). `install-api.sqlite.test.ts` claims the route
-  "isn't available on a self-hosted gateway", which passes only because
-  its env sets no `APP_BASE_DOMAIN`; `install.self-hosted-default-on` is
-  **unpinned** and `gateway.nothing-public-registers-or-deploys-on-self-host`
-  is **not enforced**. What stands: the admin gate,
-  the CSRF guard, the release intake (integrity, tar refusals, the policy
+  the install organization's owners and admins, its upload untested on
+  self-host* (high, medium fix). `docs/security-model.md` "Operator
+  Authority" records it as the second deploy authority; ADR-0003 predates
+  #371. Once `CF_DEPLOY_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and
+  `APP_BASE_DOMAIN` are set and `BROWSER_APP_INSTALLS` isn't `off`, `POST
+  /api/admin/apps/install` registers and uploads an account Worker from a
+  public GitHub release or an oss.new URL for a signed-in owner or admin
+  of the install organization; since the agent-parity swath (2026-10-24)
+  any other organization is refused before the download, each refusal
+  one `app_install.refused` warn line
+  (`deploy.browser-install-install-org-only`), and
+  `install-api.sqlite.test.ts` pins the self-hosted gate and that rule
+  (the install, the poll, and availability by the person) up to the
+  download. Still open: the upload path on self-host is unpinned
+  (the fake Cloudflare has no account-Worker routes), and
+  `gateway.nothing-public-registers-or-deploys-on-self-host` is **not
+  enforced**. What stands: the admin gate, the organization rule, the
+  CSRF guard, the release intake (integrity, tar refusals, the policy
   subset) and, behind the outer ring, Access in front of the page. What
-  needs deciding: whether an admin of a secondary organization should be
-  able to deploy at all, or default it off. The security model and this
-  threat model record it as the second authority.
+  needs deciding: whether to default it off, or owners only. The
+  security model and this threat model record it as the second authority.
 - *`CF_DEPLOY_TOKEN` on the public Worker is account-wide authority*
   (high, known, medium fix). The runbook asks for Workers Scripts Edit and
   D1 Edit on the account: the token can rewrite every Worker in the account,
@@ -1230,20 +1234,23 @@ means it is on main (every boundary fix from this pass merged on
 
 **Self-hosted, before Monday if possible**
 
-1. **The browser install lets any organization owner or admin deploy into
-   the operator's account** (B7, high; `install.self-hosted-default-on`,
+1. **The browser install lets the install organization's owners and
+   admins deploy into the operator's account** (B7, high;
+   `install.self-hosted-default-on`,
    `gateway.nothing-public-registers-or-deploys-on-self-host`). Once
    `everyapp setup` has stored a `CF_DEPLOY_TOKEN`, `POST
-   /api/admin/apps/install` registers and uploads a public release for any
-   owner or admin (on a self-hosted gateway that is the one organization
-   the setup claim made, so: anyone the owner made an admin), with a token
-   that can rewrite every Worker and database in the account; the release's
-   manifest then grants it the operator's provider keys, sender and members
-   list, which the operator never read. Behind Access the
-   page is behind Access; the token's reach is the problem either way.
-   Decision for Ben (TODO "Threat model and security scanning"): restrict
-   it to the install organization's owners, default it off, or move the
-   token into a thin deployer Worker. It also has no self-hosted test.
+   /api/admin/apps/install` registers and uploads a public release for an
+   owner or admin of the install organization (the one the setup claim
+   made, so: anyone the owner made an admin; since 2026-10-24 any other
+   organization is refused, `deploy.browser-install-install-org-only`),
+   with a token that can rewrite every Worker and database in the
+   account; the release's manifest then grants it the operator's provider
+   keys, sender and members list, which the operator never read. Behind
+   Access the page is behind Access; the token's reach is the problem
+   either way. Decision for Ben (TODO "Threat model and security
+   scanning"): owners only, default it off, or move the token into a thin
+   deployer Worker. The self-hosted gate and the organization rule are
+   tested up to the download; the upload is not.
 2. **The OAuth-client proxy signed any grant** (B4, high; fixed in #387,
    merged). Facebook's client-credentials grant returns the app access
    token, which is `<app id>|<app secret>`: the operator's secret handed

@@ -39,8 +39,11 @@ is not built, and its deploy API is disabled by `GATEWAY_DEPLOYMENT_MODE`.
 
    Since #371 the Gateway also installs a published release from the
    browser (`POST /api/admin/apps/install`, with the account token
-   `CF_DEPLOY_TOKEN`; `docs/runbooks/browser-app-install.md`). Whether that
-   second deploy authority stays is open in TODO.md.
+   `CF_DEPLOY_TOKEN`; `docs/runbooks/browser-app-install.md`), since
+   2026-10-24 only for the install organization's owners and admins (the
+   token is the account's; `deploy.browser-install-install-org-only` in
+   `docs/threat-model-invariants.md`). Whether that second deploy
+   authority stays is open in TODO.md.
 4. Every deploy records its actor on the app row (`deployed_by_actor`): the
    Cloudflare login's email, or `api-token:<account id>` in CI.
 5. The hosted tier gets its own HTTP control plane and credentials (a
