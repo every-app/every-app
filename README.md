@@ -1,4 +1,4 @@
-# Every App - Make every app open source
+# EveryApp - Make every app open source
 
 > Make every app open source
 
@@ -8,7 +8,11 @@ Own your tools. Customize your tools. Pay as you go.
 
 It's easy to build now, but hard to get it off localhost and host it securely.
 
---
+## What is EveryApp
+- An open source app store
+- A home for internal apps and personal software
+- A framework to have every app your business needs, starting at $10/month
+- A directory of "software recipes" so that you don't need to build from scratch
 
 Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in. One Gateway sits in front of them all and gives each app only what you allow. Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor.
 
