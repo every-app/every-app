@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeAccessSettingsRecord } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
+import { recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { discoverGateway } from "@/lib/gateway/discover";
@@ -592,6 +593,66 @@ describe("everyapp status", () => {
     expect(fixCodes(done)).not.toContain("APP_NEEDS_SETUP");
     expect(fixCodes(done)).not.toContain("SETTINGS_UNKNOWN");
     expect(await shown()).not.toContain("SETTING");
+  });
+
+  it("names the Hyperdrive origin a first deploy stopped for, and where it goes, until the config exists", async () => {
+    const registerPending = (appSlug: string, hyperdrive: Array<{ name: string }>) =>
+      register(db(), {
+        appSlug,
+        name: appSlug,
+        description: appSlug,
+        manifest: { id: appSlug, resources: { hyperdrive }, database: { provider: "postgres" } },
+        appBaseDomain: "example.com",
+        deployer: { actor: "dev@example.com", email: "dev@example.com" },
+        organizationName: "Acme",
+      });
+    // One config: POSTGRES_DATABASE_URL serves it. Two: each its own variable.
+    await registerPending("seo", [{ name: "HYPERDRIVE" }]);
+    await registerPending("crawler", [{ name: "PAGES" }, { name: "STATS_DB" }]);
+    // crawler's PAGES config was created before the deploy stopped elsewhere.
+    await recordOwnedResource(db(), "every-acme-crawler", {
+      kind: "hyperdrive",
+      binding: "PAGES",
+      name: "every-acme-crawler--pages",
+      resourceId: "hd-pages",
+    });
+
+    const done = await status();
+
+    const fixes = done["data"]["fixes"] as Array<{ code: string; message: string }>;
+    expect(fixes.find((fix) => fix.message.startsWith("seo "))).toEqual(
+      expect.objectContaining({
+        code: "APP_NOT_UPLOADED",
+        message: [
+          "seo was registered, but none of its deploys finished",
+          "HYPERDRIVE needs the database its Hyperdrive config connects to: POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL) in .everyapp/secrets.env, on the machine that deploys it.",
+        ].join("\n"),
+      }),
+    );
+    expect(fixes.find((fix) => fix.message.startsWith("crawler "))!.message).toBe(
+      [
+        "crawler was registered, but none of its deploys finished",
+        "STATS_DB needs the database its Hyperdrive config connects to: STATS_DB_ORIGIN_URL in .everyapp/secrets.env, on the machine that deploys it.",
+      ].join("\n"),
+    );
+    expect(await shown()).toContain(
+      [
+        "! seo was registered, but none of its deploys finished",
+        "  HYPERDRIVE needs the database its Hyperdrive config connects to: POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL) in .everyapp/secrets.env, on the machine that deploys it.",
+      ].join("\n"),
+    );
+
+    // Once the config exists, the deploy needs no origin to finish.
+    await recordOwnedResource(db(), "every-acme-seo", {
+      kind: "hyperdrive",
+      binding: "HYPERDRIVE",
+      name: "every-acme-seo--hyperdrive",
+      resourceId: "hd-seo",
+    });
+    const later = (await status())["data"]["fixes"] as Array<{ message: string }>;
+    expect(later.find((fix) => fix.message.startsWith("seo "))!.message).toBe(
+      "seo was registered, but none of its deploys finished",
+    );
   });
 
   it("prints the deployment mode the install recorded", async () => {

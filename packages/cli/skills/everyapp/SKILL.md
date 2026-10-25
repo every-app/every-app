@@ -107,11 +107,15 @@ Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--lo
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
          if the user said so). pnpm everyapp db restore --json undoes the last
          deploy's migrations (and every write since): only when the user asks.
-Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
-         reads POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from
-         .everyapp/secrets.env, which the user writes; never print, commit or
-         ask for its values in chat. deploy runs drizzle-kit migrate before
-         the upload.
+Postgres: any Postgres with a URL (Neon, Supabase, …) goes through Hyperdrive:
+         resources.hyperdrive, database.provider "postgres", migrations.dialect
+         "postgresql" (manifest page, #postgres). The deploy reads
+         POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from
+         .everyapp/secrets.env, which the user writes (configure doesn't);
+         never print, commit or ask for its values in chat. Without it deploy
+         stops HYPERDRIVE_ORIGIN_MISSING (data.variables, data.file) and status
+         names it under the app. deploy runs drizzle-kit migrate before the
+         upload. Turso is libSQL: app secrets, not Hyperdrive.
 Secrets: pnpm everyapp configure <app> --json   sets up an app: every setting its
          manifest declares, each where it is held (an AI key or a capability's
          client on the Gateway, once for every app; the app's own secrets on

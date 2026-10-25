@@ -50,6 +50,23 @@ export function hyperdriveOriginVariable(binding: string): string {
 }
 
 /**
+ * The variables a Hyperdrive binding's origin may be set as, the one to
+ * suggest first: for the app's only config POSTGRES_DATABASE_URL (which
+ * Postgres migrations read too), then the binding's own; with several
+ * configs, the binding's own alone. What the deploy's
+ * HYPERDRIVE_ORIGIN_MISSING and `status` tell the person to set.
+ */
+export function hyperdriveOriginVariables(binding: string, configs: number): string[] {
+  const own = hyperdriveOriginVariable(binding);
+  return configs === 1 ? [POSTGRES_URL_VARIABLE, own] : [own];
+}
+
+/** `POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL)`: the variables above, in words. */
+export function describeOriginVariables([first, ...others]: readonly string[]): string {
+  return others.length > 0 ? `${first} (or ${others.join(", ")})` : `${first}`;
+}
+
+/**
  * The origin URL for a Hyperdrive binding, and the variable it came from:
  * its own, or POSTGRES_DATABASE_URL when it is the app's only config.
  */

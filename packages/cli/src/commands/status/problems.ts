@@ -6,6 +6,7 @@
  */
 import type { AppSetup } from "@every-app/sdk/internal";
 import chalk from "chalk";
+import { APP_SECRETS_FILE, describeOriginVariables } from "@/lib/app/deploySecrets";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import type { McpSummary, PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { describeUnmetSettings } from "@/lib/app/settings";
@@ -139,6 +140,16 @@ export interface CheckoutState {
   checkout: { version: string; treeSha256: string | null } | null;
 }
 
+/**
+ * A `pending` app's Hyperdrive binding with no config recorded as the
+ * app's yet: the deploy that creates it needs its origin, in one of
+ * `variables` (hyperdriveOriginVariables) in .everyapp/secrets.env.
+ */
+export interface MissingOrigin {
+  binding: string;
+  variables: string[];
+}
+
 /** What cf couldn't tell: its error, for the problem that says so. */
 export interface Unread {
   error: string;
@@ -175,6 +186,7 @@ export function problemsFor({
   checkout,
   emailProblems,
   settings,
+  missingOrigins,
 }: {
   install: InstallRecord;
   desired: DesiredState;
@@ -193,6 +205,8 @@ export function problemsFor({
   emailProblems: EmailRouteProblem[] | Unread;
   /** Why the Workers' secrets couldn't be listed, when they couldn't. */
   settings: Unread | null;
+  /** By app id, the Hyperdrive origins a `pending` app's next deploy needs first. */
+  missingOrigins?: ReadonlyMap<string, readonly MissingOrigin[]>;
 }): Problem[] {
   const problems: Problem[] = [];
   const live = install.releaseVersion;
@@ -279,7 +293,10 @@ export function problemsFor({
         code: ProblemCode.AppNotUploaded,
         severity: Severity.Warning,
         headline: `${app.id} was registered, but none of its deploys finished`,
-        detail: [],
+        detail: (missingOrigins?.get(app.id) ?? []).map(
+          ({ binding, variables }) =>
+            `${binding} needs the database its Hyperdrive config connects to: ${describeOriginVariables(variables)} in ${APP_SECRETS_FILE}, on the machine that deploys it.`,
+        ),
         run: command`${DEPLOY} from the app's directory, or ${`${CLI} delete ${app.id}`}`,
       });
     } else if (app.status === "binding" && app.bound) {

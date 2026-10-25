@@ -159,7 +159,7 @@ The app's Worker binds every class (each pointing at the Worker that defines it)
 - `resources.hyperdrive[].worker`: a helper Worker that alone binds it; every Worker binds it when unset. An undeclared helper fails: `Hyperdrive <NAME> is bound by Worker "<worker>", which workers doesn't declare.`
 - `resources.hyperdrive[].caching`: `off` (the default) or `default`. Off because Hyperdrive never invalidates a cached read when the app writes, and app code reads its own writes; `default` turns on Cloudflare's own caching (60 s, stale for 15 s more). The deploy sets `caching.disabled` on the config accordingly and corrects a config that caches otherwise (`cachesAs()` in `packages/cli/src/lib/cf/hyperdrive.ts`).
 
-The deploy creates the config from the origin URL in the app's secrets file `.everyapp/secrets.env`: `<BINDING>_ORIGIN_URL`, or `POSTGRES_DATABASE_URL` when the app has one config (`HYPERDRIVE_ORIGIN_MISSING` otherwise). The password goes to cf in a private body file, never on the command line, and nothing from that file reaches the Worker. In development a binding exists only when `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<binding>` is set in `.dev.vars` or `.env`. Hyperdrive is not available on the dispatch tier (below).
+The origin is the binding's required setting, and it never leaves the machine that deploys: the deploy creates the config from the origin URL in the app's secrets file `.everyapp/secrets.env`, `<BINDING>_ORIGIN_URL`, or `POSTGRES_DATABASE_URL` when the app has one config. Without it the deploy stops with [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing), naming the variable for this app (`POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL)` for one config, the binding's own for several) and the file, and `everyapp status` names the same under the app while its first deploy hasn't finished. Once the config exists a redeploy needs no origin (with one, it repoints the config). The password goes to cf in a private body file, never on the command line, and nothing from that file reaches the Worker. `everyapp configure` doesn't write the file: it sets what the Gateway and the app's Worker hold. In development a binding exists only when `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<binding>` is set in `.dev.vars` or `.env`. Hyperdrive is not available on the dispatch tier (below). Which databases it reaches, the steps and the code: [Postgres](#postgres).
 
 ### Workers AI
 
@@ -206,7 +206,7 @@ Who may reach it: only the app's own Worker, through `binding` or the Durable Ob
 | `database.provider` | `d1` or `postgres`: the database the app's code talks to. Every Worker gets it as the text binding `DATABASE_PROVIDER`.                                                                                                            |
 | `database.region`   | Regex `^[a-z0-9]+:[a-z0-9-]+$`, message `region must be a cloud region such as "aws:us-east-1"`. Deployed Workers get `placement: { region }` (cf's targeted placement) so they run near the database; not applied in development. |
 
-Strict: no other keys. `migrations.dialect: "postgresql"` requires `database.provider: "postgres"`: `Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.` Declaring `database` reserves the binding name `DATABASE_PROVIDER` (a secret may not take it).
+Strict: no other keys. `migrations.dialect: "postgresql"` requires `database.provider: "postgres"`: `Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.` Declaring `database` reserves the binding name `DATABASE_PROVIDER` (a secret may not take it). An app on Postgres (Neon, Supabase, any URL) declares it beside a Hyperdrive binding: [Postgres](#postgres).
 
 ## limits
 
@@ -452,6 +452,51 @@ Refinements, each with its message:
 | `dialect: "postgresql"` needs `database.provider: "postgres"` | `Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.`                           |
 
 What runs (`packages/cli/src/commands/deploy/deployApp.ts`): on D1, `cf d1 migrations apply` against the provisioned database from `dir`, with a restore point recorded first; skipped when the app has no D1 binding or the directory is missing. In dev, `cf d1 migrations apply --local` against the same local id, for the `drizzle` and `d1-sql` engines alike. On Postgres, `drizzle-kit migrate` or `prisma migrate deploy` runs against `POSTGRES_DATABASE_URL` after the resources are provisioned, the app built and its Build Output checked, and before the upload; the URL itself is checked before anything is created (`POSTGRES_URL_MISSING` when unset: `<id> needs a Postgres URL to migrate its database`, fix `set POSTGRES_DATABASE_URL in .everyapp/secrets.env, then deploy again`). Prisma's run is skipped only when a `dir` the manifest names is missing, since Prisma finds its migrations through its config; there is no restore point (its own backups are the way back). The schema drift check (`packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`) runs only on the `drizzle` engine: `d1-sql` is skipped silently, `prisma` with the step message `Schema not checked against migrations (Prisma needs a shadow database; --verbose shows how)`. On `drizzle` it warns `SCHEMA_CHECK_SKIPPED` (`Can't check the schema against the migrations: <why>`) when drizzle-kit is not installed (`drizzle-kit isn't installed`, fix `add drizzle-kit to devDependencies`), when there is no `drizzle.config.ts` (with the detail `An app that writes its SQL by hand sets migrations.engine to "d1-sql".`), or when the `migrations.config` it names is missing (`no <config> (migrations.config)`). Releases: packing one refuses the `prisma` engine (`RELEASE_MIGRATIONS_UNSUPPORTED`: `<id> migrates with Prisma, which a release can't carry`, rerun `<cli> deploy` from the app's checkout; `packages/cli/src/lib/app/release.ts`), and `install <url>` refuses any release whose manifest has `migrations.dialect: "postgresql"`, drizzle included (the same code: `<id> can't deploy from a release: its Postgres migrations need the source`, fix `clone it, then run pnpm install && <cli> deploy in it`, where `<cli>` is how everyapp was run (`invocation()` in `packages/cli/src/lib/output/command.ts`: `pnpm everyapp` under pnpm, `npx everyapp` under npm, `yarn everyapp` under yarn, `everyapp` when run directly)), because a release carries SQL files that only the D1 migration applies by itself. Browser installs of third-party apps accept only D1 SQL migrations (`sqlite` dialect, `drizzle` engine).
+
+## Postgres
+
+Every App reaches Postgres through Cloudflare Hyperdrive, which the deploy provisions with `cf`: any Postgres with a URL works, Neon, Supabase, PlanetScale Postgres, Xata, Crunchy Bridge or a server of your own, and a MySQL URL (`mysql://`) makes a MySQL config the same way. There is no Postgres resource to create in Cloudflare and no driver to proxy: the database stays where it is, and the app's Workers bind a Hyperdrive config that holds its credentials and pools connections to it.
+
+What a person does, three steps:
+
+1. Make the database at the provider and copy its URL (for Neon and Supabase the direct one, below).
+2. Put it in the app's `.everyapp/secrets.env`, which stays on the machine that deploys (`.everyapp/` is gitignored; never paste it into a chat):
+
+   ```sh
+   POSTGRES_DATABASE_URL=postgres://user:password@host:5432/db
+   ```
+
+3. Declare it in `everyapp.config.ts`:
+
+   ```ts
+   resources: { hyperdrive: [{ name: "HYPERDRIVE" }] },
+   database: { provider: "postgres" },
+   migrations: { engine: "drizzle", dialect: "postgresql" },
+   ```
+
+Then `pnpm everyapp deploy` creates the Hyperdrive config `every-<orgKey>-<appId>--hyperdrive` pointed at that URL with query caching off ([Hyperdrive](#hyperdrive); `caching: "default"` turns Cloudflare's on), binds it as `HYPERDRIVE` on every Worker of the app with `DATABASE_PROVIDER=postgres`, and runs `drizzle-kit migrate` (or `prisma migrate deploy`, `migrations.engine: "prisma"`) against the URL before the upload ([migrations](#migrations)). Leave out `migrations` and nothing is migrated: the app migrates its database itself. `database.region` (`"aws:us-east-1"`) places its Workers near the database. Without the URL the deploy stops with [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing) (or, with Postgres migrations, [`POSTGRES_URL_MISSING`](/docs/agent/errors#postgres_url_missing) before anything is created); a URL it can't read is [`DATABASE_URL_INVALID`](/docs/agent/errors#database_url_invalid). Every variable of the file: [/docs/agent/secrets](/docs/agent/secrets#the-postgres-secrets-file).
+
+In code, open a client on the binding's `connectionString` inside each request (Cloudflare refuses a socket one request opened to another), with `postgres` (postgres.js) or `pg`:
+
+```ts
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+
+// In the handler, per request: Hyperdrive pools the connections at the edge.
+// Env types HYPERDRIVE optional: under everyapp dev it exists only with a local URL (below).
+const url = env.HYPERDRIVE?.connectionString;
+if (!url) throw new Error("No HYPERDRIVE binding");
+const sql = postgres(url, { max: 1, fetch_types: false });
+const db = drizzle(sql);
+```
+
+OpenSEO does this (`open-seo/src/db/pg/client.ts`: `withPgClient()` keeps the request's client in `AsyncLocalStorage`; `open-seo/src/db/provider.ts` reads `DATABASE_PROVIDER` and the binding; `open-seo/drizzle/pg.config.ts` is the drizzle-kit config that reads `process.env.POSTGRES_DATABASE_URL`). With `pg`, `new Client({ connectionString: env.HYPERDRIVE.connectionString })` and `await client.connect()` per request. A MySQL config has no `database.provider` or migration dialect of its own: set `HYPERDRIVE_ORIGIN_URL=mysql://…`, leave `database` and `migrations` out, and connect with `mysql2` on the binding's `host`, `user`, `password`, `database` and `port`.
+
+In development (`everyapp dev`) Hyperdrive isn't contacted: set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://…` in `.dev.vars` (a local Postgres, or a development branch of the database) and `env.HYPERDRIVE.connectionString` is that URL; without it the binding is absent ([/docs/agent/dev](/docs/agent/dev)).
+
+Neon and Supabase each offer a pooled URL and a direct one. Hyperdrive pools connections itself and wants the direct one: on Neon the host without `-pooler` (connection pooling unchecked in the dashboard's connection details), on Supabase the "Direct connection" string. `drizzle-kit migrate` works over either, so one direct `POSTGRES_DATABASE_URL` serves both; to give the config another URL than the migrations, set `HYPERDRIVE_ORIGIN_URL` beside it (a binding's own variable wins). Neon's API key in the providers catalog (`NEON_API_KEY`) manages projects and branches through the Gateway; it is not how an app reaches its database.
+
+Turso is libSQL (SQLite), not Postgres, so it isn't a Hyperdrive origin. Its URL and token are the app's own secrets, declared under `secrets` (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) and set with `pnpm everyapp configure <app>` after the first deploy (`.dev.vars` in development); the app connects over HTTP with `createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN })` from `@libsql/client/web` (`drizzle-orm/libsql` on top). `database.provider` stays `d1` or is left out, and the deploy runs no Turso migrations: run `drizzle-kit migrate` (dialect `turso`) yourself.
 
 ## mcp
 

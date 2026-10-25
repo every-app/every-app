@@ -297,10 +297,10 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 
 ### Hyperdrive origin missing
 
-- Symptom: [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing): `<BINDING> needs the database its Hyperdrive config connects to`, `Creating the config needs its URL.`, fix `set <BINDING>_ORIGIN_URL (or POSTGRES_DATABASE_URL, when it is the app's only config) in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>`. [`DATABASE_URL_INVALID`](/docs/agent/errors#database_url_invalid): `<VAR> in .everyapp/secrets.env isn't a URL` / `isn't a postgres:// or mysql:// URL` / `needs a host, a database, a user and a password`.
+- Symptom: [`HYPERDRIVE_ORIGIN_MISSING`](/docs/agent/errors#hyperdrive_origin_missing): `<BINDING> needs the database its Hyperdrive config connects to`, `Creating the config needs its URL, from .everyapp/secrets.env on the machine that deploys; nothing in that file reaches the Worker.`, fix `set POSTGRES_DATABASE_URL (or <BINDING>_ORIGIN_URL) in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>` (the binding's own variable alone when the app has several configs; `data.variables` lists them). `pnpm everyapp status` shows the same line under the app's `APP_NOT_UPLOADED` until its config exists. [`DATABASE_URL_INVALID`](/docs/agent/errors#database_url_invalid): `<VAR> in .everyapp/secrets.env isn't a URL` / `isn't a postgres:// or mysql:// URL` / `needs a host, a database, a user and a password`.
 - Cause: the deploy creates the config from the origin in the app's secrets file; nothing in that file reaches the Worker (the config holds the credentials in Cloudflare). `.everyapp/` is gitignored.
 - Confirm: in the app's directory `grep -E '^(<BINDING>_ORIGIN_URL|POSTGRES_DATABASE_URL)=' .everyapp/secrets.env` (the names only; never paste the values); `resources.hyperdrive` in `everyapp.config.ts` names the binding.
-- Fix: write the variable, deploy again. Source: `packages/cli/src/lib/app/deploySecrets.ts`, `packages/cli/src/lib/app/resources.ts`.
+- Fix: the person writes the variable (never ask for the value in chat; Neon and Supabase: the direct URL, not the pooled one, [Postgres](/docs/agent/manifest#postgres)), then deploy again. Source: `packages/cli/src/lib/app/deploySecrets.ts`, `packages/cli/src/lib/app/resources.ts`.
 
 ### Postgres URL missing
 

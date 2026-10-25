@@ -3,6 +3,7 @@ import { storedSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup, ProviderRegistry } from "@every-app/sdk/internal";
 import { readAccessSettingsRecord } from "@/lib/access/record";
 import { accessStateOf, type AccessState } from "@/lib/access/settings";
+import { hyperdriveOriginVariables } from "@/lib/app/deploySecrets";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
 import {
@@ -45,6 +46,7 @@ import {
   problemsFor,
   type AppState,
   type CheckoutState,
+  type MissingOrigin,
   type Problem,
   type Unread,
 } from "./problems";
@@ -71,7 +73,9 @@ interface StatusFlags {
  * host where the manifest asks for it), each published hostname's
  * certificate (Cloudflare's certificate packs), whether Cloudflare Access
  * is in front (the Gateway Worker's settings, by name), any deploy in
- * progress, `fixes`: what is off, and what to run about it, and `next`:
+ * progress, what an app whose first deploy stopped still needs for its
+ * Hyperdrive configs (their origins, which only the deploying machine
+ * holds), `fixes`: what is off, and what to run about it, and `next`:
  * what isn't done yet (next.ts), from the same reads plus the MCP app
  * rows and five counts in the install organization.
  */
@@ -177,7 +181,7 @@ export async function reportStatus({
   const accessState = access && "value" in access ? access.value : null;
   const accessUnread = access && "error" in access ? access : null;
   const missingWorkers = new Set(desired.missing.map((row) => row.workerName));
-  const [certificates, emailProblems, settings, counts] = await Promise.all([
+  const [certificates, emailProblems, settings, counts, missingOrigins] = await Promise.all([
     readOrUnread(() => certificateStatus(cf, install.zoneId, install.liveDomains)),
     readOrUnread(async () =>
       emailRoutes.length === 0 ? [] : emailRouteProblems(cf, emailRoutes),
@@ -190,6 +194,7 @@ export async function reportStatus({
     claimed
       ? readOrganizationCounts(db, claimed.organizationId).catch(() => null)
       : null,
+    missingHyperdriveOrigins(db, registered),
   ]);
 
   const gatewayUrl = `https://${install.gatewayHost}`;
@@ -252,6 +257,7 @@ export async function reportStatus({
     checkout: source,
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
     settings: settings.unread,
+    missingOrigins,
   });
   const next = nextStepsFor({
     mode: install.deploymentMode,
@@ -392,6 +398,53 @@ async function readSettings(
     setups.set(app.appSlug, setup);
   }
   return { setups, unread };
+}
+
+/**
+ * What each `pending` app's next deploy needs before it can create its
+ * Hyperdrive configs: every binding its registered manifest declares under
+ * `resources.hyperdrive` with no config recorded as the app's, and where
+ * its origin goes (the deploy's HYPERDRIVE_ORIGIN_MISSING says the same).
+ * The origin is on the machine that deploys, never on the Gateway, so this
+ * is all status can tell. The ledger is read only for such an app; a read
+ * that fails leaves the hint out.
+ */
+async function missingHyperdriveOrigins(
+  db: FoundGateway["db"],
+  apps: RegisteredAppInfo[],
+): Promise<Map<string, MissingOrigin[]>> {
+  const missing = new Map<string, MissingOrigin[]>();
+  const waiting = apps
+    .filter((app) => app.status === "pending")
+    .map((app) => ({ app, bindings: hyperdriveBindingsOf(app.manifest) }))
+    .filter(({ bindings }) => bindings.length > 0);
+  if (waiting.length === 0) return missing;
+  const recorded = await readResourcesOfKind(db, "hyperdrive").catch(() => null);
+  if (!recorded) return missing;
+  for (const { app, bindings } of waiting) {
+    const unmade = bindings.filter(
+      (binding) =>
+        !recorded.some(
+          (config) => config.workerName === app.workerName && config.binding === binding && config.resourceId,
+        ),
+    );
+    if (unmade.length === 0) continue;
+    missing.set(
+      app.appSlug,
+      unmade.map((binding) => ({ binding, variables: hyperdriveOriginVariables(binding, bindings.length) })),
+    );
+  }
+  return missing;
+}
+
+/** The Hyperdrive bindings a stored manifest declares, read as JSON parsed it. */
+function hyperdriveBindingsOf(manifest: RegisteredAppInfo["manifest"]): string[] {
+  const configs = (manifest as { resources?: { hyperdrive?: unknown } } | null)?.resources?.hyperdrive;
+  if (!Array.isArray(configs)) return [];
+  return configs.flatMap((config: unknown) => {
+    const name = (config as { name?: unknown } | null)?.name;
+    return typeof name === "string" && name ? [name] : [];
+  });
 }
 
 /** What cf says, or why it couldn't say: the rest of the report goes on. */

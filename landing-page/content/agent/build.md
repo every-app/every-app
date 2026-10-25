@@ -156,7 +156,10 @@ what the app is for; who uses it (just them, or everyone in the organization:
 then `access: "everyone"`); what it stores (the tables); what it does on its
 own (sends mail, calls a model, runs on a schedule, serves a script to a
 website); what stays private to each person. Repeat the answers back in one
-paragraph, then build. For a clear request, build.
+paragraph, then build. For a clear request, build. The database is D1 unless
+the person has a Postgres (Neon, Supabase, any URL) or asks for one: then
+Hyperdrive ("Postgres through Hyperdrive" in [patterns.md](/docs/agent/patterns)), and the person
+puts its URL in `.everyapp/secrets.env` themselves.
 
 The loop: `pnpm everyapp create ../my-app` from the every-app folder (or work
 in the app you are in); the schema and the queries, the server functions, the

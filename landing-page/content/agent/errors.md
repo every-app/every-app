@@ -698,9 +698,9 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`
 
 ### HYPERDRIVE_ORIGIN_MISSING
 
-Self-host `deploy` (step `app.resources`) has to create the Hyperdrive config for a `resources.hyperdrive` binding and the app's secrets file `.everyapp/secrets.env` holds no origin for it: neither `<BINDING>_ORIGIN_URL` nor, when it is the app's only Hyperdrive config, `POSTGRES_DATABASE_URL`. The deploy creates one whenever no config under the binding's name can be used: none is recorded as the app's and none in the account has the name; the recorded one (by id) was deleted and nothing else has the name (a `RESOURCE_RECREATED` warning comes first); or the record has no id (a claim whose create was never recorded) and nothing has the name. Message `<binding> needs the database its Hyperdrive config connects to` then `Creating the config needs its URL.`
+Self-host `deploy` (step `app.resources`) has to create the Hyperdrive config for a `resources.hyperdrive` binding and the app's secrets file `.everyapp/secrets.env` holds no origin for it: neither `<BINDING>_ORIGIN_URL` nor, when it is the app's only Hyperdrive config, `POSTGRES_DATABASE_URL`. The origin is the binding's required setting, read only on the machine that deploys. The deploy creates a config whenever no config under the binding's name can be used: none is recorded as the app's and none in the account has the name; the recorded one (by id) was deleted and nothing else has the name (a `RESOURCE_RECREATED` warning comes first); or the record has no id (a claim whose create was never recorded) and nothing has the name. A first deploy stops here after registering the app, so `pnpm everyapp status` lists it as [`APP_NOT_UPLOADED`](#app_not_uploaded) with the same variable and file. Message `<binding> needs the database its Hyperdrive config connects to` then `Creating the config needs its URL, from .everyapp/secrets.env on the machine that deploys; nothing in that file reaches the Worker.`
 
-**Fix:** `data.fix`: `set <BINDING>_ORIGIN_URL (or POSTGRES_DATABASE_URL, when it is the app's only config) in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>`; `data.rerun` is this same command. Not retryable.
+**Fix:** `data.fix` names the variable for this app: `set POSTGRES_DATABASE_URL (or <BINDING>_ORIGIN_URL) in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>` when the binding is the app's only config, `set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to …` when it has several. `data.binding` is the binding, `data.variables` the variables in that order (the first is the one to set), `data.file` `.everyapp/secrets.env`; `data.rerun` is this same command. Not retryable. The person writes the file (`everyapp configure` doesn't); never ask for or print the value. Which URL and why: [Postgres](/docs/agent/manifest#postgres).
 
 Source: `packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/app/deploySecrets.ts`
 
@@ -2547,7 +2547,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### APP_NOT_UPLOADED
 
-Warning. The app's row is `pending`: `<app> was registered, but none of its deploys finished`. Run: `pnpm everyapp deploy from the app's directory, or pnpm everyapp delete <app>`.
+Warning. The app's row is `pending`: `<app> was registered, but none of its deploys finished`. When its registered manifest declares Hyperdrive bindings with no config recorded as the app's yet, one line per binding follows with the origin its next deploy needs first ([`HYPERDRIVE_ORIGIN_MISSING`](#hyperdrive_origin_missing)): `<BINDING> needs the database its Hyperdrive config connects to: POSTGRES_DATABASE_URL (or <BINDING>_ORIGIN_URL) in .everyapp/secrets.env, on the machine that deploys it.` (the binding's own variable alone when the app has several configs). Run: `pnpm everyapp deploy from the app's directory, or pnpm everyapp delete <app>`.
 
 Source: `packages/cli/src/commands/status/problems.ts`
 

@@ -12,9 +12,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { removeApp } from "@/commands/delete";
+import { reportStatus } from "@/commands/status";
 import { readOwnedResources } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
+import { discoverGateway } from "@/lib/gateway/discover";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -296,10 +298,53 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
       deploy({ ...withoutMigrations, database: { provider: "postgres" } }),
     ).rejects.toMatchObject({
       code: "HYPERDRIVE_ORIGIN_MISSING",
-      fix: expect.stringContaining("HYPERDRIVE_ORIGIN_URL"),
+      message:
+        "HYPERDRIVE needs the database its Hyperdrive config connects to\nCreating the config needs its URL, from .everyapp/secrets.env on the machine that deploys; nothing in that file reaches the Worker.",
+      // The app's only config: POSTGRES_DATABASE_URL serves it, as it serves the migrations.
+      fix: "set POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL) in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>",
+      data: {
+        binding: "HYPERDRIVE",
+        variables: ["POSTGRES_DATABASE_URL", "HYPERDRIVE_ORIGIN_URL"],
+        file: ".everyapp/secrets.env",
+      },
     });
     expect(account.hyperdrive.size).toBe(0);
     expect(seoUploads()).toEqual([]);
+
+    // The app stays registered, never deployed: status names the same variable and file.
+    const { gateway } = await discoverGateway({
+      whoami: { authenticated: true, accounts: [{ id: ACCOUNT_ID, name: "Acme" }] },
+      createCf: () => account.cf,
+      interactive: false,
+    });
+    events = [];
+    await reportStatus({ gateway: gateway!, out: out(), checkout: null });
+    expect(events.at(-1)!["data"]["fixes"]).toContainEqual(
+      expect.objectContaining({
+        code: "APP_NOT_UPLOADED",
+        message:
+          "seo was registered, but none of its deploys finished\nHYPERDRIVE needs the database its Hyperdrive config connects to: POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL) in .everyapp/secrets.env, on the machine that deploys it.",
+      }),
+    );
+  });
+
+  it("names each config's own variable when the app has several, and POSTGRES_DATABASE_URL serves none", async () => {
+    // POSTGRES_DATABASE_URL is set (the migrations need it), STATS_ORIGIN_URL isn't.
+    writeSecrets(
+      [`POSTGRES_DATABASE_URL=${DATABASE_URL}`, `HYPERDRIVE_ORIGIN_URL=${DATABASE_URL}`, ""].join("\n"),
+    );
+    await expect(
+      deploy({
+        ...SEO,
+        resources: { kv: ["KV"], hyperdrive: [{ name: "HYPERDRIVE" }, { name: "STATS" }] },
+      }),
+    ).rejects.toMatchObject({
+      code: "HYPERDRIVE_ORIGIN_MISSING",
+      fix: "set STATS_ORIGIN_URL in .everyapp/secrets.env to postgres://<user>:<password>@<host>:<port>/<database>",
+      data: { binding: "STATS", variables: ["STATS_ORIGIN_URL"], file: ".everyapp/secrets.env" },
+    });
+    expect(seoUploads()).toEqual([]);
+    expect(migrations).toEqual([]);
   });
 
   it("prefers a binding's own origin over POSTGRES_DATABASE_URL", async () => {

@@ -43,8 +43,10 @@ import { CLI, thisCommand } from "@/lib/output/command";
 import type { InstallTarget } from "./installBuildOutput";
 import {
   APP_SECRETS_FILE,
+  describeOriginVariables,
   hyperdriveOriginUrl,
   hyperdriveOriginVariable,
+  hyperdriveOriginVariables,
   parseOriginUrl,
   type AppSecrets,
   type HyperdriveOrigin,
@@ -179,6 +181,7 @@ export async function provisionAppResources(
         binding,
         name: hyperdriveNameFor(registration.workerName, binding),
         origin: origins.get(binding) ?? null,
+        originVariables: hyperdriveOriginVariables(binding, configs.length),
         caching,
       }),
     };
@@ -210,10 +213,12 @@ async function provisionHyperdrive(
     binding: string;
     name: string;
     origin: HyperdriveOrigin | null;
+    /** Where its origin may be set, the one to suggest first (hyperdriveOriginVariables). */
+    originVariables: string[];
     caching: HyperdriveCaching;
   },
 ): Promise<string> {
-  const { cf, gatewayDb, registration, owned, binding, name, origin, caching } = options;
+  const { cf, gatewayDb, registration, owned, binding, name, origin, originVariables, caching } = options;
   const { onRecreated, onChanged } = options;
   const { workerName } = registration;
   const resource = { kind: "hyperdrive" as const, binding, name };
@@ -286,12 +291,15 @@ async function provisionHyperdrive(
   }
 
   if (!origin) {
+    // The origin is the binding's required setting: named exactly, with the
+    // file it goes in, which stays on the machine that deploys.
     throw new EveryAppError(
       "HYPERDRIVE_ORIGIN_MISSING",
-      `${binding} needs the database its Hyperdrive config connects to\nCreating the config needs its URL.`,
+      `${binding} needs the database its Hyperdrive config connects to\nCreating the config needs its URL, from ${APP_SECRETS_FILE} on the machine that deploys; nothing in that file reaches the Worker.`,
       {
-        fix: `set ${variable} (or POSTGRES_DATABASE_URL, when it is the app's only config) in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>`,
+        fix: `set ${describeOriginVariables(originVariables)} in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>`,
         rerun: thisCommand(),
+        data: { binding, variables: originVariables, file: APP_SECRETS_FILE },
       },
     );
   }
