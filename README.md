@@ -1,12 +1,14 @@
-# Every App
+# Every App - Make every app open source
 
 > Make every app open source
 
-Own your tools. Customize your tools.
+Own your tools. Customize your tools. Pay as you go.
 
-Pay as you go.
+> Build personal software with peace of mind.
 
-Build internal apps with peace of mind.
+It's easy to build something now, but hard to get it off of localhost and host it securely.
+
+--
 
 Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in. One Gateway sits in front of them all and gives each app only what you allow. Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor.
 
