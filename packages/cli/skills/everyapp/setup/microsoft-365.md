@@ -11,6 +11,8 @@ and `MICROSOFT_365_CLIENT_SECRET` set on the Gateway.
 
 ## Settings
 
+Through the Gateway's own flow (since 2026-10-25) the same client also serves apps that list `microsoft-365` with `access: "read"` and `scopes`, without an app callback: register `https://<gateway>/connect/microsoft-365/callback` as a second redirect URI, and each person connects under Connected accounts in the account menu (the agent docs' `providers` page, "OAuth providers"). The client may be pasted in Manage workspace → Providers instead of set below; a setting set here wins.
+
 | Name                          | Required | What it holds                                                                              |
 | ----------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `MICROSOFT_365_CLIENT_ID`     | required | The registration's **Application (client) ID** (a GUID, shown on its Overview page). Not a secret. |

@@ -112,7 +112,7 @@ What an attacker would want, roughly in the order it would hurt.
 |---|---|---|---|
 | A1 | The Cloudflare account and its credentials (the operator's login, `CLOUDFLARE_API_TOKEN` in CI, the browser-install token) | Cloudflare; the operator's machine; the Gateway's secrets when browser installs are on | The operator |
 | A2 | The Gateway's signing material: `JWT_PRIVATE_KEY` (identity tokens), `BETTER_AUTH_SECRET` (sessions, host sessions through HKDF, the setup and invitation hashes) | Worker secrets | Nobody reads them; the Gateway uses them |
-| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `LINKEDIN_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), and the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for |
+| A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `LINKEDIN_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`), and since 2026-10-25 the OAuth clients pasted in Manage workspace → Providers and the tokens of every connected account (`docs/design/2026-10-oauth-providers.md`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`); a pasted client's secret and every connection's access and refresh tokens sealed in D1 (`oauth_clients`, `provider_connections`: AES-256-GCM under a key derived from `BETTER_AUTH_SECRET`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for; a pasted client only while its row still has the endpoints it was pasted for; a person's token only on a call the app's declared scope sets cover |
 | A4 | Each app's data: its D1 databases, KV, R2, Durable Objects, Postgres through Hyperdrive | The app's own bindings | That app's Worker, for members with access |
 | A5 | Accounts and sessions: emails, password hashes, Better Auth sessions, verification and reset tokens | The Gateway's D1 | The person; admins act on members of their organization |
 | A6 | Organizations, memberships, roles, app access grants, invitations | The Gateway's D1 | Owners and admins of that organization |
@@ -625,8 +625,9 @@ gateway mints `aud` from the registry row.
 **What crosses.** Calls an app's Worker makes back to the Gateway over its
 `EVERY_APP_GATEWAY` service binding: the AI proxy (`/api/ai/<provider>/…`),
 the capability proxy (`/api/integrations/<id>/…`: DataForSEO, Context.dev,
-the social networks' and Google's and Microsoft's OAuth clients, email,
-members), and the tool-catalog fetch. The binding carries the app's
+the social networks' and Google's and Microsoft's OAuth clients, the
+held-token branch of every OAuth provider the Gateway runs the flow for,
+email, members), and the tool-catalog fetch. The binding carries the app's
 upload-time props (`organizationId`, `appId`, `workerName`) and the app
 forwards the identity of the request it is serving, or names an
 organization for background work. On the other side, the operator's
@@ -641,7 +642,24 @@ them itself when a member's AI client calls such a server's tool through
 `/mcp` (B5); no app's Worker ever sees one. The code is
 `apps/every-app-gateway/src/server/remote-mcp/{index.ts,bind.ts,relist.ts}`
 and `packages/toolbus/src/remote/{client.ts,normalize.ts}` (#627); the
-design is `docs/design/2026-10-mcp-by-url.md`.
+design is `docs/design/2026-10-mcp-by-url.md`. Since 2026-10-25 the
+gateway also holds people's OAuth tokens: an OAuth provider (a catalog
+client with a `flow`, or a row or preset with `auth.kind: "oauth2-user"`)
+is connected at `/connect/<id>` with PKCE and a one-use state, the tokens
+are sealed in `provider_connections`, and an app's call to the provider's
+API hosts crosses this boundary with no token of its own: the gateway
+refreshes under a lease, puts the bearer on, and holds the call to the
+app's declared scope sets, so the route allowlist of the scopes slice is
+now a live boundary. The code is
+`apps/every-app-gateway/src/server/oauth/{flow.ts,tokens.ts,service.ts,client.ts}`,
+`secrets/sealed.ts` and the held-token branch of
+`capabilities/oauthClient.ts`; the design is
+`docs/design/2026-10-oauth-providers.md`, the invariants the
+`oauth.client-bound-to-endpoints`, `oauth.client-secret-sealed-at-rest`,
+`oauth.tokens-sealed-at-rest`, `oauth.held-token-never-to-app`,
+`oauth.held-token-scope-routes-live`, `oauth.pkce-on-connect`,
+`oauth.state-single-use`, `oauth.return-to-own-hosts` and
+`oauth.google-never-revoked` rows of the register.
 
 **What it stops.** An app learning a provider key, a client secret, or
 whether a key exists for a capability it didn't request. An app reaching a
@@ -746,11 +764,16 @@ which tokens it gets, not the calls it makes with them).
   stopped an app granted `google-workspace` for Search Console from
   reading Gmail. With #411 on main the invariants in the table below
   hold. Their honest limits,
-  which stay in this model: the network's API calls still don't pass
-  through the gateway (the app holds the tokens, so the per-set host and
-  path allowlist in `packages/sdk/src/internal/oauthScopes.ts` enforces
-  nothing until an outbound Worker or gateway-held tokens use it; the
-  boundary is which tokens an app can obtain); Google and Slack narrow per
+  which stay in this model for the app-driven flow: there the network's
+  API calls still don't pass through the gateway (the app holds the
+  tokens, so the per-set host and path allowlist in
+  `packages/sdk/src/internal/oauthScopes.ts` enforces nothing on them; the
+  boundary is which tokens an app can obtain). Since 2026-10-25 the
+  Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`) holds the
+  tokens itself and runs that allowlist on every call
+  (`oauth.held-token-scope-routes-live`), so an app that uses it is
+  narrowed to its sets by the gateway; the app-driven flow keeps the
+  limits that follow: Google and Slack narrow per
   app only when the app asks for the status's scopes without
   `include_granted_scopes` (a wider token is refused, not narrowed);
   Microsoft, and Slack installations, may return every scope the person

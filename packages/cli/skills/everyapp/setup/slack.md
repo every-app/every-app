@@ -9,6 +9,8 @@ its Client ID and Client Secret, and **Connect Slack** in Open CRM completes.
 
 ## Settings
 
+Through the Gateway's own flow (since 2026-10-25) the same client also serves apps that list `slack` with `scopes`, without an app callback: register `https://<gateway>/connect/slack/callback` as a second redirect URL, and each person connects under Connected accounts in the account menu (the agent docs' `providers` page, "OAuth providers"). The client may be pasted in Manage workspace → Providers instead of set below; a setting set here wins.
+
 | Name                  | Required | What it holds                                                                                          |
 | --------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
 | `SLACK_CLIENT_ID`     | required | The app's **Client ID** (Basic Information → App Credentials), as shown. Public; apps get it for the authorize URL. |

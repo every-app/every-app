@@ -51,6 +51,21 @@ whole spec, hint and smoke request included, and its setting is set like
 any Gateway setting (`pnpm everyapp secret set <NAME>`, which first names
 the provider and the hosts its key goes to).
 
+An OAuth provider (GitHub, Notion, Linear, GitLab, Atlassian, HubSpot,
+Zoom, Dropbox, Spotify, X, or any custom one; the agent docs'
+`providers` page, "OAuth providers") has no file either: `pnpm everyapp
+provider presets` lists what can be added, `pnpm everyapp provider add
+--oauth <preset>` adds it and prints the redirect URI the person registers
+at the provider's console (`https://<gateway>/connect/<id>/callback`) and
+the two settings to set, `pnpm everyapp secret set <ID>_CLIENT_ID
+<ID>_CLIENT_SECRET` (an owner or admin may paste them in Manage workspace →
+Providers instead). Only a person can make the OAuth app at the provider
+and approve a consent; after the client is set, each member connects their
+own account under Connected accounts in the account menu. Google,
+Microsoft 365 and Slack below are the same: their files set the client,
+and the same client serves both the app-driven flow those files describe
+and the Gateway-owned one.
+
 Which integrations a person needs: the apps they deploy decide. The four
 Every App apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
 installed from their GitHub releases by [gateway.md](gateway.md)'s last

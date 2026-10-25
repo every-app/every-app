@@ -112,11 +112,17 @@ becomes something else, not on the first feature.
    with `createGatewayFetch({ env, for: request })`; `ai.models` lists the
    models the app may ask for. The Gateway holds the key; a provider the
    manifest doesn't list is refused.
-7. A capability (`members`, `email`, `dataforseo`, `context`, an OAuth client)
-   under `capabilities` with `access` and a `why`; an OAuth client
-   (`google-workspace`, `microsoft-365`, `slack`) also with `scopes: [...]`,
-   the least that does the job. Called with `listMembers()`, `sendEmail()`,
-   `integrationFetch()`; a refusal is a state the page shows, never a crash.
+7. A capability (`members`, `email`, `dataforseo`, `context`, an OAuth
+   provider) under `capabilities` with `access` and a `why`; an OAuth
+   provider (`google-workspace`, `microsoft-365`, `slack`, `github-oauth` or
+   any the Gateway's operator added) also with `scopes: [...]`, the least
+   that does the job. Called with `listMembers()`, `sendEmail()`,
+   `integrationFetch()`; for an OAuth provider the Gateway puts the
+   connected person's token on the call, so the app handles no token: on
+   `integrationStatus().connection === null` it shows a "Connect GitHub"
+   link to `connectUrl({ env, provider, returnTo })`, and on a
+   `integration_not_connected` refusal the same. A refusal is a state the
+   page shows, never a crash.
 8. Tools in `defineTools()` over the same `src/server/` queries, each with an
    honest `risk` (`read`, `write`, `destructive`), a description the model can
    act on, and `instructions` for the set. Throw `ToolError` for a message

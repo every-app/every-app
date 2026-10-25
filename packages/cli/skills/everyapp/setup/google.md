@@ -20,6 +20,8 @@ below come from `docs/design/2026-10-oauth-scopes.md`.
 
 ## Settings
 
+Through the Gateway's own flow (since 2026-10-25) the same client also serves apps that list `google-workspace` with `access: "read"` and `scopes`, without an app callback: register `https://<gateway>/connect/google-workspace/callback` as a second redirect URI, and each person connects under Connected accounts in the account menu (the agent docs' `providers` page, "OAuth providers"). The client may be pasted in Manage workspace → Providers instead of set below; a setting set here wins.
+
 | Name                             | Required | What it holds                                                                     |
 | -------------------------------- | -------- | --------------------------------------------------------------------------------- |
 | `GOOGLE_WORKSPACE_CLIENT_ID`     | required | The client's id, ending in `.apps.googleusercontent.com`; public, not a secret    |

@@ -92,7 +92,7 @@ A spec names Gateway settings and never holds a value: no field takes one. Every
 | Field              | Required                  | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                            | When absent                                |
 | ------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `id`               | yes                       | Lowercase letters, digits and hyphens, a letter first, 2 to 40 characters (`^[a-z][a-z0-9-]{1,39}$`). A row may not take a catalog id or `everyapp`                                                                                                                                                                                                                                                                                                             |                                            |
-| `mode`             | no                        | `"api_key"` only: an AI provider or an OAuth client is a catalog entry, not a spec a Gateway takes                                                                                                                                                                                                                                                                                                                                                              | `api_key`                                  |
+| `mode`             | no                        | `"api_key"`, or left out: the kind comes from `auth.kind`. An AI provider is a catalog entry, not a spec a Gateway takes; an OAuth provider is a spec whose `auth.kind` is `oauth2-user` ([below](#oauth-providers-upload-a-client-the-gateway-runs-the-flow))                                                                                                                                                                                                  | `api_key`                                  |
 | `name`             | yes                       | 1 to 64 characters: the provider's name in lists, errors and logs                                                                                                                                                                                                                                                                                                                                                                                               |                                            |
 | `description`      | no                        | At most 200 characters                                                                                                                                                                                                                                                                                                                                                                                                                                          |                                            |
 | `docs`             | yes                       | An https URL, at most 500 characters: where the person gets the key                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
@@ -130,7 +130,7 @@ Setting names (`auth.secret`, `auth.user.secret`, `hostSetting`, `secrets[].name
 | `{ "kind": "basic", "secret": "X_API_KEY", "as": "username" }`                                           | `Authorization: Basic base64(<value>:)`: the key is the username, the password empty                                                                                                                                                                                                                                                                                                                                      | Segment, Mixpanel, Crisp                                                  |
 | `{ "kind": "basic", "secret": "X_API_KEY", "as": "pair" }`                                               | `Authorization: Basic <…>`: the value is `login:password`, base64-encoded, or sent as it is when it holds no colon (already encoded)                                                                                                                                                                                                                                                                                      | DataForSEO                                                                |
 
-`as` is required for `basic` and says where the key goes, never guessed from the value; `user` belongs to `as: "password"` only. Any other kind is refused (`auth.kind: must be bearer, header, query or basic (an OAuth client or an AI provider is a catalog entry, not a spec this gateway takes)`): an OAuth client or an AI provider is a catalog entry; a client-credentials exchange and signed requests (AWS SigV4, HMAC) aren't in this slice. A fixed header the provider wants on every call (`anthropic-version`, `Notion-Version`) is the app's to send: the Gateway forwards an app's ordinary headers. Every request also loses the app's `Authorization`, `x-api-key`, cookies, `x-everyapp-*` and forwarding headers before the key goes on, and is made with `redirect: "manual"`.
+`as` is required for `basic` and says where the key goes, never guessed from the value; `user` belongs to `as: "password"` only. The fifth kind, `oauth2-user`, is an OAuth provider the Gateway runs the user flow for ([below](#oauth-providers-upload-a-client-the-gateway-runs-the-flow)); its `auth` names the two client settings instead of a `secret`. Any other kind is refused: an AI provider is a catalog entry; a client-credentials exchange and signed requests (AWS SigV4, HMAC) aren't in this slice. A fixed header the provider wants on every call (`anthropic-version`, `Notion-Version`) is the app's to send: the Gateway forwards an app's ordinary headers. Every request also loses the app's `Authorization`, `x-api-key`, cookies, `x-everyapp-*` and forwarding headers before the key goes on, and is made with `redirect: "manual"`.
 
 ### `hostSetting`: a host of the operator's
 
@@ -171,6 +171,164 @@ After the value is set it records on the row what the key was set for: `provider
 - A row replaced (`provider add --replace`), removed and added again, or edited by hand in D1 is unbound until `secret set` runs again: calls answer `503 integration_not_configured` with `<Name>'s key was set for other hosts than the provider has now. Its operator sets it again with: everyapp secret set <NAMES>`. A person changing a row's hosts sets the key again; nobody who can only rewrite rows can move a key the operator set.
 - `provider remove` leaves the setting on the Gateway Worker (`pnpm everyapp secret unset STRIPE_API_KEY` removes it), and nothing reads it until a new row is bound by a new `secret set`.
 
+## OAuth providers: upload a client, the Gateway runs the flow
+
+An OAuth provider is a provider whose credential is a person's: GitHub, Google, Notion, Linear, any API with an OAuth 2 authorization-code flow. Since 2026-10-25 it is a kind of the registry (`docs/design/2026-10-oauth-providers.md`): an owner or admin adds one from a preset or a spec, pastes the client id and secret the provider issued, and the Gateway runs the whole flow itself, holds each person's tokens sealed, refreshes them, and puts the right token on every call an app makes through `integrationFetch()`. The app never sees the client secret, the access token or the refresh token; it sees calls that go through and refusals that say what to do.
+
+Two flows exist on the same client, and a catalog entry may offer both (`integrationStatus().flow` is `app`, `gateway` or `both`):
+
+- **The app-driven flow** (`app`): the social networks' entries since #326. The app builds the authorize URL from the status's `clientId`, receives the callback on its own host, exchanges the code through the Gateway's token-endpoint proxy and keeps the person's tokens itself. Unchanged.
+- **The Gateway-owned flow** (`gateway`, this section): the person connects once, in the Gateway, and every app that lists the provider calls it through the proxy with that connection. `google-workspace`, `microsoft-365`, `slack` and `discord` offer both; every registered OAuth provider and every preset offers this one.
+
+### The spec: `auth.kind: "oauth2-user"`
+
+The same JSON a row of any kind is, with `auth` an OAuth block and a `scopeSets` object; `parseProviderSpec` takes it, and `oauthSpecOf` writes a catalog entry that has a `flow` back as one (`provider show <id>` prints it):
+
+```json
+{
+  "id": "github-oauth",
+  "name": "GitHub",
+  "description": "Repositories, issues, pull requests and the person's profile.",
+  "docs": "https://github.com/settings/developers",
+  "api": "https://docs.github.com/rest",
+  "hosts": ["api.github.com"],
+  "auth": {
+    "kind": "oauth2-user",
+    "authorizeUrl": "https://github.com/login/oauth/authorize",
+    "tokenUrl": "https://github.com/login/oauth/access_token",
+    "revokeUrl": "https://api.github.com/applications/{client_id}/grant",
+    "revokeMethod": "DELETE",
+    "clientId": "GITHUB_OAUTH_CLIENT_ID",
+    "clientSecret": "GITHUB_OAUTH_CLIENT_SECRET",
+    "inject": "form",
+    "pkce": true,
+    "scopeDialect": "comma",
+    "tokenHeaders": { "Accept": "application/json" },
+    "identity": {
+      "url": "https://api.github.com/user",
+      "label": "login",
+      "id": "id"
+    }
+  },
+  "scopeSets": {
+    "identity": {
+      "label": "GitHub account (who you are)",
+      "access": "read",
+      "scopes": ["read:user", "user:email"]
+    },
+    "repo.read": {
+      "label": "Repositories (read, private ones included)",
+      "access": "read",
+      "scopes": ["repo"]
+    },
+    "repo.write": {
+      "label": "Repositories (read and write)",
+      "access": "write",
+      "scopes": ["repo"]
+    },
+    "org.read": {
+      "label": "Organizations and teams (read)",
+      "access": "read",
+      "scopes": ["read:org"]
+    }
+  },
+  "access": ["read", "write"],
+  "hint": "Register an OAuth App (not a GitHub App) and paste its client id and secret."
+}
+```
+
+The common fields (`id`, `name`, `description`, `docs`, `api`, `hosts`, `access`, `readMethods`, `writeMethods`, `hint`, `example`, `tags`) follow the table above; `docs` is where the person makes the OAuth app (the console). `hosts` are the API hosts the person's token is sent to; the authorize, token and revoke hosts need not be among them. The OAuth fields, with the parser's rule; any other field under `auth` is `not a field of auth.kind oauth2-user`:
+
+| Field                  | Required | Rule                                                                                                                                                                                                                                                                                                                                        | When absent                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `auth.authorizeUrl`    | yes      | An https URL with no port, credentials, fragment or query string, on a host that passes the row host rules (public DNS, never the Gateway's own)                                                                                                                                                                                            |                                         |
+| `auth.tokenUrl`        | yes      | The same; the token request is a `POST` there                                                                                                                                                                                                                                                                                               |                                         |
+| `auth.revokeUrl`       | no       | The same; `{client_id}` in the path is replaced by the client id (GitHub's grant endpoint). Without it, disconnecting deletes the Gateway's copy and revokes nothing at the provider                                                                                                                                                        | no revocation at the provider           |
+| `auth.revokeMethod`    | no       | `POST` or `DELETE`; needs a `revokeUrl`                                                                                                                                                                                                                                                                                                     | `POST`                                  |
+| `auth.clientId`        | yes      | A setting name under the row's prefix (`GITHUB_OAUTH_` for `github-oauth`): where the client id lives when set from a terminal                                                                                                                                                                                                              |                                         |
+| `auth.clientSecret`    | no       | Another setting name under the prefix. Absent: a public client (PKCE alone)                                                                                                                                                                                                                                                                 | public client                           |
+| `auth.inject`          | no       | `form` (the client id and secret in the token request's body) or `basic` (HTTP Basic)                                                                                                                                                                                                                                                       | `form`                                  |
+| `auth.pkce`            | no       | `true` or `false`: whether the authorize request carries `code_challenge` (S256) and the token request its verifier. Off only for a provider that refuses the parameter                                                                                                                                                                     | `true`                                  |
+| `auth.scopeDialect`    | no       | How the provider spells granted scopes in its token answer: `space` (RFC 6749), `comma` (GitHub), `google`, `microsoft` or `slack` (the catalog's parsers). For `space` and `comma`, an answer with no `scope` field is taken as granted-as-requested (RFC 6749 §5.1)                                                                       | `space`                                 |
+| `auth.authorizeParams` | no       | At most 10 extra query parameters on the authorize URL (Google's `access_type=offline` and `prompt=consent`); never `client_id`, `redirect_uri`, `response_type`, `scope`, `state`, `code_challenge` or `code_challenge_method`, which the Gateway sets                                                                                     |                                         |
+| `auth.tokenHeaders`    | no       | At most 10 extra headers on the token request (GitHub's `Accept: application/json`); never `authorization`, `content-type`, `content-length`, `host`, `cookie` or an `x-everyapp-*` name                                                                                                                                                    |                                         |
+| `auth.identity`        | no       | `{ url, label, id? }`: after the exchange the Gateway `GET`s `url` (on one of `hosts`) with the new token and reads `label` and `id` (a field name, or a dotted path at most four deep) to name the connection ("ben" at GitHub, the email at Google)                                                                                       | the connection is named by its provider |
+| `scopeSets`            | yes      | 1 to 20 sets named `identity` or `<area>.<access>` (`repo.read`), each `{ label, access, scopes, userScopes?, routes? }`: `access` `read` or `write`; `scopes` at most 40 provider scope strings, one each, no space or comma inside; `routes` at most 20 of `{ host, paths, posts? }` on one of `hosts`, as the scopes design's route sets |                                         |
+| `alwaysRequested`      | no       | Scopes every connection asks for whatever its sets (`offline_access`)                                                                                                                                                                                                                                                                       | `[]`                                    |
+| `tolerated`            | no       | Scopes a token may carry beyond the sets without refusal (identity and refresh scopes in every spelling the provider uses); never a data scope                                                                                                                                                                                              | `[]`                                    |
+
+A set with `routes` unlocks those paths only (`GET` and `HEAD` on `paths`, the `posts` patterns); a set without routes unlocks every path on `hosts` for its `access` (a read set the `readMethods`, a write set the write methods too). On every host the segments `batch` and `$batch` never pass. The parsed spec is the same `OAuthClientCapability` a catalog client is, with a `scopePolicy` built from the sets (`grantTypes` `authorization_code` and `refresh_token`, `requestScope: "keep"`) and a `flow` block carrying the rest; `isOAuthProvider()` is true for it.
+
+The row rules of the table above hold with the client settings in place of the key, and one more: `oauth.client-bound-to-endpoints`. A client uploaded for a row stays usable only while the row still has the authorize, token and revoke URLs, `hosts`, `inject` and setting names it was uploaded for (`providerBindingKey` over those); a row replaced since reads as having no client until the client is pasted or set again, and the token-endpoint branch and the status refuse an unbound OAuth row too.
+
+### Presets
+
+`OAUTH_PRESETS` (`packages/sdk/src/internal/oauthPresets.ts`) are specs of this shape shipped with the SDK, one per provider: `github-oauth`, `notion-oauth`, `linear-oauth`, `gitlab-oauth`, `atlassian` (Jira and Confluence), `hubspot-oauth`, `zoom`, `dropbox`, `spotify` and `x-oauth` (X's OAuth 2 with PKCE; X's OAuth 1.0a stays an app secret). An id carries `-oauth` where the catalog already holds an API-key entry of that name, so `github` (a token) and `github-oauth` (a person's grant) are two providers with two setting families. A preset becomes a row when added (`provider add --oauth github-oauth`, the dialog, `everyapp_provider_add` with `{ preset }`), so `provider show github-oauth` prints it and a copy can be edited and added again under another id; a preset is a starting point, never a hidden catalog entry. Each is parsed by a test, and the catalog table below lists them with the catalog's clients. The catalog's own OAuth entries that have a `flow`, `google-workspace`, `microsoft-365`, `slack` and `discord`, are offered in the same picker, marked built in: adding one uploads the client only and writes no row.
+
+### The client: pasted in the Gateway, or set from a terminal
+
+One client per provider per Gateway, as a row's key is. Two places can hold it, and the first that is set wins:
+
+1. **Worker secrets**, set from a terminal: `pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET` (the row's two settings; `GOOGLE_WORKSPACE_CLIENT_ID` and its secret for the catalog's Google), which binds the row as any key does. The CLI never writes the sealed copy: the key that seals it lives in the Worker.
+2. **The `oauth_clients` table**, pasted in **Manage workspace → Providers** (the Add OAuth provider dialog, or Replace client): the client id in clear, the secret sealed (AES-256-GCM through WebCrypto, a random nonce per value, stored as `v1.<nonce>.<ciphertext>`; the key derived once per isolate with HKDF-SHA256 from `BETTER_AUTH_SECRET` with the info `everyapp:oauth:v1`, so no new setting is needed; `apps/every-app-gateway/src/server/secrets/sealed.ts`), with who pasted it and when, and the row's binding key. A sealed value that no longer opens (the secret rotated) reads as no client.
+
+`provider list`, `provider show`, the Admin table and `everyapp_provider_list` say which source is live (`env` or `d1`, the client id, who, when) and never a secret. **Forget pasted client** in the dialog deletes the sealed copy (its twin from a terminal is `secret unset` of the two settings); **Replace client** overwrites it. The redirect URI the person registers at the provider's console is `https://<gateway>/connect/<id>/callback`; every surface prints it beside the console's URL.
+
+### The flow
+
+```text
+GET /connect/<id>?account=user|organization&return=<path or app URL>&sets=a,b
+  the person's own session (any member for `user`; an owner or admin for `organization`,
+  the workspace's one account background work uses); the provider must be an OAuth
+  provider with a live client (404 or 409 saying why)
+  sets: the ones named, else the union of the sets every active app that lists the
+  provider declares, else every set the provider has; `identity` always when it exists
+  → one `oauth_states` row (32 random bytes as the state, the PKCE verifier, who, which
+    organization, the account kind, the sets, where to return; 10 minutes, one use)
+  → 302 to authorizeUrl with response_type=code, client_id, redirect_uri, scope (the
+    union, in the dialect's separator), state, code_challenge(_method=S256), authorizeParams
+
+GET /connect/<id>/callback?code&state            ← the redirect URI
+  the state row is this person's, unexpired, and deleted at once (`oauth.state-single-use`)
+  an `error` from the provider ends on a Gateway page, never a redirect
+  → POST tokenUrl with code, redirect_uri, code_verifier, the client as `inject` says,
+    tokenHeaders; 64 KiB answer, redirect: "manual", never logged
+  → the granted scopes (the dialect) must cover the sets asked; an excess beyond
+    `tolerated` is refused and the tokens dropped (the scopes design's rules)
+  → `identity` names the account; one `provider_connections` row per
+    (organization, provider, subject), replaced on reconnect, tokens sealed
+  → `provider.connected` with the actor
+  → 302 to `return`: a path on the Gateway, or an https URL whose host is one of this
+    Gateway's app hosts (APP_BASE_DOMAIN, a registered app's host; http://localhost:<port>
+    in GATEWAY_DEPLOYMENT_MODE=dev). Anything else lands on Settings → Connected accounts
+```
+
+An app sends people into it with `connectUrl({ env, provider, returnTo, account })` (`@every-app/sdk/server`: `<GATEWAY_URL>/connect/<id>?return=…&account=…`; `connectPath` is the path alone, also on the status). The person lands back where they were, connected.
+
+**Refresh.** A call through the proxy refreshes a connection whose `expires_at` is within 60 seconds, under a lease on the row (one conditional `UPDATE`, so parallel calls don't race); a refresh the provider refuses marks the connection `expired`, emits `provider.connection_expired` once, and calls answer `integration_not_connected` with `reconnect: true` until the person connects again.
+
+**Disconnect.** Settings → Connected accounts (own), Manage workspace → Providers (any), `pnpm everyapp provider disconnect`, `everyapp_provider_disconnect`: deletes the row, emits `provider.disconnected`, and revokes at the provider only when the spec has a `revokeUrl`. The Google entry has none on purpose: Google's revocation is per person per client and would also kill the tokens an app-driven app holds under the same client; the copy the Gateway drops dies at its expiry. GitHub, GitLab, Dropbox and Zoom revoke. The CLI's `disconnect` deletes without revoking (it has no token to revoke with) and says so.
+
+### Calls with the held token
+
+`/api/integrations/<id>/<host>/<path>` for an OAuth provider, in this order:
+
+1. The host is one of the provider's token endpoints: the app-driven branch, unchanged ([OAuth clients](/docs/agent/secrets#oauth-clients)).
+2. The host is in `hosts`: the held-token branch. The app is active and lists the provider (`capability_not_requested`); the method is allowed (`integration_method_not_allowed`: read methods on any grant, write methods on `access: "write"` for a provider that offers it); the client is live (`integration_not_configured`); the call is attributed (`admit()`), and an agent's read-only connection may not write (`integration_read_only`); the connection: `x-everyapp-account` (`integrationFetch`'s `account`; `user` when a person is behind the call, `organization` for background work) picks whose, and a missing or expired one is `409 integration_not_connected` with `{ connectPath, reconnect }`; the app's declared `scopes` must be within the connection's sets, else `integration_not_connected` with `reconnect: true` and the missing sets; the path must be covered by a declared set (`403 integration_scope_not_allowed`; `heldTokenCallAllowed()` in `packages/sdk/src/internal/oauthScopes.ts`); then the token is refreshed if due and put on the call as `Authorization: Bearer`, the app's `Authorization`, cookies, `X-HTTP-Method-Override` and any `access_token` or `token` query key are stripped, the call is made with `redirect: "manual"`, `set-cookie` is dropped from the answer, the call is counted (Usage) and logged as `integration.proxy.call` with the set names.
+3. Any other host: `invalid_integration_route`.
+
+`GET /api/integrations/<id>` (the status) gains `flow` (`app`, `gateway` or `both`), `connectPath`, and for the caller's account `connection`: `{ account, label, scopeSets, ready, reconnect? }` or `null`. An app shows "Connect GitHub" (a link to `connectUrl()`) on `connection: null`, "Reconnect" on `reconnect: true`, and calls on `ready`.
+
+**Scopes.** As the scopes design says: a provider carries sets; an app declares the sets it needs under `scopes` (`capabilities: { "github-oauth": { access: "read", scopes: ["identity", "repo.read"], why } }`); the strict validator refuses an unknown set name for a provider that has sets and `scopes` on one that has none; the consent asks the union; the proxy holds the call to the declared sets. The catalog's Google and Microsoft sets are untouched: a Gateway-owned Google connection for OpenSEO asks `identity`, `search-console.read` and `analytics.read`, the same strings as the app-driven flow.
+
+### Who may do what
+
+Adding, replacing a client, removing a provider, listing every connection and disconnecting someone else's account: owners and admins. Connecting and disconnecting one's own account: any member. The organization's account (`account=organization`): owners and admins. Rows are written by the Cloudflare login or by owners and admins through the dialog and `everyapp_provider_add` on a self-hosted Gateway (`providers.add-is-privileged`); the client is pasted by owners and admins in the dialog, or set by the login from a terminal; no tool argument ever carries a secret.
+
+### Events
+
+`provider.added` and `provider.removed` (with `provider.kind` `api_key` or `oauth`), `provider.updated` (a client replaced, a spec replaced), `provider.connected`, `provider.disconnected` and `provider.connection_expired`, each with the actor and the account's kind and label, never a token ([events](/docs/agent/events#providers)). Held-token calls count in Usage like every proxied call; Activity stays the tools audit.
+
 ## The commands
 
 ```bash
@@ -187,7 +345,7 @@ pnpm everyapp provider disconnect github-oauth --user ben@example.com
 
 From an AI client, the same registry is five built-ins on the Gateway connector: `everyapp_provider_list` for every member (with the OAuth `presets`), `everyapp_provider_add` (the spec object or `{ preset }`, never a URL, never a replace), `everyapp_provider_remove` (refuses a bound or listed row), `everyapp_provider_connections` and `everyapp_provider_disconnect` (a member's own account; the organization's for owners and admins) for owners and admins on a self-hosted Gateway; see [the provider tools](/docs/agent/mcp#provider-tools). A key is never set through a tool.
 
-All four run from any directory under the Cloudflare login (as every Gateway command: `--gateway`, `--account-id`, `--json`, `--verbose`). A Gateway from before migration 0013 has no `providers` table: `add` and `remove` refuse and name `pnpm everyapp update`; `list` and `show` read it as having no rows.
+All of them run from any directory under the Cloudflare login (as every Gateway command: `--gateway`, `--account-id`, `--json`, `--verbose`). A Gateway from before migration 0013 has no `providers` table: `add` and `remove` refuse and name `pnpm everyapp update`; `list` and `show` read it as having no rows.
 
 | Command                                                                                                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `done.data` under `--json`                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -200,7 +358,7 @@ All four run from any directory under the Cloudflare login (as every Gateway com
 | `pnpm everyapp provider disconnect <id> --user <email> \| --organization \| --all`                            | Deletes the connection rows named (exactly one of the three flags: `PROVIDER_CONNECTION_WHICH` otherwise) and queues `provider.disconnected` for each. The CLI holds no token, so the grant stays at the provider until revoked there (the output names the console; Admin → Providers → Disconnect revokes it). An OAuth id with no such connection is `PROVIDER_CONNECTION_NOT_FOUND`; an id that isn't an OAuth provider's `PROVIDER_NOT_FOUND`                                                                                                                                                                                                                                                                                                                                                               | `{ id, name, removed: [connection…], revoked: false, revokeAt }`                                                                                                                                                      |
 | `pnpm everyapp provider remove <id> [--force]`                                                                | Removes a row; for an OAuth provider, its connections and the client uploaded under Admin → Providers go with it (the output counts them: `connections`, `client`). A catalog id is `PROVIDER_BUILTIN`, an id with no row `PROVIDER_NOT_FOUND`, and a row an active app's manifest lists is `PROVIDER_IN_USE` (naming the apps) unless `--force`. The setting stays on the Gateway; the output says `secret unset` removes it                                                                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                       |
 
-`source` is `catalog` or `row`; `addedBy` is the Cloudflare login's email (or `api-token:<account id>`), `addedAt` epoch milliseconds. Nothing any of them prints or returns is a value: settings appear by name and set or not.
+`provider add` takes `--oauth` for an OAuth preset, built-in client or spec, `--client-id` for the client id (its secret on stdin as `NAME=value`, or `--from-env`), and `--replace` as for any row. `source` is `catalog` or `row`; `addedBy` is the Cloudflare login's email (or `api-token:<account id>`), `addedAt` epoch milliseconds. For an OAuth provider `list` and `show` add `kind: "oauth"`, `flow`, `redirectUri`, `client` (`source` `env`, `d1` or `null`, the client id, who, when) and the connections count. Nothing any of them prints or returns is a value: settings appear by name and set or not, a client by its id.
 
 `everyapp provider` was the name of `everyapp mcp` until 2026-10-24. Through launch week, `pnpm everyapp provider on <id>` and `pnpm everyapp provider off <id>` stay as hidden routes that run `mcp on|off` and first print `everyapp provider on is now everyapp mcp on; this alias goes after launch week.`; `provider list` is this page's. The MCP apps' own codes, `PROVIDER_APP_UNKNOWN` and `PROVIDER_KEY_UNSET`, are unchanged.
 
@@ -221,6 +379,11 @@ What each means; the fix for a CLI code is in its `data.fix` and on [the error c
 | `PROVIDER_CLIENT_INCOMPLETE`       | `provider add --oauth`             | A client id without its secret (or the reverse) was given; nothing was set, the provider is registered                                                                                          |
 | `PROVIDER_CONNECTION_WHICH`        | `provider disconnect`              | None or several of `--user`, `--organization`, `--all`                                                                                                                                          |
 | `PROVIDER_CONNECTION_NOT_FOUND`    | `provider disconnect`              | No connection to that provider for the person or the organization named                                                                                                                         |
+| `PROVIDER_BOUND`                   | `everyapp_provider_remove`         | The row's key or client is bound; removing it is the operator's (`provider remove`, then `secret unset`)                                                                                        |
+| `OAUTH_PROVIDER_REQUIRED`          | the Gateway                        | A connect, a client upload or a connections call named a provider that isn't an OAuth provider with a `flow`                                                                                    |
+| `OAUTH_CLIENT_REQUIRED`            | the Gateway                        | A connect started for a provider with no live client (none set, or the pasted one unbound or unreadable); the message names the dialog and the `secret set`                                     |
+| `SEALING_UNAVAILABLE`              | the Gateway                        | `BETTER_AUTH_SECRET` is unset, so nothing can be sealed or opened: no client can be pasted and no connection made until it is                                                                   |
+| `PROVIDER_HOSTED`                  | the Gateway                        | Adding a provider, pasting or forgetting a client, or removing a provider on a hosted Gateway: rows and clients are a self-hosted Gateway's (`providers.add-is-privileged`)                     |
 | `CAPABILITY_UNKNOWN`               | `deploy`                           | The manifest lists an id neither the catalog nor the Gateway's rows have; fix `pnpm everyapp provider add <spec>`                                                                               |
 | `CAPABILITY_NOT_IN_CATALOG`        | `dev` (a warning)                  | The manifest lists an id outside the catalog: it is reached locally only through `.everyapp/providers/<id>.json`                                                                                |
 | `invalid_integration_route`        | the Gateway, 400                   | The host isn't one of the spec's (or its host setting's), the path could leave it, or the id is an AI provider's                                                                                |
@@ -260,7 +423,7 @@ An app lists the provider as any other, with the sets it needs: `capabilities: {
 
 ## Local development
 
-`everyapp dev` has no Gateway. For a catalog provider the SDK calls the provider directly with the developer's own key from `.dev.vars`, under the Gateway's setting name, by the same spec. For a registered provider it needs the spec too: `everyAppWorker()` reads `.everyapp/providers/*.json` in the app's directory into `EVERYAPP_DEV_PROVIDERS` (a JSON array of the specs), and `integrationFetch()` resolves the id from it and puts the key from `.dev.vars` (under the spec's setting names) where the spec's `auth` says. The file is what `pnpm everyapp provider show <id> --save` writes, or `provider add` run in the app's directory; a spec holds no value, so the file is safe to commit. Without a file the call throws a `ConfigurationError` that names the command, and `everyapp dev` warns `CAPABILITY_NOT_IN_CATALOG` for the id when it starts.
+`everyapp dev` has no Gateway. For a catalog provider the SDK calls the provider directly with the developer's own key from `.dev.vars`, under the Gateway's setting name, by the same spec. For a registered provider it needs the spec too: `everyAppWorker()` reads `.everyapp/providers/*.json` in the app's directory into `EVERYAPP_DEV_PROVIDERS` (a JSON array of the specs), and `integrationFetch()` resolves the id from it and puts the key from `.dev.vars` (under the spec's setting names) where the spec's `auth` says. The file is what `pnpm everyapp provider show <id> --save` writes, or `provider add` run in the app's directory; a spec holds no value, so the file is safe to commit. Without a file the call throws a `ConfigurationError` that names the command, and `everyapp dev` warns `CAPABILITY_NOT_IN_CATALOG` for the id when it starts. For an OAuth provider's held-token calls there is no flow locally: the SDK puts the developer's own token from `.dev.vars` on the call, under the provider's prefix plus `ACCESS_TOKEN` (`devAccessTokenName()`: `GOOGLE_WORKSPACE_ACCESS_TOKEN`, `GITHUB_OAUTH_ACCESS_TOKEN`), and `integrationStatus` reports a connection while it is set; without it the call answers `integration_not_connected` as the Gateway would.
 
 ## The catalog
 

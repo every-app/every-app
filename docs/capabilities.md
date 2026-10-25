@@ -412,6 +412,8 @@ rules' invariants are the `providers.*` rows of the threat model's register
 
 ## OAuth clients
 
+Since 2026-10-25 an OAuth client can also run the Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`): the catalog's `google-workspace`, `microsoft-365`, `slack` and `discord` carry a `flow` block, and any OAuth provider added from a preset or a spec with `auth.kind: "oauth2-user"` (`everyapp provider add --oauth github-oauth`) is one. There the person connects at `https://<gateway>/connect/<id>` (PKCE, a one-use state), the Gateway holds the tokens sealed in D1 and refreshes them, and an app that lists the provider with `scopes` calls its API hosts through `integrationFetch()` with the token put on by the Gateway, held to the sets it declared. The client may be the Worker secrets below or one pasted in Manage workspace → Providers (sealed in `oauth_clients`; the Worker secret wins). The redirect URI for that flow is `https://<gateway>/connect/<id>/callback`. The app-driven flow below is unchanged and both run on the same client; the agent page is [providers](../landing-page/content/agent/providers.md).
+
 A social network's OAuth client is a capability too (`oauth_client`): the
 operator registers one client per network on the network's developer
 console and gives it to the gateway, and every app that lists the network
