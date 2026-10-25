@@ -1,5 +1,5 @@
 /**
- * `everyapp provider add|list|show|remove`: the provider registry
+ * `everyapp provider add|list|show|remove|presets|connections|disconnect`: the provider registry
  * (docs/design/2026-10-provider-registry.md). Every API provider the
  * Gateway brokers is an entry of data: the built-in catalog
  * (`@every-app/sdk/internal` capabilities.ts) and the rows this Gateway
@@ -33,7 +33,14 @@ import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { addProvider, gatewayRegistry, removeProvider } from "@/lib/gateway/providers";
+import {
+  addProvider,
+  countConnections,
+  gatewayRegistry,
+  readUploadedClients,
+  removeProvider,
+  type UploadedClient,
+} from "@/lib/gateway/providers";
 import { listApps } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -43,6 +50,17 @@ import { formatTable } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
 import type { GatewayCommandFlags } from "../flags";
 import { turnOff, turnOn } from "../mcp";
+import {
+  addOAuth,
+  disconnectProvider,
+  isOAuthCapability,
+  listPresets,
+  listProviderConnections,
+  oauthFacts,
+  type ConnectionsFlags,
+  type DisconnectFlags,
+  type OAuthAddFlags,
+} from "./oauth";
 
 /** The most a spec may be, from a file or a URL. */
 export const MAX_SPEC_BYTES = 64 * 1024;
@@ -60,8 +78,40 @@ export interface ProviderOptions {
   now?: () => number;
 }
 
-export async function add(flags: GatewayCommandFlags & { replace?: boolean }, spec: string): Promise<void> {
-  await runCommand(flags, (out) => addFromSpec({ flags, out }, spec));
+export async function add(flags: GatewayCommandFlags & OAuthAddFlags, spec?: string): Promise<void> {
+  await runCommand(flags, async (out) => {
+    if (flags.oauth) {
+      if (spec) {
+        throw new EveryAppError(
+          "PROVIDER_SPEC_INVALID",
+          `--oauth ${flags.oauth} names the provider; ${spec} was given too
+Nothing was changed.`,
+          { fix: `give one: ${CLI} provider add --oauth ${flags.oauth}, or ${CLI} provider add ${spec}` },
+        );
+      }
+      await addOAuth({ flags, out }, flags.oauth);
+      return;
+    }
+    if (!spec) {
+      throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the spec to register\nA JSON file or an https URL for an API provider, or --oauth <preset> for an OAuth one.", {
+        rerun: `${CLI} provider presets`,
+        rerunNote: "names the OAuth presets",
+      });
+    }
+    await addFromSpec({ flags, out }, spec);
+  });
+}
+
+export async function presets(flags: { json?: boolean; verbose?: boolean }): Promise<void> {
+  await runCommand(flags, (out) => listPresets({ out }));
+}
+
+export async function connections(flags: GatewayCommandFlags & ConnectionsFlags): Promise<void> {
+  await runCommand(flags, (out) => listProviderConnections({ flags, out }));
+}
+
+export async function disconnect(flags: GatewayCommandFlags & DisconnectFlags, id: string): Promise<void> {
+  await runCommand(flags, (out) => disconnectProvider({ flags, out }, id));
 }
 
 export async function list(flags: GatewayCommandFlags): Promise<void> {
@@ -382,6 +432,21 @@ interface ListedProvider {
   addedBy?: string | null;
   addedAt?: number | null;
   apps: string[];
+  /** An OAuth entry's flow, redirect URI, console, scope sets, client source and connections (`oauthFacts`). */
+  flow?: "app" | "both";
+  redirectUri?: string;
+  console?: string;
+  scopeSets?: unknown[];
+  client?: { source: "env" | "uploaded" | "none"; clientId?: string };
+  connections?: number;
+}
+
+/** What `provider list` and `provider show` know of the OAuth side of the Gateway. */
+interface OAuthContext {
+  gatewayUrl: string;
+  gatewayNames: readonly string[];
+  uploaded: ReadonlyMap<string, UploadedClient>;
+  connections: ReadonlyMap<string, number>;
 }
 
 /** Every provider the registry has but the Gateway's services, as `provider list` reports it. */
@@ -389,6 +454,7 @@ function providersOf(
   registry: ProviderRegistry,
   gatewayNames: readonly string[],
   apps: Awaited<ReturnType<typeof listApps>>,
+  oauth: OAuthContext,
 ): ListedProvider[] {
   const rows = new Map(registry.rows().map((row) => [row.id, row]));
   const providers: ListedProvider[] = [];
@@ -406,6 +472,9 @@ function providersOf(
       source: row ? "row" : "catalog",
       ...(row ? { addedBy: row.addedBy, addedAt: row.addedAt } : {}),
       apps: appsUsing(apps, id, capability),
+      ...(isOAuthCapability(capability)
+        ? (oauthFacts(id, capability, { source: row ? "row" : "catalog", ...oauth }) as Partial<ListedProvider>)
+        : {}),
     });
   }
   return providers;
@@ -420,24 +489,37 @@ function providersOf(
 export async function listProviders(options: ProviderOptions): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
-  const [registry, gatewayNames, apps] = await Promise.all([
+  const [registry, gatewayNames, apps, uploaded, connections] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
     listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
     listApps(gateway.db),
+    readUploadedClients(gateway.db),
+    countConnections(gateway.db),
   ]);
-  const providers = providersOf(registry, gatewayNames, apps);
+  const providers = providersOf(registry, gatewayNames, apps, {
+    gatewayUrl: gateway.gatewayUrl,
+    gatewayNames,
+    uploaded,
+    connections,
+  });
   const table = formatTable(
     ["ID", "NAME", "KIND", "HOSTS", "SETTINGS", "SOURCE", "APPS"],
     providers.map((provider) => [
       provider.id,
       provider.name,
-      provider.kind,
+      provider.kind === "oauth client" && provider.flow && provider.flow !== "app" ? "oauth" : provider.kind,
       [...provider.hosts, ...(provider.hostSetting ? [`<${provider.hostSetting}>`] : [])].join(", ") || chalk.dim("-"),
       [
-        provider.settings
-          .map((setting) => `${setting.name} ${setting.set ? chalk.green("set") : chalk.yellow("not set")}`)
-          .join(", "),
-        ...(provider.source === "row" ? [provider.bound ? chalk.green("bound") : chalk.yellow("not bound")] : []),
+        // An uploaded client counts as set: the Gateway reads it when the env lacks the setting.
+        provider.client?.source === "uploaded"
+          ? `client ${chalk.green("uploaded")}`
+          : provider.settings
+              .map((setting) => `${setting.name} ${setting.set ? chalk.green("set") : chalk.yellow("not set")}`)
+              .join(", "),
+        ...(provider.source === "row" && provider.client?.source !== "uploaded"
+          ? [provider.bound ? chalk.green("bound") : chalk.yellow("not bound")]
+          : []),
+        ...(provider.connections !== undefined ? [`${provider.connections} connected`] : []),
       ].join(", "),
       provider.source === "row" ? `registered by ${provider.addedBy ?? "someone"}` : chalk.dim("catalog"),
       provider.apps.join(", ") || chalk.dim("-"),
@@ -493,6 +575,8 @@ function specOf(id: string, capability: Capability): Record<string, unknown> {
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
     case "oauth_client":
+      // A registered OAuth provider's whole spec (what `provider add --oauth` took); a built-in client's setup facts.
+      if (capability.flow && !capability.setup) return providerSpecOf(id, capability);
       return {
         id,
         kind: "oauth client",
@@ -502,6 +586,7 @@ function specOf(id: string, capability: Capability): Record<string, unknown> {
         tokenEndpoints: describeTokenEndpoints(capability).split(", "),
         authorize: { url: capability.authorize.url, scopes: [...capability.authorize.scopes] },
         redirectPaths: [...capability.redirectPaths],
+        ...(capability.scopePolicy ? { scopeSets: Object.keys(capability.scopePolicy.sets) } : {}),
         ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
@@ -530,9 +615,12 @@ export async function showProvider(
     );
   }
   const gateway = await connect(options);
-  const [registry, apps] = await Promise.all([
+  const [registry, apps, gatewayNames, uploaded, connections] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
     listApps(gateway.db),
+    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    readUploadedClients(gateway.db),
+    countConnections(gateway.db),
   ]);
   const capability = registry.get(id);
   if (!capability || capability.mode === "service") {
@@ -563,10 +651,38 @@ export async function showProvider(
   }
   const using = appsUsing(apps, id, capability);
   const bound = registry.bound(id);
+  const oauth = isOAuthCapability(capability)
+    ? oauthFacts(id, capability, {
+        source: row ? "row" : "catalog",
+        gatewayUrl: gateway.gatewayUrl,
+        gatewayNames,
+        uploaded,
+        connections,
+      })
+    : null;
+  const client = oauth?.["client"] as { source: "env" | "uploaded" | "none"; clientId?: string } | undefined;
   const facts = [
     row
-      ? `Registered by ${row.addedBy ?? "someone"}${row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : ""}; ${bound ? "its key is bound to these hosts" : "its key isn't set for these hosts yet"}.`
-      : "Built in.",
+      ? `Registered by ${row.addedBy ?? "someone"}${row.addedAt ? ` on ${new Date(row.addedAt).toISOString().slice(0, 10)}` : ""}; ${
+          oauth
+            ? client?.source === "uploaded"
+              ? "its client was uploaded under Admin → Providers"
+              : bound
+                ? "its client is bound to these endpoints"
+                : "its client isn't set for these endpoints yet"
+            : bound
+              ? "its key is bound to these hosts"
+              : "its key isn't set for these hosts yet"
+        }.`
+      : oauth
+        ? `Built in; its client is ${client?.source === "env" ? "set" : client?.source === "uploaded" ? "uploaded under Admin → Providers" : "not set"}.`
+        : "Built in.",
+    ...(oauth
+      ? [
+          `Redirect URI to register at ${String(oauth["console"])}: ${String(oauth["redirectUri"])}`,
+          `${String(oauth["connections"])} connected; people connect at ${gateway.gatewayUrl}/connect/${id}.`,
+        ]
+      : []),
     using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
     ...(saved ? [`Wrote ${saved} for everyapp dev.`] : []),
   ];
@@ -578,11 +694,12 @@ export async function showProvider(
       provider: spec,
       source: row ? "row" : "catalog",
       bound,
+      ...(oauth ?? {}),
       addedBy: row?.addedBy ?? null,
       addedAt: row?.addedAt ?? null,
       apps: using,
       ...(saved ? { saved } : {}),
-      ...(row && !bound
+      ...(row && !bound && client?.source !== "uploaded"
         ? {
             next: [
               {
@@ -627,6 +744,10 @@ export async function removeRegistered(
   const lines = [
     `Removed ${removed.name} (${id}) from ${gatewayHost}.`,
     "The Gateway stops serving it within 30 seconds.",
+    ...(removed.connections > 0
+      ? [`${removed.connections} connection${removed.connections === 1 ? "" : "s"} to it ${removed.connections === 1 ? "was" : "were"} deleted (the grants stay at the provider until revoked there).`]
+      : []),
+    ...(removed.client ? ["The client uploaded under Admin → Providers was deleted with it."] : []),
     ...(removed.apps.length > 0
       ? [`${listed(removed.apps)} ${removed.apps.length === 1 ? "lists" : "list"} it: ${removed.apps.length === 1 ? "its" : "their"} calls to it fail until it is registered again.`]
       : []),
@@ -646,6 +767,8 @@ export async function removeRegistered(
       removed: true,
       settings,
       apps: removed.apps,
+      connections: removed.connections,
+      client: removed.client,
       ...(stays.length > 0
         ? { next: [{ command: `${CLI} secret unset ${stays.join(" ")}`, note: "the key nothing reads any more" }] }
         : {}),

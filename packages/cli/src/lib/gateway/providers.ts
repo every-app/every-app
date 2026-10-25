@@ -44,23 +44,42 @@ import { installOrganization, listApps, text, type Deployer } from "./registry";
 /** What the host rule needs of the install: the Gateway's host and its apps' base domain. */
 type ProviderInstall = Pick<InstallRecord, "gatewayHost" | "appBaseDomain">;
 
-const providerTables = new WeakMap<D1Database, Promise<boolean>>();
+const knownTables = new WeakMap<D1Database, Map<string, Promise<boolean>>>();
+
+/** Whether the Gateway's D1 has `table`. Asked of each database once per table. */
+function hasTable(db: D1Database, table: string): Promise<boolean> {
+  let tables = knownTables.get(db);
+  if (!tables) {
+    tables = new Map();
+    knownTables.set(db, tables);
+  }
+  let known = tables.get(table);
+  if (!known) {
+    known = db
+      .run([
+        { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", params: [table] },
+      ])
+      .then(([rows = []]) => rows.length > 0);
+    tables.set(table, known);
+  }
+  return known;
+}
 
 /**
  * Whether the Gateway's D1 has the `providers` table (migration 0013,
  * 2026-10-25). Asked of each database once.
  */
 function hasProvidersTable(db: D1Database): Promise<boolean> {
-  let known = providerTables.get(db);
-  if (!known) {
-    known = db
-      .run([
-        { sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'providers'" },
-      ])
-      .then(([rows = []]) => rows.length > 0);
-    providerTables.set(db, known);
-  }
-  return known;
+  return hasTable(db, "providers");
+}
+
+/**
+ * Whether the Gateway's D1 has the OAuth tables (`oauth_clients`,
+ * `provider_connections`; migration 0016, 2026-10-25). A Gateway without
+ * them has no uploaded clients and no connections.
+ */
+function hasOAuthTables(db: D1Database): Promise<boolean> {
+  return hasTable(db, "provider_connections");
 }
 
 /** A stored row as the registry reads it, with the spec's text as stored. */
@@ -232,10 +251,17 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
   const now = input.now ?? Date.now();
   const stored = JSON.stringify(input.spec);
   // Only if the write below landed: the row as written now. A replace is a registration too.
-  const event = await providerEvent(db, "provider.added", { id, name: capability.label }, input.deployer, now, {
-    sql: "EXISTS (SELECT 1 FROM providers WHERE id = ? AND spec = ? AND updated_at = ?)",
-    params: [id, stored, now],
-  });
+  const event = await providerEvent(
+    db,
+    "provider.added",
+    { id, name: capability.label, kind: capability.mode === "oauth_client" ? "oauth" : "api_key" },
+    input.deployer,
+    now,
+    {
+      sql: "EXISTS (SELECT 1 FROM providers WHERE id = ? AND spec = ? AND updated_at = ?)",
+      params: [id, stored, now],
+    },
+  );
   const [written = []] = await db.run([
     existing
       ? {
@@ -266,6 +292,10 @@ interface RemovedProvider {
   settings: string[];
   /** The registered apps that list it (removed anyway with --force). */
   apps: string[];
+  /** The connections (people's and the organization's tokens) deleted with an OAuth provider's row. */
+  connections: number;
+  /** Whether a client uploaded under Admin → Providers was deleted with the row. */
+  client: boolean;
 }
 
 /**
@@ -309,16 +339,39 @@ export async function removeProvider(
   const name = parsed.ok ? parsed.capability.label : id;
   // Queued before the delete, only while the row is there: a second remove
   // racing this one finds none and queues nothing.
-  const event = await providerEvent(db, "provider.removed", { id, name }, deployer, now, {
-    sql: "EXISTS (SELECT 1 FROM providers WHERE id = ?)",
-    params: [id],
-  });
-  await db.run([...event, { sql: "DELETE FROM providers WHERE id = ?", params: [id] }]);
+  const event = await providerEvent(
+    db,
+    "provider.removed",
+    { id, name, kind: parsed.ok && parsed.capability.mode === "oauth_client" ? "oauth" : "api_key" },
+    deployer,
+    now,
+    {
+      sql: "EXISTS (SELECT 1 FROM providers WHERE id = ?)",
+      params: [id],
+    },
+  );
+  // An OAuth provider's connections and uploaded client go with the row:
+  // tokens for a provider the Gateway no longer serves open nothing, and a
+  // row added again under the id must not inherit them.
+  const oauth = await hasOAuthTables(db);
+  const results = await db.run([
+    ...event,
+    ...(oauth
+      ? [
+          { sql: "DELETE FROM provider_connections WHERE provider_id = ? RETURNING id", params: [id] },
+          { sql: "DELETE FROM oauth_clients WHERE provider_id = ? RETURNING provider_id", params: [id] },
+        ]
+      : []),
+    { sql: "DELETE FROM providers WHERE id = ?", params: [id] },
+  ]);
+  const deleted = oauth ? results.slice(event.length, event.length + 2) : [];
   return {
     id,
     name,
     settings: parsed.ok ? [...capabilitySettings(parsed.capability)] : [],
     apps,
+    connections: deleted[0]?.length ?? 0,
+    client: (deleted[1]?.length ?? 0) > 0,
   };
 }
 
@@ -331,7 +384,7 @@ export async function removeProvider(
 async function providerEvent(
   db: D1Database,
   type: "provider.added" | "provider.removed",
-  provider: { id: string; name: string },
+  provider: { id: string; name: string; kind?: "api_key" | "oauth" },
   deployer: Deployer,
   now: number,
   onlyIf: { sql: string; params: Array<string | number> },
@@ -342,7 +395,9 @@ async function providerEvent(
     organizationId: found.organization.id,
     type,
     actor: operatorActor(deployer),
-    data: { provider: { id: provider.id, name: provider.name } },
+    data: {
+      provider: { id: provider.id, name: provider.name, ...(provider.kind ? { kind: provider.kind } : {}) },
+    },
     onlyIf,
     now,
   });
@@ -386,4 +441,172 @@ export async function bindProviderSettings(
     })),
   );
   return results.flatMap((result) => result.map((each) => String(each["id"])));
+}
+
+// OAuth providers: the uploaded clients and the connections (migration 0016).
+
+/** A client uploaded under Admin → Providers, as the CLI reports it: the id, never the secret. */
+export interface UploadedClient {
+  providerId: string;
+  clientId: string;
+  hasSecret: boolean;
+  addedBy: string | null;
+  addedAt: number | null;
+}
+
+/** Every client uploaded in the UI (`oauth_clients`), by provider id; none on a Gateway without the table. */
+export async function readUploadedClients(db: D1Database): Promise<Map<string, UploadedClient>> {
+  if (!(await hasOAuthTables(db))) return new Map();
+  const [rows = []] = await db.run([
+    {
+      sql: "SELECT provider_id, client_id, client_secret_enc IS NOT NULL AS has_secret, added_by, added_at FROM oauth_clients",
+    },
+  ]);
+  return new Map(
+    rows.map((row) => [
+      String(row["provider_id"]),
+      {
+        providerId: String(row["provider_id"]),
+        clientId: String(row["client_id"]),
+        hasSecret: Boolean(Number(row["has_secret"])),
+        addedBy: text(row["added_by"]),
+        addedAt: row["added_at"] == null ? null : Number(row["added_at"]),
+      },
+    ]),
+  );
+}
+
+/** One person's or one organization's connection to an OAuth provider, as `provider connections` reports it: never a token. */
+export interface ProviderConnection {
+  id: string;
+  organizationId: string;
+  providerId: string;
+  account: "user" | "organization";
+  userId: string | null;
+  userEmail: string | null;
+  label: string | null;
+  scopeSets: string[];
+  status: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+}
+
+interface ConnectionFilter {
+  /** The organization's connections (default: every organization's). */
+  organizationId?: string;
+  providerId?: string;
+  /** A person's, by email (matched without case). */
+  userEmail?: string;
+  /** The organization's own connection only. */
+  organization?: boolean;
+}
+
+function connectionWhere(filter: ConnectionFilter): { sql: string; params: Array<string | number> } {
+  const clauses: string[] = [];
+  const params: Array<string | number> = [];
+  if (filter.organizationId) {
+    clauses.push("c.organization_id = ?");
+    params.push(filter.organizationId);
+  }
+  if (filter.providerId) {
+    clauses.push("c.provider_id = ?");
+    params.push(filter.providerId);
+  }
+  if (filter.userEmail) {
+    clauses.push("lower(u.email) = ?");
+    params.push(filter.userEmail.trim().toLowerCase());
+  }
+  if (filter.organization) clauses.push("c.account_kind = 'organization'");
+  return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+}
+
+function safeStringArray(value: unknown): string[] {
+  try {
+    const parsed: unknown = JSON.parse(String(value ?? "[]"));
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The connections `filter` names, newest first; none on a Gateway without the table. */
+export async function listConnections(db: D1Database, filter: ConnectionFilter = {}): Promise<ProviderConnection[]> {
+  if (!(await hasOAuthTables(db))) return [];
+  const where = connectionWhere(filter);
+  const [rows = []] = await db.run([
+    {
+      sql: `SELECT c.id, c.organization_id, c.provider_id, c.account_kind, c.user_id, u.email AS user_email, c.label,
+  c.scope_sets, c.status, c.created_at, c.last_used_at, c.expires_at
+FROM provider_connections c LEFT JOIN users u ON u.id = c.user_id
+${where.sql}
+ORDER BY c.created_at DESC, c.id`,
+      params: where.params,
+    },
+  ]);
+  return rows.map((row) => ({
+    id: String(row["id"]),
+    organizationId: String(row["organization_id"]),
+    providerId: String(row["provider_id"]),
+    account: row["account_kind"] === "organization" ? "organization" : "user",
+    userId: text(row["user_id"]),
+    userEmail: text(row["user_email"]),
+    label: text(row["label"]),
+    scopeSets: safeStringArray(row["scope_sets"]),
+    status: String(row["status"] ?? "active"),
+    createdAt: Number(row["created_at"]),
+    lastUsedAt: row["last_used_at"] == null ? null : Number(row["last_used_at"]),
+    expiresAt: row["expires_at"] == null ? null : Number(row["expires_at"]),
+  }));
+}
+
+/** The connections of each provider, by id: what `provider list` and `provider show` count. */
+export async function countConnections(db: D1Database): Promise<Map<string, number>> {
+  if (!(await hasOAuthTables(db))) return new Map();
+  const [rows = []] = await db.run([
+    { sql: "SELECT provider_id, count(*) AS n FROM provider_connections GROUP BY provider_id" },
+  ]);
+  return new Map(rows.map((row) => [String(row["provider_id"]), Number(row["n"])]));
+}
+
+/**
+ * Delete the connections `filter` names (`provider disconnect`), queueing
+ * `provider.disconnected` for each in the batch that deletes it, as the
+ * operator, with `revoked: false`: the CLI holds no token and can't revoke
+ * at the provider; the done event says where to. The rows deleted.
+ */
+export async function removeConnections(
+  db: D1Database,
+  filter: ConnectionFilter & { providerId: string; providerName: string },
+  deployer: Deployer,
+  now = Date.now(),
+): Promise<ProviderConnection[]> {
+  const connections = await listConnections(db, filter);
+  if (connections.length === 0) return [];
+  const statements: D1Statement[] = [];
+  for (const connection of connections) {
+    statements.push(
+      ...(await queueEventFromCli(db, {
+        organizationId: connection.organizationId,
+        type: "provider.disconnected",
+        actor: operatorActor(deployer),
+        data: {
+          provider: { id: filter.providerId, name: filter.providerName },
+          account: {
+            kind: connection.account,
+            ...(connection.userId
+              ? { user: { id: connection.userId, ...(connection.userEmail ? { email: connection.userEmail } : {}) } }
+              : {}),
+            ...(connection.label ? { label: connection.label } : {}),
+          },
+          revoked: false,
+        },
+        onlyIf: { sql: "EXISTS (SELECT 1 FROM provider_connections WHERE id = ?)", params: [connection.id] },
+        now,
+      })),
+      { sql: "DELETE FROM provider_connections WHERE id = ?", params: [connection.id] },
+    );
+  }
+  await db.run(statements);
+  return connections;
 }

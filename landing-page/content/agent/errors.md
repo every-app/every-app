@@ -1080,6 +1080,24 @@ Source: `packages/cli/src/lib/gateway/remoteMcpApps.ts` (`resolveMcpApp`), `pack
 
 Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
 
+### PROVIDER_CLIENT_INCOMPLETE
+
+`provider add --oauth` was given one half of the client (the id by `--client-id` or a piped line, or the secret) without the other: `<Provider>'s client needs <NAME> too` / `Nothing was set; the provider is registered.` The row was written; set the client with the command in `data.fix` (`pnpm everyapp secret set <ID>_CLIENT_ID <ID>_CLIENT_SECRET`), or pipe both as `NAME=value` lines.
+
+Source: `packages/cli/src/commands/provider/oauth.ts`
+
+### PROVIDER_CONNECTION_NOT_FOUND
+
+`provider disconnect <id>` found no connection to the provider for the person (`--user`), the organization (`--organization`) or at all (`--all`): `No connection to <Provider> for <who>` / `Nothing was changed.` `data.rerun`: `pnpm everyapp provider connections --provider <id>`.
+
+Source: `packages/cli/src/commands/provider/oauth.ts`
+
+### PROVIDER_CONNECTION_WHICH
+
+`provider disconnect <id>` without exactly one of `--user <email>`, `--organization` and `--all`: `Say whose connection to <id> to remove` (or the flags given `name different connections`) / `Nothing was changed.` `data.fix` names the three.
+
+Source: `packages/cli/src/commands/provider/oauth.ts`
+
 ### PROVIDER_EXISTS
 
 `provider add` with a spec whose id is registered on this Gateway already. Nothing is written. `data.rerun` is the same command with `--replace` (`authorize: true`: replacing writes the new spec and leaves the row unbound, so its key must be set again with `secret set` before the Gateway sends it). Also raised when the row changed between the read and the write (`data.rerun` `pnpm everyapp provider list`).
@@ -1103,6 +1121,12 @@ Source: `packages/cli/src/lib/gateway/providers.ts`
 `provider remove <id>` of an id with no row (`No provider <id> is registered on this Gateway`), or `provider show <id>` of an id the Gateway doesn't offer (or a Gateway service such as `email`, or a row the Gateway refuses, with why). `data.rerun`: `pnpm everyapp provider list`.
 
 Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
+
+### PROVIDER_PRESET_UNKNOWN
+
+`provider add --oauth <value>` where `<value>` is neither an OAuth preset (`github-oauth`, …), a built-in client with a Gateway flow (`google-workspace`), nor a path or URL to a spec: `No OAuth preset <value>` with the presets listed, or `<value> is a built-in provider, not an OAuth one`. Nothing was changed. `data.rerun`: `pnpm everyapp provider presets`.
+
+Source: `packages/cli/src/commands/provider/oauth.ts`
 
 ### PROVIDER_SECRET_TAKEN
 

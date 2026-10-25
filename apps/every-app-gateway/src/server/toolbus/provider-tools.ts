@@ -21,14 +21,19 @@
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import {
+  CAPABILITIES,
   capabilitySettings,
   CAPABILITY_IDS,
   checkProviderRow,
   describeSpecProblems,
+  isOAuthProvider,
+  oauthPreset,
+  oauthPresetIds,
   parseProviderSpec,
   secretNames,
   type ApiKeyAuth,
   type Capability,
+  type OAuthClientCapability,
   type ProviderRow,
   type RegisteredProvider,
 } from "@every-app/sdk/internal";
@@ -36,6 +41,12 @@ import type { JsonObject, McpPrincipal } from "@every-app/toolbus";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
+import { PublicError } from "@/server/errors";
+import {
+  addOAuthProvider,
+  listOAuthProviders,
+  type OAuthProviderSummary,
+} from "@/server/oauth/service";
 import type { OrgContext } from "@/server/organization/orgContext";
 import {
   gatewayProviders,
@@ -146,6 +157,8 @@ function listed(
     admin: boolean;
     unbound: ReadonlySet<string>;
     apps: readonly string[];
+    /** The OAuth service's summary of the entry, when it runs the flow for one. */
+    oauth?: OAuthProviderSummary;
   },
 ): JsonObject {
   const hints = new Map<string, string>();
@@ -199,18 +212,84 @@ function listed(
         docs: capability.docs,
         ...(capability.hint ? { hint: capability.hint } : {}),
       };
-    case "oauth_client":
+    case "oauth_client": {
+      const oauth = options.oauth;
       return {
         ...base,
-        auth: { kind: "oauth_client" },
+        auth: { kind: oauth ? "oauth2-user" : "oauth_client" },
         ...(capability.hostSetting
           ? { hostSetting: capability.hostSetting }
           : {}),
         docs: capability.console,
+        hosts: [...capability.api],
+        ...(oauth
+          ? {
+              flow: oauth.flow,
+              redirectUri: oauth.redirectUri,
+              console: oauth.console,
+              scopeSets: oauth.scopeSets.map((set) => ({ ...set })),
+              connections: oauth.connections,
+              connectPath: `/connect/${id}`,
+              ...(options.admin
+                ? {
+                    client: {
+                      source: oauth.client.source,
+                      ...(oauth.client.clientId
+                        ? { clientId: oauth.client.clientId }
+                        : {}),
+                      ...(oauth.client.stale ? { stale: true } : {}),
+                    },
+                    bound: oauth.bound,
+                  }
+                : { client: { set: oauth.bound } }),
+            }
+          : {}),
+        ...(row && !oauth
+          ? {
+              addedBy: row.addedBy,
+              addedAt:
+                row.addedAt === null
+                  ? null
+                  : new Date(row.addedAt).toISOString(),
+            }
+          : {}),
       };
+    }
     case "service":
       return base;
   }
+}
+
+/** The OAuth presets `provider_add { preset }` takes: the catalog's clients with a flow (built in), then the SDK's presets. */
+function presetsListed(): JsonObject[] {
+  const one = (
+    id: string,
+    capability: OAuthClientCapability,
+    builtIn: boolean,
+  ): JsonObject => ({
+    id,
+    name: capability.label,
+    builtIn,
+    console: capability.console,
+    hosts: [...capability.api],
+    settings: [...capabilitySettings(capability)],
+    scopeSets: Object.entries(capability.scopePolicy?.sets ?? {}).map(
+      ([name, set]) => ({ name, label: set.label, access: set.access }),
+    ),
+    ...(capability.hint ? { hint: capability.hint } : {}),
+  });
+  const builtIn = Object.entries(CAPABILITIES)
+    .filter(([, capability]) => isOAuthProvider(capability as Capability))
+    .map(([id, capability]) =>
+      one(id, capability as OAuthClientCapability, true),
+    );
+  const presets = oauthPresetIds().flatMap((id) => {
+    const capability = oauthPreset(id);
+    return capability && capability.mode === "oauth_client"
+      ? [one(id, capability, false)]
+      : [];
+  });
+  return [...builtIn, ...presets];
 }
 
 export const PROVIDER_HANDLERS: Record<string, Handler> = {
@@ -219,6 +298,11 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
     const admin = ctx.role === "owner" || ctx.role === "admin";
     const unbound = registry.unboundSettings();
     const rows = new Map(registry.rows().map((row) => [row.id, row]));
+    // The OAuth side: the flow, the redirect URI, the client's source and
+    // the connections, from the service the UI reads (never a value).
+    const oauth = new Map(
+      (await listOAuthProviders(ctx)).map((summary) => [summary.id, summary]),
+    );
     // Which of the caller's own organization's apps list each provider;
     // never another organization's.
     const listing = new Map<string, string[]>();
@@ -235,19 +319,64 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
           admin,
           unbound,
           apps: listing.get(id) ?? [],
+          ...(oauth.has(id) ? { oauth: oauth.get(id)! } : {}),
         }),
       );
     return {
       providers,
       registered: rows.size,
-      next: "An app lists a provider's id under `capabilities` in its manifest; a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool).",
+      presets: presetsListed(),
+      next: "An app lists a provider's id under `capabilities` in its manifest; a setting that isn't set is set from the terminal with `everyapp secret set NAME` (never through a tool). An OAuth provider is added from a preset with everyapp_provider_add { preset }; people then connect in the browser at its connectPath.",
     };
   },
 
   async provider_add(ctx, args, principal) {
+    const preset = typeof args["preset"] === "string" ? args["preset"] : null;
     const spec = args["spec"];
+    if (preset !== null && spec !== undefined) {
+      return refuse("INVALID_INPUT", "give one of spec or preset, not both");
+    }
+    if (preset !== null) {
+      // A preset or a built-in client, through the service Admin → Providers
+      // uses: the row (none for a built-in), the events, the same refusals.
+      let summary: OAuthProviderSummary;
+      try {
+        summary = await addOAuthProvider(ctx, await userActor(ctx.userId), {
+          preset,
+        });
+      } catch (error) {
+        if (error instanceof PublicError) {
+          return refuse(error.code, error.message);
+        }
+        throw error;
+      }
+      invalidateGatewayProviders();
+      return {
+        provider: {
+          id: summary.id,
+          name: summary.name,
+          source: summary.source,
+          kind: "oauth",
+          flow: summary.flow,
+          hosts: [],
+          auth: { kind: "oauth2-user" },
+          scopeSets: summary.scopeSets.map((set) => set.name),
+          redirectUri: summary.redirectUri,
+          console: summary.console,
+          connectPath: `/connect/${summary.id}`,
+        },
+        settings: [...summary.settings],
+        bound: summary.bound,
+        next: summary.bound
+          ? `Its client is set: people connect in the browser at /connect/${summary.id}. Register ${summary.redirectUri} at ${summary.console} if not done yet.`
+          : `Register ${summary.redirectUri} at ${summary.console}, then set its client from the terminal: everyapp secret set ${summary.settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${summary.id} once it is set.`,
+      };
+    }
     if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
-      return refuse("INVALID_INPUT", "spec must be the provider spec object");
+      return refuse(
+        "INVALID_INPUT",
+        "spec must be the provider spec object (or give preset)",
+      );
     }
     const text = JSON.stringify(spec);
     if (text.length > SPEC_MAX_BYTES) {
@@ -330,6 +459,9 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
               auth: { kind: "oauth2-user" },
               authorizeUrl: capability.authorize.url,
               scopeSets: Object.keys(capability.scopePolicy?.sets ?? {}),
+              redirectUri: `${String((env as { GATEWAY_URL?: string }).GATEWAY_URL ?? "").replace(/\/+$/, "")}/connect/${id}/callback`,
+              console: capability.console,
+              connectPath: `/connect/${id}`,
             }),
       },
       settings: [...settings],

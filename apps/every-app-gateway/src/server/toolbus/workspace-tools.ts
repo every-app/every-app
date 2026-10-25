@@ -63,6 +63,7 @@ import { OrganizationService } from "@/server/services/OrganizationService";
 import { UserPatService } from "@/server/services/UserPatService";
 import { MCP_APP_HANDLERS } from "./mcp-app-tools";
 import { AI_HANDLERS } from "./ai-tools";
+import { PROVIDER_CONNECTION_HANDLERS } from "./provider-connection-tools";
 import { PROVIDER_HANDLERS } from "./provider-tools";
 import { SIGNIN_HANDLERS } from "./signin-tools";
 
@@ -536,6 +537,7 @@ const HANDLERS: Record<string, Handler> = {
   // (signin-tools.ts) and the model-provider tools (ai-tools.ts), run the
   // same way.
   ...PROVIDER_HANDLERS,
+  ...PROVIDER_CONNECTION_HANDLERS,
   ...SIGNIN_HANDLERS,
   ...AI_HANDLERS,
 

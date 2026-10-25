@@ -54,7 +54,7 @@ RUN A GATEWAY
   access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
   signin     Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
   secret     Set, remove and list secrets and Gateway settings
-  provider   Register API providers for apps to call with the Gateway's key, beside the built-in ones
+  provider   Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to
   ai         The default model provider apps get when they ask for one, and AI Gateway in front
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
@@ -147,21 +147,25 @@ Run pnpm everyapp secret <command> --help for its flags.
 ### `everyapp provider`
 
 ```text
-Register API providers for apps to call with the Gateway's key, beside the built-in ones.
+Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to.
 
 USAGE
   pnpm everyapp provider <command> [flags]
 
 COMMANDS
-  add     Register an API provider on the Gateway from its spec, so apps can list it under capabilities
-  list    List the API providers the Gateway offers: built in and registered, each key's state, the apps using each
-  show    Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it
-  remove  Remove a registered provider from the Gateway; its key stays set until secret unset
+  add          Register an API provider from its spec, or an OAuth provider from a preset (--oauth), so apps can list it under capabilities
+  list         List the API providers the Gateway offers: built in and registered, each key's state, the apps using each
+  show         Print a provider's spec: its hosts, how its key is sent, its settings, who registered it and which apps use it
+  remove       Remove a registered provider from the Gateway; its key stays set until secret unset
+  presets      List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients
+  connections  List the accounts people (and the organization) connected to OAuth providers on the Gateway
+  disconnect   Remove a person's or the organization's connection to an OAuth provider from the Gateway
 
 EXAMPLES
   $ pnpm everyapp provider list
   $ pnpm everyapp provider add stripe.json
-  $ pnpm everyapp provider show stripe
+  $ pnpm everyapp provider add --oauth github-oauth
+  $ pnpm everyapp provider connections
 
 Run pnpm everyapp provider <command> --help for its flags.
 ```
@@ -1406,15 +1410,18 @@ ARGUMENTS
 
 ### `everyapp provider add`
 
-Register an API provider on the Gateway from its spec, so apps can list it under capabilities.
+Register an API provider from its spec, or an OAuth provider from a preset (--oauth), so apps can list it under capabilities.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
-| `<spec>` | yes | The provider's spec: a JSON file, or an https URL to one (64 KiB at most) |
+| `<spec>` | no | The provider's spec: a JSON file, or an https URL to one (64 KiB at most); none with --oauth |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--replace` | switch | no |  | Replace the provider registered under the spec's id; its key must be set again |
+| `--oauth` | `<preset>` | no |  | An OAuth provider: a preset (provider presets names them: github-oauth), a built-in client (google-workspace), or a JSON spec file with auth.kind oauth2-user |
+| `--client-id` | `<id>` | no |  | With --oauth: the client id from the provider's console (public); the secret comes from piped NAME=value lines or --from-env |
+| `--from-env` | switch | no |  | With --oauth: take the client id and secret from the environment variables of their setting names (GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET); stdin isn't read |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -1422,7 +1429,7 @@ Register an API provider on the Gateway from its spec, so apps can list it under
 
 ```text
 USAGE
-  pnpm everyapp provider add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <spec>
+  pnpm everyapp provider add [--replace] [--oauth preset] [--client-id id] [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<spec>]
   pnpm everyapp provider add --help
 
 The spec says what the provider is and where its key goes: its id, name, the page the key
@@ -1440,22 +1447,37 @@ Next, set the key; the Gateway sends it only to the hosts the row had when it wa
 Run in an app's directory, it also writes .everyapp/providers/<id>.json, which everyapp dev
 reaches the provider from with your key in .dev.vars.
 
+An OAuth provider (--oauth) is one people connect their own account to: the Gateway runs
+the authorize flow at /connect/<id>, keeps each person's tokens and puts them on the app's
+calls. A preset (provider presets) or a spec file with auth.kind oauth2-user becomes a
+registered provider; a built-in client (google-workspace, slack, microsoft-365, discord)
+takes its client only. The command prints the redirect URI to register at the provider's
+console. The client id and secret are set in the same run from piped NAME=value lines or
+--from-env (never on the command line), or afterwards:
+  pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET
+
 Examples:
   pnpm everyapp provider add stripe.json
   pnpm everyapp provider add https://example.com/providers/stripe.json
   pnpm everyapp provider add stripe.json --replace
+  pnpm everyapp provider add --oauth github-oauth
+  printf 'GITHUB_OAUTH_CLIENT_SECRET=%s\n' "$SECRET" | pnpm everyapp provider add --oauth github-oauth --client-id Iv1.abc
+  pnpm everyapp provider add --oauth ./acme.json --from-env
 
 FLAGS
-     [--replace/--no-replace]  Replace the provider registered under the spec's id; its key must be set again
-     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
-     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
-     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
-     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
-  -h  --help                   Print help information and exit
-      --                       All subsequent inputs should be interpreted as arguments
+     [--replace/--no-replace]    Replace the provider registered under the spec's id; its key must be set again
+     [--oauth]                   An OAuth provider: a preset (provider presets names them: github-oauth), a built-in client (google-workspace), or a JSON spec file with auth.kind oauth2-user
+     [--client-id]               With --oauth: the client id from the provider's console (public); the secret comes from piped NAME=value lines or --from-env
+     [--from-env/--no-from-env]  With --oauth: take the client id and secret from the environment variables of their setting names (GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET); stdin isn't read
+     [--gateway]                 The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]              The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]          Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]    Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                     Print help information and exit
+      --                         All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
-  spec  The provider's spec: a JSON file, or an https URL to one (64 KiB at most)
+  [spec]  The provider's spec: a JSON file, or an https URL to one (64 KiB at most); none with --oauth
 ```
 
 ### `everyapp provider list`
@@ -1575,6 +1597,119 @@ FLAGS
 
 ARGUMENTS
   id  The provider's id (provider list names them): stripe
+```
+
+### `everyapp provider presets`
+
+List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider presets [--json] [--verbose]
+  pnpm everyapp provider presets --help
+
+Each with its scope sets (what an app lists under scopes) and the console where its client
+is made. Nothing is read from the Gateway.
+
+Example:
+  pnpm everyapp provider presets
+
+FLAGS
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp provider connections`
+
+List the accounts people (and the organization) connected to OAuth providers on the Gateway.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--all` | switch | no |  | Every organization's connections (default: the Gateway's own organization's) |
+| `--user` | `<email>` | no |  | One person's connections |
+| `--provider` | `<id>` | no |  | One provider's connections |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider connections [--all] [--user email] [--provider id] [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp provider connections --help
+
+Who connected what, with the scope sets granted, the status and when it was last used.
+Never a token.
+
+Examples:
+  pnpm everyapp provider connections
+  pnpm everyapp provider connections --provider github-oauth
+  pnpm everyapp provider connections --user ben@example.com
+
+FLAGS
+     [--all/--no-all]          Every organization's connections (default: the Gateway's own organization's)
+     [--user]                  One person's connections
+     [--provider]              One provider's connections
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp provider disconnect`
+
+Remove a person's or the organization's connection to an OAuth provider from the Gateway.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<id>` | yes | The OAuth provider's id: github-oauth |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--user` | `<email>` | no |  | This person's connection |
+| `--organization` | switch | no |  | The organization's own connection (the one background work uses) |
+| `--all` | switch | no |  | Every connection to the provider |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider disconnect [--user email] [--organization] [--all] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  pnpm everyapp provider disconnect --help
+
+The Gateway drops the tokens it held; apps get "not connected" until the person connects
+again at /connect/<id>. The CLI holds no token, so the grant stays at the provider until it
+is revoked there (Admin → Providers → Disconnect revokes it from the Gateway).
+
+Examples:
+  pnpm everyapp provider disconnect github-oauth --user ben@example.com
+  pnpm everyapp provider disconnect github-oauth --organization
+  pnpm everyapp provider disconnect github-oauth --all
+
+FLAGS
+     [--user]                            This person's connection
+     [--organization/--no-organization]  The organization's own connection (the one background work uses)
+     [--all/--no-all]                    Every connection to the provider
+     [--gateway]                         The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]                      The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]                  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]            Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                             Print help information and exit
+      --                                 All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  id  The OAuth provider's id: github-oauth
 ```
 
 ### `everyapp provider on` (hidden)

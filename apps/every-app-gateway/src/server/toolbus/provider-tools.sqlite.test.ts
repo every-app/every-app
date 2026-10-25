@@ -331,14 +331,17 @@ beforeEach(async () => {
 });
 
 describe("the provider tools on /mcp", () => {
-  it("lists all three to an owner and an admin, the list alone to a read-only admin and to a member, and hides the writers on a hosted gateway", async () => {
+  it("lists all five to an owner and an admin, the reads alone to a read-only admin, the list and the connection tools to a member, and hides the registry writers on a hosted gateway", async () => {
     expect(await providerToolNames(owner())).toEqual(PROVIDER_NAMES);
     expect(await providerToolNames(admin())).toEqual(PROVIDER_NAMES);
     expect(await providerToolNames(admin({ access: "read" }))).toEqual([
       "everyapp_provider_list",
+      "everyapp_provider_connections",
     ]);
     expect(await providerToolNames(member())).toEqual([
       "everyapp_provider_list",
+      "everyapp_provider_connections",
+      "everyapp_provider_disconnect",
     ]);
     // A member calling a writer: Unknown tool, as for any hidden tool.
     expect(
@@ -348,11 +351,14 @@ describe("the provider tools on /mcp", () => {
       unknown: true,
       message: "Unknown tool: everyapp_provider_add",
     });
-    // A hosted gateway: the list stays, the writers are gone for the owner too.
+    // A hosted gateway: the list and the connection tools stay, the
+    // registry writers are gone for the owner too.
     hoisted.env["GATEWAY_DEPLOYMENT_MODE"] = "hosted";
     resetToolBusForTests();
     expect(await providerToolNames(owner())).toEqual([
       "everyapp_provider_list",
+      "everyapp_provider_connections",
+      "everyapp_provider_disconnect",
     ]);
     expect(
       await call("everyapp_provider_add", { spec: northwind }, owner()),

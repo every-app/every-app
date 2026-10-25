@@ -41,6 +41,14 @@ const readOnly = (principal: McpPrincipal): McpPrincipal => ({
 });
 const listed = (name: string) => `everyapp_${name}`;
 const PROVIDER_NAMES = PROVIDER_TOOLS.map((tool) => listed(tool.name));
+/** What a member sees: the list and the two connection tools (their own account). */
+const MEMBER_NAMES = [
+  "everyapp_provider_list",
+  "everyapp_provider_connections",
+  "everyapp_provider_disconnect",
+];
+/** What a read-only connection sees: the reads alone. */
+const READ_NAMES = ["everyapp_provider_list", "everyapp_provider_connections"];
 
 /** A host that records every call, registering providers or not. */
 function harness(providers?: boolean) {
@@ -68,7 +76,7 @@ function harness(providers?: boolean) {
 }
 
 describe("the provider tool definitions", () => {
-  it("are the three the design names: the list for any member, add and remove for admins where the host registers providers", () => {
+  it("are the five the designs name: the list and the connections for any member, add and remove for admins where the host registers providers, disconnect for a member's own", () => {
     expect(
       PROVIDER_TOOLS.map((tool) => [
         tool.name,
@@ -80,6 +88,8 @@ describe("the provider tool definitions", () => {
       ["provider_list", "read", "member", null],
       ["provider_add", "write", "admin", "providers"],
       ["provider_remove", "write", "admin", "providers"],
+      ["provider_connections", "read", "member", null],
+      ["provider_disconnect", "write", "member", null],
     ]);
     for (const tool of PROVIDER_TOOLS) {
       expect(tool.title, tool.name).toBeTruthy();
@@ -93,7 +103,7 @@ describe("the provider tool definitions", () => {
     }
   });
 
-  it("keep the schemas closed, every field described, with no regex, reference or union; add takes the spec object alone, remove the id alone", () => {
+  it("keep the schemas closed, every field described, with no regex, reference or union; add takes the spec object or a preset id, remove the id alone", () => {
     const forbidden = ["pattern", "$ref", "anyOf", "oneOf", "allOf", "not"];
     for (const tool of PROVIDER_TOOLS) {
       const schema = tool.inputSchema as Record<string, unknown>;
@@ -116,11 +126,31 @@ describe("the provider tool definitions", () => {
     const add = PROVIDER_TOOLS.find((tool) => tool.name === "provider_add")!;
     expect(Object.keys(add.inputSchema["properties"] as object)).toEqual([
       "spec",
+      "preset",
     ]);
-    expect(add.inputSchema["required"]).toEqual(["spec"]);
+    // Neither is required by the schema (one of the two): the handler says which is missing.
+    expect(add.inputSchema["required"]).toBeUndefined();
     expect(
       (add.inputSchema["properties"] as Record<string, unknown>)["spec"],
     ).toMatchObject({ type: "object" });
+    expect(
+      (add.inputSchema["properties"] as Record<string, unknown>)["preset"],
+    ).toMatchObject({ type: "string" });
+    // Never a value: no field of any provider tool takes a client id or secret.
+    for (const tool of PROVIDER_TOOLS) {
+      for (const field of Object.keys(
+        (tool.inputSchema["properties"] ?? {}) as object,
+      )) {
+        expect(field, tool.name).not.toMatch(/client|secret|token/i);
+      }
+    }
+    const disconnect = PROVIDER_TOOLS.find(
+      (tool) => tool.name === "provider_disconnect",
+    )!;
+    expect(Object.keys(disconnect.inputSchema["properties"] as object)).toEqual(
+      ["provider", "account", "user"],
+    );
+    expect(disconnect.inputSchema["required"]).toEqual(["provider"]);
     const remove = PROVIDER_TOOLS.find(
       (tool) => tool.name === "provider_remove",
     )!;
@@ -141,29 +171,26 @@ describe("listing the provider tools", () => {
       .map((tool) => tool.name)
       .filter((name) => PROVIDER_NAMES.includes(name));
 
-  it("lists the writers to owners and admins only where the host registers providers, the list to every member, and none in compact mode or without a host", () => {
+  it("lists the writers to owners and admins only where the host registers providers, the list and the connection tools to every member, and none in compact mode or without a host", () => {
     const registering = { workspace: true, providers: true };
     expect(names(OWNER, registering)).toEqual(PROVIDER_NAMES);
     expect(names(ADMIN, registering)).toEqual(PROVIDER_NAMES);
-    expect(names(MEMBER, registering)).toEqual(["everyapp_provider_list"]);
-    expect(names(readOnly(ADMIN), registering)).toEqual([
-      "everyapp_provider_list",
-    ]);
+    expect(names(MEMBER, registering)).toEqual(MEMBER_NAMES);
+    expect(names(readOnly(ADMIN), registering)).toEqual(READ_NAMES);
     // A host that runs the workspace tools but registers no providers (a
-    // hosted gateway): the list alone, whatever the role.
-    expect(names(OWNER, { workspace: true })).toEqual([
-      "everyapp_provider_list",
-    ]);
-    expect(names(OWNER, { workspace: true, providers: false })).toEqual([
-      "everyapp_provider_list",
-    ]);
+    // hosted gateway): the registry writers are gone, whatever the role;
+    // the connection tools stay (people connect on a hosted gateway too).
+    expect(names(OWNER, { workspace: true })).toEqual(MEMBER_NAMES);
+    expect(names(OWNER, { workspace: true, providers: false })).toEqual(
+      MEMBER_NAMES,
+    );
     // Without a host, nothing; in compact mode, nothing (the search finds them).
     expect(names(OWNER, {})).toEqual([]);
     expect(names(OWNER, { providers: true })).toEqual([]);
     expect(names(OWNER, registering, "compact")).toEqual([]);
     // A credential narrowed to apps sees none, whatever the role.
     expect(names({ ...OWNER, appScope: "selected" }, registering)).toEqual([]);
-    // No view (the docs' drift test) lists all three, right after the
+    // No view (the docs' drift test) lists all five, right after the
     // workspace tools (the five core built-ins first).
     const every = listBuiltinTools().map((tool) => tool.name);
     const start = 5 + WORKSPACE_TOOLS.length;
@@ -223,13 +250,18 @@ describe("running a provider tool", () => {
     }
   });
 
-  it("refuses a member and a read-only connection the writers as unknown, and the schema before the host: never a URL, never a replace flag", async () => {
+  it("refuses a member and a read-only connection the writers as unknown, and the schema before the host: never a URL, never a replace flag, never a value", async () => {
     const { deps, calls, events } = harness(true);
     const cases: [McpPrincipal, string, string][] = [
       [MEMBER, "everyapp_provider_add", "role_required"],
       [MEMBER, "everyapp_provider_remove", "role_required"],
       [readOnly(ADMIN), "everyapp_provider_add", "read_only_connection"],
       [readOnly(OWNER), "everyapp_provider_remove", "read_only_connection"],
+      [
+        readOnly(MEMBER),
+        "everyapp_provider_disconnect",
+        "read_only_connection",
+      ],
     ];
     for (const [principal, name, reason] of cases) {
       const resolution = await executeToolCall(
@@ -251,10 +283,17 @@ describe("running a provider tool", () => {
     for (const [name, args] of [
       ["everyapp_provider_add", { spec: "https://example.com/stripe.json" }],
       ["everyapp_provider_add", { spec: {}, replace: true }],
-      ["everyapp_provider_add", {}],
+      ["everyapp_provider_add", { preset: "github-oauth", clientSecret: "x" }],
+      ["everyapp_provider_add", { preset: 7 }],
       ["everyapp_provider_remove", {}],
       ["everyapp_provider_remove", { id: "x" }],
       ["everyapp_provider_remove", { id: "stripe", force: true }],
+      ["everyapp_provider_disconnect", {}],
+      [
+        "everyapp_provider_disconnect",
+        { provider: "github-oauth", account: "team" },
+      ],
+      ["everyapp_provider_connections", { user: "x@example.com" }],
     ] as const) {
       const resolution = await executeToolCall(
         gatewayView([todoApp()], OWNER),
@@ -293,16 +332,20 @@ describe("running a provider tool", () => {
     };
     const registering = harness(true);
     const hosted = harness(false);
-    // The search answers by name.
+    // The search answers by name (ranked by relevance: compared as sets).
     expect(
-      await search(ADMIN, registering.deps, { query: "provider" }),
+      [
+        ...(await search(ADMIN, registering.deps, { query: "provider" })),
+      ].sort(),
     ).toEqual([...PROVIDER_NAMES].sort());
     expect(
-      await search(MEMBER, registering.deps, { query: "provider" }),
-    ).toEqual(["everyapp_provider_list"]);
-    expect(await search(ADMIN, hosted.deps, { query: "provider" })).toEqual([
-      "everyapp_provider_list",
-    ]);
+      [
+        ...(await search(MEMBER, registering.deps, { query: "provider" })),
+      ].sort(),
+    ).toEqual([...MEMBER_NAMES].sort());
+    expect(
+      [...(await search(ADMIN, hosted.deps, { query: "provider" }))].sort(),
+    ).toEqual([...MEMBER_NAMES].sort());
     // Through the write wrapper, in compact mode: one row naming the tool.
     const wrapped = await executeToolCall(
       gatewayView([todoApp()], ADMIN, undefined, "compact"),

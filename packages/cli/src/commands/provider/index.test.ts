@@ -9,7 +9,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { parseProviderSpec, providerBindingKey, providerSpecOf } from "@every-app/sdk/internal";
+import {
+  CAPABILITIES,
+  capabilitySettings,
+  OAUTH_PRESETS,
+  oauthPreset,
+  parseProviderSpec,
+  providerBindingKey,
+  providerSpecOf,
+} from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
@@ -29,6 +37,7 @@ import {
   runMcpAlias,
   showProvider,
 } from "./index";
+import { addOAuth, disconnectProvider, listPresets, listProviderConnections } from "./oauth";
 
 const GATEWAY = "every-app-gateway";
 
@@ -558,7 +567,7 @@ describe("provider events", () => {
       organization: ORG,
       type: "provider.added",
       actor: { kind: "operator", id: "dev@example.com" },
-      data: { provider: { id: "northwind", name: "Northwind" } },
+      data: { provider: { id: "northwind", name: "Northwind", kind: "api_key" } },
     });
     expect(await deliveryRows()).toEqual([{ event_id: added!.id, subscription_id: "sub_all", status: "pending" }]);
 
@@ -574,8 +583,8 @@ describe("provider events", () => {
 
     await add(specDir({ ...NORTHWIND, name: "Northwind Billing" }), "northwind.json", { replace: true });
     expect((await eventRows()).map((event) => [event.type, event.data])).toEqual([
-      ["provider.added", { provider: { id: "northwind", name: "Northwind" } }],
-      ["provider.added", { provider: { id: "northwind", name: "Northwind Billing" } }],
+      ["provider.added", { provider: { id: "northwind", name: "Northwind", kind: "api_key" } }],
+      ["provider.added", { provider: { id: "northwind", name: "Northwind Billing", kind: "api_key" } }],
     ]);
   });
 
@@ -597,7 +606,7 @@ describe("provider events", () => {
       expect.objectContaining({
         organization: ORG,
         actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
-        data: { provider: { id: "northwind", name: "Northwind" } },
+        data: { provider: { id: "northwind", name: "Northwind", kind: "api_key" } },
       }),
     ]);
     expect((await deliveryRows()).filter((delivery) => delivery["event_id"] === removed[0]!.id)).toEqual([
@@ -644,5 +653,371 @@ describe("provider on|off", () => {
     );
     expect(done()).toMatchObject({ data: { id: "dataforseo", on: false, wasOn: true } });
     expect(await readInstall(db())).not.toBeNull();
+  });
+});
+
+describe("provider add --oauth, presets, connections and disconnect", () => {
+  const GITHUB = OAUTH_PRESETS["github-oauth"]!;
+  const githubCapability = () => oauthPreset("github-oauth")!;
+  const githubConsole = () => {
+    const capability = githubCapability();
+    return capability.mode === "oauth_client" ? capability.console : "";
+  };
+  const addOAuthProvider = (
+    value: string,
+    options: {
+      clientId?: string;
+      stdin?: string | null;
+      env?: Record<string, string>;
+      fromEnv?: boolean;
+      replace?: boolean;
+      cwd?: string;
+    } = {},
+  ) =>
+    addOAuth(
+      {
+        flags: {
+          ...flags,
+          oauth: value,
+          ...(options.clientId ? { "client-id": options.clientId } : {}),
+          ...(options.fromEnv ? { "from-env": true } : {}),
+          ...(options.replace ? { replace: true } : {}),
+        },
+        out: out(),
+        cwd: options.cwd ?? tempDir("everyapp-provider-oauth-"),
+        createCf,
+        readStdin: async () => options.stdin ?? null,
+        env: options.env ?? {},
+      },
+      value,
+    );
+  const connections = (extra: { all?: boolean; user?: string; provider?: string } = {}) =>
+    listProviderConnections({ flags: { ...flags, ...extra }, out: out(), createCf });
+  const disconnect = (id: string, extra: { user?: string; organization?: boolean; all?: boolean } = {}) =>
+    disconnectProvider({ flags: { ...flags, ...extra }, out: out(), createCf }, id);
+
+  /** The deployer as a member row (registering an app makes the organization, not the person). */
+  async function devUserId(): Promise<string> {
+    await db().run([
+      { sql: "INSERT OR IGNORE INTO users (id, name, email, email_verified) VALUES ('u_dev', 'Dev', 'dev@example.com', 1)" },
+    ]);
+    return "u_dev";
+  }
+  /** The install organization's id. */
+  async function orgId(): Promise<string> {
+    const [found = []] = await db().run([{ sql: "SELECT id FROM organizations LIMIT 1" }]);
+    return String(found[0]!["id"]);
+  }
+  /** A connection as the Gateway's callback writes one (the token columns hold sealed text the CLI never reads). */
+  async function seedConnection(providerId: string, account: "user" | "organization", userId: string | null, label: string) {
+    await db().run([
+      {
+        sql: `INSERT INTO provider_connections (id, organization_id, provider_id, account_kind, subject, user_id, label, external_id, scope_sets, scopes, access_token_enc, refresh_token_enc, expires_at, status, created_at, updated_at, last_used_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed.refresh', NULL, 'active', ?10, ?10, NULL)`,
+        params: [
+          `conn_${label}`,
+          await orgId(),
+          providerId,
+          account,
+          account === "organization" ? "organization" : userId!,
+          account === "organization" ? null : userId,
+          label,
+          JSON.stringify(["identity", "repo.read"]),
+          JSON.stringify(["read:user", "repo"]),
+          Date.now(),
+        ],
+      },
+    ]);
+  }
+  const connectionRows = async () =>
+    (await db().run([{ sql: "SELECT id, provider_id, account_kind FROM provider_connections ORDER BY id" }]))[0] ?? [];
+  const uploadClient = () =>
+    db().run([
+      {
+        sql: "INSERT INTO oauth_clients (provider_id, client_id, client_secret_enc, bound_to, added_by, added_at, updated_at) VALUES ('github-oauth', 'Iv1.ui', 'v1.sealed', 'x', 'owner@example.com', 1, 1)",
+      },
+    ]);
+
+  it("lists the presets and the built-in clients without reaching the Gateway", async () => {
+    createCf.mockClear();
+    await listPresets({ out: out() });
+    expect(createCf).not.toHaveBeenCalled();
+    const presets = done()!["data"]["presets"] as Array<Record<string, any>>;
+    expect(presets.find((preset) => preset["id"] === "github-oauth")).toMatchObject({
+      name: "GitHub",
+      builtIn: false,
+      settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
+      console: expect.stringMatching(/^https:\/\/github\.com\//),
+    });
+    expect(presets.find((preset) => preset["id"] === "google-workspace")).toMatchObject({ builtIn: true });
+    expect(presets.find((preset) => preset["id"] === "github-oauth")!["scopeSets"].map((set: { name: string }) => set.name)).toContain("identity");
+    // The built-in clients come first, every one with a Gateway flow.
+    expect(presets.findIndex((preset) => preset["builtIn"])).toBe(0);
+    expect(done()!["data"]["next"][0]["command"]).toBe("pnpm everyapp provider add --oauth github-oauth");
+  });
+
+  it("registers a preset as a row, prints the redirect URI and the secret set to run, and leaves the client unset", async () => {
+    // An organization, so the event has somewhere to go.
+    await registerApp("shop", {});
+    await addOAuthProvider("github-oauth");
+    expect(await rows()).toEqual([
+      { id: "github-oauth", spec: JSON.stringify(GITHUB), added_by: "dev@example.com", bound_to: null, bound_at: null },
+    ]);
+    expect(steps("provider.redirect")[0]).toMatchObject({
+      data: { id: "github-oauth", redirectUri: "https://example.com/connect/github-oauth/callback", console: githubConsole() },
+    });
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("Registered GitHub (github-oauth) on example.com.\nRedirect URI to register at"),
+      data: {
+        id: "github-oauth",
+        name: "GitHub",
+        kind: "oauth",
+        source: "row",
+        replaced: false,
+        flow: "both",
+        redirectUri: "https://example.com/connect/github-oauth/callback",
+        settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
+        client: { source: "none" },
+        connections: 0,
+        next: [
+          {
+            command: "pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET",
+            note: expect.stringContaining("register https://example.com/connect/github-oauth/callback"),
+          },
+        ],
+      },
+    });
+    expect(done()!["data"]["scopeSets"].map((set: { name: string }) => set.name)).toContain("identity");
+    expect(gatewayWorker().secrets["GITHUB_OAUTH_CLIENT_ID"]).toBeUndefined();
+    // Its event names the kind.
+    const [queued = []] = await db().run([{ sql: "SELECT type, data FROM events WHERE type = 'provider.added'" }]);
+    expect(queued.map((row) => JSON.parse(String(row["data"])))).toEqual([
+      { provider: { id: "github-oauth", name: "GitHub", kind: "oauth" } },
+    ]);
+  });
+
+  it("sets the client in the same run from --client-id and a piped secret, or from the environment, binding the row; never half a client", async () => {
+    await addOAuthProvider("github-oauth", { clientId: "Iv1.abc", stdin: "GITHUB_OAUTH_CLIENT_SECRET=shh-secret\n" });
+    expect(gatewayWorker().secrets).toMatchObject({ GITHUB_OAUTH_CLIENT_ID: "Iv1.abc", GITHUB_OAUTH_CLIENT_SECRET: "shh-secret" });
+    expect((await rows())[0]).toMatchObject({ id: "github-oauth", bound_to: providerBindingKey(githubCapability()) });
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("Its client is set and live now: people connect at https://example.com/connect/github-oauth."),
+      data: { client: { source: "env" } },
+    });
+    expect(done()!["data"]["next"]).toBeUndefined();
+    // The value never appears in any event.
+    expect(JSON.stringify(events)).not.toContain("shh-secret");
+
+    // Half a client: refused, nothing set, the row stays (replaced, so unbound).
+    events = [];
+    delete gatewayWorker().secrets["GITHUB_OAUTH_CLIENT_ID"];
+    delete gatewayWorker().secrets["GITHUB_OAUTH_CLIENT_SECRET"];
+    await expect(addOAuthProvider("github-oauth", { clientId: "Iv1.other", replace: true })).rejects.toMatchObject({
+      code: "PROVIDER_CLIENT_INCOMPLETE",
+      message: expect.stringMatching(/^GitHub's client needs GITHUB_OAUTH_CLIENT_SECRET too\n/),
+    });
+    expect(gatewayWorker().secrets["GITHUB_OAUTH_CLIENT_ID"]).toBeUndefined();
+    expect((await rows())[0]).toMatchObject({ id: "github-oauth", bound_to: null });
+
+    // From the environment, both names.
+    events = [];
+    await addOAuthProvider("github-oauth", {
+      fromEnv: true,
+      replace: true,
+      env: { GITHUB_OAUTH_CLIENT_ID: "Iv1.env", GITHUB_OAUTH_CLIENT_SECRET: "env-secret" },
+    });
+    expect(gatewayWorker().secrets).toMatchObject({ GITHUB_OAUTH_CLIENT_ID: "Iv1.env", GITHUB_OAUTH_CLIENT_SECRET: "env-secret" });
+    expect((await rows())[0]).toMatchObject({ bound_to: providerBindingKey(githubCapability()) });
+
+    // A piped line that isn't the client's is refused without being echoed; a bare value too.
+    await expect(addOAuthProvider("github-oauth", { replace: true, stdin: "OPENAI_API_KEY=sk\n" })).rejects.toMatchObject({
+      code: "SECRET_NOT_DECLARED",
+    });
+    await expect(addOAuthProvider("github-oauth", { replace: true, stdin: "sk-bare-value\n" })).rejects.toMatchObject({
+      code: "PIPED_LINE_INVALID",
+    });
+  });
+
+  it("takes a built-in client without a row, a custom spec file, and refuses what isn't an OAuth preset", async () => {
+    await addOAuthProvider("google-workspace");
+    expect(await rows()).toEqual([]);
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("(google-workspace) is built in on example.com."),
+      data: {
+        id: "google-workspace",
+        kind: "oauth",
+        source: "catalog",
+        flow: "both",
+        redirectUri: "https://example.com/connect/google-workspace/callback",
+        settings: [...capabilitySettings(CAPABILITIES["google-workspace"])],
+        client: { source: "none" },
+      },
+    });
+
+    const auth = { ...(GITHUB["auth"] as Record<string, unknown>) };
+    delete auth["identity"];
+    delete auth["revokeUrl"];
+    delete auth["revokeMethod"];
+    const custom = {
+      ...GITHUB,
+      id: "acme",
+      name: "Acme",
+      docs: "https://developer.acme.test/apps",
+      hosts: ["api.acme.test"],
+      auth: {
+        ...auth,
+        authorizeUrl: "https://auth.acme.test/authorize",
+        tokenUrl: "https://auth.acme.test/token",
+        clientId: "ACME_CLIENT_ID",
+        clientSecret: "ACME_CLIENT_SECRET",
+      },
+    };
+    const dir = specDir(custom, "acme.json");
+    events = [];
+    await addOAuthProvider("./acme.json", { cwd: dir });
+    expect((await rows()).map((row) => row["id"])).toEqual(["acme"]);
+    expect(done()!["data"]).toMatchObject({
+      id: "acme",
+      kind: "oauth",
+      redirectUri: "https://example.com/connect/acme/callback",
+      settings: ["ACME_CLIENT_ID", "ACME_CLIENT_SECRET"],
+    });
+
+    await expect(addOAuthProvider("nothing")).rejects.toMatchObject({
+      code: "PROVIDER_PRESET_UNKNOWN",
+      message: expect.stringMatching(/^No OAuth preset nothing\nPresets: /),
+      rerun: "pnpm everyapp provider presets",
+    });
+    await expect(addOAuthProvider("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_PRESET_UNKNOWN" });
+    // An API-key spec through --oauth: refused before any row.
+    const apiKey = specDir(NORTHWIND);
+    await expect(addOAuthProvider("./northwind.json", { cwd: apiKey })).rejects.toMatchObject({
+      code: "PROVIDER_SPEC_INVALID",
+      message: expect.stringMatching(/^\.\/northwind\.json is an API-key spec/),
+    });
+    expect((await rows()).map((row) => row["id"])).toEqual(["acme"]);
+  });
+
+  it("shows and lists an OAuth row with its redirect URI, flow, client source and connections", async () => {
+    await addOAuthProvider("github-oauth");
+    await registerApp("shop", { capabilities: { "github-oauth": { access: "read", scopes: ["identity"] } } });
+    await seedConnection("github-oauth", "user", await devUserId(), "ben");
+    events = [];
+    await show("github-oauth");
+    expect(done()).toMatchObject({
+      data: {
+        provider: providerSpecOf("github-oauth", githubCapability()),
+        source: "row",
+        bound: false,
+        flow: "both",
+        redirectUri: "https://example.com/connect/github-oauth/callback",
+        client: { source: "none" },
+        connections: 1,
+        apps: ["shop"],
+        next: [{ command: "pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET" }],
+      },
+    });
+    expect(done()!["message"]).toBe("GitHub (github-oauth)");
+    const shown = await human((sink) => showProvider({ flags: {}, out: sink, cwd: tempDir("everyapp-provider-x-"), createCf }, "github-oauth"));
+    expect(shown).toContain("Redirect URI to register at");
+    expect(shown).toContain("1 connected; people connect at https://example.com/connect/github-oauth.");
+
+    // An uploaded client (Admin → Providers) reads as set, without a bound row.
+    await uploadClient();
+    events = [];
+    await list();
+    const github = (done()!["data"]["providers"] as Array<Record<string, any>>).find((provider) => provider["id"] === "github-oauth")!;
+    expect(github).toMatchObject({ kind: "oauth client", flow: "both", client: { source: "uploaded", clientId: "Iv1.ui" }, connections: 1, apps: ["shop"] });
+    const table = await human((sink) => listProviders({ flags: {}, out: sink, createCf }));
+    expect(table).toMatch(/github-oauth\s+GitHub\s+oauth\s+\S+\s+client uploaded, 1 connected/);
+    // The secret set hint is gone once a client is uploaded.
+    events = [];
+    await show("github-oauth");
+    expect(done()!["data"]["next"]).toBeUndefined();
+  });
+
+  it("lists connections (never a token), by provider or person, and disconnects a person's, the organization's or all, queueing the event", async () => {
+    await addOAuthProvider("github-oauth");
+    await registerApp("shop", {});
+    const userId = await devUserId();
+    await seedConnection("github-oauth", "user", userId, "ben");
+    await seedConnection("github-oauth", "organization", null, "acme-bot");
+    await seedConnection("google-workspace", "user", userId, "ben-google");
+
+    events = [];
+    await connections();
+    const listed = done()!["data"]["connections"] as Array<Record<string, any>>;
+    expect(listed.map((each) => [each["provider"], each["account"], each["label"], each["userEmail"] ?? null]).sort()).toEqual([
+      ["github-oauth", "organization", "acme-bot", null],
+      ["github-oauth", "user", "ben", "dev@example.com"],
+      ["google-workspace", "user", "ben-google", "dev@example.com"],
+    ]);
+    expect(listed[0]).toMatchObject({ providerName: expect.any(String), scopeSets: ["identity", "repo.read"], status: "active" });
+    expect(JSON.stringify(events)).not.toContain("sealed");
+    events = [];
+    await connections({ provider: "google-workspace" });
+    expect((done()!["data"]["connections"] as unknown[]).length).toBe(1);
+    events = [];
+    await connections({ user: "DEV@example.com" });
+    expect((done()!["data"]["connections"] as unknown[]).length).toBe(2);
+    const table = await human((sink) => listProviderConnections({ flags: {}, out: sink, createCf }));
+    expect(table).toContain("the organization");
+    expect(table).toContain("dev@example.com");
+
+    await expect(disconnect("github-oauth")).rejects.toMatchObject({ code: "PROVIDER_CONNECTION_WHICH" });
+    await expect(disconnect("github-oauth", { user: "x@example.com", organization: true })).rejects.toMatchObject({
+      code: "PROVIDER_CONNECTION_WHICH",
+    });
+    await expect(disconnect("northwind", { all: true })).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await expect(disconnect("github-oauth", { user: "nobody@example.com" })).rejects.toMatchObject({
+      code: "PROVIDER_CONNECTION_NOT_FOUND",
+      rerun: "pnpm everyapp provider connections --provider github-oauth",
+    });
+
+    events = [];
+    await disconnect("github-oauth", { user: "dev@example.com" });
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("Removed dev@example.com's connection to GitHub (github-oauth)."),
+      data: {
+        id: "github-oauth",
+        revoked: false,
+        revokeAt: expect.stringMatching(/^https:\/\/github\.com/),
+        removed: [expect.objectContaining({ account: "user", label: "ben" })],
+      },
+    });
+    expect((await connectionRows()).map((row) => row["id"])).toEqual(["conn_acme-bot", "conn_ben-google"]);
+    const [queued = []] = await db().run([{ sql: "SELECT data FROM events WHERE type = 'provider.disconnected'" }]);
+    expect(queued.map((row) => JSON.parse(String(row["data"])))).toEqual([
+      {
+        provider: { id: "github-oauth", name: "GitHub" },
+        account: { kind: "user", user: { id: userId, email: "dev@example.com" }, label: "ben" },
+        revoked: false,
+      },
+    ]);
+
+    events = [];
+    await disconnect("github-oauth", { organization: true });
+    expect(done()!["data"]["removed"]).toEqual([expect.objectContaining({ account: "organization", label: "acme-bot" })]);
+    await expect(disconnect("github-oauth", { all: true })).rejects.toMatchObject({ code: "PROVIDER_CONNECTION_NOT_FOUND" });
+    events = [];
+    await disconnect("google-workspace", { all: true });
+    expect(await connectionRows()).toEqual([]);
+  });
+
+  it("removes an OAuth row with its connections and its uploaded client, and counts them", async () => {
+    await registerApp("shop", {});
+    await addOAuthProvider("github-oauth");
+    await seedConnection("github-oauth", "organization", null, "acme-bot");
+    await uploadClient();
+    events = [];
+    await remove("github-oauth");
+    expect(await rows()).toEqual([]);
+    expect(await connectionRows()).toEqual([]);
+    expect((await db().run([{ sql: "SELECT provider_id FROM oauth_clients" }]))[0]).toEqual([]);
+    expect(done()).toMatchObject({
+      message: expect.stringContaining("1 connection to it was deleted"),
+      data: { id: "github-oauth", removed: true, connections: 1, client: true },
+    });
+    expect(done()!["message"]).toContain("The client uploaded under Admin → Providers was deleted with it.");
   });
 });

@@ -926,13 +926,16 @@ describe("running a workspace tool", () => {
     }
     // By app id, the gateway's own tools come as a list, by name, as many
     // as the search returns at once (25) out of the total.
-    // (The host registers no providers here, so of the provider tools only
-    // everyapp_provider_list is found; providers.test.ts has the rest. The
-    // two sign-in provider reads are an owner's too; signin.test.ts.)
+    // (The host registers no providers here, so of the provider tools the
+    // list and the connection tools are found, not the registry writers;
+    // providers.test.ts has the rest. The two sign-in provider reads are an
+    // owner's too; signin.test.ts.)
     const own = await search(OWNER, "full", { app: "everyapp" });
     const everyName = [
       ...WORKSPACE_TOOLS.map((tool) => listed(tool.name)),
       "everyapp_provider_list",
+      "everyapp_provider_connections",
+      "everyapp_provider_disconnect",
       "everyapp_signin_list",
       "everyapp_signin_show",
     ].sort();
@@ -950,16 +953,25 @@ describe("running a workspace tool", () => {
       [
         ...READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)),
         "everyapp_provider_list",
+        "everyapp_provider_connections",
         "everyapp_signin_list",
         "everyapp_signin_show",
       ].sort(),
     );
-    // A member finds their own four (and the provider list), and nothing of the admin's.
+    // A member finds their own four (and the provider list and their own
+    // connections), and nothing of the admin's.
     expect(
       (await search(MEMBER, "compact", { app: "everyapp" })).tools.map(
         (tool) => tool.name,
       ),
-    ).toEqual([...MEMBER_TOOLS, "everyapp_provider_list"].sort());
+    ).toEqual(
+      [
+        ...MEMBER_TOOLS,
+        "everyapp_provider_list",
+        "everyapp_provider_connections",
+        "everyapp_provider_disconnect",
+      ].sort(),
+    );
     expect((await search(MEMBER, "full", { query: "invite" })).tools).toEqual(
       [],
     );
