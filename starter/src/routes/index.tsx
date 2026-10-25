@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { getHome } from "@/serverFunctions/home";
 import {
   createTodo,
@@ -47,6 +47,27 @@ function Home() {
       </header>
 
       <section className={card}>
+        <h2 className={heading}>This app</h2>
+        <p>
+          A todo list, for now. To make it something else, open its folder in a
+          coding agent (Claude Code, Codex or Cursor) and say what it should
+          become:
+        </p>
+        <blockquote className="border-l-2 border-neutral-300 pl-3 text-neutral-700 dark:border-neutral-700 dark:text-neutral-300">
+          Turn this into a shared todo list for my household, with separate
+          lists for groceries and chores.
+        </blockquote>
+        <p className={note}>
+          The agent already knows Every App. The folder carries the{" "}
+          <code>{BUILD_SKILL}</code> skill: how to build one, with patterns from
+          real apps.
+        </p>
+        {typeof members === "number" && (
+          <p className={note}>{whoCanOpen(members)}</p>
+        )}
+      </section>
+
+      <section className={card}>
         <h2 className={heading}>You</h2>
         <p className="font-medium">
           {user.email}
@@ -56,54 +77,50 @@ function Home() {
           </span>
         </p>
         <p className={note}>
-          Signed in by the Gateway. The app reads who you are from a header the
-          Gateway signs; it has no login of its own.
+          You signed in at the Gateway. It tells this app who you are, signed so
+          the app can trust it. The app has no login of its own.
         </p>
       </section>
 
       <section className={card}>
         <h2 className={heading}>What this app was allowed</h2>
-        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-          <Allowed term="resources" items={allowed.resources} none="none" />
-          <Allowed
-            term="public"
-            items={allowed.public}
-            none="none: every route needs a signed-in member"
-            hint="opens without signing in; every other route needs a member"
-            link
-          />
-          <Allowed
-            term="providers"
-            items={allowed.providers}
-            none="none: AI models the Gateway calls for the app"
-          />
-          <Allowed
-            term="capabilities"
-            items={allowed.capabilities}
-            none="none: what the Gateway does for the app with keys it holds"
-            hint={
-              typeof members === "number"
-                ? `so listMembers() answers: ${members === 1 ? "you alone can" : `${members} people can`} open this app`
-                : `but the Gateway refused listMembers(): ${members.refused}`
-            }
-          />
-          <Allowed
-            term="secrets"
-            items={allowed.secrets}
-            none="none: keys only this app uses"
-          />
-          <Allowed
-            term="tools"
-            items={allowed.tools}
-            none="none"
-            hint="for AI clients at /mcp; a destructive one stays hidden until the Gateway has approvals"
-          />
-        </dl>
         <p className={note}>
-          From <code>everyapp.config.ts</code> (tools from{" "}
-          <code>src/tools.ts</code>). The Gateway gives the app nothing it
-          doesn't declare there.
+          Listed in <code>everyapp.config.ts</code>. The app gets only what that
+          file lists; the Gateway refuses the rest.
         </p>
+        <dl className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-4 sm:gap-y-2">
+          <Allowed term="resources" items={allowed.resources}>
+            Storage of its own; the todos live in the database.
+          </Allowed>
+          <Allowed term="public" items={allowed.public} link>
+            Reachable without signing in, for a provider's webhook or an OAuth
+            callback. Every route not listed needs a signed-in member.
+          </Allowed>
+          <Allowed term="providers" items={allowed.providers}>
+            AI models the Gateway calls for the app, with a key you add once.
+          </Allowed>
+          <Allowed term="capabilities" items={allowed.capabilities}>
+            What the Gateway does for the app with keys it holds;{" "}
+            {typeof members === "number" ? (
+              <>
+                <code>members</code> is how this page knows who can open it.
+              </>
+            ) : (
+              <>
+                the Gateway refused <code>listMembers()</code>:{" "}
+                <code>{members.refused}</code>.
+              </>
+            )}
+          </Allowed>
+          <Allowed term="secrets" items={allowed.secrets}>
+            Keys only this app uses.
+          </Allowed>
+          <Allowed term="tools" items={allowed.tools}>
+            What an AI assistant may do here, through your Gateway (
+            <code>src/tools.ts</code>). A destructive one stays hidden until the
+            Gateway has approvals.
+          </Allowed>
+        </dl>
       </section>
 
       <section className={card}>
@@ -182,46 +199,59 @@ function Home() {
   );
 }
 
-/** One line of the Allowed card: a manifest field and what it lists. */
+/** One line of the Allowed card: a manifest field, what it lists, and what that means. */
 function Allowed({
   term,
   items,
-  none,
-  hint,
   link,
+  children,
 }: {
   term: string;
   items: readonly string[];
-  none: string;
-  hint?: string;
   link?: boolean;
+  children: ReactNode;
 }) {
   return (
-    <>
+    // One block on a phone; on wider screens the dt and dd join the grid.
+    <div className="sm:contents">
       <dt className="font-mono text-neutral-500">{term}</dt>
       <dd className="min-w-0">
-        {items.length === 0 ? (
-          <span className="text-neutral-500">{none}</span>
-        ) : (
-          items.map((item) => (
-            <Fragment key={item}>
-              {link ? (
-                <a href={item} className="underline">
-                  {item}
-                </a>
-              ) : (
-                <code>{item}</code>
-              )}{" "}
-            </Fragment>
-          ))
-        )}
-        {items.length > 0 && hint && (
-          <span className="text-neutral-500">{hint}</span>
-        )}
+        <p>
+          {items.length === 0 ? (
+            <span className="text-neutral-500">none</span>
+          ) : (
+            items.map((item) => (
+              <Fragment key={item}>
+                {link ? (
+                  <a href={item} className="underline">
+                    {item}
+                  </a>
+                ) : (
+                  <code>{item}</code>
+                )}{" "}
+              </Fragment>
+            ))
+          )}
+        </p>
+        <p className="text-neutral-500">{children}</p>
       </dd>
-    </>
+    </div>
   );
 }
+
+/** The members count as a sentence; `listMembers()` counts the signed-in person. */
+function whoCanOpen(members: number): string {
+  return members === 1
+    ? "You alone can open it."
+    : `${members} people can open it.`;
+}
+
+// The build skill `everyapp create` copies into a new app, where coding agents
+// look for it. A convention of the CLI (packages/cli/src/lib/app/skill.ts), not
+// a manifest field, so the page names it as a constant; a test in the CLI
+// (packages/cli/src/lib/app/starterSkills.test.ts) holds it to the skills the
+// CLI ships.
+const BUILD_SKILL = "build-every-app";
 
 const card =
   "flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
