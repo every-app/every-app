@@ -34,6 +34,8 @@ import {
   EVENT_HEADERS,
   EVENT_TYPES,
   EVENTS_ALLOW_PRIVATE_TARGETS_SETTING,
+  SIGN_IN_GATEWAY_SETTINGS,
+  SIGN_IN_PROVIDER_IDS,
 } from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
 import { commandPaths } from "@/app";
@@ -114,6 +116,7 @@ describe("the agent docs", () => {
       "deploy",
       "providers",
       "access",
+      "signin",
       "workspace",
       "gateway",
       "build",
@@ -495,6 +498,27 @@ describe("the command pages", () => {
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));
     expectDocumented("access", "the password switch", ["EMAIL_PASSWORD_SIGN_IN"]);
+  });
+  it("signin.md documents every sign-in provider, setting and flag", () => {
+    expectDocumented("signin", "the sign-in provider ids (SIGN_IN_PROVIDER_IDS in packages/sdk/src/internal/signInProviders.ts)", SIGN_IN_PROVIDER_IDS);
+    expectDocumented("signin", "the sign-in providers' settings (SIGN_IN_GATEWAY_SETTINGS)", SIGN_IN_GATEWAY_SETTINGS);
+    expectDocumented("signin", "the password switch", ["EMAIL_PASSWORD_SIGN_IN"]);
+    expect(flagsOf("signin"), "everyapp signin has no flags: is the command group on this branch?").toEqual(
+      expect.arrayContaining(["--client-id", "--client-secret-from-env"]),
+    );
+    expectDocumented("signin", "the flags of everyapp signin", flagsOf("signin"));
+    expectDocumented("signin", "the codes of everyapp signin and the sign-in page", [
+      "SIGNIN_UNKNOWN_PROVIDER",
+      "SIGNIN_VALUE_REQUIRED",
+      "SIGNIN_FLAG_NOT_APPLICABLE",
+      "SIGNIN_ISSUER_INVALID",
+      "SIGNIN_TENANT_INVALID",
+      "SIGNIN_NOT_SET_UP",
+      "SIGNIN_NOT_INVITED",
+      "SIGNIN_EMAIL_NOT_VERIFIED",
+      "SIGNIN_ACCOUNT_DEACTIVATED",
+      "SIGNIN_PROVIDER_UNAVAILABLE",
+    ]);
   });
 });
 

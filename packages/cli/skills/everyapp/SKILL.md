@@ -21,7 +21,9 @@ status (the report, every line, and its fixes in order), manifest
 email, events (webhooks, email alerts, the signature, every event type,
 emit()), mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
 check refuses), providers (API providers: the catalog, registering one,
-a spec's fields), access (Cloudflare Access), workspace (the workspace from
+a spec's fields), access (Cloudflare Access), signin (sign-in providers:
+Continue with Google, Microsoft, GitHub, Apple, Cloudflare or SSO; every
+setting, the signin commands), workspace (the workspace from
 the terminal and from an AI client: every command and every tool), gateway
 (everything a Gateway offers: apps vs MCP apps vs the compact MCP surface,
 people, groups and caps, the CLI by job, what to suggest next, other MCP

@@ -24,6 +24,12 @@ person ──► Cloudflare Access ──► gateway: verifies Access's signed t
 All settings are Worker secrets. None can be changed from the admin UI, so a
 stolen admin session can't add a way in or change who it lets in.
 
+See also `docs/runbooks/sign-in-providers.md`: "Continue with Google"
+(Microsoft, GitHub, Apple, Cloudflare, or any OpenID Connect issuer) on the
+gateway's own sign-in page, with or without Access in front. Access protects
+everything behind it; a sign-in provider is only one more button on the
+sign-in page.
+
 ## Two ways, and which to use
 
 |                      | OIDC sign-in                                    | Outer ring (recommended)                                                        |
@@ -133,6 +139,15 @@ authenticate (subject to your Access policies)" and nothing about whether the
 address it asserts was verified, so someone who registers a Cloudflare
 account under a member's address could sign in as that member; `everyapp
 access on` and `show` warn when it is off (`ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT`).
+
+This "Sign in with Cloudflare" is Access's identity provider, a login in
+front of the gateway. The gateway also has a `cloudflare` sign-in provider
+of its own: a Continue with Cloudflare button on its sign-in page, through a
+private Cloudflare OAuth client in your account
+(`pnpm everyapp signin add cloudflare`), with nothing in front of the
+gateway and no Zero Trust seat. Both can be on;
+`docs/runbooks/sign-in-providers.md`, "Sign in with Cloudflare: Access's
+identity provider versus this", compares them.
 
 ## Costs and limits
 

@@ -1,6 +1,6 @@
 {
   "title": "Docs for coding agents",
-  "description": "Complete references for the coding agent that builds, deploys and operates Every App apps for a person: every command, the --json protocol, every error code, everyapp.config.ts, what an app receives from the Gateway, deploys, secrets, development, email, events, MCP, API providers and Cloudflare Access.",
+  "description": "Complete references for the coding agent that builds, deploys and operates Every App apps for a person: every command, the --json protocol, every error code, everyapp.config.ts, what an app receives from the Gateway, deploys, secrets, development, email, events, MCP, API providers, Cloudflare Access and sign-in providers.",
   "pages": [
     "index",
     "---Drive it---",
@@ -25,6 +25,7 @@
     "providers",
     "gateway",
     "access",
+    "signin",
     "workspace",
     "---From the repository---",
     "repo",

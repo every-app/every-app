@@ -1,0 +1,55 @@
+---
+title: Sign in with Google, Microsoft, GitHub, Apple or your SSO
+description: Let people sign in to your Gateway with an account they already have, beside their password, and connect an existing account the first time.
+---
+
+Optional. Your Gateway's sign-in page can show **Continue with Google**, and the same for Microsoft, GitHub, Apple, Cloudflare and your company's single sign-on (Okta, Entra ID, Keycloak, Auth0 and the like). It's another way into the same account: people keep their role and their apps, and their password keeps working unless you turn passwords off.
+
+## Who can use it
+
+- **Members**, and **people you've invited**, by the address you invited. An invited person who selects Continue with Google joins right away, with the role you chose, and needs neither the invite link nor a password.
+- **Nobody else.** Someone you haven't invited sees "You don't have an account on this gateway yet. Ask an admin to invite you." Nothing is created for them.
+- **Only verified addresses.** If the provider says it hasn't verified the address, the sign-in is refused, invited or not.
+- **Nothing before setup.** The first owner is still made with the owner link from `everyapp setup`.
+- **Not deactivated people**, whatever the provider says. [Remove someone](/docs/people#remove-someone)
+
+## The first time, if you have a password
+
+An account made with a password connects a provider once, while you prove it's yours:
+
+- Select **Continue with Google**. The page says an account with this email already exists: sign in with your password, and the page connects Google.
+- Or, signed in, open the account menu and select **Connect Google**.
+
+After that, Continue with Google alone signs you in. This step is what keeps someone who registered with your address from getting your account.
+
+People who join through a provider have no password. If your Gateway sends email, they can set one with **Forgot password?**.
+
+## Turn one on
+
+Whoever runs the Gateway does this once per provider, with the Cloudflare login. Create an OAuth app at the provider (Google Cloud, Microsoft Entra, GitHub, Apple Developer, your Cloudflare account or your identity provider), with the redirect address **Manage workspace → Sign-in** shows. Then, in your `every-app` folder:
+
+```bash
+pnpm everyapp signin add google
+```
+
+It asks for the client ID and the client secret, and the button is on the sign-in page as soon as it's done. Your coding agent can do every step for you; the details are in [the agent docs](/docs/agent/signin).
+
+## Sign in with Cloudflare, two ways
+
+Two different things share the name. [Cloudflare Access](/docs/access) (`pnpm everyapp access on`) puts a login _in front of_ the whole Gateway, and its **Sign in with Cloudflare** lets the members of your Cloudflare account through before anything reaches the Gateway. The `cloudflare` sign-in provider is a button _on_ the Gateway's own sign-in page, through a Cloudflare OAuth client you create in your account: keep the client private, so only your Cloudflare account's members can use it. You can have both on. With Access on, people are usually signed in before they ever see the button.
+
+## Turn passwords off
+
+Once you've connected a provider to your own account, you can turn passwords off:
+
+```bash
+pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN
+```
+
+Enter `false`. Nothing changes until an owner has connected a provider, so it can't lock you out. Anyone who hasn't connected one yet can't sign in after that, so have everyone connect first.
+
+## Good to know
+
+- To take someone off, [deactivate them](/docs/people#remove-someone). Removing them at Google or GitHub stops new sign-ins there, but not the sessions they already have.
+- Someone who chose Apple's **Hide My Email** arrives with an `@privaterelay.appleid.com` address, which no invitation names. Invite that address, or ask them to share their email.
+- A Google consent screen still in **Testing** only lets in the test users listed on it. Publish it in the Google Cloud console.
