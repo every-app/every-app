@@ -89,6 +89,22 @@ describe("bundleProblems", () => {
     );
   });
 
+  it("refuses Email sending bindings, which the platform's account would send", () => {
+    expect(
+      bundleProblems(
+        WORKER,
+        {
+          ...MANIFEST,
+          resources: { ...MANIFEST.resources, sendEmail: [{ name: "EMAIL" }] },
+        },
+        LIMITS,
+        false,
+      ),
+    ).toEqual([
+      "it declares Email sending bindings (resources.sendEmail), which third-party apps can't have; send through the Gateway's email capability",
+    ]);
+  });
+
   it("refuses an OAuth client with scope sets listed without them, or with ones this gateway doesn't offer", () => {
     const listing = (entry: { access: "write"; scopes?: string[] }) =>
       bundleProblems(

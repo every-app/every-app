@@ -1732,6 +1732,149 @@ describe("Queues (resources.queues)", () => {
   });
 });
 
+describe("Email sending bindings (resources.sendEmail)", () => {
+  const SENDERS = { allowedSenderAddresses: ["noreply@example.com"] };
+  const notifier = {
+    id: "notifier",
+    resources: {
+      d1: ["DB"],
+      sendEmail: [
+        {
+          name: "EMAIL",
+          allowedSenderAddresses: ["noreply@example.com"],
+          allowedDestinationAddresses: [
+            "ops@example.com",
+            "oncall@example.net",
+          ],
+        },
+        {
+          name: "ALERTS",
+          allowedSenderAddresses: ["alerts@example.com"],
+          destinationAddress: "ops@example.com",
+        },
+        { name: "ANYONE", allowedSenderAddresses: ["noreply@example.com"] },
+      ],
+    },
+  };
+
+  it("accepts bindings with their senders, with or without destinations, in both schemas", () => {
+    expect(validateManifestStrict(notifier)).toEqual(notifier);
+    expect(validateManifest(notifier)).toEqual(notifier);
+  });
+
+  it.each([
+    [
+      "a destination and a list of destinations together",
+      [
+        {
+          name: "EMAIL",
+          ...SENDERS,
+          destinationAddress: "ops@example.com",
+          allowedDestinationAddresses: ["ops@example.com"],
+        },
+      ],
+      /resources\.sendEmail\.0\.allowedDestinationAddresses: destinationAddress and allowedDestinationAddresses can't both be set/,
+    ],
+    [
+      "a sender that isn't an address",
+      [{ name: "EMAIL", allowedSenderAddresses: ["*@example.com"] }],
+      /resources\.sendEmail\.0\.allowedSenderAddresses\.0: must be an email address such as noreply@example\.com/,
+    ],
+    [
+      "a destination that isn't an address",
+      [{ name: "EMAIL", ...SENDERS, destinationAddress: "ops" }],
+      /resources\.sendEmail\.0\.destinationAddress: must be an email address/,
+    ],
+    [
+      "a destination in the list that isn't an address",
+      [
+        {
+          name: "EMAIL",
+          ...SENDERS,
+          allowedDestinationAddresses: [
+            "ops@example.com",
+            "Ops <ops@example.com>",
+          ],
+        },
+      ],
+      /resources\.sendEmail\.0\.allowedDestinationAddresses\.1: must be an email address/,
+    ],
+    [
+      "an entry without senders",
+      [{ name: "EMAIL", destinationAddress: "ops@example.com" }],
+      /resources\.sendEmail\.0\.allowedSenderAddresses: list the addresses the binding may send as: without allowedSenderAddresses it could send as any address on the account's Email Sending domains, the Gateway's own sender included/,
+    ],
+    [
+      "an empty sender list",
+      [{ name: "EMAIL", allowedSenderAddresses: [] }],
+      /resources\.sendEmail\.0\.allowedSenderAddresses: list the addresses the binding may send as/,
+    ],
+    [
+      "an empty destination list",
+      [{ name: "EMAIL", ...SENDERS, allowedDestinationAddresses: [] }],
+      /resources\.sendEmail\.0\.allowedDestinationAddresses: list at least one address, or leave the list out/,
+    ],
+    [
+      "a binding that isn't an identifier",
+      [{ name: "send-email", ...SENDERS }],
+      /resources\.sendEmail\.0\.name: binding names must be JavaScript identifiers/,
+    ],
+    [
+      "a key Cloudflare's binding doesn't have",
+      [{ name: "EMAIL", ...SENDERS, remote: true }],
+      /resources\.sendEmail\.0: Unrecognized key: "remote"/,
+    ],
+  ])("refuses %s", (_case, sendEmail, problem) => {
+    expect(() =>
+      validateManifestStrict({ id: "notifier", resources: { sendEmail } }),
+    ).toThrow(problem);
+  });
+
+  it("counts the binding among the app's names: declared twice, or taken by a secret", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "notifier",
+        resources: {
+          kv: ["EMAIL"],
+          sendEmail: [{ name: "EMAIL", ...SENDERS }],
+        },
+      }),
+    ).toThrow(/the binding EMAIL is declared twice in resources/);
+    expect(() =>
+      validateManifestStrict({
+        id: "notifier",
+        resources: { sendEmail: [{ name: "EMAIL", ...SENDERS }] },
+        secrets: ["EMAIL"],
+      }),
+    ).toThrow(/secrets: EMAIL is one of the app's bindings/);
+  });
+
+  it("stays tolerant of the lists at registration, a missing sender list included", () => {
+    const loose = {
+      id: "notifier",
+      resources: {
+        sendEmail: [
+          {
+            name: "send-email",
+            destinationAddress: "ops",
+            allowedDestinationAddresses: [],
+          },
+        ],
+      },
+    };
+    expect(validateManifest(loose).resources?.sendEmail).toEqual(
+      loose.resources.sendEmail,
+    );
+  });
+
+  it("refuses the binding on the dispatch tier only", () => {
+    expect(manifestTierProblems(notifier, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(notifier, "dispatch")).toEqual([
+      "resources.sendEmail: Email sending bindings aren't available to apps in a dispatch namespace (they send through the Gateway's email capability)",
+    ]);
+  });
+});
+
 describe("email.inbound manifest field", () => {
   const inbox = { id: "agentic-inbox", email: { inbound: true } };
 

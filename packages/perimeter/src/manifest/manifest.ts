@@ -162,6 +162,20 @@ const AiGatewayResourceSchema = z.object({
   cacheTtl: z.number().int().min(0).optional(),
 });
 
+/**
+ * A Cloudflare `send_email` binding every one of the app's Workers gets,
+ * beside the Gateway's email capability (which stays the recommended way
+ * to send): the senders it may use, and one destination or a list of
+ * them. Nothing is made in the account; Cloudflare checks the addresses
+ * when the Worker sends.
+ */
+const SendEmailResourceSchema = z.object({
+  name: z.string(),
+  allowedSenderAddresses: z.array(z.string()).optional(),
+  destinationAddress: z.string().optional(),
+  allowedDestinationAddresses: z.array(z.string()).optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -205,6 +219,8 @@ export const ResourcesSchema = z
     vectorize: z.array(VectorizeResourceSchema).optional(),
     /** AI Gateways of the app's own, by binding ({@link aiGatewayIdFor}). */
     aiGateway: z.array(AiGatewayResourceSchema).optional(),
+    /** Cloudflare `send_email` bindings, by binding, with the addresses each may use. */
+    sendEmail: z.array(SendEmailResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -1066,6 +1082,60 @@ const VectorizeResourceSchemaStrict = VectorizeResourceSchema.extend({
     }
   });
 
+/**
+ * One address, as a `send_email` binding's lists take it: no `*`, so a
+ * sender pattern (`*@<domain>`, as `everyapp email set --sender` takes)
+ * isn't mistaken for one.
+ */
+const EMAIL_ADDRESS =
+  /^[A-Za-z0-9.!#$%&'+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+const EmailAddressSchema = z
+  .string()
+  .max(254, "an email address is at most 254 characters")
+  .regex(
+    EMAIL_ADDRESS,
+    "must be an email address such as noreply@example.com, not a pattern",
+  );
+const EmailAddressListSchema = z
+  .array(EmailAddressSchema)
+  .min(1, "list at least one address, or leave the list out");
+
+/**
+ * Why an entry names its senders: without the list Cloudflare's binding
+ * sends as any address on the account's Email Sending domains, the
+ * Gateway's own sender (invitations, resets) included.
+ */
+const SENDERS_REQUIRED =
+  "list the addresses the binding may send as: without allowedSenderAddresses it could send as any address on the account's Email Sending domains, the Gateway's own sender included";
+
+/**
+ * A `send_email` binding's entry: an identifier, the senders it may use
+ * (required, at least one), addresses as addresses, and one destination or
+ * a list of them, never both (Cloudflare's `SendEmailDestinationOptions`).
+ */
+const SendEmailResourceSchemaStrict = SendEmailResourceSchema.extend({
+  name: BindingNameSchema,
+  allowedSenderAddresses: z
+    .array(EmailAddressSchema, {
+      error: (issue) =>
+        issue.input === undefined ? SENDERS_REQUIRED : undefined,
+    })
+    .min(1, SENDERS_REQUIRED),
+  destinationAddress: EmailAddressSchema.optional(),
+  allowedDestinationAddresses: EmailAddressListSchema.optional(),
+})
+  .strict()
+  .refine(
+    (entry) =>
+      entry.destinationAddress === undefined ||
+      entry.allowedDestinationAddresses === undefined,
+    {
+      message:
+        "destinationAddress and allowedDestinationAddresses can't both be set: one destination, or a list of them",
+      path: ["allowedDestinationAddresses"],
+    },
+  );
+
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
@@ -1110,6 +1180,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
       }).strict(),
     )
     .optional(),
+  sendEmail: z.array(SendEmailResourceSchemaStrict).optional(),
 }).strict();
 /** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
 export interface StrictManifestOptions {
@@ -1423,6 +1494,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.images ?? []),
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
+    ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1454,6 +1526,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.images ?? []),
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
     ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
+    ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1470,8 +1543,9 @@ export function bindingNamesOf(
  * provider is the brokered path). Nor Browser Rendering: the browser time
  * bills the platform's account the same way, nor Images, whose
  * transformations do too. Nor Vectorize indexes: the hosted deployer makes
- * none. Nor AI Gateways yet. Nor inbound mail: the platform's zones aren't
- * an organization's to route. Nor secrets of its own: a third-party Worker
+ * none. Nor AI Gateways yet. Nor a `send_email` binding: it would send
+ * from the platform's account, past the Gateway's budgets and sender list.
+ * Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets of its own: a third-party Worker
  * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
  */
 export function manifestTierProblems(
@@ -1519,6 +1593,11 @@ export function manifestTierProblems(
   if (manifest.resources?.aiGateway?.length) {
     problems.push(
       "resources.aiGateway: AI Gateways aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  if (manifest.resources?.sendEmail?.length) {
+    problems.push(
+      "resources.sendEmail: Email sending bindings aren't available to apps in a dispatch namespace (they send through the Gateway's email capability)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);

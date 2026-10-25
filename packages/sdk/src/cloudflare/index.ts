@@ -53,6 +53,7 @@ export {
   type QueueBinding,
   type QueueConsumerTrigger,
   type SecretBinding,
+  type SendEmailBinding,
   type ServiceBinding,
   type TextBinding,
   type VectorizeBinding,

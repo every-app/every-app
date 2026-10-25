@@ -29,6 +29,7 @@ import {
   type EveryAppWorkerReference,
   type HyperdriveBinding,
   type KvBinding,
+  type SendEmailBinding,
   type QueueBinding,
   type ServiceBinding,
   type WorkflowBinding,
@@ -2283,5 +2284,123 @@ describe("Queues (resources.queues)", () => {
     ).toThrow(
       `queues: JOBS's deadLetterQueue "LOST" isn't one of resources.queues.`,
     );
+  });
+});
+
+describe("Email sending bindings (resources.sendEmail)", () => {
+  const notifier = {
+    id: "notifier",
+    resources: {
+      d1: ["DB"],
+      sendEmail: [
+        {
+          name: "EMAIL",
+          allowedSenderAddresses: ["noreply@example.com"],
+          allowedDestinationAddresses: ["ops@example.com"],
+        },
+        { name: "ALERTS", destinationAddress: "oncall@example.com" },
+        { name: "ANYONE" },
+      ],
+    },
+    workers: [{ name: "digest" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: notifier,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _helper, ...helper } = everyAppAuxiliaryWorker({
+      manifest: notifier,
+      worker: "digest",
+      entrypoint: "/app/src/digest.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, helper };
+  };
+
+  it.each(["production", "development"] as const)(
+    "binds each one, with the manifest's lists, on the app's Worker and every helper (%s)",
+    (mode) => {
+      const { app, helper } = build(mode);
+      for (const env of [app.env, helper.env] as Record<string, unknown>[]) {
+        expect(env["EMAIL"]).toEqual({
+          type: "send-email",
+          allowedSenderAddresses: ["noreply@example.com"],
+          allowedDestinationAddresses: ["ops@example.com"],
+        });
+        expect(env["ALERTS"]).toEqual({
+          type: "send-email",
+          destinationAddress: "oncall@example.com",
+        });
+        expect(env["ANYONE"]).toEqual({ type: "send-email" });
+      }
+    },
+  );
+
+  it("copies the lists, so a build never shares the manifest's arrays", () => {
+    const { app } = build("production");
+    const email = app.env.EMAIL;
+    expect(email.allowedSenderAddresses).not.toBe(
+      notifier.resources.sendEmail[0].allowedSenderAddresses,
+    );
+  });
+
+  it("types each binding under its own name", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.EMAIL).toEqualTypeOf<SendEmailBinding>();
+    expectTypeOf(app.env.ANYONE).toEqualTypeOf<SendEmailBinding>();
+  });
+
+  it("refuses a name the Worker already has, and both kinds of destination", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "notifier",
+          resources: { kv: ["EMAIL"], sendEmail: [{ name: "EMAIL" }] },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow("sendEmail: EMAIL reuses a binding name the Worker already has.");
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "notifier",
+          resources: {
+            sendEmail: [
+              {
+                name: "EMAIL",
+                destinationAddress: "ops@example.com",
+                allowedDestinationAddresses: ["ops@example.com"],
+              },
+            ],
+          },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(
+      "sendEmail: EMAIL sets both destinationAddress and allowedDestinationAddresses; set one.",
+    );
+  });
+
+  it("leaves a manifest without any with none", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "send-email",
+      ),
+    ).toEqual([]);
   });
 });

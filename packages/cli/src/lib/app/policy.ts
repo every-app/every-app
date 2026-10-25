@@ -7,7 +7,11 @@
  * without its identity keys or in dev mode, bound to another Worker or to
  * resources the deploy didn't provision for it or that aren't named after
  * it, with a binding type the model doesn't know, or giving away or
- * deleting Durable Object data.
+ * deleting Durable Object data. A binding that reaches an account-wide
+ * capability with no resource of the app's own (`ai`, `browser`, `images`,
+ * `send-email`) is allowed only as everyapp.config.ts declares it, by
+ * binding name (and a `send-email` one with the declared addresses), so
+ * cloudflare.config.ts can't quietly add one.
  *
  * An app may also ship helper Workers (its manifest's `workers`), built as
  * auxiliary Workers beside its own. Each is private in the same way and
@@ -18,6 +22,7 @@ import path from "node:path";
 import {
   GATEWAY_WORKER_NAME,
   RESOURCE_SEPARATOR,
+  type Resources,
 } from "@every-app/perimeter/manifest";
 import { EveryAppError } from "@/lib/errors";
 import {
@@ -51,6 +56,9 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * own. Browser Rendering is the same: account-wide browser time billed to
  * the account, so only under a name `resources.browser` declares. Images
  * the same, under `resources.images`: transformations bill the account.
+ * `send-email` (Cloudflare's own email sending, beside the Gateway's email
+ * capability, sending past its budgets and sender list) likewise, and only
+ * with the addresses `resources.sendEmail` declares for it.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -70,6 +78,7 @@ const ALLOWED_BINDINGS = new Set([
   "ai",
   "browser",
   "images",
+  "send-email",
 ]);
 
 /**
@@ -116,6 +125,63 @@ type PolicyInputs = Pick<
   | "helperWorkers"
   | "declared"
 >;
+
+/** The address fields of a `send-email` binding, as cf's config names them. */
+const SEND_EMAIL_FIELDS = [
+  "allowedSenderAddresses",
+  "destinationAddress",
+  "allowedDestinationAddresses",
+] as const;
+
+/** One address field as a problem shows it: absent as `none`, a list as its sorted distinct addresses in brackets. */
+function addressField(value: unknown): string {
+  if (value === undefined) return "none";
+  if (Array.isArray(value)) {
+    return `[${[...new Set(value.map(String))].sort().join(", ")}]`;
+  }
+  return String(value);
+}
+
+/**
+ * One address field, comparable: a list as its sorted distinct entries
+ * (the order and repeats change nothing Cloudflare checks), kept apart
+ * from a single address and from absence.
+ */
+function addressKey(value: unknown): string {
+  if (Array.isArray(value)) {
+    const entries = [...new Set(value.map((entry) => JSON.stringify(entry)))];
+    return `list:${entries.sort().join(",")}`;
+  }
+  return `one:${JSON.stringify(value ?? null)}`;
+}
+
+/**
+ * Why a built `send-email` binding isn't one the manifest declares, or
+ * null. The upload validates nothing (an unverified sender or destination
+ * uploads, and Cloudflare refuses it only at send time), so the lists are
+ * judged against the manifest, which is the operator's declaration.
+ */
+function sendEmailProblem(
+  name: string,
+  binding: Binding,
+  declared: Pick<Resources, "sendEmail"> | undefined,
+): string | null {
+  const entries = declared?.sendEmail ?? [];
+  const entry = entries.find((candidate) => candidate.name === name);
+  if (!entry) {
+    const names = entries.map((candidate) => candidate.name);
+    return `${name} is a send-email binding that everyapp.config.ts doesn't declare in resources.sendEmail${names.length ? ` (it declares ${names.join(", ")})` : ""}`;
+  }
+  const differ = SEND_EMAIL_FIELDS.filter(
+    (field) => addressKey(binding[field]) !== addressKey(entry[field]),
+  ).map(
+    (field) =>
+      `${field} is ${addressField(binding[field])}, not ${addressField(entry[field])}`,
+  );
+  return differ.length
+    ? `${name} isn't the send-email binding resources.sendEmail declares: ${differ.join("; ")}`
+    : null;
+}
 
 /** Everything wrong with the app's built Worker, as sentences; empty when it's fine. */
 export function appPolicyProblems(
@@ -356,6 +422,12 @@ function bindingProblems(
             `${name} is bucket "${bucket}"; an app's buckets are named after its Worker (${workerName} or ${workerName}${RESOURCE_SEPARATOR}<name>)`,
           );
         }
+        break;
+      }
+      // Cloudflare's own email sending: only as the manifest declares it.
+      case "send-email": {
+        const problem = sendEmailProblem(name, binding, declared);
+        if (problem) problems.push(problem);
         break;
       }
       case "workflow": {

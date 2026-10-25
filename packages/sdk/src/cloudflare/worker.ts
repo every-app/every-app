@@ -70,6 +70,17 @@ interface AiGatewayResource {
   readonly cacheTtl?: number;
 }
 
+/**
+ * A Cloudflare `send_email` binding and the addresses it may use: the
+ * senders, and one destination or a list of them (never both).
+ */
+interface SendEmailResource {
+  readonly name: string;
+  readonly allowedSenderAddresses?: readonly string[];
+  readonly destinationAddress?: string;
+  readonly allowedDestinationAddresses?: readonly string[];
+}
+
 /** Cloudflare's limits for one of the app's Workers. */
 interface WorkerLimits {
   readonly cpuMs?: number;
@@ -128,6 +139,11 @@ export interface EveryAppWorkerManifest {
      * account, bound on every Worker as `{ id, accountId, url }`.
      */
     aiGateway?: readonly AiGatewayResource[];
+    /**
+     * Cloudflare `send_email` bindings every one of the app's Workers
+     * gets, with their addresses; nothing is made in the account.
+     */
+    sendEmail?: readonly SendEmailResource[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -306,6 +322,18 @@ export interface VectorizeBinding {
   dev?: { remote?: boolean };
 }
 /**
+ * A `send_email` binding (cf's `SendEmailBindingOptions`): one destination,
+ * a list of them, or neither, and the senders it may use.
+ */
+type SendEmailDestination =
+  | { destinationAddress: string; allowedDestinationAddresses?: never }
+  | { destinationAddress?: never; allowedDestinationAddresses: string[] }
+  | { destinationAddress?: never; allowedDestinationAddresses?: never };
+export type SendEmailBinding = SendEmailDestination & {
+  type: "send-email";
+  allowedSenderAddresses?: string[];
+};
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -364,6 +392,7 @@ export type EveryAppBinding =
   | ImagesBinding
   | VectorizeBinding
   | AiGatewayBinding
+  | SendEmailBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -431,6 +460,14 @@ type QueueNames<M> = M extends {
   resources: { queues: readonly (infer Q)[] };
 }
   ? Q extends { name: infer N extends string }
+    ? N
+    : never
+  : never;
+
+type SendEmailNames<M> = M extends {
+  resources: { sendEmail: readonly (infer S)[] };
+}
+  ? S extends { name: infer N extends string }
     ? N
     : never
   : never;
@@ -625,6 +662,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in VectorizeNames<M>]: VectorizeBinding;
 } & {
   [B in AiGatewayNames<M>]: AiGatewayBinding;
+} & {
+  [B in SendEmailNames<M>]: SendEmailBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -984,6 +1023,7 @@ export function everyAppWorker<
   addBrowserBindings(env, manifest);
   addImagesBindings(env, manifest);
   addAiGatewayBindings(env, manifest, name, deploy);
+  addSendEmailBindings(env, manifest);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -1075,7 +1115,9 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI, Browser Rendering, Images, Vectorize indexes and AI Gateways, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets, Workers AI,
+ * Browser Rendering, Images, Vectorize indexes, AI Gateways and
+ * `send_email` bindings, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -1109,6 +1151,7 @@ export function everyAppAuxiliaryWorker<
     ...storageBindings(manifest, appWorker, deploy),
   };
   addQueueBindings(env, manifest, appWorker, deploy);
+  addSendEmailBindings(env, manifest);
   if (deploy) {
     // The app's identity: the gateway treats its helper Workers as the app.
     env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, appWorker);
@@ -1477,6 +1520,54 @@ function addAiGatewayBindings(
       ? { ...provisioned(deploy.resources.aiGateway, binding) }
       : { id: aiGatewayIdFor(appWorker, binding), accountId: "", url: "" };
     env[binding] = { type: "json", value };
+  }
+}
+
+/**
+ * The manifest's `send_email` bindings, the same on every one of the
+ * app's Workers in both modes: Cloudflare's binding with the addresses
+ * the manifest lists (the deploy's policy holds the built lists to them).
+ * Deployed, Cloudflare checks a message against them and the account's
+ * Email Sending domains when the Worker sends; in development Miniflare
+ * logs the message and checks the senders.
+ */
+function addSendEmailBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+): void {
+  for (const entry of manifest.resources?.sendEmail ?? []) {
+    if (env[entry.name]) {
+      throw new Error(
+        `sendEmail: ${entry.name} reuses a binding name the Worker already has.`,
+      );
+    }
+    const senders = entry.allowedSenderAddresses
+      ? { allowedSenderAddresses: [...entry.allowedSenderAddresses] }
+      : {};
+    if (
+      entry.destinationAddress !== undefined &&
+      entry.allowedDestinationAddresses !== undefined
+    ) {
+      throw new Error(
+        `sendEmail: ${entry.name} sets both destinationAddress and allowedDestinationAddresses; set one.`,
+      );
+    }
+    env[entry.name] =
+      entry.destinationAddress !== undefined
+        ? {
+            type: "send-email",
+            ...senders,
+            destinationAddress: entry.destinationAddress,
+          }
+        : entry.allowedDestinationAddresses !== undefined
+          ? {
+              type: "send-email",
+              ...senders,
+              allowedDestinationAddresses: [
+                ...entry.allowedDestinationAddresses,
+              ],
+            }
+          : { type: "send-email", ...senders };
   }
 }
 

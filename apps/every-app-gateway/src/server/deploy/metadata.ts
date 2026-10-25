@@ -150,6 +150,13 @@ export function manifestProblems(
       "it declares Queues, which the browser deployer can't provision; use the CLI",
     );
   }
+  // Cloudflare's own email sending would send from the platform's account,
+  // past the Gateway's budgets and sender list (manifestTierProblems).
+  if (manifest.resources?.sendEmail?.length) {
+    problems.push(
+      "it declares Email sending bindings (resources.sendEmail), which third-party apps can't have; send through the Gateway's email capability",
+    );
+  }
   if (
     (manifest.migrations?.dialect &&
       manifest.migrations.dialect !== "sqlite") ||

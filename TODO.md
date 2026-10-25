@@ -1381,6 +1381,23 @@ Ben asked, over ratstack.sh, what converting the Gateway and the CLI's provision
 - [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.ai`; its bundle check refuses the binding type (`AI is a ai binding, which third-party apps can't have`).
 - [ ] **`everyapp status`'s RESOURCES cell** gains `AI` once the first lane's cell is on main.
 
+### Provisioners: Email sending (2026-10-25)
+
+`resources.sendEmail: [{ name, allowedSenderAddresses, destinationAddress?, allowedDestinationAddresses? }]` binds Cloudflare's `send_email` binding on every Worker of an app, beside the Gateway's `email` capability (which stays the recommended path): nothing created, recorded or purged ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `sendEmail` row; `landing-page/content/agent/manifest.md`, "Email sending").
+
+**Defaults to confirm**
+
+- [ ] **Every entry names its senders.** The strict validator requires a non-empty `allowedSenderAddresses` on each `resources.sendEmail` entry, so a manifest (a third-party release's too) can't declare an unrestricted binding that sends as any address on the account's Email Sending domains, the Gateway's own invitation sender included; the policy holds the built binding to exactly the declared lists. Walk-back: allow an entry without a sender list.
+- [ ] **The listed senders are accepted as written.** They need not be on a domain among the installation's senders (`apps.email_senders`, `everyapp email set --sender`); Cloudflare refuses a `from` whose domain isn't onboarded to Email Sending in the account at send time. Walk-back: require each sender's domain among the installation's senders (the deploy reads the row under its lease already).
+- [ ] **Lists compared as sets.** Order and repeats don't matter; a list is never a single address; absent is absent.
+- [ ] **Addresses, not patterns.** `*@domain` is refused in the binding's lists (Cloudflare's docs don't say it takes wildcards); an empty destination list is refused (ambiguous between "none" and "any").
+- [ ] **Refused on the dispatch tier and by the hosted deployer's manifest check**: the binding would send from the platform's account, past the Gateway's budgets and sender list.
+
+**Follow-ups**
+
+- [ ] **The design's rationale for the binding** (section 2: "for `message.reply()` from an inbound handler") is wrong: `reply()` needs no binding. The docs give the real reasons (code written against `env.EMAIL.send()`, mail sent beyond what `reply()` can); fix the design row.
+- [ ] **`everyapp status`'s RESOURCES cell** gains the binding once the first lane's cell is on main.
+
 ### Provisioners: Hyperdrive and the Postgres answer (2026-10-25)
 
 The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `hyperdrive` row). Hyperdrive's origin is now the binding's required setting where a person meets it: the deploy's `HYPERDRIVE_ORIGIN_MISSING` names the variable for this app (`POSTGRES_DATABASE_URL (or HYPERDRIVE_ORIGIN_URL)` for one config, the binding's own for several) and the file, with `data.binding`, `data.variables` and `data.file`; `everyapp status` repeats it under a `pending` app's `APP_NOT_UPLOADED` until the config is recorded. The Postgres answer is written once, `## Postgres` on the manifest page (Neon, Supabase, PlanetScale Postgres, Xata, Crunchy Bridge, a server of your own; the three steps; the code; development; the direct-URL note; Turso), and linked from the Hyperdrive, database, secrets, dev, errors and troubleshooting pages and both skills. A deploy with its origin present is byte for byte what it was (the pinned snapshots are unchanged).

@@ -416,6 +416,30 @@ describe("appPolicyProblems", () => {
       expect(appPolicyProblems(config, INPUTS)).toEqual([]);
     });
   });
+
+  describe("with resources.sendEmail", () => {
+    const declared = {
+      sendEmail: [{ name: "EMAIL", allowedSenderAddresses: ["noreply@example.com"] }],
+    };
+
+    it("accepts the declared binding on the app and its helpers, and refuses every one without the declaration", async () => {
+      const config = await builtConfig();
+      config["env"].EMAIL = { type: "send-email", allowedSenderAddresses: ["noreply@example.com"] };
+      const helper = structuredClone(config);
+      helper["name"] = "every-acme-todo--api";
+      for (const name of ["EVERYAPP_AUDIENCE", "EVERYAPP_IDENTITY_PUBLIC_KEYS", "EVERYAPP_IDENTITY_ISSUER", "USER_SYNC"]) {
+        delete helper["env"][name];
+      }
+      delete helper["exports"];
+      const inputs = { ...INPUTS, helperWorkers: ["every-acme-todo--api"] };
+      expect(appPolicyProblems(config, { ...inputs, declared })).toEqual([]);
+      expect(helperPolicyProblems(helper, "every-acme-todo--api", { ...inputs, declared })).toEqual([]);
+
+      const undeclared = "EMAIL is a send-email binding that everyapp.config.ts doesn't declare in resources.sendEmail";
+      expect(appPolicyProblems(config, inputs)).toEqual([undeclared]);
+      expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([undeclared]);
+    });
+  });
 });
 
 describe("with resources.ai", () => {
