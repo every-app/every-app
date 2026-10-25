@@ -11,6 +11,7 @@ interface UserRowOptions extends UserActions {
   emailConfigured: boolean;
   canManageInvitations: boolean;
   isOwner: boolean;
+  ownerCount: number;
   currentUserId: string | undefined;
 }
 

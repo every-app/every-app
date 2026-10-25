@@ -48,6 +48,11 @@ function UsersPage() {
   } = useLiveQuery((q) => q.from({ user: adminUsersCollection }));
   // A failed fetch leaves the collection "ready" and empty: ask the query.
   const isError = isCollectionError || useQueryFailed(["admin", "users"]);
+  // The row menus never offer to change the last owner (the server
+  // refuses with LAST_OWNER); deactivated owners count, as on the server.
+  const ownerCount = users.filter(
+    (user) => user.status !== "pending" && user.role === "owner",
+  ).length;
 
   const emailStatus = useQuery({
     queryKey: ["admin", "emailStatus"],
@@ -123,8 +128,10 @@ function UsersPage() {
   });
 
   const changeRoleMutation = useMutation({
-    mutationFn: (input: { userId: string; role: "member" | "admin" }) =>
-      updateMemberRole({ data: input }),
+    mutationFn: (input: {
+      userId: string;
+      role: "member" | "admin" | "owner";
+    }) => updateMemberRole({ data: input }),
     onSuccess: async (_result, input) => {
       await adminUsersCollection.utils.refetch();
       toast.success(`Role changed to ${input.role}`);
@@ -222,6 +229,7 @@ function UsersPage() {
         }
         canManageInvitations={canManageInvitations}
         isOwner={isOwner}
+        ownerCount={ownerCount}
         currentUserId={session?.user.id}
       />
 

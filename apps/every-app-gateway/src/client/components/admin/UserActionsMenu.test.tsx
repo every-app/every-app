@@ -45,6 +45,7 @@ function render(props: {
   user: AdminUser;
   isOwner: boolean;
   emailConfigured?: boolean;
+  ownerCount?: number;
 }) {
   act(() =>
     root.render(
@@ -52,6 +53,7 @@ function render(props: {
         {...actions}
         user={props.user}
         isOwner={props.isOwner}
+        ownerCount={props.ownerCount ?? 1}
         emailConfigured={props.emailConfigured ?? true}
         canManageInvitations
         currentUserId="user-me"
@@ -109,5 +111,53 @@ describe("who may be sent a password reset email", () => {
   it("offers no reset email without email configured", () => {
     render({ user: user("member"), isOwner: false, emailConfigured: false });
     expect(items()).not.toContain("Send password reset email");
+  });
+});
+
+describe("owners", () => {
+  it("lets an owner make a member or an admin an owner, after asking", () => {
+    render({ user: user("member"), isOwner: true });
+    expect(items()).toEqual([
+      "Send password reset email",
+      "Password reset link",
+      "Change role to admin",
+      "Make owner",
+      "Deactivate user",
+      "Delete user",
+    ]);
+    act(() => {
+      [...document.querySelectorAll('[role="menuitem"]')]
+        .find((item) => item.textContent?.trim() === "Make owner")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(document.body.textContent).toContain("Make member an owner?");
+    expect(document.body.textContent).toContain(
+      "Owners can do everything you can, including changing your role.",
+    );
+  });
+
+  it("offers an admin no way to make anyone an owner", () => {
+    render({ user: user("member"), isOwner: false });
+    expect(items()).not.toContain("Make owner");
+  });
+
+  it("lets an owner demote, deactivate or delete another owner, never reset them", () => {
+    render({ user: user("owner"), isOwner: true, ownerCount: 2 });
+    expect(items()).toEqual([
+      "Change role to admin",
+      "Change role to member",
+      "Deactivate user",
+      "Delete user",
+    ]);
+  });
+
+  it("offers nothing for the organization's only owner", () => {
+    render({ user: user("owner"), isOwner: true, ownerCount: 1 });
+    expect(trigger()).toBeNull();
+  });
+
+  it("offers an admin nothing for an owner, however many there are", () => {
+    render({ user: user("owner"), isOwner: false, ownerCount: 2 });
+    expect(trigger()).toBeNull();
   });
 });

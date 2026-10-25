@@ -193,9 +193,12 @@ USAGE
 
 COMMANDS
   rename  Rename the workspace: the name members see in the organization switcher and in invitations
+  role    Set a member's role: owner, admin or member
 
 EXAMPLES
   $ pnpm everyapp workspace rename 'Acme Corp'
+  $ pnpm everyapp workspace role sam@example.com owner
+  $ pnpm everyapp workspace role sam@example.com member
 
 Run pnpm everyapp workspace <command> --help for its flags.
 ```
@@ -1427,4 +1430,53 @@ FLAGS
 
 ARGUMENTS
   name  The new name: 1 to 64 characters, no line breaks (quote one with spaces)
+```
+
+### `everyapp workspace role`
+
+Set a member's role: owner, admin or member.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<email>` | yes | The member's email address, as Manage workspace → Users lists it |
+| `<owner\|admin\|member>` | yes | The role to give them |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace role [--gateway value] [--account-id value] [--json] [--verbose] <email> <owner|admin|member>
+  pnpm everyapp workspace role --help
+
+The workspace is the Gateway's own organization, the one its owner claimed. Owners are
+peers: any owner can make a member or an admin an owner, and change another owner's
+role, from Manage workspace → Users or with this command under the Cloudflare login.
+The workspace always keeps at least one owner, so the last owner's role is never
+changed (LAST_OWNER): make someone else an owner first. Deactivated owners don't
+count here, so this command can't leave a workspace whose only owner is locked out
+(the Gateway's own Users page needs no such rule: a deactivated owner can't act, and
+only an owner acts on an owner). Only a member can be given a role; someone still
+invited isn't one yet (MEMBER_NOT_FOUND). The Gateway picks up the change within 30
+seconds.
+
+Examples:
+  pnpm everyapp workspace role sam@example.com owner
+  pnpm everyapp workspace role sam@example.com member --json
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  email               The member's email address, as Manage workspace → Users lists it
+  owner|admin|member  The role to give them
 ```

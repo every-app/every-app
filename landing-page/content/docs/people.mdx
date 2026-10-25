@@ -35,7 +35,11 @@ If not, open the **⋯** menu next to them in **Users**, select **Password reset
 
 ## Remove someone
 
-Open the **⋯** menu next to them in **Users** and select **Deactivate user**. They're signed out everywhere and can't sign back in. **Reactivate user** undoes it. The owner can also **Delete user**.
+Open the **⋯** menu next to them in **Users** and select **Deactivate user**. They're signed out everywhere and can't sign back in. **Reactivate user** undoes it. An owner can also **Delete user**.
+
+## Owners
+
+Whoever claimed the Gateway is its first owner, and a workspace can have several: an owner opens the **⋯** menu next to a member or admin and selects **Make owner**. Owners are equals, so any owner can change another owner's role, deactivate or delete them, but never themselves, and never the last owner: the workspace always keeps one. From a terminal, `pnpm everyapp workspace role <email> owner` does the same.
 
 ## Send email
 

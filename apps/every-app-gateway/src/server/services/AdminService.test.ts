@@ -72,6 +72,24 @@ vi.mock("@/auth", () => ({
   }),
 }));
 
+// The member-management rule itself is pinned by user-management.sqlite.test.ts;
+// here only its first check (never yourself) matters, before any read.
+vi.mock("./MembershipService", () => ({
+  MembershipService: {
+    requireManageableMember: async (
+      ctx: { userId: string },
+      targetUserId: string,
+    ) => {
+      if (targetUserId === ctx.userId) {
+        throw Object.assign(new Error("You cannot deactivate yourself"), {
+          code: "CANNOT_MANAGE_SELF",
+        });
+      }
+      return { role: "member" };
+    },
+  },
+}));
+
 vi.mock("../repositories/OrganizationMembersRepository", () => ({
   OrganizationMembersRepository: {
     listMembersForOrganization: (...args: unknown[]) =>
@@ -200,6 +218,6 @@ describe("AdminService", () => {
   it("prevents the acting user from deleting themselves", async () => {
     await expect(
       AdminService.deleteUser(orgContext, "current-user"),
-    ).rejects.toThrow("Cannot delete your own account");
+    ).rejects.toMatchObject({ code: "CANNOT_MANAGE_SELF" });
   });
 });

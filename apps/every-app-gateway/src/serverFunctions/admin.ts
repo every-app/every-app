@@ -11,8 +11,10 @@ import { InvitationService } from "@/server/services/InvitationService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { isEmailConfigured } from "@/server/email/sendEmail";
 
-// Roles an owner or admin can give; ownership is never handed out here.
+// Roles an invitation carries; ownership is given to a member, never invited.
 const assignableRoleSchema = z.enum(["member", "admin"]);
+// Roles a member can be changed to; MembershipService says who may do which.
+const memberRoleSchema = z.enum(["member", "admin", "owner"]);
 
 // ============================================================================
 // Owner Setup
@@ -50,7 +52,7 @@ const deleteUserSchema = z.object({
 /**
  * Delete a user from the system.
  * Only accessible by owners.
- * Cannot delete yourself.
+ * Cannot delete yourself, or the last owner.
  */
 export const deleteUser = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
@@ -64,12 +66,13 @@ const memberActionSchema = z.object({
 });
 
 const updateMemberRoleSchema = memberActionSchema.extend({
-  role: assignableRoleSchema,
+  role: memberRoleSchema,
 });
 
 /**
- * Make a member an admin, or an admin a member.
- * Owners and admins; only an owner can change another admin.
+ * Change a member's role: member, admin or owner.
+ * Owners and admins; an admin changes members only, an owner changes
+ * anyone but themselves and the last owner (MembershipService).
  */
 export const updateMemberRole = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
@@ -80,7 +83,8 @@ export const updateMemberRole = createServerFn({ method: "POST" })
 
 /**
  * Deactivate a user: no sign-in, no sessions, no personal access tokens.
- * Owners and admins; only an owner can deactivate an admin.
+ * Owners and admins; only an owner can deactivate an admin or another
+ * owner, never the last one.
  */
 export const deactivateUser = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])

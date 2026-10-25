@@ -608,6 +608,14 @@ The registry raises the same code (a `RegistrationError`, status 400, passed thr
 
 Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/report.ts`, `packages/cli/src/lib/manifest.ts`, `packages/perimeter/src/registry/registration.ts`
 
+### LAST_OWNER
+
+`workspace role <email> admin|member` named an owner while no other owner of the workspace can act (step `workspace.role`): they are the only owner, or every other owner is deactivated (`users.banned` with no expiry or one still to come). The workspace always keeps at least one owner who can act, so the guarded `UPDATE` changed nothing and the row is as it was. Headline: `<email> is the last owner of <workspace>`, then `The workspace always keeps one owner, so their role stays until someone else is an owner.` The Gateway's Users page refuses the same move with the same code, and its write carries the same guard.
+
+**Fix:** `data.rerun`: `pnpm everyapp workspace role <email> owner` (literal `<email>`: another member's), `data.rerunNote`: `for someone else, then this command again`. `data.workspace` (`id`, `name`), `data.member` (`id`, `email`, `name`), `data.role` (the role asked for). Not retryable.
+
+Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`), `packages/cli/src/lib/gateway/members.ts` (`setMemberRole`).
+
 ### LEASE_HELD
 
 A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `update`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
@@ -631,6 +639,14 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sy
 **Fix:** as above. No rerun, not retryable.
 
 Source: `packages/cli/src/lib/manifest.ts`, `packages/cli/src/commands/email/index.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/dev/index.ts`
+
+### MEMBER_NOT_FOUND
+
+`workspace role <email> <role>` found no member with that address in the workspace (matched without case; step `workspace.role`), or the Gateway has no workspace at all. Headline: `No member <email> in <workspace>`, then `Someone still invited isn't a member until they accept.`; with no organization on the Gateway yet: `This Gateway has no workspace yet`, then `Nobody has claimed its owner link, so it has no members.`
+
+**Fix:** `data.fix`: `check the address against Manage workspace → Users, or invite them first`; `data.workspace` (`id`, `name`), `data.email`. Without a workspace, `data.rerun`: `pnpm everyapp setup`, `data.rerunNote`: `to claim it`. Not retryable.
+
+Source: `packages/cli/src/commands/workspace/index.ts` (`setRole`).
 
 ### MIGRATIONS_FAILED
 

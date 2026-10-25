@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Crown,
   Key,
   Link as LinkIcon,
   ShieldCheck,
@@ -24,7 +25,7 @@ export interface UserActions {
   onDelete: (userId: string) => void;
   onCopyInvitationLink: (invitationId: string) => void;
   onCancelInvitation: (invitationId: string) => void;
-  onChangeRole: (userId: string, role: "member" | "admin") => void;
+  onChangeRole: (userId: string, role: "member" | "admin" | "owner") => void;
   onDeactivate: (userId: string) => void;
   onReactivate: (userId: string) => void;
   isPending: boolean;
@@ -35,12 +36,15 @@ interface UserActionsMenuProps extends UserActions {
   emailConfigured: boolean;
   canManageInvitations: boolean;
   isOwner: boolean;
+  /** Owner memberships in the organization: the last one is never changed. */
+  ownerCount: number;
   currentUserId: string | undefined;
 }
 
 /**
- * The row menu of the users table. Deactivating, canceling an invitation and
- * deleting ask first; the callbacks run only once the admin confirms.
+ * The row menu of the users table. Deactivating, canceling an invitation,
+ * deleting and making someone an owner ask first; the callbacks run only
+ * once the admin confirms.
  */
 export function UserActionsMenu(props: UserActionsMenuProps) {
   return props.user.status === "pending" ? (
@@ -103,7 +107,7 @@ function InvitationActionsMenu({
   );
 }
 
-type MemberConfirmation = "deactivate" | "delete";
+type MemberConfirmation = "deactivate" | "delete" | "makeOwner";
 
 function MemberActionsMenu({
   user,
@@ -116,24 +120,32 @@ function MemberActionsMenu({
   onReactivate,
   isPending,
   isOwner,
+  ownerCount,
   currentUserId,
 }: UserActionsMenuProps) {
   const [confirming, setConfirming] = useState<MemberConfirmation | null>(null);
 
-  // Owners are never managed here, nobody manages themselves, and only an
-  // owner manages an admin (the server enforces the same rules).
-  if (user.role === "owner" || user.id === currentUserId) {
+  // The server's rule (MembershipService): nobody manages themselves, an
+  // admin manages members only, and an owner manages everyone but the
+  // organization's last owner. The menu never offers what it refuses.
+  if (user.id === currentUserId) {
     return null;
   }
-  const canManage = isOwner || user.role !== "admin";
+  const targetIsOwner = user.role === "owner";
+  const canManage = isOwner
+    ? !(targetIsOwner && ownerCount <= 1)
+    : user.role !== "admin" && !targetIsOwner;
   const subject = user.name || user.email;
 
-  const showResetEmail = canManage && !user.banned && emailConfigured;
-  const showResetLink = !user.banned && canManage;
+  // A reset link hands the account to whoever holds it: never for an owner.
+  const showResetEmail =
+    canManage && !targetIsOwner && !user.banned && emailConfigured;
+  const showResetLink = canManage && !targetIsOwner && !user.banned;
   const showRoleChange = canManage && !user.banned;
+  const showMakeOwner = showRoleChange && isOwner && !targetIsOwner;
   const showReactivate = canManage && !!user.banned;
   const showDeactivate = canManage && !user.banned;
-  const showDelete = isOwner;
+  const showDelete = isOwner && canManage;
 
   const hasSafeItems =
     showResetEmail || showResetLink || showRoleChange || showReactivate;
@@ -164,24 +176,32 @@ function MemberActionsMenu({
             Password reset link
           </DropdownMenuItem>
         ) : null}
-        {showRoleChange ? (
-          user.role === "admin" ? (
-            <DropdownMenuItem
-              disabled={isPending}
-              onClick={() => onChangeRole(user.id, "member")}
-            >
-              <ShieldOff />
-              Change role to member
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem
-              disabled={isPending}
-              onClick={() => onChangeRole(user.id, "admin")}
-            >
-              <ShieldCheck />
-              Change role to admin
-            </DropdownMenuItem>
-          )
+        {showRoleChange && user.role !== "admin" ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => onChangeRole(user.id, "admin")}
+          >
+            <ShieldCheck />
+            Change role to admin
+          </DropdownMenuItem>
+        ) : null}
+        {showRoleChange && user.role !== "member" ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => onChangeRole(user.id, "member")}
+          >
+            <ShieldOff />
+            Change role to member
+          </DropdownMenuItem>
+        ) : null}
+        {showMakeOwner ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => setConfirming("makeOwner")}
+          >
+            <Crown />
+            Make owner
+          </DropdownMenuItem>
         ) : null}
         {showReactivate ? (
           <DropdownMenuItem
@@ -213,6 +233,20 @@ function MemberActionsMenu({
           </DropdownMenuItem>
         ) : null}
       </RowActionsMenu>
+
+      {confirming === "makeOwner" ? (
+        <ConfirmDialog
+          title={`Make ${subject} an owner?`}
+          confirmLabel="Make owner"
+          onClose={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            onChangeRole(user.id, "owner");
+          }}
+        >
+          Owners can do everything you can, including changing your role.
+        </ConfirmDialog>
+      ) : null}
 
       {confirming === "deactivate" ? (
         <ConfirmDialog

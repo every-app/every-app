@@ -124,7 +124,11 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
   mcp: ["mcp list", "mcp on dataforseo", "mcp off dataforseo"],
-  workspace: ["workspace rename 'Acme Corp'"],
+  workspace: [
+    "workspace rename 'Acme Corp'",
+    "workspace role sam@example.com owner",
+    "workspace role sam@example.com member",
+  ],
   db: ["db migrate", "db query 'select count(*) from todos'"],
 };
 

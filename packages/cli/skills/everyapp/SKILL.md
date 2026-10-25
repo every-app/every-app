@@ -179,6 +179,11 @@ Workspace: pnpm everyapp workspace rename "Acme Corp" --json   renames the works
          1 to 64 characters, no line breaks). Nothing is deployed; members see it
          on their next page. Owners and admins can do the same under Manage
          workspace → Rename. WORKSPACE_NOT_CLAIMED: the Gateway has no owner yet.
+Roles:   pnpm everyapp workspace role <email> owner|admin|member --json   sets a
+         member's role in the workspace under the Cloudflare login (the Users
+         page does the same). Owners are peers and the workspace always keeps
+         one: the last owner's role is refused (LAST_OWNER); someone still
+         invited isn't a member yet (MEMBER_NOT_FOUND).
 Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.

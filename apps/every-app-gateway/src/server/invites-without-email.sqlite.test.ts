@@ -473,12 +473,21 @@ describe("without email (SQLite)", () => {
 
   it("never hands out a reset link for an owner", async () => {
     const admin = await join("admin@example.com", "admin");
-
     await expect(
       MembershipService.createPasswordResetLink(
         { orgId: ownerCtx.orgId, userId: admin.userId, role: "admin" },
         ownerCtx.userId,
       ),
+    ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+
+    // Not to a second owner either: a reset link hands the account over.
+    await MembershipService.changeRole(ownerCtx, admin.userId, "owner");
+    await expect(
+      MembershipService.createPasswordResetLink(
+        { orgId: ownerCtx.orgId, userId: admin.userId, role: "owner" },
+        ownerCtx.userId,
+      ),
     ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
+    expect(await db.select().from(verifications)).toEqual([]);
   });
 });

@@ -142,7 +142,7 @@ describe("argument problems", () => {
 describe("the command tree", () => {
   it("has the build verbs, the run verbs, and nothing hidden", () => {
     const paths = commandPaths();
-    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "configure", "status", "delete", "access on", "secret set", "email show"]) {
+    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "configure", "status", "delete", "access on", "secret set", "email show", "workspace rename", "workspace role"]) {
       expect(paths).toContain(route);
     }
     for (const gone of ["gateway", "gateway deploy", "workflow", "completion"]) {

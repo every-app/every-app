@@ -1,6 +1,10 @@
 import { db } from "@/db";
 import { members, sessions, userAccessTokens, users } from "@/db/schema";
-import { and, eq, gte, isNull } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, not, sql } from "drizzle-orm";
+import {
+  liveUser,
+  wouldLeaveNoLiveOwner,
+} from "./OrganizationMembersRepository";
 
 /**
  * Find a user by ID.
@@ -55,13 +59,27 @@ async function markEmailVerified(userId: string): Promise<void> {
 /**
  * Deactivate a user everywhere, in one D1 transaction: ban the account
  * (Better Auth's admin fields, so new sign-ins fail), end every session, and
- * revoke their personal access tokens.
+ * revoke their personal access tokens. With `unlessLastOwnerOf`, the ban
+ * refuses, in its own WHERE, an owner of that organization no other live
+ * owner would outlast (OrganizationMembersRepository.wouldLeaveNoLiveOwner),
+ * and the sessions and tokens go only once the account is deactivated, so
+ * a refused ban changes nothing: false then.
  * (The AI apps they connected are revoked after it, by
  * McpConnectionService.revokeForDeactivatedUser.)
  */
-async function deactivate(userId: string, reason: string): Promise<void> {
+async function deactivate(
+  userId: string,
+  reason: string,
+  { unlessLastOwnerOf }: { unlessLastOwnerOf?: string } = {},
+): Promise<boolean> {
   const now = new Date();
-  await db.batch([
+  const deactivatedNow = exists(
+    db
+      .select({ one: sql`1` })
+      .from(users)
+      .where(and(eq(users.id, userId), not(liveUser(now)))),
+  );
+  const [banned] = await db.batch([
     db
       .update(users)
       .set({
@@ -70,8 +88,16 @@ async function deactivate(userId: string, reason: string): Promise<void> {
         banExpires: null,
         updatedAt: now,
       })
-      .where(eq(users.id, userId)),
-    db.delete(sessions).where(eq(sessions.userId, userId)),
+      .where(
+        and(
+          eq(users.id, userId),
+          unlessLastOwnerOf
+            ? not(wouldLeaveNoLiveOwner(userId, unlessLastOwnerOf, now))
+            : undefined,
+        ),
+      )
+      .returning({ id: users.id }),
+    db.delete(sessions).where(and(eq(sessions.userId, userId), deactivatedNow)),
     db
       .update(userAccessTokens)
       .set({ revokedAt: now, updatedAt: now })
@@ -79,9 +105,11 @@ async function deactivate(userId: string, reason: string): Promise<void> {
         and(
           eq(userAccessTokens.userId, userId),
           isNull(userAccessTokens.revokedAt),
+          deactivatedNow,
         ),
       ),
   ]);
+  return banned.length > 0;
 }
 
 /** Lift a deactivation. Revoked tokens stay revoked. */

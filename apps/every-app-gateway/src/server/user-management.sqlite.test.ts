@@ -45,6 +45,8 @@ import {
 } from "@/db/schema";
 import { createProdAuthenticator } from "@/perimeter/betterAuthAuthenticator";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
+import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
+import { UserRepository } from "@/server/repositories/UserRepository";
 import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppService } from "@/server/services/AppService";
@@ -159,13 +161,147 @@ describe("user management (SQLite)", () => {
       expect(await roleOf(member)).toBe("member");
     });
 
-    it("never changes an owner or the acting user", async () => {
+    it("lets an owner make a member or an admin an owner; an admin cannot", async () => {
+      await expect(
+        MembershipService.changeRole(ctx(admin, "admin"), member, "owner"),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      expect(await roleOf(member)).toBe("member");
+
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      expect(await roleOf(member)).toBe("owner");
+      await MembershipService.changeRole(ctx(owner, "owner"), admin, "owner");
+      expect(await roleOf(admin)).toBe("owner");
+    });
+
+    it("lets one of two owners demote the other, and an admin never touch an owner", async () => {
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+
       await expect(
         MembershipService.changeRole(ctx(admin, "admin"), owner, "member"),
-      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      expect(await roleOf(owner)).toBe("owner");
+
+      await MembershipService.changeRole(ctx(member, "owner"), owner, "admin");
+      expect(await roleOf(owner)).toBe("admin");
+      expect(await roleOf(member)).toBe("owner");
+    });
+
+    it("keeps the last owner: no demoting, deactivating or deleting them", async () => {
+      // A second owner demotes the first: allowed. They are the sole owner
+      // now, and every move against them is refused, even from a caller
+      // whose context still says owner (the count is read from the database).
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      await MembershipService.changeRole(ctx(member, "owner"), owner, "admin");
+      expect(await roleOf(owner)).toBe("admin");
+
+      for (const action of [
+        () =>
+          MembershipService.changeRole(ctx(owner, "owner"), member, "admin"),
+        () => MembershipService.deactivate(ctx(owner, "owner"), member),
+        () => AdminService.deleteUser(ctx(owner, "owner"), member),
+      ]) {
+        await expect(action()).rejects.toMatchObject({ code: "LAST_OWNER" });
+      }
+      await expect(
+        MembershipService.changeRole(ctx(owner, "admin"), member, "admin"),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      expect(await roleOf(member)).toBe("owner");
+      const [row] = await db.select().from(users).where(eq(users.id, member));
+      expect(row?.banned).toBe(false);
+    });
+
+    it("keeps the last live owner in the write itself, with no check before it", async () => {
+      // Two owners. The repository, asked directly, demotes one; the same
+      // write on the one left changes nothing, as it would for the second of
+      // two owners demoting each other at once.
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      expect(
+        await OrganizationMembersRepository.updateRole(member, org, "admin"),
+      ).toBe(true);
+      expect(
+        await OrganizationMembersRepository.updateRole(owner, org, "admin"),
+      ).toBe(false);
+      expect(await roleOf(owner)).toBe("owner");
+
+      // Nor does removing or deactivating them: nothing in the batch lands.
+      expect(await OrganizationMembersRepository.removeMember(owner, org)).toBe(
+        false,
+      );
+      expect(
+        await UserRepository.deactivate(owner, "test", {
+          unlessLastOwnerOf: org,
+        }),
+      ).toBe(false);
+      const [row] = await db.select().from(users).where(eq(users.id, owner));
+      expect(row?.banned).toBe(false);
+      expect(await roleOf(owner)).toBe("owner");
+
+      // Keeping them an owner, or making another, is never refused.
+      expect(
+        await OrganizationMembersRepository.updateRole(owner, org, "owner"),
+      ).toBe(true);
+      expect(
+        await OrganizationMembersRepository.updateRole(member, org, "owner"),
+      ).toBe(true);
+
+      // A deactivated owner doesn't count: the one who can act stays, and
+      // the deactivated one may lose the role.
+      expect(await UserRepository.deactivate(member, "test")).toBe(true);
+      expect(
+        await OrganizationMembersRepository.updateRole(owner, org, "admin"),
+      ).toBe(false);
+      expect(
+        await OrganizationMembersRepository.updateRole(member, org, "member"),
+      ).toBe(true);
+      expect(await roleOf(owner)).toBe("owner");
+      expect(await roleOf(member)).toBe("member");
+    });
+
+    it("answers LAST_OWNER from the refused write when the early count was stale", async () => {
+      // The count another owner's write can overtake: here it says two
+      // while the database holds one, and each service still refuses.
+      const stale = vi
+        .spyOn(OrganizationMembersRepository, "countOwners")
+        .mockResolvedValue(2);
+      try {
+        for (const action of [
+          () =>
+            MembershipService.changeRole(ctx(admin, "owner"), owner, "admin"),
+          () => MembershipService.deactivate(ctx(admin, "owner"), owner),
+          () => AdminService.deleteUser(ctx(admin, "owner"), owner),
+        ]) {
+          await expect(action()).rejects.toMatchObject({ code: "LAST_OWNER" });
+        }
+      } finally {
+        stale.mockRestore();
+      }
+      expect(await roleOf(owner)).toBe("owner");
+      const [row] = await db.select().from(users).where(eq(users.id, owner));
+      expect(row?.banned).toBe(false);
+    });
+
+    it("never changes the acting user's own role", async () => {
       await expect(
         MembershipService.changeRole(ctx(admin, "admin"), admin, "member"),
       ).rejects.toMatchObject({ code: "CANNOT_MANAGE_SELF" });
+      await expect(
+        MembershipService.changeRole(ctx(owner, "owner"), owner, "admin"),
+      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_SELF" });
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      await expect(
+        MembershipService.changeRole(ctx(owner, "owner"), owner, "member"),
+      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_SELF" });
+      expect(await roleOf(owner)).toBe("owner");
+    });
+
+    it("never hands out a password reset for an owner, even to another owner", async () => {
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      await expect(
+        MembershipService.createPasswordResetLink(ctx(member, "owner"), owner),
+      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
+      await expect(
+        MembershipService.createPasswordResetLink(ctx(admin, "admin"), owner),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
     });
   });
 
@@ -262,10 +398,10 @@ describe("user management (SQLite)", () => {
       expect(response.status).toBe(403);
     });
 
-    it("refuses to deactivate owners, admins (unless owner) and yourself", async () => {
+    it("refuses to deactivate the last owner, admins (unless owner) and yourself", async () => {
       await expect(
         MembershipService.deactivate(ctx(admin, "admin"), owner),
-      ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
       const otherAdmin = await seedMember(db, {
         organizationId: org,
         role: "admin",
@@ -411,9 +547,13 @@ describe("user management (SQLite)", () => {
       );
     });
 
-    it("refuses to mail the owner, another admin or yourself", async () => {
+    it("refuses to mail an owner, another admin or yourself", async () => {
       await expect(
         MembershipService.sendPasswordResetEmail(ctx(admin, "admin"), owner),
+      ).rejects.toMatchObject({ code: "OWNER_REQUIRED" });
+      await MembershipService.changeRole(ctx(owner, "owner"), member, "owner");
+      await expect(
+        MembershipService.sendPasswordResetEmail(ctx(member, "owner"), owner),
       ).rejects.toMatchObject({ code: "CANNOT_MANAGE_OWNER" });
       const otherAdmin = await seedMember(db, {
         organizationId: org,

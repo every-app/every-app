@@ -7,8 +7,11 @@ import { and, eq, ne } from "drizzle-orm";
 import { passwordResetUrl } from "@/server/email/links";
 import { requirePasswordSignIn } from "@/server/password-sign-in";
 import { requireTenantAdminUserActions } from "@/server/tenant-user-actions";
-import { PublicError } from "@/server/errors";
-import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
+import { PublicError, type PublicErrorCode } from "@/server/errors";
+import {
+  resolvePrimaryOrganizationRole,
+  type OrganizationRole,
+} from "@/server/org-roles";
 import {
   forgetOrgContext,
   type OrgContext,
@@ -21,12 +24,65 @@ import { isUserBanned } from "../user-ban";
 // Matches Better Auth's own reset links.
 const RESET_LINK_TTL_MS = 60 * 60 * 1000;
 
-/** Roles an owner or admin can hand out. Ownership is never transferred here. */
-type AssignableRole = "member" | "admin";
+/**
+ * Roles an owner or admin can hand out. Owners are peers: an owner makes
+ * another member or admin an owner, and changes another owner's role; an
+ * invitation still carries member or admin only (serverFunctions/admin.ts).
+ */
+type AssignableRole = OrganizationRole;
 
 /**
- * Owners and admins manage other members' roles and access; nobody manages
- * themselves or an owner, and only an owner manages an admin.
+ * The member-management rule, as a pure function of the roles: who may
+ * change the role of, deactivate, reset or delete whom. An organization
+ * always keeps at least one owner.
+ *
+ * - Nobody manages themselves (the caller checks the ids first).
+ * - An admin manages members only; an admin or an owner is managed by an
+ *   owner.
+ * - An owner is never managed while they are the organization's only
+ *   owner (`ownerCount` is every owner membership, deactivated ones
+ *   included).
+ *
+ * Returns the code to refuse with, or null when the action may go ahead.
+ * This is the early check; the writes carry the rule themselves
+ * (OrganizationMembersRepository.wouldLeaveNoLiveOwner), so two owners acting on
+ * each other at once can't leave the organization without one who can act:
+ * the write that comes second changes nothing, and the service refuses
+ * with LAST_OWNER all the same.
+ */
+function manageableMemberRefusal({
+  actorRole,
+  targetRole,
+  ownerCount,
+}: {
+  actorRole: OrganizationRole;
+  targetRole: OrganizationRole;
+  ownerCount: number;
+}): Extract<PublicErrorCode, "OWNER_REQUIRED" | "LAST_OWNER"> | null {
+  if (targetRole === "member") return null;
+  if (actorRole !== "owner") return "OWNER_REQUIRED";
+  if (targetRole === "owner" && ownerCount <= 1) return "LAST_OWNER";
+  return null;
+}
+
+const REFUSALS: Record<
+  NonNullable<ReturnType<typeof manageableMemberRefusal>>,
+  string
+> = {
+  OWNER_REQUIRED: "Only an owner can change an admin or an owner",
+  LAST_OWNER:
+    "The last owner can't be changed or removed; make someone else an owner first.",
+};
+
+/** What a write that changed nothing means here: it refused the last owner. */
+function lastOwnerRefusal(): PublicError {
+  return new PublicError("LAST_OWNER", REFUSALS.LAST_OWNER);
+}
+
+/**
+ * Owners and admins manage other members' roles and access by
+ * manageableMemberRefusal: nobody manages themselves, an admin manages
+ * members only, and an owner manages everyone but the last owner.
  */
 async function requireManageableMember(ctx: OrgContext, targetUserId: string) {
   if (targetUserId === ctx.userId) {
@@ -44,15 +100,18 @@ async function requireManageableMember(ctx: OrgContext, targetUserId: string) {
     throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
-  const role = resolvePrimaryOrganizationRole(membership.role);
-  if (role === "owner") {
-    throw new PublicError("CANNOT_MANAGE_OWNER", "Owners cannot be changed");
-  }
-  if (role === "admin" && ctx.role !== "owner") {
-    throw new PublicError(
-      "OWNER_REQUIRED",
-      "Only an owner can change another admin",
-    );
+  const role = resolvePrimaryOrganizationRole(membership.role) ?? "member";
+  const ownerCount =
+    role === "owner"
+      ? await OrganizationMembersRepository.countOwners(ctx.orgId)
+      : 0;
+  const refusal = manageableMemberRefusal({
+    actorRole: ctx.role,
+    targetRole: role,
+    ownerCount,
+  });
+  if (refusal) {
+    throw new PublicError(refusal, REFUSALS[refusal]);
   }
   return { role };
 }
@@ -62,8 +121,19 @@ async function changeRole(
   targetUserId: string,
   role: AssignableRole,
 ) {
+  if (role === "owner" && ctx.role !== "owner") {
+    throw new PublicError(
+      "OWNER_REQUIRED",
+      "Only an owner can make someone an owner",
+    );
+  }
   await requireManageableMember(ctx, targetUserId);
-  await OrganizationMembersRepository.updateRole(targetUserId, ctx.orgId, role);
+  const changed = await OrganizationMembersRepository.updateRole(
+    targetUserId,
+    ctx.orgId,
+    role,
+  );
+  if (!changed) throw lastOwnerRefusal();
   forgetOrgContext(targetUserId);
   logEvent("member.role_changed", {
     organizationId: ctx.orgId,
@@ -87,7 +157,7 @@ async function requireAccountWideManageable(
   targetUserId: string,
 ) {
   requireTenantAdminUserActions();
-  await requireManageableMember(ctx, targetUserId);
+  const { role } = await requireManageableMember(ctx, targetUserId);
   const otherMembership = await db.query.members.findFirst({
     columns: { id: true },
     where: and(
@@ -101,6 +171,7 @@ async function requireAccountWideManageable(
       "This user also belongs to another organization, so their account can't be managed from here",
     );
   }
+  return { role };
 }
 
 /**
@@ -110,7 +181,12 @@ async function requireAccountWideManageable(
  */
 async function deactivate(ctx: OrgContext, targetUserId: string) {
   await requireAccountWideManageable(ctx, targetUserId);
-  await UserRepository.deactivate(targetUserId, `Deactivated by ${ctx.userId}`);
+  const deactivated = await UserRepository.deactivate(
+    targetUserId,
+    `Deactivated by ${ctx.userId}`,
+    { unlessLastOwnerOf: ctx.orgId },
+  );
+  if (!deactivated) throw lastOwnerRefusal();
   await McpConnectionService.revokeForDeactivatedUser(targetUserId);
   forgetOrgContext(targetUserId);
   logEvent("member.deactivated", {
@@ -136,16 +212,24 @@ async function reactivate(ctx: OrgContext, targetUserId: string) {
  * Whoever completes a password reset can set the account's password, and
  * the password works in every organization the user belongs to, so a reset
  * an admin starts (a link to hand over, or a mail) follows the
- * member-management rules (never yourself or an owner; admins only for
- * members), only covers users of this organization alone, and never
- * targets a deactivated account. Both reset variants share this check so
- * neither can be the weaker way in.
+ * member-management rules (never yourself; admins only for members), only
+ * covers users of this organization alone, and never targets a deactivated
+ * account. An owner is never reset from here, even by another owner: a
+ * reset link hands the account to whoever holds it, and an owner's account
+ * is the organization. Both reset variants share this check so neither can
+ * be the weaker way in.
  */
 async function requirePasswordResettable(
   ctx: OrgContext,
   targetUserId: string,
 ) {
-  await requireAccountWideManageable(ctx, targetUserId);
+  const { role } = await requireAccountWideManageable(ctx, targetUserId);
+  if (role === "owner") {
+    throw new PublicError(
+      "CANNOT_MANAGE_OWNER",
+      "An owner's password can't be reset from here",
+    );
+  }
   await requirePasswordSignIn();
   const user = await UserRepository.findById(targetUserId);
   // Deactivation sets `banned`; `status` is the account's own state, which
@@ -218,6 +302,8 @@ async function sendPasswordResetEmail(ctx: OrgContext, targetUserId: string) {
 }
 
 export const MembershipService = {
+  requireManageableMember,
+  lastOwnerRefusal,
   changeRole,
   deactivate,
   reactivate,

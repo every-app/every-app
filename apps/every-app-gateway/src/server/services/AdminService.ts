@@ -5,9 +5,9 @@ import { invitations, members, users } from "@/db/schema";
 import { and, count, eq, ne } from "drizzle-orm";
 import type { AdminUser } from "@/types/admin-user";
 import { UserRepository } from "../repositories/UserRepository";
-import { resolvePrimaryOrganizationRole } from "../org-roles";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { McpConnectionService } from "./McpConnectionService";
+import { MembershipService } from "./MembershipService";
 import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { mayDeleteMemberAccounts } from "@/server/tenant-user-actions";
@@ -68,6 +68,12 @@ async function listMembers(ctx: OrgContext) {
  * connected to it right after. (Deploying needs the Cloudflare login, which
  * the gateway can't revoke: see docs/security-model.md.)
  *
+ * Who may be removed is the member-management rule
+ * (MembershipService.requireManageableMember): never yourself, and an
+ * owner only by another owner, never the last one. The writes refuse the
+ * last live owner on their own too (wouldLeaveNoLiveOwner), for two owners
+ * removing each other at once.
+ *
  * Someone Cloudflare Access would let straight back in (an auto-join domain,
  * or everyone the outer ring admits) isn't kept out by deleting their
  * account: their next Access sign-in would make a new one and join again.
@@ -80,27 +86,7 @@ async function deleteUser(
   ctx: OrgContext,
   targetUserId: string,
 ): Promise<{ deactivatedInstead: boolean }> {
-  if (targetUserId === ctx.userId) {
-    throw new Error("Cannot delete your own account");
-  }
-
-  const membership = await db.query.members.findFirst({
-    columns: { id: true, role: true },
-    where: and(
-      eq(members.userId, targetUserId),
-      eq(members.organizationId, ctx.orgId),
-    ),
-  });
-
-  if (!membership) {
-    throw new Error("User not found");
-  }
-
-  const role = resolvePrimaryOrganizationRole(membership.role);
-
-  if (role === "owner") {
-    throw new Error("Cannot delete owner accounts");
-  }
+  await MembershipService.requireManageableMember(ctx, targetUserId);
 
   const [otherMemberships] = await db
     .select({ value: count() })
@@ -117,10 +103,12 @@ async function deleteUser(
     user &&
     accessWouldLetBackIn(user.email)
   ) {
-    await UserRepository.deactivate(
+    const deactivated = await UserRepository.deactivate(
       targetUserId,
       `Deleted by ${ctx.userId}; deactivated instead, as Cloudflare Access would let them back in`,
+      { unlessLastOwnerOf: ctx.orgId },
     );
+    if (!deactivated) throw MembershipService.lastOwnerRefusal();
     await McpConnectionService.revokeForDeactivatedUser(targetUserId);
     forgetOrgContext(targetUserId);
     logEvent("member.deactivated", {
@@ -132,7 +120,11 @@ async function deleteUser(
     return { deactivatedInstead: true };
   }
 
-  await OrganizationMembersRepository.removeMember(targetUserId, ctx.orgId);
+  const removed = await OrganizationMembersRepository.removeMember(
+    targetUserId,
+    ctx.orgId,
+  );
+  if (!removed) throw MembershipService.lastOwnerRefusal();
   await McpConnectionService.revokeForRemovedMember(targetUserId, ctx.orgId);
   forgetOrgContext(targetUserId);
 

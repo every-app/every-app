@@ -443,7 +443,7 @@ misconfigured deployment mode turning anything on.
 | `setup.refused-once-owner-exists` | A claim is refused `409 ALREADY_CLAIMED` as soon as any owner membership exists, valid link or not, and `403 SETUP_UNAVAILABLE` when the mode is invalid. | `apps/every-app-gateway/src/server/services/SetupService.ts:106-132` | `apps/every-app-gateway/src/server/services/SetupService.test.ts` :: refuses a valid link once the gateway has an owner |
 | `setup.one-claim-at-a-time-rollback` | Only one claim runs at a time (a singleton insert); a concurrent claim gets `503 CLAIM_IN_PROGRESS`; a failed claim deletes the user and organization it made. | `apps/every-app-gateway/src/server/organization/owner-membership.ts:8-62` | `apps/every-app-gateway/src/server/services/SetupService.test.ts` :: lets only one of two concurrent claims through |
 | `roles.admin-and-owner-gates` | Admin server functions run only for a session whose verified membership in its active, non-suspended organization is owner or admin; deleting a user or an app needs owner; a banned user fails every middleware. | `apps/every-app-gateway/src/middleware/auth.ts:21-80` | `apps/every-app-gateway/src/middleware/auth.test.ts` :: rejects members from admin middleware |
-| `roles.owner-immutable-no-self-admin-needs-owner` | No one can change the role of, deactivate, reset or delete an owner or themselves; an admin manages members, only an owner manages another admin; assignable roles are member and admin. | `apps/every-app-gateway/src/server/services/MembershipService.ts:23-57` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: lets an admin promote a member, and only an owner change an admin |
+| `roles.owner-immutable-no-self-admin-needs-owner` | An organization always keeps at least one owner. Owners are peers: an owner makes a member or an admin an owner, and changes the role of, deactivates or deletes another owner, never themselves and never the last owner (`LAST_OWNER`, counted in the database at the time, and enforced by the write itself: the demotion, ban or removal is one conditional statement that refuses the last owner who can act, so two owners acting on each other at once can't both succeed); an admin manages members only, never an admin or an owner (`OWNER_REQUIRED`); an invitation carries member or admin; a password reset for an owner is refused whoever asks (`CANNOT_MANAGE_OWNER`). | `apps/every-app-gateway/src/server/services/MembershipService.ts` (manageableMemberRefusal, requireManageableMember, changeRole, deactivate, requirePasswordResettable); `apps/every-app-gateway/src/server/repositories/OrganizationMembersRepository.ts` (wouldLeaveNoLiveOwner, updateRole, removeMember); `apps/every-app-gateway/src/server/repositories/UserRepository.ts` (deactivate) | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: keeps the last owner: no demoting, deactivating or deleting them; keeps the last live owner in the write itself, with no check before it; answers LAST_OWNER from the refused write when the early count was stale |
 | `roles.account-actions-single-org-only` | Deactivating, reactivating or minting a reset link for a user is refused when they belong to any other organization, because a ban and a password are account-wide. | `apps/every-app-gateway/src/server/services/MembershipService.ts:84-103` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: refuses to deactivate someone who also belongs to another organization |
 | `ban.deactivation-revokes-all-credentials` | Deactivating a user bans the account, deletes every session and revokes every personal token in one D1 batch, then revokes their MCP connections; the ban is read on every request. | `apps/every-app-gateway/src/server/repositories/UserRepository.ts:62-85` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: ends sessions and rejects the user's PAT |
 | `ban.removal-revokes-org-grants` | Removing a member deletes the membership and their `user_app_access` rows, revokes their tokens and MCP grants for that organization, and deletes the account only when they belong to no other organization. | `apps/every-app-gateway/src/server/repositories/OrganizationMembersRepository.ts:171-204` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: revokes the deleted user's personal access tokens |
@@ -464,12 +464,14 @@ the session lives in.
 
 **Gaps.**
 
-- *No owner recovery and no ownership transfer* (medium, known). The owner
-  the setup claim made is immutable: nobody can change, deactivate, delete
-  or reset an owner, and the `recovery` kind in `owner_setup_tokens` is
-  unused. A compromised owner account can't be removed by anyone but the
-  operator editing D1. TODO: "Setup link expiring mid-wait" is adjacent;
-  this needs its own entry.
+- *No owner recovery for a sole owner* (medium, known). Ownership transfer
+  exists: an owner makes another member an owner, and another owner can
+  then demote, deactivate or delete a compromised owner (the last owner is
+  kept, so the organization is never without one). A sole owner who is
+  compromised or locked out still needs the operator: `everyapp workspace
+  role <email> owner` under the Cloudflare login makes a second owner, and
+  the `recovery` kind in `owner_setup_tokens` is unused. TODO: "Setup link
+  expiring mid-wait" is adjacent; this needs its own entry.
 - *A stolen admin session can take over any single-organization member*
   (medium, medium fix). An admin can mint a one-hour reset link for any
   member who belongs to no other organization and set their password,
@@ -490,8 +492,6 @@ the session lives in.
   UI and cookie can appear on a `workers.dev` host during that window.
 - *Hosted open sign-up has no bot control beyond mail budgets* (medium,
   known, hosted only; the preview stays invite-only for this reason).
-- *One invariant has no test*: nothing posts `role: "owner"` to
-  `inviteMember` or `updateMemberRole`.
 
 **Docs to fix.** `docs/security-model.md` says a fresh gateway "accepts no
 sign-ups" until claimed: a sign-up carrying a live invitation token is
@@ -1323,9 +1323,12 @@ means it is on main (every boundary fix from this pass merged on
     `everyapp status` shows a PUBLIC column per app.
 16. **DataForSEO's `tasks_fixed` was account-wide and served** (B4, medium;
     fixed in #402, merged).
-17. **No owner recovery and no ownership transfer** (B2, medium, known).
-    A compromised owner account can't be removed by anyone but the
-    operator editing D1.
+17. **No owner recovery for a sole owner** (B2, medium, known).
+    Ownership transfer exists: another owner can demote, deactivate or
+    delete a compromised owner, and the last owner is always kept. An
+    organization with one owner still needs the operator (`everyapp
+    workspace role <email> owner` under the Cloudflare login) to get a
+    second.
 18. **Signing out doesn't reliably sign out of Access** (B6, medium;
     `access.sign-out.also-signs-out-of-access` is partial): only the
     sidebar's button redirects to Access's logout, and only when the

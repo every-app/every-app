@@ -52,8 +52,11 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   CONNECTION_NOT_FOUND: "That connection doesn't exist or was already revoked.",
   CANNOT_MANAGE_SELF:
     "You cannot change your own role or deactivate your own account.",
-  CANNOT_MANAGE_OWNER: "Owner accounts cannot be changed.",
-  OWNER_REQUIRED: "Only an owner can change another admin.",
+  CANNOT_MANAGE_OWNER:
+    "An owner's password can't be reset from here: a reset link would hand their account to whoever holds it.",
+  OWNER_REQUIRED: "Only an owner can change an admin or an owner.",
+  LAST_OWNER:
+    "The last owner can't be changed or removed; make someone else an owner first.",
   USER_IN_OTHER_ORGANIZATION:
     "This user also belongs to another organization, so their account can't be deactivated or reset from here.",
   PASSWORD_SIGN_IN_DISABLED:
