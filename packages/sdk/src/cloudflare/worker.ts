@@ -239,7 +239,11 @@ export interface EveryAppWorkerOptions<
 // Structural copies of the `cf/config` binding and export shapes this helper
 // emits, so the SDK needs no `cf` dependency. The app's own `defineConfig()`
 // call type-checks the result against the real ones, and `cf` infers the
-// Worker's `Env` from these types, so each binding keeps its own key.
+// Worker's `Env` from these types, so each binding keeps its own key. The
+// Vite plugin's `auxiliaryWorkers` take `@cloudflare/config`'s
+// `InputWorkerConfig`, the schema's input, which is narrower: there a
+// binding names another Worker by name only (packages/cli's
+// sdkWorkerConfig.test.ts pins both).
 export interface TextBinding {
   type: "text";
   value: string;
@@ -379,6 +383,14 @@ export interface ServiceBinding {
 export interface VersionMetadataBinding {
   type: "version-metadata";
 }
+/**
+ * A binding of any Worker these helpers build, each one `InputWorkerConfig`
+ * accepts, so a helper Worker's definition passes as the Vite plugin's
+ * `auxiliaryWorkers` config. A Durable Object binding names its Worker by
+ * name; only the app's own Worker names itself by definition (see
+ * {@link EveryAppWorkerReference}), in its typed `env`, which
+ * `defineConfig()` takes.
+ */
 export type EveryAppBinding =
   | TextBinding
   | SecretBinding
@@ -393,7 +405,7 @@ export type EveryAppBinding =
   | VectorizeBinding
   | AiGatewayBinding
   | SendEmailBinding
-  | DurableObjectBinding<string | EveryAppWorkerReference<object>>
+  | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
   | ServiceBinding
@@ -1053,7 +1065,13 @@ export function everyAppWorker<
   // names the defining Worker by a definition whose module it can read, so
   // the classes this Worker defines name it that way; cf resolves the
   // reference to the Worker's name. A path entrypoint gives cf no module.
+  // Only here: `EveryAppBinding` names Workers by name, as the Vite
+  // plugin's `auxiliaryWorkers` require.
   const { entrypoint } = options;
+  const ownClasses: Record<
+    string,
+    DurableObjectBinding<EveryAppWorkerReference<object>>
+  > = {};
   if (typeof entrypoint === "object") {
     const self: EveryAppWorkerReference<object> = {
       name,
@@ -1062,7 +1080,7 @@ export function everyAppWorker<
     };
     for (const durableObject of manifest.resources?.durableObjects ?? []) {
       if (durableObject.worker !== undefined) continue;
-      env[durableObject.name] = {
+      ownClasses[durableObject.name] = {
         type: "durable-object",
         worker: self,
         exportName: durableObject.className,
@@ -1080,7 +1098,8 @@ export function everyAppWorker<
     ...(triggers.length ? { triggers } : {}),
     ...runtimeSettings(manifest, manifest.limits, deploy),
     observability: observability(),
-    env: env as
+    // Each class keeps its key's place in `env`: classBindings bound it by name.
+    env: { ...env, ...ownClasses } as
       | EveryAppDevEnv<M, TEntrypoint>
       | EveryAppDeployEnv<M, TEntrypoint>,
     exports: exports as EveryAppExports<M>,
