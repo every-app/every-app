@@ -158,6 +158,91 @@ does, once, in
   on the dispatch tier declare no inbound mail (the hosted deploy API
   refuses it; docs/runbooks/email-sending-setup.md).
 
+### Outbound events
+
+- Everything the gateway knows about (a member joins, an app is
+  installed, a cap is reached, a tool call is blocked, a token is revoked)
+  is one typed event on a bus inside the gateway
+  (`apps/every-app-gateway/src/server/events/`; the catalogue's builders
+  in `catalogue.ts` are the only writers of a gateway event's `data`, the
+  type list is `EVENT_TYPES` in `packages/sdk/src/internal/events.ts`;
+  docs/design/2026-10-events-out.md). An owner or admin subscribes a URL,
+  or the organization's owners and admins by email, to a list of types or
+  patterns (`member.*`, `app.crm.*`, `*`): from Admin → Events (eight
+  server functions under the admin middleware), from the CLI's `events`
+  group, which writes the Gateway's D1 under the Cloudflare login
+  (ADR-0003), or, once they land, from the `everyapp_workspace_events*`
+  tools. At most 25 subscriptions per organization. Subscriptions, events
+  and deliveries are read and written under the acting organization only.
+- A webhook delivery is one JSON POST (`id`, `type`, `version`,
+  `summary`, `time`, `gateway`, `organization`, `actor`, `data`) to the
+  subscription's stored URL, signed with its secret:
+  `X-EveryApp-Signature: t=<unix seconds>,v1=<hex>`, the HMAC-SHA256 over
+  `<t>.<body>`, beside `X-EveryApp-Event`, `X-EveryApp-Event-Id`,
+  `X-EveryApp-Delivery` (stable across retries) and `X-EveryApp-Attempt`
+  (`signing.ts`, `deliver.ts`). Every webhook subscription has a secret:
+  one is generated (`whsec_` and 32 random bytes) when none is given and
+  returned once by the surface that made it, and no list, page, log or
+  later answer shows it again; a given one is 16 to 128 characters and is
+  never echoed. The receiver recomputes the HMAC in constant time and
+  refuses a `t` more than 300 seconds from its clock (the user docs carry
+  the check in Node.js, Python and Go; `verifyEventSignature` is the
+  reference). Delivery is at least once; a receiver deduplicates on `id`.
+- The target is `https:` to a public hostname: not an IP literal, not a
+  loopback, local, internal or bare name, never the gateway's own host or
+  a host under its app domains, no user name or password, no fragment, at
+  most 2,048 characters (`target.ts`; the CLI applies the same rule when
+  it adds one). With the Gateway setting `EVENTS_ALLOW_PRIVATE_TARGETS=true`
+  (self-host only) `http:`, IP literals and private names pass; the
+  gateway's own hosts never do. The rule runs again before every attempt,
+  so a changed setting is honoured on the next one. The request follows
+  no redirect (a 3xx is a failed attempt), times out at 10 seconds, and
+  reads at most 1 KiB of a failed answer, keeping 200 characters as the
+  delivery's error and never the body; a 2xx is delivered. Failures retry
+  after 1 min, 5 min, 30 min, 2 h, 8 h and 24 h; the seventh failure, or
+  a 410, is dead, shown as such in the Events tab and in the CLI, and an
+  admin can redeliver it (the schedule starts over). The first attempt
+  runs right after the event under `waitUntil`; a per-minute cron trigger
+  sweeps what is due, 50 rows a run, and the hourly one sweeps too.
+- The email sink takes no address: a subscription names a role, and each
+  delivery mails the organization's live owners (or owners and admins) as
+  read at delivery time, one mail per recipient within a delivery's
+  schedule (who was mailed is remembered per delivery and recipient for
+  three days, best effort, so a retry reaches only those still owed it; a
+  redeliver past that mails everyone again), through
+  the gateway's own sender as the `notice` kind within its daily budgets
+  (50 per address and 2,000 per gateway self-hosted, 20 and 2,000 hosted),
+  with the catalogue's one-line summary, the fields a person reads and
+  one link to the admin page (`email-sink.ts`). No sender configured
+  makes the delivery dead with `email_not_configured`; a spent budget
+  retries. The first cap an organization sets creates a built-in "Cap
+  alerts" email subscription (`cap.warning` at 80%, `cap.reached`) to its
+  owners and admins; removing it disables it, so it is never recreated
+  behind a person's back.
+- An app emits its own events with the SDK's `emit` (`POST
+  /api/events/emit` over its `EVERY_APP_GATEWAY` binding, attributed like
+  a capability call: the request's identity, or a named organization for
+  background work; `app-emit.ts`): the name becomes `app.<app id>.<name>`,
+  so no app can emit a gateway type; `data` is a JSON object of at most
+  8 KiB, nested at most 8 deep; 600 emits per app per hour, then 429 with
+  `Retry-After`; not a provider call, so neither counted in usage nor
+  refused by a monthly cap. Apps declare nothing in the manifest to emit.
+- Nothing in an event is ever a secret, a tool's arguments or result, a
+  mail body or a provider's answer: the builders carry a member as
+  `{ id, email, name }` and an app as `{ id, rowId, name }`, an invitation
+  event its id, email and role and never the link, a token event the
+  token's row id and name and never the value, tool events what the audit
+  row carries; and every event's `data`, the gateway's own and an app's,
+  is refused before any row is written when a key at any depth reads like
+  a credential (secret, token, password, authorization, api key, private
+  key, credential, cookie, session). Events and deliveries older than 30
+  days are deleted by the hourly maintenance. Logs (`events.emitted`,
+  `events.delivery`, `events.email_failed`) carry ids, types, counts,
+  status codes, up to 80 characters of an error code and a recipient by
+  HMAC, never a secret, a URL's query or a body. The signing secret is
+  stored as written in D1; [docs/threat-model.md](threat-model.md) B9
+  says why and what that exposes.
+
 ## Organizations and Shared Apps
 
 > The hosted tier is post-launch: the CLI's hosted-only surface (`setup --mode hosted`, `deploy --shared`, `register`, deploy-key deploys) was removed on 2026-10-24 and is restorable from commit `5ef30882`; the contract is `docs/hosted-vision.md`. The gateway side below is unchanged.

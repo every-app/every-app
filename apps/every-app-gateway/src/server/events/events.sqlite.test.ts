@@ -869,6 +869,56 @@ describe("the event bus (SQLite)", () => {
         }),
       ]);
     });
+
+    it("a redeliver more than three days after a partial send mails every recipient again (the limit events.email-sink-members-only names)", async () => {
+      const { subscription } = await addEmail();
+      let refuseBo = true;
+      sendMock.mockImplementation(async (options) => {
+        if (options.to === "bo@acme.example" && refuseBo) {
+          throw Object.assign(new Error("spent"), {
+            code: "EMAIL_BUDGET_EXHAUSTED",
+          });
+        }
+        return { status: "delivered" };
+      });
+      await emitAndWait(joined());
+      const mailedAt = clock;
+      const [first] = await deliveriesOf(subscription.id);
+      for (
+        let attempt = 2;
+        attempt <= EVENT_DELIVERY_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        const [row] = await deliveriesOf(subscription.id);
+        setClock(row!.nextAttemptAt!);
+        await deliverOnce(first!.id, deps);
+      }
+      const [dead] = await deliveriesOf(subscription.id);
+      expect(dead!.status).toBe("dead");
+      // The whole schedule (about 35 hours) sits inside the marker's three
+      // days: Ada was mailed once and every attempt since tried Bo alone.
+      expect(
+        sendMock.mock.calls.filter((call) => call[0].to === "ada@acme.example"),
+      ).toHaveLength(1);
+      sendMock.mockClear();
+      await EventSubscriptionService.redeliver(asOwner(), dead!.id);
+      expect(sendMock.mock.calls.map((call) => call[0].to)).toEqual([
+        "bo@acme.example",
+      ]);
+      // Past three days the marker has expired and a redeliver starts over:
+      // Ada gets the mail a second time.
+      sendMock.mockClear();
+      refuseBo = false;
+      setClock(new Date(mailedAt.getTime() + 3 * 24 * 60 * 60 * 1000 + 1000));
+      await EventSubscriptionService.redeliver(asOwner(), dead!.id);
+      expect(sendMock.mock.calls.map((call) => call[0].to).sort()).toEqual([
+        "ada@acme.example",
+        "bo@acme.example",
+      ]);
+      expect(await deliveriesOf(subscription.id)).toEqual([
+        expect.objectContaining({ status: "delivered", lastStatusCode: 2 }),
+      ]);
+    });
   });
 
   describe("subscriptions", () => {

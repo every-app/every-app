@@ -15,7 +15,7 @@ shape (our own install of the same code) comes second: its extra boundaries
 are built, mostly unverified against a live Workers for Platforms namespace,
 and switched off by default.
 
-Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit.
+Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379); the register's line numbers refer to that commit, except the public-surface rows (an app host's `/mcp` opt-in, the gateway's `/health`, the Access sign-in methods and bypass list), re-read on 2026-10-25 against `c2d04d85` (main after #606, #612 and #622), and the B9 rows (the event bus, outbound webhooks, the email sink, the app emit route), read on 2026-10-25 against `2083a662` (main after #628), with the CLI's side and the SDK's `packages/sdk/src/internal/events.ts` (#644, which added the private-name list and moved that file's lines) read against `bb644c05` (main after #644).
 
 ## How to use this document
 
@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 339 is
+  try first; the complete register of 350 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -73,6 +73,11 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
                                              ▼
                         OpenAI / OpenRouter / Workers AI / DataForSEO / Context.dev /
                         social networks' token endpoints / Email Sending
+
+                 Gateway Worker ──► subscriber URLs (B9): one signed POST per event
+                   (HMAC-SHA256 over t.body, https to a public host, never itself,
+                   no redirects, retried ~35 h) and event mail to the organization's
+                   owners and admins; never a secret, a tool's arguments or result
 ```
 
 The one rule everything else hangs on: **a person's credential stops at the
@@ -262,12 +267,13 @@ Cloudflare's job, some are simply not built.
 
 ## Trust boundaries
 
-Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 339 invariants
+Nine boundaries, each with what crosses it, the attacks it is there to
+stop, the invariants to try first (the complete register, 350 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
-the self-hosted shape; B8 is the hosted tier.
+the self-hosted shape; B8 is the hosted tier; B9 (added 2026-10-25) is
+the Gateway as a caller, in both shapes.
 
 | | Boundary | Crosses | Code |
 |---|---|---|---|
@@ -279,6 +285,7 @@ the self-hosted shape; B8 is the hosted tier.
 | B6 | Cloudflare Access ↔ Gateway | assertions, the outer ring, OIDC, membership rules | `apps/every-app-gateway/src/auth/cloudflare-access/` |
 | B7 | Operator → Cloudflare | the CLI's deploys and registry writes; the browser install | `packages/cli/src/lib/app/policy.ts`, `packages/perimeter/src/registry/`, `apps/every-app-gateway/src/server/deploy/install.ts` |
 | B8 | The hosted tier | deploy keys, the dispatch namespace, egress, third-party hosts | `apps/every-app-gateway/src/server/deploy/`, `outbound.ts`, `host-session.ts` |
+| B9 | Gateway → subscriber | signed webhook deliveries, event mail to owners and admins, an app's own events | `apps/every-app-gateway/src/server/events/`, `src/serverFunctions/events.ts`, `packages/sdk/src/internal/events.ts` |
 
 ### B1. Browser → app host: the perimeter
 
@@ -431,7 +438,7 @@ owner, or on an account that belongs to another organization too. A
 sign-in page redirecting off-site. Error bodies leaking internals. A
 misconfigured deployment mode turning anything on.
 
-**Invariants.** The register has 52 (`providers.tools-self-host-admin`, the provider tools on /mcp, is in the register only); the ones to try first:
+**Invariants.** The register has 46; the ones to try first:
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -667,7 +674,7 @@ why a provider whose `data` is `account` is refused on a hosted Gateway.
 What it does not change: whoever can deploy an app can list any provider,
 as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_provider_remove` write rows for owners and admins on a self-hosted Gateway only, never replace a row and never remove a bound or listed one (`providers.tools-self-host-admin`, B5).
 
-**Invariants.** The register has 53. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below.
+**Invariants.** The register has 54. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below. The app emit route's attribution (`events.emit-route-attributed-like-a-capability`, 2026-10-25) is the table's last row; what the event may carry is B9's.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -705,6 +712,7 @@ as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_prov
 | `remote-mcp.credential-never-leaks` | A remote MCP credential appears only in the request headers to its pinned origin: never in a result, an error, an audit row, a usage row or a log line; only the operator sets it, never the UI or a tool. | `remote/client.ts` (sanitizedHead), `remote-mcp/index.ts` (upstreamFailure), #627; `packages/sdk/src/internal/remoteMcp.ts:551` | `remote/client.test.ts :: never carries the credential or the upstream body in an error`; `remote-mcp.sqlite.test.ts :: never puts the credential in a result, an audit row, a usage row or a log line` (pinned (PR 2)) |
 | `remote-mcp.secret-name-family` | A remote MCP credential is named in the `_MCP_TOKEN` family and nothing else, so an admin adding a server can't point a key the gateway holds at their own URL, and no app secret can take one. | `packages/sdk/src/internal/gatewaySettings.ts:122`; `packages/sdk/src/internal/remoteMcp.ts:296, 308`; `packages/perimeter/src/manifest/manifest.ts:795` | `packages/sdk/src/internal/remoteMcp.test.ts` :: refuses a missing or foreign secret name, a bad kind and a routing header (partial: the manifest's refusal is untested) |
 | `remote-mcp.reserved-hosts` | A remote MCP server's URL is `https:`, a host name, and never the gateway's own origin, a host under its app domains, or a host whose key or client the gateway holds. | `packages/sdk/src/internal/remoteMcp.ts:200, 230` (reservedUpstreamHosts, remoteMcpUrlProblem) | `packages/sdk/src/internal/remoteMcp.test.ts` :: takes a public https URL and refuses everything the Gateway holds or serves |
+| `events.emit-route-attributed-like-a-capability` | An app's `POST /api/events/emit` over the binding is served only for a registered, active app whose props match its row (`attr.caller-identity`), attributed exactly as a capability call (the forwarded identity verified for the Worker and the organization, or a shared app's named organization with a live member; an `x-everyapp-org` naming another organization is refused), is not a provider call (never counted in usage, never refused by a monthly cap, needs no provider grant), and is refused for an unregistered caller before anything is read. What the event may carry, and how often, is B9's `events.app-emit-attributed-and-bounded`. | `app-gateway-entrypoint.ts:284-296` (the events route, after attributeCall), `:492-505` (routeFromPath) | `app-gateway-entrypoint.test.ts` :: answers 202 with the event's id and the prefixed type, attributed to the identity; :: a shared app must say whom the event is for, as every capability call must; :: refuses an unregistered caller before anything is read |
 
 **Not this boundary's job.** What the provider does with a valid call, an
 app's own secrets (its `secrets` in the manifest live on its Worker), and
@@ -856,7 +864,7 @@ A remote server's unhinted tool reaching a read-only connection; a tool
 the operator turned off staying callable; a member registering or
 changing a remote MCP app.
 
-**Invariants.** The register has 51.
+**Invariants.** The register has 52 (`providers.tools-self-host-admin`, the provider tools on /mcp, is in the register only).
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -964,7 +972,7 @@ shell. No control-plane route, server function or auth endpoint lives under
 keep it so. `/health` is served before that refusal, exact-case, reads no
 session and says only whether D1 answers (`server/health.ts`).
 
-**Invariants.** The register has 36.
+**Invariants.** The register has 37.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1251,6 +1259,152 @@ unless marked)
 - *The tier is unverified against a live namespace* (known, the launch
   gate).
 
+### B9. Gateway → subscriber: outbound webhooks and the email sink
+
+Since 2026-10-25 (#628, main at `2083a662`; the design is
+`docs/design/2026-10-events-out.md`). The one boundary where the Gateway
+is the caller and the other side is whoever an owner or admin chose.
+
+**What crosses.** Out: one signed JSON POST per event and subscription,
+from the Gateway Worker to a URL an owner or admin subscribed (Slack's
+Workflow Builder, Zapier, n8n, Linear, their own agent), retried on a
+schedule for about 35 hours; and the same event as one mail per recipient
+to the organization's owners and admins through the Gateway's own sender.
+In: the receiver's status and up to 1 KiB of its answer (200 characters
+kept in the delivery log), and, over the AppGateway binding (B4), an
+app's own event (`POST /api/events/emit`), which becomes
+`app.<id>.<name>` on the bus. The subscriptions themselves are made
+across other boundaries: the control plane (B2: the Events tab and the
+eight server functions), the CLI's direct D1 writes under the Cloudflare
+login (B7, ADR-0003: the `events` group, and the outbox inserts that
+register, deploy, `access` and `mcp` make in their own batch) and, once
+the twins land, the workspace tools (B5). The code is
+`apps/every-app-gateway/src/server/events/` (`catalogue.ts` the builders
+and the one line per event, `bus.ts`, `deliver.ts`, `signing.ts`,
+`target.ts`, `subscriptions.ts`, `email-sink.ts`, `app-emit.ts`,
+`cap-events.ts`, `tool-events.ts`, `setup-state.ts`),
+`apps/every-app-gateway/src/serverFunctions/events.ts`, the three
+`Event*Repository.ts` files, `apps/every-app-gateway/src/db/events.schema.ts`
+(migration `0012_events.sql`), the shared rules and limits in
+`packages/sdk/src/internal/events.ts` (cited at `bb644c05`, where #644
+added the private-name list and moved the lines below it), and on the
+CLI side `packages/cli/src/lib/gateway/events.ts`,
+`packages/cli/src/lib/gateway/eventTarget.ts` and `packages/cli/src/commands/events/`
+(#644, main at `bb644c05`).
+
+**What it stops.** The bus carrying a credential, a tool's arguments or
+result, a mail body or a provider's answer to a receiver the operator
+doesn't control (and to the deliveries list, which shows the envelope).
+A receiver unable to tell a Gateway's delivery from a forged or replayed
+one. A subscription making the Gateway call itself, an app host, a
+private or loopback name or an IP literal (an admin's input turned into
+a request from the Worker that holds every provider key), or carrying
+the body wherever a redirect points. An admin of one organization
+listing, testing, redelivering or receiving another's events. A member,
+or an agent on a read-only connection, managing subscriptions. An app
+emitting a gateway type, a credential under a plausible key, or a flood.
+The email sink mailing an address outside the organization. A signing
+secret shown anywhere after the one answer that made it. A delivery log
+kept forever.
+
+**Invariants.** The register has 10 (and B4 holds the emit route's
+attribution, `events.emit-route-attributed-like-a-capability`). The
+gateway's tests are in
+`apps/every-app-gateway/src/server/events/events.sqlite.test.ts` unless
+another file is named; the CLI's (#644) were read on main at `bb644c05`.
+
+| Id | Invariant | Enforced by | Pinned by |
+|---|---|---|---|
+| `events.no-secrets-no-tool-io` | No event carries a credential, a tool's arguments or result, a mail body or a provider's answer: the catalogue's builders are the only writers of a gateway event's `data` (a member as `{ id, email, name }`, an app as `{ id, rowId, name }`, names of settings and tools, counts, reasons; an invitation's id, email and role, never the link; a token's row id and name, never the value), tool events carry the tool, the outcome and the client as the audit row does, and every `data`, the gateway's own and an app's, is refused before any row is written when a key at any depth matches the credential pattern (secret, token, password, authorization, api key, private key, credential, cookie, session), which is why `token.created` is flat. | `apps/every-app-gateway/src/server/events/catalogue.ts:117` (the builders), `:454-486` (tokenCreated, tokenRevoked); `tool-events.ts:22-64`; `bus.ts:79-82` (checkEventData on every emit); `packages/sdk/src/internal/events.ts:272-273` (CREDENTIAL_KEY_PATTERN), `:309-363` (checkEventData) | `events.sqlite.test.ts` :: has a builder for every type whose output passes the data check and names no credential-like key; :: refuses data with a key named like a credential before anything is written (events.no-secrets-no-tool-io); :: tool.blocked and tool.error from a tool call's audit, never an allowed ok call, never the arguments |
+| `events.signed-with-timestamp` | Every webhook delivery carries `X-EveryApp-Signature: t=<unix seconds>,v1=<hex>`, HMAC-SHA256 under the subscription's secret over `<t>.<body>` (the exact bytes sent), beside `X-EveryApp-Event`, `X-EveryApp-Event-Id`, `X-EveryApp-Delivery` (stable across retries) and `X-EveryApp-Attempt`; a webhook subscription without a secret cannot be made (one is generated when none is given; a given one is 16 to 128 characters), and a row found without one at delivery time is dead, never sent unsigned. A receiver recomputes it in constant time and refuses a `t` more than 300 s from its clock (`verifyEventSignature` is the reference the docs' snippets follow). | `deliver.ts:159-166, 178-192`; `signing.ts:63-72` (eventSignatureHeader), `:83-105` (verifyEventSignature); `subscriptions.ts:245-258, 338-341`; `packages/sdk/src/internal/events.ts:165, 171-178, 384-411` | `events.sqlite.test.ts` :: sends the exact headers and a signature the subscription's secret verifies and another refuses (events.signed-with-timestamp); :: refuses a pattern that matches nothing and a secret of the wrong length; `packages/cli/src/commands/events/index.test.ts` (`bb644c05`) :: makes a whsec_ secret, shows it once in done.data.secret, and never in a message |
+| `events.target-rules` | A subscription's URL is `https:` to a hostname (not an IPv4 or bracketed IPv6 literal, not a bare label), not `localhost`, `*.local`, `*.localdomain`, `*.internal`, `*.intranet`, `*.lan`, `*.corp`, `*.private`, `*.home.arpa` or `*.onion`, never the Gateway's own host or a host under `APP_BASE_DOMAIN` or `THIRD_PARTY_DOMAIN`, with no userinfo or fragment, at most 2,048 characters; `http:`, IP literals and the private names pass only when the Gateway setting `EVENTS_ALLOW_PRIVATE_TARGETS` is exactly `true`, the Gateway's own hosts never. Checked when the subscription is added (by the Gateway for the UI, by the CLI for `events add`) and again before every attempt, so a setting or host that changed since makes the next attempt a retried `target_refused`, not a fetch. | `target.ts:93-125` (checkTarget; the Gateway's hosts first, `:110-112`), `:128-134` (targetRulesFromEnv); `apps/every-app-gateway/src/server/gateway-hosts.ts`; `subscriptions.ts:260-269` (checkUrl, at add); `deliver.ts:167-177` (before each attempt); the CLI's `packages/cli/src/lib/gateway/eventTarget.ts:60-105` (`bb644c05`) | `events.sqlite.test.ts` :: allows http and private hosts only with the flag, and the gateway's own hosts never; :: checks the target again before each attempt, so a URL the rules now refuse is not fetched (events.target-rules); `packages/cli/src/lib/gateway/eventTarget.test.ts` (`bb644c05`) :: refuses the Gateway's own host and anything under the apps' domain, a trailing dot included, even with the private setting |
+| `events.no-redirect-pinned-url` | A delivery goes to the subscription's stored URL as stored (no per-event override; `update` changes the switch, the patterns, the name and the description, never the URL or the secret) with `redirect: "manual"`, so a 3xx is a failed attempt with reason `redirect` and nothing is fetched at the Location; the request times out at 10 s; a 2xx's body is cancelled unread; a failure's answer is read to 1 KiB and 200 characters kept in `last_error`, never the request body; a 410 is dead at once; the seventh failure is dead (1 min, 5 min, 30 min, 2 h, 8 h and 24 h between attempts). | `deliver.ts:153-236` (sendWebhook: the fetch `:193-201`, the statuses `:217-235`), `:117-142` (readHead), `:238-242` (backoffAfter); `subscriptions.ts:393-411` (update's patch); `packages/sdk/src/internal/events.ts:155-163` | `events.sqlite.test.ts` :: a 3xx is a failure with reason redirect and nothing is fetched at the Location (events.no-redirect-pinned-url); :: a 500 retries after the first backoff and keeps 200 characters of the answer, never the body; :: the seventh failure is dead, after the whole backoff schedule |
+| `events.org-scoped` | Subscriptions, events and deliveries are read and written under the acting organization only: the bus reads one organization's subscriptions when it queues, the service finds a subscription or a delivery by id and organization, the deliveries page is one organization's, and the CLI's statements carry the organization id in every SELECT, INSERT, UPDATE and DELETE (a delivery is inserted only where the subscription is that organization's and enabled); an admin of one organization listing, testing, redelivering or removing another's gets `EVENT_SUBSCRIPTION_NOT_FOUND` or `EVENT_DELIVERY_NOT_FOUND`, and the CLI's `--org` names one the login administers. | `bus.ts:85-99`; `subscriptions.ts:282-294` (requireSubscription), `:468-475`, `:488-502`; `EventSubscriptionRepository.ts:37-81`; `EventDeliveryRepository.ts:51-67, 143-165, 214-265`; `EventRepository.ts:82`; the CLI's `packages/cli/src/lib/gateway/events.ts:128-183, 245-275, 371-460, 539-600` (`bb644c05`) | `events.sqlite.test.ts` :: never queues an event for another organization's subscriptions (events.org-scoped); :: refuses to test another organization's subscription (events.org-scoped); :: refuses another organization's delivery (events.org-scoped) |
+| `events.admin-only` | The eight server functions run under `organizationAdminMiddleware` (a live owner or admin of the session's active organization; a member is `UNAUTHORIZED` and nothing is read or written), the reads as GET and the writes as POST; the CLI acts under the Cloudflare login that owns the D1 (ADR-0003); the workspace tools (`everyapp_workspace_events*`, the twins PR, pending) take `minRole: "admin"` and their writes need `mcp:write`, like every workspace tool (B5, `toolbus.workspace-tools-role-gated`). | `apps/every-app-gateway/src/serverFunctions/events.ts:20-74`; `apps/every-app-gateway/src/middleware/auth.ts:85-97`; `apps/every-app-gateway/src/serverFunctions/methods.test.ts:68-70` (the READS list) | `apps/every-app-gateway/src/serverFunctions/methods.test.ts` :: declares GET only for reads and POST for everything else (partial: no test calls an events function as a member; the middleware's refusal is pinned by B2's `roles.admin-and-owner-gates`, and the tools' gate by B5 once the twins land) |
+| `events.app-emit-attributed-and-bounded` | An app's `POST /api/events/emit` over its binding is attributed like a capability call (B4, `events.emit-route-attributed-like-a-capability`: the forwarded identity, or a shared app's named organization; the actor is the user, or `{ kind: "app" }` for background work), then: the name matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` (at most 64 characters) and is prefixed `app.<app id>.`, so no app can emit a gateway type; the body is read to 16 KiB before parsing and the serialized `data` is a JSON object of at most 8 KiB, nested at most 8 deep, with no credential-named key (`400 event_data_refused` naming the key); 600 emits per app per hour are decided on one conditional write (`429 event_rate_limited` with `Retry-After`); nothing is counted or capped as a provider call. | `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts:284-296, 500`; `app-emit.ts:99-176` (handleAppEmit), `:57-77` (countEmit); `packages/sdk/src/internal/events.ts:94-131` (appEventType, appEventNameProblem), `:133-139` | `apps/every-app-gateway/src/server/app-gateway-entrypoint.test.ts` :: refuses a bad name, bad data, data too large and a credential-named key, and emits nothing; :: answers 429 with Retry-After past the hourly rate, and emits nothing; `events.sqlite.test.ts` :: decides on the write, so concurrent emits at the limit let exactly one through |
+| `events.email-sink-members-only` | The email sink takes no address: a subscription names a role (`owners`, or `admins` for owners and admins) and each delivery mails the organization's live owners and admins as read at delivery time, one mail per recipient within a delivery's schedule (who was mailed is remembered per delivery and recipient for three days, best effort, so a retry after a partial send reaches only those still owed it; the gaps say what that leaves), through the Gateway's own sender as `kind: "notice"` within that kind's daily budgets (self-hosted 50 per address and 2,000 per gateway; hosted 20 and 2,000; none in an invalid mode); a sender that isn't configured makes the delivery dead (`email_not_configured`), a spent budget a retried failure; the mail carries the catalogue's summary, the fields it chooses and one link to an admin page; logs name a recipient by HMAC. | `email-sink.ts:79-96` (listLiveOwnersAndAdmins, the owners filter), `:121` (kind notice), `:131-141`; `apps/every-app-gateway/src/server/repositories/OrganizationMembersRepository.ts:178`; `apps/every-app-gateway/src/server/platform-policy.ts:184-194, 213-222` (the notice budgets); `apps/every-app-gateway/src/server/email/sendEmail.ts:124-176` (spendMailBudget); `catalogue.ts:722-745` (adminPathFor, eventEmailFields) | `events.sqlite.test.ts` :: mails each live owner and admin once and nobody else, counting the recipients (events.email-sink-members-only); :: mails owners only when the subscription says owners; :: is dead at once with email_not_configured when the gateway can't send; :: a redeliver more than three days after a partial send mails every recipient again (the limit events.email-sink-members-only names) |
+| `events.retention` | The hourly maintenance deletes events and deliveries older than 30 days (`EVENT_RETENTION_DAYS`, a constant), up to 10,000 of each a run; `last_error` holds a code and at most 200 characters of the receiver's answer, never a request body, so what remains is the audit table's kind of record. | `apps/every-app-gateway/src/server/mcp-auth/maintenance.ts:154-160`; `EventRepository.ts:98` and `EventDeliveryRepository.ts:267` (deleteOlderThan); `packages/sdk/src/internal/events.ts:146` | `events.sqlite.test.ts` :: the hourly maintenance deletes events and deliveries older than the retention and keeps newer ones; `apps/every-app-gateway/src/server.test.ts` :: the hourly cron sweeps the event deliveries, then runs the MCP housekeeping with the cron's env |
+| `events.secret-shown-once` | A generated signing secret is returned once by the surface that made it (the `add` server function's answer; the CLI's `done.data.secret` under `--json`, or one line at the terminal; the tool's result once the twins land) and never again: the listing shape has no `secret` column (`ListedSubscription` omits it; only `findForDelivery` reads it, to sign), the CLI's column list leaves it out, `update` can neither set nor read it, no log line carries it (the add's names the host), and a secret the person gave is never echoed. | `subscriptions.ts:304-366` (add; `:364-365` returns the secret only when generated, `:358-363` the log); `EventSubscriptionRepository.ts:14-35, 65-81`; `apps/every-app-gateway/src/db/events.schema.ts:21-39`; the CLI's `packages/cli/src/commands/events/add.ts:11-15, 150-215` and `packages/cli/src/lib/gateway/events.ts:219-245` (`bb644c05`) | `events.sqlite.test.ts` :: signs with the secret the person gave, and lists it nowhere (events.secret-shown-once); `packages/cli/src/commands/events/index.test.ts` (`bb644c05`) :: makes a whsec_ secret, shows it once in done.data.secret, and never in a message; :: lists each subscription with its target, events and last delivery, never a secret or a URL's query |
+
+**Not this boundary's job.** What a receiver does with a delivery
+(Slack's, Zapier's or an agent's own rules); whether it verifies the
+signature (the docs carry the check in three languages; a receiver that
+skips it is trusting its URL's secrecy); the receiver's availability (a
+429 or 503 from it is retried on the schedule like a 500); what an app
+puts in its own event's `data` beyond the shape and key rules (an app
+that emits a customer's address has chosen to); and who may add a
+subscription: the control plane (B2), the Cloudflare login (B7) and the
+workspace tools (B5) decide that, and this boundary takes an owner's or
+admin's choice as given.
+
+**Gaps.**
+
+- *The signing secret is stored as written in D1* (low, known;
+  `event_subscriptions.secret`; TODO "Events out (2026-10-25)"). The CLI
+  writes subscriptions straight into D1 under the Cloudflare login
+  (ADR-0003) and holds no key to wrap it with; the operator's D1 is root
+  in any case, and a D1 export or backup carries it. What the secret
+  protects is a forged delivery to the subscriber's endpoint, not access
+  to the Gateway: whoever reads it can make a receiver believe an event
+  happened, not act on the Gateway. A wrap under a gateway-held key
+  becomes possible once the Gateway is the only writer of subscriptions
+  (the CLI calling a server function or a deploy-key route instead of
+  D1).
+- *No automatic pause of a failing subscription* (low, known; TODO). A
+  subscription whose receiver is gone keeps getting seven attempts per
+  event for as long as events happen: `consecutive_failures` climbs, the
+  Events tab and `events list` show it, and the owners aren't told. Each
+  event costs at most seven outbound requests over 35 hours, bounded by
+  the sweep's 50 rows a minute, so the cost is the operator's subrequests
+  and a log that fills, not a flood at the receiver (which answered 4xx
+  or 5xx, or timed out). A pause after N days of dead letters, with a
+  mail to the owners, is the follow-up.
+- *A receiver that limits requests sees failures retried on the schedule,
+  not throttled* (low). Slack's Workflow Builder webhook trigger takes
+  about one request a second per workflow; a burst of events (an
+  invitation round, a catalog sync that changes several apps) can exceed
+  it, and the refused deliveries come back after 1 min, 5 min, 30 min
+  and so on until they land or die. Nothing is lost (at-least-once; the
+  receiver deduplicates on `id`) and nothing loops, but there is no
+  per-subscription rate and no reading of the receiver's `Retry-After`.
+  A per-subscription Durable Object with alarms (the design's walk-back)
+  is where a rate would live.
+- *The CLI cannot check `THIRD_PARTY_DOMAIN`* (low, hosted only). The
+  CLI's `events add` reimplements the target rules from the install row's
+  Gateway host and `APP_BASE_DOMAIN`; `THIRD_PARTY_DOMAIN` is a Worker
+  secret whose value the CLI can't read back, so a URL under it passes
+  the CLI and is refused by the Gateway at the first attempt
+  (`target_refused: gateway_host`, retried, never fetched). A self-hosted
+  gateway has no third-party domain.
+- *A partial send can mail a recipient twice* (low; TODO "Events out
+  (2026-10-25)"). Who was mailed is a marker per delivery and recipient
+  in `rate_limit_counters`
+  (`apps/every-app-gateway/src/server/events/email-sink.ts:105-127`),
+  written after the send and best effort (a write that fails is
+  swallowed and costs that recipient one duplicate on the retry), and
+  kept three days: past the whole schedule but not the delivery, which
+  `redeliver` takes while the log keeps it (30 days), with the attempts
+  starting over. A redeliver more than three days after a partial send
+  reads every marker as expired and mails every owner and admin again
+  (`events.sqlite.test.ts` :: a redeliver more than three days after a
+  partial send mails every recipient again). The duplicate is the same
+  notice to the same members, never a mail outside the organization. A
+  marker kept as long as the delivery (or on the delivery row itself) and
+  a marker write that fails the recipient's attempt close it.
+- *The target rules are two copies kept in step by hand* (info). The
+  Gateway's `target.ts` and the CLI's `eventTarget.ts` share the limits
+  through `@every-app/sdk/internal`; the CLI reads the private-name list
+  from there too (`EVENT_PRIVATE_NAME_SUFFIXES`, #644) while the
+  Gateway's `target.ts` still carries its own copy of the same ten names,
+  each with its own order of checks. The Gateway's check before every
+  attempt is the one that counts, so a drift costs an explained refusal
+  at add time, never a delivery the Gateway's rule would refuse; pointing
+  the Gateway at the SDK's list is a one-line follow-up (TODO).
+- *A delivery's `last_error` keeps 200 characters of what the receiver
+  answered* (info): a receiver that echoes the request puts 200
+  characters of the envelope in the log, which holds nothing secret by
+  construction; the body itself is never kept.
+
 ## Credentials: lifetime and revocation
 
 Every credential in the system, how long it lives, what ends it, and how
@@ -1529,17 +1683,25 @@ means it is on main (every boundary fix from this pass merged on
     the Postiz fixture's AGPL schema replaced with our own SQL (#458), all
     2026-10-24. `docs/launch-2026-10-27.md` section G.
 
+42. **A webhook's signing secret is stored as written in D1** (B9, low,
+    known; TODO "Events out (2026-10-25)"). Whoever reads the Gateway's
+    D1 (the operator, a backup, an export) can forge a delivery to a
+    subscriber's endpoint; nothing it holds opens the Gateway. Beside it
+    in B9: no automatic pause of a subscription that keeps failing, a
+    receiver's rate limit met with the retry schedule, and the CLI's
+    target check without `THIRD_PARTY_DOMAIN` (low, known).
+
 **Hosted only** (nothing here reaches a self-hosted gateway)
 
-42. A dispatch-tier Worker sends mail from the platform's own sender and
+43. A dispatch-tier Worker sends mail from the platform's own sender and
     spends the platform's provider keys with no per-organization bound
     (B8, medium; the launch gate's "capability calls refused for
     dispatch-tier rows").
-43. With open sign-up, anyone with an invite link can plant an account for
+44. With open sign-up, anyone with an invite link can plant an account for
     someone else's email, which the victim's own verification click then
     hands over (B2, medium; `HOSTED_OPEN_SIGNUP=false` keeps the preview
     invite-only, where the invite link's email binding stops it).
-44. `connect()` from a dispatched Worker is unverified against the egress
+45. `connect()` from a dispatched Worker is unverified against the egress
     policy; the org key in a dispatched Worker's name isn't compared with
     the row's organization; `secret set` on a shared app skips the
     platform-admin check; the platform-domain refusal doesn't cover

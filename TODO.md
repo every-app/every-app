@@ -1059,7 +1059,7 @@ Ben, over the briefing: the empty home should show the four apps as cards that g
 
 ### Events out (2026-10-25)
 
-Ben's mandate for the batch: "assume we want all of this and build the best, most robust thing we're going to want long term, so that when we launch on Monday people can just run with it and they're not waiting on us for PRs." Built as an event bus inside the gateway and signed outbound webhooks, so people wire Slack, Zapier, n8n, Linear or their own agent without us building each integration: the design is [docs/design/2026-10-events-out.md](docs/design/2026-10-events-out.md) (the catalogue, the envelope, delivery, the CLI, the admin MCP tools, the Events tab, the SDK's `emit`, the threat-model rows). The defaults it shipped with, each with its walk-back in the design's section 14; yes keeps it:
+Ben's mandate for the batch: "assume we want all of this and build the best, most robust thing we're going to want long term, so that when we launch on Monday people can just run with it and they're not waiting on us for PRs." Built as an event bus inside the gateway and signed outbound webhooks, so people wire Slack, Zapier, n8n, Linear or their own agent without us building each integration: the design is [docs/design/2026-10-events-out.md](docs/design/2026-10-events-out.md) (the catalogue, the envelope, delivery, the CLI, the admin MCP tools, the Events tab, the SDK's `emit`, the threat-model rows). Landed: the gateway core #628 (`2083a662`; migration `0012_events.sql`, renumbered from the contract's 0009 after `0011_remote_mcp.sql` took the slot), the SDK's `emit` #643, the CLI's `events` group with its outbox inserts #644, the docs pages for the person and the agent #652, the threat model's B9 with its register rows #647; open at the time of writing: the MCP-app emit points #645, the `everyapp_workspace_events*` twins #649 and the Events tab #651. The defaults it shipped with, each with its walk-back in the design's section 14; yes keeps it:
 
 - [ ] **The retry scheduler is D1 rows plus a per-minute cron trigger**, not a Durable Object or a Queue: the gateway had neither, both are new surface for every self-hosted install two days before launch, and the delivery log has to be in D1 anyway. Retry resolution is one minute; the first attempt is immediate. Walk-back: a per-subscription Durable Object with alarms, same tables.
 - [ ] **A webhook's signing secret is stored as written in D1.** The CLI writes subscriptions straight into D1 (ADR-0003) and holds no key to wrap it with. What it protects is a forged webhook to the subscriber's endpoint, not access to the gateway. Walk-back: wrap with a gateway-held key once the gateway is the only writer.
@@ -1075,12 +1075,28 @@ Ben's mandate for the batch: "assume we want all of this and build the best, mos
 - [ ] **`everyapp_workspace_event_deliveries` shows an event's type and summary, never its `data`**, to keep an agent's answer small (a page of 100 events could be 1.6 MB); the Events tab's Show payload has it. Walk-back: a `payload: true` flag on a one-subscription page.
 - [ ] **Removing a subscription over MCP is an admin's** (with `confirm: true`), as in Admin → Events, unlike `workspace_remove` and `workspace_app_delete`, which are owner-only.
 
+Settled while building, where the code differs from the contract (the code wins; the design and threat model B9 say the same):
+
+- `app.installed` is emitted on the first recorded upload of a pending row (the CLI's `markDeployed`, the gateway's deploy pipeline), not at registration, so a registration whose first deploy fails announces nothing; a later upload with a new version is `app.updated`.
+- `token.created` and `token.revoked` carry the token's row flat (`{ id, name, scopes, appId?, expiresAt?, user }`), not under a `token` key: the credential-key rule refuses any key named like one, `token` included, and the gateway's own events keep the rule an app's must.
+- A `ping` reaches a paused subscription, so a paused hook can be tested; every other event skips disabled rows.
+- `redeliver` resets the schedule (attempts back to 0, due now, then an immediate attempt) for a failed or dead delivery and leaves a delivered one alone.
+- The private-name list a target is refused under lives in `@every-app/sdk/internal` (`EVENT_PRIVATE_NAME_SUFFIXES`, `isPrivateEventTargetName`, #644), which the CLI reads; the gateway's `target.ts` still carries its own copy of the same ten names (a follow-up below).
+- The envelope's `summary` is computed at delivery from the stored type, data and actor, not stored, so an event the CLI queued straight into D1 reads the same as one the gateway emitted.
+- `member.password_reset` is emitted when a reset completes (Better Auth 1.7.7 has `onPasswordReset`); there is no `member.reset_link_created`.
+- Event ids are `evt_` and a 26-character uppercase Crockford base32 ULID the gateway makes itself; subscriptions and deliveries are `sub_` and `dlv_` with 24 hex characters.
+
 Follow-ups:
 
 - [ ] A Durable Object per subscription for sub-minute retries and strict ordering, when someone needs it.
 - [ ] Pause a subscription automatically after N days of dead letters and tell the owners (today it stays enabled and the tab shows the failures).
 - [ ] `EVENTS_RETENTION_DAYS` as a Gateway setting (a constant now).
-- [ ] The Caps branch rebase: keep its default cap, `unlimited` and Paused UI; delete its notice mail, repository, table and migration (renumbered to 0010 or later); `cap.raised` comes from `AppCapService.setMonthlyCap` already.
+- [ ] The Caps branch rebase: keep its default cap, `unlimited` and Paused UI; delete its notice mail, repository, table and migration (renumbered to 0013 or later, after the events migration); `cap.raised` comes from `AppCapService.setMonthlyCap` already.
+- [ ] Pace deliveries to a receiver's own limit (Slack's Workflow Builder webhook trigger takes about one request a second per workflow): today a refused delivery is retried on the backoff schedule and nothing reads the receiver's `Retry-After`; a per-subscription Durable Object is where a rate would live (threat model B9's gaps).
+- [ ] The CLI's target check can't read `THIRD_PARTY_DOMAIN` (a Worker secret; hosted only): a URL under it passes `events add` and is refused by the Gateway at the first attempt, retried, never fetched. Fine for self-host; a deploy-key route or a server function would close it on hosted.
+- [ ] Point the gateway's `target.ts` at the SDK's `EVENT_PRIVATE_NAME_SUFFIXES`, so the list exists once (the CLI already reads it).
+- [ ] The email sink's mailed markers are best effort and kept three days (`events:mailed:<delivery>:<recipient hash>` in `rate_limit_counters`, `email-sink.ts`): a marker write that fails costs that recipient one duplicate on the retry, and a redeliver of a partial send more than three days later mails every owner and admin again (threat model B9's gaps; pinned by `events.sqlite.test.ts` :: a redeliver more than three days after a partial send mails every recipient again). Keep the marker as long as the delivery (30 days) or on the delivery row itself, and let a failed marker write fail that recipient's attempt.
+- [ ] Wrap the signing secret at rest once the Gateway is the only writer of subscriptions (the second default above; threat model B9's first gap and ranked gap 42).
 
 ### Agent-forward layer (2026-10-24)
 
