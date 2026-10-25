@@ -1211,7 +1211,7 @@ describe("the cap standing reaches the bus after the answer", () => {
     const onCap = vi.fn(() => new Promise<void>(() => undefined));
     let calls = 8;
     const caps: AppCapSources = {
-      monthlyCallCap: async () => 10,
+      effectiveMonthlyCap: async () => ({ cap: 10, source: "app" as const }),
       monthlyCalls: async () => calls,
     };
     const options = {
@@ -1247,7 +1247,10 @@ describe("the cap standing reaches the bus after the answer", () => {
     const onCap = vi.fn(async () => undefined);
     const response = await call({
       registeredApps: [app({ rowId: "row-chef" })],
-      caps: { monthlyCallCap: async () => null, monthlyCalls: async () => 0 },
+      caps: {
+        effectiveMonthlyCap: async () => ({ cap: null, source: null }),
+        monthlyCalls: async () => 0,
+      },
       onCap,
       waitUntil: () => undefined,
     });

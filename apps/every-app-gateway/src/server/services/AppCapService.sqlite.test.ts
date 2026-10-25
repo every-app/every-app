@@ -1,8 +1,10 @@
 /**
- * Setting an organization's monthly cap on an app, against a migrated
- * SQLite database: its own app, a shared app (per organization), never
- * another organization's; clearing deletes the row; the row goes with the
- * app, deleted (its tombstone) or gone.
+ * Setting an organization's caps against a migrated SQLite database: an
+ * app's own cap, "no cap" for an app under a default, or neither (the
+ * default applies); the default itself; the row invariant a reader keeps;
+ * its own app, a shared app (per organization), never another
+ * organization's; the rows go with the app, deleted (its tombstone) or
+ * gone, and with the organization.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -23,10 +25,17 @@ vi.mock("@/db", async () => {
 });
 
 import { eq } from "drizzle-orm";
-import { apps, members, orgAppSettings } from "@/db/schema";
+import {
+  apps,
+  members,
+  organizations,
+  orgAppSettings,
+  orgSettings,
+} from "@/db/schema";
 import { checkMonthlyCap, clearAppCapCache } from "@/server/app-cap";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { OrgAppSettingsRepository } from "@/server/repositories/OrgAppSettingsRepository";
+import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import { AppCapService } from "@/server/services/AppCapService";
 import { registerApp } from "@/test/registry";
@@ -68,19 +77,33 @@ describe("AppCapService (SQLite)", () => {
     userId: acmeAdmin,
     role: "admin" as const,
   });
+  const effective = (orgId: string, appRowId: string) =>
+    OrgAppSettingsRepository.getEffectiveMonthlyCap(orgId, appRowId);
+  const sources = () => ({
+    effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
+    monthlyCalls: UsageRepository.monthlyCalls,
+  });
 
   it("sets, changes and clears the cap on the organization's own app", async () => {
     await expect(
       AppCapService.setMonthlyCap(asAcmeAdmin(), { appRowId: chef, cap: 500 }),
-    ).resolves.toEqual({ appRowId: chef, monthlyCallCap: 500 });
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(acme, chef),
-    ).resolves.toBe(500);
+    ).resolves.toEqual({
+      appRowId: chef,
+      monthlyCallCap: 500,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 500,
+      capSource: "app",
+    });
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 500,
+      source: "app",
+    });
     expect(await db.select().from(orgAppSettings)).toEqual([
       expect.objectContaining({
         organizationId: acme,
         appRowId: chef,
         monthlyCallCap: 500,
+        unlimited: false,
         updatedBy: acmeAdmin,
       }),
     ]);
@@ -89,17 +112,172 @@ describe("AppCapService (SQLite)", () => {
       appRowId: chef,
       cap: 1_000_000_000,
     });
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(acme, chef),
-    ).resolves.toBe(1_000_000_000);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 1_000_000_000,
+      source: "app",
+    });
 
     await expect(
       AppCapService.setMonthlyCap(asAcmeAdmin(), { appRowId: chef, cap: null }),
-    ).resolves.toEqual({ appRowId: chef, monthlyCallCap: null });
+    ).resolves.toEqual({
+      appRowId: chef,
+      monthlyCallCap: null,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: null,
+      capSource: null,
+    });
     expect(await db.select().from(orgAppSettings)).toEqual([]);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
+  });
+
+  it("sets and clears the default, which binds every app without a row", async () => {
     await expect(
-      OrgAppSettingsRepository.getMonthlyCap(acme, chef),
-    ).resolves.toBeNull();
+      AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 1_000 }),
+    ).resolves.toEqual({ defaultMonthlyCallCap: 1_000 });
+    expect(await db.select().from(orgSettings)).toEqual([
+      expect.objectContaining({
+        organizationId: acme,
+        defaultMonthlyCallCap: 1_000,
+        updatedBy: acmeAdmin,
+      }),
+    ]);
+    await expect(
+      OrgSettingsRepository.getDefaultMonthlyCap(acme),
+    ).resolves.toBe(1_000);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 1_000,
+      source: "default",
+    });
+    await expect(effective(acme, openseo)).resolves.toEqual({
+      cap: 1_000,
+      source: "default",
+    });
+    // Another organization's apps are not bound by acme's default.
+    await expect(effective(globex, openseo)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
+
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 2_000 });
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 2_000,
+      source: "default",
+    });
+
+    await expect(
+      AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: null }),
+    ).resolves.toEqual({ defaultMonthlyCallCap: null });
+    expect(await db.select().from(orgSettings)).toEqual([]);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
+  });
+
+  it("keeps an app's own cap, none, or the default: the three states under a default", async () => {
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 1_000 });
+    // Its own cap wins.
+    await AppCapService.setMonthlyCap(asAcmeAdmin(), {
+      appRowId: chef,
+      cap: 50,
+    });
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 50,
+      source: "app",
+    });
+    // No cap at all, whatever the default.
+    await expect(
+      AppCapService.setMonthlyCap(asAcmeAdmin(), {
+        appRowId: chef,
+        cap: null,
+        unlimited: true,
+      }),
+    ).resolves.toEqual({
+      appRowId: chef,
+      monthlyCallCap: null,
+      capUnlimited: true,
+      effectiveMonthlyCallCap: null,
+      capSource: null,
+    });
+    expect(await db.select().from(orgAppSettings)).toEqual([
+      expect.objectContaining({
+        appRowId: chef,
+        monthlyCallCap: null,
+        unlimited: true,
+      }),
+    ]);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
+    // Back to the default: the row goes.
+    await expect(
+      AppCapService.setMonthlyCap(asAcmeAdmin(), { appRowId: chef, cap: null }),
+    ).resolves.toEqual({
+      appRowId: chef,
+      monthlyCallCap: null,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 1_000,
+      capSource: "default",
+    });
+    expect(await db.select().from(orgAppSettings)).toEqual([]);
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 1_000,
+      source: "default",
+    });
+    // And a cap set over unlimited clears the flag in the same write.
+    await AppCapService.setMonthlyCap(asAcmeAdmin(), {
+      appRowId: chef,
+      cap: null,
+      unlimited: true,
+    });
+    await AppCapService.setMonthlyCap(asAcmeAdmin(), {
+      appRowId: chef,
+      cap: 70,
+    });
+    expect(await db.select().from(orgAppSettings)).toEqual([
+      expect.objectContaining({ monthlyCallCap: 70, unlimited: false }),
+    ]);
+  });
+
+  it("refuses a cap and unlimited together", async () => {
+    await expect(
+      AppCapService.setMonthlyCap(asAcmeAdmin(), {
+        appRowId: chef,
+        cap: 10,
+        unlimited: true,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(await db.select().from(orgAppSettings)).toEqual([]);
+  });
+
+  it("lets a cap win on a row that says both, and lets a row that says neither fall through to the default", async () => {
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 1_000 });
+    // A row no gateway writer makes (the CLI's raw SQL could): capped.
+    await db.insert(orgAppSettings).values({
+      organizationId: acme,
+      appRowId: chef,
+      monthlyCallCap: 5,
+      unlimited: true,
+      updatedAt: new Date(),
+      updatedBy: null,
+    });
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 5,
+      source: "app",
+    });
+    // A row from before `unlimited` existed, cleared the old way: the default.
+    await db
+      .update(orgAppSettings)
+      .set({ monthlyCallCap: null, unlimited: false })
+      .where(eq(orgAppSettings.appRowId, chef));
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: 1_000,
+      source: "default",
+    });
   });
 
   it("caps a shared app per organization, on the platform organization's row", async () => {
@@ -107,16 +285,19 @@ describe("AppCapService (SQLite)", () => {
       appRowId: openseo,
       cap: 20,
     });
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(acme, openseo),
-    ).resolves.toBe(20);
+    await expect(effective(acme, openseo)).resolves.toEqual({
+      cap: 20,
+      source: "app",
+    });
     // Neither the platform organization nor another one is bound by it.
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(platform, openseo),
-    ).resolves.toBeNull();
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(globex, openseo),
-    ).resolves.toBeNull();
+    await expect(effective(platform, openseo)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
+    await expect(effective(globex, openseo)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
   });
 
   it("refuses another organization's app, a deleted app and an unknown row", async () => {
@@ -142,22 +323,22 @@ describe("AppCapService (SQLite)", () => {
     expect(await db.select().from(orgAppSettings)).toEqual([]);
   });
 
-  it("refuses a cap outside 1 to a billion, or not a whole number", async () => {
+  it("refuses a cap or default outside 1 to a billion, or not a whole number", async () => {
     for (const cap of [0, -5, 2.5, 1_000_000_001, Number.NaN]) {
       await expect(
         AppCapService.setMonthlyCap(asAcmeAdmin(), { appRowId: chef, cap }),
       ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(
+        AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap }),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
     }
     expect(await db.select().from(orgAppSettings)).toEqual([]);
+    expect(await db.select().from(orgSettings)).toEqual([]);
   });
 
   it("binds at once in this isolate: the cached cap is forgotten when it is set", async () => {
-    const sources = {
-      monthlyCallCap: OrgAppSettingsRepository.getMonthlyCap,
-      monthlyCalls: UsageRepository.monthlyCalls,
-    };
     // No cap: cached as such for the next seconds.
-    await expect(checkMonthlyCap(sources, acme, chef)).resolves.toEqual({
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toEqual({
       exceeded: false,
     });
     await UsageRepository.record({
@@ -173,17 +354,48 @@ describe("AppCapService (SQLite)", () => {
       appRowId: chef,
       cap: 1,
     });
-    await expect(checkMonthlyCap(sources, acme, chef)).resolves.toMatchObject({
-      exceeded: true,
-      cap: 1,
-      calls: 1,
-    });
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toMatchObject(
+      { exceeded: true, cap: 1, calls: 1, source: "app" },
+    );
     // And forgotten again when cleared.
     await AppCapService.setMonthlyCap(asAcmeAdmin(), {
       appRowId: chef,
       cap: null,
     });
-    await expect(checkMonthlyCap(sources, acme, chef)).resolves.toEqual({
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toEqual({
+      exceeded: false,
+    });
+  });
+
+  it("binds a default at once too, for every app this isolate cached", async () => {
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toEqual({
+      exceeded: false,
+    });
+    await expect(checkMonthlyCap(sources(), acme, openseo)).resolves.toEqual({
+      exceeded: false,
+    });
+    await UsageRepository.record({
+      organizationId: acme,
+      appRowId: chef,
+      userId: "",
+      kind: "ai",
+      target: "openai",
+      calls: 1,
+      status: 200,
+    });
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 1 });
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toMatchObject(
+      { exceeded: true, cap: 1, calls: 1, source: "default" },
+    );
+    await expect(checkMonthlyCap(sources(), acme, openseo)).resolves.toEqual({
+      exceeded: false,
+      cap: 1,
+      calls: 0,
+      month: new Date().toISOString().slice(0, 7),
+      source: "default",
+    });
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: null });
+    await expect(checkMonthlyCap(sources(), acme, chef)).resolves.toEqual({
       exceeded: false,
     });
   });
@@ -202,9 +414,10 @@ describe("AppCapService (SQLite)", () => {
     expect(await db.select().from(orgAppSettings)).toEqual([
       expect.objectContaining({ organizationId: acme, appRowId: openseo }),
     ]);
-    await expect(
-      OrgAppSettingsRepository.getMonthlyCap(acme, chef),
-    ).resolves.toBeNull();
+    await expect(effective(acme, chef)).resolves.toEqual({
+      cap: null,
+      source: null,
+    });
     // Nothing to clear on it any more, and nothing binds a redeploy.
     await expect(
       AppCapService.setMonthlyCap(asAcmeAdmin(), { appRowId: chef, cap: null }),
@@ -234,12 +447,15 @@ describe("AppCapService (SQLite)", () => {
     ]);
   });
 
-  it("goes with the app row", async () => {
+  it("goes with the app row, and the default with the organization", async () => {
     await AppCapService.setMonthlyCap(asAcmeAdmin(), {
       appRowId: chef,
       cap: 7,
     });
+    await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { cap: 100 });
     await db.delete(apps).where(eq(apps.id, chef));
     expect(await db.select().from(orgAppSettings)).toEqual([]);
+    await db.delete(organizations).where(eq(organizations.id, acme));
+    expect(await db.select().from(orgSettings)).toEqual([]);
   });
 });

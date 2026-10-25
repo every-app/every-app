@@ -21,7 +21,7 @@ import {
   providerAppManifest,
 } from "@every-app/sdk/internal";
 import { ToolError, type ToolContext } from "@every-app/sdk/server";
-import { checkMonthlyCap } from "@/server/app-cap";
+import { capRefusalMessage, checkMonthlyCap } from "@/server/app-cap";
 import { noteCapCheck } from "@/server/events/cap-events";
 import {
   handleIntegrationProxyRequest,
@@ -81,12 +81,13 @@ export async function providerCall(
       `${provider.name} isn't available to this organization.`,
     );
   }
-  // The organization's monthly cap on the row's provider calls (Admin →
-  // Usage), checked before anything reaches the provider, as the AppGateway
-  // entrypoint checks it for an app's calls. A refused call is not counted.
+  // The organization's monthly cap on the row's provider calls (Manage
+  // workspace → Usage), checked before anything reaches the provider, as
+  // the AppGateway entrypoint checks it for an app's calls. A refused call
+  // is not counted.
   const cap = await checkMonthlyCap(
     {
-      monthlyCallCap: OrgAppSettingsRepository.getMonthlyCap,
+      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
       monthlyCalls: UsageRepository.monthlyCalls,
     },
     app.organizationId,
@@ -118,12 +119,11 @@ export async function providerCall(
         cap: cap.cap,
         calls: cap.calls,
         month: cap.month,
+        source: cap.source,
       },
       "warn",
     );
-    throw new ToolError(
-      `${provider.name} has reached this organization's monthly cap of ${cap.cap} calls; an owner or admin raises it in Admin → Usage, or it resets with the next UTC month.`,
-    );
+    throw new ToolError(capRefusalMessage(provider.name, cap));
   }
   const method = call.method ?? "POST";
   const request = new Request(

@@ -340,7 +340,14 @@ export const catalogue = {
   },
 
   capRaised(input: {
-    app: EventApp;
+    /** The app whose own setting changed; null for the workspace default (`source: "default"`). */
+    app: EventApp | null;
+    /**
+     * For an app, the cap that binds it after and before the change (its
+     * own, else the default; null = none), not the row's own column: a cap
+     * set under the default is no raise, `unlimited` under a default is a
+     * removal. For the default, the default itself.
+     */
     cap: number | null;
     previousCap: number | null;
     source: CapSource;
@@ -348,12 +355,12 @@ export const catalogue = {
     return built(
       "cap.raised",
       {
-        app: app(input.app),
+        app: input.app ? app(input.app) : null,
         cap: input.cap,
         previousCap: input.previousCap,
         source: input.source,
       },
-      { appRowId: input.app.rowId },
+      input.app ? { appRowId: input.app.rowId } : {},
     );
   },
 
@@ -662,12 +669,18 @@ export function summarize(
       return `${appLabel(d.app)} is at ${num(d.threshold) ?? CAP_WARNING_THRESHOLD}% of its monthly cap (${n(num(d.calls))} of ${n(num(d.cap))})`;
     case "cap.reached":
       return `${appLabel(d.app)} reached its monthly cap (${n(num(d.cap))})`;
-    case "cap.raised":
+    case "cap.raised": {
+      // The workspace default names no app.
+      const whose =
+        str(d.source) === "default" && !obj(d.app).id
+          ? "The default cap"
+          : `${appLabel(d.app)}'s cap`;
       return num(d.cap) === null
-        ? `${appLabel(d.app)}'s cap was removed (was ${n(num(d.previousCap))})`
+        ? `${whose} was removed (was ${n(num(d.previousCap))})`
         : num(d.previousCap) === null
-          ? `${appLabel(d.app)}'s cap set to ${n(num(d.cap))}`
-          : `${appLabel(d.app)}'s cap raised from ${n(num(d.previousCap))} to ${n(num(d.cap))}`;
+          ? `${whose} set to ${n(num(d.cap))}`
+          : `${whose} raised from ${n(num(d.previousCap))} to ${n(num(d.cap))}`;
+    }
     case "tool.blocked": {
       const client = str(obj(d.client).name) ?? userLabel(d.user);
       return `${client}'s call to ${str(d.tool) ?? "a tool"} was blocked: ${str(d.reason) ?? "refused"}`;

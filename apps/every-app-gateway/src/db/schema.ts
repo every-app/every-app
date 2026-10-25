@@ -15,3 +15,4 @@ export * from "./org-app-settings.schema";
 export * from "./providers.schema";
 export * from "./events.schema";
 export * from "./remote-mcp.schema";
+export * from "./org-settings.schema";

@@ -16,7 +16,8 @@ const getUsageSchema = z.object({
 
 /**
  * What the active organization's apps spent in a UTC month, per app, per
- * member and per provider (Admin, Usage). Owners and admins only.
+ * member and per provider, with each app's cap and the organization's
+ * default (Manage workspace → Usage). Owners and admins only.
  */
 export const getUsage = createServerFn()
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
@@ -28,23 +29,46 @@ export const getUsage = createServerFn()
     });
   });
 
-const setAppMonthlyCapSchema = z.object({
-  appRowId: z.string().min(1, "App is required"),
-  cap: z
-    .number()
-    .int("Cap must be a whole number")
-    .min(MONTHLY_CALL_CAP_MIN, `Cap must be at least ${MONTHLY_CALL_CAP_MIN}`)
-    .max(MONTHLY_CALL_CAP_MAX, "Cap must be at most 1,000,000,000")
-    .nullable(),
-});
+const capSchema = z
+  .number()
+  .int("Cap must be a whole number")
+  .min(MONTHLY_CALL_CAP_MIN, `Cap must be at least ${MONTHLY_CALL_CAP_MIN}`)
+  .max(MONTHLY_CALL_CAP_MAX, "Cap must be at most 1,000,000,000")
+  .nullable();
+
+const setAppMonthlyCapSchema = z
+  .object({
+    appRowId: z.string().min(1, "App is required"),
+    cap: capSchema,
+    unlimited: z.boolean().optional(),
+  })
+  .refine((data) => data.cap === null || !data.unlimited, {
+    message: "An app has a cap or no cap, not both",
+    path: ["unlimited"],
+  });
 
 /**
- * Set or clear the active organization's monthly cap on an app's provider
- * calls: null is unlimited, the default. Owners and admins only.
+ * Set the active organization's cap on an app's provider calls (`cap`),
+ * say the app has none whatever the default (`unlimited`), or neither
+ * (null, not unlimited): the default applies, and without one the app is
+ * unlimited. Owners and admins only.
  */
 export const setAppMonthlyCap = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .validator((data: unknown) => setAppMonthlyCapSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppCapService.setMonthlyCap(context.org, data);
+  });
+
+const setDefaultMonthlyCapSchema = z.object({ cap: capSchema });
+
+/**
+ * Set or clear the active organization's default cap, which binds every
+ * app without a cap or "no cap" of its own. Owners and admins only.
+ */
+export const setDefaultMonthlyCap = createServerFn({ method: "POST" })
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .validator((data: unknown) => setDefaultMonthlyCapSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    return AppCapService.setDefaultMonthlyCap(context.org, data);
   });

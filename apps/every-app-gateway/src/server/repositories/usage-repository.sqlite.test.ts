@@ -24,6 +24,7 @@ import {
   apps,
   mcpToolCalls,
   orgAppSettings,
+  orgSettings,
   usageDaily,
   usageMonthly,
 } from "@/db/schema";
@@ -306,6 +307,10 @@ describe("UsageRepository (SQLite)", () => {
           costMicros: 1_200,
           toolCalls: 2,
           monthlyCallCap: null,
+          capUnlimited: false,
+          effectiveMonthlyCallCap: null,
+          capSource: null,
+          paused: false,
           callable: true,
         },
         {
@@ -319,6 +324,10 @@ describe("UsageRepository (SQLite)", () => {
           costMicros: 0,
           toolCalls: 0,
           monthlyCallCap: null,
+          capUnlimited: false,
+          effectiveMonthlyCallCap: null,
+          capSource: null,
+          paused: false,
           callable: false,
         },
       ]);
@@ -510,9 +519,14 @@ describe("UsageRepository (SQLite)", () => {
           costMicros: 0,
           toolCalls: 0,
           monthlyCallCap: 10,
+          capUnlimited: false,
+          effectiveMonthlyCallCap: 10,
+          capSource: "app",
+          paused: false,
           callable: true,
         },
       ]);
+      expect(summary.defaultMonthlyCallCap).toBeNull();
       // Caps are not the month's: a past month shows the same cap.
       const past = await UsageRepository.summarize({
         organizationId: acme,
@@ -641,6 +655,182 @@ describe("UsageRepository (SQLite)", () => {
       ]);
     });
 
+    it("carries the default, each app's effective cap and its source, and paused in the current month only", async () => {
+      await db.insert(apps).values([
+        {
+          id: "app-free",
+          organizationId: acme,
+          appSlug: "free",
+          name: "Free",
+          description: "",
+        },
+        {
+          id: "app-quiet",
+          organizationId: acme,
+          appSlug: "quiet",
+          name: "Quiet",
+          description: "",
+        },
+      ]);
+      await db.insert(orgSettings).values({
+        organizationId: acme,
+        defaultMonthlyCallCap: 2,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      await db.insert(orgAppSettings).values({
+        organizationId: acme,
+        appRowId: "app-free",
+        monthlyCallCap: null,
+        unlimited: true,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      // Chef, under the default, has spent it; Free is unlimited; Quiet
+      // is under the default with nothing spent.
+      await UsageRepository.record(event({ organizationId: acme, at: AT }));
+      await UsageRepository.record(event({ organizationId: acme, at: AT }));
+      await UsageRepository.record(
+        event({ organizationId: acme, appRowId: "app-free", at: AT }),
+      );
+      await UsageRepository.record(
+        event({ organizationId: acme, appRowId: "app-free", at: AT }),
+      );
+      await UsageRepository.record(
+        event({ organizationId: acme, appRowId: "app-free", at: AT }),
+      );
+      const summary = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+        now: AT,
+      });
+      expect(summary.defaultMonthlyCallCap).toBe(2);
+      expect(
+        summary.byApp.map((row) => [
+          row.appRowId,
+          row.monthlyCallCap,
+          row.capUnlimited,
+          row.effectiveMonthlyCallCap,
+          row.capSource,
+          row.paused,
+        ]),
+      ).toEqual([
+        ["app-free", null, true, null, null, false],
+        ["app-chef", null, false, 2, "default", true],
+        ["app-quiet", null, false, 2, "default", false],
+      ]);
+      // Its own cap over the default, and over the count.
+      await db.insert(orgAppSettings).values({
+        organizationId: acme,
+        appRowId: "app-chef",
+        monthlyCallCap: 5,
+        unlimited: false,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      const own = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+        now: AT,
+      });
+      expect(
+        own.byApp.find((row) => row.appRowId === "app-chef"),
+      ).toMatchObject({
+        monthlyCallCap: 5,
+        effectiveMonthlyCallCap: 5,
+        capSource: "app",
+        paused: false,
+      });
+      // A past month's count against today's cap says nothing.
+      const past = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+        now: new Date("2026-11-02T00:00:00.000Z"),
+      });
+      expect(past.byApp.every((row) => !row.paused)).toBe(true);
+      expect(
+        past.byApp.find((row) => row.appRowId === "app-quiet"),
+      ).toMatchObject({ effectiveMonthlyCallCap: 2, capSource: "default" });
+    });
+
+    it("lists the apps the organization has paused this month, in one batch", async () => {
+      const platform = await seedOrganization(db, "every-app");
+      await db.insert(apps).values([
+        {
+          id: "app-shared",
+          organizationId: platform,
+          appSlug: "openseo",
+          name: "OpenSEO",
+          description: "",
+          scope: "shared",
+        },
+        {
+          id: "app-free",
+          organizationId: acme,
+          appSlug: "free",
+          name: "Free",
+          description: "",
+        },
+      ]);
+      await db.insert(orgSettings).values({
+        organizationId: acme,
+        defaultMonthlyCallCap: 1,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      await db.insert(orgAppSettings).values([
+        {
+          organizationId: acme,
+          appRowId: "app-free",
+          monthlyCallCap: null,
+          unlimited: true,
+          updatedAt: AT,
+          updatedBy: owner,
+        },
+        {
+          organizationId: acme,
+          appRowId: "app-shared",
+          monthlyCallCap: 2,
+          unlimited: false,
+          updatedAt: AT,
+          updatedBy: owner,
+        },
+      ]);
+      // app-unlisted is at the default too, but the launcher doesn't list
+      // it: the ids are matched in memory, never bound into the query.
+      for (const appRowId of [
+        "app-chef",
+        "app-free",
+        "app-shared",
+        "app-shared",
+        "app-unlisted",
+      ]) {
+        await UsageRepository.record(
+          event({ organizationId: acme, appRowId, at: AT }),
+        );
+      }
+      // The platform organization's own use of the shared app is not acme's.
+      await UsageRepository.record(
+        event({ organizationId: platform, appRowId: "app-shared", at: AT }),
+      );
+      const ids = ["app-chef", "app-free", "app-shared", "app-none"];
+      expect([...(await UsageRepository.pausedApps(acme, ids, AT))]).toEqual([
+        "app-chef",
+        "app-shared",
+      ]);
+      expect([
+        ...(await UsageRepository.pausedApps(platform, ids, AT)),
+      ]).toEqual([]);
+      expect([
+        ...(await UsageRepository.pausedApps(
+          acme,
+          ids,
+          new Date("2026-11-01T00:00:00.000Z"),
+        )),
+      ]).toEqual([]);
+      expect([...(await UsageRepository.pausedApps(acme, [], AT))]).toEqual([]);
+    });
+
     it("reads the month's calls for a cap from the one monthly row", async () => {
       await UsageRepository.record(event({ organizationId: acme, at: AT }));
       await UsageRepository.record(
@@ -674,6 +864,7 @@ describe("UsageRepository (SQLite)", () => {
       });
       expect(other).toEqual({
         month: "2026-10",
+        defaultMonthlyCallCap: null,
         byApp: [],
         byMember: [],
         byTarget: [],

@@ -734,7 +734,9 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(first.result?.isError).toBeUndefined();
     const second = await callTool(token, "treg_get_user", { id: "u2" });
     expect(second.result?.isError).toBe(true);
-    expect(second.result?.content[0]?.text).toMatch(/monthly cap of 1 calls/);
+    expect(second.result?.content[0]?.text).toMatch(
+      /monthly cap of 1 provider calls/,
+    );
     expect(
       seen.filter((request) => request.body["method"] === "tools/call"),
     ).toHaveLength(1);
@@ -793,7 +795,9 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     // The sixth and seventh are refused at the cap: reached and paused, once.
     for (const id of ["u6", "u7"]) {
       const call = await callTool(token, "treg_get_user", { id });
-      expect(call.result?.content[0]?.text).toMatch(/monthly cap of 5 calls/);
+      expect(call.result?.content[0]?.text).toMatch(
+        /monthly cap of 5 provider calls/,
+      );
     }
     clearCapEventMemoryForTests();
     const eighth = await callTool(token, "treg_get_user", { id: "u8" });

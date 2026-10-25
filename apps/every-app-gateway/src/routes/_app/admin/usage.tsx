@@ -12,6 +12,7 @@ import {
   UsageByMemberTable,
   UsageByTargetTable,
 } from "@/client/components/admin/UsageTables";
+import { SetDefaultCapModal } from "@/client/components/admin/SetDefaultCapModal";
 import { SetMonthlyCapModal } from "@/client/components/admin/SetMonthlyCapModal";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/client/components/ui/select";
-import { monthLabel, monthOptions } from "@/client/lib/usage";
+import { formatCount, monthLabel, monthOptions } from "@/client/lib/usage";
 import { getUsage } from "@/serverFunctions/usage";
 import type { UsageAppRow } from "@/types/usage";
 
@@ -35,14 +36,20 @@ function UsagePage() {
   const [month, setMonth] = useState(() => months[0]!.value);
   const isCurrentMonth = month === months[0]!.value;
   const [capApp, setCapApp] = useState<UsageAppRow | null>(null);
+  const [editingDefault, setEditingDefault] = useState(false);
   const queryClient = useQueryClient();
   const onSetCap = useCallback((row: UsageAppRow) => setCapApp(row), []);
+  const onSaved = () => {
+    void queryClient.invalidateQueries({ queryKey: ["admin", "usage"] });
+  };
 
   const usageQuery = useQuery({
     queryKey: ["admin", "usage", month],
     queryFn: () => getUsage({ data: { month } }),
   });
   const summary = usageQuery.data;
+  const defaultCap = summary?.defaultMonthlyCallCap ?? null;
+  const hasDefault = defaultCap !== null;
   // Nothing was counted in the month: By app still lists the apps the
   // organization can call (zeros, and the cap to set), the other tables
   // would be empty. With no apps either, the empty state alone.
@@ -114,12 +121,42 @@ function UsagePage() {
         />
       ) : (
         <>
+          {summary ? (
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 rounded-lg border border-border px-4 py-3 text-sm">
+              <div>
+                <p className="font-medium">Default monthly cap</p>
+                <p className="text-xs text-muted-foreground">
+                  Every app without its own cap
+                </p>
+              </div>
+              <div className="flex items-center gap-2 tabular-nums">
+                {hasDefault ? (
+                  <span>{formatCount(defaultCap)} provider calls</span>
+                ) : (
+                  <span className="text-muted-foreground">Unlimited</span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="-mr-2"
+                  aria-label={`${hasDefault ? "Edit" : "Set"} the default monthly cap`}
+                  onClick={() => setEditingDefault(true)}
+                >
+                  {hasDefault ? "Edit" : "Set default"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <section className="space-y-3">
-            <SectionHeader title="By app" />
+            <SectionHeader
+              title="By app"
+              hint="Calls the Gateway makes for apps: AI providers and capabilities such as DataForSEO, counted together. Cost only where the provider reports it."
+            />
             <UsageByAppTable
               rows={summary?.byApp ?? []}
               isLoading={usageQuery.isLoading}
               isCurrentMonth={isCurrentMonth}
+              hasDefault={hasDefault}
               onSetCap={onSetCap}
             />
           </section>
@@ -146,13 +183,17 @@ function UsagePage() {
       {capApp ? (
         <SetMonthlyCapModal
           app={capApp}
+          defaultCap={defaultCap}
           isCurrentMonth={isCurrentMonth}
           onClose={() => setCapApp(null)}
-          onSaved={() => {
-            void queryClient.invalidateQueries({
-              queryKey: ["admin", "usage"],
-            });
-          }}
+          onSaved={onSaved}
+        />
+      ) : null}
+      {editingDefault ? (
+        <SetDefaultCapModal
+          defaultCap={defaultCap}
+          onClose={() => setEditingDefault(false)}
+          onSaved={onSaved}
         />
       ) : null}
     </div>

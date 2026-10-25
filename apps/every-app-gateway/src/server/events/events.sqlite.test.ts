@@ -1273,6 +1273,21 @@ describe("the event bus (SQLite)", () => {
       );
       expect(line("cap.reached")).toBe("CRM reached its monthly cap (1,000)");
       expect(line("cap.raised")).toBe("CRM's cap raised from 1,000 to 5,000");
+      // The workspace default names no app.
+      expect(
+        summarize(
+          "cap.raised",
+          { app: null, cap: 1000, previousCap: null, source: "default" },
+          ada,
+        ),
+      ).toBe("The default cap set to 1,000");
+      expect(
+        summarize(
+          "cap.raised",
+          { app: null, cap: null, previousCap: 1000, source: "default" },
+          ada,
+        ),
+      ).toBe("The default cap was removed (was 1,000)");
       expect(line("tool.blocked")).toBe(
         "Claude's call to crm_delete_contact was blocked: destructive",
       );
@@ -1714,6 +1729,101 @@ describe("the event bus (SQLite)", () => {
         type: "cap.raised",
         data: { cap: null, previousCap: 10 },
       });
+    });
+
+    it("cap.raised with source default and no app, and the Cap alerts row, from the workspace default too", async () => {
+      clearAppCapCache();
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 100 });
+      expect(
+        (await EventSubscriptionService.list(asOwner())).subscriptions,
+      ).toEqual([
+        expect.objectContaining({
+          builtin: "cap_alerts",
+          sink: "email",
+          recipients: "admins",
+        }),
+      ]);
+      // A lower default is no event and no second row; a higher one and a
+      // removal are announced, without an app.
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 50 });
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 200 });
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: null });
+      expect(
+        (await typesEmitted()).map((e) => ({ type: e.type, data: e.data })),
+      ).toEqual([
+        {
+          type: "cap.raised",
+          data: { app: null, cap: 100, previousCap: null, source: "default" },
+        },
+        {
+          type: "cap.raised",
+          data: { app: null, cap: 200, previousCap: 50, source: "default" },
+        },
+        {
+          type: "cap.raised",
+          data: { app: null, cap: null, previousCap: 200, source: "default" },
+        },
+      ]);
+      expect(
+        (await EventSubscriptionService.list(asOwner())).subscriptions,
+      ).toHaveLength(1);
+    });
+
+    it("cap.raised measures the cap that binds the app: a cap under the default is no raise, back to the default is one, unlimited under a default is a removal", async () => {
+      clearAppCapCache();
+      const { app } = await registerApp(db, {
+        organizationId: acme,
+        appSlug: "crm",
+        name: "CRM",
+      });
+      const crm = { id: "crm", rowId: app.id, name: "CRM" };
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 1_000 });
+      // Tighter than the default: silent.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 500,
+      });
+      // The row goes and the default binds again: a raise to the default.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: null,
+      });
+      // No cap whatever the default: a removal, said once.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: null,
+        unlimited: true,
+      });
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: null,
+        unlimited: true,
+      });
+      // A cap where there was none: set.
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 5_000,
+      });
+      expect(
+        (await typesEmitted()).map((e) => ({ type: e.type, data: e.data })),
+      ).toEqual([
+        {
+          type: "cap.raised",
+          data: { app: null, cap: 1_000, previousCap: null, source: "default" },
+        },
+        {
+          type: "cap.raised",
+          data: { app: crm, cap: 1_000, previousCap: 500, source: "app" },
+        },
+        {
+          type: "cap.raised",
+          data: { app: crm, cap: null, previousCap: 1_000, source: "app" },
+        },
+        {
+          type: "cap.raised",
+          data: { app: crm, cap: 5_000, previousCap: null, source: "app" },
+        },
+      ]);
     });
 
     it("token.created and token.revoked name the token's row and never its value", async () => {

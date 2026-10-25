@@ -5,7 +5,8 @@
  * with --many, a long catalog), apps that need setup (a Gateway setting
  * unset, an any-of group, an app-held secret the CLI recorded as unset), a
  * provider app, groups (empty, one member, many members), access grants
- * direct and through groups, monthly caps (unset, under, reached), AI
+ * direct and through groups, monthly caps (a workspace default, an app
+ * under its own cap, one paused through the default, one unlimited), AI
  * connections, personal access tokens (active, expired, revoked), a month
  * of usage and an agent-activity trail with and without the AI client's
  * handshake name. For screenshots and design review; nothing here is for
@@ -137,6 +138,12 @@ async function reset() {
     ],
     ["groups", `id IN (${inList(SEED_GROUP_IDS)})`, SEED_GROUP_IDS],
     ["org_app_settings", apps, SEED_APP_IDS],
+    // The default of every organization the seed members belong to (org A
+    // is the claimed owner's, so its id is not "seed-"); before `members`.
+    [
+      "org_settings",
+      "organization_id IN (SELECT organization_id FROM members WHERE id LIKE 'seed-%')",
+    ],
     ["user_access_tokens", `id IN (${inList(SEED_TOKEN_IDS)})`, SEED_TOKEN_IDS],
     ["user_app_access", "id LIKE 'seed-%'"],
     ["invitations", "id LIKE 'seed-%'"],
@@ -593,18 +600,24 @@ async function main() {
     }
   }
 
-  // Monthly caps (Admin → Usage): OpenSEO well under its cap, the inbox
-  // past its (the gateway refuses its calls: the cap check reads the
-  // usage_monthly rows written below), the provider app under a small one;
-  // every other app unlimited.
-  for (const [app, cap, by] of [
-    [appId("openseo"), 5_000, ownerId],
-    [appId("inbox"), 1_000, "seed-user-admin"],
-    [appId("provider-dataforseo"), 500, ownerId],
+  // Monthly caps (Manage workspace → Usage): a workspace default of 1,000
+  // for every app without a row; OpenSEO well under its own cap, the
+  // provider app under a small one, the CRM unlimited whatever the
+  // default, and the inbox with no row of its own past the default (the
+  // gateway refuses its calls and the launcher says Paused: the cap check
+  // reads the usage_monthly rows written below).
+  await run(
+    "INSERT INTO org_settings (organization_id, default_monthly_call_cap, updated_at, updated_by) VALUES (?, ?, ?, ?)",
+    [orgA, 1_000, ago(2 * DAY), ownerId],
+  );
+  for (const [app, cap, unlimited, by] of [
+    [appId("openseo"), 5_000, 0, ownerId],
+    [appId("provider-dataforseo"), 500, 0, ownerId],
+    [appId("crm"), null, 1, "seed-user-admin"],
   ]) {
     await run(
-      "INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)",
-      [orgA, app, cap, ago(DAY), by],
+      "INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, unlimited, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)",
+      [orgA, app, cap, unlimited, ago(DAY), by],
     );
   }
 

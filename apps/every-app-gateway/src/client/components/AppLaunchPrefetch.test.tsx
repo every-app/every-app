@@ -44,6 +44,7 @@ function app(overrides: Partial<UserAccessApp> = {}): UserAccessApp {
     via: null,
     icon: null,
     setup: null,
+    paused: false,
     ...overrides,
   };
 }

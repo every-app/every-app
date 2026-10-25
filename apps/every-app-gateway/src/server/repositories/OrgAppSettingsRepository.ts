@@ -1,40 +1,58 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { orgAppSettings } from "@/db/schema";
+import { organizations, orgAppSettings, orgSettings } from "@/db/schema";
+import { effectiveMonthlyCap, type EffectiveCap } from "@/server/app-cap";
 
 /**
- * The organization's monthly cap on an app's provider calls, or null when
- * none is set (no row, or a row with none).
+ * The cap that binds an app's provider calls for the organization this
+ * month: the app's own cap, none when the app is unlimited, else the
+ * organization's default (`org_settings`), else none. One query: the
+ * organization, with its row on the app and its defaults joined.
  */
-async function getMonthlyCap(
+async function getEffectiveMonthlyCap(
   organizationId: string,
   appRowId: string,
-): Promise<number | null> {
+): Promise<EffectiveCap> {
   const [row] = await db
-    .select({ cap: orgAppSettings.monthlyCallCap })
-    .from(orgAppSettings)
-    .where(
+    .select({
+      appCap: orgAppSettings.monthlyCallCap,
+      unlimited: orgAppSettings.unlimited,
+      defaultCap: orgSettings.defaultMonthlyCallCap,
+    })
+    .from(organizations)
+    .leftJoin(
+      orgAppSettings,
       and(
-        eq(orgAppSettings.organizationId, organizationId),
+        eq(orgAppSettings.organizationId, organizations.id),
         eq(orgAppSettings.appRowId, appRowId),
       ),
     )
+    .leftJoin(orgSettings, eq(orgSettings.organizationId, organizations.id))
+    .where(eq(organizations.id, organizationId))
     .limit(1);
-  return row?.cap ?? null;
+  if (!row) return { cap: null, source: null };
+  return effectiveMonthlyCap({
+    appCap: row.appCap,
+    unlimited: row.unlimited ?? false,
+    defaultCap: row.defaultCap,
+  });
 }
 
 /**
- * Set or clear the cap. Clearing deletes the row: the default needs none,
- * and the table holds nothing else yet.
+ * Set the organization's cap on the app (`cap`), say the app has none
+ * whatever the default (`unlimited`), or neither: delete the row, so the
+ * default applies, and without one the app is unlimited. Both columns are
+ * written in one statement, keeping the row invariant.
  */
 async function setMonthlyCap(input: {
   organizationId: string;
   appRowId: string;
   cap: number | null;
+  unlimited: boolean;
   updatedBy: string;
 }): Promise<void> {
-  const { organizationId, appRowId, cap, updatedBy } = input;
-  if (cap === null) {
+  const { organizationId, appRowId, cap, unlimited, updatedBy } = input;
+  if (cap === null && !unlimited) {
     await db
       .delete(orgAppSettings)
       .where(
@@ -46,22 +64,17 @@ async function setMonthlyCap(input: {
     return;
   }
   const updatedAt = new Date();
+  const row = { monthlyCallCap: cap, unlimited, updatedAt, updatedBy };
   await db
     .insert(orgAppSettings)
-    .values({
-      organizationId,
-      appRowId,
-      monthlyCallCap: cap,
-      updatedAt,
-      updatedBy,
-    })
+    .values({ organizationId, appRowId, ...row })
     .onConflictDoUpdate({
       target: [orgAppSettings.organizationId, orgAppSettings.appRowId],
-      set: { monthlyCallCap: cap, updatedAt, updatedBy },
+      set: row,
     });
 }
 
 export const OrgAppSettingsRepository = {
-  getMonthlyCap,
+  getEffectiveMonthlyCap,
   setMonthlyCap,
 } as const;

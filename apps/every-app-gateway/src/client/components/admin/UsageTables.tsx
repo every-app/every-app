@@ -133,65 +133,81 @@ function toolCallsColumn<
 }
 
 /**
- * The organization's monthly cap on the app's provider calls: how far
- * into it the app is this month, or the cap alone for a past month (the
- * cap is on the current month), or "Unlimited". The button opens the
- * set/clear dialog. An app the organization can no longer call (deleted)
- * has no cap and no button.
+ * The cap that binds the app this month and how far into it the app is,
+ * or the cap alone for a past month (the count is the current month's):
+ * its own cap as a number, the workspace default with " · default", "No
+ * cap" for an app told to ignore the default, "Unlimited" when nothing
+ * binds. A paused app (at its cap) reads "Paused · 1,000 of 1,000" in
+ * red with a red bar, and its button is Raise. The button opens the cap
+ * dialog. An app the organization can no longer call (deleted) has no cap
+ * and no button.
  */
 function MonthlyCapCell({
   row,
   isCurrentMonth,
+  hasDefault,
   onSetCap,
 }: {
   row: UsageAppRow;
   isCurrentMonth: boolean;
+  hasDefault: boolean;
   onSetCap: (row: UsageAppRow) => void;
 }) {
-  const cap = row.monthlyCallCap;
+  const cap = row.effectiveMonthlyCallCap;
   if (!row.callable) return null;
-  const button = (label: string) => (
+  // The visible label and the verb a screen reader hears before "monthly
+  // cap": "Set cap" reads as "Set monthly cap for Notes".
+  const button = (label: string, verb = label) => (
     <Button
       variant="ghost"
       size="xs"
       className="-mr-2"
-      aria-label={`${label} monthly cap for ${row.name ?? row.appRowId}`}
+      aria-label={`${verb} monthly cap for ${row.name ?? row.appRowId}`}
       onClick={() => onSetCap(row)}
     >
       {label}
     </Button>
   );
   if (cap === null) {
+    // A "no cap" row only means something against a default; without one
+    // it reads as the unlimited it is.
+    const noCap = row.capUnlimited && hasDefault;
     return (
       <div className="flex items-center justify-end gap-2">
-        <span className="text-muted-foreground">Unlimited</span>
-        {button("Set cap")}
+        <span className="text-muted-foreground">
+          {noCap ? "No cap" : "Unlimited"}
+        </span>
+        {button(noCap ? "Edit" : "Set cap", noCap ? "Edit" : "Set")}
       </div>
     );
   }
+  const source = row.capSource === "default" ? " · default" : "";
   if (!isCurrentMonth) {
     return (
       <div className="flex items-center justify-end gap-2">
-        <span>{formatCount(cap)}</span>
+        <span>
+          {formatCount(cap)}
+          {source}
+        </span>
         {button("Edit")}
       </div>
     );
   }
-  const reached = row.calls >= cap;
+  const progress = formatCapProgress(row.calls, cap);
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
-        <span className={reached ? "text-destructive" : undefined}>
-          {formatCapProgress(row.calls, cap)}
+        <span className={row.paused ? "text-destructive" : undefined}>
+          {row.paused ? `Paused · ${progress}` : `${progress}${source}`}
         </span>
-        {button("Edit")}
+        {button(row.paused ? "Raise" : "Edit")}
       </div>
       <Progress
         value={Math.min(row.calls, cap)}
         max={cap}
-        aria-label={`${row.name ?? row.appRowId}: ${formatCapProgress(row.calls, cap)} provider calls this month`}
+        aria-label={`${row.name ?? row.appRowId}: ${progress} provider calls this month`}
         className="w-28"
-        indicatorClassName={reached ? "bg-destructive" : undefined}
+        indicatorClassName={row.paused ? "bg-destructive" : undefined}
       />
     </div>
   );
@@ -200,7 +216,9 @@ function MonthlyCapCell({
 interface AppColumnOptions {
   /** The month shown is the current UTC month: progress toward the cap applies. */
   isCurrentMonth: boolean;
-  /** Opens the set/clear dialog for the row's app. */
+  /** The organization has a default cap: an app's "no cap" means something. */
+  hasDefault: boolean;
+  /** Opens the cap dialog for the row's app. */
   onSetCap: (row: UsageAppRow) => void;
 }
 
@@ -209,6 +227,7 @@ interface AppColumnOptions {
 // module-level arrays, and the app columns are memoized on their options.
 function buildAppColumns({
   isCurrentMonth,
+  hasDefault,
   onSetCap,
 }: AppColumnOptions): ColumnDef<UsageAppRow>[] {
   return [
@@ -217,7 +236,8 @@ function buildAppColumns({
     toolCallsColumn<UsageAppRow>(),
     {
       id: "monthlyCap",
-      accessorFn: (row) => row.monthlyCallCap ?? Number.POSITIVE_INFINITY,
+      accessorFn: (row) =>
+        row.effectiveMonthlyCallCap ?? Number.POSITIVE_INFINITY,
       header: ({ column }) => (
         <SortableHeader column={column} label="Monthly cap" />
       ),
@@ -230,6 +250,7 @@ function buildAppColumns({
         <MonthlyCapCell
           row={row.original}
           isCurrentMonth={isCurrentMonth}
+          hasDefault={hasDefault}
           onSetCap={onSetCap}
         />
       ),
@@ -359,11 +380,12 @@ export function UsageByAppTable({
   isLoading,
   error,
   isCurrentMonth,
+  hasDefault,
   onSetCap,
 }: UsageTableProps<UsageAppRow> & AppColumnOptions) {
   const columns = useMemo(
-    () => buildAppColumns({ isCurrentMonth, onSetCap }),
-    [isCurrentMonth, onSetCap],
+    () => buildAppColumns({ isCurrentMonth, hasDefault, onSetCap }),
+    [isCurrentMonth, hasDefault, onSetCap],
   );
   const table = useDataTable({
     data: rows,

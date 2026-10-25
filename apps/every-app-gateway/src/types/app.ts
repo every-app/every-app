@@ -83,6 +83,13 @@ export type UserAccessApp = Pick<
   /** The path of the launcher icon the app's manifest names (`icon`), or null. */
   icon: string | null;
   setup: ListedAppSetup;
+  /**
+   * The app has reached the viewer organization's monthly cap on its
+   * provider calls this UTC month: it opens, but the Gateway refuses its
+   * AI and provider calls until the month ends or an owner or admin raises
+   * the cap under Manage workspace → Usage.
+   */
+  paused: boolean;
 };
 
 /**

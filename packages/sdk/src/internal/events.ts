@@ -66,7 +66,11 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("app", "app.tools_changed", "An app's AI tools changed"),
   entry("cap", "cap.warning", "An app is at 80% of its monthly cap"),
   entry("cap", "cap.reached", "An app reached its monthly cap"),
-  entry("cap", "cap.raised", "An app's monthly cap was raised or removed"),
+  entry(
+    "cap",
+    "cap.raised",
+    "An app's monthly cap, or the workspace default, was raised or removed",
+  ),
   entry("tool", "tool.blocked", "An AI client's tool call was blocked"),
   entry("tool", "tool.error", "An AI client's tool call failed"),
   entry("connection", "connection.created", "An AI app was connected"),

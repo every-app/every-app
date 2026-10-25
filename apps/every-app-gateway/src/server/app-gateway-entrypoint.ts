@@ -13,6 +13,7 @@ import {
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
 import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 import {
+  capRefusalMessage,
   checkMonthlyCap,
   clearAppCapCache,
   type AppCapSources,
@@ -281,11 +282,12 @@ export async function handleAppGatewayRequest({
         cap: check.cap,
         calls: check.calls,
         month: check.month,
+        source: check.source,
       });
       throw new AppGatewayError(
         "app_monthly_cap_exceeded",
         429,
-        `${props.appId} has reached its monthly cap of ${check.cap.toLocaleString("en-US")} provider calls for this organization; an owner or admin raises it in Admin → Usage.`,
+        capRefusalMessage(props.appId, check),
         { "retry-after": String(check.retryAfterSeconds) },
       );
     };

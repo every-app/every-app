@@ -10,7 +10,7 @@ const QUERY_CACHE_KEY = "every-app-gateway-react-query-cache";
  *
  * This ensures users don't see stale/incompatible data after updates.
  */
-export const CACHE_BUSTER = "app-capabilities-setup-schema-1";
+export const CACHE_BUSTER = "app-paused-2";
 
 export const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,

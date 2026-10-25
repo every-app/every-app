@@ -85,6 +85,13 @@
       "when": 1792895203477,
       "tag": "0013_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792897272667,
+      "tag": "0014_caps_defaults",
+      "breakpoints": true
     }
   ]
 }

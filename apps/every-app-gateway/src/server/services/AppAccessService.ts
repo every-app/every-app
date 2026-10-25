@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { UsageRepository } from "../repositories/UsageRepository";
 import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
@@ -13,7 +14,10 @@ import { listedAppSetup } from "./listedAppSetup";
  * gateway the shared apps, which every member of every organization may
  * open. Each carries its `setup`: what it still needs set before it
  * opens, with the command for an app of the reader's own organization (a
- * shared app is the platform's to fix).
+ * shared app is the platform's to fix), and whether the reader's
+ * organization has it `paused`: at its monthly cap on provider calls, in
+ * one read for every listed app (a shared app's count and cap are the
+ * reader's organization's, whoever owns the row).
  */
 async function getAppsForUser(ctx: OrgContext) {
   const [accessRecords, shared] = await Promise.all([
@@ -54,6 +58,10 @@ async function getAppsForUser(ctx: OrgContext) {
         via: null,
       })),
   ];
+  const paused = await UsageRepository.pausedApps(
+    ctx.orgId,
+    listed.map(({ app }) => app.id),
+  );
   const apps = await Promise.all(
     listed.map(async ({ app, grantedAt, via }) => {
       // The registry columns the evaluation read stay server-side; the
@@ -70,6 +78,7 @@ async function getAppsForUser(ctx: OrgContext) {
         grantedAt,
         via,
         setup: await listedAppSetup(app, app.organizationId === ctx.orgId),
+        paused: paused.has(app.id),
       };
     }),
   );

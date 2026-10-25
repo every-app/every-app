@@ -685,8 +685,8 @@ describe("a provider app on the gateway's /mcp", () => {
       keywords: ["seo tools"],
     });
     expect(call.result?.isError).toBe(true);
-    expect(call.result?.content[0]?.text).toContain(
-      "monthly cap of 1 calls; an owner or admin raises it in Admin → Usage",
+    expect(call.result?.content[0]?.text).toBe(
+      "DataForSEO has reached its monthly cap of 1 provider calls for this organization. Its AI and provider calls are refused until the month ends (UTC) or an owner or admin raises the cap under Manage workspace → Usage.",
     );
     expect(upstream).toHaveLength(1);
     const [usage] = await db.select().from(usageDaily);

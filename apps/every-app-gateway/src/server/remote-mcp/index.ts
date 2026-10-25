@@ -66,7 +66,7 @@ import {
   RemoteMcpError,
   type NormalizedRemoteCatalog,
 } from "@every-app/toolbus/remote";
-import { checkMonthlyCap } from "@/server/app-cap";
+import { capRefusalMessage, checkMonthlyCap } from "@/server/app-cap";
 import { noteCapCheck } from "@/server/events/cap-events";
 import {
   providerAudience,
@@ -545,11 +545,12 @@ async function callTool(
     );
   }
   const appName = route.name ?? route.appSlug;
-  // The organization's monthly cap on the row (Admin → Usage), checked
-  // before anything goes upstream, as for a built-in provider app.
+  // The organization's monthly cap on the row (Manage workspace → Usage,
+  // the app's own or the workspace default), checked before anything goes
+  // upstream, as for a built-in provider app.
   const cap = await checkMonthlyCap(
     {
-      monthlyCallCap: OrgAppSettingsRepository.getMonthlyCap,
+      effectiveMonthlyCap: OrgAppSettingsRepository.getEffectiveMonthlyCap,
       monthlyCalls: UsageRepository.monthlyCalls,
     },
     route.organizationId,
@@ -582,13 +583,11 @@ async function callTool(
         cap: cap.cap,
         calls: cap.calls,
         month: cap.month,
+        source: cap.source,
       },
       "warn",
     );
-    return errorResult(
-      "",
-      `${appName} has reached this organization's monthly cap of ${cap.cap} calls; an owner or admin raises it in Admin → Usage, or it resets with the next UTC month.`,
-    );
+    return errorResult("", capRefusalMessage(appName, cap));
   }
   const gate = await refusal(route, block);
   if ("problem" in gate) return toolsError(500, "misconfigured", gate.problem);

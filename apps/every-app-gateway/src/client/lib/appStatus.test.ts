@@ -27,13 +27,16 @@ const UNREADY: UserAccessApp["setup"] = {
 };
 
 function app(
-  overrides: Partial<Pick<UserAccessApp, "hostname" | "status" | "setup">>,
+  overrides: Partial<
+    Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier" | "paused">
+  >,
 ) {
   return {
     hostname: "seo.apps.example.com",
     tier: "service_binding",
     status: "active",
     setup: null,
+    paused: false,
     ...overrides,
   };
 }
@@ -76,6 +79,56 @@ describe("appStatus", () => {
     expect(appNeedsSetup(app({ status: "disabled", setup: UNREADY }))).toBe(
       false,
     );
+  });
+});
+
+describe("appStatus for a paused app", () => {
+  it("shows Paused for a ready app at its monthly cap, and still opens it", () => {
+    for (const setup of [READY, null]) {
+      expect(appStatus(app({ setup, paused: true }))).toEqual({
+        label: AppStatusLabel.Paused,
+        variant: "warning",
+        opens: true,
+      });
+      expect(appNeedsSetup(app({ setup, paused: true }))).toBe(false);
+    }
+  });
+
+  it("lets setup and the deploy state win over a pause", () => {
+    expect(appStatus(app({ setup: UNREADY, paused: true })).label).toBe(
+      AppStatusLabel.NeedsSetup,
+    );
+    expect(appNeedsSetup(app({ setup: UNREADY, paused: true }))).toBe(true);
+    expect(appStatus(app({ status: "disabled", paused: true })).label).toBe(
+      AppStatusLabel.Disabled,
+    );
+    expect(appStatus(app({ hostname: null, paused: true })).label).toBe(
+      AppStatusLabel.NeedsDeploy,
+    );
+  });
+
+  it("shows Paused on an MCP app that is set up, which still never opens and still takes the agent dialog", () => {
+    const mcp = { tier: PROVIDER_APP_TIER, hostname: null };
+    expect(appStatus(app({ ...mcp, paused: true }))).toEqual({
+      label: AppStatusLabel.Paused,
+      variant: "warning",
+      opens: false,
+    });
+    expect(mcpAppUsable(app({ ...mcp, paused: true }))).toBe(true);
+    expect(appStatus(app({ ...mcp, setup: UNREADY, paused: true }))).toEqual({
+      label: AppStatusLabel.NeedsSetup,
+      variant: "warning",
+      opens: false,
+    });
+    expect(mcpAppUsable(app({ ...mcp, setup: UNREADY, paused: true }))).toBe(
+      false,
+    );
+    expect(appStatus(app({ ...mcp })).label).toBe(AppStatusLabel.Active);
+  });
+
+  it("reads an app that carries no pause (Admin → Apps) as before", () => {
+    const { paused: _paused, ...withoutPause } = app({});
+    expect(appStatus(withoutPause).label).toBe(AppStatusLabel.Active);
   });
 });
 

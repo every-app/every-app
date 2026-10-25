@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
   summarize: vi.fn(),
   setMonthlyCap: vi.fn(),
+  setDefaultMonthlyCap: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -43,12 +44,14 @@ vi.mock("@/server/repositories/UsageRepository", () => ({
 vi.mock("@/server/services/AppCapService", () => ({
   AppCapService: {
     setMonthlyCap: (...args: unknown[]) => mocks.setMonthlyCap(...args),
+    setDefaultMonthlyCap: (...args: unknown[]) =>
+      mocks.setDefaultMonthlyCap(...args),
   },
   MONTHLY_CALL_CAP_MIN: 1,
   MONTHLY_CALL_CAP_MAX: 1_000_000_000,
 }));
 
-import { getUsage, setAppMonthlyCap } from "./usage";
+import { getUsage, setAppMonthlyCap, setDefaultMonthlyCap } from "./usage";
 
 type ServerFnBuilder<TData> = {
   middlewares: unknown[];
@@ -66,7 +69,12 @@ const setAppMonthlyCapServerFn =
   setAppMonthlyCap as unknown as ServerFnBuilder<{
     appRowId: string;
     cap: number | null;
+    unlimited?: boolean;
   }>;
+const setDefaultMonthlyCapServerFn =
+  setDefaultMonthlyCap as unknown as ServerFnBuilder<{ cap: number | null }>;
+
+const org = { orgId: "org-1", userId: "admin-1", role: "admin" };
 
 describe("getUsage server function", () => {
   beforeEach(() => {
@@ -92,12 +100,18 @@ describe("getUsage server function", () => {
   });
 
   it("summarizes the active organization's month, never a requested one", async () => {
-    const summary = { month: "2026-10", byApp: [], byMember: [], byTarget: [] };
+    const summary = {
+      month: "2026-10",
+      defaultMonthlyCallCap: 1_000,
+      byApp: [],
+      byMember: [],
+      byTarget: [],
+    };
     mocks.summarize.mockResolvedValue(summary);
     await expect(
       getUsageServerFn.serverHandler({
         data: { month: "2026-10" },
-        context: { org: { orgId: "org-1", userId: "admin-1", role: "admin" } },
+        context: { org },
       }),
     ).resolves.toEqual(summary);
     expect(mocks.summarize).toHaveBeenCalledWith({
@@ -119,7 +133,7 @@ describe("setAppMonthlyCap server function", () => {
     ]);
   });
 
-  it("takes a whole cap from 1 to a billion, or null to clear it", () => {
+  it("takes a whole cap from 1 to a billion, null to inherit the default, or null and unlimited", () => {
     const validate = setAppMonthlyCapServerFn.validatorFn;
     expect(validate({ appRowId: "app-1", cap: 5000 })).toEqual({
       appRowId: "app-1",
@@ -137,29 +151,83 @@ describe("setAppMonthlyCap server function", () => {
       appRowId: "app-1",
       cap: null,
     });
+    expect(validate({ appRowId: "app-1", cap: null, unlimited: true })).toEqual(
+      { appRowId: "app-1", cap: null, unlimited: true },
+    );
+    expect(validate({ appRowId: "app-1", cap: 5, unlimited: false })).toEqual({
+      appRowId: "app-1",
+      cap: 5,
+      unlimited: false,
+    });
     for (const cap of [0, -1, 1.5, 1_000_000_001, "5000", undefined, NaN]) {
       expect(() => validate({ appRowId: "app-1", cap })).toThrow();
     }
     expect(() => validate({ appRowId: "", cap: 10 })).toThrow(
       "App is required",
     );
+    expect(() =>
+      validate({ appRowId: "app-1", cap: 10, unlimited: true }),
+    ).toThrow("An app has a cap or no cap, not both");
+    expect(() =>
+      validate({ appRowId: "app-1", cap: null, unlimited: "yes" }),
+    ).toThrow();
   });
 
   it("sets the cap for the active organization through the service", async () => {
-    mocks.setMonthlyCap.mockResolvedValue({
+    const state = {
       appRowId: "app-1",
       monthlyCallCap: 5000,
-    });
-    const org = { orgId: "org-1", userId: "admin-1", role: "admin" };
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 5000,
+      capSource: "app",
+    };
+    mocks.setMonthlyCap.mockResolvedValue(state);
     await expect(
       setAppMonthlyCapServerFn.serverHandler({
         data: { appRowId: "app-1", cap: 5000 },
         context: { org },
       }),
-    ).resolves.toEqual({ appRowId: "app-1", monthlyCallCap: 5000 });
+    ).resolves.toEqual(state);
     expect(mocks.setMonthlyCap).toHaveBeenCalledWith(org, {
       appRowId: "app-1",
       cap: 5000,
+    });
+  });
+});
+
+describe("setDefaultMonthlyCap server function", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses the public error and organization admin gate", () => {
+    expect(setDefaultMonthlyCapServerFn.middlewares).toEqual([
+      mocks.publicErrorMiddleware,
+      mocks.organizationAdminMiddleware,
+    ]);
+  });
+
+  it("takes a whole cap from 1 to a billion, or null to clear the default", () => {
+    const validate = setDefaultMonthlyCapServerFn.validatorFn;
+    expect(validate({ cap: 1_000 })).toEqual({ cap: 1_000 });
+    expect(validate({ cap: null })).toEqual({ cap: null });
+    for (const cap of [0, -1, 1.5, 1_000_000_001, "1000", undefined, NaN]) {
+      expect(() => validate({ cap })).toThrow();
+    }
+  });
+
+  it("sets the default for the active organization through the service", async () => {
+    mocks.setDefaultMonthlyCap.mockResolvedValue({
+      defaultMonthlyCallCap: 1_000,
+    });
+    await expect(
+      setDefaultMonthlyCapServerFn.serverHandler({
+        data: { cap: 1_000 },
+        context: { org },
+      }),
+    ).resolves.toEqual({ defaultMonthlyCallCap: 1_000 });
+    expect(mocks.setDefaultMonthlyCap).toHaveBeenCalledWith(org, {
+      cap: 1_000,
     });
   });
 });

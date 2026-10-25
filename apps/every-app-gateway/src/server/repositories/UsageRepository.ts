@@ -6,6 +6,7 @@ import {
   mcpToolCalls,
   members,
   orgAppSettings,
+  orgSettings,
   usageDaily,
   usageMonthly,
   users,
@@ -17,7 +18,7 @@ import {
   type UsageEvent,
   type UsageRecorder,
 } from "@/server/usage-event";
-import type { MonthlyCallCounter } from "@/server/app-cap";
+import { effectiveMonthlyCap, type MonthlyCallCounter } from "@/server/app-cap";
 import type { UsageAppRow, UsageSummary, UsageTotals } from "@/types/usage";
 
 /** Daily rows are kept this many months, monthly rows this many. */
@@ -140,6 +141,67 @@ async function monthlyCalls(
   return row?.calls ?? 0;
 }
 
+/**
+ * Which of these apps the organization has paused in the month `now` is
+ * in: those whose counted calls have reached the cap that binds them (the
+ * app's own, else the organization's default unless the app is unlimited).
+ * One batch: the organization's cap rows, its default, and the month's
+ * rows, all of them. The app ids are matched in memory, not bound into
+ * the statements: D1 allows 100 bound parameters per statement (each
+ * statement of a batch alone), and the launcher lists every app the
+ * organization can call, which can pass that. An organization's own rows
+ * are few (one per capped app, one per app called this month), so reading
+ * them all costs less than a second batch. The launcher reads it for every
+ * app it lists, shared apps included (their row is the platform's, but the
+ * count and the cap are this organization's).
+ */
+async function pausedApps(
+  organizationId: string,
+  appRowIds: readonly string[],
+  now = new Date(),
+): Promise<Set<string>> {
+  const paused = new Set<string>();
+  if (appRowIds.length === 0) return paused;
+  const wanted = new Set(appRowIds);
+  const [settings, defaults, counts] = await db.batch([
+    db
+      .select({
+        appRowId: orgAppSettings.appRowId,
+        appCap: orgAppSettings.monthlyCallCap,
+        unlimited: orgAppSettings.unlimited,
+      })
+      .from(orgAppSettings)
+      .where(eq(orgAppSettings.organizationId, organizationId)),
+    db
+      .select({ defaultCap: orgSettings.defaultMonthlyCallCap })
+      .from(orgSettings)
+      .where(eq(orgSettings.organizationId, organizationId))
+      .limit(1),
+    db
+      .select({ appRowId: usageMonthly.appRowId, calls: usageMonthly.calls })
+      .from(usageMonthly)
+      .where(
+        and(
+          eq(usageMonthly.organizationId, organizationId),
+          eq(usageMonthly.month, utcMonth(now)),
+        ),
+      ),
+  ]);
+  const defaultCap = defaults[0]?.defaultCap ?? null;
+  const rows = new Map(settings.map((row) => [row.appRowId, row]));
+  for (const { appRowId, calls } of counts) {
+    if (!wanted.has(appRowId)) continue;
+    const row = rows.get(appRowId);
+    const { cap } = effectiveMonthlyCap({
+      appCap: row?.appCap ?? null,
+      unlimited: row?.unlimited ?? false,
+      defaultCap,
+    });
+    if (cap !== null && calls >= cap) paused.add(appRowId);
+  }
+  return paused;
+}
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** The first day of the month `months` after `month` ("YYYY-MM"). */
@@ -184,14 +246,18 @@ function memberOf(
  * per member (with a '' row for the apps' own calls; a former member by
  * id), and per provider or capability. Allowed MCP tool calls come from
  * the audit trail, so an app agents use shows up even before it calls a
- * provider.
+ * provider. Each callable app carries the cap that binds it (its own, or
+ * the organization's default) and, in the month `now` is in, whether it
+ * has reached it.
  */
 async function summarize({
   organizationId,
   month,
+  now = new Date(),
 }: {
   organizationId: string;
   month: string;
+  now?: Date;
 }): Promise<UsageSummary> {
   if (!MONTH.test(month)) throw new Error(`not a month: ${month}`);
   const from = `${month}-01`;
@@ -218,6 +284,7 @@ async function summarize({
     toolCallsByApp,
     toolCallsByMember,
     callable,
+    defaults,
   ] = await db.batch([
     db
       .select({
@@ -274,7 +341,7 @@ async function summarize({
       .where(toolCallsInMonth)
       .groupBy(mcpToolCalls.userId, users.name, users.email),
     // Every app the organization can call today (its own, and the shared
-    // ones; never a deleted app's tombstone), with the organization's cap
+    // ones; never a deleted app's tombstone), with the organization's row
     // on it: an app shows in the month before it made a call, so a cap
     // can be set before the first call and is always visible to clear.
     db
@@ -283,6 +350,7 @@ async function summarize({
         name: apps.name,
         appSlug: apps.appSlug,
         monthlyCallCap: orgAppSettings.monthlyCallCap,
+        capUnlimited: orgAppSettings.unlimited,
       })
       .from(apps)
       .leftJoin(
@@ -298,8 +366,14 @@ async function summarize({
           ne(apps.status, DELETED_APP_STATUS),
         ),
       ),
+    db
+      .select({ cap: orgSettings.defaultMonthlyCallCap })
+      .from(orgSettings)
+      .where(eq(orgSettings.organizationId, organizationId))
+      .limit(1),
   ]);
 
+  const defaultMonthlyCallCap = defaults[0]?.cap ?? null;
   const none: UsageTotals = {
     calls: 0,
     failures: 0,
@@ -310,15 +384,17 @@ async function summarize({
   // Usage rows first (an app that spent, callable today or not), then the
   // callable apps: their cap, and a zero row for one that made no call. A
   // cap only ever shows on a callable app, where it can be set and cleared.
-  const appRows = new Map(
+  const uncapped = {
+    monthlyCallCap: null as number | null,
+    capUnlimited: false,
+    effectiveMonthlyCallCap: null as number | null,
+    capSource: null as UsageAppRow["capSource"],
+    paused: false,
+  };
+  const appRows = new Map<string, UsageAppRow>(
     byApp.map((row) => [
       row.appRowId,
-      {
-        ...row,
-        toolCalls: 0,
-        monthlyCallCap: null as number | null,
-        callable: false,
-      },
+      { ...row, toolCalls: 0, ...uncapped, callable: false },
     ]),
   );
   for (const row of toolCallsByApp) {
@@ -331,24 +407,36 @@ async function summarize({
         ...none,
         ...row,
         appRowId: row.appRowId,
-        monthlyCallCap: null,
+        ...uncapped,
         callable: false,
       });
     }
   }
+  // Paused is this month's state only: a past month's count against
+  // today's cap says nothing.
+  const current = month === utcMonth(now);
   for (const row of callable) {
-    const existing = appRows.get(row.appRowId);
-    if (existing) {
-      existing.callable = true;
-      existing.monthlyCallCap = row.monthlyCallCap;
-    } else {
-      appRows.set(row.appRowId, {
-        ...none,
-        ...row,
-        toolCalls: 0,
-        callable: true,
-      });
-    }
+    const { monthlyCallCap, capUnlimited, ...listed } = row;
+    const effective = effectiveMonthlyCap({
+      appCap: monthlyCallCap,
+      unlimited: capUnlimited ?? false,
+      defaultCap: defaultMonthlyCallCap,
+    });
+    const existing = appRows.get(row.appRowId) ?? {
+      ...none,
+      ...listed,
+      toolCalls: 0,
+      ...uncapped,
+      callable: true,
+    };
+    existing.callable = true;
+    existing.monthlyCallCap = monthlyCallCap;
+    existing.capUnlimited = capUnlimited ?? false;
+    existing.effectiveMonthlyCallCap = effective.cap;
+    existing.capSource = effective.source;
+    existing.paused =
+      current && effective.cap !== null && existing.calls >= effective.cap;
+    appRows.set(row.appRowId, existing);
   }
   const memberRows = new Map(
     byMember.map((row) => [row.userId, { ...row, toolCalls: 0 }]),
@@ -367,6 +455,7 @@ async function summarize({
     byCalls(a, b) || (a.name ?? a.appRowId).localeCompare(b.name ?? b.appRowId);
   return {
     month,
+    defaultMonthlyCallCap,
     byApp: [...appRows.values()].sort(byCallsThenName),
     byMember: [...memberRows.values()].sort(byCalls),
     byTarget: byTarget.sort((a, b) => b.calls - a.calls),
@@ -437,11 +526,13 @@ async function deleteOlderThan(
 
 export const UsageRepository: UsageRecorder &
   MonthlyCallCounter & {
+    pausedApps: typeof pausedApps;
     summarize: typeof summarize;
     deleteOlderThan: typeof deleteOlderThan;
   } = {
   record,
   monthlyCalls,
+  pausedApps,
   summarize,
   deleteOlderThan,
 } as const;

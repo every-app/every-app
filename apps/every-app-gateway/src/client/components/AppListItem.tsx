@@ -13,6 +13,7 @@ import {
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
 import {
+  AppStatusLabel,
   MCP_APP_KIND_LABEL,
   appNeedsSetup,
   appStatus,
@@ -41,11 +42,21 @@ interface AppListItemProps {
 }
 
 /**
+ * What a paused card says in place of its description, on phones and to
+ * screen readers too (the chip alone can't say it: the body sits under
+ * the link overlay, so nothing in it takes a hover).
+ */
+export const PAUSED_CARD_SENTENCE =
+  "Monthly cap reached. An owner or admin can raise it under Manage workspace → Usage.";
+
+/**
  * The app is a normal link; pinning is a separate, keyboard-accessible
  * action. An app that needs setup is no link: the card (its badge
  * included) opens the setup dialog instead. An MCP app has no page: its
  * card carries an "MCP" chip where the open arrow would be and opens the
- * dialog that says how an agent uses it.
+ * dialog that says how an agent uses it. A paused app (at its monthly
+ * cap) opens as it did, since only its provider calls are refused: its
+ * one chip says Paused and its description says who raises the cap.
  */
 export function AppListItem({
   app,
@@ -59,6 +70,7 @@ export function AppListItem({
   const routable = status.opens;
   const needsSetup = appNeedsSetup(app);
   const mcp = mcpAppUsable(app);
+  const paused = status.label === AppStatusLabel.Paused;
   const list = layout === AppLibraryLayout.List;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
@@ -66,10 +78,19 @@ export function AppListItem({
   // (lib/appLaunchPrefetch); an app that opens always has a hostname.
   const { hostname } = app;
   const warm = hostname ? () => preconnectTo(hostname) : undefined;
-  // What sits beside the name when there is no arrow: the kind of an MCP
-  // app, or the state of an app that doesn't open.
+  // What sits beside the name when there is no arrow, one chip per card:
+  // Paused on an app that is at its cap (a state the person acts on, so
+  // it comes before the kind), else the kind of an MCP app, else the
+  // state of an app that doesn't open.
   // The kind in the badge's soft tint, so it never reads as a state.
-  const chip = mcp ? (
+  const chip = paused ? (
+    <Badge
+      variant={status.variant}
+      className={cn("shrink-0", list && "md:hidden")}
+    >
+      {status.label}
+    </Badge>
+  ) : mcp ? (
     <Badge variant="soft" className={cn("shrink-0", list && "md:hidden")}>
       {MCP_APP_KIND_LABEL}
     </Badge>
@@ -124,7 +145,7 @@ export function AppListItem({
             list && "md:mt-0 md:line-clamp-none md:truncate md:leading-5",
           )}
         >
-          {app.description}
+          {paused ? PAUSED_CARD_SENTENCE : app.description}
         </p>
       </div>
       <div
@@ -156,7 +177,7 @@ export function AppListItem({
           <TooltipContent>{pinLabel}</TooltipContent>
         </Tooltip>
         {list ? (
-          routable ? (
+          routable && !paused ? (
             <span
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
@@ -169,7 +190,7 @@ export function AppListItem({
                 aria-hidden
               />
             </span>
-          ) : mcp ? (
+          ) : mcp && !paused ? (
             <Badge variant="soft" className="hidden md:inline-flex">
               {MCP_APP_KIND_LABEL}
             </Badge>

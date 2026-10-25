@@ -276,6 +276,7 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | Admin → Tokens → Revoke | `userTokens.revokeUserToken` | `workspace token revoke` | `everyapp_revoke_token` | own tokens only through MCP; any token for the operator |
 | Admin → Usage: the month | `usage.getUsage` | `workspace usage` | `everyapp_workspace_usage` | the Caps thread's gateway PR (t3/caps-core) adds the effective cap, its source, `unlimited` and `paused`; both twins show them once it lands |
 | Admin → Usage → Cap an app | `usage.setAppMonthlyCap` | `workspace app cap` | `everyapp_workspace_app_cap` | `off` removes the app's own cap; once t3/caps-core is on main: `--unlimited` and the tool's `unlimited` (no cap even with a workspace default), and the default cap as `workspace cap default` / `everyapp_workspace_cap_default` with its server function `usage.setDefaultMonthlyCap` |
+| Admin → Usage → Default monthly cap | `usage.setDefaultMonthlyCap` | — | — | no twin: `workspace cap default` and `everyapp_workspace_cap_default` are the parity thread's (its plan above), now that the default cap is on main; `cap: null` removes the default; raised or removed it emits `cap.raised` with `source: "default"` and no app, and the organization's first cap, default or an app's, makes the Cap alerts subscription |
 
 ### Other UI actions (not server functions)
 

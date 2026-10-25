@@ -2,16 +2,16 @@
 /**
  * The home card rendered for real (React in a DOM): a ready app is a link,
  * an app that needs setup is a button that opens the setup dialog, an MCP
- * app is a button that opens the "Use it from your agent" dialog, and the
- * pin button works on any. The wording of the status is tested on
- * appStatus (lib/appStatus.test.ts).
+ * app is a button that opens the "Use it from your agent" dialog, a paused
+ * app opens as it did and says so, and the pin button works on any. The
+ * wording of the status is tested on appStatus (lib/appStatus.test.ts).
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import type { UserAccessApp } from "@/types/app";
-import { AppListItem } from "./AppListItem";
+import { AppListItem, PAUSED_CARD_SENTENCE } from "./AppListItem";
 
 // The card reads only the layout enum from the library hook, whose
 // collections reach the server's Worker bindings; keep the test in the DOM.
@@ -36,6 +36,7 @@ function app(overrides: Partial<UserAccessApp> = {}): UserAccessApp {
     via: null,
     icon: null,
     setup: null,
+    paused: false,
     ...overrides,
   };
 }
@@ -194,4 +195,50 @@ it("sends an MCP app whose key is unset to the setup dialog, not the agent dialo
   press(setup);
   expect(onOpenSetup).toHaveBeenCalledOnce();
   expect(onUseMcp).not.toHaveBeenCalled();
+});
+
+it("keeps a paused app a link, with the Paused chip and the sentence in place of its description, in both layouts", () => {
+  for (const layout of [AppLibraryLayout.Grid, AppLibraryLayout.List]) {
+    render(app({ paused: true }), layout);
+    expect(openLink()?.getAttribute("href")).toBe("//seo.apps.example.com");
+    expect(setupButton()).toBeNull();
+    const chips = [...container.querySelectorAll('[data-slot="badge"]')];
+    expect(chips.map((chip) => chip.textContent)).toEqual(
+      layout === AppLibraryLayout.List ? ["Paused", "Paused"] : ["Paused"],
+    );
+    expect(text()).toContain(PAUSED_CARD_SENTENCE);
+    expect(text()).not.toContain("Keyword research.");
+    expect(text()).not.toContain("Open app");
+  }
+});
+
+it("shows the description and no chip on a ready app, and Open app in the list layout", () => {
+  render(app(), AppLibraryLayout.List);
+  expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+  expect(text()).toContain("Keyword research.");
+  expect(text()).toContain("Open app");
+});
+
+it("says Needs setup, not Paused, on a paused app that isn't set up", () => {
+  render(app({ setup: UNREADY, paused: true }));
+  expect(text()).toContain("Needs setup");
+  expect(text()).not.toContain("Paused");
+  expect(text()).toContain("Keyword research.");
+  expect(setupButton()).not.toBeNull();
+});
+
+it("shows Paused instead of the MCP chip on a paused MCP app, which still opens the agent dialog, in both layouts", () => {
+  for (const layout of [AppLibraryLayout.Grid, AppLibraryLayout.List]) {
+    render({ ...MCP, paused: true }, layout);
+    const chips = [...container.querySelectorAll('[data-slot="badge"]')];
+    expect(chips.map((chip) => chip.textContent)).toEqual(
+      layout === AppLibraryLayout.List ? ["Paused", "Paused"] : ["Paused"],
+    );
+    expect(text()).not.toContain("MCP");
+    expect(text()).toContain(PAUSED_CARD_SENTENCE);
+    expect(container.querySelector("a[href]")).toBeNull();
+    press(useButton());
+    expect(onUseMcp).toHaveBeenCalledOnce();
+    onUseMcp.mockClear();
+  }
 });
