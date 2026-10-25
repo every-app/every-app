@@ -251,7 +251,6 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
           : "Invalid input",
       );
     }
-    // events: mcp_app.added (kind "remote"), at the service's write.
     const added = await McpAppService.add(
       ctx,
       parsed.data,
@@ -297,7 +296,6 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
     }
     const details = await detailsOf(ctx, args);
     const credential = credentialOf(details);
-    // events: mcp_app.removed, at the service's write.
     await McpAppService.remove(ctx, { id: details.id });
     return {
       removed: {
@@ -319,7 +317,6 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
 
   async mcp_on(ctx, args) {
     const row = await resolveMcpApp(ctx, requireText(args, "app"));
-    // events: mcp_app.enabled, at the service's write.
     const { changed } = await McpAppService.setStatus(ctx, {
       id: row.id,
       status: "active",
@@ -330,7 +327,6 @@ export const MCP_APP_HANDLERS: Record<string, McpAppHandler> = {
 
   async mcp_off(ctx, args) {
     const row = await resolveMcpApp(ctx, requireText(args, "app"));
-    // events: mcp_app.disabled, at the service's write.
     const { changed } = await McpAppService.setStatus(ctx, {
       id: row.id,
       status: "disabled",

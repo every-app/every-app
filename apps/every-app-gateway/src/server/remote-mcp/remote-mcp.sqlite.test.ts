@@ -6,7 +6,8 @@
  * forwarded with the credential the gateway holds, the credential never
  * leaving the gateway, the usage counted against the row and the call
  * audited; the risk mapping and the operator's overrides; the credential
- * binding; off and on; and the identity check on the contract itself.
+ * binding; off and on; the identity check on the contract itself; and
+ * app.tools_changed, kind "remote", once for each change of the list.
  */
 import {
   afterEach,
@@ -48,7 +49,7 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 }));
 
 import { generateKeyPairSync } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   mcpAppStatusUpdate,
   planRemoteMcpAppAdd,
@@ -76,9 +77,13 @@ import { clearAppCapCache } from "@/server/app-cap";
 import { clearCapEventMemoryForTests } from "@/server/events/cap-events";
 import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
 import { resetRegistrationLimitsForTests } from "@/server/mcp-auth/registration-limit";
+import { McpAppService } from "@/server/services/McpAppService";
 import { UserPatService } from "@/server/services/UserPatService";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
-import { clearCatalogSyncClaimsForTests } from "@/server/toolbus/catalog-sync";
+import {
+  clearCatalogSyncClaimsForTests,
+  syncAppTools,
+} from "@/server/toolbus/catalog-sync";
 import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import { createKvFake } from "@/test/kv-fake";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
@@ -911,5 +916,85 @@ describe("a remote MCP app on the gateway's /mcp", () => {
       seen.filter((request) => request.body["method"] === "tools/call"),
     ).toHaveLength(1);
     await settle();
+  });
+});
+
+describe("a remote MCP app's tool changes on the event bus", () => {
+  /** The app.tools_changed events written, in the order they were written. */
+  async function toolsChanged() {
+    const rows = await db
+      .select()
+      .from(events)
+      .orderBy(sql`rowid`);
+    return rows
+      .filter((event) => event.type === "app.tools_changed")
+      .map((event) => ({
+        appRowId: event.appRowId,
+        data: JSON.parse(event.data) as Record<string, unknown>,
+      }));
+  }
+
+  it("announces app.tools_changed with kind remote once for each change of the list, and never for a listing of the same tools", async () => {
+    const token = await pat(ownerId);
+    // The first use lists the tools: from none to three.
+    await toolNames(token);
+    expect(await toolsChanged()).toEqual([
+      {
+        appRowId: rowId,
+        data: {
+          app: { id: "treg", rowId, name: "Treg" },
+          kind: "remote",
+          toolCount: 3,
+          previousToolCount: 0,
+          added: ["delete_user", "get_user", "send_mail"],
+          removed: [],
+        },
+      },
+    ]);
+
+    // The same list again, by the hourly re-list's seam: no change.
+    const row = await currentRow();
+    const target = {
+      rowId,
+      organizationId: orgId,
+      appSlug: "treg",
+      hostname: null,
+      workerName: null,
+      tier: row.tier,
+      versionId: null,
+      manifest: row.manifest,
+      name: row.name,
+    };
+    await syncAppTools(target);
+    expect(await toolsChanged()).toHaveLength(1);
+
+    // An operator's Refresh tools drops the snapshot and lists the same
+    // tools: still no change.
+    const refreshed = await McpAppService.refreshTools(
+      { orgId, userId: ownerId, role: "owner" },
+      { id: rowId },
+    );
+    await settle();
+    expect(refreshed).toMatchObject({ added: [], removed: [], error: null });
+    expect(await toolsChanged()).toHaveLength(1);
+
+    // A tool turned off leaves the list: one change, kind remote.
+    await override({
+      tool: { name: "sendMail", override: { enabled: false } },
+    });
+    await toolNames(token);
+    const changes = await toolsChanged();
+    expect(changes).toHaveLength(2);
+    expect(changes[1]).toEqual({
+      appRowId: rowId,
+      data: {
+        app: { id: "treg", rowId, name: "Treg" },
+        kind: "remote",
+        toolCount: 2,
+        previousToolCount: 3,
+        added: [],
+        removed: ["send_mail"],
+      },
+    });
   });
 });

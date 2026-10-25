@@ -14,6 +14,13 @@
  * `on`/`off` are the status for both kinds (`active` serves, `disabled`
  * keeps access, tokens and the snapshot and serves nothing); `remove` is
  * the tombstone, which #599's `off` used to be.
+ *
+ * Each write announces itself on the event bus once it has happened
+ * (docs/design/2026-10-events-out.md, section 5): `mcp_app.added` for an
+ * add, `mcp_app.enabled` or `mcp_app.disabled` for a status that changed,
+ * `mcp_app.removed` for a remove, the acting member as the actor and the
+ * kind read from the row. The bus never throws, so a webhook never undoes
+ * the change that caused it.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -42,6 +49,9 @@ import {
 } from "@every-app/sdk/internal";
 import { SETUP_CLI } from "@/server/app-setup";
 import { GatewayError, PublicError, getPublicErrorCode } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue, type BuiltEvent } from "@/server/events/catalogue";
+import { userActor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
@@ -180,6 +190,31 @@ function syncable(
   };
 }
 
+type McpAppKind = "builtin" | "remote";
+
+/** Which kind of MCP app a row is: a remote server's when it has a remote block. */
+function kindOf(row: Pick<AppRow, "tier" | "manifest">): McpAppKind {
+  return isRemoteMcpRow(row) ? "remote" : "builtin";
+}
+
+/**
+ * Announce an MCP app write on the event bus, the acting member as the
+ * actor and the app as the event names it. Never throws.
+ */
+async function announce(
+  ctx: OrgContext,
+  app: Pick<AppRow, "id" | "appSlug" | "name">,
+  build: (subject: {
+    app: { id: string; rowId: string; name: string };
+  }) => BuiltEvent,
+): Promise<void> {
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await userActor(ctx.userId),
+    ...build({ app: { id: app.appSlug, rowId: app.id, name: app.name } }),
+  }));
+}
+
 type Listing = {
   status: McpAppSnapshot["status"];
   toolCount: number;
@@ -191,13 +226,17 @@ type Listing = {
  * /mcp path takes on first use), waiting up to `budgetMs`: the listing's
  * outcome, or null when it didn't finish in time (it finishes after the
  * response) or couldn't start (the app can't be reached from here yet).
- * Never throws.
+ * `previousNames` are the tool names a dropped snapshot held, so the
+ * listing's app.tools_changed compares against them. Never throws.
  */
 async function listToolsWithin(
   app: SyncableApp,
   budgetMs: number,
+  previousNames?: readonly string[],
 ): Promise<Listing | null> {
-  const listing: Promise<Listing | null> = syncAppTools(app).then(
+  const listing: Promise<Listing | null> = syncAppTools(app, {
+    previousNames,
+  }).then(
     (result) => {
       logToolSync(app, result, "first_use");
       return {
@@ -330,8 +369,11 @@ async function add(
   } catch (error) {
     throw asPublicError(error);
   }
-  // events: mcp_app.added (kind "remote")
   await McpAppRepository.writeRemoteApp(plan.app, plan.grants);
+  // A revived tombstone is added again, as a new one is.
+  await announce(ctx, plan.app, (subject) =>
+    catalogue.mcpAppAdded({ ...subject, kind: "remote" }),
+  );
 
   const secret = remoteMcpSecretOf(plan.remote.auth);
   let listing: Listing | null = null;
@@ -404,8 +446,14 @@ async function setStatus(
     throw asPublicError(error);
   }
   if (change) {
-    // events: mcp_app.enabled | mcp_app.disabled (by change.status)
-    await McpAppRepository.setStatus(row.id, ctx.orgId, change.status);
+    const { status } = change;
+    await McpAppRepository.setStatus(row.id, ctx.orgId, status);
+    const kind = kindOf(row);
+    await announce(ctx, row, (subject) =>
+      status === "active"
+        ? catalogue.mcpAppEnabled({ ...subject, kind })
+        : catalogue.mcpAppDisabled({ ...subject, kind }),
+    );
   }
   return { status: input.status, changed: change !== null };
 }
@@ -419,8 +467,11 @@ async function remove(ctx: OrgContext, input: { id: string }): Promise<void> {
   assertOwner(ctx);
   const row = await AppRepository.findById(input.id, ctx.orgId);
   if (!row || !mcpAppRemoveUpdate(registryRow(row))) throw notFound();
-  // events: mcp_app.removed
   await AppRepository.tombstone(row);
+  const kind = kindOf(row);
+  await announce(ctx, row, (subject) =>
+    catalogue.mcpAppRemoved({ ...subject, kind }),
+  );
 }
 
 /**
@@ -435,13 +486,15 @@ async function refreshTools(
   const row = await findMcpRow(ctx, input.id);
   const listed = (names: string[]) =>
     names.map((name) => `${row.appSlug}_${name}`);
-  const before = new Set(
-    listed(await AppToolRepository.toolNames(row.id, ctx.orgId)),
-  );
+  const previousNames = await AppToolRepository.toolNames(row.id, ctx.orgId);
+  const before = new Set(listed(previousNames));
   await AppToolRepository.deleteSnapshot(row.id, ctx.orgId);
+  // The names the dropped snapshot held: a refresh that lists the same
+  // tools is no app.tools_changed.
   const listing = await listToolsWithin(
     syncable(row),
     REFRESH_LISTING_BUDGET_MS,
+    previousNames,
   );
   const after = listed(await AppToolRepository.toolNames(row.id, ctx.orgId));
   const afterSet = new Set(after);
@@ -541,7 +594,7 @@ async function get(
       name: row.name,
       description: row.description,
       status,
-      kind: isRemoteMcpRow(row) ? "remote" : "builtin",
+      kind: kindOf(row),
       remote: null,
       origin: null,
       authKind: null,

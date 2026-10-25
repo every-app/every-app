@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { isRemoteMcpRow } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { AppRepository } from "../repositories/AppRepository";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
@@ -146,7 +147,10 @@ async function deleteApp(ctx: OrgContext, id: string) {
     organizationId: ctx.orgId,
     actor: await userActor(ctx.userId),
     ...(existingApp.tier === PROVIDER_APP_TIER
-      ? catalogue.mcpAppRemoved({ app, kind: "builtin" })
+      ? catalogue.mcpAppRemoved({
+          app,
+          kind: isRemoteMcpRow(existingApp) ? "remote" : "builtin",
+        })
       : catalogue.appRemoved({ app, purged: false })),
   }));
 }

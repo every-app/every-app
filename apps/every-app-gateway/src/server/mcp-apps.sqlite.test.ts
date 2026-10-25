@@ -7,7 +7,8 @@
  * comes back with the rule's sentence; an update bumps the block's
  * revision; on and off keep everything; remove is the owners' and is the
  * tombstone; Refresh tools lists again and says what changed; getMcpApp
- * shows the credential's state and every tool's risk with its source.
+ * shows the credential's state and every tool's risk with its source;
+ * each add, status change and remove announces its one event on the bus.
  *
  * The listing itself (catalog-sync's syncAppTools, which reaches the
  * remote server through the gateway's proxy) stands in here: it writes the
@@ -34,6 +35,12 @@ const hoisted = vi.hoisted(() => ({
   /** What the stand-in server lists, or an error to throw. */
   listing: [] as ListedTool[] | Error,
   syncs: [] as string[],
+  /** What each listing was asked with: the row as the sync reads it, and the names before. */
+  synced: [] as Array<{
+    manifest?: string | null;
+    name?: string;
+    previousNames?: readonly string[];
+  }>,
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -50,8 +57,21 @@ vi.mock("@/server/toolbus/catalog-sync", () => ({
   logToolSync: () => undefined,
   // The listing as the proxy writes it: the snapshot from the block's
   // revision, and what the server listed tool by tool.
-  syncAppTools: async (app: { rowId: string; organizationId: string }) => {
+  syncAppTools: async (
+    app: {
+      rowId: string;
+      organizationId: string;
+      manifest?: string | null;
+      name?: string;
+    },
+    options: { previousNames?: readonly string[] } = {},
+  ) => {
     hoisted.syncs.push(app.rowId);
+    hoisted.synced.push({
+      manifest: app.manifest,
+      name: app.name,
+      previousNames: options.previousNames,
+    });
     if (hoisted.listing instanceof Error) throw hoisted.listing;
     const { db } = await import("@/db");
     const schema = await import("@/db/schema");
@@ -113,16 +133,19 @@ vi.mock("@/server/toolbus/catalog-sync", () => ({
   },
 }));
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { planProviderAppOn } from "@every-app/perimeter/registry";
 import {
   apps,
   appToolCatalogs,
   appTools,
+  events,
   remoteMcpCredentials,
   remoteMcpTools,
   userAppAccess,
 } from "@/db/schema";
+import { clearEventSubjectCachesForTests } from "@/server/events/subjects";
+import { AppService } from "@/server/services/AppService";
 import { McpAppService } from "@/server/services/McpAppService";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 
@@ -201,6 +224,27 @@ async function turnOnDataForSeo(): Promise<string> {
   return plan.app.id;
 }
 
+/**
+ * The mcp_app.* events written, in the order they were written (SQLite's
+ * rowid: two events in the same millisecond have ids in no set order), as
+ * a subscriber reads them.
+ */
+async function mcpAppEvents() {
+  const rows = await db
+    .select()
+    .from(events)
+    .orderBy(sql`rowid`);
+  return rows
+    .filter((event) => event.type.startsWith("mcp_app."))
+    .map((event) => ({
+      type: event.type,
+      organizationId: event.organizationId,
+      appRowId: event.appRowId,
+      actor: JSON.parse(event.actor) as Record<string, unknown>,
+      data: JSON.parse(event.data) as Record<string, unknown>,
+    }));
+}
+
 const TREG_TOOLS: ListedTool[] = [
   {
     upstreamName: "getUser",
@@ -238,6 +282,8 @@ beforeEach(async () => {
   hoisted.background.length = 0;
   hoisted.listing = TREG_TOOLS;
   hoisted.syncs = [];
+  hoisted.synced = [];
+  clearEventSubjectCachesForTests();
   db = await createTestDb();
   hoisted.testDb.current = db;
   acme = await seedOrganization(db, "acme");
@@ -943,5 +989,179 @@ describe("showing an MCP app", () => {
     await expect(
       McpAppService.get(as(otherAdmin, "admin", other), { id: builtin }),
     ).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+});
+
+describe("the events an MCP app's changes announce", () => {
+  it("announces an add once: mcp_app.added, kind remote, the app named, the adding member the actor", async () => {
+    const added = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, auth: { kind: "none" } },
+      "admin@example.com",
+    );
+    expect(await mcpAppEvents()).toEqual([
+      {
+        type: "mcp_app.added",
+        organizationId: acme,
+        appRowId: added.rowId,
+        actor: expect.objectContaining({ kind: "user", id: admin }),
+        data: {
+          app: { id: "treg", rowId: added.rowId, name: "treg" },
+          kind: "remote",
+        },
+      },
+    ]);
+  });
+
+  it("announces nothing for an add the rules refuse", async () => {
+    await expect(
+      McpAppService.add(
+        as(admin, "admin"),
+        { url: "http://treg.to/mcp/", auth: { kind: "none" } },
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_MCP_URL_REFUSED" });
+    expect(await mcpAppEvents()).toEqual([]);
+  });
+
+  it("lists a remote server's tools from its own row, manifest and name, so the sync reaches the server and not a built-in of that id", async () => {
+    await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, name: "Treg", auth: { kind: "none" } },
+      null,
+    );
+    expect(hoisted.synced).toHaveLength(1);
+    expect(hoisted.synced[0]!.name).toBe("Treg");
+    expect(
+      JSON.parse(hoisted.synced[0]!.manifest ?? "{}") as {
+        remote?: { url: string };
+      },
+    ).toMatchObject({ remote: { url: TREG } });
+  });
+
+  it("announces a status that changed, mcp_app.disabled then mcp_app.enabled, with each row's kind, and nothing when it was already so", async () => {
+    const { rowId } = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, auth: { kind: "none" } },
+      null,
+    );
+    const builtin = await turnOnDataForSeo();
+    for (const id of [rowId, builtin]) {
+      await McpAppService.setStatus(as(admin, "admin"), {
+        id,
+        status: "disabled",
+      });
+      await McpAppService.setStatus(as(admin, "admin"), {
+        id,
+        status: "disabled",
+      });
+      await McpAppService.setStatus(as(owner, "owner"), {
+        id,
+        status: "active",
+      });
+    }
+    const changes = (await mcpAppEvents()).filter(
+      (event) => event.type !== "mcp_app.added",
+    );
+    expect(
+      changes.map((event) => ({
+        type: event.type,
+        appRowId: event.appRowId,
+        actor: event.actor["id"],
+        data: event.data,
+      })),
+    ).toEqual([
+      {
+        type: "mcp_app.disabled",
+        appRowId: rowId,
+        actor: admin,
+        data: { app: { id: "treg", rowId, name: "treg" }, kind: "remote" },
+      },
+      {
+        type: "mcp_app.enabled",
+        appRowId: rowId,
+        actor: owner,
+        data: { app: { id: "treg", rowId, name: "treg" }, kind: "remote" },
+      },
+      {
+        type: "mcp_app.disabled",
+        appRowId: builtin,
+        actor: admin,
+        data: {
+          app: expect.objectContaining({ id: "dataforseo", rowId: builtin }),
+          kind: "builtin",
+        },
+      },
+      {
+        type: "mcp_app.enabled",
+        appRowId: builtin,
+        actor: owner,
+        data: {
+          app: expect.objectContaining({ id: "dataforseo", rowId: builtin }),
+          kind: "builtin",
+        },
+      },
+    ]);
+  });
+
+  it("announces a remove once, mcp_app.removed with the row's kind, and nothing for a refused one", async () => {
+    const { rowId } = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, auth: { kind: "none" } },
+      null,
+    );
+    const builtin = await turnOnDataForSeo();
+    await expect(
+      McpAppService.remove(as(admin, "admin"), { id: rowId }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await McpAppService.remove(as(owner, "owner"), { id: rowId });
+    await McpAppService.remove(as(owner, "owner"), { id: builtin });
+    await expect(
+      McpAppService.remove(as(owner, "owner"), { id: rowId }),
+    ).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+    const removed = (await mcpAppEvents()).filter(
+      (event) => event.type === "mcp_app.removed",
+    );
+    expect(
+      removed.map((event) => ({
+        appRowId: event.appRowId,
+        actor: event.actor["id"],
+        kind: event.data["kind"],
+      })),
+    ).toEqual([
+      { appRowId: rowId, actor: owner, kind: "remote" },
+      { appRowId: builtin, actor: owner, kind: "builtin" },
+    ]);
+  });
+
+  it("says kind remote when a remote server's row is deleted from the Apps list", async () => {
+    const { rowId } = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, auth: { kind: "none" } },
+      null,
+    );
+    await AppService.delete(as(owner, "owner"), rowId);
+    const removed = (await mcpAppEvents()).filter(
+      (event) => event.type === "mcp_app.removed",
+    );
+    expect(removed.map((event) => event.data)).toEqual([
+      { app: { id: "treg", rowId, name: "treg" }, kind: "remote" },
+    ]);
+  });
+
+  it("hands Refresh tools' listing the names the dropped snapshot held, so the same tools are no change", async () => {
+    const { rowId } = await McpAppService.add(
+      as(admin, "admin"),
+      { url: TREG, auth: { kind: "none" } },
+      null,
+    );
+    // The add's own listing compares against the stored snapshot.
+    expect(hoisted.synced[0]!.previousNames).toBeUndefined();
+    await McpAppService.refreshTools(as(admin, "admin"), { id: rowId });
+    expect(hoisted.synced[1]!.previousNames).toEqual([
+      "create_note",
+      "delete_everything",
+      "get_user",
+    ]);
   });
 });

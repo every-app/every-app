@@ -172,7 +172,17 @@ async function snapshotVersion(app: SyncableApp): Promise<string | null> {
   return remote ? remoteMcpVersion(remote) : providerCatalogVersion();
 }
 
-export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
+export async function syncAppTools(
+  app: SyncableApp,
+  options: {
+    /**
+     * The tool names to compare the new catalog against for
+     * app.tools_changed, when the caller dropped the snapshot that held
+     * them (an operator's Refresh tools); else the stored snapshot's.
+     */
+    previousNames?: readonly string[];
+  } = {},
+): Promise<ToolSyncResult> {
   let fetcher;
   try {
     fetcher = appFetcherFor(app);
@@ -237,10 +247,9 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
 
   // The names before, so a changed catalog is an event (never the
   // schemas: names only, capped in the catalogue).
-  const previousNames = await AppToolRepository.toolNames(
-    app.rowId,
-    app.organizationId,
-  );
+  const previousNames =
+    options.previousNames ??
+    (await AppToolRepository.toolNames(app.rowId, app.organizationId));
   // A remote MCP app's list can change under the gateway: say what did.
   const remote = app.tier === PROVIDER_APP_TIER && remoteMcpRouteOf(app);
   const before = remote
