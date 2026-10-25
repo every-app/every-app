@@ -914,7 +914,8 @@ describe("showing an MCP app", () => {
       .where(eq(remoteMcpCredentials.name, "TREG_MCP_TOKEN"));
     const elsewhere = await credential();
     expect(elsewhere).toMatchObject({
-      credential: { boundTo: "https://old.treg.to", state: "bound_elsewhere" },
+      // The other origin is never told: on a hosted Gateway it may be another organization's.
+      credential: { boundTo: null, state: "bound_elsewhere" },
       setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
     });
     // The value itself is never in the answer.

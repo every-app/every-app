@@ -121,8 +121,8 @@ export const MCP_APP_COPY = {
         `${name} is set. The Gateway binds it to this server on first use.`,
       bound: (name: string, origin: string) =>
         `${name} is set, bound to ${origin}.`,
-      bound_elsewhere: (name: string, origin: string) =>
-        `${name} is bound to another origin (${origin}): run secret set again.`,
+      bound_elsewhere: (name: string) =>
+        `${name} was set for another server, so nothing is sent to this one: the Gateway's operator runs secret set again.`,
     },
     statusLabel: "Status",
     on: "On: its tools are served.",

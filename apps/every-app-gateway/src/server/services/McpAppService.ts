@@ -505,7 +505,10 @@ async function credentialOf(block: RemoteMcpBlock): Promise<McpAppCredential> {
       : boundTo === origin
         ? "bound"
         : "bound_elsewhere";
-  return { name, set, boundTo, state };
+  // Never another origin: the binding table is keyed by name across the
+  // whole Gateway, so on a hosted Gateway "elsewhere" can be another
+  // organization's server, which is not this one's to see.
+  return { name, set, boundTo: state === "bound" ? boundTo : null, state };
 }
 
 /**

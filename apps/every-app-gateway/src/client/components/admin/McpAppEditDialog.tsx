@@ -550,6 +550,6 @@ function credentialLine(credential: NonNullable<McpAppDetails["credential"]>) {
     case "bound":
       return copy.bound(name, credential.boundTo ?? "");
     case "bound_elsewhere":
-      return copy.bound_elsewhere(name, credential.boundTo ?? "");
+      return copy.bound_elsewhere(name);
   }
 }
