@@ -641,6 +641,19 @@ describe("mcp tool", () => {
     await changeTool(options<ToolFlags>({ flags: { ...flags, risk: "read" } }), "treg", "searchDocs");
     expect(warnings("REMOTE_MCP_TOOL_NOT_LISTED")).toEqual([expect.objectContaining({ message: expect.stringContaining("searchDocs isn't in treg's last tool listing") })]);
     expect(done()!["data"]).toMatchObject({ tool: { serverName: "searchDocs", inListing: false }, override: { risk: "read" }, rev: 3 });
+    // Each override is mcp_app.tool_changed, the operator its actor, the override after the change.
+    const [treg] = await query("SELECT id, name FROM apps WHERE app_slug = 'treg'");
+    const app = { id: "treg", rowId: treg!["id"], name: treg!["name"] };
+    expect(
+      (await query("SELECT type, actor, data FROM events WHERE type = 'mcp_app.tool_changed' ORDER BY rowid")).map((event) => ({
+        type: event["type"],
+        actor: JSON.parse(String(event["actor"])),
+        data: JSON.parse(String(event["data"])),
+      })),
+    ).toEqual([
+      { type: "mcp_app.tool_changed", actor: { kind: "operator", id: ACTOR, email: ACTOR }, data: { app, kind: "remote", tool: "getUser", enabled: false } },
+      { type: "mcp_app.tool_changed", actor: { kind: "operator", id: ACTOR, email: ACTOR }, data: { app, kind: "remote", tool: "searchDocs", risk: "read" } },
+    ]);
   });
 
   it("refuses a built-in's tools and a change that says nothing or two things", async () => {

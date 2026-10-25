@@ -888,6 +888,7 @@ export async function changeTool(options: McpOptions<ToolFlags>, id: string, too
     toolName,
     { ...(flags.risk ? { risk: flags.risk } : {}), ...(flags.on ? { enabled: true } : flags.off ? { enabled: false } : {}) },
     options.now?.(),
+    gateway.deployer,
   );
   out.emit({ type: "step", step: "mcp.tool", status: "ok", message: `Changed ${changed.serverName} on ${id}`, data: { id } });
   if (!changed.inListing) {

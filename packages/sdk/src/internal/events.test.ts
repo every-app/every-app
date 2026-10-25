@@ -58,6 +58,13 @@ describe("subscription patterns", () => {
 
   it("never sends a ping to an everything subscription", () => {
     expect(eventPatternMatches("*", "ping")).toBe(false);
+    expect(eventPatternMatches("*", "subscription.created")).toBe(false);
+    expect(eventPatternMatches("subscription.*", "subscription.created")).toBe(
+      true,
+    );
+    expect(
+      eventPatternMatches("subscription.removed", "subscription.removed"),
+    ).toBe(true);
     expect(eventPatternMatches("ping", "ping")).toBe(true);
     expect(eventSubscribed(["*", "member.*"], "ping")).toBe(false);
     expect(eventSubscribed(["cap.*"], "cap.warning")).toBe(true);

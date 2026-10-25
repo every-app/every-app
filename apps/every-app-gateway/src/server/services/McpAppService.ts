@@ -51,7 +51,7 @@ import { SETUP_CLI } from "@/server/app-setup";
 import { GatewayError, PublicError, getPublicErrorCode } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue, type BuiltEvent } from "@/server/events/catalogue";
-import { userActor } from "@/server/events/subjects";
+import { actorFor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
@@ -201,7 +201,7 @@ async function announce(
 ): Promise<void> {
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...build({ app: { id: app.appSlug, rowId: app.id, name: app.name } }),
   }));
 }
@@ -413,6 +413,48 @@ async function update(
     name: next.name,
     description: next.description,
   });
+  const subject = { id: row.appSlug, rowId: row.id, name: next.name };
+  if (change.tool) {
+    const override = next.remote.tools[change.tool.name] ?? null;
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.mcpAppToolChanged({
+        app: subject,
+        kind: "remote",
+        tool: change.tool!.name,
+        risk: override?.risk,
+        enabled: override?.enabled,
+        cleared: override === null ? true : undefined,
+      }),
+    }));
+  }
+  const changed = (
+    [
+      ["risk", change.risk !== undefined],
+      ["tools", change.tools !== undefined],
+      ["name", change.name !== undefined && next.name !== row.name],
+      [
+        "description",
+        change.description !== undefined &&
+          next.description !== row.description,
+      ],
+    ] as const
+  )
+    .filter(([, did]) => did)
+    .map(([field]) => field);
+  if (changed.length > 0) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.mcpAppUpdated({
+        app: subject,
+        kind: "remote",
+        changed,
+        risk: changed.includes("risk") ? next.remote.risk : undefined,
+      }),
+    }));
+  }
   return {
     remote: next.remote,
     name: next.name,

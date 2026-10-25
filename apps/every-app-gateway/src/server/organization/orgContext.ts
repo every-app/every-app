@@ -6,11 +6,19 @@ import {
   type OrganizationRole,
 } from "@/server/org-roles";
 import { isPersonalOrganizationOf } from "./personal-marker";
+import type { EventActor } from "@/server/events/catalogue";
 
 export interface OrgContext {
   orgId: string;
   userId: string;
   role: OrganizationRole;
+  /**
+   * Who the events of this context name as their cause, when it isn't the
+   * signed-in member themselves: an agent calling the Gateway's MCP tools
+   * (the connection's client name) acts for `userId` but is the actor.
+   * Left unset, the member is (events/subjects.ts `actorFor`).
+   */
+  actor?: EventActor;
 }
 
 const ORG_CONTEXT_CACHE_MAX_ENTRIES = 500;

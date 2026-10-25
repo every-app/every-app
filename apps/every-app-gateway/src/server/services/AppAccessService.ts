@@ -6,6 +6,9 @@ import { UsageRepository } from "../repositories/UsageRepository";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import { activateBindingApps } from "@/server/app-activation";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue, type EventUser } from "@/server/events/catalogue";
+import { actorFor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { listedAppSetup } from "./listedAppSetup";
@@ -211,6 +214,26 @@ async function updateAccessForApp(
       toRevoke,
       ctx.orgId,
     );
+  }
+
+  if (toGrant.length > 0 || toRevoke.length > 0) {
+    const byId = new Map(
+      organizationUsers.map((user): [string, EventUser] => [
+        user.id,
+        { id: user.id, email: user.email, name: user.name || null },
+      ]),
+    );
+    const named = (id: string): EventUser =>
+      byId.get(id) ?? { id, email: null, name: null };
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.appAccessChanged({
+        app: { id: app.appSlug, rowId: app.id, name: app.name },
+        granted: toGrant.map(named),
+        revoked: toRevoke.map(named),
+      }),
+    }));
   }
 
   return {

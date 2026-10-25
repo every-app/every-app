@@ -12,7 +12,7 @@ import { PublicError, type PublicErrorCode } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { notePasswordResetOrigin } from "@/server/events/password-reset";
-import { userActor, userSubject } from "@/server/events/subjects";
+import { actorFor, userSubject } from "@/server/events/subjects";
 import {
   resolvePrimaryOrganizationRole,
   type OrganizationRole,
@@ -151,7 +151,7 @@ async function changeRole(
   });
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...catalogue.memberRoleChanged({
       user: await userSubject(targetUserId),
       role,
@@ -213,7 +213,7 @@ async function deactivate(ctx: OrgContext, targetUserId: string) {
   });
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...catalogue.memberDeactivated({
       user: await userSubject(targetUserId),
     }),
@@ -231,7 +231,7 @@ async function reactivate(ctx: OrgContext, targetUserId: string) {
   });
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...catalogue.memberReactivated({
       user: await userSubject(targetUserId),
     }),

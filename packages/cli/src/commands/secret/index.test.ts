@@ -1195,20 +1195,27 @@ describe("the setup state on each app's row, and its events", () => {
       { type: "app.installed", data: expect.objectContaining({ app: expect.objectContaining({ id: "notes" }) }) },
     ]);
 
-    // Still short of its own key: the same state, no event.
+    // Still short of its own key: the same state, no transition; the setting itself is one event, by name, with no app (set from no app's directory).
     await set(emptyDir(), "OPENROUTER_API_KEY");
     expect(await state("crm")).toBe("needs_setup");
-    expect(await queued()).toHaveLength(3);
+    expect((await queued()).slice(3)).toEqual([
+      { type: "app.settings_changed", data: { app: null, settings: ["OPENROUTER_API_KEY"], action: "set", target: "gateway" } },
+    ]);
 
     await setFor("crm", emptyDir(), "TOKEN_ENCRYPTION_KEY");
     expect(await state("crm")).toBe("ready");
-    expect((await queued()).slice(3)).toEqual([{ type: "app.ready", data: { app } }]);
+    expect((await queued()).slice(4)).toEqual([
+      { type: "app.settings_changed", data: { app, settings: ["TOKEN_ENCRYPTION_KEY"], action: "set", target: "app" } },
+      { type: "app.ready", data: { app } },
+    ]);
 
     await unset(emptyDir(), "OPENROUTER_API_KEY");
     expect(await state("crm")).toBe("needs_setup");
-    expect((await queued()).slice(4)).toEqual([
+    expect((await queued()).slice(6)).toEqual([
+      { type: "app.settings_changed", data: { app: null, settings: ["OPENROUTER_API_KEY"], action: "unset", target: "gateway" } },
       { type: "app.needs_setup", data: { app, unmet: ["OPENAI_API_KEY", "OPENROUTER_API_KEY"] } },
     ]);
+    expect(JSON.stringify(await queued())).not.toContain("sk-");
     expect(await state("notes")).toBe("ready");
   });
 });

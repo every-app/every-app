@@ -1,5 +1,8 @@
 import { logEvent } from "@every-app/perimeter";
 import { PublicError } from "@/server/errors";
+import { emit } from "@/server/events/bus";
+import { catalogue, type EventUser } from "@/server/events/catalogue";
+import { actorFor, appSubject } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { AppRepository } from "../repositories/AppRepository";
 import { GroupRepository } from "../repositories/GroupRepository";
@@ -105,6 +108,11 @@ async function createGroup(ctx: OrgContext, input: GroupInput) {
     groupId: id,
     by: ctx.userId,
   });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.groupCreated({ group: { id, name }, description }),
+  }));
   return { id, name, description };
 }
 
@@ -113,24 +121,43 @@ async function updateGroup(
   groupId: string,
   input: GroupInput,
 ) {
-  await requireGroup(ctx, groupId);
+  const existing = await requireGroup(ctx, groupId);
   const { name, description } = normalize(input);
   await assertNameFree(ctx.orgId, name, groupId);
   await refusingNameConflict(name, () =>
     GroupRepository.update(groupId, ctx.orgId, { name, description }),
   );
+  if (existing.name !== name || existing.description !== description) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.groupUpdated({
+        group: { id: groupId, name },
+        previousName: existing.name,
+        description:
+          existing.description !== description ? description : undefined,
+      }),
+    }));
+  }
   return { id: groupId, name, description };
 }
 
 /** Deleting a group ends what it granted: its members and apps go with it. */
 async function deleteGroup(ctx: OrgContext, groupId: string) {
-  await requireGroup(ctx, groupId);
+  const existing = await requireGroup(ctx, groupId);
   await GroupRepository.remove(groupId, ctx.orgId);
   logEvent("group.deleted", {
     organizationId: ctx.orgId,
     groupId,
     by: ctx.userId,
   });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.groupRemoved({
+      group: { id: groupId, name: existing.name },
+    }),
+  }));
   return { success: true };
 }
 
@@ -152,7 +179,7 @@ async function setGroupMembers(
   groupId: string,
   userIds: string[],
 ) {
-  await requireGroup(ctx, groupId);
+  const existing = await requireGroup(ctx, groupId);
   const organizationUsers =
     await OrganizationMembersRepository.listMembersForOrganization(ctx.orgId);
   const memberIds = new Set(organizationUsers.map((user) => user.id));
@@ -182,6 +209,25 @@ async function setGroupMembers(
     removed: remove.length,
     by: ctx.userId,
   });
+  if (add.length > 0 || remove.length > 0) {
+    const byId = new Map(
+      organizationUsers.map((user): [string, EventUser] => [
+        user.id,
+        { id: user.id, email: user.email, name: user.name || null },
+      ]),
+    );
+    const named = (id: string): EventUser =>
+      byId.get(id) ?? { id, email: null, name: null };
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.groupMembersChanged({
+        group: { id: groupId, name: existing.name },
+        added: add.map(named),
+        removed: remove.map(named),
+      }),
+    }));
+  }
   return { added: add.length, removed: remove.length };
 }
 
@@ -202,7 +248,7 @@ async function setGroupApps(
   groupId: string,
   appRowIds: string[],
 ) {
-  await requireGroup(ctx, groupId);
+  const existing = await requireGroup(ctx, groupId);
   const wanted = new Set(appRowIds);
   for (const appRowId of wanted) {
     const app = await AppRepository.findById(appRowId, ctx.orgId);
@@ -231,6 +277,17 @@ async function setGroupApps(
     revoked: remove.length,
     by: ctx.userId,
   });
+  if (add.length > 0 || remove.length > 0) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.groupAppsChanged({
+        group: { id: groupId, name: existing.name },
+        granted: await Promise.all(add.map(appSubject)),
+        revoked: await Promise.all(remove.map(appSubject)),
+      }),
+    }));
+  }
   return { granted: add.length, revoked: remove.length };
 }
 

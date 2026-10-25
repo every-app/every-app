@@ -27,6 +27,8 @@ Common objects, used by several types:
 | `member.reactivated` | 1 | "jo@acme.com was reactivated" | `{ user }` |
 | `member.removed` | 1 | "jo@acme.com was removed" | `{ user, accountDeleted: boolean }` |
 | `member.password_reset` | 1 | "jo@acme.com reset their password" | `{ user, by: "self" \| "admin_link" \| "admin_email" }` (emitted when the reset completes; if Better Auth 1.7.7 offers no completion hook, emit `member.reset_link_created` `{ user }` from `MembershipService.createPasswordResetLink` instead and document that) |
+| `member.invitation_cancelled` | 1 | "Ada cancelled the invitation for jo@acme.com" | `{ invitation: { id, email, role } }` (never the link; Admin, the CLI's `workspace uninvite`, the tool) |
+| `organization.renamed` | 1 | "Ada renamed the workspace to Acme Corp" | `{ name, previousName }` |
 | `app.installed` | 1 | "crm was installed" | `{ app, version?: string, hostname?: string, scope: "org" \| "shared", source: "cli" \| "browser" \| "release" }` |
 | `app.updated` | 1 | "crm was redeployed (version …)" | `{ app, version?: string, previousVersion?: string }` |
 | `app.removed` | 1 | "crm was removed" | `{ app, purged: boolean }` |
@@ -34,9 +36,19 @@ Common objects, used by several types:
 | `app.ready` | 1 | "crm is ready" | `{ app }` |
 | `app.paused_cap` | 1 | "crm is paused: monthly cap of 1,000 reached" | `{ app, cap, calls, month, source: "app" \| "default" }` |
 | `app.tools_changed` | 1 | "crm's tools changed: 12 tools (was 11)" | `{ app, kind: "app" \| "builtin" \| "remote", toolCount, previousToolCount, added: string[], removed: string[] }` (names only, capped at 50 each; MCP apps of both kinds go through the same catalog sync, so this is their event too) |
+| `app.renamed` | 1 | "Old CRM was renamed to CRM" | `{ app, previousName?, description? }` |
+| `app.settings_changed` | 1 | "crm's settings set: OPENROUTER_API_KEY" | `{ app: EventApp \| null, settings: string[], action: "set" \| "unset", target: "gateway" \| "app" }` (names only, never a value; `secret set|unset` and `configure`) |
+| `app.access_changed` | 1 | "crm's access changed: 2 granted, 1 revoked" | `{ app, granted: user[], revoked: user[], grantedCount, revokedCount, everyone?: boolean }` (50 each way, counts exact) |
+| `app.email_changed` | 1 | "crm's email changed: 1 sender, 1 inbound" | `{ app, senders: string[], inbound: string[] }` (`email set|unset`) |
 | `cap.warning` | 1 | "crm is at 80% of its monthly cap (800 of 1,000)" | `{ app, cap, calls, month, threshold: 80, source }` |
 | `cap.reached` | 1 | "crm reached its monthly cap (1,000)" | `{ app, cap, calls, month, source }` |
 | `cap.raised` | 1 | "crm's cap raised from 1,000 to 5,000" | `{ app, cap: number \| null, previousCap: number \| null, source }` (`cap: null` = no cap now; the workspace default raised or removed carries `app: null` and `source: "default"`: "The default cap raised from 1,000 to 5,000") |
+| `cap.changed` | 1 | "crm's cap changed from 1,000 to 500" | the same fields: a lowered cap or default, a cap set under the default, or an app's row changed while the binding cap stayed (cap.raised's counterpart, so every cap write is one event) |
+| `group.created` | 1 | "Ada created the group Sales" | `{ group: { id, name }, description? }` |
+| `group.updated` | 1 | "The group Sales was renamed to Sales EMEA" | `{ group, previousName?, description? }` |
+| `group.removed` | 1 | "The group Sales was removed" | `{ group }` |
+| `group.members_changed` | 1 | "The group Sales's members changed: 1 added, 0 removed" | `{ group, added: user[], removed: user[], addedCount, removedCount }` (50 each way) |
+| `group.apps_changed` | 1 | "The group Sales's apps changed: 1 granted, 0 revoked" | `{ group, granted: app[], revoked: app[], grantedCount, revokedCount }` |
 | `tool.blocked` | 1 | "Claude's call to crm_delete_contact was blocked: destructive" | `{ tool, app?, user, client?: { kind, name?, id }, risk?, reason, callId }` |
 | `tool.error` | 1 | "crm_list_contacts failed for Claude: app_error" | `{ tool, app?, user, client?, risk?, outcome, callId, durationMs }` |
 | `connection.created` | 1 | "Ada connected Claude (read & write, all apps)" | `{ connection: { id, clientName, clientDomain?, access, appScope }, user }` |
@@ -50,14 +62,20 @@ Common objects, used by several types:
 | `mcp_app.removed` | 1 | "DataForSEO was removed" | `{ app, kind }` (`everyapp mcp remove`, the tombstone) |
 | `mcp_app.enabled` | 1 | "DataForSEO is being served again" | `{ app, kind }` (`everyapp mcp on` on an existing row: status disabled → active) |
 | `mcp_app.disabled` | 1 | "DataForSEO stopped being served" | `{ app, kind }` (`everyapp mcp off`: status active → disabled, access kept; the MCP-by-URL thread's semantics) |
+| `mcp_app.updated` | 1 | "DataForSEO was changed: risk" | `{ app, kind, changed: ("risk" \| "name" \| "description" \| "tools")[], risk? }` |
+| `mcp_app.tool_changed` | 1 | "DataForSEO's tool delete_row was changed (off) (risk destructive)" | `{ app, kind, tool, risk?, enabled?, cleared? }` (one tool's risk or on/off override) |
 | `provider.added` | 1 | reserved: the Provider registry thread | `{ provider: { id, name } }` |
 | `provider.removed` | 1 | reserved: the Provider registry thread | `{ provider: { id, name } }` |
+| `subscription.created` | 1 | "Ada added the subscription Slack" | `{ subscription: { id, name, sink }, events: string[], host?, recipients? }` (never the secret or the URL; a `*` subscription does not get `subscription.*`) |
+| `subscription.updated` | 1 | "The subscription Slack was paused" | `{ subscription, changed: ("enabled" \| "events" \| "name" \| "description")[], enabled?, events? }` |
+| `subscription.removed` | 1 | "The subscription Slack was removed" | `{ subscription, disabled: boolean }` |
+| `subscription.redelivered` | 1 | "Ada redelivered member.joined to Slack" | `{ subscription, delivery: { id, eventId, eventType } }` |
 | `ping` | 1 | "Test event from Every App" | `{ subscription: { id, name }, message }` (delivered only to the subscription under test) |
 | `app.<id>.<name>` | app's | "crm: invoice.paid" | whatever the app sent (section 7); the catalogue records the pattern, not each name |
 
 Not in the catalogue, on purpose: anything that would carry a secret (the invitation link, a reset link, a token value, an OAuth code), a tool's arguments or result (the audit table holds neither; the bus holds neither), an email body, a provider's response. The catalogue module has a unit test that every documented type's `data` builder refuses keys named like credentials (section 7's rule applies to the gateway's own events too).
 
-Subscriptions match types by exact name or by prefix pattern: `member.*`, `cap.*`, `app.*` (which also matches `app.crm.invoice.paid`), `app.crm.*`, or `*`. A subscription with no list gets everything but `ping` (a ping goes only to the subscription under test).
+Subscriptions match types by exact name or by prefix pattern: `member.*`, `cap.*`, `app.*` (which also matches `app.crm.invoice.paid`), `app.crm.*`, or `*`. A subscription with no list gets everything but `ping` (a ping goes only to the subscription under test) and the bus's own `subscription.*` housekeeping (named explicitly when wanted, so a catch-all's first delivery is not the event of its own creation).
 
 ## 2. The envelope
 
@@ -199,26 +217,38 @@ Server functions (`src/serverFunctions/events.ts`, admin middleware; the `method
 
 | Event | Where |
 |---|---|
-| `member.invited` | `InvitationService.invite` (and `inviteWithoutSession` once #614 lands) |
+| `member.invited` | `InvitationService.invite` (and `inviteWithoutSession` once #614 lands); the CLI's `workspace invite` (`lib/gateway/workspace.ts`, outbox in the invitation's batch, `emailSent` false) |
+| `member.invitation_cancelled` | `AdminService.cancelInvitation` and `cancelInvitationWithoutSession` (Admin → Users, the `everyapp_workspace_uninvite` tool); the CLI's `workspace uninvite` |
+| `organization.renamed` | `OrganizationService.rename`; the CLI's `workspace rename` |
 | `member.joined` | `auth/config.ts` organization hooks `afterAcceptInvitation` (via `invitation`) and `afterAddMember` (via `member_add`), and the Access auto-join inserts in `auth/cloudflare-access/membership.ts` (via `access`); the setup claim's owner (via `setup`) from `SetupService` |
-| `member.role_changed` | `MembershipService.changeRole` |
-| `member.deactivated` / `reactivated` | `MembershipService.deactivate` / `reactivate`; `AdminService.deleteUser`'s deactivate branch (reason `deleted_with_access_auto_join`) |
-| `member.removed` | `AdminService.deleteUser`'s remove branch |
+| `member.role_changed` | `MembershipService.changeRole`; the CLI's `workspace role` (`lib/gateway/members.ts`, after the guarded write took) |
+| `member.deactivated` / `reactivated` | `MembershipService.deactivate` / `reactivate`; `AdminService.deleteUser`'s deactivate branch (reason `deleted_with_access_auto_join`); the CLI's `workspace deactivate` / `reactivate` / `remove`'s deactivate branch, in the ban's own batch |
+| `member.removed` | `AdminService.deleteUser`'s remove branch; the CLI's `workspace remove`, in the removal's batch |
 | `member.password_reset` | Better Auth's password reset completion hook if the version has one, else `member.reset_link_created` from `createPasswordResetLink` and `sendPasswordResetEmail` |
 | `app.installed` / `app.updated` | the CLI's `markDeployed` in `packages/cli/src/lib/gateway/registry.ts`: the first recorded upload of a pending row is `installed` (a registration whose first deploy fails announces nothing), a later upload with a new version is `updated` (`version` and `previousVersion` are Worker version ids, the only version the registry holds); an outbox insert in the same D1 batch (section 8); `everyapp install` is `source: "release"`; the gateway's own deploy paths (the browser install and the hosted Deploy API in `server/deploy`) emit at the same moments from their upload record, source `browser` or `cli` |
 | `app.removed` | the CLI's `deleteApp`; `AppService.delete` |
+| `app.renamed` | `AppService.update` (Admin → Apps → Edit, the `everyapp_workspace_app_set` tool); the CLI's `workspace app set --name\|--description` |
+| `app.access_changed` | `AppAccessService.updateAccessForApp` (the direct grants) and `AppService.update` ("Available to everyone" on, naming everyone it granted, and off); the CLI's `workspace app access` and `app set --everyone` |
+| `app.settings_changed` | the CLI's `secret set\|unset` and `configure` (`commands/secret/index.ts` `announceSettingsChanged`), once each destination's change is live: names only; `app` null for a Gateway setting set from no app's directory, under the install organization |
+| `app.email_changed` | the CLI's `writeAppEmail` (`email set\|unset`), in the row's batch, only when the stored lists changed |
 | `app.needs_setup` / `app.ready` | `apps.setup_state` (new column in the same migration: `ready` \| `needs_setup` \| null = never evaluated). The gateway writes it wherever it evaluates readiness (`listedAppSetup`, `refuseUnreadyApp`, activation) and emits on a transition (`needs_setup` carries the unmet names from the report); the CLI writes it after `configure`, `secret set|unset` and `deploy` compute `setup` (`appSetupFrom`), with the outbox row on a transition. A first evaluation (null → anything) emits only `needs_setup`, never `ready`. |
 | `app.paused_cap` + `cap.reached` | `enforceCap` in `app-gateway-entrypoint.ts` when `exceeded`, and the provider-app call path (`provider-apps/call.ts`) which enforces the same cap; dedupe key per type: `<type>:<org>:<app row>:<month>:<cap>` |
 | `cap.warning` | the same `enforceCap`, when `calls >= 0.8 * cap` and not exceeded (`checkMonthlyCap` is extended to return `cap`, `calls`, `month`, `source` whenever a cap is set, not only when exceeded); dedupe key as above with the threshold |
 | `cap.raised` | `AppCapService.setMonthlyCap` when the cap that binds the app (its own, else the workspace default) ends higher or null: `cap` and `previousCap` are those two, so an app cap set under the default is no raise and `unlimited` under a default is a removal; `setDefaultMonthlyCap` the same way for the default itself (`source: "default"`, no app); either makes the Cap alerts subscription with an organization's first cap; the CLI's cap verbs (#617) once they land |
+| `cap.changed` | the same two services and the same two CLI verbs, for every other cap write a person makes: lowered, set under the default, or the app's row changed while the binding cap stayed (`unlimited` taken back under no default) |
+| `group.created` / `updated` / `removed` / `members_changed` / `apps_changed` | `GroupService` (Admin → Groups, the `everyapp_workspace_group_*` tools); the CLI's `workspace groups create\|set\|delete\|members\|apps`, each in the write's batch, only when something changed |
 | `app.tools_changed` | `toolbus/catalog-sync.ts` when a sync stores a catalog whose tool names differ from the previous snapshot |
 | `tool.blocked` / `tool.error` | `auditToolCall` in `toolbus/runtime.ts`: `decision === "blocked"` → blocked; `decision === "allowed" && outcome !== "ok"` → error. The same `waitUntil` the audit row rides. |
-| `connection.created` / `revoked` | `McpConnectionRepository.create` (from `mcp-auth/authorize.ts`) / `McpConnectionService.markRevoked` (every reason) |
-| `token.created` / `revoked` | `UserPatService.create` / `revoke` |
+| `connection.created` / `revoked` | `McpConnectionRepository.create` (from `mcp-auth/authorize.ts`) / `McpConnectionService.markRevoked` (every reason); the CLI's `workspace connections revoke` (reason `operator`, the operator as the actor, not the member) |
+| `token.created` / `revoked` | `UserPatService.create` / `revoke` (the person's own; the Gateway has no admin revoke); the CLI's `workspace tokens revoke` (the operator as the actor, not the token's owner) |
 | `access.changed` | the CLI's `access on` / `access off`, outbox insert after the Gateway settings are written |
 | `signin_provider.added` / `removed` | the CLI's `signin add` / `signin remove` (`commands/signin/index.ts`), outbox insert after the Gateway settings are written, only on the off→on and on→off transitions |
 | `mcp_app.added` / `removed` / `enabled` / `disabled` | the CLI's `mcp on` (a new row → added with kind `builtin`; an existing disabled row → enabled), `mcp off` (disabled), `mcp remove` (removed) in `lib/gateway/providerApps.ts` and the MCP-by-URL thread's `remoteMcpApps.ts` (kind `remote`), outbox; `AppService.delete` of a `provider` row; the MCP-by-URL thread leaves `// events: mcp_app.…` comments at its write sites and the events thread wires them |
+| `mcp_app.updated` / `mcp_app.tool_changed` | `McpAppService.update` (the Edit dialog, the `everyapp_mcp_update` tool); the CLI's `mcp tool` queues `mcp_app.tool_changed` in the override's batch (`remoteMcpApps.ts` `setRemoteMcpTool`) |
+| `subscription.created` / `updated` / `removed` / `redelivered` | `subscriptions.ts` `add` / `update` / `remove` / `redeliver` (Admin → Events, the `everyapp_workspace_events_*` tools); the CLI's `events add` (after the insert), `enable\|disable`, `remove` and `redeliver` (in the write's batch), all in `lib/gateway/events.ts`. A `*` subscription never receives them. |
 | `ping` | `subscriptions.test` |
+
+**The actor.** A write from Admin names the signed-in member (`user`). A write through the Gateway's MCP tools names the agent: `{ kind: "agent", id: <credential id>, name: <the connection's client name>, email: <the member it acts for> }`, carried on the tool's `OrgContext.actor` (`workspace-tools.ts` `agentActor`) and read by `events/subjects.ts` `actorFor`, so every service emits the same way for both. A write from the CLI names the operator (the Cloudflare login). An admin revoking someone's token or connection from the CLI is the actor; the token's owner stays the subject under `user`.
 
 The Caps thread's branch (`t3/caps-core`, unmerged on 2026-10-25, in `/tmp/ea-caps/core`) sends cap mails from `usage-cap-notices.ts` with a `usage_cap_notices` table. That path is replaced by this: `cap.warning` and `cap.reached` on the bus, delivered by the built-in email subscription of section 6. When that branch is rebased, its `noticeCapUsage`, `UsageCapNoticeRepository`, `capNoticeEmail` and the `usage_cap_notices` table go; its default cap, `unlimited` and Paused UI stay and emit `cap.raised` through the service.
 

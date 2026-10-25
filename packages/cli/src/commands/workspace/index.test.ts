@@ -443,8 +443,9 @@ describe("workspace deactivate and reactivate", () => {
     await deactivateMember(opts(), "Mia@acme.com");
     expect(data()).toMatchObject({ member: { id: "u-mia", email: "mia@acme.com", deactivated: true }, already: false });
     // One request: a failed second one could never leave a banned user with live tokens.
+    // The event (member.deactivated, the operator its actor) rides the same batch, under the ban's own condition.
     expect(writeBatches()).toEqual([
-      ["UPDATE users", "DELETE FROM sessions", "UPDATE user_access_tokens", "UPDATE mcp_connections"],
+      ["UPDATE users", "DELETE FROM sessions", "UPDATE user_access_tokens", "UPDATE mcp_connections", "INSERT INTO events"],
     ]);
     expect(live()).toEqual({
       // banned with no expiry: isUserBanned(user) is true at any time.
@@ -597,7 +598,7 @@ describe("workspace remove", () => {
     });
     // One D1 batch: the grants, the group places, the tokens, the connections, the membership, the account.
     expect(writeBatches()).toEqual([
-      ["DELETE FROM user_app_access", "DELETE FROM group_members", "UPDATE user_access_tokens", "UPDATE mcp_connections", "DELETE FROM members", "DELETE FROM users"],
+      ["DELETE FROM user_app_access", "DELETE FROM group_members", "UPDATE user_access_tokens", "UPDATE mcp_connections", "DELETE FROM members", "DELETE FROM users", "INSERT INTO events"],
     ]);
     expect(rows("SELECT id FROM members WHERE user_id = 'u-mia'")).toEqual([]);
     expect(rows("SELECT id FROM user_app_access WHERE user_id = 'u-mia'")).toEqual([]);
@@ -630,7 +631,8 @@ describe("workspace remove", () => {
   });
 
   it("keeps the account on a hosted Gateway, and deactivates instead where Access could let them back in", async () => {
-
+    // Only this test's events: the fixture seeds the audit log's rows.
+    sqlite().sqlite.exec("DELETE FROM event_deliveries; DELETE FROM events");
     sqlite().sqlite.prepare("UPDATE _everyapp_install SET deployment_mode = 'hosted'").run();
     await removeMember(opts({ yes: true }), "mia@acme.com");
     expect(data()).toMatchObject({ accountDeleted: false, otherOrganizations: 0 });
@@ -646,6 +648,13 @@ describe("workspace remove", () => {
     expect(rows("SELECT id FROM members WHERE user_id = 'u-admin'")).toHaveLength(1);
     expect(rows("SELECT id FROM user_access_tokens WHERE id = 'pat-ada' AND revoked_at IS NULL")).toEqual([]);
     expect(done()!["message"]).toContain("Deactivated ada@acme.com instead");
+    // The event says what happened: deactivated, with the Gateway's reason, not removed.
+    expect(
+      rows("SELECT type, data FROM events WHERE type LIKE 'member.%' ORDER BY rowid").map((row) => ({ type: row["type"], data: JSON.parse(String(row["data"])) })),
+    ).toEqual([
+      { type: "member.removed", data: { user: { id: "u-mia", email: "mia@acme.com", name: "Mia" }, accountDeleted: false } },
+      { type: "member.deactivated", data: { user: { id: "u-admin", email: "ada@acme.com", name: "Ada" }, reason: "deleted_with_access_auto_join" } },
+    ]);
   });
 });
 
@@ -1692,5 +1701,155 @@ describe("a Gateway from before org_settings and org_app_settings.unlimited (mig
     await setCap(opts(), "crm", null);
     expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
     expect(data()).toMatchObject({ cap: null, was: 5000, effectiveCap: null, capSource: null });
+  });
+});
+
+describe("the event bus: every workspace write is one event, the operator its actor (the audit log's coverage)", () => {
+  const OPERATOR = { kind: "operator", id: "dev@example.com", email: "dev@example.com" };
+  const queued = () =>
+    rows("SELECT type, actor, data, app_row_id FROM events ORDER BY rowid").map((row) => ({
+      type: row["type"],
+      actor: JSON.parse(String(row["actor"])),
+      data: JSON.parse(String(row["data"])),
+      appRowId: row["app_row_id"],
+    }));
+  const clear = () => sqlite().sqlite.exec("DELETE FROM event_deliveries; DELETE FROM events");
+  // The fixture seeds the audit log's rows; each test reads its own alone.
+  beforeEach(clear);
+  const MIA = { id: "u-mia", email: "mia@acme.com", name: "Mia" };
+  const SAM = { id: "u-sam", email: "sam@acme.com", name: "Sam" };
+  const ADA = { id: "u-admin", email: "ada@acme.com", name: "Ada" };
+  const CRM = { id: "crm", rowId: "app-crm", name: "CRM" };
+
+  it("member.invited (no mail went), member.invitation_cancelled, member.role_changed, member.deactivated, member.reactivated and member.removed, each once, never a link or a token", async () => {
+    await inviteMember(opts(), "new@acme.com", "admin");
+    const [invited] = queued();
+    expect(invited).toMatchObject({
+      type: "member.invited",
+      actor: OPERATOR,
+      data: { invitation: { email: "new@acme.com", role: "admin", expiresAt: new Date(NOW + 72 * HOUR).toISOString() }, emailSent: false },
+      appRowId: null,
+    });
+    expect(JSON.stringify(invited!.data)).not.toContain("einv_");
+    // A refused invite (the address is a member) queues nothing.
+    await expect(inviteMember(opts(), "mia@acme.com", "member")).rejects.toMatchObject({ code: "ALREADY_MEMBER" });
+    expect(queued()).toHaveLength(1);
+
+    clear();
+    await cancelInvitation(opts(), "inv-pat");
+    expect(queued()).toEqual([
+      { type: "member.invitation_cancelled", actor: OPERATOR, data: { invitation: { id: "inv-pat", email: "pat@acme.com", role: "member" } }, appRowId: null },
+    ]);
+    // Cancelled already: nothing changed, so no event.
+    await expect(cancelInvitation(opts(), "pat@acme.com")).rejects.toMatchObject({ code: "INVITATION_NOT_PENDING" });
+    expect(queued()).toHaveLength(1);
+
+    clear();
+    await setRole(opts(), "sam@acme.com", "owner");
+    expect(queued()).toEqual([
+      { type: "member.role_changed", actor: OPERATOR, data: { user: SAM, role: "owner", previousRole: "member" }, appRowId: null },
+    ]);
+    events = [];
+    await setRole(opts(), "sam@acme.com", "owner");
+    expect(data()["changed"]).toBe(false);
+    expect(queued()).toHaveLength(1);
+
+    clear();
+    await deactivateMember(opts(), "mia@acme.com");
+    await deactivateMember(opts(), "mia@acme.com");
+    await reactivateMember(opts(), "mia@acme.com");
+    await reactivateMember(opts(), "mia@acme.com");
+    expect(queued()).toEqual([
+      { type: "member.deactivated", actor: OPERATOR, data: { user: MIA }, appRowId: null },
+      { type: "member.reactivated", actor: OPERATOR, data: { user: MIA }, appRowId: null },
+    ]);
+    // A refused deactivation queues nothing.
+    await expect(deactivateMember(opts(), "nobody@acme.com")).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+    expect(queued()).toHaveLength(2);
+
+    clear();
+    await removeMember(opts({ yes: true }), "mia@acme.com");
+    expect(queued()).toEqual([{ type: "member.removed", actor: OPERATOR, data: { user: MIA, accountDeleted: true }, appRowId: null }]);
+    clear();
+    await removeMember(opts({ yes: true }), "sam@acme.com");
+    expect(queued()).toEqual([{ type: "member.removed", actor: OPERATOR, data: { user: { ...SAM }, accountDeleted: false }, appRowId: null }]);
+  });
+
+  it("organization.renamed with the previous name; nothing when the name is the same", async () => {
+    await renameWorkspace(opts(), "Acme Corp");
+    expect(queued()).toEqual([{ type: "organization.renamed", actor: OPERATOR, data: { name: "Acme Corp", previousName: "Acme" }, appRowId: null }]);
+    await renameWorkspace(opts(), "Acme Corp");
+    expect(queued()).toHaveLength(1);
+  });
+
+  it("group.created, group.updated, group.members_changed, group.apps_changed and group.removed, the members and apps named; nothing for a refused or empty change", async () => {
+    await createGroup(opts({ description: "Ops team" }), "Ops");
+    const id = data()["group"]["id"] as string;
+    await expect(createGroup(opts(), "ops")).rejects.toMatchObject({ code: "GROUP_NAME_TAKEN" });
+    await updateGroup(opts({ name: "Operations" }), id);
+    await updateGroup(opts({ name: "Operations" }), id);
+    await groupMembersCommand(opts({ add: ["mia@acme.com", "sam@acme.com"] }), id);
+    await groupMembersCommand(opts({ set: ["sam@acme.com"] }), id);
+    await groupMembersCommand(opts({ set: ["sam@acme.com"] }), id);
+    await groupAppsCommand(opts({ add: ["crm"] }), id);
+    await deleteGroup(opts({ yes: true }), id);
+    const group = { id, name: "Operations" };
+    expect(queued()).toEqual([
+      { type: "group.created", actor: OPERATOR, data: { group: { id, name: "Ops" }, description: "Ops team" }, appRowId: null },
+      { type: "group.updated", actor: OPERATOR, data: { group, previousName: "Ops" }, appRowId: null },
+      { type: "group.members_changed", actor: OPERATOR, data: { group, added: [MIA, SAM], removed: [], addedCount: 2, removedCount: 0 }, appRowId: null },
+      { type: "group.members_changed", actor: OPERATOR, data: { group, added: [], removed: [MIA], addedCount: 0, removedCount: 1 }, appRowId: null },
+      { type: "group.apps_changed", actor: OPERATOR, data: { group, granted: [CRM], revoked: [], grantedCount: 1, revokedCount: 0 }, appRowId: null },
+      { type: "group.removed", actor: OPERATOR, data: { group }, appRowId: null },
+    ]);
+  });
+
+  it("app.renamed, and app.access_changed for the direct grants and for 'available to everyone' (everyone it granted named), on the app's row", async () => {
+    await updateApp(opts({ name: "Open CRM" }), "crm");
+    await updateApp(opts({ description: "Deals" }), "crm");
+    await appAccessCommand(opts({ add: ["ada@acme.com"], remove: ["mia@acme.com"] }), "crm");
+    await appAccessCommand(opts({ add: ["ada@acme.com"] }), "crm");
+    await updateApp(opts({ everyone: "on" }), "crm");
+    await updateApp(opts({ everyone: "off" }), "crm");
+    const app = { ...CRM, name: "Open CRM" };
+    const DEV = { id: "u-owner", email: "dev@example.com", name: "Dev" };
+    expect(queued()).toEqual([
+      { type: "app.renamed", actor: OPERATOR, data: { app, previousName: "CRM" }, appRowId: "app-crm" },
+      { type: "app.renamed", actor: OPERATOR, data: { app, description: "Deals" }, appRowId: "app-crm" },
+      { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [ADA], revoked: [MIA], grantedCount: 1, revokedCount: 1 }, appRowId: "app-crm" },
+      // Everyone, by address: Ada and the owner held a grant already, so the Gateway's insert skipped them, but the event names everyone it covers.
+      { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [ADA, DEV, MIA, SAM], revoked: [], grantedCount: 4, revokedCount: 0, everyone: true }, appRowId: "app-crm" },
+      { type: "app.access_changed", actor: OPERATOR, data: { app, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone: false }, appRowId: "app-crm" },
+    ]);
+  });
+
+  it("cap.changed for a cap set under the default or lowered, and for the default lowered; cap.raised stays for a raise", async () => {
+    await setDefaultCap(opts(), 1000);
+    await setCap(opts(), "crm", 500);
+    await setCap(opts(), "crm", 400);
+    await setCap(opts(), "crm", 2000);
+    await setDefaultCap(opts(), 800);
+    expect(queued().map((event) => [event.type, event.data["cap"], event.data["previousCap"], event.data["source"], event.appRowId])).toEqual([
+      ["cap.raised", 1000, null, "default", null],
+      ["cap.changed", 500, 1000, "app", "app-crm"],
+      ["cap.changed", 400, 500, "app", "app-crm"],
+      ["cap.raised", 2000, 400, "app", "app-crm"],
+      ["cap.changed", 800, 1000, "default", null],
+    ]);
+    expect(queued()[1]).toMatchObject({ actor: OPERATOR, data: { app: CRM } });
+  });
+
+  it("token.revoked and connection.revoked name the operator as the actor, not the member, and never a token value", async () => {
+    await revokeToken(opts(), "pat-mia");
+    await revokeToken(opts(), "pat-mia");
+    await revokeConnection(opts(), "mcpc_mia");
+    await revokeConnection(opts(), "mcpc_mia");
+    const user = { id: "u-mia", email: "mia@acme.com", name: null };
+    expect(queued()).toEqual([
+      { type: "token.revoked", actor: OPERATOR, data: { id: "pat-mia", name: "laptop", user }, appRowId: null },
+      { type: "connection.revoked", actor: OPERATOR, data: { connection: { id: "mcpc_mia", clientName: "Claude" }, user, reason: "operator" }, appRowId: null },
+    ]);
+    expect(JSON.stringify(queued())).not.toContain("epat_");
+    expect(JSON.stringify(queued())).not.toContain("hash-");
   });
 });

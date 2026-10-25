@@ -154,14 +154,17 @@ export function eventEnvelope(
 /** The Add dialog's group headings; a ping is sent from Send test, never subscribed to. */
 const GROUP_LABELS: Partial<Record<EventGroup, string>> = {
   member: "Members",
+  organization: "Workspace",
   app: "Apps",
   cap: "Monthly caps",
+  group: "Groups",
   tool: "Agent tool calls",
   connection: "AI connections",
   token: "Tokens",
   access: "Cloudflare Access",
   mcp_app: "MCP apps",
   provider: "API providers",
+  subscription: "Event subscriptions",
 };
 
 export type EventTypeGroup = {

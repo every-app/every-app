@@ -86,7 +86,7 @@ export async function setRole(options: WorkspaceOptions, email: string, role: Wo
   const { organization } = found;
   const workspaceData = { id: organization.id, name: organization.name };
   out.emit({ type: "step", step: ROLE_STEP, status: "start", message: `Setting ${address}'s role...` });
-  const result = await setMemberRole(gateway.db, organization.id, address, role);
+  const result = await setMemberRole(gateway.db, organization.id, address, role, gateway.deployer);
   if (result.kind === "not_found") {
     throw new EveryAppError(
       "MEMBER_NOT_FOUND",
@@ -150,7 +150,7 @@ export async function renameWorkspace(options: WorkspaceOptions, rawName: string
   }
   const gateway = await connectGateway(options);
   out.emit({ type: "step", step: RENAME_STEP, status: "start", message: "Renaming the workspace..." });
-  const { organization, previousName, changed } = await workspace.renameInstallOrganization(gateway.db, name);
+  const { organization, previousName, changed } = await workspace.renameInstallOrganization(gateway.db, name, gateway.deployer);
   out.emit({
     type: "step",
     step: RENAME_STEP,

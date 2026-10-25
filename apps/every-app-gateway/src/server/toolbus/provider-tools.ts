@@ -40,7 +40,7 @@ import {
 import type { JsonObject, McpPrincipal } from "@every-app/toolbus";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
-import { userActor } from "@/server/events/subjects";
+import { actorFor } from "@/server/events/subjects";
 import { PublicError } from "@/server/errors";
 import {
   addOAuthProvider,
@@ -341,7 +341,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       // uses: the row (none for a built-in), the events, the same refusals.
       let summary: OAuthProviderSummary;
       try {
-        summary = await addOAuthProvider(ctx, await userActor(ctx.userId), {
+        summary = await addOAuthProvider(ctx, await actorFor(ctx), {
           preset,
         });
       } catch (error) {
@@ -443,7 +443,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
     // the write: a bus that fails is logged and never fails the add.
     await emit(async () => ({
       organizationId: ctx.orgId,
-      actor: await userActor(ctx.userId),
+      actor: await actorFor(ctx),
       ...catalogue.providerAdded({
         provider: { id, name: capability.label },
       }),
@@ -528,7 +528,7 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
     const name = registered?.capability.label ?? id;
     await emit(async () => ({
       organizationId: ctx.orgId,
-      actor: await userActor(ctx.userId),
+      actor: await actorFor(ctx),
       ...catalogue.providerRemoved({ provider: { id, name } }),
     }));
     return {

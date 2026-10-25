@@ -6,6 +6,9 @@ import {
 } from "@/server/organization/orgContext";
 import { validOrganizationName } from "@/server/organization/organization-name";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
+import { emit } from "@/server/events/bus";
+import { catalogue } from "@/server/events/catalogue";
+import { actorFor } from "@/server/events/subjects";
 
 /**
  * The session's active organization, with only what the UI shows: its id,
@@ -52,12 +55,23 @@ async function rename(
       "Use 1 to 64 characters with no line breaks.",
     );
   }
+  const before = await OrganizationRepository.findSummaryById(ctx.orgId);
   await OrganizationRepository.rename(ctx.orgId, name);
   logEvent("organization.renamed", {
     organizationId: ctx.orgId,
     by: ctx.userId,
     name,
   });
+  if (before?.name !== name) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.organizationRenamed({
+        name,
+        previousName: before?.name ?? "",
+      }),
+    }));
+  }
   return { id: ctx.orgId, name };
 }
 

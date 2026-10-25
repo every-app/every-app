@@ -494,6 +494,23 @@ describe("writeAppEmail", () => {
     await writeAppEmail(db(), "inbox", { senders: [], inbound: [] }, DEPLOYER);
     expect(app("inbox")).toMatchObject({ email_senders: null, email_inbound: null });
     await expect(readAppEmail(db(), plan.app.id)).resolves.toEqual({ senders: [], inbound: [] });
+    // Each change is app.email_changed, the lists as stored now (names only), the operator its actor; the same lists again are no event.
+    await writeAppEmail(db(), "inbox", { senders: [], inbound: [] }, DEPLOYER);
+    expect(
+      sqlite.all("SELECT type, actor, data, app_row_id FROM events WHERE type = 'app.email_changed' ORDER BY rowid").map((row) => ({
+        ...row,
+        actor: JSON.parse(String(row["actor"])),
+        data: JSON.parse(String(row["data"])),
+      })),
+    ).toEqual([
+      {
+        type: "app.email_changed",
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { app: { id: "inbox", rowId: plan.app.id, name: "inbox" }, senders: LISTS.senders, inbound: LISTS.inbound },
+        app_row_id: plan.app.id,
+      },
+      expect.objectContaining({ data: { app: { id: "inbox", rowId: plan.app.id, name: "inbox" }, senders: [], inbound: [] } }),
+    ]);
     await expect(readAppEmail(db(), "no-such-row")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
   });
 

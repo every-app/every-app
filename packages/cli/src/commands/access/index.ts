@@ -576,7 +576,8 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
         CLOUDFLARE_ACCESS_APPS_AUD: values.appsAud,
         CLOUDFLARE_ACCESS_AUD: values.gatewayAud,
       },
-      { flags: options.flags, out },
+      // access.changed below is the event for this; the settings' names ride it.
+      { flags: options.flags, out, announce: false },
     );
     // A rewrite asked for with the same applications changes nothing a subscriber sees.
     const changed =
@@ -982,6 +983,7 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
     await applyGatewaySettings(connection, Object.fromEntries(held.map((name) => [name, null])), {
       flags: options.flags,
       out,
+      announce: false,
     });
   }
   await clearAccessSettingsRecord(db, await accessChanged(db, connection.deployer, { access: "off" }));

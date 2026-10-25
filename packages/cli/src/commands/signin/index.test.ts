@@ -436,7 +436,7 @@ describe("the signin_provider events", () => {
       data: JSON.parse(String(row["data"])),
     }));
 
-  it("queues added when a provider goes on and removed when it goes off, never for a rotation, with no setting in the data", async () => {
+  it("queues added when a provider goes on and removed when it goes off, never for a rotation, with no setting in the data; each write also an app.settings_changed naming the settings alone", async () => {
     await db().run([
       { sql: "INSERT INTO organizations (id, name, slug, created_at) VALUES ('org-1', 'Acme', 'acme', 0)" },
       {
@@ -449,7 +449,12 @@ describe("the signin_provider events", () => {
     await add("cloudflare", { "client-secret-from-env": "S" });
     await removeProvider(options({ flags: { ...flags, yes: true } }), "cloudflare");
 
-    expect(await queued()).toEqual([
+    const all = await queued();
+    // The settings writes (add, rotate, remove) each say which names changed, never a value.
+    expect(all.filter((event) => event.type === "app.settings_changed")).toHaveLength(3);
+    expect(JSON.stringify(all)).not.toContain("secret-one");
+    expect(JSON.stringify(all)).not.toContain("secret-two");
+    expect(all.filter((event) => String(event.type).startsWith("signin_provider."))).toEqual([
       {
         organization: "org-1",
         type: "signin_provider.added",

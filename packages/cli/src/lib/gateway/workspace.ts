@@ -40,11 +40,51 @@ import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
 import { hasAiDefault } from "./aiDefault";
 import { costCapMicros, emptyOrgSettingsSql, hasCostCaps, microsToUsd, requireCostCaps } from "./costCaps";
-import { capAlertsStatement, operatorActor, queueEventFromCli, requireAuditColumns } from "./events";
+import {
+  capAlertsStatement,
+  operatorActor,
+  queueEventFromCli,
+  requireAuditColumns,
+  type CliEventInput,
+} from "./events";
 import { anotherLiveOwnerSql } from "./members";
 import { installOrganization, registryCall, text, type Deployer, type Organization } from "./registry";
 
 type D1Row = Record<string, unknown>;
+
+/** A member as an event's `data` names them (the catalogue's EventUser). */
+const eventUser = (member: { id: string; email: string; name?: string | null }) => ({
+  id: member.id,
+  email: member.email,
+  name: member.name || null,
+});
+
+/** An app as an event's `data` names it (the catalogue's EventApp). */
+const eventApp = (app: Pick<WorkspaceApp, "id" | "appSlug" | "name">) => ({
+  id: app.appSlug,
+  rowId: app.id,
+  name: app.name,
+});
+
+/** Members and apps an event lists, each way; the counts beside them are exact. */
+const EVENT_LIST_MAX = 50;
+
+/**
+ * The outbox statements for one event of this workspace, the operator as
+ * its actor (lib/gateway/events.ts), for the write's own batch; nothing on
+ * a Gateway without the event tables.
+ */
+function queueEvent(
+  ws: Workspace,
+  input: Pick<CliEventInput, "type" | "data" | "appRowId" | "onlyIf">,
+): Promise<D1Statement[]> {
+  return queueEventFromCli(ws.db, {
+    organizationId: ws.organization.id,
+    actor: operatorActor(ws.operator),
+    now: ws.now,
+    ...input,
+  });
+}
 
 /**
  * The workspace `rename` acts on: the install's organization, once it has
@@ -72,6 +112,8 @@ async function claimedWorkspace(db: D1Database): Promise<Organization> {
 export function renameInstallOrganization(
   db: D1Database,
   name: string,
+  deployer: Deployer,
+  now = Date.now(),
 ): Promise<{ organization: Organization; previousName: string; changed: boolean }> {
   return registryCall(async () => {
     const organization = await claimedWorkspace(db);
@@ -79,6 +121,13 @@ export function renameInstallOrganization(
     if (changed) {
       await db.run([
         { sql: "UPDATE organizations SET name = ? WHERE id = ?", params: [name, organization.id] },
+        ...(await queueEventFromCli(db, {
+          organizationId: organization.id,
+          type: "organization.renamed",
+          actor: operatorActor(deployer),
+          data: { name, previousName: organization.name },
+          now,
+        })),
       ]);
     }
     return {
@@ -621,6 +670,15 @@ SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM invitations WHERE id = ?2)`,
       sql: "SELECT id, email, role, status, expires_at, created_at FROM invitations WHERE id = ?",
       params: [id],
     },
+    // The event only when the invitation was written; no mail went (the CLI prints the link).
+    ...(await queueEvent(ws, {
+      type: "member.invited",
+      data: {
+        invitation: { id, email: address, role, expiresAt: new Date(expiresAt).toISOString() },
+        emailSent: false,
+      },
+      onlyIf: { sql: "EXISTS (SELECT 1 FROM invitations WHERE id = ?)", params: [id] },
+    })),
   ]);
   const row = written[0];
   if (!row) {
@@ -721,6 +779,11 @@ export async function uninvite(ws: Workspace, identifier: string): Promise<Works
       sql: "UPDATE invitations SET status = 'canceled' WHERE id = ? AND organization_id = ? AND status = 'pending' RETURNING id",
       params: [invitation.id, ws.organization.id],
     },
+    ...(await queueEvent(ws, {
+      type: "member.invitation_cancelled",
+      data: { invitation: { id: invitation.id, email: invitation.email, role: invitation.role } },
+      onlyIf: { sql: "changes() > 0", params: [] },
+    })),
   ]);
   if (changed.length === 0) {
     throw new EveryAppError("INVITATION_NOT_PENDING", `The invitation for ${invitation.email} was used or canceled meanwhile`);
@@ -840,11 +903,25 @@ export async function deactivate(
 ): Promise<{ member: WorkspaceMember; already: boolean }> {
   const member = await findMember(ws, identifier);
   await refuseLastLiveOwner(ws, member, "deactivated", true);
-  const [changed = []] = await ws.db.run(
-    deactivationWrites(ws, member, `Deactivated by ${ws.operator.actor} (${CLI} workspace deactivate)`),
-  );
+  const [changed = []] = await ws.db.run([
+    ...deactivationWrites(ws, member, `Deactivated by ${ws.operator.actor} (${CLI} workspace deactivate)`),
+    ...(await deactivatedEvent(ws, member)),
+  ]);
   if (changed.length === 0) await refuseLastLiveOwner(ws, member, "deactivated", true, { afterWrite: true });
   return { member: { ...member, deactivated: true }, already: member.deactivated };
+}
+
+/**
+ * `member.deactivated` for the batch `deactivationWrites` heads, once the
+ * ban is on the row; nothing for someone deactivated already.
+ */
+async function deactivatedEvent(ws: Workspace, member: WorkspaceMember, reason?: string): Promise<D1Statement[]> {
+  if (member.deactivated) return [];
+  return queueEvent(ws, {
+    type: "member.deactivated",
+    data: { user: eventUser(member), ...(reason ? { reason } : {}) },
+    onlyIf: { sql: "EXISTS (SELECT 1 FROM users WHERE id = ? AND banned = 1)", params: [member.id] },
+  });
 }
 
 /** Lift a deactivation (MembershipService.reactivate): revoked tokens and connections stay revoked. */
@@ -859,6 +936,13 @@ export async function reactivate(
 WHERE id = ?1 AND EXISTS (SELECT 1 FROM members m WHERE m.user_id = ?1 AND m.organization_id = ?2)`,
       params: [member.id, ws.organization.id, ws.now],
     },
+    ...(member.deactivated
+      ? await queueEvent(ws, {
+          type: "member.reactivated",
+          data: { user: eventUser(member) },
+          onlyIf: { sql: "changes() > 0", params: [] },
+        })
+      : []),
   ]);
   return { member: { ...member, deactivated: false }, already: !member.deactivated };
 }
@@ -900,13 +984,14 @@ export async function remove(
   const otherOrganizations = number(others[0]?.["n"]);
   if (otherOrganizations === 0 && (await options.accessMayLetBackIn(member))) {
     // Only this organization's member: the account-wide rule the ban holds is this organization's.
-    const [changed = []] = await ws.db.run(
-      deactivationWrites(
+    const [changed = []] = await ws.db.run([
+      ...deactivationWrites(
         ws,
         member,
         `Removed by ${ws.operator.actor} (${CLI} workspace remove); deactivated instead, as Cloudflare Access would let them back in`,
       ),
-    );
+      ...(await deactivatedEvent(ws, member, "deleted_with_access_auto_join")),
+    ]);
     if (changed.length === 0) await refuseLastLiveOwner(ws, member, "removed", true, { afterWrite: true });
     return { member: { ...member, deactivated: true }, deactivatedInstead: true, accountDeleted: false, otherOrganizations };
   }
@@ -935,6 +1020,15 @@ WHERE user_id = ?1 AND organization_id = ?2 AND revoked_at IS NULL AND ${MANAGEA
           params: [member.id],
         }
       : { sql: "SELECT NULL AS id WHERE 0" },
+    // Once the membership went; the account goes with it exactly when the policy says and no other membership remains.
+    ...(await queueEvent(ws, {
+      type: "member.removed",
+      data: { user: eventUser(member), accountDeleted: options.deleteAccounts && otherOrganizations === 0 },
+      onlyIf: {
+        sql: "NOT EXISTS (SELECT 1 FROM members WHERE user_id = ? AND organization_id = ?)",
+        params: [member.id, ws.organization.id],
+      },
+    })),
   ]);
   if (removed.length === 0) await refuseLastLiveOwner(ws, member, "removed", false, { afterWrite: true });
   return { member, deactivatedInstead: false, accountDeleted: deleted.length > 0, otherOrganizations };
@@ -1039,6 +1133,11 @@ WHERE NOT EXISTS (SELECT 1 FROM groups WHERE organization_id = ?2 AND lower(name
 RETURNING id`,
       params: [id, ws.organization.id, name, description, ws.now, ws.operator.userId],
     },
+    ...(await queueEvent(ws, {
+      type: "group.created",
+      data: { group: { id, name }, ...(description ? { description } : {}) },
+      onlyIf: { sql: "EXISTS (SELECT 1 FROM groups WHERE id = ?)", params: [id] },
+    })),
   ]);
   if (written.length === 0) throw groupNameTaken(name);
   return { id, name, description, createdAt: ws.now, memberCount: 0, appCount: 0 };
@@ -1061,6 +1160,17 @@ WHERE id = ?1 AND organization_id = ?2
 RETURNING id`,
       params: [group.id, ws.organization.id, name, description],
     },
+    ...(group.name !== name || group.description !== description
+      ? await queueEvent(ws, {
+          type: "group.updated",
+          data: {
+            group: { id: group.id, name },
+            ...(group.name !== name ? { previousName: group.name } : {}),
+            ...(group.description !== description && description ? { description } : {}),
+          },
+          onlyIf: { sql: "changes() > 0", params: [] },
+        })
+      : []),
   ]);
   if (written.length === 0) throw groupNameTaken(name);
   return { ...group, name, description };
@@ -1074,6 +1184,11 @@ export async function deleteGroup(ws: Workspace, identifier: string): Promise<Wo
     { sql: "DELETE FROM group_app_access WHERE group_id = ?1 AND organization_id = ?2", params },
     { sql: "DELETE FROM group_members WHERE group_id = ?1 AND organization_id = ?2", params },
     { sql: "DELETE FROM groups WHERE id = ?1 AND organization_id = ?2", params },
+    ...(await queueEvent(ws, {
+      type: "group.removed",
+      data: { group: { id: group.id, name: group.name } },
+      onlyIf: { sql: "NOT EXISTS (SELECT 1 FROM groups WHERE id = ?)", params: [group.id] },
+    })),
   ]);
   return group;
 }
@@ -1180,6 +1295,18 @@ SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM members WHERE user_id = ?2
 ON CONFLICT DO NOTHING`,
       params: [group.id, userId, ws.organization.id, ws.now, ws.operator.userId],
     })),
+    ...(plan.add.length > 0 || plan.remove.length > 0
+      ? await queueEvent(ws, {
+          type: "group.members_changed",
+          data: {
+            group: { id: group.id, name: group.name },
+            added: plan.add.slice(0, EVENT_LIST_MAX).map((id) => eventUser(byId.get(id)!)),
+            removed: plan.remove.slice(0, EVENT_LIST_MAX).map((id) => eventUser(byId.get(id)!)),
+            addedCount: plan.add.length,
+            removedCount: plan.remove.length,
+          },
+        })
+      : []),
   ]);
   return {
     added: plan.add.map((id) => byId.get(id)!),
@@ -1246,6 +1373,18 @@ WHERE EXISTS (SELECT 1 FROM apps WHERE id = ?2 AND organization_id = ?3 AND scop
 ON CONFLICT DO NOTHING`,
       params: [group.id, appRowId, ws.organization.id, ws.now, ws.operator.userId],
     })),
+    ...(plan.add.length > 0 || plan.remove.length > 0
+      ? await queueEvent(ws, {
+          type: "group.apps_changed",
+          data: {
+            group: { id: group.id, name: group.name },
+            granted: plan.add.slice(0, EVENT_LIST_MAX).map((id) => eventApp(byId.get(id)!)),
+            revoked: plan.remove.slice(0, EVENT_LIST_MAX).map((id) => eventApp(byId.get(id)!)),
+            grantedCount: plan.add.length,
+            revokedCount: plan.remove.length,
+          },
+        })
+      : []),
   ]);
   return {
     added: plan.add.map((id) => byId.get(id)!),
@@ -1305,25 +1444,62 @@ export async function updateApp(
   const description = update.description === undefined ? app.description : update.description.trim();
   const everyone = update.everyone ?? app.everyone;
   const grants: D1Statement[] = [];
+  const subject = { id: app.appSlug, rowId: app.id, name };
+  const events: D1Statement[] = [];
   if (everyone && !app.everyone) {
     const [members = []] = await ws.db.run([
-      { sql: "SELECT user_id FROM members WHERE organization_id = ?", params: [ws.organization.id] },
+      {
+        sql: "SELECT u.id, u.email, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.organization_id = ? ORDER BY u.email",
+        params: [ws.organization.id],
+      },
     ]);
     for (const batch of chunks(members, ROWS_PER_INSERT)) {
       grants.push({
         sql: `INSERT INTO user_app_access (id, user_id, app_row_id, organization_id, granted_by) VALUES ${batch.map(() => "(?, ?, ?, ?, ?)").join(", ")} ON CONFLICT DO NOTHING RETURNING id`,
-        params: batch.flatMap((member) => [randomUUID(), String(member["user_id"]), app.id, ws.organization.id, ws.operator.userId]),
+        params: batch.flatMap((member) => [randomUUID(), String(member["id"]), app.id, ws.organization.id, ws.operator.userId]),
       });
     }
+    // Everyone it granted (the first 50 by address, the count exact), as the Gateway's own event lists them.
+    const granted = members.map((member) => eventUser({ id: String(member["id"]), email: String(member["email"]), name: text(member["name"]) }));
+    events.push(
+      ...(await queueEvent(ws, {
+        type: "app.access_changed",
+        data: { app: subject, granted: granted.slice(0, EVENT_LIST_MAX), revoked: [], grantedCount: granted.length, revokedCount: 0, everyone: true },
+        appRowId: app.id,
+      })),
+    );
+  } else if (update.everyone === false && app.everyone) {
+    events.push(
+      ...(await queueEvent(ws, {
+        type: "app.access_changed",
+        data: { app: subject, granted: [], revoked: [], grantedCount: 0, revokedCount: 0, everyone: false },
+        appRowId: app.id,
+      })),
+    );
   }
-  const [, ...granted] = await ws.db.run([
+  if (name !== app.name || description !== app.description) {
+    events.push(
+      ...(await queueEvent(ws, {
+        type: "app.renamed",
+        data: {
+          app: subject,
+          ...(name !== app.name ? { previousName: app.name } : {}),
+          ...(description !== app.description ? { description } : {}),
+        },
+        appRowId: app.id,
+      })),
+    );
+  }
+  const results = await ws.db.run([
     {
       sql: `UPDATE apps SET name = ?3, description = ?4, is_default = ?5, updated_at = ?6
 WHERE id = ?1 AND organization_id = ?2 AND status != '${DELETED_APP_STATUS}'`,
       params: [app.id, ws.organization.id, name, description, everyone ? 1 : 0, ws.now],
     },
     ...grants,
+    ...events,
   ]);
+  const granted = results.slice(1, 1 + grants.length);
   return { app: await findApp(ws, app.id), granted: granted.reduce((count, rows) => count + rows.length, 0) };
 }
 
@@ -1397,6 +1573,19 @@ SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM members WHERE user_id 
 ON CONFLICT DO NOTHING`,
       params: [randomUUID(), userId, app.id, ws.organization.id, ws.now, ws.operator.userId],
     })),
+    ...(plan.add.length > 0 || plan.remove.length > 0
+      ? await queueEvent(ws, {
+          type: "app.access_changed",
+          data: {
+            app: eventApp(app),
+            granted: plan.add.slice(0, EVENT_LIST_MAX).map((id) => eventUser(byId.get(id)!)),
+            revoked: plan.remove.slice(0, EVENT_LIST_MAX).map((id) => eventUser(byId.get(id)!)),
+            grantedCount: plan.add.length,
+            revokedCount: plan.remove.length,
+          },
+          appRowId: app.id,
+        })
+      : []),
   ]);
   return {
     granted: plan.add.map((id) => byId.get(id)!),
@@ -1493,6 +1682,22 @@ function raisedCaps(
   before: { calls: number | null; cost: number | null },
 ): Record<string, number | null> | null {
   if (!raised(after.calls, before.calls) && !raised(after.cost, before.cost)) return null;
+  return {
+    cap: after.calls,
+    previousCap: before.calls,
+    ...(after.cost !== before.cost && { costCap: microsToUsd(after.cost), previousCostCap: microsToUsd(before.cost) }),
+  };
+}
+
+/**
+ * The fields of `cap.changed` for a change `raisedCaps` did not announce (a
+ * cap lowered or set under the default), or null when nothing changed.
+ */
+function changedCaps(
+  after: { calls: number | null; cost: number | null },
+  before: { calls: number | null; cost: number | null },
+): Record<string, number | null> | null {
+  if (after.calls === before.calls && after.cost === before.cost) return null;
   return {
     cap: after.calls,
     previousCap: before.calls,
@@ -1601,17 +1806,24 @@ export async function setMonthlyCap(
     cap == null && costCap == null
       ? null
       : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
-  const change = raisedCaps({ calls: effective.cap, cost: effectiveCost.cap }, { calls: before.cap, cost: beforeCost.cap });
+  // cap.raised for a raise or a removal of either cap; cap.changed when a
+  // binding cap was lowered or set under the default, or the row changed
+  // while the binding caps stayed (its own cap at the default's value,
+  // `unlimited` taken back under no default).
+  const after = { calls: effective.cap, cost: effectiveCost.cap };
+  const previously = { calls: before.cap, cost: beforeCost.cap };
+  const change = raisedCaps(after, previously);
+  const changed = change
+    ? null
+    : (changedCaps(after, previously) ??
+      (effective.source !== before.source || effectiveCost.source !== beforeCost.source
+        ? { cap: effective.cap, previousCap: before.cap }
+        : null));
   const event = change
-    ? await queueEventFromCli(ws.db, {
-        organizationId: org,
-        type: "cap.raised",
-        actor: operatorActor(ws.operator),
-        data: { app: { id: app.appSlug, rowId: app.id, name: app.name }, ...change, source: "app" },
-        appRowId: app.id,
-        now: ws.now,
-      })
-    : [];
+    ? await queueEvent(ws, { type: "cap.raised", data: { app: eventApp(app), ...change, source: "app" }, appRowId: app.id })
+    : changed
+      ? await queueEvent(ws, { type: "cap.changed", data: { app: eventApp(app), ...changed, source: "app" }, appRowId: app.id })
+      : [];
   const write: D1Statement =
     newCap === null && newCost === null && !unlimited
       ? { sql: "DELETE FROM org_app_settings WHERE organization_id = ? AND app_row_id = ?", params: [org, app.id] }
@@ -1676,8 +1888,8 @@ interface DefaultCapChange {
  * the operator's Gateway user, or null for an API token. In the write's
  * own batch: a number set makes the Cap alerts subscription when the
  * organization has none, and a default first set, raised or removed
- * queues `cap.raised` with no app and `source: "default"` (a lowered one
- * is not an event). Refused on a Gateway from before migration 0014
+ * queues `cap.raised` with no app and `source: "default"`, or `cap.changed`
+ * for a lowered or newly set one. Refused on a Gateway from before migration 0014
  * (GATEWAY_PREDATES_DEFAULT_CAPS), and a dollar default on one from
  * before migration 0018 (GATEWAY_PREDATES_COST_CAPS).
  */
@@ -1709,16 +1921,15 @@ export async function setDefaultMonthlyCap(
     cap == null && costCap == null
       ? null
       : await capAlertsStatement(ws.db, { organizationId: org, deployer: ws.operator, now: ws.now });
-  const change = raisedCaps({ calls: newCap, cost: newCost }, { calls: was, cost: wasCostCapMicros });
+  const after = { calls: newCap, cost: newCost };
+  const previously = { calls: was, cost: wasCostCapMicros };
+  const change = raisedCaps(after, previously);
+  const changed = change ? null : changedCaps(after, previously);
   const event = change
-    ? await queueEventFromCli(ws.db, {
-        organizationId: org,
-        type: "cap.raised",
-        actor: operatorActor(ws.operator),
-        data: { app: null, ...change, source: "default" },
-        now: ws.now,
-      })
-    : [];
+    ? await queueEvent(ws, { type: "cap.raised", data: { app: null, ...change, source: "default" } })
+    : changed
+      ? await queueEvent(ws, { type: "cap.changed", data: { app: null, ...changed, source: "default" } })
+      : [];
   // Upsert the columns this Gateway has, then drop the row when nothing is
   // left in it: the default model provider (migration 0017) keeps it.
   const write: D1Statement[] = [
@@ -2371,6 +2582,12 @@ export async function revokeToken(
       sql: "UPDATE user_access_tokens SET revoked_at = ?3, updated_at = ?3 WHERE id = ?1 AND organization_id = ?2 AND revoked_at IS NULL",
       params: [token.id, ws.organization.id, ws.now],
     },
+    // The operator is the actor, not the token's owner (flat, like the Gateway's: never a key named token).
+    ...(await queueEvent(ws, {
+      type: "token.revoked",
+      data: { id: token.id, name: token.name, user: eventUser({ ...token.user, name: null }) },
+      onlyIf: { sql: "changes() > 0", params: [] },
+    })),
   ]);
   return { token: { ...token, revokedAt: ws.now, active: false }, already: false };
 }
@@ -2452,6 +2669,15 @@ export async function revokeConnection(
 WHERE id = ?1 AND organization_id = ?2 AND revoked_at IS NULL`,
       params: [connection.id, ws.organization.id, ws.now, ws.operator.userId],
     },
+    ...(await queueEvent(ws, {
+      type: "connection.revoked",
+      data: {
+        connection: { id: connection.id, clientName: connection.clientName },
+        user: eventUser({ ...connection.user, name: null }),
+        reason: "operator",
+      },
+      onlyIf: { sql: "changes() > 0", params: [] },
+    })),
   ]);
   return { connection: { ...connection, revokedAt: ws.now, revokedReason: "user" }, already: false };
 }

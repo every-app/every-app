@@ -10,6 +10,8 @@
  * command can't leave a workspace whose only owner is locked out.
  */
 import type { D1Database } from "@/lib/cf/d1";
+import { operatorActor, queueEventFromCli } from "./events";
+import type { Deployer } from "./registry";
 
 type MemberRole = "owner" | "admin" | "member";
 
@@ -58,6 +60,8 @@ export async function setMemberRole(
   organizationId: string,
   email: string,
   role: MemberRole,
+  /** Who runs the command: the `member.role_changed` event's actor. Without one, no event. */
+  deployer?: Deployer,
 ): Promise<SetMemberRoleResult> {
   const address = email.trim().toLowerCase();
   const nowMs = Date.now();
@@ -80,7 +84,22 @@ WHERE organization_id = ?1
   if (!was) return { kind: "not_found" };
   if (was.role === role) return { kind: "unchanged", member: was };
   const now = toMember(after[0]) ?? was;
-  if (now.role === role) return { kind: "changed", member: now, previousRole: was.role };
+  if (now.role === role) {
+    // After the write, once it is known to have taken: the Gateway's own
+    // MembershipService.changeRole announces the same way.
+    if (deployer) {
+      await db.run(
+        await queueEventFromCli(db, {
+          organizationId,
+          type: "member.role_changed",
+          actor: operatorActor(deployer),
+          data: { user: { id: now.id, email: now.email, name: now.name || null }, role, previousRole: was.role },
+          now: nowMs,
+        }),
+      );
+    }
+    return { kind: "changed", member: now, previousRole: was.role };
+  }
   return { kind: "last_owner", member: was };
 }
 

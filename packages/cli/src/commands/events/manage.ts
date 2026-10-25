@@ -14,7 +14,7 @@ import { connect, named, organizationData, subscriptionData, type EventsOptions 
 export async function removeEvents(options: EventsOptions, id: string): Promise<void> {
   const { out } = options;
   const { gateway, organization } = await connect(options);
-  const { subscription, outcome } = await removeSubscription(gateway.db, organization, id, options.now?.());
+  const { subscription, outcome } = await removeSubscription(gateway.db, organization, id, options.now?.(), gateway.deployer);
   const lines =
     outcome === "disabled"
       ? [
@@ -47,6 +47,7 @@ export async function setEnabled(options: EventsOptions, id: string, enabled: bo
     id,
     enabled,
     options.now?.(),
+    gateway.deployer,
   );
   const headline = changed
     ? `${enabled ? "Enabled" : "Disabled"} ${named(subscription)}.`

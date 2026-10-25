@@ -38,7 +38,7 @@ vi.mock("better-auth/tanstack-start", () => ({
 }));
 vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import {
   APP_EVENT_RATE_PER_HOUR,
   AUDIT_RETENTION_DAYS,
@@ -98,8 +98,12 @@ import { EventDeliveryRepository } from "@/server/repositories/EventDeliveryRepo
 import { EventRepository } from "@/server/repositories/EventRepository";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { AdminService } from "@/server/services/AdminService";
+import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppCapService } from "@/server/services/AppCapService";
 import { AppService } from "@/server/services/AppService";
+import { GroupService } from "@/server/services/GroupService";
+import { OrganizationService } from "@/server/services/OrganizationService";
+import { runWorkspaceTool } from "@/server/toolbus/workspace-tools";
 import { InvitationService } from "@/server/services/InvitationService";
 import { listedAppSetup } from "@/server/services/listedAppSetup";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
@@ -214,6 +218,23 @@ describe("the event bus (SQLite)", () => {
     vi.restoreAllMocks();
   });
 
+  /**
+   * Forget the bus's own housekeeping (`subscription.*`, which adding or
+   * changing a subscription emits) so a test counts only the events it
+   * is about; the audit-coverage tests below assert those directly.
+   */
+  async function forgetHousekeeping() {
+    await settleBackground();
+    const housekeeping = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(like(events.type, "subscription.%"));
+    for (const { id } of housekeeping) {
+      await db.delete(eventDeliveries).where(eq(eventDeliveries.eventId, id));
+      await db.delete(events).where(eq(events.id, id));
+    }
+  }
+
   async function addWebhook(
     input: {
       url?: string;
@@ -222,12 +243,14 @@ describe("the event bus (SQLite)", () => {
       name?: string;
     } = {},
   ) {
-    return EventSubscriptionService.add(asOwner(), {
+    const added = await EventSubscriptionService.add(asOwner(), {
       url: input.url ?? "https://hooks.example.net/every-app",
       events: input.events,
       secret: input.secret,
       name: input.name,
     });
+    await forgetHousekeeping();
+    return added;
   }
 
   const actor: EventActor = {
@@ -268,6 +291,7 @@ describe("the event bus (SQLite)", () => {
       await EventSubscriptionService.update(asOwner(), paused.subscription.id, {
         enabled: false,
       });
+      await forgetHousekeeping();
 
       await emit(joined());
       await settleBackground();
@@ -769,7 +793,11 @@ describe("the event bus (SQLite)", () => {
 
   describe("the email sink", () => {
     async function addEmail(recipients: "owners" | "admins" = "admins") {
-      return EventSubscriptionService.add(asOwner(), { email: recipients });
+      const added = await EventSubscriptionService.add(asOwner(), {
+        email: recipients,
+      });
+      await forgetHousekeeping();
+      return added;
     }
 
     it("mails each live owner and admin once and nobody else, counting the recipients (events.email-sink-members-only)", async () => {
@@ -1284,6 +1312,92 @@ describe("the event bus (SQLite)", () => {
       "provider.removed": catalogue.providerRemoved({
         provider: { id: "p", name: "P" },
       }),
+      "member.invitation_cancelled": catalogue.memberInvitationCancelled({
+        invitation: { id: "inv-1", email: "jo@acme.example", role: "member" },
+      }),
+      "organization.renamed": catalogue.organizationRenamed({
+        name: "Acme Corp",
+        previousName: "Acme",
+      }),
+      "app.renamed": catalogue.appRenamed({
+        app,
+        previousName: "Old CRM",
+        description: "Contacts",
+      }),
+      "app.settings_changed": catalogue.appSettingsChanged({
+        app,
+        settings: ["OPENROUTER_API_KEY"],
+        action: "set",
+        target: "gateway",
+      }),
+      "app.access_changed": catalogue.appAccessChanged({
+        app,
+        granted: [user],
+        revoked: [],
+      }),
+      "app.email_changed": catalogue.appEmailChanged({
+        app,
+        senders: ["hello"],
+        inbound: ["support"],
+      }),
+      "cap.changed": catalogue.capChanged({
+        app,
+        cap: 500,
+        previousCap: 1000,
+        source: "app",
+      }),
+      "group.created": catalogue.groupCreated({
+        group: { id: "grp_1", name: "Sales" },
+        description: "The sales team",
+      }),
+      "group.updated": catalogue.groupUpdated({
+        group: { id: "grp_1", name: "Sales EMEA" },
+        previousName: "Sales",
+      }),
+      "group.removed": catalogue.groupRemoved({
+        group: { id: "grp_1", name: "Sales" },
+      }),
+      "group.members_changed": catalogue.groupMembersChanged({
+        group: { id: "grp_1", name: "Sales" },
+        added: [user],
+        removed: [],
+      }),
+      "group.apps_changed": catalogue.groupAppsChanged({
+        group: { id: "grp_1", name: "Sales" },
+        granted: [app],
+        revoked: [],
+      }),
+      "mcp_app.updated": catalogue.mcpAppUpdated({
+        app,
+        kind: "remote",
+        changed: ["risk"],
+        risk: "write",
+      }),
+      "mcp_app.tool_changed": catalogue.mcpAppToolChanged({
+        app,
+        kind: "remote",
+        tool: "delete_row",
+        risk: "destructive",
+        enabled: false,
+      }),
+      "subscription.created": catalogue.subscriptionCreated({
+        subscription: { id: "sub_x", name: "Slack", sink: "webhook" },
+        events: ["member.*"],
+        host: "hooks.example.net",
+      }),
+      "subscription.updated": catalogue.subscriptionUpdated({
+        subscription: { id: "sub_x", name: "Slack", sink: "webhook" },
+        changed: ["enabled"],
+        enabled: false,
+      }),
+      "subscription.removed": catalogue.subscriptionRemoved({
+        subscription: { id: "sub_x", name: "Slack", sink: "webhook" },
+        disabled: false,
+      }),
+      "subscription.redelivered": catalogue.subscriptionRedelivered({
+        subscription: { id: "sub_x", name: "Slack", sink: "webhook" },
+        delivery: { id: "dlv_1", eventId: "evt_1", eventType: "member.joined" },
+      }),
       "provider.updated": catalogue.providerUpdated({
         provider: { id: "github", name: "GitHub", kind: "oauth" },
         change: "client",
@@ -1437,6 +1551,67 @@ describe("the event bus (SQLite)", () => {
         "provider.connection_expired:conn_1",
       );
       expect(line("ping")).toBe("Test event from Every App");
+      expect(line("member.invitation_cancelled")).toBe(
+        "Ada cancelled the invitation for jo@acme.example",
+      );
+      expect(line("organization.renamed")).toBe(
+        "Ada renamed the workspace to Acme Corp",
+      );
+      expect(line("app.renamed")).toBe("Old CRM was renamed to CRM");
+      expect(line("app.settings_changed")).toBe(
+        "CRM's settings set: OPENROUTER_API_KEY",
+      );
+      expect(line("app.access_changed")).toBe(
+        "CRM's access changed: 1 granted",
+      );
+      expect(line("app.email_changed")).toBe(
+        "CRM's email changed: 1 sender, 1 inbound",
+      );
+      expect(line("cap.changed")).toBe("CRM's cap lowered from 1,000 to 500");
+      expect(line("group.created")).toBe("Ada created the group Sales");
+      expect(line("group.updated")).toBe(
+        "The group Sales was renamed to Sales EMEA",
+      );
+      expect(line("group.removed")).toBe("The group Sales was removed");
+      expect(line("group.members_changed")).toBe(
+        "The group Sales's members changed: 1 added, 0 removed",
+      );
+      expect(line("group.apps_changed")).toBe(
+        "The group Sales's apps changed: 1 granted, 0 revoked",
+      );
+      expect(line("mcp_app.updated")).toBe("CRM was changed: risk");
+      expect(line("mcp_app.tool_changed")).toBe(
+        "CRM's tool delete_row was changed (off) (risk destructive)",
+      );
+      expect(line("subscription.created")).toBe(
+        "Ada added the subscription Slack",
+      );
+      expect(line("subscription.updated")).toBe(
+        "The subscription Slack was paused",
+      );
+      expect(line("subscription.removed")).toBe(
+        "The subscription Slack was removed",
+      );
+      expect(line("subscription.redelivered")).toBe(
+        "Ada redelivered member.joined to Slack",
+      );
+      // An agent names its connection; a token with no client name, the member it acts for.
+      const claude: EventActor = {
+        kind: "agent",
+        id: "conn-1",
+        name: "Claude",
+        email: "ada@acme.example",
+      };
+      expect(
+        summarize("group.created", samples["group.created"]!.data, claude),
+      ).toBe("Claude created the group Sales");
+      expect(
+        summarize("group.created", samples["group.created"]!.data, {
+          kind: "agent",
+          id: "pat-1",
+          email: "ada@acme.example",
+        }),
+      ).toBe("ada@acme.example created the group Sales");
       expect(summarize("app.crm.invoice.paid", { total: 1 }, ada)).toBe(
         "crm: invoice.paid",
       );
@@ -1710,7 +1885,7 @@ describe("the event bus (SQLite)", () => {
     });
 
     it("a subject lookup that fails never breaks the action: the member is deactivated and the emit is logged as failed", async () => {
-      vi.spyOn(subjects, "userActor").mockRejectedValue(
+      vi.spyOn(subjects, "userSubject").mockRejectedValue(
         new Error("D1_ERROR: Network connection lost."),
       );
       await expect(
@@ -1844,7 +2019,7 @@ describe("the event bus (SQLite)", () => {
           recipients: "admins",
         }),
       ]);
-      // A second cap doesn't make a second row; a lower cap is no event.
+      // A second cap doesn't make a second row; a lower cap is cap.changed, no raise.
       await AppCapService.setMonthlyCap(asOwner(), {
         appRowId: app.id,
         cap: 8,
@@ -1864,6 +2039,7 @@ describe("the event bus (SQLite)", () => {
         })),
       ).toEqual([
         { type: "cap.raised", cap: 10, previousCap: null },
+        { type: "cap.changed", cap: 8, previousCap: 10 },
         { type: "cap.raised", cap: 10, previousCap: 8 },
       ]);
 
@@ -1901,7 +2077,7 @@ describe("the event bus (SQLite)", () => {
       await noteCapCheck(acme, app.id, standing(12));
       expect(batches).toHaveBeenCalledTimes(5);
       const emitted = (await typesEmitted()).filter(
-        (e) => e.type !== "cap.raised",
+        (e) => e.type !== "cap.raised" && e.type !== "cap.changed",
       );
       expect(emitted.map((e) => e.type)).toEqual([
         "cap.warning",
@@ -2070,8 +2246,8 @@ describe("the event bus (SQLite)", () => {
           recipients: "admins",
         }),
       ]);
-      // A lower default is no event and no second row; a higher one and a
-      // removal are announced, without an app.
+      // A lower default is cap.changed and no second row; a higher one and a
+      // removal are cap.raised, without an app.
       await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 50 });
       await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 200 });
       await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: null });
@@ -2081,6 +2257,10 @@ describe("the event bus (SQLite)", () => {
         {
           type: "cap.raised",
           data: { app: null, cap: 100, previousCap: null, source: "default" },
+        },
+        {
+          type: "cap.changed",
+          data: { app: null, cap: 50, previousCap: 100, source: "default" },
         },
         {
           type: "cap.raised",
@@ -2105,7 +2285,7 @@ describe("the event bus (SQLite)", () => {
       });
       const crm = { id: "crm", rowId: app.id, name: "CRM" };
       await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 1_000 });
-      // Tighter than the default: silent.
+      // Tighter than the default: no raise, but cap.changed says so.
       await AppCapService.setMonthlyCap(asOwner(), {
         appRowId: app.id,
         cap: 500,
@@ -2137,6 +2317,10 @@ describe("the event bus (SQLite)", () => {
         {
           type: "cap.raised",
           data: { app: null, cap: 1_000, previousCap: null, source: "default" },
+        },
+        {
+          type: "cap.changed",
+          data: { app: crm, cap: 500, previousCap: 1_000, source: "app" },
         },
         {
           type: "cap.raised",
@@ -2663,6 +2847,276 @@ describe("the event bus (SQLite)", () => {
           },
         }),
       ]);
+    });
+  });
+  describe("admin emit points (audit coverage: each admin write is one event with its actor)", () => {
+    async function emitted(organizationId = acme) {
+      const rows = await db
+        .select({ type: events.type, data: events.data, actor: events.actor })
+        .from(events)
+        .where(eq(events.organizationId, organizationId));
+      return rows.map((row) => ({
+        type: row.type,
+        data: JSON.parse(row.data) as Record<string, unknown>,
+        actor: JSON.parse(row.actor) as Record<string, unknown>,
+      }));
+    }
+    const adaActor = () =>
+      expect.objectContaining({
+        kind: "user",
+        id: owner,
+        email: "ada@acme.example",
+      });
+
+    async function anApp(appSlug = "crm") {
+      const { app } = await registerApp(db, {
+        organizationId: acme,
+        appSlug,
+        name: appSlug.toUpperCase(),
+      });
+      await settleBackground();
+      await db.delete(events);
+      return app;
+    }
+
+    it("organization.renamed when the workspace is renamed, with the previous name", async () => {
+      await OrganizationService.rename(asOwner(), "Acme Corp");
+      expect(await emitted()).toEqual([
+        expect.objectContaining({
+          type: "organization.renamed",
+          data: { name: "Acme Corp", previousName: "acme" },
+          actor: adaActor(),
+        }),
+      ]);
+      // The same name again is no event.
+      await OrganizationService.rename(asOwner(), "Acme Corp");
+      expect((await emitted()).length).toBe(1);
+    });
+
+    it("member.invitation_cancelled from the session-less cancel (the MCP tool's path); never the link", async () => {
+      await db.insert(invitations).values({
+        id: "inv-1",
+        organizationId: acme,
+        email: "jo@acme.example",
+        role: "member",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+        inviterId: owner,
+      });
+      await AdminService.cancelInvitationWithoutSession(asOwner(), "inv-1");
+      const [event] = await emitted();
+      expect(event).toMatchObject({
+        type: "member.invitation_cancelled",
+        data: {
+          invitation: { id: "inv-1", email: "jo@acme.example", role: "member" },
+        },
+        actor: adaActor(),
+      });
+      expect(JSON.stringify(event!.data)).not.toMatch(/token|link/i);
+    });
+
+    it("group.created, group.updated, group.members_changed, group.apps_changed and group.removed, each once, with the members and apps named", async () => {
+      const app = await anApp();
+      const group = await GroupService.createGroup(asOwner(), {
+        name: "Sales",
+      });
+      await GroupService.updateGroup(asOwner(), group.id, {
+        name: "Sales EMEA",
+      });
+      await GroupService.setGroupMembers(asOwner(), group.id, [member]);
+      await GroupService.setGroupApps(asOwner(), group.id, [app.id]);
+      await GroupService.setGroupApps(asOwner(), group.id, [app.id]); // unchanged: no event
+      await GroupService.deleteGroup(asOwner(), group.id);
+      const all = await emitted();
+      expect(all.map((e) => e.type)).toEqual([
+        "group.created",
+        "group.updated",
+        "group.members_changed",
+        "group.apps_changed",
+        "group.removed",
+      ]);
+      expect(all[0]).toMatchObject({
+        data: { group: { id: group.id, name: "Sales" } },
+        actor: adaActor(),
+      });
+      expect(all[1]!.data).toEqual({
+        group: { id: group.id, name: "Sales EMEA" },
+        previousName: "Sales",
+      });
+      expect(all[2]!.data).toMatchObject({
+        added: [{ id: member, email: "cy@acme.example" }],
+        removed: [],
+        addedCount: 1,
+        removedCount: 0,
+      });
+      expect(all[3]!.data).toMatchObject({
+        granted: [{ id: "crm", rowId: app.id, name: "CRM" }],
+        grantedCount: 1,
+        revokedCount: 0,
+      });
+      expect(all[4]!.data).toEqual({
+        group: { id: group.id, name: "Sales EMEA" },
+      });
+    });
+
+    it("app.access_changed with who was granted and revoked, and app.renamed; 'available to everyone' names everyone it granted", async () => {
+      const app = await anApp();
+      await AppAccessService.updateAccessForApp(asOwner(), app.id, [member]);
+      await AppAccessService.updateAccessForApp(asOwner(), app.id, [member]); // unchanged
+      await AppAccessService.updateAccessForApp(asOwner(), app.id, []);
+      await AppService.update(asOwner(), { id: app.id, name: "Contacts" });
+      await AppService.update(asOwner(), { id: app.id, isDefault: true });
+      const all = await emitted();
+      expect(all.map((e) => e.type)).toEqual([
+        "app.access_changed",
+        "app.access_changed",
+        "app.renamed",
+        "app.access_changed",
+      ]);
+      // registerApp granted the admin: setting the list to Cy alone revokes Bo.
+      expect(all[0]!.data).toMatchObject({
+        app: { id: "crm", rowId: app.id },
+        granted: [{ id: member, email: "cy@acme.example" }],
+        revoked: [{ email: "bo@acme.example" }],
+        grantedCount: 1,
+        revokedCount: 1,
+      });
+      expect(all[1]!.data).toMatchObject({
+        granted: [],
+        revoked: [{ id: member }],
+      });
+      expect(all[2]!.data).toEqual({
+        app: { id: "crm", rowId: app.id, name: "Contacts" },
+        previousName: "CRM",
+      });
+      expect(all[3]!.data).toMatchObject({ everyone: true, grantedCount: 3 });
+      expect(all[3]!.actor).toEqual(adaActor());
+    });
+
+    it("cap.changed when a cap is set under the default or lowered (cap.raised stays for a raise); the default cap likewise", async () => {
+      const app = await anApp();
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 1000 }); // cap.raised
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 500,
+      }); // under the default: changed
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 2000,
+      }); // raised
+      await AppCapService.setMonthlyCap(asOwner(), {
+        appRowId: app.id,
+        cap: 1500,
+      }); // lowered
+      await AppCapService.setDefaultMonthlyCap(asOwner(), { cap: 800 }); // lowered default
+      const all = await emitted();
+      expect(all.map((e) => e.type)).toEqual([
+        "cap.raised",
+        "cap.changed",
+        "cap.raised",
+        "cap.changed",
+        "cap.changed",
+      ]);
+      expect(all[1]!.data).toEqual({
+        app: { id: "crm", rowId: app.id, name: "CRM" },
+        cap: 500,
+        previousCap: 1000,
+        source: "app",
+      });
+      expect(all[3]!.data).toMatchObject({ cap: 1500, previousCap: 2000 });
+      expect(all[4]!.data).toEqual({
+        app: null,
+        cap: 800,
+        previousCap: 1000,
+        source: "default",
+      });
+    });
+
+    it("subscription.created, subscription.updated, subscription.redelivered and subscription.removed, never the secret or the URL", async () => {
+      fetchMock.mockResolvedValue(new Response("no", { status: 500 }));
+      // The service itself, not addWebhook: its housekeeping is the subject here.
+      const { subscription, secret } = await EventSubscriptionService.add(
+        asOwner(),
+        {
+          url: "https://hooks.example.net/every-app?key=querysecret",
+          events: ["member.*", "subscription.*"],
+          name: "Slack",
+        },
+      );
+      await settleBackground();
+      await EventSubscriptionService.update(asOwner(), subscription.id, {
+        enabled: false,
+      });
+      await EventSubscriptionService.update(asOwner(), subscription.id, {
+        enabled: false,
+      }); // unchanged
+      await settleBackground();
+      const deliveries = await EventSubscriptionService.deliveries(
+        asOwner(),
+        {},
+      );
+      const failed = deliveries.deliveries[0]!;
+      await EventSubscriptionService.redeliver(asOwner(), failed.id);
+      await settleBackground();
+      await EventSubscriptionService.remove(asOwner(), subscription.id);
+      const all = await emitted();
+      expect(all.map((e) => e.type)).toEqual([
+        "subscription.created",
+        "subscription.updated",
+        "subscription.redelivered",
+        "subscription.removed",
+      ]);
+      expect(all[0]!.data).toEqual({
+        subscription: { id: subscription.id, name: "Slack", sink: "webhook" },
+        events: ["member.*", "subscription.*"],
+        host: "hooks.example.net",
+      });
+      expect(all[1]!.data).toEqual({
+        subscription: { id: subscription.id, name: "Slack", sink: "webhook" },
+        changed: ["enabled"],
+        enabled: false,
+      });
+      expect(all[2]!.data).toMatchObject({
+        delivery: { id: failed.id, eventType: "subscription.created" },
+      });
+      expect(all[3]!.data).toEqual({
+        subscription: { id: subscription.id, name: "Slack", sink: "webhook" },
+        disabled: false,
+      });
+      const text = JSON.stringify(all.map((e) => e.data));
+      expect(text).not.toContain(secret!);
+      expect(text).not.toContain("querysecret");
+      expect(text).not.toContain("https://");
+      for (const event of all) expect(event.actor).toEqual(adaActor());
+    });
+
+    it("names the agent as the actor when a write comes through the Gateway's MCP tools: the credential, the client name and the member it acts for", async () => {
+      const result = await runWorkspaceTool(
+        "workspace_group_create",
+        { name: "Agents" },
+        {
+          userId: owner,
+          email: "ada@acme.example",
+          organizationId: acme,
+          orgRole: "owner",
+          credential: { kind: "oauth", id: "conn-1", clientName: "Claude" },
+          access: "write",
+        },
+      );
+      expect(result.isError).not.toBe(true);
+      const [event] = await emitted();
+      expect(event).toMatchObject({
+        type: "group.created",
+        actor: {
+          kind: "agent",
+          id: "conn-1",
+          name: "Claude",
+          email: "ada@acme.example",
+        },
+      });
+      expect(summarize(event!.type, event!.data, event!.actor)).toBe(
+        "Claude created the group Agents",
+      );
     });
   });
 });

@@ -197,7 +197,7 @@ describe("AdminService", () => {
     ).resolves.toEqual({ success: true });
 
     expect(mockInvitationsFindFirst).toHaveBeenCalledWith({
-      columns: { id: true },
+      columns: { id: true, email: true, role: true },
       where: {
         and: [
           { col: "id", val: "invite-1" },

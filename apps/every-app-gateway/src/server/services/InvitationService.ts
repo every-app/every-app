@@ -10,7 +10,7 @@ import { PublicError } from "@/server/errors";
 import { invitationUrl } from "@/server/email/links";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
-import { userActor } from "@/server/events/subjects";
+import { actorFor } from "@/server/events/subjects";
 import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
 import { invitationEmail } from "@/server/email/templates";
 import {
@@ -114,7 +114,7 @@ async function deliver(
   // The event names the invitation and whether mail went; never the link.
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...catalogue.memberInvited({
       invitation: {
         id: invitation.id,

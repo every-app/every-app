@@ -12,7 +12,7 @@ import { MembershipService } from "./MembershipService";
 import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventUser } from "@/server/events/catalogue";
-import { userActor, userSubject } from "@/server/events/subjects";
+import { actorFor, userSubject } from "@/server/events/subjects";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { mayDeleteMemberAccounts } from "@/server/tenant-user-actions";
 import {
@@ -129,7 +129,7 @@ async function deleteUser(
     });
     await emit(async () => ({
       organizationId: ctx.orgId,
-      actor: await userActor(ctx.userId),
+      actor: await actorFor(ctx),
       ...catalogue.memberDeactivated({
         user: await userSubject(targetUserId),
         reason: "deleted_with_access_auto_join",
@@ -163,7 +163,7 @@ async function deleteUser(
   }
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...catalogue.memberRemoved({ user: subject, accountDeleted }),
   }));
   return { deactivatedInstead: false };
@@ -175,7 +175,7 @@ async function cancelInvitation(
   headers: Headers,
 ) {
   const invitation = await db.query.invitations.findFirst({
-    columns: { id: true },
+    columns: { id: true, email: true, role: true },
     where: and(
       eq(invitations.id, invitationId),
       eq(invitations.organizationId, ctx.orgId),
@@ -192,8 +192,27 @@ async function cancelInvitation(
     headers,
     body: { invitationId },
   });
+  await announceInvitationCancelled(ctx, invitation);
 
   return { success: true };
+}
+
+/** `member.invitation_cancelled`: the invitation's id, address and role; never its link. */
+async function announceInvitationCancelled(
+  ctx: OrgContext,
+  invitation: { id: string; email: string; role: string | null },
+): Promise<void> {
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.memberInvitationCancelled({
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role ?? "member",
+      },
+    }),
+  }));
 }
 
 /**
@@ -216,7 +235,11 @@ async function cancelInvitationWithoutSession(
         eq(invitations.status, "pending"),
       ),
     )
-    .returning({ id: invitations.id, email: invitations.email });
+    .returning({
+      id: invitations.id,
+      email: invitations.email,
+      role: invitations.role,
+    });
   const invitation = canceled[0];
   if (!invitation) {
     throw new PublicError(
@@ -229,7 +252,11 @@ async function cancelInvitationWithoutSession(
     invitationId,
     by: ctx.userId,
   });
-  return { success: true, invitation };
+  await announceInvitationCancelled(ctx, invitation);
+  return {
+    success: true,
+    invitation: { id: invitation.id, email: invitation.email },
+  };
 }
 
 // TODO: Split this service once the org migration settles and review overhead drops.

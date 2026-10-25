@@ -252,6 +252,8 @@ Deliveries are kept for 30 days.
 | `member.reactivated`          | A member was reactivated                                   |
 | `member.removed`              | A member was removed                                       |
 | `member.password_reset`       | A member reset their password                              |
+| `member.invitation_cancelled` | A pending invitation was cancelled                         |
+| `organization.renamed`        | The workspace was renamed                                  |
 | `app.installed`               | An app was installed on the Gateway                        |
 | `app.updated`                 | An app was redeployed                                      |
 | `app.removed`                 | An app was removed from the Gateway                        |
@@ -259,9 +261,19 @@ Deliveries are kept for 30 days.
 | `app.ready`                   | An app has every setting it needs                          |
 | `app.paused_cap`              | An app is paused: its monthly cap is reached               |
 | `app.tools_changed`           | An app's AI tools changed                                  |
+| `app.renamed`                 | An app's name or description changed                       |
+| `app.settings_changed`        | An app's settings were set or unset (names only)           |
+| `app.access_changed`          | Who can open an app changed                                |
+| `app.email_changed`           | An app's email senders or inbound changed                  |
 | `cap.warning`                 | An app is at 80% of its monthly cap                        |
 | `cap.reached`                 | An app reached its monthly cap                             |
 | `cap.raised`                  | An app's monthly cap was raised or removed                 |
+| `cap.changed`                 | An app's monthly cap was set or lowered                    |
+| `group.created`               | A group was created                                        |
+| `group.updated`               | A group was renamed or described                           |
+| `group.removed`               | A group was removed                                        |
+| `group.members_changed`       | A group's members changed                                  |
+| `group.apps_changed`          | The apps a group opens changed                             |
 | `tool.blocked`                | An AI client's tool call was blocked                       |
 | `tool.error`                  | An AI client's tool call failed                            |
 | `connection.created`          | An AI app was connected                                    |
@@ -275,12 +287,18 @@ Deliveries are kept for 30 days.
 | `mcp_app.removed`             | An MCP app was removed                                     |
 | `mcp_app.enabled`             | An MCP app is being served again                           |
 | `mcp_app.disabled`            | An MCP app stopped being served                            |
+| `mcp_app.updated`             | An MCP app's risk default, name or description changed     |
+| `mcp_app.tool_changed`        | One tool of an MCP app was overridden                      |
 | `provider.added`              | An API provider was registered                             |
 | `provider.removed`            | An API provider was removed                                |
 | `provider.updated`            | A provider's spec or OAuth client was replaced             |
 | `provider.connected`          | Someone connected an account at an OAuth provider          |
 | `provider.disconnected`       | An OAuth provider account was disconnected                 |
 | `provider.connection_expired` | An OAuth connection needs reconnecting                     |
+| `subscription.created`        | An event subscription was added                            |
+| `subscription.updated`        | An event subscription was changed, paused or resumed       |
+| `subscription.removed`        | An event subscription was removed                          |
+| `subscription.redelivered`    | A delivery was queued again by hand                        |
 | `ai.default_changed`          | The default model provider changed                         |
 | `ping`                        | A test event, sent to one subscription on request          |
 

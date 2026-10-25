@@ -31,7 +31,15 @@ export interface EventUser {
 /** Who caused an event. */
 export type EventActor =
   | { kind: "user"; id: string; email?: string | null; name?: string | null }
-  | { kind: "agent"; id?: string; name?: string }
+  | {
+      kind: "agent";
+      /** The credential's id. */
+      id?: string;
+      /** The connection's client name. */
+      name?: string;
+      /** The member the agent acts for. */
+      email?: string | null;
+    }
   | { kind: "app"; id: string }
   | { kind: "operator"; id: string }
   | { kind: "gateway" };
@@ -80,6 +88,10 @@ type ToolClientKind = "pat" | "session" | "dev" | "oauth" | "access";
 
 /** Tool names an app.tools_changed event lists, each way. */
 const TOOL_NAMES_MAX = 50;
+/** Members an access or group change lists, each way; the counts are exact. */
+const USERS_MAX = 50;
+/** Setting names an app.settings_changed event lists. */
+const SETTINGS_MAX = 50;
 /** The share of the cap cap.warning fires at. */
 export const CAP_WARNING_THRESHOLD = 80;
 
@@ -126,6 +138,34 @@ function account(input: EventProviderAccount): Data {
 
 function app(subject: EventApp): EventApp {
   return { id: subject.id, rowId: subject.rowId, name: subject.name };
+}
+
+/** A group as `data` carries it. */
+interface EventGroup {
+  id: string;
+  name: string;
+}
+
+function group(subject: EventGroup): EventGroup {
+  return { id: subject.id, name: subject.name };
+}
+
+/** A subscription as `data` carries it: never its secret, never a URL's query. */
+interface EventSubscriptionSubject {
+  id: string;
+  name: string;
+  sink: "webhook" | "email";
+}
+
+function subscription(
+  subject: EventSubscriptionSubject,
+): EventSubscriptionSubject {
+  return { id: subject.id, name: subject.name, sink: subject.sink };
+}
+
+/** The first `max` members, each as `{ id, email, name }`. */
+function users(members: readonly EventUser[], max = USERS_MAX): EventUser[] {
+  return members.slice(0, max).map(user);
 }
 
 /** Drop undefined fields so the stored JSON has no "key": undefined holes. */
@@ -281,6 +321,29 @@ export const catalogue = {
     });
   },
 
+  memberInvitationCancelled(input: {
+    invitation: { id: string; email: string; role: string };
+  }): BuiltEvent {
+    const { invitation } = input;
+    return built("member.invitation_cancelled", {
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+      },
+    });
+  },
+
+  organizationRenamed(input: {
+    name: string;
+    previousName: string;
+  }): BuiltEvent {
+    return built("organization.renamed", {
+      name: input.name,
+      previousName: input.previousName,
+    });
+  },
+
   appInstalled(input: {
     app: EventApp;
     version?: string | null;
@@ -374,6 +437,93 @@ export const catalogue = {
     );
   },
 
+  /** The name and the description after the change; `previousName` when the name changed. */
+  appRenamed(input: {
+    app: EventApp;
+    previousName?: string | null;
+    description?: string | null;
+  }): BuiltEvent {
+    return built(
+      "app.renamed",
+      compact({
+        app: app(input.app),
+        previousName:
+          input.previousName && input.previousName !== input.app.name
+            ? input.previousName
+            : undefined,
+        description: input.description ?? undefined,
+      }),
+      { appRowId: input.app.rowId },
+    );
+  },
+
+  /**
+   * Setting names only, never a value: what was set or unset, and where.
+   * `app` is null for a Gateway setting set outside any app (a provider's
+   * key from the Gateway's directory).
+   */
+  appSettingsChanged(input: {
+    app: EventApp | null;
+    settings: readonly string[];
+    action: "set" | "unset";
+    /** `gateway` for a Gateway setting the app reads; `app` for its own Worker's. */
+    target: "gateway" | "app";
+  }): BuiltEvent {
+    return built(
+      "app.settings_changed",
+      {
+        app: input.app ? app(input.app) : null,
+        settings: [...new Set(input.settings)].slice(0, SETTINGS_MAX),
+        action: input.action,
+        target: input.target,
+      },
+      input.app ? { appRowId: input.app.rowId } : {},
+    );
+  },
+
+  /**
+   * Direct grants that came and went (the first 50 each way, the counts
+   * exact), and `everyone` when "Available to everyone" was switched.
+   */
+  appAccessChanged(input: {
+    app: EventApp;
+    granted: readonly EventUser[];
+    revoked: readonly EventUser[];
+    grantedCount?: number;
+    revokedCount?: number;
+    everyone?: boolean;
+  }): BuiltEvent {
+    return built(
+      "app.access_changed",
+      compact({
+        app: app(input.app),
+        granted: users(input.granted),
+        revoked: users(input.revoked),
+        grantedCount: input.grantedCount ?? input.granted.length,
+        revokedCount: input.revokedCount ?? input.revoked.length,
+        everyone: input.everyone,
+      }),
+      { appRowId: input.app.rowId },
+    );
+  },
+
+  /** The sender and inbound address names as stored now; never a mail. */
+  appEmailChanged(input: {
+    app: EventApp;
+    senders: readonly string[];
+    inbound: readonly string[];
+  }): BuiltEvent {
+    return built(
+      "app.email_changed",
+      {
+        app: app(input.app),
+        senders: [...input.senders],
+        inbound: [...input.inbound],
+      },
+      { appRowId: input.app.rowId },
+    );
+  },
+
   capWarning(input: CapInput): BuiltEvent {
     return built(
       "cap.warning",
@@ -432,6 +582,99 @@ export const catalogue = {
       }),
       input.app ? { appRowId: input.app.rowId } : {},
     );
+  },
+
+  /**
+   * The counterpart of cap.raised: a cap set under the default, lowered,
+   * or an app's own row changed while the binding caps stayed. Same
+   * fields; `cap` and `previousCap` are the binding call caps after and
+   * before, `costCap` and `previousCostCap` the dollar caps when changed.
+   */
+  capChanged(input: {
+    app: EventApp | null;
+    cap: number | null;
+    previousCap: number | null;
+    costCap?: number | null;
+    previousCostCap?: number | null;
+    source: CapSource;
+  }): BuiltEvent {
+    return built(
+      "cap.changed",
+      compact({
+        app: input.app ? app(input.app) : null,
+        cap: input.cap,
+        previousCap: input.previousCap,
+        costCap: input.costCap,
+        previousCostCap: input.previousCostCap,
+        source: input.source,
+      }),
+      input.app ? { appRowId: input.app.rowId } : {},
+    );
+  },
+
+  groupCreated(input: {
+    group: EventGroup;
+    description?: string | null;
+  }): BuiltEvent {
+    return built(
+      "group.created",
+      compact({
+        group: group(input.group),
+        description: input.description ?? undefined,
+      }),
+    );
+  },
+
+  groupUpdated(input: {
+    group: EventGroup;
+    previousName?: string | null;
+    description?: string | null;
+  }): BuiltEvent {
+    return built(
+      "group.updated",
+      compact({
+        group: group(input.group),
+        previousName:
+          input.previousName && input.previousName !== input.group.name
+            ? input.previousName
+            : undefined,
+        description: input.description ?? undefined,
+      }),
+    );
+  },
+
+  groupRemoved(input: { group: EventGroup }): BuiltEvent {
+    return built("group.removed", { group: group(input.group) });
+  },
+
+  groupMembersChanged(input: {
+    group: EventGroup;
+    added: readonly EventUser[];
+    removed: readonly EventUser[];
+    addedCount?: number;
+    removedCount?: number;
+  }): BuiltEvent {
+    return built("group.members_changed", {
+      group: group(input.group),
+      added: users(input.added),
+      removed: users(input.removed),
+      addedCount: input.addedCount ?? input.added.length,
+      removedCount: input.removedCount ?? input.removed.length,
+    });
+  },
+
+  groupAppsChanged(input: {
+    group: EventGroup;
+    granted: readonly EventApp[];
+    revoked: readonly EventApp[];
+  }): BuiltEvent {
+    return built("group.apps_changed", {
+      group: group(input.group),
+      granted: input.granted.slice(0, USERS_MAX).map(app),
+      revoked: input.revoked.slice(0, USERS_MAX).map(app),
+      grantedCount: input.granted.length,
+      revokedCount: input.revoked.length,
+    });
   },
 
   toolBlocked(input: {
@@ -629,6 +872,48 @@ export const catalogue = {
     );
   },
 
+  /** Which fields changed, by name; the risk default after, when it did. */
+  mcpAppUpdated(input: {
+    app: EventApp;
+    kind: McpAppKind;
+    changed: readonly ("risk" | "name" | "description" | "tools")[];
+    risk?: string;
+  }): BuiltEvent {
+    return built(
+      "mcp_app.updated",
+      compact({
+        app: app(input.app),
+        kind: input.kind,
+        changed: [...input.changed],
+        risk: input.risk,
+      }),
+      { appRowId: input.app.rowId },
+    );
+  },
+
+  /** One tool's override after the change: its risk, whether it is served; `cleared` when the override went. */
+  mcpAppToolChanged(input: {
+    app: EventApp;
+    kind: McpAppKind;
+    tool: string;
+    risk?: string;
+    enabled?: boolean;
+    cleared?: boolean;
+  }): BuiltEvent {
+    return built(
+      "mcp_app.tool_changed",
+      compact({
+        app: app(input.app),
+        kind: input.kind,
+        tool: input.tool,
+        risk: input.risk,
+        enabled: input.enabled,
+        cleared: input.cleared,
+      }),
+      { appRowId: input.app.rowId },
+    );
+  },
+
   providerAdded(input: { provider: EventProvider }): BuiltEvent {
     return built("provider.added", { provider: provider(input.provider) });
   },
@@ -662,6 +947,66 @@ export const catalogue = {
       account: account(input.account),
       scopeSets: [...input.scopeSets],
       reconnected: input.reconnected ?? false,
+    });
+  },
+
+  /** The subscription, its patterns and, for a webhook, the target's host; never the secret or the URL. */
+  subscriptionCreated(input: {
+    subscription: EventSubscriptionSubject;
+    events: readonly string[];
+    host?: string | null;
+    recipients?: string | null;
+  }): BuiltEvent {
+    return built(
+      "subscription.created",
+      compact({
+        subscription: subscription(input.subscription),
+        events: [...input.events],
+        host: input.host ?? undefined,
+        recipients: input.recipients ?? undefined,
+      }),
+    );
+  },
+
+  subscriptionUpdated(input: {
+    subscription: EventSubscriptionSubject;
+    changed: readonly ("enabled" | "events" | "name" | "description")[];
+    enabled?: boolean;
+    events?: readonly string[];
+  }): BuiltEvent {
+    return built(
+      "subscription.updated",
+      compact({
+        subscription: subscription(input.subscription),
+        changed: [...input.changed],
+        enabled: input.enabled,
+        events: input.events ? [...input.events] : undefined,
+      }),
+    );
+  },
+
+  /** `disabled` when a built-in one was turned off instead of removed. */
+  subscriptionRemoved(input: {
+    subscription: EventSubscriptionSubject;
+    disabled: boolean;
+  }): BuiltEvent {
+    return built("subscription.removed", {
+      subscription: subscription(input.subscription),
+      disabled: input.disabled,
+    });
+  },
+
+  subscriptionRedelivered(input: {
+    subscription: EventSubscriptionSubject;
+    delivery: { id: string; eventId: string; eventType: string };
+  }): BuiltEvent {
+    return built("subscription.redelivered", {
+      subscription: subscription(input.subscription),
+      delivery: {
+        id: input.delivery.id,
+        eventId: input.delivery.eventId,
+        eventType: input.delivery.eventType,
+      },
     });
   },
 
@@ -783,6 +1128,16 @@ function appLabel(value: unknown): string {
   return str(subject.name) ?? str(subject.id) ?? "an app";
 }
 
+function groupLabel(value: unknown): string {
+  const subject = obj(value);
+  return str(subject.name) ?? str(subject.id) ?? "a group";
+}
+
+function subscriptionLabel(value: unknown): string {
+  const subject = obj(value);
+  return str(subject.name) ?? str(subject.id) ?? "a subscription";
+}
+
 const n = (value: number | null): string =>
   value === null ? "?" : value.toLocaleString("en-US");
 
@@ -851,6 +1206,10 @@ export function summarize(
       return `${userLabel(d.user)} was removed`;
     case "member.password_reset":
       return `${userLabel(d.user)} reset their password`;
+    case "member.invitation_cancelled":
+      return `${actorLabel(actor)} cancelled the invitation for ${str(obj(d.invitation).email) ?? "someone"}`;
+    case "organization.renamed":
+      return `${actorLabel(actor)} renamed the workspace to ${str(d.name) ?? "a new name"}`;
     case "app.installed":
       return `${appLabel(d.app)} was installed`;
     case "app.updated":
@@ -873,6 +1232,28 @@ export function summarize(
         : `${appLabel(d.app)} is paused: monthly cap of ${n(num(d.cap))} reached`;
     case "app.tools_changed":
       return `${appLabel(d.app)}'s tools changed: ${n(num(d.toolCount))} tools (was ${n(num(d.previousToolCount))})`;
+    case "app.renamed":
+      return str(d.previousName)
+        ? `${str(d.previousName)} was renamed to ${appLabel(d.app)}`
+        : `${appLabel(d.app)}'s description changed`;
+    case "app.settings_changed": {
+      const settings = list(d.settings);
+      const whose = obj(d.app).id ? `${appLabel(d.app)}'s` : "The Gateway's";
+      return `${whose} settings ${str(d.action) ?? "changed"}: ${settings.join(", ") || "none"}`;
+    }
+    case "app.access_changed": {
+      const parts: string[] = [];
+      if (num(d.grantedCount)) parts.push(`${n(num(d.grantedCount))} granted`);
+      if (num(d.revokedCount)) parts.push(`${n(num(d.revokedCount))} revoked`);
+      if (d.everyone === true) parts.push("available to everyone");
+      if (d.everyone === false) parts.push("no longer for everyone");
+      return `${appLabel(d.app)}'s access changed${parts.length ? `: ${parts.join(", ")}` : ""}`;
+    }
+    case "app.email_changed": {
+      const senders = list(d.senders);
+      const inbound = list(d.inbound);
+      return `${appLabel(d.app)}'s email changed: ${senders.length} sender${senders.length === 1 ? "" : "s"}, ${inbound.length} inbound`;
+    }
     case "cap.warning": {
       const share = `${num(d.threshold) ?? CAP_WARNING_THRESHOLD}%`;
       return isCost(d)
@@ -891,6 +1272,26 @@ export function summarize(
           : `${appLabel(d.app)}'s cap`;
       return raisedLine(whose, d);
     }
+    case "cap.changed": {
+      // cap.raised's counterpart, read the same way (lowered, set, removed).
+      const whose =
+        str(d.source) === "default" && !obj(d.app).id
+          ? "The default cap"
+          : `${appLabel(d.app)}'s cap`;
+      return raisedLine(whose, d);
+    }
+    case "group.created":
+      return `${actorLabel(actor)} created the group ${groupLabel(d.group)}`;
+    case "group.updated":
+      return str(d.previousName)
+        ? `The group ${str(d.previousName)} was renamed to ${groupLabel(d.group)}`
+        : `The group ${groupLabel(d.group)} was changed`;
+    case "group.removed":
+      return `The group ${groupLabel(d.group)} was removed`;
+    case "group.members_changed":
+      return `The group ${groupLabel(d.group)}'s members changed: ${n(num(d.addedCount))} added, ${n(num(d.removedCount))} removed`;
+    case "group.apps_changed":
+      return `The group ${groupLabel(d.group)}'s apps changed: ${n(num(d.grantedCount))} granted, ${n(num(d.revokedCount))} revoked`;
     case "tool.blocked": {
       const client = str(obj(d.client).name) ?? userLabel(d.user);
       return `${client}'s call to ${str(d.tool) ?? "a tool"} was blocked: ${str(d.reason) ?? "refused"}`;
@@ -929,10 +1330,31 @@ export function summarize(
       return `${appLabel(d.app)} is being served again`;
     case "mcp_app.disabled":
       return `${appLabel(d.app)} stopped being served`;
+    case "mcp_app.updated":
+      return `${appLabel(d.app)} was changed: ${list(d.changed).join(", ") || "nothing"}`;
+    case "mcp_app.tool_changed":
+      return d.cleared === true
+        ? `${appLabel(d.app)}'s tool ${str(d.tool) ?? ""} override was cleared`.trim()
+        : `${appLabel(d.app)}'s tool ${str(d.tool) ?? ""} was changed${d.enabled === false ? " (off)" : d.enabled === true ? " (on)" : ""}${str(d.risk) ? ` (risk ${str(d.risk)})` : ""}`;
     case "provider.added":
       return `${str(obj(d.provider).name) ?? "A provider"} was registered`;
     case "provider.removed":
       return `${str(obj(d.provider).name) ?? "A provider"} was removed`;
+    case "subscription.created":
+      return `${actorLabel(actor)} added the subscription ${subscriptionLabel(d.subscription)}`;
+    case "subscription.updated": {
+      const changed = list(d.changed);
+      if (changed.length === 1 && changed[0] === "enabled") {
+        return `The subscription ${subscriptionLabel(d.subscription)} was ${d.enabled === false ? "paused" : "resumed"}`;
+      }
+      return `The subscription ${subscriptionLabel(d.subscription)} was changed: ${changed.join(", ") || "nothing"}`;
+    }
+    case "subscription.removed":
+      return d.disabled === true
+        ? `The subscription ${subscriptionLabel(d.subscription)} was turned off`
+        : `The subscription ${subscriptionLabel(d.subscription)} was removed`;
+    case "subscription.redelivered":
+      return `${actorLabel(actor)} redelivered ${str(obj(d.delivery).eventType) ?? "an event"} to ${subscriptionLabel(d.subscription)}`;
     case "provider.updated":
       return `${str(obj(d.provider).name) ?? "A provider"}'s ${str(d.change) === "client" ? "OAuth client" : "spec"} was replaced`;
     case "provider.connected":
@@ -967,6 +1389,8 @@ export function adminPathFor(type: string): string {
   if (type.startsWith("cap.") || type === "app.paused_cap")
     return "/admin/usage";
   if (type.startsWith("member.")) return "/admin/users";
+  if (type.startsWith("group.")) return "/admin/groups";
+  if (type.startsWith("subscription.")) return "/admin/events";
   if (type.startsWith("tool.")) return "/admin/activity";
   if (type.startsWith("token.")) return "/admin/tokens";
   if (type.startsWith("connection.")) return "/settings/connections";
@@ -1011,6 +1435,11 @@ export function eventEmailFields(type: string, data: Data): EmailField[] {
   const subject = obj(d.app);
   if (subject.name || subject.id)
     add("App", str(subject.name) ?? str(subject.id));
+  const grp = obj(d.group);
+  if (grp.name || grp.id) add("Group", str(grp.name) ?? str(grp.id));
+  const sub = obj(d.subscription);
+  if (type.startsWith("subscription.") && (sub.name || sub.id))
+    add("Subscription", str(sub.name) ?? str(sub.id));
   if (type === "member.invited") {
     const invitation = obj(d.invitation);
     add("Invited", invitation.email);
@@ -1019,6 +1448,15 @@ export function eventEmailFields(type: string, data: Data): EmailField[] {
   }
   add("Role", d.role);
   add("Previous role", d.previousRole);
+  add("Previous name", d.previousName);
+  if (type === "organization.renamed") add("Name", d.name);
+  if (list(d.settings).length) add("Settings", list(d.settings).join(", "));
+  add("Action", d.action);
+  if (list(d.changed).length) add("Changed", list(d.changed).join(", "));
+  add("Granted", d.grantedCount);
+  add("Revoked", d.revokedCount);
+  if (list(d.senders).length) add("Senders", list(d.senders).join(", "));
+  if (list(d.inbound).length) add("Inbound", list(d.inbound).join(", "));
   add("Reason", d.reason);
   add("Joined via", d.via);
   add("Version", d.version);

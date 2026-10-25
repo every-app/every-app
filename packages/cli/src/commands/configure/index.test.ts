@@ -796,6 +796,7 @@ describe("the setup state configure records", () => {
       stdin: "OPENROUTER_API_KEY=sk-or\nDATAFORSEO_API_KEY=login:password\nTOKEN_ENCRYPTION_KEY=tek\n",
     });
     expect(await state()).toBe("ready");
-    expect(await types()).toEqual(["app.installed", "app.needs_setup", "app.ready"]);
+    // Each destination's names once they are live (never a value), then the transition.
+    expect(await types()).toEqual(["app.installed", "app.needs_setup", "app.settings_changed", "app.settings_changed", "app.ready"]);
   });
 });

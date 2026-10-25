@@ -11,7 +11,7 @@ import type { AppCapState } from "@/types/usage";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
-import { userActor } from "@/server/events/subjects";
+import { actorFor } from "@/server/events/subjects";
 import { EventSubscriptionService } from "@/server/events/subscriptions";
 import type { OrgContext } from "@/server/organization/orgContext";
 
@@ -128,6 +128,31 @@ function raisedCaps(
   };
 }
 
+/**
+ * The fields of `cap.changed` for a change from `before` to `after` that
+ * `raisedCaps` did not announce (a cap lowered or set under the default),
+ * or null when nothing changed. Same shape as `cap.raised`.
+ */
+function changedCaps(
+  after: { calls: number | null; cost: number | null },
+  before: { calls: number | null; cost: number | null },
+): {
+  cap: number | null;
+  previousCap: number | null;
+  costCap?: number | null;
+  previousCostCap?: number | null;
+} | null {
+  if (after.calls === before.calls && after.cost === before.cost) return null;
+  return {
+    cap: after.calls,
+    previousCap: before.calls,
+    ...(after.cost !== before.cost && {
+      costCap: usd(after.cost),
+      previousCostCap: usd(before.cost),
+    }),
+  };
+}
+
 const bound = (caps: EffectiveCaps) => ({
   calls: caps.calls.cap,
   cost: caps.cost.cap,
@@ -204,17 +229,31 @@ async function setMonthlyCap(
     app.id,
   );
   if (cap !== null || cost !== null) await ensureCapAlerts(ctx.orgId);
+  const eventApp = { id: app.appSlug, rowId: app.id, name: app.name };
   const change = raisedCaps(bound(effective), bound(before));
   if (change) {
     await emit(async () => ({
       organizationId: ctx.orgId,
-      actor: await userActor(ctx.userId),
-      ...catalogue.capRaised({
-        app: { id: app.appSlug, rowId: app.id, name: app.name },
-        ...change,
-        source: "app",
-      }),
+      actor: await actorFor(ctx),
+      ...catalogue.capRaised({ app: eventApp, ...change, source: "app" }),
     }));
+  } else {
+    // Lowered, set under the default, or the row changed while the binding
+    // caps stayed (its own cap at the default's value, `unlimited` taken
+    // back under none): cap.changed, cap.raised's counterpart.
+    const changed =
+      changedCaps(bound(effective), bound(before)) ??
+      (effective.calls.source !== before.calls.source ||
+      effective.cost.source !== before.cost.source
+        ? { cap: effective.calls.cap, previousCap: before.calls.cap }
+        : null);
+    if (changed) {
+      await emit(async () => ({
+        organizationId: ctx.orgId,
+        actor: await actorFor(ctx),
+        ...catalogue.capChanged({ app: eventApp, ...changed, source: "app" }),
+      }));
+    }
   }
   logEvent("usage.cap_set", {
     organizationId: ctx.orgId,
@@ -272,15 +311,21 @@ async function setDefaultMonthlyCap(
   });
   clearAppCapCache();
   if (cap !== null || cost !== null) await ensureCapAlerts(ctx.orgId);
-  const change = raisedCaps(
-    { calls: cap, cost },
-    { calls: previous.cap, cost: previous.costCapMicros },
-  );
+  const after = { calls: cap, cost };
+  const previously = { calls: previous.cap, cost: previous.costCapMicros };
+  const change = raisedCaps(after, previously);
+  const changed = change ? null : changedCaps(after, previously);
   if (change) {
     await emit(async () => ({
       organizationId: ctx.orgId,
-      actor: await userActor(ctx.userId),
+      actor: await actorFor(ctx),
       ...catalogue.capRaised({ app: null, ...change, source: "default" }),
+    }));
+  } else if (changed) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.capChanged({ app: null, ...changed, source: "default" }),
     }));
   }
   logEvent("usage.default_cap_set", {

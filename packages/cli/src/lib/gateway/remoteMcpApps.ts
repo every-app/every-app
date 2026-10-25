@@ -823,6 +823,8 @@ export function setRemoteMcpTool(
   tool: string,
   change: RemoteToolChange,
   now = Date.now(),
+  /** Who runs the command: the `mcp_app.tool_changed` event's actor. Without one, no event. */
+  deployer?: Deployer,
 ): Promise<RemoteToolChanged> {
   return registryCall(async () => {
     const tables = await remoteMcpTables(db);
@@ -847,12 +849,31 @@ ORDER BY (upstream_name = ?2) DESC, upstream_name LIMIT 1`,
     for (let attempt = 1; ; attempt += 1) {
       const before = remoteMcpBlockOf(app)?.tools[serverName] ?? null;
       const update = remoteMcpAppUpdate(app, { tool: { name: serverName, override } });
+      const after = update.remote.tools[serverName] ?? null;
       const [changed = []] = await db.run([
         {
           sql: `UPDATE apps SET manifest = ?, name = ?, description = ?, updated_at = ?
 WHERE id = ? AND manifest = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
           params: [update.manifest, update.name, update.description, now, app.id, app.manifest],
         },
+        // mcp_app.tool_changed: the override after the change (the Gateway's Edit dialog queues the same), in the write's batch.
+        ...(deployer
+          ? await queueEventFromCli(db, {
+              organizationId: app.organizationId,
+              type: "mcp_app.tool_changed",
+              actor: operatorActor(deployer),
+              data: {
+                ...mcpAppEventData(app),
+                tool: serverName,
+                ...(after?.risk ? { risk: after.risk } : {}),
+                ...(after?.enabled !== undefined ? { enabled: after.enabled } : {}),
+                ...(after === null ? { cleared: true } : {}),
+              },
+              appRowId: app.id,
+              onlyIf: { sql: "changes() > 0", params: [] },
+              now,
+            })
+          : []),
       ]);
       if (changed.length > 0) {
         return {
@@ -860,7 +881,7 @@ WHERE id = ? AND manifest = ? AND status != '${DELETED_APP_STATUS}' RETURNING id
           listedName: local ? `${ref.id}_${local}` : null,
           inListing: Boolean(match),
           before,
-          after: update.remote.tools[serverName] ?? null,
+          after,
           rev: update.remote.rev,
         };
       }

@@ -109,7 +109,7 @@ export async function redeliverOne(options: EventsOptions, id: string): Promise<
   const { out } = options;
   const { gateway, organization } = await connect(options);
   const now = options.now?.() ?? Date.now();
-  const { delivery, previous, outcome } = await redeliver(gateway.db, organization, id, now);
+  const { delivery, previous, outcome } = await redeliver(gateway.db, organization, id, now, gateway.deployer);
   const what = `${previous.type ?? "the event"} to ${previous.subscriptionName ?? previous.subscriptionId}`;
   const was =
     previous.status === "dead"

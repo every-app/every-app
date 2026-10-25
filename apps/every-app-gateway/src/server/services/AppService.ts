@@ -9,7 +9,7 @@ import { activateBindingApps } from "@/server/app-activation";
 import { PublicError } from "@/server/errors";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
-import { userActor } from "@/server/events/subjects";
+import { actorFor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { gatewayProviders } from "@/server/providers";
@@ -120,6 +120,26 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
     description: data.description,
     isDefault: data.isDefault,
   });
+  const subject = {
+    id: existingApp.appSlug,
+    rowId: existingApp.id,
+    name: data.name ?? existingApp.name,
+  };
+  const renamed = data.name !== undefined && data.name !== existingApp.name;
+  const described =
+    data.description !== undefined &&
+    data.description !== existingApp.description;
+  if (renamed || described) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.appRenamed({
+        app: subject,
+        previousName: renamed ? existingApp.name : undefined,
+        description: described ? data.description : undefined,
+      }),
+    }));
+  }
 
   if (data.isDefault && !existingApp.isDefault) {
     const orgMembers =
@@ -133,6 +153,31 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
         grantedBy: ctx.userId,
       })),
     );
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.appAccessChanged({
+        app: subject,
+        granted: orgMembers.map((member) => ({
+          id: member.id,
+          email: member.email,
+          name: member.name || null,
+        })),
+        revoked: [],
+        everyone: true,
+      }),
+    }));
+  } else if (data.isDefault === false && existingApp.isDefault) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.appAccessChanged({
+        app: subject,
+        granted: [],
+        revoked: [],
+        everyone: false,
+      }),
+    }));
   }
 }
 
@@ -156,7 +201,7 @@ async function deleteApp(ctx: OrgContext, id: string) {
   };
   await emit(async () => ({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     ...(existingApp.tier === PROVIDER_APP_TIER
       ? catalogue.mcpAppRemoved({
           app,

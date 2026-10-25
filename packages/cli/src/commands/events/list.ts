@@ -79,7 +79,7 @@ export async function listEvents(options: EventsOptions): Promise<void> {
 export function listTypes({ out }: { out: EventSink }): void {
   const notes = [
     "An app's own events are app.<app id>.<name> (app.crm.invoice.paid): subscribe with app.crm.* or app.*.",
-    "--events takes types, prefixes with .* (member.*), or * for everything but test pings (the default).",
+    "--events takes types, prefixes with .* (member.*), or * for everything but test pings and subscription.* (the default).",
   ];
   out.emit({
     type: "done",

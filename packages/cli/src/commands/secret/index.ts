@@ -99,11 +99,15 @@ import {
   remoteMcpCredentialNames,
   unbindRemoteMcpCredentials,
 } from "@/lib/gateway/remoteMcpApps";
+import { operatorActor, queueEventFromCli } from "@/lib/gateway/events";
 import {
   findRegisteredApp,
+  installOrganization,
   listApps,
   readApp,
+  readAppById,
   writeAppSecretNames,
+  type Deployer,
   type RegisteredAppInfo,
 } from "@/lib/gateway/registry";
 import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
@@ -137,6 +141,8 @@ interface SecretOptions {
   createCf?: (accountId?: string) => CfRunner;
   /** The app row whose setup state the caller records itself (`configure`), left out of the refresh. */
   setupRecordedBy?: string;
+  /** False from a command that queues its own event for the change (`access on|off` → `access.changed`): no `app.settings_changed` beside it. */
+  announce?: boolean;
 }
 
 interface SetSecretsOptions extends SecretOptions {
@@ -269,7 +275,7 @@ function sayWhereKeysGo(
 export async function applyGatewaySettings(
   connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl">,
   changes: Readonly<Record<string, string | null>>,
-  options: Pick<SecretOptions, "flags" | "out">,
+  options: Pick<SecretOptions, "flags" | "out" | "announce">,
 ): Promise<Applied | null> {
   const names = Object.keys(changes);
   const removing = Object.values(changes).every((value) => value === null);
@@ -1247,6 +1253,14 @@ async function apply(
           applied.app = { id: app!.manifest.id, workerName: app!.workerName, names, versions };
           await recordSecretNames(cf, db, app!, out);
         }
+        if (options.announce !== false) {
+          await announceSettingsChanged(
+            db,
+            deployer,
+            { app: app?.rowId ?? null, names, removing, target: destination.step === "secrets.gateway" ? "gateway" : "app" },
+            out,
+          );
+        }
         out.emit({
           type: "step",
           step: destination.step,
@@ -1317,6 +1331,46 @@ async function pinRemoteMcpCredentials(
     });
   }
   return result.bound;
+}
+
+/**
+ * `app.settings_changed` on the Gateway's event bus once the change is
+ * live: the names set or unset and where they went, never a value. Under
+ * the app's organization, or the install organization for a Gateway
+ * setting set outside any app (`app` null). The change itself is live
+ * already: a queue that fails is said with --verbose and never fails the run.
+ */
+async function announceSettingsChanged(
+  db: D1Database,
+  deployer: Deployer,
+  change: { app: string | null; names: readonly string[]; removing: boolean; target: "gateway" | "app" },
+  out: EventSink,
+): Promise<void> {
+  try {
+    const row = change.app ? await readAppById(db, change.app) : null;
+    const organizationId = row?.organizationId ?? (await installOrganization(db))?.organization.id;
+    if (!organizationId) return;
+    await db.run(
+      await queueEventFromCli(db, {
+        organizationId,
+        type: "app.settings_changed",
+        actor: operatorActor(deployer),
+        data: {
+          app: row ? { id: row.appSlug, rowId: row.id, name: row.name } : null,
+          settings: [...change.names],
+          action: change.removing ? "unset" : "set",
+          target: change.target,
+        },
+        appRowId: row?.id ?? null,
+      }),
+    );
+  } catch (error) {
+    out.emit({
+      type: "progress",
+      step: "secrets.record",
+      message: `Couldn't record the change on the event bus (${errorMessage(error).split("\n")[0]})`,
+    });
+  }
 }
 
 /**

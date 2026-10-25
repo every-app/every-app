@@ -11,6 +11,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, organizations, users } from "@/db/schema";
+import type { OrgContext } from "@/server/organization/orgContext";
 import type { EventActor, EventApp, EventUser } from "./catalogue";
 
 const CACHE_TTL_MS = 30_000;
@@ -111,6 +112,14 @@ export async function userActor(userId: string): Promise<EventActor> {
     email: member.email,
     name: member.name,
   };
+}
+
+/**
+ * The actor of a context: the one the context carries (an agent on the
+ * MCP tools), else the signed-in member.
+ */
+export function actorFor(ctx: OrgContext): Promise<EventActor> {
+  return ctx.actor ? Promise.resolve(ctx.actor) : userActor(ctx.userId);
 }
 
 /** A user row already in hand, as the actor. */

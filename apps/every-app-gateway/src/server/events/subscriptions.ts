@@ -40,11 +40,11 @@ import {
   EventSubscriptionRepository,
   type ListedSubscription,
 } from "@/server/repositories/EventSubscriptionRepository";
-import { emitAndWait, subscriptionPatterns } from "./bus";
+import { emit, emitAndWait, subscriptionPatterns } from "./bus";
 import { catalogue, summarize } from "./catalogue";
 import { attemptDeliveries } from "./deliver";
 import { newSubscriptionId } from "./ids";
-import { userActor } from "./subjects";
+import { actorFor } from "./subjects";
 import { checkTarget, targetRulesFromEnv } from "./target";
 
 /** The built-in email subscription the first cap creates (section 6). */
@@ -317,6 +317,15 @@ async function add(
       host: new URL(target).host,
     });
     const subscription = view(await requireSubscription(ctx, id));
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.subscriptionCreated({
+        subscription: { id, name: subscription.name, sink: "webhook" },
+        events: patterns,
+        host: new URL(target).host,
+      }),
+    }));
     return given ? { subscription } : { subscription, secret };
   }
   await EventSubscriptionRepository.insert({
@@ -341,7 +350,17 @@ async function add(
     sink: "email",
     recipients: input.email,
   });
-  return { subscription: view(await requireSubscription(ctx, id)) };
+  const subscription = view(await requireSubscription(ctx, id));
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.subscriptionCreated({
+      subscription: { id, name: subscription.name, sink: "email" },
+      events: patterns,
+      recipients: input.email,
+    }),
+  }));
+  return { subscription };
 }
 
 /** Change the switch, the patterns, the name or the description. */
@@ -352,17 +371,42 @@ async function update(
 ): Promise<{ subscription: EventSubscription }> {
   const existing = await requireSubscription(ctx, id);
   const patch: Parameters<typeof EventSubscriptionRepository.update>[2] = {};
-  if (input.enabled !== undefined) patch.enabled = input.enabled;
+  const changed: ("enabled" | "events" | "name" | "description")[] = [];
+  if (input.enabled !== undefined && input.enabled !== existing.enabled) {
+    patch.enabled = input.enabled;
+    changed.push("enabled");
+  }
   if (input.events !== undefined) {
     patch.events = JSON.stringify(checkPatterns(input.events));
+    if (patch.events !== existing.events) changed.push("events");
   }
-  if (input.name !== undefined)
+  if (input.name !== undefined) {
     patch.name = checkName(input.name, existing.name);
+    if (patch.name !== existing.name) changed.push("name");
+  }
   if (input.description !== undefined) {
     patch.description = input.description?.trim() || null;
+    if (patch.description !== existing.description) changed.push("description");
   }
   await EventSubscriptionRepository.update(id, ctx.orgId, patch);
-  return { subscription: view(await requireSubscription(ctx, id)) };
+  const subscription = view(await requireSubscription(ctx, id));
+  if (changed.length > 0) {
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.subscriptionUpdated({
+        subscription: {
+          id,
+          name: subscription.name,
+          sink: existing.sink === "email" ? "email" : "webhook",
+        },
+        changed,
+        enabled: changed.includes("enabled") ? patch.enabled : undefined,
+        events: changed.includes("events") ? subscription.events : undefined,
+      }),
+    }));
+  }
+  return { subscription };
 }
 
 /** Remove a subscription; a built-in one is disabled instead and says so. */
@@ -371,6 +415,11 @@ async function remove(
   id: string,
 ): Promise<{ removed: boolean; disabled: boolean }> {
   const existing = await requireSubscription(ctx, id);
+  const subject = {
+    id,
+    name: existing.name,
+    sink: existing.sink === "email" ? ("email" as const) : ("webhook" as const),
+  };
   if (existing.builtin) {
     await EventSubscriptionRepository.update(id, ctx.orgId, { enabled: false });
     logEvent("events.subscription_disabled", {
@@ -378,10 +427,26 @@ async function remove(
       org: ctx.orgId,
       builtin: existing.builtin,
     });
+    await emit(async () => ({
+      organizationId: ctx.orgId,
+      actor: await actorFor(ctx),
+      ...catalogue.subscriptionRemoved({
+        subscription: subject,
+        disabled: true,
+      }),
+    }));
     return { removed: false, disabled: true };
   }
   await EventSubscriptionRepository.deleteById(id, ctx.orgId);
   logEvent("events.subscription_removed", { subscription: id, org: ctx.orgId });
+  await emit(async () => ({
+    organizationId: ctx.orgId,
+    actor: await actorFor(ctx),
+    ...catalogue.subscriptionRemoved({
+      subscription: subject,
+      disabled: false,
+    }),
+  }));
   return { removed: true, disabled: false };
 }
 
@@ -396,7 +461,7 @@ async function test(
   const subscription = await requireSubscription(ctx, id);
   const queued = await emitAndWait({
     organizationId: ctx.orgId,
-    actor: await userActor(ctx.userId),
+    actor: await actorFor(ctx),
     only: id,
     ...catalogue.ping({
       subscription: { id: subscription.id, name: subscription.name },
@@ -463,6 +528,30 @@ async function redeliver(
     deliveryId,
     ctx.orgId,
   );
+  if (reset) {
+    await emit(async () => {
+      const subscription = await requireSubscription(
+        ctx,
+        existing.subscriptionId,
+      );
+      return {
+        organizationId: ctx.orgId,
+        actor: await actorFor(ctx),
+        ...catalogue.subscriptionRedelivered({
+          subscription: {
+            id: subscription.id,
+            name: subscription.name,
+            sink: subscription.sink === "email" ? "email" : "webhook",
+          },
+          delivery: {
+            id: deliveryId,
+            eventId: existing.eventId,
+            eventType: listed?.event?.type ?? "unknown",
+          },
+        }),
+      };
+    });
+  }
   return { delivery: listed ? deliveryView(listed) : null };
 }
 

@@ -40,6 +40,7 @@ import {
 import { isEmailConfigured } from "@/server/email/sendEmail";
 import { PublicError } from "@/server/errors";
 import { listAudit } from "@/server/events/audit";
+import type { EventActor } from "@/server/events/catalogue";
 import { DELIVERY_ID_PATTERN } from "@/server/events/ids";
 import { EventSubscriptionService } from "@/server/events/subscriptions";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
@@ -1180,6 +1181,22 @@ const HANDLERS: Record<string, Handler> = {
   ...MCP_APP_HANDLERS,
 };
 
+/**
+ * The events a tool's write emits name the agent as their cause: the
+ * credential's id, the connection's client name when it has one, and the
+ * member it acts for (docs/design/2026-10-events-out.md, the actor).
+ */
+function agentActor(principal: McpPrincipal): EventActor {
+  return {
+    kind: "agent",
+    id: principal.credential.id,
+    ...(principal.credential.clientName
+      ? { name: principal.credential.clientName }
+      : {}),
+    email: principal.email,
+  };
+}
+
 function toolError(message: string): ToolCallResultV1 {
   return { content: [{ type: "text", text: message }], isError: true };
 }
@@ -1214,6 +1231,7 @@ export async function runWorkspaceTool(
     orgId: principal.organizationId,
     userId: principal.userId,
     role,
+    actor: agentActor(principal),
   };
   try {
     const answer = await handler(ctx, args, principal);

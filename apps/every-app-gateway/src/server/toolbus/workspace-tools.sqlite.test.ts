@@ -1681,11 +1681,12 @@ describe("an admin administering the workspace over /mcp", () => {
     });
     expect(rows[3]).toMatchObject({
       label: "Someone was invited to the workspace",
-      // The actor as the catalogue names them (their current name, else email).
+      // Over /mcp the actor is the agent: the credential's id, acting for
+      // the member (their email); the summary names them by it.
       summary: expect.stringMatching(/ invited pat@example.com as member$/),
       actor: {
-        kind: "user",
-        id: adminId,
+        kind: "agent",
+        id: "pat_admin",
         email: "admin@example.com",
       },
       subject: { invitation: { email: "pat@example.com", role: "member" } },
@@ -1693,7 +1694,7 @@ describe("an admin administering the workspace over /mcp", () => {
     });
     expect(rows[2]).toMatchObject({
       label: expect.stringContaining("cap"),
-      actor: { kind: "user", id: ownerId, email: "owner@example.com" },
+      actor: { kind: "agent", id: "pat_owner", email: "owner@example.com" },
       subject: { app: { id: "crm", name: "CRM" } },
     });
     expect(rows[1]).toMatchObject({
@@ -1718,10 +1719,11 @@ describe("an admin administering the workspace over /mcp", () => {
           type: string;
         }[]
       ).map((row) => row.type);
-    expect(await types({ actor: "admin@example.com" })).toEqual([
-      "member.invited",
-    ]);
-    expect(await types({ actor: ownerId })).toEqual(["cap.raised"]);
+    // The agent's row is the credential's, not the member's: by its id.
+    expect(await types({ actor: "pat_admin" })).toEqual(["member.invited"]);
+    expect(await types({ actor: "admin@example.com" })).toEqual([]);
+    expect(await types({ actor: "pat_owner" })).toEqual(["cap.raised"]);
+    expect(await types({ actor: ownerId })).toEqual([]);
     expect(await types({ actor: "crm" })).toEqual(["app.crm.invoice.paid"]);
     expect(await types({ type: "tool.*" })).toEqual(["tool.blocked"]);
     expect(await types({ type: "member.invited" })).toEqual(["member.invited"]);

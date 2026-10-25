@@ -367,6 +367,57 @@ describe("events list", () => {
   });
 });
 
+describe("the subscription.* events (the audit log's coverage)", () => {
+  const queued = async () =>
+    (await sql("SELECT type, actor, data FROM events WHERE type LIKE 'subscription.%' ORDER BY rowid")).map((row) => ({
+      type: row["type"],
+      actor: JSON.parse(String(row["actor"])),
+      data: JSON.parse(String(row["data"])),
+    }));
+  const OPERATOR = { kind: "operator", id: "dev@example.com", email: "dev@example.com" };
+
+  it("subscription.created, updated, removed and redelivered, the operator as the actor, never the secret or the URL's query; a catch-all hears none of them", async () => {
+    // A catch-all (*) is not told about subscriptions; one naming subscription.* is.
+    await add("https://hooks.example.org/audit?key=k", { flags: { json: true, events: ["subscription.*"] } });
+    const watcher = String(done()!["data"]["subscription"]["id"]);
+    lines = [];
+    const id = await added("https://hooks.example.org/every?token=t");
+    await run((out) => setEnabled({ flags, out, createCf }, id, false));
+    await run((out) => setEnabled({ flags, out, createCf }, id, false));
+    await run((out) => setEnabled({ flags, out, createCf }, id, true));
+    await run((out) => removeEvents({ flags, out, createCf }, id));
+    const subscription = { id, name: "hooks.example.org", sink: "webhook" };
+    expect(await queued()).toEqual([
+      { type: "subscription.created", actor: OPERATOR, data: { subscription: { id: watcher, name: "hooks.example.org", sink: "webhook" }, events: ["subscription.*"], host: "hooks.example.org" } },
+      { type: "subscription.created", actor: OPERATOR, data: { subscription, events: ["*"], host: "hooks.example.org" } },
+      { type: "subscription.updated", actor: OPERATOR, data: { subscription, changed: ["enabled"], enabled: false } },
+      { type: "subscription.updated", actor: OPERATOR, data: { subscription, changed: ["enabled"], enabled: true } },
+      { type: "subscription.removed", actor: OPERATOR, data: { subscription, disabled: false } },
+    ]);
+    const stored = JSON.stringify(await queued());
+    expect(stored).not.toContain("whsec_");
+    expect(stored).not.toContain("key=k");
+    expect(stored).not.toContain("token=t");
+    // The watcher gets each (its own creation included); the catch-all got none.
+    const deliveries = await sql(
+      "SELECT d.subscription_id, e.type FROM event_deliveries d JOIN events e ON e.id = d.event_id WHERE e.type LIKE 'subscription.%' ORDER BY e.rowid",
+    );
+    expect(deliveries.map((row) => row["subscription_id"])).toEqual([watcher, watcher, watcher, watcher, watcher]);
+  });
+
+  it("a built-in subscription removed is subscription.removed with disabled true", async () => {
+    await sql(
+      "INSERT INTO event_subscriptions (id, organization_id, name, sink, recipients, events, builtin, created_at, updated_at) VALUES ('sub_capalerts', 'org-1', 'Cap alerts', 'email', 'admins', '[\"cap.warning\",\"cap.reached\"]', 'cap_alerts', ?, ?)",
+      NOW,
+      NOW,
+    );
+    await run((out) => removeEvents({ flags, out, createCf }, "sub_capalerts"));
+    expect(await queued()).toEqual([
+      { type: "subscription.removed", actor: OPERATOR, data: { subscription: { id: "sub_capalerts", name: "Cap alerts", sink: "email" }, disabled: true } },
+    ]);
+  });
+});
+
 describe("events remove, enable and disable", () => {
   it("removes a person's subscription, and disables a built-in one instead", async () => {
     const id = await added();
@@ -439,12 +490,12 @@ describe("events test", () => {
     });
 
     expect(error()).toBeUndefined();
-    const [event] = await sql("SELECT id, organization_id, type, version, time, actor, data, app_row_id, dedupe_key FROM events");
+    const [event] = await sql("SELECT id, organization_id, type, version, time, actor, data, app_row_id, dedupe_key FROM events WHERE type = 'ping'");
     expect(event).toMatchObject({ organization_id: "org-1", type: "ping", version: 1, time: NOW, app_row_id: null, dedupe_key: null });
     expect(String(event!["id"])).toMatch(/^evt_[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(JSON.parse(String(event!["actor"]))).toEqual({ kind: "operator", id: "dev@example.com", email: "dev@example.com" });
     expect(JSON.parse(String(event!["data"]))).toMatchObject({ subscription: { id, name: "hooks.example.org" } });
-    const deliveries = await sql("SELECT id, event_id, subscription_id, organization_id, status FROM event_deliveries");
+    const deliveries = await sql("SELECT id, event_id, subscription_id, organization_id, status FROM event_deliveries WHERE event_id = ?", String(event!["id"]));
     expect(deliveries).toEqual([
       expect.objectContaining({ event_id: event!["id"], subscription_id: id, organization_id: "org-1", status: "delivered" }),
     ]);
@@ -577,6 +628,20 @@ describe("events deliveries and redeliver", () => {
     });
     expect(await sql("SELECT status, attempts, next_attempt_at, redelivered_at, claimed_until FROM event_deliveries")).toEqual([
       { status: "pending", attempts: 0, next_attempt_at: NOW + 5_000, redelivered_at: NOW + 5_000, claimed_until: null },
+    ]);
+    // The redeliver is itself an event, naming the delivery and what it carried; the catch-all subscription gets no delivery of it.
+    expect(
+      (await sql("SELECT type, actor, data FROM events WHERE type = 'subscription.redelivered'")).map((row) => ({
+        type: row["type"],
+        actor: JSON.parse(String(row["actor"])),
+        data: JSON.parse(String(row["data"])),
+      })),
+    ).toEqual([
+      {
+        type: "subscription.redelivered",
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { subscription: { id, name: "hooks.example.org", sink: "webhook" }, delivery: { id: "dlv_dead", eventId: expect.any(String), eventType: "member.joined" } },
+      },
     ]);
 
     lines = [];

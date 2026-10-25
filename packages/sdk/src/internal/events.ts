@@ -12,8 +12,10 @@
 
 export type EventGroup =
   | "member"
+  | "organization"
   | "app"
   | "cap"
+  | "group"
   | "tool"
   | "connection"
   | "token"
@@ -21,6 +23,7 @@ export type EventGroup =
   | "signin_provider"
   | "mcp_app"
   | "provider"
+  | "subscription"
   | "ai"
   | "ping";
 
@@ -55,6 +58,12 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("member", "member.reactivated", "A member was reactivated"),
   entry("member", "member.removed", "A member was removed"),
   entry("member", "member.password_reset", "A member reset their password"),
+  entry(
+    "member",
+    "member.invitation_cancelled",
+    "A pending invitation was cancelled",
+  ),
+  entry("organization", "organization.renamed", "The workspace was renamed"),
   entry("app", "app.installed", "An app was installed on the Gateway"),
   entry("app", "app.updated", "An app was redeployed"),
   entry("app", "app.removed", "An app was removed from the Gateway"),
@@ -66,6 +75,18 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "An app is paused: its monthly cap is reached",
   ),
   entry("app", "app.tools_changed", "An app's AI tools changed"),
+  entry("app", "app.renamed", "An app's name or description changed"),
+  entry(
+    "app",
+    "app.settings_changed",
+    "An app's settings were set or unset (names only)",
+  ),
+  entry("app", "app.access_changed", "Who can open an app changed"),
+  entry(
+    "app",
+    "app.email_changed",
+    "An app's email senders or inbound changed",
+  ),
   entry("cap", "cap.warning", "An app is at 80% of its monthly cap"),
   entry("cap", "cap.reached", "An app reached its monthly cap"),
   entry(
@@ -73,6 +94,16 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "cap.raised",
     "An app's monthly cap, or the workspace default, was raised or removed",
   ),
+  entry(
+    "cap",
+    "cap.changed",
+    "An app's monthly cap, or the workspace default, was set or lowered",
+  ),
+  entry("group", "group.created", "A group was created"),
+  entry("group", "group.updated", "A group was renamed or described"),
+  entry("group", "group.removed", "A group was removed"),
+  entry("group", "group.members_changed", "A group's members changed"),
+  entry("group", "group.apps_changed", "The apps a group opens changed"),
   entry("tool", "tool.blocked", "An AI client's tool call was blocked"),
   entry("tool", "tool.error", "An AI client's tool call failed"),
   entry("connection", "connection.created", "An AI app was connected"),
@@ -94,6 +125,16 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("mcp_app", "mcp_app.removed", "An MCP app was removed"),
   entry("mcp_app", "mcp_app.enabled", "An MCP app is being served again"),
   entry("mcp_app", "mcp_app.disabled", "An MCP app stopped being served"),
+  entry(
+    "mcp_app",
+    "mcp_app.updated",
+    "An MCP app's risk default, name or description changed",
+  ),
+  entry(
+    "mcp_app",
+    "mcp_app.tool_changed",
+    "One tool of an MCP app was overridden: its risk, or on/off",
+  ),
   entry("provider", "provider.added", "A provider was registered"),
   entry("provider", "provider.removed", "A provider was removed"),
   entry(
@@ -115,6 +156,26 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "provider",
     "provider.connection_expired",
     "An OAuth provider refused to refresh a connection; it needs reconnecting",
+  ),
+  entry(
+    "subscription",
+    "subscription.created",
+    "An event subscription was added",
+  ),
+  entry(
+    "subscription",
+    "subscription.updated",
+    "An event subscription was changed, paused or resumed",
+  ),
+  entry(
+    "subscription",
+    "subscription.removed",
+    "An event subscription was removed",
+  ),
+  entry(
+    "subscription",
+    "subscription.redelivered",
+    "A delivery was queued again by hand",
   ),
   entry("ai", "ai.default_changed", "The default model provider changed"),
   entry("ping", "ping", "A test event, sent to one subscription on request"),
@@ -274,7 +335,11 @@ export type EventEmailRecipients = (typeof EVENT_EMAIL_RECIPIENTS)[number];
  * gateway's app events and every app's own.
  */
 export function eventPatternMatches(pattern: string, type: string): boolean {
-  if (pattern === "*") return type !== "ping";
+  // Everything but a test ping and the bus's own housekeeping: a webhook
+  // hears about subscriptions only when it names `subscription.*`, so a
+  // catch-all's first delivery is the event it was made for, not itself.
+  if (pattern === "*")
+    return type !== "ping" && !type.startsWith("subscription.");
   if (pattern.endsWith(".*")) {
     return type.startsWith(pattern.slice(0, -1));
   }

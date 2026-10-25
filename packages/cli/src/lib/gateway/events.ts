@@ -123,7 +123,7 @@ export async function requireEventsTables(db: D1Database): Promise<void> {
 
 // The outbox.
 
-interface CliEventInput {
+export interface CliEventInput {
   organizationId: string;
   /** A catalogue type (`app.installed`); its version is the catalogue's. */
   type: string;
@@ -465,6 +465,23 @@ RETURNING ${SUBSCRIPTION_COLUMNS}`,
       ],
     },
   ]);
+  if (inserted[0]) {
+    // subscription.created, the operator as its actor: the patterns and, for
+    // a webhook, the target's host; never the secret, never the URL's query.
+    await db.run(
+      await queueEventFromCli(db, {
+        organizationId: input.organization.id,
+        type: "subscription.created",
+        actor: operatorActor(input.deployer),
+        data: {
+          subscription: { id, name: input.name, sink: target.sink },
+          events: input.events,
+          ...(target.sink === "webhook" ? { host: new URL(target.url).host } : { recipients: target.recipients }),
+        },
+        now,
+      }),
+    );
+  }
   if (!inserted[0]) {
     throw new EveryAppError(
       "EVENT_SUBSCRIPTIONS_LIMIT",
@@ -490,14 +507,27 @@ export async function removeSubscription(
   organization: { id: string; name: string },
   id: string,
   now = Date.now(),
+  /** Who runs the command: the `subscription.removed` event's actor. Without one, no event. */
+  deployer?: Deployer,
 ): Promise<{ subscription: Subscription; outcome: "removed" | "disabled" }> {
   const subscription = await findSubscription(db, organization, id);
+  const event = (disabled: boolean) =>
+    deployer
+      ? queueEventFromCli(db, {
+          organizationId: organization.id,
+          type: "subscription.removed",
+          actor: operatorActor(deployer),
+          data: { subscription: subscriptionSubject(subscription), disabled },
+          now,
+        })
+      : Promise.resolve([]);
   if (subscription.builtin) {
     await db.run([
       {
         sql: "UPDATE event_subscriptions SET enabled = 0, updated_at = ? WHERE id = ? AND organization_id = ?",
         params: [now, subscription.id, organization.id],
       },
+      ...(await event(true)),
     ]);
     return { subscription: { ...subscription, enabled: false }, outcome: "disabled" };
   }
@@ -506,9 +536,17 @@ export async function removeSubscription(
       sql: "DELETE FROM event_subscriptions WHERE id = ? AND organization_id = ?",
       params: [subscription.id, organization.id],
     },
+    ...(await event(false)),
   ]);
   return { subscription, outcome: "removed" };
 }
+
+/** A subscription as an event's `data` names it: never its secret, never a URL. */
+const subscriptionSubject = (subscription: Subscription) => ({
+  id: subscription.id,
+  name: subscription.name,
+  sink: subscription.sink,
+});
 
 /** Pause or resume a subscription: a paused one gets no new deliveries. Whether it changed. */
 export async function setSubscriptionEnabled(
@@ -517,6 +555,8 @@ export async function setSubscriptionEnabled(
   id: string,
   enabled: boolean,
   now = Date.now(),
+  /** Who runs the command: the `subscription.updated` event's actor. Without one, no event. */
+  deployer?: Deployer,
 ): Promise<{ subscription: Subscription; changed: boolean }> {
   const subscription = await findSubscription(db, organization, id);
   if (subscription.enabled === enabled) return { subscription, changed: false };
@@ -525,6 +565,16 @@ export async function setSubscriptionEnabled(
       sql: "UPDATE event_subscriptions SET enabled = ?, updated_at = ? WHERE id = ? AND organization_id = ?",
       params: [enabled ? 1 : 0, now, subscription.id, organization.id],
     },
+    ...(deployer
+      ? await queueEventFromCli(db, {
+          organizationId: organization.id,
+          type: "subscription.updated",
+          actor: operatorActor(deployer),
+          data: { subscription: subscriptionSubject(subscription), changed: ["enabled"], enabled },
+          onlyIf: { sql: "changes() > 0", params: [] },
+          now,
+        })
+      : []),
   ]);
   return { subscription: { ...subscription, enabled }, changed: true };
 }
@@ -658,6 +708,8 @@ export async function redeliver(
   organization: { id: string; name: string },
   id: string,
   now = Date.now(),
+  /** Who runs the command: the `subscription.redelivered` event's actor. Without one, no event. */
+  deployer?: Deployer,
 ): Promise<{ delivery: Delivery; previous: Delivery; outcome: "queued" | "attempting" | "delivered" }> {
   await requireEventsTables(db);
   const previous = await readDelivery(db, organization.id, id.trim());
@@ -686,6 +738,19 @@ WHERE id = ?2 AND organization_id = ?3 AND status IN ('pending', 'dead') AND (cl
 RETURNING id`,
       params: [now, previous.id, organization.id],
     },
+    ...(deployer
+      ? await queueEventFromCli(db, {
+          organizationId: organization.id,
+          type: "subscription.redelivered",
+          actor: operatorActor(deployer),
+          data: {
+            subscription: subscriptionSubject(subscription),
+            delivery: { id: previous.id, eventId: previous.eventId, eventType: previous.type ?? "unknown" },
+          },
+          onlyIf: { sql: "changes() > 0", params: [] },
+          now,
+        })
+      : []),
   ]);
   const delivery = (await readDelivery(db, organization.id, previous.id)) ?? previous;
   const outcome = changed.length > 0 ? "queued" : delivery.status === "delivered" ? "delivered" : "attempting";

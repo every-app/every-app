@@ -938,12 +938,29 @@ export async function writeAppEmail(
     }
     const emailSenders = storedEmailList(config.senders);
     const emailInbound = storedEmailList(config.inbound);
+    const same = emailSenders === app.emailSenders && emailInbound === app.emailInbound;
     const [changed = []] = await db.run([
       {
         sql: `UPDATE apps SET email_senders = ?, email_inbound = ?, updated_at = ?
 WHERE id = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
         params: [emailSenders, emailInbound, now, app.id],
       },
+      // app.email_changed: the lists as stored now, names only; nothing when they are as they were.
+      ...(same
+        ? []
+        : await queueEventFromCli(db, {
+            organizationId: app.organizationId,
+            type: "app.email_changed",
+            actor: operatorActor(deployer),
+            data: {
+              app: eventApp(app),
+              senders: parseEmailList(emailSenders),
+              inbound: parseEmailList(emailInbound),
+            },
+            appRowId: app.id,
+            onlyIf: { sql: "changes() > 0", params: [] },
+            now,
+          })),
     ]);
     if (changed.length === 0) throw notRegistered(appSlug);
     return info({ ...app, emailSenders, emailInbound });
