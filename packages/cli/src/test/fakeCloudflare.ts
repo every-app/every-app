@@ -20,6 +20,11 @@
  * objects (a bucket with any is refused on delete, as R2 does). Vectorize
  * indexes exist by name with their config, and a deploy binding one that
  * doesn't exist is refused before anything is uploaded, as cf's is. `api.fetch` is the account's REST API, for the hosted
+ * objects (a bucket with any is refused on delete, as R2 does). AI Gateways
+ * exist by id with their settings, created and updated (a PUT: what an
+ * update leaves out goes back to its default) from a body file, refusing
+ * an id Cloudflare refuses, as cf 1.0.0-beta.14 showed live on 2026-10-24.
+ * `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
  * or sent.
@@ -173,6 +178,50 @@ function accessApiError(code: number, message: string, status: string, path: str
   return apiError(code, message, status, `access/${path}`);
 }
 
+/**
+ * What a new AI Gateway has besides what its create says (as
+ * `cf ai-gateway gateways get` printed a new one on loop-1, 2026-10-25),
+ * and what an update (a PUT) puts back for a setting it leaves out.
+ */
+const AI_GATEWAY_DEFAULTS: Record<string, unknown> = {
+  collect_logs: true,
+  cache_ttl: 0,
+  authentication: false,
+  rate_limiting_interval: 0,
+  rate_limiting_limit: 0,
+  rate_limiting_technique: null,
+  log_management: 10_000_000,
+  log_management_strategy: "DELETE_OLDEST",
+  logpush_public_key: null,
+  cache_invalidate_on_update: false,
+  logpush: false,
+  wholesale: true,
+  byok_only: false,
+  fedramp_level: null,
+  fedramp_mode: null,
+  zdr: false,
+  log_classification: false,
+  internal: false,
+  store_id: "",
+  is_default: false,
+  workers_ai_billing_mode: "postpaid",
+  retry_max_attempts: null,
+  retry_delay: null,
+  retry_backoff: null,
+};
+
+/** What an AI Gateway's create or update can't set. */
+const AI_GATEWAY_READ_ONLY = new Set([
+  "id",
+  "created_at",
+  "modified_at",
+  "wholesale",
+  "internal",
+  "is_default",
+  "fedramp_level",
+  "fedramp_mode",
+]);
+
 /** The MX records Email Routing adds (and locks) on a domain it routes. */
 const EMAIL_ROUTING_MX = [
   "route1.mx.cloudflare.net",
@@ -317,6 +366,8 @@ export class FakeCloudflare {
   readonly buckets = new Map<string, { objects: number }>();
   /** Vectorize indexes by name. */
   readonly vectorizeIndexes = new Map<string, FakeVectorizeIndex>();
+  /** AI Gateways by id, as `cf ai-gateway gateways get` prints each. */
+  readonly aiGateways = new Map<string, Record<string, unknown>>();
   readonly deploys: RecordedDeploy[] = [];
   /** `cf d1 time-travel restore`s, in order (the data isn't rewound). */
   readonly restores: Array<{ databaseId: string; bookmark: string }> = [];
@@ -688,6 +739,7 @@ export class FakeCloudflare {
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
       .on(["vectorize"], (call) => this.vectorizeCommand(call))
+      .on(["ai-gateway", "gateways"], (call) => this.aiGatewayCommand(call))
       .on(["email-routing"], (call) => this.emailRoutingCommand(call))
       .on(["zero-trust"], (call) => this.zeroTrustCommand(call))
       .on(["build"], (call) => this.build(call))
@@ -1273,6 +1325,95 @@ export class FakeCloudflare {
       return { stdout: "" };
     }
     return cfError(`unknown command vectorize ${action}`);
+  }
+
+  /**
+   * `cf ai-gateway gateways get|list|create|update|delete`. A create or
+   * update takes its settings from the `--body @<file>` cf is handed, with
+   * the fields Cloudflare requires; an update is a PUT, so a setting it
+   * leaves out goes back to its default. Ids are Cloudflare's: lowercase
+   * letters and digits joined by single hyphens, at most 64.
+   */
+  private aiGatewayCommand(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2];
+    const at = (id?: string) => `ai-gateway/gateways${id ? `/${id}` : ""}`;
+    const body = (): Record<string, unknown> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!) as Record<string, unknown>;
+    };
+    const required = [
+      "cache_invalidate_on_update",
+      "cache_ttl",
+      "collect_logs",
+      "rate_limiting_interval",
+      "rate_limiting_limit",
+    ];
+    const settings = (request: Record<string, unknown>) => ({
+      ...AI_GATEWAY_DEFAULTS,
+      ...Object.fromEntries(
+        Object.entries(request).filter(([key]) => !AI_GATEWAY_READ_ONLY.has(key)),
+      ),
+    });
+    if (action === "list") {
+      const search = flag(call.args, "--search") ?? "";
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...this.aiGateways.values()]
+            .filter((gateway) => String(gateway["id"]).includes(search))
+            .slice((page - 1) * perPage, page * perPage),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request) {
+        return cfError("--cache-invalidate-on-update is required (or pass --body with this field set).");
+      }
+      const id = String(request["id"] ?? "");
+      if (id.length > 64) {
+        return apiError(7001, "String must contain at most 64 character(s)", "400 Bad Request", at());
+      }
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+        return apiError(7001, "not valid ID format", "400 Bad Request", at());
+      }
+      const missing = required.find((field) => request[field] === undefined);
+      if (missing) return apiError(7001, `${missing}: Required`, "400 Bad Request", at());
+      if (this.aiGateways.has(id)) {
+        return apiError(7001, "An object with this id already exists", "400 Bad Request", at());
+      }
+      const now = this.clock();
+      this.aiGateways.set(id, { id, created_at: now, modified_at: now, ...settings(request) });
+      return { stdout: JSON.stringify(this.aiGateways.get(id)) };
+    }
+    const id = call.args[3]!;
+    const gateway = this.aiGateways.get(id);
+    if (!gateway) return apiError(7002, "Not Found", "404 Not Found", at(id));
+    if (action === "get") return { stdout: JSON.stringify(gateway) };
+    if (action === "update") {
+      const request = body() ?? {};
+      const missing = required.find((field) => request[field] === undefined);
+      if (missing) return apiError(7001, `${missing}: Required`, "400 Bad Request", at(id));
+      this.aiGateways.set(id, {
+        id,
+        created_at: gateway["created_at"],
+        modified_at: this.clock(),
+        ...settings(request),
+      });
+      return { stdout: JSON.stringify(this.aiGateways.get(id)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(
+        call,
+        "This permanently deletes the gateway, its configuration, and its stored logs. Requests sent to this gateway will fail. This action cannot be undone.",
+      );
+      if (declined) return declined;
+      this.aiGateways.delete(id);
+      return { stdout: JSON.stringify(gateway) };
+    }
+    return cfError(`unknown command ai-gateway gateways ${action}`);
   }
 
   /**

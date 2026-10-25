@@ -1,77 +1,280 @@
 /**
- * Cloudflare AI Gateway resources through `cf ai-gateway gateways …`: find
- * one, make one when it is missing, delete one. The contract agreed with
- * the Resource provisioners thread on 2026-10-25 (its PR "AI Gateway"
- * lands the probed implementation and the fake account's commands; this
- * file is the same signature so `everyapp ai gateway on` compiles and
- * tests inject a fake). An id is lowercase letters, digits and single
- * hyphens, 64 characters at most (Cloudflare refuses `--`, `_` and
- * uppercase); new gateways are made unauthenticated.
+ * Cloudflare AI Gateways, by id. An app's own (`resources.aiGateway`,
+ * lib/app/resources.ts) and the Gateway's account-level one (the Model
+ * providers' `AI_GATEWAY_ID`, `everyapp` by default) both come through
+ * here.
+ *
+ * The contract other commands call (the Model providers' `everyapp ai
+ * gateway`): `findAiGateway`, `ensureAiGateway` (`{ id, accountId,
+ * collectLogs?, cacheTtl? }` → `{ id, url, created }`), `deleteAiGateway`,
+ * `listAiGateways`, `aiGatewayUrl` and `isValidAiGatewayId`. The deploy also
+ * uses `createAiGateway` (a create that fails on a taken id, for the
+ * resource ledger) and `updateAiGateway`.
+ *
+ * A gateway is created with Cloudflare's required settings in a body file
+ * (`--body @<file>`): logs collected unless `collectLogs` is false, no
+ * cache unless `cacheTtl` says how many seconds, no rate limit, and no
+ * authentication (callers send their own provider keys; an authenticated
+ * gateway would need a Cloudflare token the app doesn't have). Ids are
+ * lowercase letters and digits joined by single hyphens, at most 64
+ * characters (`isAiGatewayId`): `[7001] not valid ID format` otherwise.
  */
-import { z } from "zod";
-import { CfError } from "./errors";
+import { aiGatewayUrl } from "@every-app/sdk/cloudflare";
+import { isAiGatewayId } from "@every-app/perimeter/manifest";
+import { isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
+import {
+  AiGatewayListOutput,
+  AiGatewayOutput,
+  type AiGateway as AiGatewayRecord,
+} from "./schemas";
 
+/**
+ * A gateway as the callers of {@link ensureAiGateway} see it (the Model
+ * providers' `everyapp ai gateway on` and the deploy): its id and its URL,
+ * `https://gateway.ai.cloudflare.com/v1/<accountId>/<id>`. The account's
+ * full record is {@link AiGatewayRecord}.
+ */
 export interface AiGateway {
   id: string;
-  /** `https://gateway.ai.cloudflare.com/v1/<accountId>/<id>`. */
   url: string;
 }
 
-const AI_GATEWAY_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export { aiGatewayUrl };
 
-/** Whether `id` is a name Cloudflare accepts for a gateway. */
+/**
+ * Whether Cloudflare takes `id` as a gateway's: lowercase letters and
+ * digits joined by single hyphens (no `--`), at most 64 characters.
+ */
 export function isValidAiGatewayId(id: string): boolean {
-  return id.length > 0 && id.length <= 64 && AI_GATEWAY_ID.test(id);
+  return isAiGatewayId(id);
 }
 
-function aiGatewayUrl(accountId: string, id: string): string {
-  return `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(id)}`;
+/** The settings the deploy keeps as the manifest says. */
+interface AiGatewaySettings {
+  /** Whether the gateway logs each request; true unless false. */
+  collectLogs?: boolean;
+  /** Seconds a response stays cached; 0 (nothing cached) unless set. */
+  cacheTtl?: number;
 }
 
-const GatewayOutput = z.object({ id: z.string() }).passthrough();
+/** What a gateway's settings are when the manifest leaves them out. */
+export function aiGatewaySettings(settings: AiGatewaySettings): Required<AiGatewaySettings> {
+  return {
+    collectLogs: settings.collectLogs ?? true,
+    cacheTtl: settings.cacheTtl ?? 0,
+  };
+}
 
-/** The gateway `id`, or null when the account has none by that name. */
-async function findAiGateway(cf: CfRunner, id: string): Promise<{ id: string } | null> {
+/** Whether `gateway` logs and caches as `settings` say. */
+export function hasAiGatewaySettings(gateway: AiGatewayRecord, settings: AiGatewaySettings): boolean {
+  const wanted = aiGatewaySettings(settings);
+  return (
+    (gateway.collect_logs ?? false) === wanted.collectLogs &&
+    (gateway.cache_ttl ?? 0) === wanted.cacheTtl
+  );
+}
+
+/**
+ * The settings an update sends back as they were: Cloudflare's update is a
+ * PUT, so a setting left out could go back to its default. Every one the
+ * gateway reads back and the update takes (cf schema ai-gateway gateways
+ * update), when it has a value.
+ */
+const KEPT_ON_UPDATE = [
+  "authentication",
+  "byok_only",
+  "cache_invalidate_on_update",
+  "log_classification",
+  "log_management",
+  "log_management_strategy",
+  "logpush",
+  "logpush_public_key",
+  "rate_limiting_interval",
+  "rate_limiting_limit",
+  "rate_limiting_technique",
+  "retry_backoff",
+  "retry_delay",
+  "retry_max_attempts",
+  "store_id",
+  "workers_ai_billing_mode",
+  "zdr",
+] as const;
+
+function assertId(id: string): void {
+  if (!isValidAiGatewayId(id)) {
+    throw new Error(
+      `"${id}" isn't an AI Gateway id Cloudflare takes: lowercase letters and digits joined by single hyphens, at most 64 characters.`,
+    );
+  }
+}
+
+/** The gateway with this id, or null when the account has none. */
+export async function findAiGateway(cf: CfRunner, id: string): Promise<AiGatewayRecord | null> {
   try {
-    const found = await runCfJson(cf, { plane: "account", args: ["ai-gateway", "gateways", "get", id] }, GatewayOutput);
-    return { id: found.id };
+    return await runCfJson(
+      cf,
+      { plane: "account", args: ["ai-gateway", "gateways", "get", id] },
+      AiGatewayOutput,
+    );
   } catch (error) {
-    if (error instanceof CfError && (error.kind === "not_found" || /not[_ ]found/i.test(error.message))) return null;
+    // `[7002] Not Found` (404), seen live.
+    if (isCfError(error, "not_found")) return null;
     throw error;
   }
 }
 
 /**
- * The gateway `id` in the account, made when it is missing (logs
- * collected, no cache unless `cacheTtl`), with its URL. Idempotent.
+ * Create a gateway; fails (`already_exists`: `[7001] An object with this
+ * id already exists`) when the id is taken.
  */
-export async function ensureAiGateway(
+export async function createAiGateway(
   cf: CfRunner,
-  options: { id: string; accountId: string; collectLogs?: boolean; cacheTtl?: number },
-): Promise<AiGateway & { created: boolean }> {
-  const { id, accountId } = options;
-  if (!isValidAiGatewayId(id)) {
-    throw new Error(`${id} isn't a valid AI Gateway id: lowercase letters, digits and single hyphens, 64 at most`);
-  }
-  const found = await findAiGateway(cf, id);
-  if (found) return { id: found.id, url: aiGatewayUrl(accountId, found.id), created: false };
-  const made = await runCfJson(
+  id: string,
+  settings: AiGatewaySettings = {},
+): Promise<AiGatewayRecord> {
+  assertId(id);
+  const { collectLogs, cacheTtl } = aiGatewaySettings(settings);
+  return runCfJson(
     cf,
     {
       plane: "account",
-      args: [
+      files: {
+        "ai-gateway.json": {
+          id,
+          collect_logs: collectLogs,
+          cache_ttl: cacheTtl,
+          cache_invalidate_on_update: false,
+          rate_limiting_interval: 0,
+          rate_limiting_limit: 0,
+          authentication: false,
+        },
+      },
+      args: (files) => [
         "ai-gateway",
         "gateways",
         "create",
-        id,
-        "--collect-logs",
-        String(options.collectLogs ?? true),
-        ...(options.cacheTtl === undefined ? [] : ["--cache-ttl", String(options.cacheTtl)]),
+        "--body",
+        `@${files["ai-gateway.json"]!}`,
       ],
     },
-    GatewayOutput,
+    AiGatewayOutput,
   );
-  return { id: made.id, url: aiGatewayUrl(accountId, made.id), created: true };
 }
 
+/**
+ * The gateway with this id, created when the account has none (also when
+ * another run created it meanwhile: idempotent). An existing one is used
+ * as it is, its settings untouched. `created` says whether this call made it.
+ */
+export async function ensureAiGateway(
+  cf: CfRunner,
+  options: { id: string; accountId: string } & AiGatewaySettings,
+): Promise<{ id: string; url: string; created: boolean }> {
+  const { id, accountId, ...settings } = options;
+  assertId(id);
+  const result = (created: boolean) => ({ id, url: aiGatewayUrl(accountId, id), created });
+  if (await findAiGateway(cf, id)) return result(false);
+  try {
+    await createAiGateway(cf, id, settings);
+    return result(true);
+  } catch (error) {
+    if (isCfError(error, "already_exists") && (await findAiGateway(cf, id))) {
+      return result(false);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Change a gateway's logging and caching, keeping every other setting it
+ * reads back (the update is a PUT).
+ */
+export async function updateAiGateway(
+  cf: CfRunner,
+  gateway: AiGatewayRecord,
+  settings: AiGatewaySettings,
+): Promise<AiGatewayRecord> {
+  const kept = Object.fromEntries(
+    KEPT_ON_UPDATE.flatMap((field) =>
+      gateway[field] === undefined || gateway[field] === null ? [] : [[field, gateway[field]]],
+    ),
+  );
+  const wanted = aiGatewaySettings(settings);
+  return runCfJson(
+    cf,
+    {
+      plane: "account",
+      files: {
+        "ai-gateway.json": {
+          // Cloudflare requires these on every update.
+          cache_invalidate_on_update: false,
+          rate_limiting_interval: 0,
+          rate_limiting_limit: 0,
+          ...kept,
+          collect_logs: wanted.collectLogs,
+          cache_ttl: wanted.cacheTtl,
+        },
+      },
+      args: (files) => [
+        "ai-gateway",
+        "gateways",
+        "update",
+        gateway.id,
+        "--body",
+        `@${files["ai-gateway.json"]!}`,
+      ],
+    },
+    AiGatewayOutput,
+  );
+}
+
+/**
+ * Delete a gateway, its settings and its stored logs. `--force` answers
+ * cf's confirmation, which nobody can answer for a piped call, so callers
+ * decide first (lib/cf/resources.ts deleteD1). A missing one throws
+ * `not_found`.
+ */
+export async function deleteAiGateway(cf: CfRunner, id: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["ai-gateway", "gateways", "delete", id, "--force"],
+  });
+}
+
+const PAGE_SIZE = 20;
+const MAX_PAGES = 50;
+
+/**
+ * The account's gateways whose id matches `search` (Cloudflare's search by
+ * id), every page. A page that brings nothing new ends the listing too,
+ * so an API that ignores the page asked for can't loop.
+ */
+export async function listAiGateways(cf: CfRunner, search: string): Promise<AiGatewayRecord[]> {
+  const gateways = new Map<string, AiGatewayRecord>();
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const batch = await runCfJson(
+      cf,
+      {
+        plane: "account",
+        args: [
+          "ai-gateway",
+          "gateways",
+          "list",
+          "--search",
+          search,
+          "--per-page",
+          String(PAGE_SIZE),
+          "--page",
+          String(page),
+        ],
+      },
+      AiGatewayListOutput,
+    );
+    const before = gateways.size;
+    for (const gateway of batch) gateways.set(gateway.id, gateway);
+    if (batch.length < PAGE_SIZE || gateways.size === before) break;
+  }
+  return [...gateways.values()];
+}

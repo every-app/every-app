@@ -95,6 +95,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
       const inputs = {
         workerName: "every-acme-simple-todo",
         organizationId: "org-1",
+        accountId: ACCOUNT_ID,
         gatewayUrl: "https://apps.example.com",
         identityPublicKeys: [PUBLIC_KEY],
         resources: {

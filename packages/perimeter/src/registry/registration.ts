@@ -27,6 +27,7 @@ import {
   isReservedAppId,
   ManifestError,
   MAX_BUCKET_NAME_LENGTH,
+  MAX_ORG_KEY_LENGTH as ORG_KEY_MAX_LENGTH,
   MAX_WORKER_NAME_LENGTH,
   registryWorkerNameFor,
   RESOURCE_SEPARATOR,
@@ -130,7 +131,6 @@ export class RegistrationError extends Error {
 }
 
 const DNS_LABEL_PATTERN = /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
-const ORG_KEY_MAX_LENGTH = 12;
 const ORG_KEY_ATTEMPTS = 50;
 
 /** The `[a-z0-9]`, at most 12 characters, an organization's key starts as. */

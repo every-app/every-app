@@ -41,6 +41,7 @@ const MANIFEST = {
 const TARGET: InstallTarget = {
   workerName: "every-acme-seo",
   organizationId: "org-acme",
+  accountId: "0123456789abcdef0123456789abcd01",
   gatewayUrl: "https://apps.example.com",
   identityPublicKeys: PUBLIC_KEYS,
   resources: {
@@ -282,6 +283,77 @@ describe("installWorkerConfig", () => {
     expect(app["env"].EVERYAPP_IDENTITY_ISSUER.value).toBe(
       BUILD_SENTINEL.gatewayUrl,
     );
+  });
+});
+
+describe("installWorkerConfig and AI Gateways", () => {
+  const ACCOUNT = "0123456789abcdef0123456789abcd01";
+  const NOTES = {
+    id: "notes",
+    resources: { aiGateway: [{ name: "AI_GATEWAY" }] },
+    workers: [{ name: "digest" }],
+  } as const;
+  const GATEWAY = {
+    id: "every-acme-notes-ai-gateway",
+    accountId: ACCOUNT,
+    url: `https://gateway.ai.cloudflare.com/v1/${ACCOUNT}/every-acme-notes-ai-gateway`,
+  };
+  const NOTES_TARGET: InstallTarget = {
+    ...TARGET,
+    workerName: "every-acme-notes",
+    accountId: ACCOUNT,
+    resources: { aiGateway: { AI_GATEWAY: GATEWAY } },
+    helperWorkers: ["every-acme-notes--digest"],
+  };
+  const notes = () => {
+    const options = { manifest: NOTES, ctx: { mode: "production" } } as const;
+    const { entrypoint: _app, ...app } = everyAppWorker({ ...options, entrypoint: "./src/entry.worker.ts" });
+    const { entrypoint: _digest, ...digest } = everyAppAuxiliaryWorker({
+      ...options,
+      worker: "digest",
+      entrypoint: "./src/digest.ts",
+    });
+    return { app: structuredClone(app) as Record<string, any>, digest: structuredClone(digest) as Record<string, any> };
+  };
+
+  it("gives each Worker's gateway binding the provisioned id, account and URL", () => {
+    const { app, digest } = notes();
+    for (const config of [app, digest]) {
+      expect(installWorkerConfig(config, NOTES_TARGET)["env"].AI_GATEWAY).toEqual({
+        type: "json",
+        value: GATEWAY,
+      });
+    }
+  });
+
+  it("rewrites only a json binding whose value.id is its own binding's placeholder", () => {
+    const { app } = notes();
+    app["env"].FEATURES = { type: "json", value: { id: "plan", tier: "pro" } };
+    app["env"].LIST = { type: "json", value: [resourceSentinel("LIST")] };
+    // Another binding's placeholder: never handed the gateway.
+    app["env"].COPY = { type: "json", value: { id: resourceSentinel("AI_GATEWAY") } };
+
+    const env = installWorkerConfig(app, NOTES_TARGET)["env"];
+    expect(env.FEATURES).toEqual({ type: "json", value: { id: "plan", tier: "pro" } });
+    expect(env.LIST).toEqual({ type: "json", value: ["every-acme-notes--LIST"] });
+    expect(env.COPY).toEqual({ type: "json", value: { id: "every-acme-notes--AI_GATEWAY" } });
+  });
+
+  it("refuses a gateway the build binds but the deploy didn't provision", () => {
+    const { app } = notes();
+    expect(() => installWorkerConfig(app, { ...NOTES_TARGET, resources: {} })).toThrow(
+      expect.objectContaining({
+        code: "INSTALL_INPUTS_MISSING",
+        message: expect.stringContaining("AI Gateway AI_GATEWAY"),
+      }),
+    );
+  });
+
+  it("writes the account wherever its placeholder is, before the Worker name it starts with", () => {
+    const { app } = notes();
+    app["env"].ACCOUNT_NOTE = { type: "text", value: `account ${BUILD_SENTINEL.accountId}` };
+    const env = installWorkerConfig(app, NOTES_TARGET)["env"];
+    expect(env.ACCOUNT_NOTE).toEqual({ type: "text", value: `account ${ACCOUNT}` });
   });
 });
 

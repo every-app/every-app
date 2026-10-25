@@ -33,6 +33,7 @@ import {
   ruleWorker,
 } from "@/lib/cf/emailRouting";
 import { listHyperdrive } from "@/lib/cf/hyperdrive";
+import { listAiGateways } from "@/lib/cf/aiGateway";
 import { listR2Buckets } from "@/lib/cf/r2";
 import { listVectorizeIndexes } from "@/lib/cf/vectorize";
 import { listAll, type CfRunner } from "@/lib/cf/runner";
@@ -211,6 +212,12 @@ export async function inventoryAccount({
     .filter((name) => ours("vectorize", name))
     .sort();
   found("vectorize", vectorize.length, vectorize);
+  // 7b. AI Gateways, by id (`<worker>-<binding>`: one hyphen, still every-*).
+  const aiGateway = (await read("the AI Gateways", [], () => listAiGateways(cf, EVERY_APP_PREFIX)))
+    .map((gateway) => gateway.id)
+    .filter((id) => ours("ai-gateway", id))
+    .sort();
+  found("aiGateway", aiGateway.length, aiGateway);
 
   // 8. Access: the applications by what they cover (with an install row to
   // say what that is) and by name, and the policy by name. The team and
@@ -380,6 +387,7 @@ export async function inventoryAccount({
     r2,
     hyperdrive,
     vectorize,
+    aiGateway,
     access,
     email,
     certificates,

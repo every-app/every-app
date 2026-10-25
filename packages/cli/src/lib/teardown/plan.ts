@@ -84,6 +84,8 @@ export interface TeardownPlan {
   hyperdrive: Array<{ name: string; id: string }>;
   /** Vectorize indexes, by name (an index has no other id). */
   vectorize: string[];
+  /** AI Gateways, by id. */
+  aiGateway: string[];
   access: {
     applications: Array<{ id: string; name: string }>;
     policy: { id: string; name: string } | null;
@@ -107,6 +109,7 @@ export const KINDS = [
   ["r2", "R2 bucket", "R2 buckets"],
   ["hyperdrive", "Hyperdrive config", "Hyperdrive configs"],
   ["vectorize", "Vectorize index", "Vectorize indexes"],
+  ["aiGateway", "AI Gateway", "AI Gateways"],
   ["dns", "DNS record", "DNS records"],
 ] as const;
 export type Kind = (typeof KINDS)[number][0];
@@ -123,6 +126,7 @@ export const PLACES: Readonly<Record<Kind, string>> = {
   r2: "Storage & Databases → R2 Object Storage",
   hyperdrive: "Storage & Databases → Hyperdrive",
   vectorize: "AI → Vectorize",
+  aiGateway: "AI → AI Gateway",
   dns: "the zone → DNS → Records",
 };
 
@@ -150,6 +154,7 @@ export function planCounts(plan: TeardownPlan): Record<Kind, number> {
     r2: plan.r2.length,
     hyperdrive: plan.hyperdrive.length,
     vectorize: plan.vectorize.length,
+    aiGateway: plan.aiGateway.length,
     dns: dnsRecordCount(plan.dns),
   };
 }
@@ -167,6 +172,7 @@ export const describe = {
   r2: (name: string) => `${RESOURCE_LABELS.r2} "${name}"`,
   hyperdrive: (name: string) => `${RESOURCE_LABELS.hyperdrive} "${name}"`,
   vectorize: (name: string) => `${RESOURCE_LABELS.vectorize} "${name}"`,
+  aiGateway: (id: string) => `${RESOURCE_LABELS["ai-gateway"]} "${id}"`,
   application: (name: string) => `Access application "${name}"`,
   policy: (name: string) => `Access policy "${name}"`,
   rule: (address: string | null, zoneName: string) =>
@@ -200,6 +206,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
     r2: plan.r2,
     hyperdrive: plan.hyperdrive.map((config) => config.name),
     vectorize: plan.vectorize,
+    aiGateway: plan.aiGateway,
     dns: plan.dns.flatMap((name) => name.records.map((record) => `${record.type} at ${name.name}`)),
   };
   return KINDS.flatMap(([kind, , many]) =>
@@ -239,6 +246,7 @@ export function planData(plan: TeardownPlan): Record<string, unknown> {
     r2: plan.r2,
     hyperdrive: plan.hyperdrive,
     vectorize: plan.vectorize,
+    aiGateway: plan.aiGateway,
     access: plan.access,
     email: plan.email,
     certificates: plan.certificates,

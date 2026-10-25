@@ -114,6 +114,19 @@ const VectorizeResourceSchema = z.object({
   preset: z.string().optional(),
 });
 
+/**
+ * An AI Gateway of the app's own in the Cloudflare account, which every
+ * one of its Workers binds as `{ id, accountId, url }` (a `json` binding).
+ * Its id is `<worker>-<binding>` ({@link aiGatewayIdFor}).
+ */
+const AiGatewayResourceSchema = z.object({
+  name: z.string(),
+  /** Whether the gateway keeps a log of each request (on by default). */
+  collectLogs: z.boolean().optional(),
+  /** How long, in seconds, the gateway caches a response; 0 (the default) caches nothing. */
+  cacheTtl: z.number().int().min(0).optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -153,6 +166,8 @@ export const ResourcesSchema = z
     images: z.array(z.string()).optional(),
     /** Vectorize indexes, by binding, which every one of the app's Workers binds. */
     vectorize: z.array(VectorizeResourceSchema).optional(),
+    /** AI Gateways of the app's own, by binding ({@link aiGatewayIdFor}). */
+    aiGateway: z.array(AiGatewayResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -845,6 +860,18 @@ const BindingNameSchema = z
   );
 
 /**
+ * An AI Gateway's binding: a JavaScript identifier whose underscores each
+ * sit between letters or digits, since it becomes the end of the gateway's
+ * id, where Cloudflare allows single hyphens only ({@link aiGatewayIdFor}).
+ */
+const AiGatewayBindingNameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$/,
+    "an AI Gateway's binding is letters and digits joined by single underscores (it ends the gateway's id, which takes single hyphens only)",
+  );
+
+/**
  * The app's own secrets, each by name or as an entry with its need:
  * identifiers, each once, none the deploy
  * sets itself, and none of the Gateway's settings, which an app reaches
@@ -1000,6 +1027,13 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
     )
     .optional(),
   vectorize: z.array(VectorizeResourceSchemaStrict).optional(),
+  aiGateway: z
+    .array(
+      AiGatewayResourceSchema.extend({
+        name: AiGatewayBindingNameSchema,
+      }).strict(),
+    )
+    .optional(),
 }).strict();
 /** How the strict validator looks capability ids up ({@link validateManifestStrict}). */
 export interface StrictManifestOptions {
@@ -1155,8 +1189,30 @@ export function validateManifestStrict(
   }
   assertHelperWorkersAreDeclared(manifest);
   assertDatabaseIsConsistent(manifest);
+  assertAiGatewayIdsFit(manifest);
   assertSettingNeedsAreConsistent(manifest);
   return manifest;
+}
+
+/**
+ * Each AI Gateway's id fits Cloudflare's 64 characters on any Gateway:
+ * the Worker name it starts with is `every-<orgKey>-<id>`, and an org key
+ * is at most {@link MAX_ORG_KEY_LENGTH} characters, so the longest id the
+ * manifest can give is known before any organization is.
+ */
+function assertAiGatewayIdsFit(manifest: EveryAppManifest): void {
+  const longestWorker = registryWorkerNameFor({
+    appId: manifest.id,
+    orgKey: "k".repeat(MAX_ORG_KEY_LENGTH),
+  });
+  for (const { name } of manifest.resources?.aiGateway ?? []) {
+    const id = aiGatewayIdFor(longestWorker, name);
+    if (id.length > MAX_AI_GATEWAY_ID_LENGTH) {
+      throw new ManifestError(
+        `Invalid everyapp.config: resources.aiGateway: ${name} would make an AI Gateway id of up to ${id.length} characters (${aiGatewayIdFor(registryWorkerNameFor({ appId: manifest.id, orgKey: "<orgKey>" }), name)}), longer than Cloudflare's ${MAX_AI_GATEWAY_ID_LENGTH}; shorten the binding name.`,
+      );
+    }
+  }
 }
 
 /**
@@ -1256,6 +1312,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
+    ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1285,6 +1342,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.browser ?? []),
     ...(manifest.resources?.images ?? []),
     ...(manifest.resources?.vectorize ?? []).map((v) => v.name),
+    ...(manifest.resources?.aiGateway ?? []).map((g) => g.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1303,6 +1361,8 @@ export function bindingNamesOf(
  * transformations do too. Nor inbound mail: the platform's zones aren't an organization's to route. Nor secrets
  * browser time bills the platform's account the same way. Nor Vectorize
  * indexes: the hosted deployer makes none. Nor inbound
+ * browser time bills the platform's account the same way. Nor AI
+ * Gateways yet. Nor inbound
  * mail: the platform's zones aren't an organization's to route. Nor secrets
  * of its own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID
  * only, and nothing sets another.
@@ -1342,6 +1402,11 @@ export function manifestTierProblems(
   if (manifest.resources?.vectorize?.length) {
     problems.push(
       "resources.vectorize: Vectorize indexes aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  if (manifest.resources?.aiGateway?.length) {
+    problems.push(
+      "resources.aiGateway: AI Gateways aren't available to apps in a dispatch namespace yet",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
@@ -1469,6 +1534,35 @@ export const MAX_VECTORIZE_NAME_LENGTH = 64;
  */
 export function vectorizeNameFor(workerName: string, binding: string): string {
   return suffixedName(workerName, binding);
+}
+
+/** Cloudflare's limit on an AI Gateway's id. */
+export const MAX_AI_GATEWAY_ID_LENGTH = 64;
+
+/** The longest organization key registration assigns (`orgKeyCandidates()`). */
+export const MAX_ORG_KEY_LENGTH = 12;
+
+/**
+ * Cloudflare's rule for an AI Gateway's id, seen live on 2026-10-24
+ * (`[7001] not valid ID format` otherwise): lowercase letters and digits,
+ * joined by single hyphens, at most {@link MAX_AI_GATEWAY_ID_LENGTH}.
+ */
+const AI_GATEWAY_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isAiGatewayId(id: string): boolean {
+  return id.length <= MAX_AI_GATEWAY_ID_LENGTH && AI_GATEWAY_ID.test(id);
+}
+
+/**
+ * The AI Gateway an app Worker's binding uses: the Worker's name and the
+ * binding lowercased with `_` as `-`, joined by ONE hyphen
+ * (`every-acme-notes` and `AI_GATEWAY` → `every-acme-notes-ai-gateway`),
+ * since an id may not hold {@link RESOURCE_SEPARATOR}. So the id alone
+ * doesn't say whose it is (app `notes-ai`'s `GATEWAY` would be the same);
+ * the resource ledger does, and refuses one it didn't record.
+ */
+export function aiGatewayIdFor(workerName: string, binding: string): string {
+  return `${workerName}-${binding.toLowerCase().replaceAll("_", "-")}`;
 }
 
 function suffixedName(workerName: string, binding: string): string {

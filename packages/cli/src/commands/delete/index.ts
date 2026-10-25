@@ -9,6 +9,7 @@ import {
   readOwnedResources,
   RESOURCE_LABELS,
 } from "@/lib/app/ownership";
+import { deleteAiGateway } from "@/lib/cf/aiGateway";
 import type { D1Database } from "@/lib/cf/d1";
 import { isCfError } from "@/lib/cf/errors";
 import {
@@ -248,6 +249,7 @@ const KINDS = [
   "KV namespace",
   "Hyperdrive config",
   "Vectorize index",
+  "AI Gateway",
   "mail route",
 ] as const;
 type Kind = (typeof KINDS)[number];
@@ -345,6 +347,9 @@ async function purgeApp(
         await deleteHyperdrive(cf, resource.resourceId);
       } else if (resource.kind === "vectorize") {
         await deleteVectorizeIndex(cf, resource.resourceId);
+      } else if (resource.kind === "ai-gateway") {
+        // Its stored logs go with it.
+        await deleteAiGateway(cf, resource.resourceId);
       } else {
         await deleteKv(cf, resource.resourceId);
       }

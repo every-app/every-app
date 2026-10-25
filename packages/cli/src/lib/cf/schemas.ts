@@ -234,3 +234,25 @@ export const VectorizeIndexOutput = z.looseObject({
 });
 export type VectorizeIndex = z.infer<typeof VectorizeIndexOutput>;
 export const VectorizeIndexListOutput = z.array(VectorizeIndexOutput);
+
+/**
+ * `cf ai-gateway gateways get|create|update`, and each entry of
+ * `gateways list`: the gateway and its settings. Seen live on 2026-10-24
+ * (cf 1.0.0-beta.14): `id, created_at, modified_at,
+ * rate_limiting_interval, rate_limiting_limit, rate_limiting_technique,
+ * cache_ttl, log_management, log_management_strategy, logpush_public_key,
+ * authentication, collect_logs, cache_invalidate_on_update, logpush,
+ * wholesale, byok_only, fedramp_level, fedramp_mode, zdr,
+ * log_classification, internal, store_id, is_default,
+ * workers_ai_billing_mode, retry_max_attempts, retry_delay, retry_backoff`;
+ * only what the deploy reads is typed, the rest is kept (an update is a
+ * PUT, and sends back every setting it read: lib/cf/aiGateway.ts).
+ */
+export const AiGatewayOutput = z.looseObject({
+  id: z.string(),
+  collect_logs: z.boolean().nullish(),
+  cache_ttl: z.number().nullish(),
+  authentication: z.boolean().nullish(),
+});
+export type AiGateway = z.infer<typeof AiGatewayOutput>;
+export const AiGatewayListOutput = z.array(AiGatewayOutput);

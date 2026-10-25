@@ -525,6 +525,7 @@ async function deploySteps(
       ...ownership,
       manifest,
       secrets: appSecrets,
+      accountId,
     });
     out.emit({ type: "step", step: "app.resources", status: "ok", message: "The app's resources are ready." });
     if (createdHyperdrive) {
@@ -554,6 +555,7 @@ async function deploySteps(
     const target: InstallTarget = {
       workerName,
       organizationId: organization.id,
+      accountId,
       gatewayUrl,
       identityPublicKeys: [identityKey],
       resources,

@@ -6,6 +6,13 @@
  * assigned names here: the ones the built Workers bind are made after the
  * Build Output is installed (./buckets.ts; cf's prebuilt deploy creates
  * none), never recorded, and purging them is a later change.
+ * Hyperdrive configs, named `<worker>--<binding>` after its Worker. Its R2
+ * buckets (`resources.r2`) only get their assigned names here: the ones
+ * the built Workers bind are made after the Build Output is installed
+ * (./buckets.ts; cf's prebuilt deploy creates none), never recorded, and
+ * purging them is a later change. Its AI Gateways are `<worker>-<binding>`
+ * (one hyphen: an id can't hold `--`), with their logging and caching kept
+ * as the manifest says.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -14,12 +21,23 @@
  * before it is created, so a retry after any failure finds it again.
  */
 import {
+  aiGatewayIdFor,
+  isAiGatewayId,
   isReservedName,
   MAX_VECTORIZE_NAME_LENGTH,
+  MAX_AI_GATEWAY_ID_LENGTH,
   RESOURCE_SEPARATOR,
   vectorizeNameFor,
 } from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
+import {
+  aiGatewaySettings,
+  aiGatewayUrl,
+  createAiGateway,
+  findAiGateway,
+  hasAiGatewaySettings,
+  updateAiGateway,
+} from "@/lib/cf/aiGateway";
 import type { D1Database } from "@/lib/cf/d1";
 import { isCfError } from "@/lib/cf/errors";
 import {
@@ -37,7 +55,7 @@ import {
   type HyperdriveCaching,
 } from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
-import type { HyperdriveConfig, VectorizeIndex } from "@/lib/cf/schemas";
+import type { AiGateway, HyperdriveConfig, VectorizeIndex } from "@/lib/cf/schemas";
 import {
   createVectorizeIndex,
   describeVectorizeShape,
@@ -84,7 +102,7 @@ interface ProvisionOptions {
   /** Said for each resource created, or created again after it was deleted. */
   onCreated?: (description: string, kind: OwnedResource["kind"]) => void;
   onRecreated?: (description: string, kind: OwnedResource["kind"]) => void;
-  /** Said when an existing Hyperdrive config is adopted or pointed at a new origin. */
+  /** Said when an existing Hyperdrive config is adopted or pointed at a new origin, or an AI Gateway's settings change. */
   onChanged?: (message: string) => void;
 }
 
@@ -128,6 +146,8 @@ export async function provisionAppResources(
     manifest: EveryAppCliManifest;
     /** The app's secrets file: the origins of its Hyperdrive configs. */
     secrets?: AppSecrets;
+    /** The Cloudflare account: an AI Gateway's URL holds it. */
+    accountId: string;
   },
 ): Promise<InstallTarget["resources"]> {
   const { cf, registration, manifest } = options;
@@ -135,6 +155,21 @@ export async function provisionAppResources(
     options.gatewayDb,
     registration.workerName,
   );
+  /** The app's AI Gateways, provisioned after everything else. */
+  const withGateways = async () => {
+    const gateways = manifest.resources?.aiGateway ?? [];
+    if (gateways.length === 0) return {};
+    const aiGateway: NonNullable<InstallTarget["resources"]["aiGateway"]> = {};
+    for (const { name: binding, ...settings } of gateways) {
+      const id = await provisionAiGateway({ ...options, owned, binding, settings });
+      aiGateway[binding] = {
+        id,
+        accountId: options.accountId,
+        url: aiGatewayUrl(options.accountId, id),
+      };
+    }
+    return { aiGateway };
+  };
   const provision = (kind: "d1" | "kv", binding: string) =>
     provisionOne({
       ...options,
@@ -172,7 +207,9 @@ export async function provisionAppResources(
   const configs = manifest.resources?.hyperdrive ?? [];
   const vectorize = async () =>
     provisionVectorizeIndexes({ ...options, owned });
-  if (configs.length === 0) return { d1, kv, ...r2, ...(await vectorize()) };
+  if (configs.length === 0) {
+    return { d1, kv, ...r2, ...(await vectorize()), ...(await withGateways()) };
+  }
   // Every origin is checked before any config is created or changed.
   const origins = new Map(
     configs.map(({ name: binding }) => {
@@ -197,7 +234,7 @@ export async function provisionAppResources(
       }),
     };
   }
-  return { d1, kv, ...r2, hyperdrive, ...(await vectorize()) };
+  return { d1, kv, ...r2, hyperdrive, ...(await vectorize()), ...(await withGateways()) };
 }
 
 /**
@@ -273,6 +310,64 @@ function vectorizeShape(entry: {
   if (entry.preset !== undefined) return { preset: entry.preset };
   // The strict schema holds one of the two forms.
   return { dimensions: entry.dimensions!, metric: entry.metric! };
+}
+
+/**
+ * The app's AI Gateway for one binding, through the ledger as its D1
+ * databases are ({@link provisionOne}): one of its id not recorded as the
+ * app's is refused (a gateway holds logs of prompts and answers). A
+ * recorded one whose logging or caching differs from the manifest is set
+ * back to it.
+ */
+async function provisionAiGateway(
+  options: ProvisionOptions & {
+    owned: OwnedResource[];
+    binding: string;
+    settings: { collectLogs?: boolean; cacheTtl?: number };
+  },
+): Promise<string> {
+  const { cf, registration, binding, settings, onChanged } = options;
+  const id = aiGatewayIdFor(registration.workerName, binding);
+  if (!isAiGatewayId(id)) {
+    throw new EveryAppError(
+      "INVALID_MANIFEST",
+      `resources.aiGateway: ${binding} would be the AI Gateway "${id}", which Cloudflare refuses (lowercase letters and digits joined by single hyphens, at most ${MAX_AI_GATEWAY_ID_LENGTH} characters)`,
+      { fix: "shorten the binding name in everyapp.config.ts" },
+    );
+  }
+  // The one provisionOne found, when it found one: a new one has the settings.
+  const lookup: { found: AiGateway | null } = { found: null };
+  await provisionOne({
+    ...options,
+    kind: "ai-gateway",
+    name: id,
+    find: async (name) => {
+      lookup.found = await findAiGateway(cf, name);
+      return lookup.found?.id ?? null;
+    },
+    create: async (name) => (await createAiGateway(cf, name, settings)).id,
+  });
+  const existing = lookup.found;
+  if (existing && !hasAiGatewaySettings(existing, settings)) {
+    await updateAiGateway(cf, existing, settings);
+    const description = describeResource({ kind: "ai-gateway", name: id });
+    const wanted = aiGatewaySettings(settings);
+    if ((existing.collect_logs ?? false) !== wanted.collectLogs) {
+      onChanged?.(
+        wanted.collectLogs
+          ? `Turned on request logs on ${description} (collectLogs).`
+          : `Turned off request logs on ${description} (collectLogs: false).`,
+      );
+    }
+    if ((existing.cache_ttl ?? 0) !== wanted.cacheTtl) {
+      onChanged?.(
+        wanted.cacheTtl === 0
+          ? `Turned off response caching on ${description} (no cacheTtl).`
+          : `Set ${description} to cache responses for ${wanted.cacheTtl} s (cacheTtl).`,
+      );
+    }
+  }
+  return id;
 }
 
 /**
@@ -413,7 +508,7 @@ function assignedName(
 async function provisionOne(
   options: ProvisionOptions & {
     owned: OwnedResource[];
-    kind: "d1" | "kv" | "vectorize";
+    kind: "d1" | "kv" | "vectorize" | "ai-gateway";
     binding: string;
     name: string;
     find: (name: string) => Promise<string | null>;
@@ -446,7 +541,7 @@ async function provisionOne(
   } else if (existing) {
     throw new EveryAppError(
       "RESOURCE_NAME_TAKEN",
-      `A ${RESOURCE_LABELS[kind]} named "${name}" already exists in this Cloudflare account\nNo deploy of this app created it; it may belong to another Gateway, app or project.`,
+      `${/^[AEIOU]/.test(RESOURCE_LABELS[kind]) ? "An" : "A"} ${RESOURCE_LABELS[kind]} named "${name}" already exists in this Cloudflare account\nNo deploy of this app created it; it may belong to another Gateway, app or project.`,
       { fix: "delete or rename it", rerun: thisCommand() },
     );
   }

@@ -17,6 +17,12 @@ export const BUILD_SENTINEL = Object.freeze({
   // and a string rewrite of it can't hit anything else.
   workerName: "every-hosted--sentinel",
   organizationId: "everyapp-hosted-deploy-sentinel",
+  /**
+   * The Cloudflare account the app is installed in (an AI Gateway's URL
+   * holds it). Starts with the Worker name's placeholder, so an install
+   * rewrites it before that one.
+   */
+  accountId: "every-hosted--sentinel-account",
   /** The gateway's URL, and so the identity issuer. */
   gatewayUrl: "https://every-hosted--sentinel.invalid",
   publicKey:
@@ -28,6 +34,9 @@ export const BUILD_SENTINEL = Object.freeze({
  * bucket's or Vectorize index's name, a KV namespace's or Hyperdrive
  * config's id. The installer
  * rewrites each by its binding name; the value only has to be recognizable.
+ * bucket's name, a KV namespace's, Hyperdrive config's or AI Gateway's id.
+ * The installer rewrites each by its binding name; the value only has to
+ * be recognizable.
  */
 export function resourceSentinel(binding: string): string {
   return `${BUILD_SENTINEL.workerName}--${binding}`;
@@ -41,8 +50,23 @@ interface SentinelManifest {
     r2?: readonly string[];
     hyperdrive?: readonly { readonly name: string }[];
     vectorize?: readonly { readonly name: string }[];
+    aiGateway?: readonly { readonly name: string }[];
   };
 }
+
+/** Where an AI Gateway takes requests: `https://gateway.ai.cloudflare.com/v1/<account>/<id>`. */
+export function aiGatewayUrl(accountId: string, id: string): string {
+  return `https://gateway.ai.cloudflare.com/v1/${accountId}/${id}`;
+}
+
+/**
+ * What an AI Gateway binding holds (a `json` binding): the gateway's id,
+ * its account, and its URL, under which each provider has a path
+ * (`<url>/openai`, `<url>/anthropic`, `<url>/workers-ai`, `<url>/compat`).
+ * In development `accountId` and `url` are empty: there is no gateway, so
+ * an app calls the provider directly.
+ */
+export type AiGatewayValue = { id: string; accountId: string; url: string };
 
 /** Everything install-specific a Worker is built from, by binding. */
 export interface EveryAppDeployTarget {
@@ -50,6 +74,8 @@ export interface EveryAppDeployTarget {
   workerName: string;
   /** The organization that owns the app; scopes the AppGateway binding. */
   organizationId: string;
+  /** The Cloudflare account the app is installed in. */
+  accountId: string;
   /** The gateway's URL, which is also the identity tokens' issuer. */
   gatewayUrl: string;
   /** SPKI PEM public keys (current + next) that verify identity tokens. */
@@ -63,6 +89,8 @@ export interface EveryAppDeployTarget {
     r2?: Record<string, { name: string }>;
     /** Vectorize indexes by binding, under the names the deploy provisioned. */
     vectorize?: Record<string, { name: string }>;
+    /** AI Gateways by binding: each binding's whole value. */
+    aiGateway?: Record<string, AiGatewayValue>;
   };
 }
 
@@ -84,6 +112,7 @@ export function sentinelDeployTarget(
   return {
     workerName: BUILD_SENTINEL.workerName,
     organizationId: BUILD_SENTINEL.organizationId,
+    accountId: BUILD_SENTINEL.accountId,
     gatewayUrl: BUILD_SENTINEL.gatewayUrl,
     identityPublicKeys: [BUILD_SENTINEL.publicKey],
     resources: {
@@ -97,6 +126,14 @@ export function sentinelDeployTarget(
       vectorize: byBinding(
         resources?.vectorize?.map((index) => index.name),
         (name) => ({ name }),
+      ),
+      aiGateway: byBinding(
+        resources?.aiGateway?.map((gateway) => gateway.name),
+        (id) => ({
+          id,
+          accountId: BUILD_SENTINEL.accountId,
+          url: aiGatewayUrl(BUILD_SENTINEL.accountId, id),
+        }),
       ),
     },
   };

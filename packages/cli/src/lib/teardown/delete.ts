@@ -13,6 +13,12 @@
  * second run finds the record again. A failure on one item is a warning
  * and the item goes to `kept`, with where to delete it by hand; the run
  * goes on.
+ * removed), the apps' D1, KV, R2, Hyperdrive, AI Gateways, the DNS records left at our
+ * names once the Custom Domains went with their Workers, and last of all
+ * the Gateway's D1: it is where the inventory reads the hostnames, so
+ * while a DNS record of theirs is kept it stays too, and a second run
+ * finds the record again. A failure on one item is a warning and the item
+ * goes to `kept`, with where to delete it by hand; the run goes on.
  */
 import { deleteAccessApplication, deleteAccessPolicy } from "@/lib/cf/access";
 import {
@@ -23,6 +29,7 @@ import {
 } from "@/lib/cf/emailRouting";
 import { isCfError } from "@/lib/cf/errors";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
+import { deleteAiGateway } from "@/lib/cf/aiGateway";
 import { deleteR2Bucket } from "@/lib/cf/r2";
 import { deleteD1, deleteKv } from "@/lib/cf/resources";
 import { deleteVectorizeIndex } from "@/lib/cf/vectorize";
@@ -271,6 +278,13 @@ export async function executeTeardown({
   await kindStep("vectorize", plan.vectorize.length, async () => {
     for (const name of plan.vectorize) {
       await attempt("vectorize", describe.vectorize(name), () => deleteVectorizeIndex(cf, name));
+    }
+  });
+
+  // 9c. AI Gateways, and the logs they hold.
+  await kindStep("aiGateway", plan.aiGateway.length, async () => {
+    for (const id of plan.aiGateway) {
+      await attempt("aiGateway", describe.aiGateway(id), () => deleteAiGateway(cf, id));
     }
   });
 

@@ -9,8 +9,13 @@
  *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs, R2
  *     buckets and Vectorize indexes get the names and ids the deploy
  *     provisioned, by binding name;
+ *   - the manifest's D1 databases, KV namespaces, Hyperdrive configs and R2
+ *     buckets get the names and ids the deploy provisioned, by binding name;
+ *   - its AI Gateways' `json` bindings get the gateway's `{ id, accountId,
+ *     url }`: only a json binding whose `value.id` is its own binding's
+ *     placeholder, never any other json binding;
  *   - then every remaining placeholder string: the gateway URL (the
- *     identity issuer), the organization, the identity keys, and the
+ *     identity issuer), the account, the organization, the identity keys, and the
  *     Worker name wherever it appears (the Worker's own name, its audience,
  *     Durable Object and helper service bindings, Workflow names, buckets
  *     named after it);
@@ -97,9 +102,11 @@ export function installWorkerConfig<T extends Record<string, unknown>>(
   const result = mapStrings(installed, (value) =>
     value === keys
       ? JSON.stringify(target.identityPublicKeys)
-      : // The gateway URL first: it holds the Worker name's placeholder.
+      : // The gateway URL and the account first: they hold the Worker
+        // name's placeholder.
         value
           .replaceAll(BUILD_SENTINEL.gatewayUrl, () => target.gatewayUrl)
+          .replaceAll(BUILD_SENTINEL.accountId, () => target.accountId)
           .replaceAll(
             BUILD_SENTINEL.organizationId,
             () => target.organizationId,
@@ -160,6 +167,10 @@ function installResource(
   binding: Binding,
   target: InstallTarget,
 ): void {
+  if (binding.type === "json") {
+    installAiGateway(name, binding, target);
+    return;
+  }
   const kind = String(binding.type);
   if (!isPlaceholderKind(kind)) return;
   const placeholder = resourceSentinel(name);
@@ -174,6 +185,41 @@ function installResource(
     );
   }
   Object.assign(binding, resource);
+}
+
+/**
+ * An AI Gateway's binding, `{ type: "json", value: { id, accountId, url } }`,
+ * gets the gateway the deploy provisioned: only when `value.id` is this
+ * binding's placeholder. Any other json binding is the app's own data and
+ * stays as it is.
+ */
+function installAiGateway(
+  name: string,
+  binding: Binding,
+  target: InstallTarget,
+): void {
+  const value = binding["value"];
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    (value as Record<string, unknown>)["id"] !== resourceSentinel(name)
+  ) {
+    return;
+  }
+  const gateway = target.resources.aiGateway?.[name];
+  if (!gateway) {
+    throw new EveryAppError(
+      "INSTALL_INPUTS_MISSING",
+      `The build binds ${RESOURCE_LABELS["ai-gateway"]} ${name}, which the deploy didn't provision`,
+      { fix: "declare it in everyapp.config.ts's resources.aiGateway" },
+    );
+  }
+  binding["value"] = {
+    id: gateway.id,
+    accountId: gateway.accountId,
+    url: gateway.url,
+  };
 }
 
 /** `value` with `fn` applied to every string in it (not to keys). */
@@ -192,6 +238,7 @@ function mapStrings(value: unknown, fn: (value: string) => string): unknown {
 function placeholdersIn(value: unknown, at = ""): string[] {
   const placeholders = [
     BUILD_SENTINEL.workerName,
+    BUILD_SENTINEL.accountId,
     BUILD_SENTINEL.organizationId,
     BUILD_SENTINEL.gatewayUrl,
     BUILD_SENTINEL.publicKey,

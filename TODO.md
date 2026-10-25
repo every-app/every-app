@@ -1345,6 +1345,24 @@ The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners
 
 - [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.browser`; its bundle check refuses the binding type (`BROWSER is a browser binding, which third-party apps can't have`).
 - [ ] **`everyapp status`'s RESOURCES cell** gains `Browser` once the first lane's cell is on main.
+### Provisioners: AI Gateway (2026-10-25)
+
+`resources.aiGateway: [{ name, collectLogs?, cacheTtl? }]` is a manifest resource kind ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md) section 2): an AI Gateway of the app's own, `<worker>-<binding>`, bound on every Worker as a json binding `{ id, accountId, url }` (empty `accountId` and `url` in development), provisioned through the resource ledger, purged and torn down; `packages/cli/src/lib/cf/aiGateway.ts` is also the Model providers thread's library. Probed live on loop-1.
+
+**Needs Ben (defaults taken)**
+
+- [ ] **One hyphen in the id**, `every-acme-notes-ai-gateway`: Cloudflare refuses `--` in a gateway id, so the id alone doesn't say whose it is (app `notes-ai`'s `GATEWAY` collides with `notes`'s `AI_GATEWAY`); the ledger refuses the second app with `RESOURCE_NAME_TAKEN`. Walk-back: a hash suffix, or an id unrelated to the Worker name recorded in the ledger.
+- [ ] **Ledger, never adopt**: an existing unrecorded gateway of the id is refused (it holds logs of prompts and answers). Walk-back: `adopt: true` per entry.
+- [ ] **Logs on, cache off, no rate limit, `authentication: false` by default.** Unauthenticated because the app sends its own provider key; an authenticated gateway would need a Cloudflare token in the app. Walk-back: manifest fields for each.
+- [ ] **The strict validator counts the longest org key (12)** so a manifest that validates deploys on any Gateway; it refuses ids that would fit with a shorter key.
+- [ ] **A json binding of `{ id, accountId, url }`**, not a text URL (design section 9).
+
+**Follow-ups, no decision needed**
+
+- [ ] `RESOURCES_KEPT` on `delete --purge` doesn't look for an unrecorded gateway of the app's id (D1 and KV only, as Hyperdrive).
+- [ ] `RESOURCE_REPLACED` can't fire for a gateway: its id is its name, so a recorded one deleted and recreated by someone else reads as the app's.
+- [ ] The update is a PUT that sends back every setting it reads; guardrails, OpenTelemetry and spend limits aren't read back, so a deploy that changes `collectLogs` or `cacheTtl` may reset ones set in the dashboard (unverified).
+- [ ] `everyapp status`'s RESOURCES cell, once the first lane adds it.
 
 ### Provisioners: Images (2026-10-25)
 

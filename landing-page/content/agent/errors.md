@@ -748,7 +748,7 @@ Source: `packages/cli/src/lib/package-manager.ts`, `packages/cli/src/lib/childLo
 
 ### INSTALL_INPUTS_MISSING
 
-Installing the Build Output for a self-host deploy (`installWorkerConfig()`, step `app.build`): a Worker's config binds a D1, KV, Hyperdrive or R2 resource whose `name` (D1, R2) or `id` (KV, Hyperdrive) is still that binding's build placeholder (`resourceSentinel(binding)`), but the deploy provisioned no resource of that kind under that binding, which is what happens when `cloudflare.config.ts` binds something `everyapp.config.ts` doesn't declare. Message `The build binds <D1 database|KV namespace|Hyperdrive config|R2 bucket> <binding>, which the deploy didn't provision`.
+Installing the Build Output for a self-host deploy (`installWorkerConfig()`, step `app.build`): a Worker's config binds a D1, KV, Hyperdrive or R2 resource whose `name` (D1, R2) or `id` (KV, Hyperdrive) is still that binding's build placeholder (`resourceSentinel(binding)`), but the deploy provisioned no resource of that kind under that binding, which is what happens when `cloudflare.config.ts` binds something `everyapp.config.ts` doesn't declare. Message `The build binds <D1 database|KV namespace|Hyperdrive config|R2 bucket> <binding>, which the deploy didn't provision`. The same for a `json` binding whose `value.id` is its binding's placeholder (an AI Gateway's) when `resources.aiGateway` declares no gateway of that binding: `The build binds AI Gateway <binding>, which the deploy didn't provision`, `data.fix` `declare it in everyapp.config.ts's resources.aiGateway`.
 
 **Fix:** `data.fix`: `declare it in everyapp.config.ts's resources`. No rerun, not retryable.
 
@@ -1209,6 +1209,7 @@ Source: `packages/cli/src/lib/app/resources.ts`, `packages/perimeter/src/manifes
 ### RESOURCE_NAME_TAKEN
 
 Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1 or KV: `A <D1 database|KV namespace|Vectorize index> named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it` (a Vectorize index is refused whatever its shape: its vectors are whoever wrote them's). Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
+Self-host `deploy` (step `app.resources`) found a resource under the app's assigned name that no deploy of this app recorded as its own in `_everyapp_app_resources`; a name proves nothing, so it is refused on every attempt. D1, KV or AI Gateway: `A <D1 database|KV namespace> named "<name>" already exists in this Cloudflare account` (`An AI Gateway named "<id>" …`) then `No deploy of this app created it; it may belong to another Gateway, app or project.`, `data.fix` `delete or rename it`. Hyperdrive, when the existing config doesn't connect to the origin in `.everyapp/secrets.env` (one that does is adopted): `A Hyperdrive config named "<name>" already exists in this Cloudflare account` then `No deploy of this app created it.`, `data.fix` `to use it, set <BINDING>_ORIGIN_URL in .everyapp/secrets.env to the URL of the database it connects to; otherwise delete or rename it`. A race, when Cloudflare says the name was taken between the lookup and the create: `<Kind> "<name>" was created by someone else while this deploy was creating it`, `data.fix` `delete or rename it`. (The Worker's equivalent is `WORKER_NAME_TAKEN`.)
 
 **Fix:** as above; each sets `data.rerun` to this same command. Not retryable.
 
@@ -1225,6 +1226,7 @@ Source: `packages/cli/src/lib/app/buckets.ts`
 ### RESOURCE_OWNED
 
 Recording a resource as the app's in `_everyapp_app_resources` hit one of its unique indexes: another app already records that resource id, or that name, under the same kind (Worker, D1, KV, Hyperdrive, Vectorize). Raised while claiming the Worker and provisioning resources in a self-host `deploy` (step `app.resources`). Message `<Kind> "<name>" is recorded as another app's` then `<workerName> can't use it.` For an Email Routing address the same violation is reported as `EMAIL_ADDRESS_TAKEN`.
+Recording a resource as the app's in `_everyapp_app_resources` hit one of its unique indexes: another app already records that resource id, or that name, under the same kind (Worker, D1, KV, Hyperdrive, AI Gateway). Raised while claiming the Worker and provisioning resources in a self-host `deploy` (step `app.resources`). Message `<Kind> "<name>" is recorded as another app's` then `<workerName> can't use it.` For an Email Routing address the same violation is reported as `EMAIL_ADDRESS_TAKEN`.
 
 **Fix:** `data.fix`: `rename the binding in everyapp.config.ts`. No rerun, not retryable.
 
@@ -1739,6 +1741,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`, `packages/cli/src/lib/output/report
 ### CF_NOT_FOUND
 
 `not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database) or `10200` (Workflow), Vectorize's `vectorize.index.not_found` (`[3000]`, 404) or `vectorize.index.deleted` (`[3005]`, 410: an index deleted a moment ago, whose name a create takes at once), or the text `not found` or `does not exist`. Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
+`not_found`: API code `10007` (Worker), `10009` (KV key), `7404` (D1 database) or `10200` (Workflow), or the text `not found` or `does not exist` (an AI Gateway's `[7002] Not Found`). Most callers catch this kind themselves (`isCfError(error, "not_found")`); it is reported only where none did.
 
 **Fix:** none; not retryable.
 
@@ -1747,6 +1750,7 @@ Source: `packages/cli/src/lib/cf/errors.ts`
 ### CF_ALREADY_EXISTS
 
 `already_exists`: API code `7502` (D1) or `10014` (KV), Vectorize's `vectorize.index.duplicate_name` (`[3002]`, 409), or the text `already exists`: a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
+`already_exists`: API code `7502` (D1) or `10014` (KV), or the text `already exists` (an AI Gateway's `[7001] An object with this id already exists`): a second resource with the same name was refused. The deploy's resource creation turns this into `RESOURCE_NAME_TAKEN`; it is reported raw elsewhere.
 
 **Fix:** none; not retryable.
 
@@ -2463,6 +2467,7 @@ Source: `packages/cli/src/commands/delete/index.ts`
 ### RESOURCE_RECREATED
 
 `deploy`, step `app.resources`: a recorded database, namespace, Hyperdrive config or Vectorize index no longer exists in the account; a new, empty one is created.
+`deploy`, step `app.resources`: a recorded database, namespace, bucket, config or AI Gateway no longer exists in the account; a new, empty one is created.
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`
 

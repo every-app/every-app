@@ -33,6 +33,7 @@ import {
   type WorkflowBinding,
   type WorkflowExport,
   type VectorizeBinding,
+  aiGatewayUrl,
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
@@ -2001,5 +2002,117 @@ describe("Vectorize indexes (resources.vectorize)", () => {
         (binding) => binding.type === "vectorize",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("AI Gateways (resources.aiGateway)", () => {
+  const notes = {
+    id: "notes",
+    resources: {
+      d1: ["DB"],
+      aiGateway: [{ name: "AI_GATEWAY", collectLogs: false, cacheTtl: 60 }],
+    },
+    workers: [{ name: "digest" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: notes,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _digest, ...digest } = everyAppAuxiliaryWorker({
+      manifest: notes,
+      worker: "digest",
+      entrypoint: "/app/src/digest.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, digest };
+  };
+
+  it("binds each gateway's placeholder as a json binding on the app's Worker and every helper", () => {
+    const { app, digest } = build("production");
+    const placeholder = {
+      type: "json",
+      value: {
+        id: resourceSentinel("AI_GATEWAY"),
+        accountId: BUILD_SENTINEL.accountId,
+        url: `https://gateway.ai.cloudflare.com/v1/${BUILD_SENTINEL.accountId}/${resourceSentinel("AI_GATEWAY")}`,
+      },
+    };
+    for (const env of [app.env, digest.env] as Record<string, unknown>[]) {
+      expect(env["AI_GATEWAY"]).toEqual(placeholder);
+    }
+    // The settings are the deploy's: nothing of them reaches the Worker.
+    expect(JSON.stringify(app.env)).not.toContain("collectLogs");
+  });
+
+  it("puts the account and every gateway in sentinelDeployTarget()", () => {
+    const target = sentinelDeployTarget(notes);
+    expect(target.accountId).toBe(BUILD_SENTINEL.accountId);
+    expect(target.resources.aiGateway).toEqual({
+      AI_GATEWAY: {
+        id: resourceSentinel("AI_GATEWAY"),
+        accountId: BUILD_SENTINEL.accountId,
+        url: aiGatewayUrl(
+          BUILD_SENTINEL.accountId,
+          resourceSentinel("AI_GATEWAY"),
+        ),
+      },
+    });
+    // The account's placeholder starts with the Worker name's, so an
+    // install that rewrote the Worker name first would mangle it.
+    expect(BUILD_SENTINEL.accountId.startsWith(BUILD_SENTINEL.workerName)).toBe(
+      true,
+    );
+  });
+
+  it("gives development the deploy's id and no account or URL: there is no gateway", () => {
+    const { app, digest } = build("development");
+    const dev = {
+      type: "json",
+      value: { id: "every-notes-ai-gateway", accountId: "", url: "" },
+    };
+    expect((app.env as Record<string, unknown>)["AI_GATEWAY"]).toEqual(dev);
+    expect((digest.env as Record<string, unknown>)["AI_GATEWAY"]).toEqual(dev);
+  });
+
+  it("types each gateway under its own binding name as a json value", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.AI_GATEWAY).toEqualTypeOf<{
+      type: "json";
+      value: { id: string; accountId: string; url: string };
+    }>();
+  });
+
+  it("refuses a gateway that reuses a binding name the Worker already has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "notes",
+          resources: { d1: ["DB"], aiGateway: [{ name: "DB" }] },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow("aiGateway: DB reuses a binding name the Worker already has.");
+  });
+
+  it("leaves a manifest without gateways with no json binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "json",
+      ),
+    ).toEqual([]);
+    expect(sentinelDeployTarget(manifest).resources.aiGateway).toEqual({});
   });
 });

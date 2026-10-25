@@ -154,6 +154,9 @@ async function deploy(manifest: EveryAppCliManifest): Promise<string> {
  * Hyperdrive config, a Vectorize index, DNS left at our names, and a
  * Worker, database, namespace, bucket, config, index and record that are
  * someone else's.
+ * Hyperdrive config, an AI Gateway, DNS left at our names, and a Worker,
+ * database, namespace, bucket, config, gateway and record that are
+ * someone else's (a gateway named `everyapp` among them: not every-*).
  */
 async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean } = {}): Promise<void> {
   await deploy(TODO);
@@ -200,6 +203,9 @@ async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean 
     config: { dimensions: 384, metric: "cosine" },
     created_on: "2026-10-24T00:00:00.000Z",
   });
+  for (const id of [`${TODO_WORKER}-ai-gateway`, "support-bot", "everyapp"]) {
+    account.aiGateways.set(id, { id, collect_logs: true, cache_ttl: 0 });
+  }
   // At the app's host: a record a Custom Domain's kind (ours to clear once
   // the domain is gone) and a TXT that isn't; a wildcard and www that are
   // someone else's.
@@ -405,6 +411,7 @@ describe("teardown --dry-run", () => {
       buckets: [...account.buckets.keys()].sort(),
       hyperdrive: [...account.hyperdrive.keys()].sort(),
       vectorize: [...account.vectorizeIndexes.keys()].sort(),
+      aiGateways: [...account.aiGateways.keys()].sort(),
       workflows: [...account.workflows.keys()].sort(),
       packs: account.certificatePacks.map((pack) => pack.id),
       dns: account.dnsRecords.map((record) => `${record.type} ${record.name}`),
@@ -423,6 +430,7 @@ describe("teardown --dry-run", () => {
       buckets: [...account.buckets.keys()].sort(),
       hyperdrive: [...account.hyperdrive.keys()].sort(),
       vectorize: [...account.vectorizeIndexes.keys()].sort(),
+      aiGateways: [...account.aiGateways.keys()].sort(),
       workflows: [...account.workflows.keys()].sort(),
       packs: account.certificatePacks.map((pack) => pack.id),
       dns: account.dnsRecords.map((record) => `${record.type} ${record.name}`),
@@ -445,6 +453,7 @@ describe("teardown --dry-run", () => {
       r2: [`${TODO_WORKER}--media`, `${TODO_WORKER}--uploads`],
       hyperdrive: [{ name: `${TODO_WORKER}--pg`, id: "hd-ours" }],
       vectorize: [`${TODO_WORKER}--vectors`],
+      aiGateway: [`${TODO_WORKER}-ai-gateway`],
       access: {
         applications: expect.arrayContaining([
           expect.objectContaining({ name: "Every App gateway" }),
@@ -483,6 +492,9 @@ describe("teardown --dry-run", () => {
     expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, access: 3, email: 2, dns: 3 });
     // Nothing of what isn't ours.
     expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|product-search|www\.|\*\./);
+    expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, aiGateway: 1, access: 3, email: 2, dns: 3 });
+    // Nothing of what isn't ours.
+    expect(JSON.stringify(plan)).not.toMatch(/other-worker|customer-data|customer-cache|customer-backups|warehouse|support-bot|"everyapp"|www\.|\*\./);
   });
 });
 
@@ -502,6 +514,7 @@ describe("teardown", () => {
     expect(kvTitles()).toEqual(["customer-cache"]);
     expect([...account.hyperdrive.keys()]).toEqual(["hd-theirs"]);
     expect([...account.vectorizeIndexes.keys()]).toEqual(["product-search"]);
+    expect([...account.aiGateways.keys()].sort()).toEqual(["everyapp", "support-bot"]);
     // R2: the empty bucket went; the one with objects is kept, and said.
     expect([...account.buckets.keys()].sort()).toEqual(["customer-backups", `${TODO_WORKER}--uploads`]);
     expect(warnings("TEARDOWN_DELETE_FAILED")).toEqual([
@@ -556,6 +569,7 @@ describe("teardown", () => {
         `KV namespace "${GATEWAY}-OAUTH_KV"`,
         `R2 bucket "${TODO_WORKER}--media"`,
         `Hyperdrive config "${TODO_WORKER}--pg"`,
+        `AI Gateway "${TODO_WORKER}-ai-gateway"`,
         `DNS A record at todo.${HOST}`,
       ]),
     );
@@ -573,7 +587,8 @@ describe("teardown", () => {
     expect(order(`Worker "${TODO_WORKER}"`)).toBeLessThan(order(`Worker "${GATEWAY}"`));
     expect(order(`Worker "${GATEWAY}"`)).toBeLessThan(order(`D1 database "${TODO_WORKER}"`));
     expect(order(`D1 database "${TODO_WORKER}"`)).toBeLessThan(order(`KV namespace "${TODO_WORKER}"`));
-    expect(order(`Hyperdrive config "${TODO_WORKER}--pg"`)).toBeLessThan(order(`DNS A record at todo.${HOST}`));
+    expect(order(`Hyperdrive config "${TODO_WORKER}--pg"`)).toBeLessThan(order(`AI Gateway "${TODO_WORKER}-ai-gateway"`));
+    expect(order(`AI Gateway "${TODO_WORKER}-ai-gateway"`)).toBeLessThan(order(`DNS A record at todo.${HOST}`));
     expect(order(`DNS A record at todo.${HOST}`)).toBeLessThan(order(`D1 database "${GATEWAY}"`));
     expect(removed.at(-1)).toBe(`D1 database "${GATEWAY}"`);
     // Every Worker went with its references: the Gateway and the app bind each other.
@@ -967,6 +982,7 @@ describe("teardown review: what it must leave alone", () => {
       /^r2 buckets list/,
       /^hyperdrive list/,
       /^vectorize list/,
+      /^ai-gateway gateways list/,
       /^zero-trust organization get/,
       /^zero-trust access applications list/,
       /^zero-trust access policies list/,

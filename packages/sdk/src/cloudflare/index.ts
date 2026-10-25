@@ -27,6 +27,7 @@ export {
   workflowNameFor,
   type AiBinding,
   type BrowserBinding,
+  type AiGatewayBinding,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -46,6 +47,7 @@ export {
   type GatewayBinding,
   type HyperdriveBinding,
   type ImagesBinding,
+  type JsonBinding,
   type KvBinding,
   type SecretBinding,
   type ServiceBinding,
@@ -56,8 +58,10 @@ export {
   type WorkflowExport,
 } from "./worker.js";
 export {
+  aiGatewayUrl,
   BUILD_SENTINEL,
   resourceSentinel,
   sentinelDeployTarget,
+  type AiGatewayValue,
   type EveryAppDeployTarget,
 } from "./sentinel.js";

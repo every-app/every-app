@@ -7,7 +7,7 @@ The manifest is the single source of truth for an app's identity, resources and 
 
 ## Shape and loading
 
-The file default-exports a plain object literal ending in `as const`. Every manifest in the repository does this; the test fixtures add `satisfies EveryAppCliManifest` (`packages/cli/src/test/fixtures/manifests/postiz.ts`). `as const` matters: `everyAppWorker<const M>()` infers the Worker's `Env` type from the literal (each D1, KV, R2, Durable Object, Workflow, Hyperdrive and helper-Worker binding name becomes a typed key), so a widened type loses the typed bindings. `defineEveryApp(manifest)` exists in `packages/perimeter/src/manifest/manifest.ts` as an identity helper typed `(EveryAppManifest) => EveryAppManifest`; no app in the repository uses it, and the perimeter is not a package apps depend on.
+The file default-exports a plain object literal ending in `as const`. Every manifest in the repository does this; the test fixtures add `satisfies EveryAppCliManifest` (`packages/cli/src/test/fixtures/manifests/postiz.ts`). `as const` matters: `everyAppWorker<const M>()` infers the Worker's `Env` type from the literal (each D1, KV, R2, Durable Object, Workflow, Hyperdrive, AI Gateway and helper-Worker binding name becomes a typed key), so a widened type loses the typed bindings. `defineEveryApp(manifest)` exists in `packages/perimeter/src/manifest/manifest.ts` as an identity helper typed `(EveryAppManifest) => EveryAppManifest`; no app in the repository uses it, and the perimeter is not a package apps depend on.
 
 `cloudflare.config.ts` consumes it like this (`starter/cloudflare.config.ts`):
 
@@ -145,6 +145,22 @@ How each resource is named in the Cloudflare account, from the Worker name (`W`,
 | `workers`              | `W--<name>`                            | `helperWorkerName()`; at most 63 characters (`Helper Worker <name> is longer than Cloudflare's 63 characters; shorten its name in everyapp.config.ts.`)                                                  |
 
 Every D1 database, KV namespace, R2 bucket and Vectorize index is bound on all of the app's Workers (the app's own and each helper). In production the binding carries the ids and names the deploy provisioned (placeholders from `sentinelDeployTarget()` until `everyapp deploy` or a hosted deployer rewrites them; a bare `cf build` or `cf deploy` is refused unless `EVERYAPP_BUILD=1`). In development (`cf dev`, or no mode): a D1 binding gets the fixed local id `localD1Id(W, binding)` (the first 32 hex characters of `sha256("W:binding")`, which `cf d1 … --local` and `everyapp db` both address); a KV binding gets id `<binding>-W` when the manifest has helper Workers (so helpers share the namespace in dev) and cf's default otherwise; an R2 binding is named by the production rule.
+Binding names are what the Worker reads from `env`. In the strict schema, `resources.d1`, `resources.kv`, `resources.r2`, `resources.ai`, `resources.workflows[].name` and `resources.hyperdrive[].name` must match `^[A-Za-z_][A-Za-z0-9_]*$` (`binding names must be JavaScript identifiers`); `resources.durableObjects[].name` is any string; `resources.aiGateway[].name` is stricter, below. Unknown keys inside `resources` are refused in the strict schema. One name may be used once across `d1`, `kv`, `r2`, `hyperdrive`, `ai` and `aiGateway` (`the binding <NAME> is declared twice in resources.`). The SDK refuses a binding that reuses a name the Worker already has (`r2: <NAME> reuses a binding name the Worker already has.`, `hyperdrive: …`, `ai: …`, `aiGateway: …`, `workflows: <NAME> (<Class>) reuses a binding or class name the Worker already has.`).
+
+How each resource is named in the Cloudflare account, from the Worker name (`W`, e.g. `every-acme-notes`) and the binding:
+
+| Field                  | Account name                           | Rule                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resources.d1`         | `W` for `DB`; `W--<binding>` otherwise | `resourceNameFor()`: the suffix is the binding lowercased with `_` turned into `-`                                                                                                                        |
+| `resources.kv`         | `W` for `KV`; `W--<binding>` otherwise | same                                                                                                                                                                                                      |
+| `resources.r2`         | `W` for `R2`; `W--<binding>` otherwise | `bucketNameFor()`; `MAX_BUCKET_NAME_LENGTH` is 63. `R2` is the bucket apps bound by hand before `resources.r2` existed                                                                                    |
+| `resources.workflows`  | `W--<binding>` always                  | `workflowNameFor()`; at most 64 characters (`workflows: <NAME> would be the Workflow "<name>", longer than Cloudflare's 64 characters; shorten the binding name.`)                                        |
+| `resources.hyperdrive` | `W--<binding>` always                  | `hyperdriveNameFor()` in `packages/cli/src/lib/app/resources.ts` (the same suffix rule as D1 and KV); the config is created and reconciled by the deploy through `packages/cli/src/lib/cf/hyperdrive.ts`  |
+| `resources.ai`         | none                                   | Workers AI is account-wide: nothing is created, recorded or deleted (`### Workers AI` below)                                                                                                              |
+| `resources.aiGateway`  | `W-<binding>` always (one hyphen)      | `aiGatewayIdFor()`: the gateway's id, which Cloudflare allows only lowercase letters and digits joined by single hyphens, at most 64 characters (`isAiGatewayId()`), so it can't carry the `--` separator |
+| `workers`              | `W--<name>`                            | `helperWorkerName()`; at most 63 characters (`Helper Worker <name> is longer than Cloudflare's 63 characters; shorten its name in everyapp.config.ts.`)                                                   |
+
+Every D1 database, KV namespace and R2 bucket is bound on all of the app's Workers (the app's own and each helper). In production the binding carries the ids and names the deploy provisioned (placeholders from `sentinelDeployTarget()` until `everyapp deploy` or a hosted deployer rewrites them; a bare `cf build` or `cf deploy` is refused unless `EVERYAPP_BUILD=1`). In development (`cf dev`, or no mode): a D1 binding gets the fixed local id `localD1Id(W, binding)` (the first 32 hex characters of `sha256("W:binding")`, which `cf d1 … --local` and `everyapp db` both address); a KV binding gets id `<binding>-W` when the manifest has helper Workers (so helpers share the namespace in dev) and cf's default otherwise; an R2 binding is named by the production rule.
 
 ### Durable Objects and Workflows
 
@@ -264,6 +280,49 @@ Both or neither is refused: `<NAME>: a preset sets the index's dimensions and me
 The binding. In production `{ type: "vectorize", name }` on every Worker of the app (the app's own and each helper), `name` the index the deploy provisioned (`resourceSentinel(<binding>)` until the install rewrites it). In development `{ type: "vectorize", name: "every-<id>--<binding>", dev: { remote: true } }`: the account's index of the dev Worker's name. Cloudflare has no local Vectorize, so `everyapp dev` binds nothing local; calls reach that index only once the app's `vite.config.ts` turns the Cloudflare plugin's `remoteBindings` on (the starter has it off) and `cf auth login` has run, and until then every call throws (`Binding VECTORS needs to be run remotely`; [/docs/agent/dev](/docs/agent/dev#vectorize-in-development)). The typed `Env` has `VectorizeBinding` under each binding name, which `cf workers types` turns into `VectorizeIndex`.
 
 What the deploy does (`packages/cli/src/lib/app/resources.ts`, through `packages/cli/src/lib/cf/vectorize.ts`): checks every index name against the 64 characters first (`VECTORIZE_NAME_TOO_LONG`), then for each index `cf vectorize get <name>`; one the app recorded (`_everyapp_app_resources`, kind `vectorize`, the name as its id) is used when it has the declared shape and refused with `VECTORIZE_CONFIG_MISMATCH` when it doesn't (an index can't be reshaped: rename the binding to make a new one, or change the manifest back); one nobody recorded is `RESOURCE_NAME_TAKEN` (an index holds whoever wrote it's vectors); none is recorded as the app's, then created with `cf vectorize create --body @<file>` (`{ name, config: { dimensions, metric } }` or `{ name, config: { preset } }`; a body file because cf reads a flag value starting with `@` as a file). A recorded index that was deleted is made again, empty, after a `RESOURCE_RECREATED` warning. cf's own deploy never makes an index, so the index exists before the upload. `delete --purge` deletes every recorded index (`cf vectorize delete <name> --force`, its vectors with it) and names any index of the app's names it never recorded in `RESOURCES_KEPT`; `everyapp teardown` deletes every index named `every-*`. Vectorize is not available on the dispatch tier (below).
+
+### AI Gateway
+
+`resources.aiGateway[]` takes `{ name, collectLogs?, cacheTtl? }`: an [AI Gateway](https://developers.cloudflare.com/ai-gateway/) of the app's own in the Cloudflare account, for the model calls the app makes itself.
+
+```ts
+resources: {
+  aiGateway: [{ name: "AI_GATEWAY", collectLogs: true, cacheTtl: 0 }],
+},
+```
+
+- `resources.aiGateway[].name`: the binding, letters and digits joined by single underscores (`^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$`; otherwise `an AI Gateway's binding is letters and digits joined by single underscores (it ends the gateway's id, which takes single hyphens only)`), since it ends the gateway's id.
+- `resources.aiGateway[].collectLogs`: whether the gateway keeps a log of each request (prompt, answer, tokens, cost) for its dashboard; `true` by default.
+- `resources.aiGateway[].cacheTtl`: how many seconds the gateway serves a repeated request from its cache, a whole number from 0; `0` (the default) caches nothing.
+
+**The id.** `W-<binding>` with the binding lowercased and `_` as `-`, joined by one hyphen (`aiGatewayIdFor()`): `every-acme-notes` and `AI_GATEWAY` give `every-acme-notes-ai-gateway`. Cloudflare refuses `--`, `_` and uppercase in a gateway id (`[7001] not valid ID format`) and more than 64 characters, so the `--` separator the other kinds carry can't be used; the id alone doesn't say whose it is (app `notes-ai`'s `GATEWAY` would be the same id), and the resource ledger does instead (below). The strict validator refuses a binding whose id could pass 64 characters on any Gateway, counting the longest organization key (12 characters): `resources.aiGateway: <NAME> would make an AI Gateway id of up to <n> characters (every-<orgKey>-<id>-<suffix>), longer than Cloudflare's 64; shorten the binding name.`
+
+**The binding** is a `json` binding on every Worker of the app (the app's own and each helper), typed `{ type: "json"; value: { id: string; accountId: string; url: string } }`, so the Worker reads `env.AI_GATEWAY.id`, `env.AI_GATEWAY.accountId` and `env.AI_GATEWAY.url`:
+
+| Mode        | `id`                                                 | `accountId` | `url`                                                   |
+| ----------- | ---------------------------------------------------- | ----------- | ------------------------------------------------------- |
+| Production  | the gateway's id                                     | the account | `https://gateway.ai.cloudflare.com/v1/<accountId>/<id>` |
+| Development | the id the deploy would use (`every-<id>-<binding>`) | `""`        | `""`                                                    |
+
+In production the build holds placeholders (`value.id` = `resourceSentinel(<binding>)`, `value.accountId` = `BUILD_SENTINEL.accountId`), which the install rewrites; it rewrites only a json binding whose `value.id` is its own binding's placeholder, never any other json binding. In development there is no gateway: an app treats an empty `url` as "call the provider directly".
+
+**Using it.** With Workers AI, pass the id; with a provider's own client and the app's own key (one of its `secrets`), put the client's base URL under the gateway (Anthropic's path is `/anthropic`, the OpenAI-compatible endpoint `/compat`):
+
+```ts
+await env.AI.run(model, input, { gateway: { id: env.AI_GATEWAY.id } });
+
+const openai = new OpenAI({
+  apiKey: env.OPENAI_API_KEY,
+  // Empty in development: straight to the provider.
+  baseURL: env.AI_GATEWAY.url ? `${env.AI_GATEWAY.url}/openai` : undefined,
+});
+```
+
+The gateway is unauthenticated (`authentication: false`): the provider key in the request is what authorizes the call, and the gateway adds logs, caching and analytics.
+
+**The Gateway's AI proxy is separate.** An app that lists `providers` calls models through the Gateway with the Gateway's keys (`createGatewayFetch()`, [providers](#providers)); whatever account-level AI Gateway the Gateway routes those calls through is the Gateway's setting, shared by every app. `resources.aiGateway` is the app's alone: its logs, cache and analytics hold only the app's own calls.
+
+**What the deploy does** (`packages/cli/src/lib/app/resources.ts`, `packages/cli/src/lib/cf/aiGateway.ts`): looks the id up (`cf ai-gateway gateways get <id>`); one the resource ledger records as the app's is used, and set back to the manifest's `collectLogs` and `cacheTtl` when they differ (`cf ai-gateway gateways update`, said as a `progress` line); one that exists unrecorded is refused, `RESOURCE_NAME_TAKEN` (a gateway holds logs of prompts and answers, so it is never adopted); none is recorded as the app's (ledger kind `ai-gateway`, the id as `resource_id`), then created (`cf ai-gateway gateways create --body @<file>` with `collect_logs`, `cache_ttl`, `cache_invalidate_on_update: false`, no rate limit and `authentication: false`). `everyapp delete --purge` deletes a recorded gateway and its stored logs (`cf ai-gateway gateways delete <id> --force`); `everyapp teardown` finds the account's `every-*` gateways (`cf ai-gateway gateways list --search every-`) and deletes them. AI Gateways are not available on the dispatch tier (below), and the hosted deployer refuses the json binding.
 
 ## workers
 
@@ -718,6 +777,7 @@ Real manifests in the repository: `starter/everyapp.config.ts` (the starter abov
 - `packages/cli/src/lib/app/installBuildOutput.ts`
 - `packages/cli/src/lib/cf/hyperdrive.ts`
 - `packages/cli/src/lib/cf/vectorize.ts`
+- `packages/cli/src/lib/cf/aiGateway.ts`
 - `packages/cli/src/lib/gateway/registry.ts`
 - `packages/cli/src/lib/output/command.ts`
 - `packages/cli/src/lib/package-manager.ts`

@@ -19,6 +19,7 @@ const PUBLIC_KEY =
 const INPUTS: InstallTarget = {
   workerName: "every-acme-todo",
   organizationId: "org-1",
+  accountId: "0123456789abcdef0123456789abcd01",
   gatewayUrl: "https://apps.example.com",
   identityPublicKeys: [PUBLIC_KEY],
   resources: {

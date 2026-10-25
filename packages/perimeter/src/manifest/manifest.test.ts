@@ -16,6 +16,9 @@ import {
   manifestTierProblems,
   DISPATCH_INBOUND_PROBLEM,
   type CapabilityRequest,
+  aiGatewayIdFor,
+  isAiGatewayId,
+  bindingNamesOf,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -1888,5 +1891,131 @@ describe("Images (resources.images)", () => {
     expect(
       manifestTierProblems({ resources: { images: [] } }, "dispatch"),
     ).toEqual([]);
+  });
+});
+
+describe("AI Gateways (resources.aiGateway)", () => {
+  const notes = {
+    id: "notes",
+    resources: {
+      aiGateway: [
+        { name: "AI_GATEWAY" },
+        { name: "SUMMARIES", collectLogs: false, cacheTtl: 3600 },
+      ],
+    },
+  };
+
+  it("accepts gateways with their settings in both schemas", () => {
+    expect(validateManifestStrict(notes)).toEqual(notes);
+    expect(validateManifest(notes)).toEqual(notes);
+  });
+
+  it("names a gateway <worker>-<binding>, one hyphen, since an id can't hold --", () => {
+    expect(aiGatewayIdFor("every-acme-notes", "AI_GATEWAY")).toBe(
+      "every-acme-notes-ai-gateway",
+    );
+    expect(aiGatewayIdFor("every-notes", "SUMMARIES")).toBe(
+      "every-notes-summaries",
+    );
+    expect(isAiGatewayId("every-acme-notes-ai-gateway")).toBe(true);
+  });
+
+  it.each([
+    ["two hyphens in a row", "every-acme-notes--ai"],
+    ["an underscore", "every_acme"],
+    ["an uppercase letter", "Every-acme"],
+    ["a trailing hyphen", "every-acme-"],
+    ["65 characters", "a".repeat(65)],
+  ])("knows Cloudflare refuses an id with %s", (_case, id) => {
+    expect(isAiGatewayId(id)).toBe(false);
+  });
+
+  it("accepts an id of exactly 64 characters", () => {
+    expect(isAiGatewayId("a".repeat(64))).toBe(true);
+  });
+
+  it.each([
+    [
+      "a binding with a leading underscore (the id would hold --)",
+      { aiGateway: [{ name: "_GATEWAY" }] },
+      /resources\.aiGateway\.0\.name: an AI Gateway's binding is letters and digits joined by single underscores/,
+    ],
+    [
+      "a binding with two underscores in a row",
+      { aiGateway: [{ name: "AI__GATEWAY" }] },
+      /resources\.aiGateway\.0\.name/,
+    ],
+    [
+      "a binding with a trailing underscore",
+      { aiGateway: [{ name: "GATEWAY_" }] },
+      /resources\.aiGateway\.0\.name/,
+    ],
+    [
+      "a binding that isn't an identifier",
+      { aiGateway: [{ name: "ai-gateway" }] },
+      /resources\.aiGateway\.0\.name/,
+    ],
+    [
+      "a negative cache TTL",
+      { aiGateway: [{ name: "AI_GATEWAY", cacheTtl: -1 }] },
+      /resources\.aiGateway\.0\.cacheTtl/,
+    ],
+    [
+      "a fractional cache TTL",
+      { aiGateway: [{ name: "AI_GATEWAY", cacheTtl: 1.5 }] },
+      /resources\.aiGateway\.0\.cacheTtl/,
+    ],
+    [
+      "a setting the kind doesn't have",
+      { aiGateway: [{ name: "AI_GATEWAY", authentication: true }] },
+      /Unrecognized key/,
+    ],
+    [
+      "a gateway named like a D1 database",
+      { d1: ["DB"], aiGateway: [{ name: "DB" }] },
+      /the binding DB is declared twice/,
+    ],
+  ])("refuses %s", (_case, resources, problem) => {
+    expect(() => validateManifestStrict({ id: "notes", resources })).toThrow(
+      problem,
+    );
+  });
+
+  it("refuses a binding whose id could pass 64 characters with the longest org key", () => {
+    // every-<12-char org key>-<id>-<suffix>: 20 characters before the id.
+    const id = "a".repeat(30);
+    const fits = { id, resources: { aiGateway: [{ name: "G".repeat(14) }] } };
+    expect(validateManifestStrict(fits)).toEqual(fits);
+    expect(() =>
+      validateManifestStrict({
+        id,
+        resources: { aiGateway: [{ name: "G".repeat(15) }] },
+      }),
+    ).toThrow(
+      `resources.aiGateway: ${"G".repeat(15)} would make an AI Gateway id of up to 65 characters (every-<orgKey>-${id}-${"g".repeat(15)}), longer than Cloudflare's 64; shorten the binding name.`,
+    );
+  });
+
+  it("counts a gateway's binding among the app's, so no secret takes it", () => {
+    expect(bindingNamesOf(notes).has("AI_GATEWAY")).toBe(true);
+    expect(() =>
+      validateManifestStrict({ ...notes, secrets: ["AI_GATEWAY"] }),
+    ).toThrow(/secrets: AI_GATEWAY is one of the app's bindings/);
+  });
+
+  it("is refused on the dispatch tier only", () => {
+    expect(manifestTierProblems(notes, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(notes, "dispatch")).toEqual([
+      "resources.aiGateway: AI Gateways aren't available to apps in a dispatch namespace yet",
+    ]);
+  });
+
+  it("doesn't refuse a gateway setting it doesn't know at registration", () => {
+    expect(
+      validateManifest({
+        id: "notes",
+        resources: { aiGateway: [{ name: "AI_GATEWAY", guardrails: true }] },
+      }).resources?.aiGateway,
+    ).toEqual([{ name: "AI_GATEWAY" }]);
   });
 });

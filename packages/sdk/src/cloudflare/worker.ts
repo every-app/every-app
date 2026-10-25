@@ -3,7 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
-import { sentinelDeployTarget, type EveryAppDeployTarget } from "./sentinel.js";
+import {
+  sentinelDeployTarget,
+  type AiGatewayValue,
+  type EveryAppDeployTarget,
+} from "./sentinel.js";
 
 /** A Durable Object or Workflow class, and the helper Worker defining it. */
 interface ClassResource {
@@ -31,6 +35,14 @@ interface VectorizeResource {
   readonly dimensions?: number;
   readonly metric?: string;
   readonly preset?: string;
+}
+/** An AI Gateway of the app's own, which every one of its Workers binds. */
+interface AiGatewayResource {
+  readonly name: string;
+  /** Whether the gateway logs each request (the deploy's concern; on by default). */
+  readonly collectLogs?: boolean;
+  /** How long the gateway caches a response, in seconds (the deploy's concern; 0 by default). */
+  readonly cacheTtl?: number;
 }
 
 /** Cloudflare's limits for one of the app's Workers. */
@@ -80,6 +92,11 @@ export interface EveryAppWorkerManifest {
      * once the Vite plugin's `remoteBindings` is on and `cf auth login` ran.
      */
     vectorize?: readonly VectorizeResource[];
+    /**
+     * AI Gateways of the app's own, each `<app worker>-<binding>` in the
+     * account, bound on every Worker as `{ id, accountId, url }`.
+     */
+    aiGateway?: readonly AiGatewayResource[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -201,6 +218,16 @@ export interface HyperdriveBinding {
   id: string;
   dev?: { connectionString?: string };
 }
+/** A JSON value the Worker reads as it is: `env.<NAME>` is `value`. */
+export interface JsonBinding<T = unknown> {
+  type: "json";
+  value: T;
+}
+/**
+ * An AI Gateway of the app's own (`resources.aiGateway`): its id, account
+ * and URL, which the Worker reads as `env.<NAME>.id` and `env.<NAME>.url`.
+ */
+export type AiGatewayBinding = JsonBinding<AiGatewayValue>;
 /**
  * Workers AI (`env.AI.run()`), which cf types as `Ai`. Deployed, it calls
  * the account's Workers AI. Miniflare has none locally: in development the
@@ -299,6 +326,7 @@ export type EveryAppBinding =
   | BrowserBinding
   | ImagesBinding
   | VectorizeBinding
+  | AiGatewayBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -341,6 +369,13 @@ type VectorizeNames<M> = M extends {
   resources: { vectorize: readonly (infer V)[] };
 }
   ? V extends { name: infer N extends string }
+    ? N
+    : never
+  : never;
+type AiGatewayNames<M> = M extends {
+  resources: { aiGateway: readonly (infer G)[] };
+}
+  ? G extends { name: infer N extends string }
     ? N
     : never
   : never;
@@ -541,6 +576,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in ImagesNames<M>]: ImagesBinding;
 } & {
   [B in VectorizeNames<M>]: VectorizeBinding;
+} & {
+  [B in AiGatewayNames<M>]: AiGatewayBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -879,6 +916,7 @@ export function everyAppWorker<
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);
   addImagesBindings(env, manifest);
+  addAiGatewayBindings(env, manifest, name, deploy);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -1016,6 +1054,7 @@ export function everyAppAuxiliaryWorker<
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);
   addImagesBindings(env, manifest);
+  addAiGatewayBindings(env, manifest, appWorker, deploy);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1249,6 +1288,32 @@ function addImagesBindings(
       );
     }
     env[binding] = { type: "images" };
+  }
+}
+
+/**
+ * The app's AI Gateways, which all its Workers share, each a `json`
+ * binding of `{ id, accountId, url }`. Deployed, the gateway the deploy
+ * provisioned (a placeholder until installed); in development the id the
+ * deploy's rule gives, with an empty account and URL: there is no gateway,
+ * so the app calls the provider directly.
+ */
+function addAiGatewayBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  deploy: EveryAppDeployTarget | undefined,
+): void {
+  for (const { name: binding } of manifest.resources?.aiGateway ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `aiGateway: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    const value = deploy
+      ? { ...provisioned(deploy.resources.aiGateway, binding) }
+      : { id: aiGatewayIdFor(appWorker, binding), accountId: "", url: "" };
+    env[binding] = { type: "json", value };
   }
 }
 
@@ -1603,6 +1668,14 @@ function bucketNameFor(workerName: string, binding: string): string {
 
 function suffixedName(workerName: string, binding: string): string {
   return `${workerName}--${binding.toLowerCase().replaceAll("_", "-")}`;
+}
+
+/**
+ * A copy of the gateway's aiGatewayIdFor: one hyphen, since an AI
+ * Gateway's id may not hold `--`.
+ */
+function aiGatewayIdFor(workerName: string, binding: string): string {
+  return `${workerName}-${binding.toLowerCase().replaceAll("_", "-")}`;
 }
 
 function assertAppId(id: unknown): void {
