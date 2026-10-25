@@ -119,6 +119,15 @@ describe("the workspace tool definitions", () => {
       "revoke_token",
       "my_connections",
       "revoke_connection",
+      // mcpApps.ts, listed after these (mcpApps.test.ts).
+      "mcp_list",
+      "mcp_show",
+      "mcp_add",
+      "mcp_remove",
+      "mcp_on",
+      "mcp_off",
+      "mcp_refresh",
+      "mcp_tool",
     ]);
     expect(new Set(names).size).toBe(names.length);
     for (const tool of WORKSPACE_TOOLS) {
@@ -181,11 +190,12 @@ describe("the workspace tool definitions", () => {
     }
   });
 
-  it("make the two irreversible tools owner-only, asking confirm: true", () => {
+  it("make the three irreversible tools owner-only, asking confirm: true", () => {
     const irreversible = WORKSPACE_TOOLS.filter((tool) => tool.irreversible);
     expect(irreversible.map((tool) => tool.name)).toEqual([
       "workspace_remove",
       "workspace_app_delete",
+      "mcp_remove",
     ]);
     for (const tool of irreversible) {
       expect(tool.minRole, tool.name).toBe("owner");

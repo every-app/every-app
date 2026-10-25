@@ -159,7 +159,12 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          (both ask `confirm: true`); every member gets their own
          `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`
          and `everyapp_revoke_connection`. A user is an email or id, an app a
-         manifest id or row id, a group a name or `grp_` id. Full reference:
+         manifest id or row id, a group a name or `grp_` id. MCP apps, the
+         `mcp` commands as tools: `everyapp_mcp_list`, `everyapp_mcp_show`,
+         `everyapp_mcp_add` (a credential's setting name, never its value; the
+         answer names `secret set`), `everyapp_mcp_on`, `everyapp_mcp_off`,
+         `everyapp_mcp_refresh`, `everyapp_mcp_tool`, and for owners
+         `everyapp_mcp_remove` (`confirm: true`). Full reference:
          /docs/agent/mcp#workspace-tools.
 Listing: full (the built-ins, the workspace tools, then every tool) until a connection's full list
          would pass 256 tools or 1 MiB, then compact (the built-ins only:

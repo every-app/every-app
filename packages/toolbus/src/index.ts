@@ -37,6 +37,7 @@ export {
   MAX_REQUEST_BODY_BYTES,
   type ToolBusHttpHandler,
 } from "./http";
+export { MCP_APP_TOOLS } from "./mcpApps";
 export {
   MAX_TOOL_NAME_LENGTH,
   namespacedToolName,

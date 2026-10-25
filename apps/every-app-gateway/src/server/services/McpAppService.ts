@@ -159,8 +159,13 @@ async function findRemoteRow(ctx: OrgContext, id: string) {
   return row;
 }
 
+/**
+ * The row as a sync reaches it. The manifest is what tells a remote
+ * server's row from a built-in's (catalog-sync's appFetcherFor): without
+ * it a remote row would be listed as a built-in provider, and fail.
+ */
 function syncable(
-  app: Pick<AppRow, "id" | "organizationId" | "appSlug">,
+  app: Pick<AppRow, "id" | "organizationId" | "appSlug" | "name" | "manifest">,
 ): SyncableApp {
   return {
     rowId: app.id,
@@ -170,6 +175,8 @@ function syncable(
     workerName: null,
     tier: PROVIDER_APP_TIER,
     versionId: null,
+    manifest: app.manifest,
+    name: app.name,
   };
 }
 

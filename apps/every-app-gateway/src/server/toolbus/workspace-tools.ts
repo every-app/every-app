@@ -18,6 +18,9 @@
  * id or email, a token by id or name. No handler returns a credential: no
  * invitation link, no reset link, no token value
  * (docs/design/2026-10-agent-parity.md, decision 2).
+ *
+ * The MCP app tools' handlers (`everyapp_mcp_*`) are mcp-app-tools.ts's,
+ * merged into the map below.
  */
 import { logEvent } from "@every-app/perimeter";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
@@ -48,6 +51,7 @@ import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { OrganizationService } from "@/server/services/OrganizationService";
 import { UserPatService } from "@/server/services/UserPatService";
+import { MCP_APP_HANDLERS } from "./mcp-app-tools";
 
 type Handler = (
   ctx: OrgContext,
@@ -704,6 +708,8 @@ const HANDLERS: Record<string, Handler> = {
         principal.credential.kind === "oauth" && principal.credential.id === id,
     };
   },
+
+  ...MCP_APP_HANDLERS,
 };
 
 function toolError(message: string): ToolCallResultV1 {

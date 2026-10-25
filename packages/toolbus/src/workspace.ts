@@ -24,7 +24,11 @@
  * says whether the invitation was mailed and never carries the link,
  * password resets go to the user's inbox, and tokens are listed and
  * revoked, never created (docs/design/2026-10-agent-parity.md, decision 2).
+ *
+ * The MCP app tools (`everyapp_mcp_*`) are defined in mcpApps.ts and listed
+ * here after these.
  */
+import { MCP_APP_TOOLS } from "./mcpApps";
 import type { JsonObject, WorkspaceRole } from "./types";
 
 export interface WorkspaceToolDefinition {
@@ -584,4 +588,5 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
       "connection",
     ]),
   },
+  ...MCP_APP_TOOLS,
 ];
