@@ -90,7 +90,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   EVENT_DELIVERY_NOT_FOUND: "That delivery doesn't exist any more.",
   EVENT_TYPE_UNKNOWN:
     "One of the event types isn't one the gateway emits. Pick from the list, or use a pattern like member.* or app.crm.*.",
-  EVENT_SECRET_INVALID: "A signing secret is 16 to 128 characters.",
+  EVENT_SECRET_INVALID:
+    "A signing secret is 16 to 128 characters with no spaces.",
   EVENT_SINK_CONFLICT:
     "A subscription is a webhook URL or an email to owners and admins, not both.",
   // The rules' own messages say more (getRuleErrorMessage); these are the
@@ -109,6 +110,11 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
  * shown as the server sent it rather than as a canned line.
  */
 const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
+  // The event target rules and the pattern and secret checks
+  // (server/events/target.ts, subscriptions.ts) name what is wrong.
+  "EVENT_TARGET_REFUSED",
+  "EVENT_TYPE_UNKNOWN",
+  "EVENT_SECRET_INVALID",
   "REMOTE_MCP_INVALID",
   "REMOTE_MCP_URL_REFUSED",
   "REMOTE_MCP_EXISTS",

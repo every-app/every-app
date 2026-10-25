@@ -23,6 +23,11 @@ import {
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import { PublicError } from "@/server/errors";
+import type {
+  EventDelivery,
+  EventSubscription,
+  JsonValue,
+} from "@/types/events";
 import { gatewayHosts } from "@/server/gateway-hosts";
 import type { OrgContext } from "@/server/organization/orgContext";
 import {
@@ -52,58 +57,6 @@ const DELIVERIES_PAGE_DEFAULT = 50;
 /** The most deliveries one page holds: the UI's, the admin tool's (pinned by its test). */
 export const DELIVERIES_PAGE_MAX = 100;
 
-/** A subscription as the pages, the CLI and the tools see it. */
-interface SubscriptionView {
-  id: string;
-  name: string;
-  sink: "webhook" | "email";
-  url: string | null;
-  recipients: EventEmailRecipients | null;
-  events: string[];
-  enabled: boolean;
-  builtin: string | null;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-  lastDeliveryAt: string | null;
-  lastDeliveryStatus: "delivered" | "failed" | "dead" | null;
-  consecutiveFailures: number;
-}
-
-/** Plain JSON, as the server functions may return it. */
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
-interface DeliveryView {
-  id: string;
-  subscriptionId: string;
-  status: DeliveryStatus;
-  attempts: number;
-  nextAttemptAt: string | null;
-  lastAttemptAt: string | null;
-  lastStatusCode: number | null;
-  lastError: string | null;
-  deliveredAt: string | null;
-  redeliveredAt: string | null;
-  createdAt: string;
-  /** The event, as the envelope carries it (never anything secret, by construction). */
-  event: {
-    id: string;
-    type: string;
-    version: number;
-    summary: string;
-    time: string;
-    actor: { [key: string]: JsonValue } | null;
-    data: { [key: string]: JsonValue };
-    appRowId: string | null;
-  } | null;
-}
-
 interface AddSubscriptionInput {
   url?: string;
   email?: EventEmailRecipients;
@@ -131,7 +84,7 @@ function iso(date: Date | null): string | null {
   return date ? date.toISOString() : null;
 }
 
-function view(row: ListedSubscription): SubscriptionView {
+function view(row: ListedSubscription): EventSubscription {
   return {
     id: row.id,
     name: row.name,
@@ -166,8 +119,8 @@ function parseStored(text: string): unknown {
   }
 }
 
-function deliveryView(row: ListedDelivery): DeliveryView {
-  let event: DeliveryView["event"] = null;
+function deliveryView(row: ListedDelivery): EventDelivery {
+  let event: EventDelivery["event"] = null;
   if (row.event) {
     const data = parseStored(row.event.data);
     const payload =
@@ -298,7 +251,7 @@ async function requireSubscription(
 /** The organization's subscriptions, oldest first. */
 async function list(
   ctx: OrgContext,
-): Promise<{ subscriptions: SubscriptionView[] }> {
+): Promise<{ subscriptions: EventSubscription[] }> {
   const rows = await EventSubscriptionRepository.listByOrganization(ctx.orgId);
   return { subscriptions: rows.map(view) };
 }
@@ -312,7 +265,7 @@ async function add(
   ctx: OrgContext,
   input: AddSubscriptionInput,
   createdBy: string = ctx.userId,
-): Promise<{ subscription: SubscriptionView; secret?: string }> {
+): Promise<{ subscription: EventSubscription; secret?: string }> {
   const url = input.url?.trim();
   if (url && input.email) {
     throw new PublicError(
@@ -396,7 +349,7 @@ async function update(
   ctx: OrgContext,
   id: string,
   input: UpdateSubscriptionInput,
-): Promise<{ subscription: SubscriptionView }> {
+): Promise<{ subscription: EventSubscription }> {
   const existing = await requireSubscription(ctx, id);
   const patch: Parameters<typeof EventSubscriptionRepository.update>[2] = {};
   if (input.enabled !== undefined) patch.enabled = input.enabled;
@@ -439,7 +392,7 @@ async function remove(
 async function test(
   ctx: OrgContext,
   id: string,
-): Promise<{ delivery: DeliveryView | null }> {
+): Promise<{ delivery: EventDelivery | null }> {
   const subscription = await requireSubscription(ctx, id);
   const queued = await emitAndWait({
     organizationId: ctx.orgId,
@@ -462,7 +415,7 @@ async function test(
 async function deliveries(
   ctx: OrgContext,
   query: DeliveriesQuery,
-): Promise<{ deliveries: DeliveryView[]; nextCursor: string | null }> {
+): Promise<{ deliveries: EventDelivery[]; nextCursor: string | null }> {
   const limit = Math.min(
     Math.max(1, query.limit ?? DELIVERIES_PAGE_DEFAULT),
     DELIVERIES_PAGE_MAX,
@@ -486,7 +439,7 @@ async function deliveries(
 async function redeliver(
   ctx: OrgContext,
   deliveryId: string,
-): Promise<{ delivery: DeliveryView | null }> {
+): Promise<{ delivery: EventDelivery | null }> {
   const existing = await EventDeliveryRepository.findById(
     deliveryId,
     ctx.orgId,

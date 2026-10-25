@@ -8,9 +8,11 @@
  * direct and through groups, monthly caps (a workspace default, an app
  * under its own cap, one paused through the default, one unlimited), AI
  * connections, personal access tokens (active, expired, revoked), a month
- * of usage and an agent-activity trail with and without the AI client's
- * handshake name. For screenshots and design review; nothing here is for
- * production.
+ * of usage, an agent-activity trail with and without the AI client's
+ * handshake name, and the event bus: a webhook subscription with
+ * delivered, failed and dead deliveries, the built-in Cap alerts email
+ * subscription (dead: no mail locally), and a dozen events. For
+ * screenshots and design review; nothing here is for production.
  *
  * "Needs setup" depends on the gateway's own .dev.vars: with
  * OPENROUTER_API_KEY and DATAFORSEO_API_KEY set to any value OpenSEO and
@@ -24,8 +26,9 @@
  *   node scripts/seed-local.mjs [--many] [--reset]
  *
  * Seeded rows have ids starting with "seed-", except apps and tokens, whose
- * ids the gateway requires to be UUIDs: theirs are derived from their names,
- * so they are the same on every run. A second run replaces everything, and
+ * ids the gateway requires to be UUIDs, and groups and the event bus's
+ * rows, which have the gateway's own prefixed shapes: theirs are derived
+ * from their names, so they are the same on every run. A second run replaces everything, and
  * --reset only removes it. Passwords: everyone is "password-<role>-1"
  * (admin@example.com is password-admin-1, member@example.com is
  * password-member-1).
@@ -78,6 +81,47 @@ const tokenId = (key) => seedUuid(`pat-${key}`);
 /** A group id in the gateway's own shape, `grp_` and 16 hex characters. */
 const groupId = (key) =>
   `grp_${createHash("sha1").update(`every-app-seed:group-${key}`).digest("hex").slice(0, 16)}`;
+/** `<prefix>_` and 24 hex characters, the gateway's subscription and delivery shape. */
+const prefixedHex = (prefix, key) =>
+  `${prefix}_${createHash("sha1").update(`every-app-seed:${prefix}-${key}`).digest("hex").slice(0, 24)}`;
+const subscriptionId = (key) => prefixedHex("sub", key);
+const deliveryId = (key) => prefixedHex("dlv", key);
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/**
+ * An event id as the gateway makes one (`evt_`, ten characters of time,
+ * sixteen of randomness): the time is the event's, the rest derived from
+ * the key, so a reseed finds last run's rows by that tail.
+ */
+const eventIdTail = (key) =>
+  [...createHash("sha1").update(`every-app-seed:event-${key}`).digest()]
+    .slice(0, 16)
+    .map((byte) => CROCKFORD[byte % 32])
+    .join("");
+function eventId(key, ms) {
+  let time = "";
+  for (let value = ms, index = 0; index < 10; index += 1) {
+    time = CROCKFORD[value % 32] + time;
+    value = Math.floor(value / 32);
+  }
+  return `evt_${time}${eventIdTail(key)}`;
+}
+const SUBSCRIPTION_KEYS = ["slack", "cap-alerts"];
+const EVENT_KEYS = [
+  "invited",
+  "joined",
+  "role",
+  "installed",
+  "updated",
+  "needs-setup",
+  "blocked",
+  "token",
+  "warning",
+  "reached",
+  "paused",
+  "deal-won",
+];
+const SEED_SUBSCRIPTION_IDS = SUBSCRIPTION_KEYS.map(subscriptionId);
+const SEED_EVENT_TAILS = EVENT_KEYS.map(eventIdTail);
 const APP_KEYS = [
   "openseo",
   "inbox",
@@ -119,6 +163,21 @@ async function run(sql, params = []) {
 async function reset() {
   const apps = `app_row_id IN (${inList(SEED_APP_IDS)})`;
   const tables = [
+    [
+      "event_deliveries",
+      `subscription_id IN (${inList(SEED_SUBSCRIPTION_IDS)})`,
+      SEED_SUBSCRIPTION_IDS,
+    ],
+    [
+      "event_subscriptions",
+      `id IN (${inList(SEED_SUBSCRIPTION_IDS)})`,
+      SEED_SUBSCRIPTION_IDS,
+    ],
+    [
+      "events",
+      `substr(id, 15) IN (${inList(SEED_EVENT_TAILS)})`,
+      SEED_EVENT_TAILS,
+    ],
     ["mcp_tool_calls", "id LIKE 'seed-%'"],
     ["usage_daily", apps, SEED_APP_IDS],
     ["usage_monthly", apps, SEED_APP_IDS],
@@ -1196,9 +1255,322 @@ async function main() {
     );
   }
 
+  const bus = await seedEvents({
+    orgA,
+    ownerId,
+    ownerName: String(owner.name),
+  });
+
   console.log(
-    `Seeded ${users.length} users, ${invitations.length} invitations, ${apps.length + 2} apps (one a provider app), ${groups.length} groups, ${connections.length} connections, ${tokens.length} tokens, ${calls.length} tool calls into ${orgA} (Acme Corp) and ${orgB} (Northwind Traders).`,
+    `Seeded ${users.length} users, ${invitations.length} invitations, ${apps.length + 2} apps (one a provider app), ${groups.length} groups, ${connections.length} connections, ${tokens.length} tokens, ${calls.length} tool calls, ${bus.subscriptions} event subscriptions, ${bus.events} events and ${bus.deliveries} deliveries into ${orgA} (Acme Corp) and ${orgB} (Northwind Traders).`,
   );
+}
+
+/**
+ * Manage workspace → Events: "Slack #ops", a webhook taking member and
+ * cap events, blocked tool calls, installs and updates, and crm's own
+ * events (not app.needs_setup, which the local gateway emits for real the
+ * first time it reads the seeded apps), whose deliveries were mostly
+ * delivered, one dead after its seventh attempt, one redelivered, and the
+ * two latest failing (retried, two failures in a row); and the built-in
+ * "Cap alerts" email subscription the inbox's cap created, dead twice
+ * because a local gateway can't send mail. The events are a dozen of the
+ * catalogue's over the last two days and one of an app's own
+ * (app.crm.deal.won), with the data the catalogue's builders write, so
+ * the summaries and payloads read as real ones. Never a real secret: the
+ * webhook's is a placeholder.
+ */
+async function seedEvents({ orgA, ownerId, ownerName }) {
+  const MINUTE = 60 * 1000;
+  const owner = { kind: "user", id: ownerId, name: ownerName };
+  const admin = {
+    id: "seed-user-admin",
+    email: "admin@example.com",
+    name: "Alex Admin",
+  };
+  const member = {
+    id: "seed-user-member",
+    email: "member@example.com",
+    name: "Morgan Member",
+  };
+  const sam = {
+    id: "seed-user-plain",
+    email: "sam@example.com",
+    name: "sam@example.com",
+  };
+  const app = (key, name) => ({ id: key, rowId: appId(key), name });
+  const crm = app("crm", "Open CRM");
+  const inbox = app("inbox", "Agentic Inbox");
+  const month = new Date(now).toISOString().slice(0, 7);
+  const gateway = { kind: "gateway" };
+  const events = [
+    [
+      "invited",
+      "member.invited",
+      ago(46 * HOUR),
+      owner,
+      {
+        invitation: {
+          id: "seed-inv-1",
+          email: "invitee@example.com",
+          role: "member",
+          expiresAt: new Date(ago(46 * HOUR) + 72 * HOUR).toISOString(),
+        },
+        emailSent: false,
+      },
+    ],
+    [
+      "joined",
+      "member.joined",
+      ago(40 * HOUR),
+      { kind: "user", ...sam },
+      { user: sam, role: "member", via: "invitation" },
+    ],
+    [
+      "role",
+      "member.role_changed",
+      ago(30 * HOUR),
+      owner,
+      { user: admin, role: "admin", previousRole: "member" },
+    ],
+    [
+      "installed",
+      "app.installed",
+      ago(26 * HOUR),
+      { kind: "operator", id: "ben@example.com" },
+      {
+        app: crm,
+        version: "4f1c2a9e",
+        hostname: "crm.apps.example.com",
+        scope: "org",
+        source: "cli",
+      },
+    ],
+    [
+      "updated",
+      "app.updated",
+      ago(20 * HOUR),
+      { kind: "operator", id: "ben@example.com" },
+      {
+        app: app("openseo", "OpenSEO"),
+        version: "9b07d3c1",
+        previousVersion: "51e0aa42",
+      },
+    ],
+    [
+      "needs-setup",
+      "app.needs_setup",
+      ago(19 * HOUR),
+      gateway,
+      { app: inbox, unmet: ["EMAIL_FROM"] },
+    ],
+    [
+      "blocked",
+      "tool.blocked",
+      ago(8 * HOUR),
+      { kind: "agent", id: "seed-mcpc-claude", name: "Claude" },
+      {
+        tool: "crm_delete_contact",
+        app: crm,
+        user: member,
+        client: { kind: "oauth", name: "Claude", id: "seed-mcpc-claude" },
+        risk: "destructive",
+        reason: "destructive_requires_approval",
+        callId: "seed-call-3",
+      },
+    ],
+    [
+      "token",
+      "token.created",
+      ago(6 * HOUR),
+      owner,
+      {
+        id: tokenId("claude-code"),
+        name: "Claude Code on MacBook",
+        scopes: ["mcp"],
+        user: { id: ownerId, name: ownerName },
+      },
+    ],
+    [
+      "warning",
+      "cap.warning",
+      ago(4 * HOUR),
+      gateway,
+      {
+        app: inbox,
+        cap: 1000,
+        calls: 800,
+        month,
+        threshold: 80,
+        source: "app",
+      },
+    ],
+    [
+      "reached",
+      "cap.reached",
+      ago(2 * HOUR),
+      gateway,
+      { app: inbox, cap: 1000, calls: 1000, month, source: "app" },
+    ],
+    [
+      "paused",
+      "app.paused_cap",
+      ago(2 * HOUR),
+      gateway,
+      { app: inbox, cap: 1000, calls: 1000, month, source: "app" },
+    ],
+    [
+      "deal-won",
+      "app.crm.deal.won",
+      ago(30 * MINUTE),
+      { kind: "user", ...member },
+      {
+        dealId: "deal_42",
+        account: "Northwind Traders",
+        amount: 12000,
+        currency: "USD",
+      },
+    ],
+  ];
+  const ids = new Map();
+  for (const [key, type, time, actor, data] of events) {
+    const id = eventId(key, time);
+    ids.set(key, { id, time });
+    await run(
+      "INSERT INTO events (id, organization_id, type, version, time, actor, data, app_row_id, dedupe_key, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, NULL, ?)",
+      [
+        id,
+        orgA,
+        type,
+        time,
+        JSON.stringify(actor),
+        JSON.stringify(data),
+        data.app?.rowId ?? (type.startsWith("app.crm.") ? appId("crm") : null),
+        time,
+      ],
+    );
+  }
+
+  const slack = subscriptionId("slack");
+  const capAlerts = subscriptionId("cap-alerts");
+  const latestAttempt = ago(2 * MINUTE);
+  await run(
+    "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, recipients, events, enabled, builtin, description, created_at, updated_at, created_by, last_delivery_at, last_delivery_status, consecutive_failures) VALUES (?, ?, 'Slack #ops', 'webhook', 'https://hooks.example.com/everyapp', 'whsec_seed-placeholder-not-a-real-secret', NULL, ?, 1, NULL, NULL, ?, ?, ?, ?, 'failed', 2)",
+    [
+      slack,
+      orgA,
+      JSON.stringify([
+        "member.*",
+        "cap.*",
+        "tool.blocked",
+        "app.installed",
+        "app.updated",
+        "app.crm.*",
+      ]),
+      ago(3 * DAY),
+      ago(3 * DAY),
+      ownerId,
+      latestAttempt,
+    ],
+  );
+  await run(
+    "INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, recipients, events, enabled, builtin, description, created_at, updated_at, created_by, last_delivery_at, last_delivery_status, consecutive_failures) VALUES (?, ?, 'Cap alerts', 'email', NULL, NULL, 'admins', ?, 1, 'cap_alerts', 'Owners and admins get an email at 80% and at the cap.', ?, ?, NULL, ?, 'dead', 2)",
+    [
+      capAlerts,
+      orgA,
+      JSON.stringify(["cap.warning", "cap.reached"]),
+      ago(DAY),
+      ago(DAY),
+      ids.get("reached").time + 1000,
+    ],
+  );
+
+  // [event, subscription, outcome]: delivered at the first attempt unless
+  // it says otherwise.
+  const deliveries = [
+    ["invited", slack, "delivered"],
+    ["joined", slack, "dead"],
+    ["role", slack, "delivered"],
+    ["installed", slack, "delivered"],
+    ["updated", slack, "redelivered"],
+    ["blocked", slack, "delivered"],
+    ["warning", slack, "delivered"],
+    ["reached", slack, "failed"],
+    ["deal-won", slack, "failed"],
+    ["warning", capAlerts, "no-mail"],
+    ["reached", capAlerts, "no-mail"],
+  ];
+  for (const [key, subscription, outcome] of deliveries) {
+    const { id: event, time } = ids.get(key);
+    const first = time + 400;
+    const row = {
+      delivered: ["delivered", 1, null, first, 200, null, first, null],
+      redelivered: [
+        "delivered",
+        1,
+        null,
+        time + 3 * HOUR,
+        200,
+        null,
+        time + 3 * HOUR,
+        time + 3 * HOUR,
+      ],
+      dead: ["dead", 7, null, time + 35 * HOUR, null, "timeout", null, null],
+      failed: [
+        "pending",
+        2,
+        latestAttempt + 25 * MINUTE,
+        latestAttempt,
+        503,
+        "status_503: Service Unavailable",
+        null,
+        null,
+      ],
+      "no-mail": [
+        "dead",
+        1,
+        null,
+        first,
+        null,
+        "email_not_configured",
+        null,
+        null,
+      ],
+    }[outcome];
+    const [
+      status,
+      attempts,
+      nextAttemptAt,
+      lastAttemptAt,
+      statusCode,
+      error,
+      deliveredAt,
+      redeliveredAt,
+    ] = row;
+    await run(
+      "INSERT INTO event_deliveries (id, event_id, subscription_id, organization_id, status, attempts, next_attempt_at, claimed_until, last_attempt_at, last_status_code, last_error, delivered_at, redelivered_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+      [
+        deliveryId(`${key}-${subscription}`),
+        event,
+        subscription,
+        orgA,
+        status,
+        attempts,
+        nextAttemptAt,
+        lastAttemptAt,
+        statusCode,
+        error,
+        deliveredAt,
+        redeliveredAt,
+        time,
+      ],
+    );
+  }
+  return {
+    subscriptions: 2,
+    events: events.length,
+    deliveries: deliveries.length,
+  };
 }
 
 main()

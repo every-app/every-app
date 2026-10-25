@@ -12,14 +12,18 @@ import {
 } from "@/client/components/ui/dialog";
 
 /**
- * Shows a newly created token once, with a usage snippet under it. Render it
- * only while open. Only Done closes it: Escape and an outside click do
- * nothing, so the token can't be lost by accident.
+ * Shows a newly created token (or a webhook's signing secret) once, with a
+ * usage snippet under it. Render it only while open. Only Done closes it:
+ * Escape and an outside click do nothing, so the token can't be lost by
+ * accident.
  */
 export function TokenRevealDialog({
   title,
   description,
   token,
+  tokenLabel = "Token",
+  warning = "Save this token now. It will not be shown again.",
+  copiedMessage = "Token copied",
   usageLabel,
   usage,
   onClose,
@@ -27,6 +31,12 @@ export function TokenRevealDialog({
   title: string;
   description: string;
   token: string;
+  /** What the value is called above its box. */
+  tokenLabel?: string;
+  /** The one-time warning. */
+  warning?: string;
+  /** The toast after a copy. */
+  copiedMessage?: string;
   usageLabel: string;
   usage: string;
   onClose: () => void;
@@ -46,12 +56,12 @@ export function TokenRevealDialog({
         <Alert variant="warning">
           <TriangleAlert aria-hidden />
           <AlertDescription className="text-foreground">
-            Save this token now. It will not be shown again.
+            {warning}
           </AlertDescription>
         </Alert>
         <div className="space-y-1.5">
-          <p className="text-sm font-medium">Token</p>
-          <CodeBlock code={token} successMessage="Token copied" />
+          <p className="text-sm font-medium">{tokenLabel}</p>
+          <CodeBlock code={token} successMessage={copiedMessage} />
         </div>
         <div className="space-y-1.5">
           <p className="text-sm font-medium">{usageLabel}</p>

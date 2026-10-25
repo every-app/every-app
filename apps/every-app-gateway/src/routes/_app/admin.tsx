@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Users,
   UsersRound,
+  Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
@@ -50,6 +51,7 @@ enum AdminTab {
   Tokens = "tokens",
   Usage = "usage",
   Activity = "activity",
+  Events = "events",
 }
 
 const adminTabs = [
@@ -78,6 +80,12 @@ const adminTabs = [
     label: "Activity",
     to: "/admin/activity",
     icon: ScrollText,
+  },
+  {
+    value: AdminTab.Events,
+    label: "Events",
+    to: "/admin/events",
+    icon: Webhook,
   },
 ] as const;
 

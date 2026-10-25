@@ -12,11 +12,14 @@ import { useScrollOverflow } from "@/client/hooks/useScrollOverflow";
  */
 export function ScrollBox({
   className,
+  frameClassName,
   children,
   /** What changes the rows: the box measures again when it changes. */
   deps = [],
 }: {
   className?: string;
+  /** The frame around the box, for a box that fills a column (`min-h-0 flex-1`). */
+  frameClassName?: string;
   children: ReactNode;
   deps?: readonly unknown[];
 }) {
@@ -29,7 +32,7 @@ export function ScrollBox({
   return (
     // min-w-0: a grid or flex item, so the rows truncate instead of widening
     // the dialog.
-    <div className="relative min-w-0">
+    <div className={cn("relative min-w-0", frameClassName)}>
       <div
         ref={ref}
         data-slot="scroll-box"

@@ -26,6 +26,7 @@ import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminActivityRouteImport } from './routes/_app/admin/activity'
 import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
+import { Route as AppAdminEventsRouteImport } from './routes/_app/admin/events'
 import { Route as AppAdminGroupsRouteImport } from './routes/_app/admin/groups'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
@@ -123,6 +124,11 @@ const AppAdminAppsRoute = AppAdminAppsRouteImport.update({
   path: '/apps',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminEventsRoute = AppAdminEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminGroupsRoute = AppAdminGroupsRouteImport.update({
   id: '/groups',
   path: '/groups',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/oauth/consent': typeof OauthConsentRoute
   '/admin/activity': typeof AppAdminActivityRoute
   '/admin/apps': typeof AppAdminAppsRoute
+  '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/admin/activity': typeof AppAdminActivityRoute
   '/admin/apps': typeof AppAdminAppsRoute
+  '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
@@ -262,6 +270,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/admin/activity': typeof AppAdminActivityRoute
   '/_app/admin/apps': typeof AppAdminAppsRoute
+  '/_app/admin/events': typeof AppAdminEventsRoute
   '/_app/admin/groups': typeof AppAdminGroupsRoute
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/admin/activity'
     | '/admin/apps'
+    | '/admin/events'
     | '/admin/groups'
     | '/admin/tokens'
     | '/admin/usage'
@@ -323,6 +333,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/activity'
     | '/admin/apps'
+    | '/admin/events'
     | '/admin/groups'
     | '/admin/tokens'
     | '/admin/usage'
@@ -354,6 +365,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/admin/activity'
     | '/_app/admin/apps'
+    | '/_app/admin/events'
     | '/_app/admin/groups'
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
@@ -510,6 +522,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminAppsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/events': {
+      id: '/_app/admin/events'
+      path: '/events'
+      fullPath: '/admin/events'
+      preLoaderRoute: typeof AppAdminEventsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/groups': {
       id: '/_app/admin/groups'
       path: '/groups'
@@ -600,6 +619,7 @@ declare module '@tanstack/react-router' {
 interface AppAdminRouteChildren {
   AppAdminActivityRoute: typeof AppAdminActivityRoute
   AppAdminAppsRoute: typeof AppAdminAppsRoute
+  AppAdminEventsRoute: typeof AppAdminEventsRoute
   AppAdminGroupsRoute: typeof AppAdminGroupsRoute
   AppAdminTokensRoute: typeof AppAdminTokensRoute
   AppAdminUsageRoute: typeof AppAdminUsageRoute
@@ -610,6 +630,7 @@ interface AppAdminRouteChildren {
 const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminActivityRoute: AppAdminActivityRoute,
   AppAdminAppsRoute: AppAdminAppsRoute,
+  AppAdminEventsRoute: AppAdminEventsRoute,
   AppAdminGroupsRoute: AppAdminGroupsRoute,
   AppAdminTokensRoute: AppAdminTokensRoute,
   AppAdminUsageRoute: AppAdminUsageRoute,
