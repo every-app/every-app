@@ -24,7 +24,11 @@ click when they have to do something themselves.
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
 
-Which integrations a person needs: the apps they deploy decide. From any
+Which integrations a person needs: the apps they deploy decide. The four
+Every App apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
+installed from their GitHub releases by [gateway.md](gateway.md)'s last
+step, each unless the person skips it; the keys they then ask for are the
+files below. From any
 directory, `pnpm everyapp secret list <app id> --json` (the id as `status`
 lists it in `data.apps[].id`; in the app's directory it can be left out)
 reports the app's setup state as `data.app.setup`: `ready` (the app
