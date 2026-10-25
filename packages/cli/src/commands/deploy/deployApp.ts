@@ -559,6 +559,7 @@ async function deploySteps(
       resources,
       deletedDurableObjects,
       helperWorkers: helpers.map((helper) => helper.workerName),
+      declared: manifest.resources,
     };
     if (!release) {
       out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });

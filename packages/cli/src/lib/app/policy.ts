@@ -40,10 +40,14 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * model covers it: most reach account-wide resources by id or name (another
  * app's queue, dispatch namespace, private network, secrets store,
  * rate-limit counters, …), or account-wide capabilities the gateway is
- * meant to broker (Workers AI, email). Buckets and Workflows are allowed
- * only under the app's own names (buckets only as the manifest's
- * `resources.r2`, when it declares any), and Hyperdrive configs only as the
- * ones the deploy provisioned.
+ * meant to broker (email). Buckets and Workflows are allowed only under the
+ * app's own names (buckets only as the manifest's `resources.r2`, when it
+ * declares any), and Hyperdrive configs only as the ones the deploy
+ * provisioned. Workers AI is account-wide inference billed to the account,
+ * outside the Gateway's budgets, caps and usage tap (its `workers-ai`
+ * provider is the brokered path), and the deploy provisions nothing to
+ * check it against: so only under a binding name the manifest declares in
+ * `resources.ai`, never one cloudflare.config.ts adds on its own.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -58,6 +62,7 @@ const ALLOWED_BINDINGS = new Set([
   "workflow",
   "worker",
   "hyperdrive",
+  "ai",
 ]);
 
 /**
@@ -98,7 +103,11 @@ interface BuiltWorkerConfig extends Record<string, unknown> {
 
 type PolicyInputs = Pick<
   InstallTarget,
-  "workerName" | "resources" | "deletedDurableObjects" | "helperWorkers"
+  | "workerName"
+  | "resources"
+  | "deletedDurableObjects"
+  | "helperWorkers"
+  | "declared"
 >;
 
 /** Everything wrong with the app's built Worker, as sentences; empty when it's fine. */
@@ -189,7 +198,7 @@ function privacyProblems(config: BuiltWorkerConfig): string[] {
 /** Problems with a Worker's bindings; `mayBindWorker` decides service bindings. */
 function bindingProblems(
   env: Record<string, Binding>,
-  { workerName, resources, helperWorkers = [] }: PolicyInputs,
+  { workerName, resources, helperWorkers = [], declared }: PolicyInputs,
   mayBindWorker: (name: string, binding: Binding) => boolean,
 ): string[] {
   const problems: string[] = [];
@@ -202,6 +211,8 @@ function bindingProblems(
   // The manifest's buckets, when it declares any; otherwise any bucket
   // named after the app's Worker (one bound by hand in cloudflare.config.ts).
   const buckets = Object.values(resources.r2 ?? {}).map((bucket) => bucket.name);
+  // Workers AI only under the names resources.ai declares.
+  const aiBindings = declared?.ai ?? [];
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -238,6 +249,15 @@ function bindingProblems(
       case "hyperdrive":
         if (!hyperdriveIds.has(String(binding["id"]))) {
           problems.push(`${name} isn't a Hyperdrive config the deploy provisioned`);
+        }
+        break;
+      case "ai":
+        if (!aiBindings.includes(name)) {
+          problems.push(
+            aiBindings.length > 0
+              ? `${name} is a Workers AI binding, which isn't one of the app's in resources.ai (${aiBindings.join(", ")})`
+              : `${name} is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai`,
+          );
         }
         break;
       case "r2": {

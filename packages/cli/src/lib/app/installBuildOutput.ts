@@ -21,6 +21,7 @@
  * (./policy.ts) then checks the installed output against the same target.
  */
 import fs from "node:fs/promises";
+import type { Resources } from "@every-app/perimeter/manifest";
 import {
   BUILD_SENTINEL,
   resourceSentinel,
@@ -45,6 +46,13 @@ export interface InstallTarget extends EveryAppDeployTarget {
   deletedDurableObjects?: readonly string[];
   /** The app's helper Workers, by full name (`<app worker>--<name>`). */
   helperWorkers?: readonly string[];
+  /**
+   * The manifest's `resources` as everyapp.config.ts declares them. The
+   * policy lets a binding the deploy provisions nothing for (Workers AI)
+   * through only under a name declared here: nothing else says the app
+   * asked for it.
+   */
+  declared?: Resources;
 }
 
 type Binding = Record<string, unknown> & { type?: unknown };

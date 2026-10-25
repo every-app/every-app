@@ -1241,6 +1241,23 @@ Ben asked, over ratstack.sh, what converting the Gateway and the CLI's provision
 - [ ] **Pin the gateway test fixture to the real `cf build`** inside `packages/cli/src/lib/cfDryRun.test.ts` (CI only): `gateway-worker.config.json` is hand-copied, last touched 2026-10-13, and 42 apply tests run on it.
 - [ ] **A gateway binding fence test**: every name `patchBuildOutput` writes is declared with the same type in `cloudflare.config.ts`, no `KV` or `APP__*` there, then delete the legacy `delete env["KV"]`.
 
+### Provisioners: Workers AI (2026-10-25)
+
+`resources.ai: ["AI"]` binds Workers AI (`env.AI.run()`) on every Worker of an app: nothing created, recorded or purged, billed to the account ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `ai` row; `landing-page/content/agent/manifest.md`, "Workers AI").
+
+**Defaults to confirm**
+
+- [ ] **Declared or refused.** The deploy's policy allows an `ai` binding only under a name `resources.ai` declares, so `cloudflare.config.ts` can't add account-wide inference on its own. Walk-back: allow `ai` by type alone.
+- [ ] **Remote in development, one switch.** The SDK marks the dev binding `dev: { remote: true }`; the starter keeps `remoteBindings: false`, so every call throws `Binding AI needs to be run remotely` until the app sets `remoteBindings: true` in `vite.config.ts` and runs `cf auth login`. Alternatives: the starter on `remoteBindings: true` (every new app's dev then needs a login), or no dev binding at all.
+- [ ] **Refused on the dispatch tier,** with a pointer to the `workers-ai` provider: the binding would bill the platform's account.
+- [ ] **No Gateway budget on the binding.** Its calls aren't counted, capped or attributed by the Gateway; the docs send apps that want caps to the `workers-ai` provider. A metered wrapper the SDK hands out is a later choice.
+
+**Follow-ups**
+
+- [ ] **`everyapp dev`'s ready block** says nothing about the remote binding yet (the design's section 4 `Remote bindings:` line); Workers AI is the first remote kind.
+- [ ] **The hosted deployer's manifest check** (`apps/every-app-gateway/src/server/deploy/metadata.ts`, `manifestProblems()`) doesn't name `resources.ai`; its bundle check refuses the binding type (`AI is a ai binding, which third-party apps can't have`).
+- [ ] **`everyapp status`'s RESOURCES cell** gains `AI` once the first lane's cell is on main.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).

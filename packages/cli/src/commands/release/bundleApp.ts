@@ -59,6 +59,7 @@ export async function bundleApp({
       helperWorkers: (manifest.workers ?? []).map((helper) =>
         helperWorkerName(sentinel.workerName, helper.name),
       ),
+      declared: manifest.resources,
     },
   });
   out.emit({ type: "step", step: "app.build", status: "ok", message: "Built the app and checked its Build Output." });

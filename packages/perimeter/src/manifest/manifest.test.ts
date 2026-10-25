@@ -1387,6 +1387,66 @@ describe("Prisma migrations, Hyperdrive caching and R2 buckets", () => {
   });
 });
 
+describe("Workers AI (resources.ai)", () => {
+  const assistant = { id: "assistant", resources: { d1: ["DB"], ai: ["AI"] } };
+
+  it("accepts Workers AI bindings in both schemas, beside the AI proxy's own ai field", () => {
+    expect(validateManifestStrict(assistant)).toEqual(assistant);
+    expect(validateManifest(assistant)).toEqual(assistant);
+    const both = {
+      ...assistant,
+      resources: { ai: ["AI", "AI_BATCH"] },
+      providers: ["workers-ai"],
+      ai: { models: ["@cf/meta/llama-3.1-8b-instruct"] },
+    };
+    expect(validateManifestStrict(both)).toEqual(both);
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { ai: ["workers-ai"] } },
+      /resources\.ai\.0/,
+    ],
+    [
+      "a binding named like a KV namespace",
+      { resources: { kv: ["AI"], ai: ["AI"] } },
+      /the binding AI is declared twice/,
+    ],
+    [
+      "the same binding twice",
+      { resources: { ai: ["AI", "AI"] } },
+      /the binding AI is declared twice/,
+    ],
+    [
+      "a secret named like the binding",
+      { resources: { ai: ["AI"] }, secrets: ["AI"] },
+      /secrets: AI is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...assistant, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("stays tolerant of entries at registration", () => {
+    expect(
+      validateManifest({ id: "assistant", resources: { ai: ["workers-ai"] } })
+        .resources?.ai,
+    ).toEqual(["workers-ai"]);
+  });
+
+  it("is refused on the dispatch tier, where it would bill the platform's account", () => {
+    expect(manifestTierProblems(assistant, "dispatch")).toEqual([
+      "resources.ai: the Workers AI binding isn't available to apps in a dispatch namespace (it bills the platform's account); list the workers-ai provider instead",
+    ]);
+    expect(manifestTierProblems(assistant, "service_binding")).toEqual([]);
+    expect(manifestTierProblems({ resources: { ai: [] } }, "dispatch")).toEqual(
+      [],
+    );
+  });
+});
+
 describe("email.inbound manifest field", () => {
   const inbox = { id: "agentic-inbox", email: { inbound: true } };
 

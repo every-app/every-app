@@ -43,6 +43,13 @@ export interface EveryAppWorkerManifest {
     workflows?: readonly ClassResource[];
     /** Hyperdrive configs, named `<app worker>--<binding>` by the deploy. */
     hyperdrive?: readonly HyperdriveResource[];
+    /**
+     * Workers AI, by binding (`["AI"]`), which every one of the app's
+     * Workers binds: nothing to create, billed to the account. In
+     * development it reaches the account only once the app's Vite config
+     * turns `remoteBindings` on (see {@link AiBinding}).
+     */
+    ai?: readonly string[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -165,6 +172,18 @@ export interface HyperdriveBinding {
   dev?: { connectionString?: string };
 }
 /**
+ * Workers AI (`env.AI.run()`), which cf types as `Ai`. Deployed, it calls
+ * the account's Workers AI. Miniflare has none locally: in development the
+ * binding is marked remote, so it reaches the account once the app's Vite
+ * config sets `remoteBindings: true` (the starter sets it false) and
+ * `cf auth login` has run; until then every call throws `Binding AI needs
+ * to be run remotely`.
+ */
+export interface AiBinding {
+  type: "ai";
+  dev?: { remote?: boolean };
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -217,6 +236,7 @@ export type EveryAppBinding =
   | KvBinding
   | R2Binding
   | HyperdriveBinding
+  | AiBinding
   | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
@@ -240,6 +260,9 @@ type KvNames<M> = M extends { resources: { kv: readonly (infer B)[] } }
   ? B & string
   : never;
 type R2Names<M> = M extends { resources: { r2: readonly (infer B)[] } }
+  ? B & string
+  : never;
+type AiNames<M> = M extends { resources: { ai: readonly (infer B)[] } }
   ? B & string
   : never;
 type DurableObjects<M> = M extends {
@@ -429,6 +452,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in KvNames<M>]: KvBinding;
 } & {
   [B in R2Names<M>]: R2Binding;
+} & {
+  [B in AiNames<M>]: AiBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -762,6 +787,7 @@ export function everyAppWorker<
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
+  addAiBindings(env, manifest, deploy);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -850,7 +876,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases, KV namespaces and R2 buckets, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces, R2 buckets and Workers AI, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -895,6 +921,7 @@ export function everyAppAuxiliaryWorker<
     env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
     addDevProviders(env, options.root);
   }
+  addAiBindings(env, manifest, deploy);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1039,6 +1066,30 @@ function storageBindings(
     }
   }
   return env;
+}
+
+/**
+ * The manifest's Workers AI bindings, which every one of the app's Workers
+ * gets: `{ type: "ai" }` deployed (account-wide, nothing to provision), and
+ * marked remote in development, where Miniflare has no Workers AI. The
+ * remote mark does nothing until the app's Vite config sets
+ * `remoteBindings: true`, so turning that on is the one switch.
+ */
+function addAiBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  deploy: EveryAppDeployTarget | undefined,
+): void {
+  for (const binding of manifest.resources?.ai ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `ai: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    env[binding] = deploy
+      ? { type: "ai" }
+      : { type: "ai", dev: { remote: true } };
+  }
 }
 
 /**

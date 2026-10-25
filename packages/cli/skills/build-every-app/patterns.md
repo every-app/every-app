@@ -52,6 +52,12 @@ How the apps on Every App do each thing, and the file to copy from. `starter/` i
 | `compatibilityDate` | The runtime date every build runs on | `open-analytics/everyapp.config.ts`, `open-seo/everyapp.config.ts` | Pin it when porting an app that ran under Wrangler |
 | `cloudflare.config.ts` beyond the manifest | Crons, compatibility flags and plain text bindings read when the Worker is built | `open-crm/cloudflare.config.ts` (`crons: ["* * * * *"]`, `global_fetch_strictly_public`), `agentic-inbox/cloudflare.config.ts` (`AI_PROVIDER`, `AGENT_MODEL`), `open-seo/cloudflare.config.ts` | `everyAppWorker({ manifest, entrypoint, ctx, crons })`, then spread and extend |
 
+## Cloudflare resources
+
+| Pattern | What it is | Where | Copy this |
+| --- | --- | --- | --- |
+| Workers AI as a binding | `resources.ai` binds `env.AI` on every Worker of the app: `env.AI.run()` directly (the Agents SDK, models the OpenAI-compatible routes don't carry, an AI Gateway by id), billed to the account with no Gateway budget or cap. Under `pnpm dev` every call throws `Binding AI needs to be run remotely` until `vite.config.ts` sets `remoteBindings: true` and `cf auth login` has run. For calls the Gateway caps and counts, list the `workers-ai` provider instead | `packages/sdk/src/cloudflare/worker.ts` (`addAiBindings()`); no app uses it yet: `agentic-inbox/workers/everyapp/gateway.ts` (`gatewayAi()`) is the provider path for code written against `env.AI.run()` | `resources: { ai: ["AI"] }`, then `await env.AI.run("@cf/meta/llama-3.1-8b-instruct", { prompt })` |
+
 ## Sending and receiving email
 
 | Pattern | What it is | Where | Copy this |

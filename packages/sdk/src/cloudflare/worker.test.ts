@@ -19,6 +19,7 @@ import {
   localD1Path,
   resourceSentinel,
   sentinelDeployTarget,
+  type AiBinding,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -1598,6 +1599,90 @@ describe("R2 buckets (resources.r2)", () => {
     expect(
       Object.values(config.env as Record<string, { type: string }>).filter(
         (binding) => binding.type === "r2",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("Workers AI (resources.ai)", () => {
+  const assistant = {
+    id: "assistant",
+    resources: { d1: ["DB"], ai: ["AI"] },
+    workers: [{ name: "embed", binding: "EMBED" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: assistant,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _embed, ...embed } = everyAppAuxiliaryWorker({
+      manifest: assistant,
+      worker: "embed",
+      entrypoint: "/app/src/embed.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, embed };
+  };
+
+  it("binds Workers AI on the app's Worker and every helper, with nothing to install", () => {
+    const { app, embed } = build("production");
+    for (const env of [app.env, embed.env] as Record<string, unknown>[]) {
+      expect(env["AI"]).toEqual({ type: "ai" });
+    }
+    // Account-wide: no placeholder for the deploy to rewrite.
+    expect(sentinelDeployTarget(assistant).resources).not.toHaveProperty("ai");
+  });
+
+  it("marks it remote in development, where Miniflare has no Workers AI", () => {
+    const { app, embed } = build("development");
+    for (const env of [app.env, embed.env] as Record<string, unknown>[]) {
+      expect(env["AI"]).toEqual({ type: "ai", dev: { remote: true } });
+    }
+  });
+
+  it("binds several names when the manifest lists several", () => {
+    const { env } = everyAppWorker({
+      manifest: { id: "assistant", resources: { ai: ["AI", "AI_BATCH"] } },
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(env).toMatchObject({
+      AI: { type: "ai" },
+      AI_BATCH: { type: "ai" },
+    });
+  });
+
+  it("types each binding as Workers AI, which cf turns into Ai", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.AI).toEqualTypeOf<AiBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: { id: "assistant", resources: { kv: ["AI"], ai: ["AI"] } },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow("ai: AI reuses a binding name the Worker already has.");
+  });
+
+  it("leaves a manifest without resources.ai with no ai binding", () => {
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "ai",
       ),
     ).toEqual([]);
   });

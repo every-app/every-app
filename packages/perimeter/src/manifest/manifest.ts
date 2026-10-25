@@ -97,6 +97,12 @@ export const ResourcesSchema = z
      * `<worker>--<binding>` ({@link bucketNameFor}).
      */
     r2: z.array(z.string()).optional(),
+    /**
+     * Workers AI, by binding (`["AI"]`), which every one of the app's
+     * Workers binds: account-wide inference billed to the account, nothing
+     * to create. The Gateway's `workers-ai` provider is the brokered path.
+     */
+    ai: z.array(z.string()).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -853,6 +859,7 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
   r2: z.array(BindingNameSchema).optional(),
+  ai: z.array(BindingNameSchema).optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -1114,6 +1121,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.kv ?? []),
     ...(manifest.resources?.r2 ?? []),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.resources?.ai ?? []),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1139,6 +1147,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.resources?.ai ?? []),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1150,9 +1159,12 @@ export function bindingNamesOf(
  * The dispatch tier (customer code in a Workers for Platforms namespace)
  * gets no Hyperdrive: an account holds at most 25 configs, so they are
  * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
- * refuses R2 bindings. Nor inbound mail: the platform's zones aren't an
- * organization's to route. Nor secrets of its own: a third-party Worker
- * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
+ * refuses R2 bindings. Nor Workers AI: the binding bills whatever account
+ * the Worker runs in, the platform's here, with no Gateway budget (the
+ * `workers-ai` provider is the brokered path). Nor inbound mail: the
+ * platform's zones aren't an organization's to route. Nor secrets of its
+ * own: a third-party Worker gets GATEWAY_URL and EVERY_APP_ORG_ID only, and
+ * nothing sets another.
  */
 export function manifestTierProblems(
   manifest: Pick<Manifest, "resources" | "email" | "secrets">,
@@ -1169,6 +1181,11 @@ export function manifestTierProblems(
   if (manifest.resources?.r2?.length) {
     problems.push(
       "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  if (manifest.resources?.ai?.length) {
+    problems.push(
+      "resources.ai: the Workers AI binding isn't available to apps in a dispatch namespace (it bills the platform's account); list the workers-ai provider instead",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);

@@ -25,6 +25,7 @@ export {
   localD1Id,
   localD1Path,
   workflowNameFor,
+  type AiBinding,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,

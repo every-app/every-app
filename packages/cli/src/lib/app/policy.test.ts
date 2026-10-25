@@ -243,7 +243,6 @@ describe("appPolicyProblems", () => {
     ["a private network", { type: "vpc-service", serviceId: "s1" }],
     ["a secrets store", { type: "secrets-store-secret", storeId: "s", secretName: "x" }],
     ["shared rate-limit counters", { type: "rate-limit", namespace: "4180", simple: { limit: 1, period: 60 } }],
-    ["Workers AI directly", { type: "ai" }],
   ])("refuses %s, a binding type apps can't use", async (_case, binding) => {
     const config = await builtConfig();
     config["env"].EXTRA = binding;
@@ -352,6 +351,74 @@ describe("appPolicyProblems", () => {
       expect(appPolicyProblems(config, none)).toEqual([]);
       expect(appPolicyProblems(config, INPUTS)).toEqual([]);
     });
+  });
+});
+
+describe("with resources.ai", () => {
+  const WITH_AI: InstallTarget = { ...INPUTS, declared: { ai: ["AI"] } };
+
+  it("accepts the Workers AI binding everyAppWorker() builds, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, ai: ["AI"] },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_AI);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      expect(config["env"]["AI"]).toEqual({ type: "ai" });
+    }
+    const inputs = { ...WITH_AI, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    // The same build, with the manifest's declaration gone: cloudflare.config.ts
+    // can't add account-wide inference on its own.
+    const undeclared = { ...inputs, declared: undefined };
+    expect(appPolicyProblems(app, undeclared)).toEqual([
+      "AI is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai",
+    ]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", undeclared)).toEqual([
+      "AI is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai",
+    ]);
+  });
+
+  it("refuses Workers AI the manifest doesn't declare", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "ai" };
+    expect(appPolicyProblems(config, INPUTS)).toEqual([
+      "EXTRA is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai",
+    ]);
+    expect(appPolicyProblems(config, { ...INPUTS, declared: { ai: [] } })).toEqual([
+      "EXTRA is a Workers AI binding, which everyapp.config.ts doesn't declare; list it in resources.ai",
+    ]);
+  });
+
+  it("refuses Workers AI under a name resources.ai doesn't list", async () => {
+    const config = await builtConfig();
+    config["env"].AI = { type: "ai" };
+    config["env"].MORE_AI = { type: "ai" };
+    expect(appPolicyProblems(config, WITH_AI)).toEqual([
+      "MORE_AI is a Workers AI binding, which isn't one of the app's in resources.ai (AI)",
+    ]);
   });
 });
 
