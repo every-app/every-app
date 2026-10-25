@@ -13,8 +13,9 @@ name: Release
 #
 # The build needs no Cloudflare account and no secret: `everyapp release`
 # packs a tenant-neutral Build Output; the Gateway that installs it fills in
-# the account. The CLI and the SDK come from vendor/ (file: dependencies), so
-# nothing here depends on a checkout of the Every App repository.
+# the account. The CLI and the SDK are the published packages pinned in
+# package.json (or vendored tarballs under vendor/), so nothing here depends
+# on a checkout of the Every App repository.
 on:
   pull_request:
   push:

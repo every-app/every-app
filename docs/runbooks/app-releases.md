@@ -14,28 +14,37 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
 
 ## What an app repository needs
 
-1. **The CLI and the SDK, resolvable from a clone.** Nothing is published
-   to npm while we work from the checkout (`.github/RELEASE.md`), and the
+1. **The CLI and the SDK, resolvable from a clone.** The
    `link:../private-every-app/...` paths the ports used only resolve on a
    machine with that checkout beside the app: a stranger's `pnpm install`
    left dangling symlinks, and `pnpm dev` failed with
-   `everyapp: command not found`. So the two packages are vendored as
-   tarballs in the app's `vendor/` directory and referenced as `file:`
-   dependencies:
+   `everyapp: command not found`. Since 2026-10-25 the two packages are on
+   npm under the dist-tag `next` (`everyapp@0.3.0-rc.1`,
+   `@every-app/sdk@0.3.0-rc.1`; `latest` still points at the pre-October
+   0.2.x, so never `npx everyapp`), and an app pins the exact version:
 
    ```json
-   "dependencies":    { "@every-app/sdk": "file:vendor/every-app-sdk-0.3.0.tgz" },
-   "devDependencies": { "everyapp": "file:vendor/everyapp-0.3.0.tgz" }
+   "dependencies":    { "@every-app/sdk": "0.3.0-rc.1" },
+   "devDependencies": { "everyapp": "0.3.0-rc.1" }
    ```
 
-   A packed CLI runs `dev`, `db migrate` and `release` on its own (its
-   bundle inlines the SDK, the perimeter and the toolbus; its other imports
-   are its declared dependencies, which pnpm installs from the registry).
-   It can't `create`, `setup`, `update`, `deploy` or `install`: those build
-   the Gateway from a checkout and stop with `CHECKOUT_MISSING`. Deploys
-   therefore run from an Every App checkout (`pnpm everyapp install <url>`
-   there, or that checkout's CLI from the app's directory:
-   `node ../every-app/packages/cli/bin/everyapp.js deploy`).
+   Exact, not a range: a release is built from what the lockfile says, and
+   a pre-release range would float. A repository with pnpm's
+   `minimumReleaseAge` must list `everyapp` in `minimumReleaseAgeExclude`
+   (OpenCRM and OpenSEO do; `@every-app/*` covers the SDK), or a fresh
+   publish waits out the window.
+
+   The fallback, when the published version predates something the app
+   needs (an SDK export, a CLI check), is the same two packages packed from
+   a checkout and committed as `file:` tarballs under the app's `vendor/`
+   (`pnpm pack-for-app`, below). Either way the CLI in the app runs `dev`,
+   `db migrate` and `release` on its own (its bundle inlines the SDK, the
+   perimeter and the toolbus; its other imports are its declared
+   dependencies). It can't `create`, `setup`, `update`, `deploy` or
+   `install`: those build the Gateway from a checkout and stop with
+   `CHECKOUT_MISSING`. Deploys therefore run from an Every App checkout
+   (`pnpm everyapp install <url>` there, or that checkout's CLI from the
+   app's directory: `node ../every-app/packages/cli/bin/everyapp.js deploy`).
 
 2. **A Release workflow.** `release.yml` in the app's `.github/workflows` runs
    `pnpm install --frozen-lockfile` and `pnpm exec everyapp release`, keeps
@@ -52,24 +61,27 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
 From an Every App checkout, with the app's repository cloned beside it:
 
 ```sh
-pnpm pack-for-app ../open-crm --workflow
+pnpm pack-for-app ../open-crm --npm 0.3.0-rc.1 --workflow
 ```
 
-`scripts/pack-for-app.mjs` builds the SDK and the CLI, packs both into
-`<app>/vendor/` (replacing earlier tarballs), points the app's `package.json`
-at them, writes `vendor/README.md` (which commit the tarballs come from, how
-to refresh them, how to use a live checkout instead), copies
-`scripts/pack-for-app/release.yml` into the app's `.github/workflows` as
-`release.yml` with `--workflow`, and runs `pnpm install` in the app so its lockfile records the
-tarballs' integrity. Commit `vendor/`, `package.json`, `pnpm-lock.yaml` and
-the workflow. `--no-build` skips the builds (the tarballs are packed from
-`dist/` as it is), `--no-install` the install.
+`scripts/pack-for-app.mjs` with `--npm <version>` points the app's
+`package.json` at that exact published version of both packages (each in
+the dependency section it already lives in), deletes any `vendor/` tarballs
+of ours, copies `scripts/pack-for-app/release.yml` into the app's
+`.github/workflows` as `release.yml` with `--workflow`, and runs
+`pnpm install` in the app so its lockfile records the pin. Commit
+`package.json`, `pnpm-lock.yaml` and the workflow (and `vendor/`'s removal).
 
-Refreshing after a platform change is the same command without
-`--workflow`. A refreshed tarball keeps its name; its integrity changes, so a
-`pnpm install --frozen-lockfile` against the old lockfile fails with
-`ERR_PNPM_TARBALL_INTEGRITY` rather than build with stale code, and the
-script's `pnpm install` is what updates the lockfile.
+Without `--npm` the script vendors instead: it builds the SDK and the CLI,
+packs both into `<app>/vendor/` (replacing earlier tarballs), points
+`package.json` at them (`file:vendor/…`), writes `vendor/README.md` (which
+commit the tarballs come from, how to refresh them, how to use a live
+checkout instead), and runs `pnpm install`. `--no-build` skips the builds,
+`--no-install` the install. A refreshed tarball keeps its name; its integrity
+changes, so a `pnpm install --frozen-lockfile` against the old lockfile fails
+with `ERR_PNPM_TARBALL_INTEGRITY` rather than build with stale code, and the
+script's `pnpm install` is what updates the lockfile. Moving from tarballs
+to npm later is the same command with `--npm`.
 
 The app's default branch is what the workflow releases from. A repository
 whose default branch isn't `main` (Agentic Inbox's is `everyapp` until it is
@@ -105,13 +117,9 @@ installs on a fresh account as it is.
 
 ## The alternatives, for the record
 
-- **npm packages at a pinned version** (`"everyapp": "0.3.0"`): the
-  cleanest once publishing resumes (`.github/RELEASE.md`, "Turning
-  publishing back on"): drop `"private": true` from
-  `packages/cli/package.json` and `packages/sdk/package.json`, publish the
-  SDK then the CLI, and replace the `file:` specifiers. Until then every
-  clone would break, and the ports' `pnpm-workspace.yaml` `minimumReleaseAge`
-  (8 days) would refuse a just-published `everyapp` unless excluded.
+- **Vendored tarballs** were the launch-week default (2026-10-24, before
+  anything was published): zero steps for anyone, and still the fallback
+  above. 560 KB of binaries per repository, refreshed by hand.
 - **A git dependency on the platform repository**
   (`github:every-app/every-app#<sha>&path:/packages/sdk`): pnpm resolves it
   but ships only `package.json` and `README.md` (the package's `files` is
