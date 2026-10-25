@@ -205,17 +205,32 @@ describe("rateLimitCredentialRequest", () => {
     );
   });
 
-  it("covers sign-up, password reset and the setup claim", async () => {
+  it("covers sign-up, password reset, the setup claim and the invite link lookup", async () => {
     for (const path of [
       "/api/auth/sign-up/email",
       "/api/auth/request-password-reset",
       "/api/setup/claim",
+      "/api/invitations/lookup",
     ]) {
       const env = { AUTH_RATE_LIMIT_IP: limiter(0) };
       expect(
         (await rateLimitCredentialRequest(post(path, {}), env))?.status,
       ).toBe(429);
     }
+  });
+
+  it("counts the invite link lookup per address only, and leaves its body readable", async () => {
+    const env = {
+      AUTH_RATE_LIMIT_IP: limiter(1),
+      AUTH_RATE_LIMIT_EMAIL: limiter(0),
+      AUTH_RATE_LIMIT_ACCOUNT: limiter(0),
+    };
+    const request = post("/api/invitations/lookup", { token: "einv_abc" });
+    await expect(rateLimitCredentialRequest(request, env)).resolves.toBeNull();
+    expect(env.AUTH_RATE_LIMIT_IP.keys).toEqual(["ip:203.0.113.7"]);
+    expect(env.AUTH_RATE_LIMIT_EMAIL.keys).toEqual([]);
+    expect(env.AUTH_RATE_LIMIT_ACCOUNT.keys).toEqual([]);
+    await expect(request.json()).resolves.toEqual({ token: "einv_abc" });
   });
 
   it("reads the email from form bodies too", async () => {

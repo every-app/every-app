@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { getPublicErrorCode } from "@/server/errors";
 import { SetupError, SetupService } from "@/server/services/SetupService";
 import {
+  gatewayOrigin,
   jsonResponse,
   SENSITIVE_JSON_HEADERS,
 } from "@/routes/api/_request-origin";
@@ -17,15 +17,6 @@ const claimSchema = z.object({
     .min(8, "Password must be at least 8 characters")
     .max(128, "Password must be at most 128 characters"),
 });
-
-function gatewayOrigin(request: Request): string {
-  try {
-    if (env.GATEWAY_URL) return new URL(env.GATEWAY_URL).origin;
-  } catch {
-    // Fall through to the request's own origin.
-  }
-  return new URL(request.url).origin;
-}
 
 function respond(payload: unknown, status = 200): Response {
   return jsonResponse(payload, status, SENSITIVE_JSON_HEADERS);

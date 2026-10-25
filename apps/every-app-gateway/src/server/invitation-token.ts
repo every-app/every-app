@@ -7,7 +7,9 @@
  * slow hash. Signing up through an invitation and accepting one both need a
  * live token.
  */
+import { maskEmail } from "./mask-email";
 import { InvitationLinkRepository } from "./repositories/InvitationLinkRepository";
+import { OrganizationRepository } from "./repositories/OrganizationRepository";
 
 const INVITATION_TOKEN_PREFIX = "einv_";
 
@@ -51,4 +53,26 @@ export async function findPendingInvitationByToken(
     return null;
   }
   return invitation;
+}
+
+/**
+ * What an invite link may show before anyone signs in: the organization's
+ * name and the invited address, masked. Null for an unknown, used, canceled
+ * or expired token alike, so the lookup tells a prober nothing about a
+ * token that isn't live.
+ */
+export async function peekInvitation(
+  token: string,
+  now = new Date(),
+): Promise<{ organizationName: string; invitedEmail: string } | null> {
+  const invitation = await findPendingInvitationByToken(token, now);
+  if (!invitation) return null;
+  const organization = await OrganizationRepository.findSummaryById(
+    invitation.organizationId,
+  );
+  if (!organization) return null;
+  return {
+    organizationName: organization.name,
+    invitedEmail: maskEmail(invitation.email),
+  };
 }

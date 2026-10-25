@@ -33,6 +33,7 @@ import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
+import { Route as ApiInvitationsLookupRouteImport } from './routes/api/invitations/lookup'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
 import { Route as ApiAdminAppsInstallRouteImport } from './routes/api/admin/apps/install'
 import { Route as ApiAdminDeploysIdRouteImport } from './routes/api/admin/deploys/$id'
@@ -157,6 +158,11 @@ const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
   path: '/api/dev/identity',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInvitationsLookupRoute = ApiInvitationsLookupRouteImport.update({
+  id: '/api/invitations/lookup',
+  path: '/api/invitations/lookup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
   id: '/api/setup/claim',
   path: '/api/setup/claim',
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin/': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/invitations/lookup': typeof ApiInvitationsLookupRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
+    | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/admin/'
     | '/api/admin/apps/install'
@@ -320,6 +330,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
+    | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/admin'
     | '/api/admin/apps/install'
@@ -350,6 +361,7 @@ export interface FileRouteTypes {
     | '/_app/settings/connections'
     | '/api/auth/$'
     | '/api/dev/identity'
+    | '/api/invitations/lookup'
     | '/api/setup/claim'
     | '/_app/admin/'
     | '/api/admin/apps/install'
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
+  ApiInvitationsLookupRoute: typeof ApiInvitationsLookupRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
   ApiAdminAppsInstallRoute: typeof ApiAdminAppsInstallRouteWithChildren
   ApiAdminDeploysIdRoute: typeof ApiAdminDeploysIdRoute
@@ -546,6 +559,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDevIdentityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/invitations/lookup': {
+      id: '/api/invitations/lookup'
+      path: '/api/invitations/lookup'
+      fullPath: '/api/invitations/lookup'
+      preLoaderRoute: typeof ApiInvitationsLookupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/setup/claim': {
       id: '/api/setup/claim'
       path: '/api/setup/claim'
@@ -642,6 +662,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,
+  ApiInvitationsLookupRoute: ApiInvitationsLookupRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
   ApiAdminAppsInstallRoute: ApiAdminAppsInstallRouteWithChildren,
   ApiAdminDeploysIdRoute: ApiAdminDeploysIdRoute,

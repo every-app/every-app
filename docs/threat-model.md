@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 317 is
+  try first; the complete register of 318 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -255,7 +255,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 317 invariants
+stop, the invariants to try first (the complete register, 318 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -423,7 +423,7 @@ owner, or on an account that belongs to another organization too. A
 sign-in page redirecting off-site. Error bodies leaking internals. A
 misconfigured deployment mode turning anything on.
 
-**Invariants.** The register has 45; the ones to try first:
+**Invariants.** The register has 46; the ones to try first:
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -432,6 +432,7 @@ misconfigured deployment mode turning anything on.
 | `invite.token-is-the-credential` | Signing up through an invitation and accepting one both require an `einv_` link token whose SHA-256 maps to a pending, unexpired invitation; the invitation id never works. | `apps/every-app-gateway/src/server/invitation-token.ts:38-54` | `apps/every-app-gateway/src/server/invites-without-email.sqlite.test.ts` :: never accepts the invitation id in place of the link |
 | `invite.email-binding` | An invite link only signs up or joins an account whose email equals the invited email (case-insensitive). | `apps/every-app-gateway/src/auth/config.ts:78-94` | `apps/every-app-gateway/src/server/invites-without-email.sqlite.test.ts` :: lets the invitee join through the copied link, and nobody else |
 | `invite.secrets-hidden-from-members` | Better Auth's accept-invitation, list-invitations and get-full-organization endpoints answer 404 over HTTP; the gateway's own organization view returns no members or invitations to a member. | `apps/every-app-gateway/src/auth/config.ts:242-257, 455` (`DISABLED_AUTH_PATHS`) | `apps/every-app-gateway/src/server/invites-without-email.sqlite.test.ts` :: gives a plain member no way to read an invitation |
+| `invite.peek-token-only` | The pre-sign-in lookup (`POST /api/invitations/lookup`) answers only to a live `einv_` link token, with the organization's name and the invited address masked to its first character and domain; unknown, used, canceled and expired tokens get one identical `404 INVITATION_NOT_VALID`; same-origin JSON only, counted per client address with the credential paths. | `apps/every-app-gateway/src/routes/api/invitations/lookup.ts:27-58`; `src/server/invitation-token.ts:64-78` (`peekInvitation`); `src/server/auth-rate-limit.ts:40` | `apps/every-app-gateway/src/server/invitation-peek.sqlite.test.ts` :: answers one identical 404 for unknown, used, canceled and expired links |
 | `ba.admin-plugin-closed` | Every endpoint of Better Auth's admin plugin (ban, impersonate, set password, set role, list and remove users) answers 404 over HTTP in every mode. | `apps/every-app-gateway/src/auth/config.ts:264-278, 455` | `apps/every-app-gateway/src/auth/config.test.ts` :: closes every one of the admin plugin's endpoints over HTTP |
 | `ba.org-creation-closed` | No HTTP client can create an organization: the endpoint is disabled, `allowUserToCreateOrganization` is false, and the before-hook refuses creation while no owner exists. | `apps/every-app-gateway/src/auth/config.ts:242, 469, 538-545` | `apps/every-app-gateway/src/auth/auth.sqlite.test.ts` :: closes organization creation over HTTP, before and after the claim |
 | `csrf.cookie-state-change-same-origin` | On the gateway host, any non-GET/HEAD/OPTIONS request carrying a cookie needs `Sec-Fetch-Site: same-origin` or an `Origin` on the gateway host, else `403 csrf_denied`; the only exemptions are the token-authenticated `/mcp`, `/oauth/token` and `/oauth/register`, none of which reads the cookie. | `apps/every-app-gateway/src/server/control-plane-guard.ts:26-50, 63-92` | `apps/every-app-gateway/src/server.test.ts` :: rejects a cookie-carrying cross-site POST to any control-plane route |
@@ -448,7 +449,7 @@ misconfigured deployment mode turning anything on.
 | `ban.removal-revokes-org-grants` | Removing a member deletes the membership and their `user_app_access` rows, revokes their tokens and MCP grants for that organization, and deletes the account only when they belong to no other organization. | `apps/every-app-gateway/src/server/repositories/OrganizationMembersRepository.ts:171-204` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: revokes the deleted user's personal access tokens |
 | `org.context-is-verified-membership` | The organization a session acts under is always a members row for that user; an `activeOrganizationId` they aren't a member of resolves to null; without one, only a sole membership is a fallback. | `apps/every-app-gateway/src/server/organization/orgContext.ts:51-120` | `apps/every-app-gateway/src/server/organization/orgContext.test.ts` :: rejects an active organization the user is not a member of |
 | `org.suspended-opens-nothing` | A non-active organization fails the member middleware with `ORGANIZATION_SUSPENDED` and is not attributable for background work. | `apps/every-app-gateway/src/middleware/auth.ts:67-72` | `apps/every-app-gateway/src/middleware/auth.test.ts` :: refuses a suspended organization's members |
-| `ratelimit.credential-endpoints` | Sign-in, sign-up, reset and the setup claim are counted per client address (IPv6 by /64), per account and per gateway with Workers Rate Limiting bindings. | `apps/every-app-gateway/src/server/auth-rate-limit.ts:30-43, 98-104, 161-201` | `apps/every-app-gateway/src/server/auth-rate-limit.test.ts` :: throttles brute-force sign-in from one IP once its limit is spent |
+| `ratelimit.credential-endpoints` | Sign-in, sign-up, reset, the setup claim and the invite link lookup are counted per client address (IPv6 by /64), per account and per gateway with Workers Rate Limiting bindings. | `apps/every-app-gateway/src/server/auth-rate-limit.ts:30-47, 99-108, 162-202` | `apps/every-app-gateway/src/server/auth-rate-limit.test.ts` :: throttles brute-force sign-in from one IP once its limit is spent |
 | `mail.daily-budgets-and-escaping` | Every verification, reset and invitation mail is counted before sending against per-kind daily budgets per recipient (an HMAC of the address) and per gateway; every interpolated value is HTML-escaped and kept to one line. | `apps/every-app-gateway/src/server/email/sendEmail.ts:102-193`; `email/templates.ts:18-32` | `apps/every-app-gateway/src/server/email/sendEmail.test.ts` :: sends a few mails of a kind a day to one address, then refuses |
 | `redirect.sign-in-return-paths-safe` | The sign-in, sign-up, verify-email and reset pages follow `redirect` only as a same-origin path (`/` but not `//` or `/\`, no `://`) and `return_to` only as an http(s) URL on a subdomain of the current host that isn't a server-function URL. | `apps/every-app-gateway/src/utils/auth.ts:5-13, 43-72` | `apps/every-app-gateway/src/utils/auth.test.ts` :: rejects absolute URLs and missing values |
 | `session.cookie-scope-flags-and-ip` | In production the session cookie is `__Secure-`-prefixed and `Secure`, `Domain`-scoped to `APP_BASE_DOMAIN` (never a parent zone), and Better Auth's base URL is pinned to `GATEWAY_URL`, never derived from the request. | `apps/every-app-gateway/src/auth/config.ts:305-322, 340, 367, 373-397` | `apps/every-app-gateway/src/auth/config.test.ts` :: enables rate limiting, secure cookies and app-subdomain cookies in production |

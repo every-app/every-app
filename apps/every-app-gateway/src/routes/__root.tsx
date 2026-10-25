@@ -74,7 +74,17 @@ function RootComponent() {
   return (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, buster: CACHE_BUSTER }}
+      persistOptions={{
+        persister,
+        buster: CACHE_BUSTER,
+        dehydrateOptions: {
+          // The default (successful queries only), minus any query with
+          // `meta: { persist: false }`, which stays in memory: the invite
+          // link lookup keys on the link's secret.
+          shouldDehydrateQuery: (query) =>
+            query.state.status === "success" && query.meta?.persist !== false,
+        },
+      }}
     >
       <TooltipProvider>
         <AppRouter />

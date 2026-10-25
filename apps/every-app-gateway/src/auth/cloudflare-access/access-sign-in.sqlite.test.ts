@@ -51,6 +51,7 @@ import {
   userAppAccess,
   users,
 } from "@/db/schema";
+import { peekInvitation } from "@/server/invitation-token";
 import { UserRepository } from "@/server/repositories/UserRepository";
 import { AdminService } from "@/server/services/AdminService";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
@@ -432,7 +433,10 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     const { user } = (await response.json()) as {
       user: { id: string; email: string };
     };
-    // Bob opens the link afterwards: the accept page just confirms it.
+    // Bob opens the link afterwards. The pre-sign-in lookup now calls it
+    // dead (no longer pending), so the accept page must not end on that
+    // answer for a signed-in person: the link still confirms it.
+    await expect(peekInvitation(token)).resolves.toBeNull();
     await expect(
       InvitationService.accept(user, new Headers(), token),
     ).resolves.toEqual({ organizationId: owner.organizationId });

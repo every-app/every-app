@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const workers = vi.hoisted(() => ({ env: {} as { GATEWAY_URL?: string } }));
+vi.mock("cloudflare:workers", () => workers);
+
 import {
+  gatewayOrigin,
   JSON_HEADERS,
   SENSITIVE_JSON_HEADERS,
   jsonResponse,
@@ -23,5 +28,23 @@ describe("jsonResponse", () => {
       "no-store, no-cache, must-revalidate",
     );
     expect(response.headers.get("pragma")).toBe("no-cache");
+  });
+});
+
+describe("gatewayOrigin", () => {
+  const request = new Request("http://localhost:8787/api/setup/claim", {
+    method: "POST",
+  });
+
+  it("is GATEWAY_URL's origin when it is set", () => {
+    workers.env.GATEWAY_URL = "https://gateway.example.com/";
+    expect(gatewayOrigin(request)).toBe("https://gateway.example.com");
+  });
+
+  it("falls back to the request's origin without one, or with a broken one", () => {
+    delete workers.env.GATEWAY_URL;
+    expect(gatewayOrigin(request)).toBe("http://localhost:8787");
+    workers.env.GATEWAY_URL = "not a url";
+    expect(gatewayOrigin(request)).toBe("http://localhost:8787");
   });
 });

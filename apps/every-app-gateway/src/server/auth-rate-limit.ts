@@ -1,7 +1,7 @@
 /**
  * Brute-force limits on the gateway's credential endpoints: sign-in, sign-up,
- * password reset, the owner setup claim, and OAuth client registration and
- * tokens.
+ * password reset, the owner setup claim, the invite link lookup, and OAuth
+ * client registration and tokens.
  *
  * Better Auth's own limiter keeps its counters in each isolate's memory, so
  * on Workers it limits little. These use the Workers Rate Limiting bindings
@@ -34,6 +34,10 @@ const CREDENTIAL_PATHS = new Set([
   "/api/auth/forget-password",
   "/api/auth/reset-password",
   "/api/setup/claim",
+  // Looking an invite link up before sign-in answers only to a live token;
+  // counted per address (its body names no account) so nobody probes
+  // tokens at speed.
+  "/api/invitations/lookup",
   // Starting a single sign-on (Cloudflare Access) writes a verification
   // row; Better Auth's own limiter counts them per isolate only.
   "/api/auth/sign-in/social",
