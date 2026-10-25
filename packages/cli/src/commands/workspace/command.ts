@@ -423,10 +423,13 @@ const appAccessCommand = buildCommand({
   },
 });
 
-/** `<n|off>`: a whole number of calls, or off for unlimited. */
-function parseCap(input: string): number | null {
+/**
+ * `<n|off>`: a whole number of calls, or `off` (never null: an optional
+ * positional's type drops null along with undefined).
+ */
+function parseCap(input: string): number | "off" {
   const value = input.trim().toLowerCase();
-  if (value === "off" || value === "none" || value === "unlimited") return null;
+  if (value === "off" || value === "none") return "off";
   if (!/^\d+$/.test(value)) throw new Error(`a cap is a whole number of calls per month, or off (not ${input})`);
   const cap = Number(value);
   if (cap < 1 || cap > MONTHLY_CALL_CAP_MAX) {
@@ -442,20 +445,67 @@ const appCapCommand = buildCommand({
       kind: "tuple",
       parameters: [
         { ...appParameter, brief: "The app, by id or row id: the organization's own, or a shared one" },
-        { placeholder: "n|off", brief: "Provider calls per UTC month (1 to 1,000,000,000), or off for no cap", parse: parseCap },
+        {
+          placeholder: "n|off",
+          brief: "Provider calls per UTC month (1 to 1,000,000,000), or off for no cap of its own (the workspace default applies); left out with --unlimited",
+          parse: parseCap,
+          optional: true,
+        },
+      ],
+    },
+    flags: {
+      unlimited: {
+        kind: "boolean",
+        optional: true,
+        brief: "No cap at all, even with a workspace default (instead of a number or off)",
+      },
+      ...workspaceFlags,
+    },
+  },
+  docs: {
+    brief: "Cap an app's provider calls per month, lift its own cap, or exempt it from the workspace default",
+    fullDescription: [
+      "An app has a cap of its own (a number), no cap whatever the workspace default",
+      "(--unlimited), or neither (off): the default set with workspace cap default binds it,",
+      "and without one it is uncapped. Past the cap that binds it, a provider tool answers a",
+      "tool error naming it and an app's brokered call gets 429 app_monthly_cap_exceeded until",
+      "the next UTC month. Binds within seconds. --unlimited and a number or off together are",
+      "refused (INVALID_VALUE); on a Gateway from before the workspace default, --unlimited is",
+      "refused (GATEWAY_PREDATES_DEFAULT_CAPS) and a number or off still work.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace app cap crm 5000`,
+      `  ${CLI} workspace app cap crm off`,
+      `  ${CLI} workspace app cap crm --unlimited`,
+    ].join("\n"),
+  },
+});
+
+const capDefaultCommand = buildCommand({
+  loader: async () => (await import("./apps")).capDefault,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        { placeholder: "n|off", brief: "Provider calls per UTC month (1 to 1,000,000,000) for every app without its own cap, or off for no default", parse: parseCap },
       ],
     },
     flags: workspaceFlags,
   },
   docs: {
-    brief: "Cap an app's provider calls per month, or lift the cap",
+    brief: "Set or clear the workspace default cap: what binds every app without a cap or --unlimited of its own",
     fullDescription: [
-      "Past the cap, a provider tool answers a tool error naming it and an app's brokered call",
-      "gets 429 app_monthly_cap_exceeded until the next UTC month. Binds within seconds.",
+      "The same setting as Manage workspace → Usage → Default monthly cap. An app's own cap, or",
+      "its --unlimited, stays. The Gateway holds every app without one to it within 30 seconds;",
+      "past it, a provider tool answers a tool error naming the cap and an app's brokered call",
+      "gets 429 app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the",
+      "workspace's first cap makes the built-in Cap alerts subscription, and a default set,",
+      "raised or removed queues cap.raised (a lowered one doesn't). Refused on a Gateway from",
+      "before the workspace default (GATEWAY_PREDATES_DEFAULT_CAPS): run update first.",
       "",
       "Examples:",
-      `  ${CLI} workspace app cap crm 5000`,
-      `  ${CLI} workspace app cap crm off`,
+      `  ${CLI} workspace cap default 1000`,
+      `  ${CLI} workspace cap default off --json`,
     ].join("\n"),
   },
 });
@@ -483,11 +533,15 @@ const usageCommand = buildCommand({
     },
   },
   docs: {
-    brief: "What the apps spent in a month: per app (with its cap), per member and per provider",
+    brief: "What the apps spent in a month: per app (with the cap that binds it), per member and per provider",
     fullDescription: [
       "Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a",
       "provider answered, and allowed MCP tool calls from the audit trail. Every callable app is",
-      "listed, with zeros in a month it made no call. Nothing is changed.",
+      "listed, with zeros in a month it made no call, its own cap, the cap that binds it and where",
+      "it comes from (its own, or the workspace default), whether it is exempt (--unlimited) and",
+      "whether it is paused this month; the workspace default cap comes with it. Nothing is",
+      "changed. Refused on a Gateway from before the workspace default",
+      "(GATEWAY_PREDATES_DEFAULT_CAPS): run update first.",
       "",
       `Example:\n  ${CLI} workspace usage --month 2026-10 --json`,
     ].join("\n"),
@@ -621,6 +675,11 @@ const appRoutes = buildRouteMap({
   docs: { brief: "Change an app's listing, who can open it, and its monthly cap" },
 });
 
+const capRoutes = buildRouteMap({
+  routes: { default: capDefaultCommand },
+  docs: { brief: "The workspace default cap on every app's provider calls" },
+});
+
 const tokenRoutes = buildRouteMap({
   routes: { revoke: tokenRevokeCommand },
   docs: { brief: "Revoke a personal access token" },
@@ -728,6 +787,7 @@ export const workspaceRoutes = buildRouteMap({
     group: groupRoutes,
     apps: appsCommand,
     app: appRoutes,
+    cap: capRoutes,
     usage: usageCommand,
     activity: activityCommand,
     tokens: tokensCommand,

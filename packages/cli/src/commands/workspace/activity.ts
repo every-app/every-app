@@ -59,6 +59,15 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
   const { ws } = await connect(options);
   const month = flags.month ?? workspace.utcMonth(new Date(ws.now));
   const summary = await workspace.usage(ws, month);
+  // The cap that binds the app, where it comes from, and whether it is paused.
+  const capCell = (row: (typeof summary.byApp)[number]): string => {
+    if (!row.callable) return chalk.dim("removed");
+    if (row.capUnlimited) return chalk.dim("none (unlimited)");
+    if (row.effectiveMonthlyCallCap === null) return chalk.dim("none");
+    const cap = n(row.effectiveMonthlyCallCap);
+    const bound = row.capSource === "default" ? `${cap} ${chalk.dim("(default)")}` : cap;
+    return row.paused ? `${bound} ${chalk.yellow("paused")}` : bound;
+  };
   const apps = formatTable(
     ["APP", "CALLS", "FAILED", "TOOL CALLS", "TOKENS IN/OUT", "COST", "CAP"],
     summary.byApp.map((row) => [
@@ -68,7 +77,7 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
       n(row.toolCalls),
       `${n(row.inputTokens)}/${n(row.outputTokens)}`,
       dollars(row.costMicros),
-      !row.callable ? chalk.dim("removed") : row.monthlyCallCap === null ? chalk.dim("none") : n(row.monthlyCallCap),
+      capCell(row),
     ]),
   );
   const members = formatTable(
@@ -95,12 +104,18 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
   );
   const calls = summary.byApp.reduce((sum, row) => sum + row.calls, 0);
   const toolCalls = summary.byApp.reduce((sum, row) => sum + row.toolCalls, 0);
-  const headline = `${ws.organization.name}, ${month}: ${plural(calls, "provider call")} and ${plural(toolCalls, "tool call")} across ${plural(summary.byApp.length, "app")}`;
+  const paused = summary.byApp.filter((row) => row.paused).length;
+  const headline = `${ws.organization.name}, ${month}: ${plural(calls, "provider call")} and ${plural(toolCalls, "tool call")} across ${plural(summary.byApp.length, "app")}${paused > 0 ? `, ${paused} paused` : ""}`;
+  const defaultCap =
+    summary.defaultMonthlyCallCap === null
+      ? "No workspace default cap."
+      : `Workspace default cap: ${n(summary.defaultMonthlyCallCap)} calls a month for every app without its own.`;
   out.emit({
     type: "done",
     message: headline,
     display: [
       headline,
+      chalk.dim(defaultCap),
       "",
       chalk.bold("By app"),
       ...(summary.byApp.length > 0 ? apps : [chalk.dim("no apps")]),
@@ -111,7 +126,7 @@ export async function reportUsage(options: WorkspaceOptions<WorkspaceFlags & { m
       chalk.bold("By provider"),
       ...(summary.byTarget.length > 0 ? targets : [chalk.dim("no calls")]),
       "",
-      chalk.dim(`Cap an app: ${CLI} workspace app cap <app> <n|off>`),
+      chalk.dim(`Cap an app: ${CLI} workspace app cap <app> <n|off|--unlimited>; the default: ${CLI} workspace cap default <n|off>`),
     ].join("\n"),
     data: { organization: ws.organization, ...summary },
   });

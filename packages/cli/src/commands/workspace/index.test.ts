@@ -29,7 +29,7 @@ import {
   revokeConnection,
   revokeToken,
 } from "./activity";
-import { appAccessCommand, listApps, setCap, updateApp } from "./apps";
+import { appAccessCommand, listApps, setCap, setDefaultCap, updateApp } from "./apps";
 import {
   createGroup,
   deleteGroup,
@@ -821,14 +821,23 @@ describe("workspace apps", () => {
 
   it("cap sets, changes and lifts the monthly cap, on the organization's own apps and shared ones", async () => {
     await setCap(opts(), "crm", 5000);
-    expect(data()).toMatchObject({ app: { appId: "crm" }, cap: 5000, was: null });
-    expect(rows("SELECT monthly_call_cap, updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 5000, updated_by: "u-owner" }]);
+    expect(data()).toMatchObject({
+      app: { appId: "crm" },
+      cap: 5000,
+      unlimited: false,
+      was: null,
+      wasUnlimited: false,
+      effectiveCap: 5000,
+      capSource: "app",
+    });
+    // A number writes the cap and unlimited 0 in the one statement.
+    expect(rows("SELECT monthly_call_cap, unlimited, updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 5000, unlimited: 0, updated_by: "u-owner" }]);
     events = [];
     await setCap(opts(), "todo", 250);
     expect(data()).toMatchObject({ cap: 250, was: 500 });
     events = [];
     await setCap(opts(), "todo", null);
-    expect(data()).toMatchObject({ cap: null, was: 250 });
+    expect(data()).toMatchObject({ cap: null, was: 250, effectiveCap: null, capSource: null });
     expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-todo'")).toEqual([]);
     events = [];
     await setCap(opts(), "shared", 10);
@@ -957,10 +966,11 @@ describe("workspace usage", () => {
     await reportUsage(opts({ month: "2026-10" }));
     expect(data()["byApp"]).toEqual([
       // Only allowed tool calls count (call-2 was blocked), as the Gateway's summary counts them.
-      expect.objectContaining({ appSlug: "crm", calls: 8, failures: 1, inputTokens: 800, outputTokens: 160, toolCalls: 1, monthlyCallCap: null, callable: true }),
-      expect.objectContaining({ appSlug: "todo", calls: 2, costMicros: 1500, toolCalls: 1, monthlyCallCap: 500, callable: true }),
+      expect.objectContaining({ appSlug: "crm", calls: 8, failures: 1, inputTokens: 800, outputTokens: 160, toolCalls: 1, monthlyCallCap: null, capUnlimited: false, effectiveMonthlyCallCap: null, capSource: null, paused: false, callable: true }),
+      expect.objectContaining({ appSlug: "todo", calls: 2, costMicros: 1500, toolCalls: 1, monthlyCallCap: 500, capUnlimited: false, effectiveMonthlyCallCap: 500, capSource: "app", paused: false, callable: true }),
       expect.objectContaining({ appSlug: "shared", calls: 0, toolCalls: 0, callable: true }),
     ]);
+    expect(data()["defaultMonthlyCallCap"]).toBeNull();
     expect(data()["byMember"]).toEqual([
       expect.objectContaining({ userId: "u-mia", email: "mia@acme.com", calls: 8, toolCalls: 1 }),
       expect.objectContaining({ userId: "", email: null, calls: 2 }),
@@ -1115,6 +1125,8 @@ describe("an API-token operator", () => {
     expect(rows("SELECT granted_by FROM user_app_access WHERE app_row_id = 'app-crm' AND user_id = 'u-sam'")).toEqual([{ granted_by: null }]);
     await lib.setMonthlyCap(ws, "crm", 10);
     expect(rows("SELECT updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ updated_by: null }]);
+    await lib.setDefaultMonthlyCap(ws, 10);
+    expect(rows("SELECT updated_by FROM org_settings WHERE organization_id = ?", ORG)).toEqual([{ updated_by: null }]);
     await lib.revokeConnection(ws, "mcpc_mia");
     expect(rows("SELECT revoked_by, revoked_reason FROM mcp_connections WHERE id = 'mcpc_mia'")).toEqual([{ revoked_by: null, revoked_reason: "user" }]);
     // The ban names the token as who did it.
@@ -1279,5 +1291,175 @@ describe("workspace role", () => {
     expect(parseWorkspaceRole("Owner")).toBe("owner");
     expect(parseWorkspaceRole(" member ")).toBe("member");
     expect(() => parseWorkspaceRole("boss")).toThrow("Use owner, admin or member.");
+  });
+});
+
+describe("workspace cap default and workspace app cap --unlimited", () => {
+  const CRM = { id: "crm", rowId: "app-crm", name: "CRM" };
+  const capAlerts = () => rows("SELECT id FROM event_subscriptions WHERE organization_id = ? AND builtin = 'cap_alerts'", ORG);
+  /**
+   * The cap.raised events queued so far, then forgotten: the tests' clock
+   * is fixed, so events made in one millisecond don't sort.
+   */
+  const takeCapEvents = () => {
+    const taken = rows("SELECT data, app_row_id FROM events WHERE type = 'cap.raised'").map((row) => ({
+      ...(JSON.parse(String(row["data"])) as Record<string, unknown>),
+      app_row_id: row["app_row_id"],
+    }));
+    sqlite().sqlite.exec("DELETE FROM event_deliveries; DELETE FROM events");
+    return taken;
+  };
+
+  it("cap default writes org_settings, makes the Cap alerts subscription with the first cap, and queues cap.raised with no app when first set, raised or removed, never lowered, in the one batch", async () => {
+    account.cf.calls.length = 0;
+    await setDefaultCap(opts(), 1000);
+    expect(rows("SELECT organization_id, default_monthly_call_cap, updated_at, updated_by FROM org_settings")).toEqual([
+      { organization_id: ORG, default_monthly_call_cap: 1000, updated_at: NOW, updated_by: "u-owner" },
+    ]);
+    expect(capAlerts()).toHaveLength(1);
+    expect(takeCapEvents()).toEqual([{ app: null, cap: 1000, previousCap: null, source: "default", app_row_id: null }]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_settings", "INSERT INTO event_subscriptions", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({ cap: 1000, was: null, capAlerts: { subscriptionId: capAlerts()[0]!["id"] } });
+    expect(done()!["message"]).toContain("on the Gateway within 30 seconds");
+
+    // Lowered: the row changes in place, and that is no event.
+    events = [];
+    await setDefaultCap(opts(), 500);
+    expect(rows("SELECT default_monthly_call_cap FROM org_settings")).toEqual([{ default_monthly_call_cap: 500 }]);
+    expect(takeCapEvents()).toEqual([]);
+    expect(data()).toMatchObject({ cap: 500, was: 1000, capAlerts: null });
+
+    // Raised: an event; the same again: nothing changed, nothing to announce.
+    events = [];
+    await setDefaultCap(opts(), 2000);
+    expect(takeCapEvents()).toEqual([{ app: null, cap: 2000, previousCap: 500, source: "default", app_row_id: null }]);
+    events = [];
+    await setDefaultCap(opts(), 2000);
+    expect(takeCapEvents()).toEqual([]);
+    expect(done()!["message"]).toContain("Nothing changed");
+
+    // Removed: the row goes, and the event says cap null.
+    events = [];
+    account.cf.calls.length = 0;
+    await setDefaultCap(opts(), null);
+    expect(rows("SELECT organization_id FROM org_settings")).toEqual([]);
+    expect(takeCapEvents()).toEqual([{ app: null, cap: null, previousCap: 2000, source: "default", app_row_id: null }]);
+    expect(writeBatches()).toEqual([["DELETE FROM org_settings", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({ cap: null, was: 2000, capAlerts: null });
+    expect(done()!["message"]).toContain("on the Gateway within 30 seconds");
+
+    // Removing what isn't there: no event. Out of range: refused.
+    events = [];
+    await setDefaultCap(opts(), null);
+    expect(takeCapEvents()).toEqual([]);
+    await expect(setDefaultCap(opts(), 0)).rejects.toMatchObject({ code: "INVALID_CAP" });
+
+    // Another organization's default is its own.
+    events = [];
+    await setDefaultCap(opts({ org: "beta" }), 10);
+    expect(rows("SELECT organization_id, default_monthly_call_cap FROM org_settings")).toEqual([{ organization_id: OTHER_ORG, default_monthly_call_cap: 10 }]);
+  });
+
+  it("--unlimited writes cap NULL and unlimited 1 in one statement, off deletes the row, and cap.raised follows the cap that binds the app before and after", async () => {
+    await setDefaultCap(opts(), 1000);
+    takeCapEvents();
+
+    // A cap under the default is no raise.
+    events = [];
+    await setCap(opts(), "crm", 500);
+    expect(rows("SELECT monthly_call_cap, unlimited FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 500, unlimited: 0 }]);
+    expect(data()).toMatchObject({ cap: 500, unlimited: false, was: null, wasUnlimited: false, effectiveCap: 500, capSource: "app" });
+    expect(takeCapEvents()).toEqual([]);
+
+    // Above its own: raised.
+    events = [];
+    await setCap(opts(), "crm", 2000);
+    expect(takeCapEvents()).toEqual([{ app: CRM, cap: 2000, previousCap: 500, source: "app", app_row_id: "app-crm" }]);
+
+    // --unlimited: no cap at all, NULL and 1 together; a removal of the cap that bound it.
+    events = [];
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", undefined, true);
+    expect(rows("SELECT monthly_call_cap, unlimited, updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([
+      { monthly_call_cap: null, unlimited: 1, updated_by: "u-owner" },
+    ]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_app_settings", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({ cap: null, unlimited: true, was: 2000, wasUnlimited: false, effectiveCap: null, capSource: null, capAlerts: null });
+    expect(takeCapEvents()).toEqual([{ app: CRM, cap: null, previousCap: 2000, source: "app", app_row_id: "app-crm" }]);
+    expect(done()!["message"]).toContain("no cap at all");
+
+    // off: the row goes and the default binds it again, raised from none to 1,000.
+    events = [];
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", null);
+    expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
+    expect(writeBatches()).toEqual([["DELETE FROM org_app_settings", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({ cap: null, unlimited: false, was: null, wasUnlimited: true, effectiveCap: 1000, capSource: "default" });
+    expect(takeCapEvents()).toEqual([{ app: CRM, cap: 1000, previousCap: null, source: "app", app_row_id: "app-crm" }]);
+    expect(done()!["message"]).toContain("The workspace default of 1,000 calls a month binds it");
+
+    // off again: nothing changed, no event.
+    events = [];
+    await setCap(opts(), "crm", null);
+    expect(takeCapEvents()).toEqual([]);
+    expect(done()!["message"]).toContain("Nothing changed");
+
+    // A number or off with --unlimited, and neither: refused before anything connects.
+    createCf.mockClear();
+    await expect(setCap(opts(), "crm", 10, true)).rejects.toMatchObject({ code: "INVALID_VALUE" });
+    await expect(setCap(opts(), "crm", null, true)).rejects.toMatchObject({ code: "INVALID_VALUE" });
+    await expect(setCap(opts(), "crm", undefined)).rejects.toMatchObject({ code: "MISSING_ARGUMENT" });
+    expect(createCf).not.toHaveBeenCalled();
+  });
+
+  it("usage shows the workspace default and, per app, the cap that binds it, its source, unlimited and paused (this month only)", async () => {
+    await setDefaultCap(opts(), 1000);
+    await setCap(opts(), "shared", undefined, true);
+    // todo made 2 calls this month: a cap of 2 pauses it.
+    await setCap(opts(), "todo", 2);
+    events = [];
+    await reportUsage(opts({ month: "2026-10" }));
+    expect(data()["defaultMonthlyCallCap"]).toBe(1000);
+    expect(data()["byApp"]).toEqual([
+      expect.objectContaining({ appSlug: "crm", monthlyCallCap: null, capUnlimited: false, effectiveMonthlyCallCap: 1000, capSource: "default", paused: false }),
+      expect.objectContaining({ appSlug: "todo", monthlyCallCap: 2, capUnlimited: false, effectiveMonthlyCallCap: 2, capSource: "app", paused: true }),
+      expect.objectContaining({ appSlug: "shared", monthlyCallCap: null, capUnlimited: true, effectiveMonthlyCallCap: null, capSource: null, paused: false }),
+    ]);
+    expect(done()!["message"]).toBe("Acme, 2026-10: 10 provider calls and 2 tool calls across 3 apps, 1 paused");
+
+    // A past month's count against today's cap says nothing.
+    events = [];
+    await reportUsage(opts({ month: "2026-09" }));
+    expect(data()["byApp"].find((row: any) => row.appSlug === "todo")).toMatchObject({ effectiveMonthlyCallCap: 2, capSource: "app", paused: false });
+  });
+});
+
+describe("a Gateway from before org_settings and org_app_settings.unlimited (migration 0014)", () => {
+  // The live Gateway's D1 until `update` runs its migrations.
+  beforeEach(() => {
+    sqlite().sqlite.exec("DROP TABLE org_settings; ALTER TABLE org_app_settings DROP COLUMN unlimited");
+  });
+
+  it("refuses cap default, --unlimited and usage with GATEWAY_PREDATES_DEFAULT_CAPS, nothing written, and still writes a number or off", async () => {
+    await expect(setDefaultCap(opts(), 1000)).rejects.toMatchObject({
+      code: "GATEWAY_PREDATES_DEFAULT_CAPS",
+      message: expect.stringContaining("The Gateway predates default caps"),
+      rerun: expect.stringContaining("everyapp update"),
+    });
+    await expect(setCap(opts(), "crm", undefined, true)).rejects.toMatchObject({ code: "GATEWAY_PREDATES_DEFAULT_CAPS" });
+    expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
+    await expect(reportUsage(opts({ month: "2026-10" }))).rejects.toMatchObject({ code: "GATEWAY_PREDATES_DEFAULT_CAPS" });
+
+    // A number and off write the cap alone, as before the column, with the events still queued.
+    events = [];
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", 5000);
+    expect(rows("SELECT monthly_call_cap, updated_by FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 5000, updated_by: "u-owner" }]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_app_settings", "INSERT INTO event_subscriptions", "INSERT INTO events"]]);
+    expect(data()).toMatchObject({ cap: 5000, unlimited: false, was: null, wasUnlimited: false, effectiveCap: 5000, capSource: "app" });
+    events = [];
+    await setCap(opts(), "crm", null);
+    expect(rows("SELECT app_row_id FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([]);
+    expect(data()).toMatchObject({ cap: null, was: 5000, effectiveCap: null, capSource: null });
   });
 });

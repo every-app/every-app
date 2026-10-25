@@ -647,6 +647,14 @@ An `events` command (every one but `events types`) against a Gateway whose D1 pr
 
 Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`).
 
+### GATEWAY_PREDATES_DEFAULT_CAPS
+
+`workspace cap default`, `workspace app cap --unlimited` and `workspace usage` against a Gateway whose D1 predates migration `0014_caps_defaults` (2026-10-25): it has no `org_settings` table and no `org_app_settings.unlimited` column (`hasDefaultCaps`, one batch of two `PRAGMA table_info` per run). Raised after connecting, before anything is written; `workspace app cap <app> <n|off>` never raises it (on such a Gateway it writes the cap alone, as before the column). Headline: `The Gateway predates default caps`, then `Its database has no workspace default cap and no no-cap override until the Gateway is updated to a release that has them.`
+
+**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`), which applies the Gateway's migrations. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`requireDefaultCaps`).
+
 ### GATEWAY_URL_MISMATCH
 
 `--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `events` but `events types`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
@@ -761,11 +769,11 @@ Source: `packages/cli/src/lib/gateway/patchBuildOutput.ts`, `packages/cli/src/li
 
 ### INVALID_CAP
 
-`workspace app cap <app> <n|off>`: the cap isn't a whole number from 1 to 1,000,000,000 (`MONTHLY_CALL_CAP_MAX`, the Gateway's bound), or `off`. The command line's parser refuses most such values first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `A monthly cap is a whole number from 1 to 1,000,000,000, or off`.
+`workspace app cap <app> <n|off>` and `workspace cap default <n|off>`: the cap isn't a whole number from 1 to 1,000,000,000 (`MONTHLY_CALL_CAP_MAX`, the Gateway's bound), or `off`. The command line's parser refuses most such values first, as `INVALID_VALUE` (exit 252); this is the library's own check behind it. Headline: `A monthly cap is a whole number from 1 to 1,000,000,000, or off`. The library also raises it when a number and `unlimited` reach it together (`An app has a cap or no cap, not both`), which the command refuses first as `INVALID_VALUE`.
 
 **Fix:** none offered; no rerun; not retryable.
 
-Source: `packages/cli/src/lib/gateway/workspace.ts` (`setMonthlyCap`), `packages/cli/src/commands/workspace/command.ts` (`parseCap`).
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`setMonthlyCap`, `setDefaultMonthlyCap`), `packages/cli/src/commands/workspace/command.ts` (`parseCap`).
 
 ### INVALID_DEV_MODE
 
@@ -1749,6 +1757,8 @@ Source: `packages/cli/src/argumentErrors.ts`
 
 Exit 252. One of: an enum flag, `--<flag> can't be "<input>"` / `Use one of: <values>.` with `data.didYouMean`; a boolean flag given a value, `--<flag> is a switch and takes no value (got "<input>")` with `data.fix`: `use --<flag> or --no-<flag>`; a flag whose parser refused the value, `--<flag> can't be "<input>"` / `<reason>` (or `<reason>, not <input>` when the reason already names the flag); a positional argument that failed to parse, `"<input>" won't do for <placeholder>` / `<reason>` with `data.usage`; `--no-<flag> is a switch and takes no value (got "<value>")`.
 
+Also raised by `workspace app cap <app> [<n|off>] [--unlimited]` itself, before it connects, when `--unlimited` comes with a number or `off`: `--unlimited takes no number and no off`, `data.fix` gives the command with `--unlimited` alone (the parser cannot see the conflict).
+
 **Fix:** as the message says.
 
 Source: `packages/cli/src/argumentErrors.ts`
@@ -1756,6 +1766,8 @@ Source: `packages/cli/src/argumentErrors.ts`
 ### MISSING_ARGUMENT
 
 Exit 252. A required positional is missing: `Missing the <argument>` (named by the parameter's brief when it is 30 characters or shorter, else its placeholder), or for a list parameter `Name at least one <brief>`. `data.usage`.
+
+Also raised by `workspace app cap <app>` itself, before it connects, when neither a cap nor `--unlimited` is given (the second argument is optional for `--unlimited`'s sake): `Missing the cap`, `data.usage`.
 
 **Fix:** pass the argument.
 

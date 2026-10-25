@@ -484,19 +484,43 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_app_cap",
     title: "Cap an app's monthly calls",
     description:
-      "Set or clear the organization's monthly cap on an app's provider calls (Admin → Usage): a whole number of calls, or null for unlimited. Owners and admins.",
+      "Set the organization's monthly cap on an app's provider calls (Admin → Usage), say the app has no cap whatever the workspace default (`cap: null, unlimited: true`), or neither (`cap: null` alone): the app inherits the workspace default, and without one it is uncapped. Answers the app's own cap, `capUnlimited`, and the cap that binds it now with its source (`app`, `default`, or null). Owners and admins.",
     inputSchema: objectWith(
       {
         app: APP,
         cap: {
           type: ["integer", "null"],
           description:
-            "Calls per month, 1 to 1,000,000,000; null for unlimited.",
+            "Calls per month, 1 to 1,000,000,000; null for no cap of its own (the workspace default applies unless `unlimited`).",
+          minimum: 1,
+          maximum: MONTHLY_CAP_MAX,
+        },
+        unlimited: {
+          type: "boolean",
+          description:
+            "No cap at all, even with a workspace default. Only with cap null: a cap and unlimited together are refused.",
+        },
+      },
+      ["app", "cap"],
+    ),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "workspace_cap_default",
+    title: "The workspace default cap",
+    description:
+      "Set or clear the organization's default monthly cap on provider calls (Admin → Usage → Default monthly cap): what binds every app without a cap or `unlimited` of its own. A whole number of calls, or null for no default. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        cap: {
+          type: ["integer", "null"],
+          description:
+            "Calls per month for every app without its own cap, 1 to 1,000,000,000; null for no default.",
           minimum: 1,
           maximum: MONTHLY_CAP_MAX,
         },
       },
-      ["app", "cap"],
+      ["cap"],
     ),
   },
   {
@@ -513,7 +537,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "workspace_usage",
     title: "Usage for a month",
     description:
-      "What the organization's apps spent in a UTC month: per app, per member and per provider or capability, with each app's monthly cap. Owners and admins.",
+      "What the organization's apps spent in a UTC month: per app, per member and per provider or capability, with the workspace default cap (`defaultMonthlyCallCap`) and for each app its own cap, `capUnlimited`, the cap that binds it (`effectiveMonthlyCallCap`, `capSource`: app or default) and whether it is `paused` this month. Owners and admins.",
     inputSchema: objectWith({
       month: {
         type: "string",

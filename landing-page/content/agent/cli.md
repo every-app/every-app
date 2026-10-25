@@ -247,7 +247,8 @@ COMMANDS
   group        Make, change or delete a group, and set its members and apps
   apps         Every app with who can open it, whether everyone can, its state and what it still needs set
   app          Change an app's listing, who can open it, and its monthly cap
-  usage        What the apps spent in a month: per app (with its cap), per member and per provider
+  cap          The workspace default cap on every app's provider calls
+  usage        What the apps spent in a month: per app (with the cap that binds it), per member and per provider
   activity     The tool-call audit trail, newest first: who called which tool on which app, and what came of it
   tokens       Every member's personal access tokens for the organization (never a token's value)
   token        Revoke a personal access token
@@ -3130,12 +3131,62 @@ ARGUMENTS
 
 ### `everyapp workspace app cap`
 
-Cap an app's provider calls per month, or lift the cap.
+Cap an app's provider calls per month, lift its own cap, or exempt it from the workspace default.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
 | `<app>` | yes | The app, by id or row id: the organization's own, or a shared one |
-| `<n\|off>` | yes | Provider calls per UTC month (1 to 1,000,000,000), or off for no cap |
+| `<n\|off>` | no | Provider calls per UTC month (1 to 1,000,000,000), or off for no cap of its own (the workspace default applies); left out with --unlimited |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--unlimited` | switch | no |  | No cap at all, even with a workspace default (instead of a number or off) |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace app cap [--unlimited] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app> [<n|off>]
+  pnpm everyapp workspace app cap --help
+
+An app has a cap of its own (a number), no cap whatever the workspace default
+(--unlimited), or neither (off): the default set with workspace cap default binds it,
+and without one it is uncapped. Past the cap that binds it, a provider tool answers a
+tool error naming it and an app's brokered call gets 429 app_monthly_cap_exceeded until
+the next UTC month. Binds within seconds. --unlimited and a number or off together are
+refused (INVALID_VALUE); on a Gateway from before the workspace default, --unlimited is
+refused (GATEWAY_PREDATES_DEFAULT_CAPS) and a number or off still work.
+
+Examples:
+  pnpm everyapp workspace app cap crm 5000
+  pnpm everyapp workspace app cap crm off
+  pnpm everyapp workspace app cap crm --unlimited
+
+FLAGS
+     [--unlimited/--no-unlimited]  No cap at all, even with a workspace default (instead of a number or off)
+     [--org]                       The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]                   The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]                The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]      Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                       Print help information and exit
+      --                           All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+   app     The app, by id or row id: the organization's own, or a shared one
+  [n|off]  Provider calls per UTC month (1 to 1,000,000,000), or off for no cap of its own (the workspace default applies); left out with --unlimited
+```
+
+### `everyapp workspace cap default`
+
+Set or clear the workspace default cap: what binds every app without a cap or --unlimited of its own.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<n\|off>` | yes | Provider calls per UTC month (1 to 1,000,000,000) for every app without its own cap, or off for no default |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -3147,15 +3198,20 @@ Cap an app's provider calls per month, or lift the cap.
 
 ```text
 USAGE
-  pnpm everyapp workspace app cap [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app> <n|off>
-  pnpm everyapp workspace app cap --help
+  pnpm everyapp workspace cap default [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <n|off>
+  pnpm everyapp workspace cap default --help
 
-Past the cap, a provider tool answers a tool error naming it and an app's brokered call
-gets 429 app_monthly_cap_exceeded until the next UTC month. Binds within seconds.
+The same setting as Manage workspace → Usage → Default monthly cap. An app's own cap, or
+its --unlimited, stays. The Gateway holds every app without one to it within 30 seconds;
+past it, a provider tool answers a tool error naming the cap and an app's brokered call
+gets 429 app_monthly_cap_exceeded until the next UTC month. As in the Gateway, the
+workspace's first cap makes the built-in Cap alerts subscription, and a default set,
+raised or removed queues cap.raised (a lowered one doesn't). Refused on a Gateway from
+before the workspace default (GATEWAY_PREDATES_DEFAULT_CAPS): run update first.
 
 Examples:
-  pnpm everyapp workspace app cap crm 5000
-  pnpm everyapp workspace app cap crm off
+  pnpm everyapp workspace cap default 1000
+  pnpm everyapp workspace cap default off --json
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3167,13 +3223,12 @@ FLAGS
       --                       All subsequent inputs should be interpreted as arguments
 
 ARGUMENTS
-  app    The app, by id or row id: the organization's own, or a shared one
-  n|off  Provider calls per UTC month (1 to 1,000,000,000), or off for no cap
+  n|off  Provider calls per UTC month (1 to 1,000,000,000) for every app without its own cap, or off for no default
 ```
 
 ### `everyapp workspace usage`
 
-What the apps spent in a month: per app (with its cap), per member and per provider.
+What the apps spent in a month: per app (with the cap that binds it), per member and per provider.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -3191,7 +3246,11 @@ USAGE
 
 Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a
 provider answered, and allowed MCP tool calls from the audit trail. Every callable app is
-listed, with zeros in a month it made no call. Nothing is changed.
+listed, with zeros in a month it made no call, its own cap, the cap that binds it and where
+it comes from (its own, or the workspace default), whether it is exempt (--unlimited) and
+whether it is paused this month; the workspace default cap comes with it. Nothing is
+changed. Refused on a Gateway from before the workspace default
+(GATEWAY_PREDATES_DEFAULT_CAPS): run update first.
 
 Example:
   pnpm everyapp workspace usage --month 2026-10 --json

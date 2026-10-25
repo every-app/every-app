@@ -1,14 +1,15 @@
 /**
- * `everyapp workspace apps` and `workspace app set|access|cap`: the
- * organization's apps as an admin sees them (Admin → Apps and Usage),
- * who can open each, and the monthly cap on its provider calls
- * (lib/gateway/workspace.ts does the reading and writing).
+ * `everyapp workspace apps`, `workspace app set|access|cap` and
+ * `workspace cap default`: the organization's apps as an admin sees them
+ * (Admin → Apps and Usage), who can open each, the monthly cap on its
+ * provider calls and the workspace default (lib/gateway/workspace.ts does
+ * the reading and writing).
  */
 import chalk from "chalk";
 import { parseSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup } from "@every-app/sdk/internal";
 import { appSetupFrom, declaresSettings, listGatewaySecretNames } from "@/lib/app/settings";
-import { errorMessage } from "@/lib/errors";
+import { EveryAppError, errorMessage } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import * as workspace from "@/lib/gateway/workspace";
 import { runCommand } from "@/lib/output/run";
@@ -35,8 +36,21 @@ export async function appAccess(flags: ChangeFlags, app: string): Promise<void> 
   await runCommand(flags, (out) => appAccessCommand({ flags, out }, app));
 }
 
-export async function appCap(flags: WorkspaceFlags, app: string, cap: number | null): Promise<void> {
-  await runCommand(flags, (out) => setCap({ flags, out }, app, cap));
+/** The command line's `<n|off>` as the library takes it: a number, or null for off. */
+const capOf = (cap: number | "off"): number | null => (cap === "off" ? null : cap);
+
+export async function appCap(
+  flags: WorkspaceFlags & { unlimited?: boolean },
+  app: string,
+  cap?: number | "off",
+): Promise<void> {
+  await runCommand(flags, (out) =>
+    setCap({ flags, out }, app, cap === undefined ? undefined : capOf(cap), flags.unlimited ?? false),
+  );
+}
+
+export async function capDefault(flags: WorkspaceFlags, cap: number | "off"): Promise<void> {
+  await runCommand(flags, (out) => setDefaultCap({ flags, out }, capOf(cap)));
 }
 
 /** The stored manifest's JSON as an object, or null when it isn't one. */
@@ -216,35 +230,131 @@ export async function appAccessCommand(
   });
 }
 
-export async function setCap(options: WorkspaceOptions, identifier: string, cap: number | null): Promise<void> {
+/** A cap as a person reads it: "5,000 calls a month". */
+const calls = (value: number) => `${value.toLocaleString("en-US")} calls a month`;
+
+/** An app's own setting as a person reads it. */
+function ownCap(cap: number | null, unlimited: boolean): string {
+  if (cap !== null) return calls(cap);
+  return unlimited ? "no cap at all" : "no cap of its own";
+}
+
+/** The Cap alerts line and data, when a cap write made the organization's built-in email subscription. */
+function capAlertsOf(capAlertsId: string | null): { subscriptionId: string; message: string } | null {
+  return capAlertsId === null
+    ? null
+    : {
+        subscriptionId: capAlertsId,
+        message: `Owners and admins are emailed at 80% and at the cap (the built-in Cap alerts subscription; ${CLI} events list shows it).`,
+      };
+}
+
+const PAST_THE_CAP =
+  "a provider tool answers a tool error naming the cap, and an app's brokered call gets 429 app_monthly_cap_exceeded until the next UTC month.";
+
+/**
+ * `workspace app cap <app> [<n|off>] [--unlimited]`: a number, `off` or
+ * `--unlimited`, exactly one of them, checked before anything connects.
+ */
+export async function setCap(
+  options: WorkspaceOptions,
+  identifier: string,
+  cap: number | null | undefined,
+  unlimited = false,
+): Promise<void> {
   const { out } = options;
+  if (unlimited && cap !== undefined) {
+    throw new EveryAppError(
+      "INVALID_VALUE",
+      "--unlimited takes no number and no off\nAn app has a cap (a number), no cap whatever the workspace default (--unlimited), or neither (off).",
+      { fix: `give --unlimited alone: ${CLI} workspace app cap ${identifier} --unlimited` },
+    );
+  }
+  if (!unlimited && cap === undefined) {
+    throw new EveryAppError(
+      "MISSING_ARGUMENT",
+      "Missing the cap\nGive a number of calls per month, off for no cap of its own, or --unlimited.",
+      { data: { usage: `${CLI} workspace app cap <app> [<n|off>] [--unlimited] [flags]` } },
+    );
+  }
   const { ws } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: `Setting ${identifier}'s cap...` });
-  const result = await workspace.setMonthlyCap(ws, identifier, cap);
-  const { app, was, capAlertsId } = result;
-  const says = (value: number | null) => (value === null ? "no cap" : `${value.toLocaleString("en-US")} calls a month`);
-  out.emit({ type: "step", step: STEP, status: "ok", message: `${app.appSlug}: ${says(cap)}`, data: { appRowId: app.id, cap, was } });
+  const result = await workspace.setMonthlyCap(ws, identifier, cap ?? null, { unlimited });
+  const { app, was, wasUnlimited, effective, before, capAlertsId } = result;
+  const same = result.cap === was && unlimited === wasUnlimited;
+  out.emit({
+    type: "step",
+    step: STEP,
+    status: "ok",
+    message: `${app.appSlug}: ${ownCap(result.cap, unlimited)}`,
+    data: {
+      appRowId: app.id,
+      cap: result.cap,
+      unlimited,
+      was,
+      wasUnlimited,
+      effectiveCap: effective.cap,
+      capSource: effective.source,
+    },
+  });
   const lines = [
-    cap === was
-      ? `${app.appSlug} had ${says(cap)} already. Nothing changed.`
-      : `${app.appSlug}: ${says(cap)} for ${ws.organization.name} (was ${says(was)}).`,
-    cap === null
-      ? "Its provider calls are no longer capped."
-      : "Past it, a provider tool answers a tool error naming the cap, and an app's brokered call gets 429 app_monthly_cap_exceeded until the next UTC month.",
+    same
+      ? `${app.appSlug} had ${ownCap(result.cap, unlimited)} already. Nothing changed.`
+      : `${app.appSlug}: ${ownCap(result.cap, unlimited)} for ${ws.organization.name} (was ${ownCap(was, wasUnlimited)}).`,
+    effective.cap === null
+      ? before.cap === null
+        ? "Its provider calls are not capped."
+        : "Its provider calls are no longer capped."
+      : effective.source === "default"
+        ? `The workspace default of ${calls(effective.cap)} binds it; past it, ${PAST_THE_CAP}`
+        : `Past it, ${PAST_THE_CAP}`,
   ];
-  // The organization's first cap made the Gateway's built-in email subscription.
-  const capAlerts =
-    capAlertsId === null
-      ? null
-      : {
-          subscriptionId: capAlertsId,
-          message: `Owners and admins are emailed at 80% and at the cap (the built-in Cap alerts subscription; ${CLI} events list shows it).`,
-        };
+  const capAlerts = capAlertsOf(capAlertsId);
   if (capAlerts) lines.push(capAlerts.message);
   out.emit({
     type: "done",
     message: lines.join("\n"),
     display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
-    data: { organization: ws.organization, app: appData(app), cap, was, capAlerts },
+    data: {
+      organization: ws.organization,
+      app: appData(app),
+      cap: result.cap,
+      unlimited,
+      was,
+      wasUnlimited,
+      effectiveCap: effective.cap,
+      capSource: effective.source,
+      capAlerts,
+    },
+  });
+}
+
+/**
+ * `workspace cap default <n|off>`: the organization's default cap, as
+ * Manage workspace → Usage sets it. The Gateway reads it within 30
+ * seconds (its cap cache).
+ */
+export async function setDefaultCap(options: WorkspaceOptions, cap: number | null): Promise<void> {
+  const { out } = options;
+  const { ws } = await connect(options);
+  out.emit({ type: "step", step: STEP, status: "start", message: "Setting the workspace default cap..." });
+  const { was, capAlertsId } = await workspace.setDefaultMonthlyCap(ws, cap);
+  const says = (value: number | null) => (value === null ? "no default cap" : `a default cap of ${calls(value)}`);
+  out.emit({ type: "step", step: STEP, status: "ok", message: `${ws.organization.name}: ${says(cap)}`, data: { cap, was } });
+  const lines = [
+    cap === was
+      ? `${ws.organization.name} had ${says(cap)} already. Nothing changed.`
+      : `${ws.organization.name}: ${says(cap)} (was ${says(was)}).`,
+    cap === null
+      ? "Every app without a cap of its own is uncapped on the Gateway within 30 seconds; an app's own cap or --unlimited stays."
+      : `Every app without a cap or --unlimited of its own is held to it on the Gateway within 30 seconds; past it, ${PAST_THE_CAP}`,
+  ];
+  const capAlerts = capAlertsOf(capAlertsId);
+  if (capAlerts) lines.push(capAlerts.message);
+  out.emit({
+    type: "done",
+    message: lines.join("\n"),
+    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    data: { organization: ws.organization, cap, was, capAlerts },
   });
 }

@@ -764,14 +764,29 @@ const HANDLERS: Record<string, Handler> = {
       callable: true,
     });
     const cap = args["cap"];
+    const unlimited = args["unlimited"];
+    // The service refuses a cap and unlimited together, and answers the
+    // app's own setting with the cap that binds it now (AppCapState).
     const set = await AppCapService.setMonthlyCap(ctx, {
       appRowId: app.id,
       cap: typeof cap === "number" ? cap : null,
+      ...(typeof unlimited === "boolean" ? { unlimited } : {}),
     });
     return {
       app: { id: app.id, appId: app.appSlug, name: app.name },
       monthlyCallCap: set.monthlyCallCap,
+      capUnlimited: set.capUnlimited,
+      effectiveMonthlyCallCap: set.effectiveMonthlyCallCap,
+      capSource: set.capSource,
     };
+  },
+
+  async workspace_cap_default(ctx, args) {
+    const cap = args["cap"];
+    const set = await AppCapService.setDefaultMonthlyCap(ctx, {
+      cap: typeof cap === "number" ? cap : null,
+    });
+    return { defaultMonthlyCallCap: set.defaultMonthlyCallCap };
   },
 
   async workspace_app_delete(ctx, args) {

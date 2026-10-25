@@ -1084,6 +1084,9 @@ describe("an admin administering the workspace over /mcp", () => {
     ).toEqual({
       app: { id: crmRowId, appId: "crm", name: "CRM" },
       monthlyCallCap: 1000,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 1000,
+      capSource: "app",
     });
     const usage = await data("everyapp_workspace_usage", {}, admin());
     expect(usage).toMatchObject({
@@ -1123,6 +1126,157 @@ describe("an admin administering the workspace over /mcp", () => {
     expect(
       (await data("everyapp_workspace_apps", {}, owner()))["apps"],
     ).toEqual([]);
+  });
+
+  it("sets the workspace default cap, caps an app under it, exempts it (unlimited), lets it inherit again, and usage shows the cap that binds each app and its source; a member sees neither cap tool, a read-only admin cannot set", async () => {
+    const crm = { id: crmRowId, appId: "crm", name: "CRM" };
+    // Nothing set: the app has no cap and nothing binds it.
+    expect(await data("everyapp_workspace_usage", {}, admin())).toMatchObject({
+      defaultMonthlyCallCap: null,
+      byApp: [
+        expect.objectContaining({
+          appRowId: crmRowId,
+          monthlyCallCap: null,
+          capUnlimited: false,
+          effectiveMonthlyCallCap: null,
+          capSource: null,
+          paused: false,
+        }),
+      ],
+    });
+
+    // The default binds every app without a row of its own.
+    expect(
+      await data("everyapp_workspace_cap_default", { cap: 1000 }, admin()),
+    ).toEqual({ defaultMonthlyCallCap: 1000 });
+    // Inherit: cap null alone keeps the app on the default.
+    expect(
+      await data(
+        "everyapp_workspace_app_cap",
+        { app: "crm", cap: null },
+        admin(),
+      ),
+    ).toEqual({
+      app: crm,
+      monthlyCallCap: null,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 1000,
+      capSource: "default",
+    });
+    // Set: the app's own cap wins over the default.
+    expect(
+      await data(
+        "everyapp_workspace_app_cap",
+        { app: "crm", cap: 500 },
+        admin(),
+      ),
+    ).toEqual({
+      app: crm,
+      monthlyCallCap: 500,
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 500,
+      capSource: "app",
+    });
+    // Unlimited: no cap at all, whatever the default.
+    expect(
+      await data(
+        "everyapp_workspace_app_cap",
+        { app: crmRowId, cap: null, unlimited: true },
+        admin(),
+      ),
+    ).toEqual({
+      app: crm,
+      monthlyCallCap: null,
+      capUnlimited: true,
+      effectiveMonthlyCallCap: null,
+      capSource: null,
+    });
+    // A cap and unlimited together: the service refuses.
+    expect(
+      await refusal(
+        "everyapp_workspace_app_cap",
+        { app: "crm", cap: 10, unlimited: true },
+        admin(),
+      ),
+    ).toBe("INVALID_INPUT: An app has a cap or no cap, not both.");
+    // Usage carries the default and, per app, the effective cap and its source.
+    expect(await data("everyapp_workspace_usage", {}, admin())).toMatchObject({
+      defaultMonthlyCallCap: 1000,
+      byApp: [
+        expect.objectContaining({
+          appRowId: crmRowId,
+          monthlyCallCap: null,
+          capUnlimited: true,
+          effectiveMonthlyCallCap: null,
+          capSource: null,
+          paused: false,
+        }),
+      ],
+    });
+    // Inherit again: the default shows as what binds it.
+    await data(
+      "everyapp_workspace_app_cap",
+      { app: "crm", cap: null, unlimited: false },
+      admin(),
+    );
+    expect(
+      (
+        (await data("everyapp_workspace_usage", {}, admin()))[
+          "byApp"
+        ] as Record<string, unknown>[]
+      )[0],
+    ).toMatchObject({
+      capUnlimited: false,
+      effectiveMonthlyCallCap: 1000,
+      capSource: "default",
+    });
+    // Clear the default: nothing binds the app again.
+    expect(
+      await data("everyapp_workspace_cap_default", { cap: null }, admin()),
+    ).toEqual({ defaultMonthlyCallCap: null });
+    expect(
+      (
+        (await data("everyapp_workspace_usage", {}, admin()))[
+          "byApp"
+        ] as Record<string, unknown>[]
+      )[0],
+    ).toMatchObject({ effectiveMonthlyCallCap: null, capSource: null });
+    // Out of the schema's range: refused before the handler.
+    expect(
+      await refusal("everyapp_workspace_cap_default", { cap: 0 }, admin()),
+    ).toMatch(/^Invalid arguments for everyapp_workspace_cap_default: /);
+
+    // A member sees neither tool, and a read-only admin cannot set either.
+    expect(await toolNames(member())).not.toContain(
+      "everyapp_workspace_cap_default",
+    );
+    expect(
+      await call("everyapp_workspace_cap_default", { cap: 10 }, member()),
+    ).toEqual({
+      ok: false,
+      unknown: true,
+      message: "Unknown tool: everyapp_workspace_cap_default",
+    });
+    const readOnly = admin({
+      access: "read",
+      credential: { kind: "oauth", id: "mcpc_ro", clientName: "Claude" },
+    });
+    expect(await toolNames(readOnly)).not.toContain(
+      "everyapp_workspace_cap_default",
+    );
+    for (const [name, args] of [
+      ["everyapp_workspace_cap_default", { cap: 10 }],
+      ["everyapp_workspace_app_cap", { app: "crm", cap: 10 }],
+    ] as const) {
+      expect(await call(name, { ...args }, readOnly), name).toEqual({
+        ok: false,
+        unknown: true,
+        message: `Unknown tool: ${name}`,
+      });
+    }
+    expect(await data("everyapp_workspace_usage", {}, readOnly)).toMatchObject({
+      defaultMonthlyCallCap: null,
+    });
   });
 
   it("renames the workspace under the 64-character rule; the slug stays", async () => {

@@ -119,6 +119,7 @@ describe("the workspace tool definitions", () => {
       "workspace_app_access",
       "workspace_app_access_set",
       "workspace_app_cap",
+      "workspace_cap_default",
       "workspace_app_delete",
       "workspace_usage",
       "workspace_activity",
