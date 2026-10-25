@@ -93,7 +93,7 @@ function settableOf(capability: Capability): string[] {
 }
 
 function smokeOf(capability: ApiKeyCapability | AiProviderCapability): string {
-  const smoke: SmokeRequest | undefined = capability.mode === "api_key" ? capability.smoke : undefined;
+  const smoke: SmokeRequest | undefined = capability.smoke;
   if (!smoke) return "none recorded";
   const host = smoke.host ?? (capability.mode === "api_key" ? (capability.hosts[0] ?? `<${capability.hostSetting}>`) : new URL(capability.origin).host);
   const free = smoke.free ? "free" : "charged";

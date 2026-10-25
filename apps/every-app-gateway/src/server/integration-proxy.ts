@@ -249,11 +249,16 @@ export async function handleIntegrationProxyRequest({
     writeMethodsOf(integration).includes(method);
   if (!reads && !writes) {
     const writeMethods = writeMethodsOf(integration);
+    // A write-only provider (a sender, a GraphQL API) has no read calls:
+    // every method it offers needs the write grant.
+    const needsWrite = integration.readMethods.length
+      ? `${integration.label} calls may use ${integration.readMethods.join(" or ")} with access: "read"; ${method} needs access: "write" in the app's capabilities entry.`
+      : `${integration.label} offers no read calls; ${method} needs access: "write" in the app's capabilities entry.`;
     return refusal(
       405,
       "integration_method_not_allowed",
       offersWrite && writeMethods.includes(method)
-        ? `${integration.label} calls may use ${integration.readMethods.join(" or ")} with access: "read"; ${method} needs access: "write" in the app's capabilities entry.`
+        ? needsWrite
         : `${integration.label} calls may use ${(offersWrite ? [...integration.readMethods, ...writeMethods] : integration.readMethods).join(" or ")}.`,
     );
   }
@@ -388,6 +393,31 @@ export async function handleIntegrationProxyRequest({
         `${integration.label} answered with a redirect, which the gateway neither follows nor relays for a provider whose key travels in the URL.`,
       );
     }
+    // A provider that builds URLs for the app (Mapbox's TileJSON `tiles`, a
+    // style's sources) writes the key into the body: a text answer is read
+    // whole, bounded, and every copy of the value, raw or URL-encoded, is
+    // replaced before it goes out; one past the bound is refused rather than
+    // sent unscrubbed. Binary answers (tiles, images) pass through as streams.
+    if (response.body && isTextAnswer(responseHeaders)) {
+      const scrubbed = await scrubbedText(
+        response.body,
+        Object.values(auth.query),
+      );
+      if (scrubbed === null) {
+        logCall(null);
+        return refusal(
+          502,
+          "integration_upstream_failed",
+          `${integration.label} answered with more text than the gateway reads for a provider whose key travels in the URL (${QUERY_TEXT_MAX_BYTES} bytes).`,
+        );
+      }
+      responseHeaders.delete("content-length");
+      responseHeaders.delete("content-encoding");
+      response = new Response(scrubbed, {
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
   }
   const costField = integration.cost?.responseField;
   if (!response.body || !costField) {
@@ -403,6 +433,59 @@ export async function handleIntegrationProxyRequest({
     statusText: response.statusText,
     headers: responseHeaders,
   });
+}
+
+/** The most text the gateway reads to scrub a query-key provider's answer. */
+const QUERY_TEXT_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Whether an answer is text the key could be written into (JSON, XML, HTML, scripts, forms). */
+function isTextAnswer(headers: Headers): boolean {
+  const type = (headers.get("content-type") ?? "").toLowerCase();
+  return (
+    type.startsWith("text/") ||
+    type.includes("json") ||
+    type.includes("xml") ||
+    type.includes("javascript") ||
+    type.includes("x-www-form-urlencoded")
+  );
+}
+
+/**
+ * `body` read whole (at most {@link QUERY_TEXT_MAX_BYTES}, else null with
+ * the rest cancelled) with every copy of each of `values`, raw or
+ * URL-encoded, replaced by `[redacted]`.
+ */
+async function scrubbedText(
+  body: ReadableStream<Uint8Array>,
+  values: readonly string[],
+): Promise<string | null> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > QUERY_TEXT_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const joined = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  let text = new TextDecoder().decode(joined);
+  for (const value of values) {
+    if (!value) continue;
+    for (const copy of new Set([value, encodeURIComponent(value)])) {
+      text = text.split(copy).join("[redacted]");
+    }
+  }
+  return text;
 }
 
 /**

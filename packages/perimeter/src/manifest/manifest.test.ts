@@ -530,8 +530,8 @@ describe("capabilities manifest field", () => {
   it.each([
     [
       "an unknown capability",
-      { github: { access: "read" } },
-      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin, facebook, .*, microsoft-365\)/,
+      { nope: { access: "read" } },
+      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin, facebook, .*, microsoft-365, stripe, .*, newsapi\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -1054,7 +1054,7 @@ describe("each setting's need (optional, anyOf, why, docs)", () => {
       validateManifestStrict({
         id: "inbox",
         providers: [{ id: "openrouter", anyOf: "AI model" }],
-        secrets: [{ name: "ANTHROPIC_API_KEY", anyOf: "AI model" }],
+        secrets: [{ name: "NORTHWIND_API_KEY", anyOf: "AI model" }],
       }),
     ).not.toThrow();
     expect(() =>

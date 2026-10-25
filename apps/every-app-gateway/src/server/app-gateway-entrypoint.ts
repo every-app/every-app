@@ -436,6 +436,11 @@ export async function handleAppGatewayRequest({
                 calls: 0,
                 inputTokens: report.usage?.input ?? 0,
                 outputTokens: report.usage?.output ?? 0,
+                // The call's price where the provider's answer carries it
+                // (`cost.responseField`: OpenRouter's usage.cost).
+                ...(report.usage?.cost === undefined
+                  ? {}
+                  : { costMicros: dollarsToMicros(report.usage.cost) }),
               }),
           }
         : {}),

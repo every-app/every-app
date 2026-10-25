@@ -13,14 +13,14 @@ import {
   rowSecretProblem,
 } from "./providerRegistry";
 
-const stripe = {
-  id: "stripe",
+const northwind = {
+  id: "northwind",
   spec: {
-    id: "stripe",
-    name: "Stripe",
-    docs: "https://dashboard.stripe.com/apikeys",
-    hosts: ["api.stripe.com"],
-    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://developer.northwind.io/keys",
+    hosts: ["api.northwind.io"],
+    auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
   },
 };
 
@@ -28,7 +28,7 @@ describe("the built-in registry", () => {
   it("is the catalog, in catalog order, with every setting it reads", () => {
     expect(BUILTIN_PROVIDERS.ids()).toEqual(CAPABILITY_IDS);
     expect(BUILTIN_PROVIDERS.sourceOf("dataforseo")).toBe("catalog");
-    expect(BUILTIN_PROVIDERS.sourceOf("stripe")).toBeUndefined();
+    expect(BUILTIN_PROVIDERS.sourceOf("northwind")).toBeUndefined();
     expect(BUILTIN_PROVIDERS.settingNames().has("DATAFORSEO_API_KEY")).toBe(
       true,
     );
@@ -56,27 +56,31 @@ describe("the built-in registry", () => {
 describe("a registry with rows", () => {
   it("adds a row after the catalog, with its settings, as a JSON string or an object", () => {
     const registry = providerRegistry([
-      stripe,
+      northwind,
       {
-        id: "exa",
+        id: "contoso",
         spec: JSON.stringify({
-          ...stripe.spec,
-          id: "exa",
-          name: "Exa",
-          hosts: ["api.exa.ai"],
-          auth: { kind: "header", secret: "EXA_API_KEY", header: "x-api-key" },
+          ...northwind.spec,
+          id: "contoso",
+          name: "Contoso",
+          hosts: ["api.contoso.dev"],
+          auth: {
+            kind: "header",
+            secret: "CONTOSO_API_KEY",
+            header: "x-api-key",
+          },
         }),
       },
     ]);
     expect(registry.rejected).toEqual([]);
-    expect(registry.ids()).toEqual([...CAPABILITY_IDS, "stripe", "exa"]);
-    expect(registry.sourceOf("stripe")).toBe("row");
-    expect(registry.get("stripe")).toMatchObject({
+    expect(registry.ids()).toEqual([...CAPABILITY_IDS, "northwind", "contoso"]);
+    expect(registry.sourceOf("northwind")).toBe("row");
+    expect(registry.get("northwind")).toMatchObject({
       mode: "api_key",
-      label: "Stripe",
+      label: "Northwind",
     });
-    expect(registry.settingNames().has("STRIPE_API_KEY")).toBe(true);
-    expect(registry.settingNames().has("EXA_API_KEY")).toBe(true);
+    expect(registry.settingNames().has("NORTHWIND_API_KEY")).toBe(true);
+    expect(registry.settingNames().has("CONTOSO_API_KEY")).toBe(true);
   });
 
   it("never lets a row shadow the catalog or take the reserved id", () => {
@@ -84,7 +88,7 @@ describe("a registry with rows", () => {
       {
         id: "dataforseo",
         spec: {
-          ...stripe.spec,
+          ...northwind.spec,
           id: "dataforseo",
           auth: { kind: "bearer", secret: "DATAFORSEO_OTHER" },
         },
@@ -92,7 +96,7 @@ describe("a registry with rows", () => {
       {
         id: "everyapp",
         spec: {
-          ...stripe.spec,
+          ...northwind.spec,
           id: "everyapp",
           auth: { kind: "bearer", secret: "EVERYAPP_X" },
         },
@@ -144,7 +148,7 @@ describe("a registry with rows", () => {
       {
         id,
         spec: {
-          ...stripe.spec,
+          ...northwind.spec,
           id,
           hosts: ["api.x.example"],
           auth: { kind: "bearer", secret: name },
@@ -172,24 +176,24 @@ describe("a registry with rows", () => {
 
   it("gives a second row naming the first's setting to the first", () => {
     const registry = providerRegistry([
-      stripe,
+      northwind,
       {
-        id: "stripe-eu",
+        id: "northwind-eu",
         spec: {
-          ...stripe.spec,
-          id: "stripe-eu",
-          hosts: ["api.stripe.com"],
-          auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+          ...northwind.spec,
+          id: "northwind-eu",
+          hosts: ["api.northwind.io"],
+          auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
         },
       },
     ]);
-    expect(registry.get("stripe")).toBeDefined();
+    expect(registry.get("northwind")).toBeDefined();
     expect(registry.rejected).toEqual([
       {
-        id: "stripe-eu",
+        id: "northwind-eu",
         code: "PROVIDER_SECRET_TAKEN",
         message:
-          "STRIPE_API_KEY doesn't start with STRIPE_EU_: a provider's settings carry its own id",
+          "NORTHWIND_API_KEY doesn't start with NORTHWIND_EU_: a provider's settings carry its own id",
       },
     ]);
   });
@@ -205,13 +209,13 @@ describe("a registry with rows", () => {
     ]) {
       expect(publicHostProblem(host), host).not.toBeNull();
     }
-    expect(publicHostProblem("api.stripe.com")).toBeNull();
+    expect(publicHostProblem("api.northwind.io")).toBeNull();
     const registry = providerRegistry(
       [
         {
           id: "aa",
           spec: {
-            ...stripe.spec,
+            ...northwind.spec,
             id: "aa",
             hosts: ["10.0.0.1"],
             auth: { kind: "bearer", secret: "AA_KEY" },
@@ -220,7 +224,7 @@ describe("a registry with rows", () => {
         {
           id: "bb",
           spec: {
-            ...stripe.spec,
+            ...northwind.spec,
             id: "bb",
             hosts: ["crm.apps.example.com"],
             auth: { kind: "bearer", secret: "BB_KEY" },
@@ -229,7 +233,7 @@ describe("a registry with rows", () => {
         {
           id: "cc",
           spec: {
-            ...stripe.spec,
+            ...northwind.spec,
             id: "cc",
             hosts: ["api.c.example"],
             auth: { kind: "bearer", secret: "CC_KEY" },
@@ -256,7 +260,7 @@ describe("a registry with rows", () => {
       {
         id: "yy",
         spec: {
-          ...stripe.spec,
+          ...northwind.spec,
           id: "zz",
           auth: { kind: "bearer", secret: "ZZ_KEY" },
         },
@@ -290,7 +294,7 @@ describe("gatewayHostRefusal", () => {
     expect(gatewayHostRefusal("x.usercontent.example.net", hosts)).toBe(
       "x.usercontent.example.net is under this gateway's third-party domain usercontent.example.net",
     );
-    expect(gatewayHostRefusal("api.stripe.com", hosts)).toBeNull();
+    expect(gatewayHostRefusal("api.northwind.io", hosts)).toBeNull();
     // A sibling of the base domain is someone else's.
     expect(gatewayHostRefusal("example.com", hosts)).toBeNull();
   });

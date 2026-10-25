@@ -4,35 +4,41 @@ import { providerRegistry } from "./providerRegistry";
 
 const registry = providerRegistry([
   {
-    id: "stripe",
+    id: "northwind",
     spec: {
-      id: "stripe",
-      name: "Stripe",
-      docs: "https://dashboard.stripe.com/apikeys",
-      hosts: ["api.stripe.com"],
-      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://developer.northwind.io/keys",
+      hosts: ["api.northwind.io"],
+      auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
       hint: "A restricted key from the dashboard.",
       secrets: [
-        { name: "STRIPE_API_KEY", hint: "Read access to Customers is enough." },
+        {
+          name: "NORTHWIND_API_KEY",
+          hint: "Read access to Customers is enough.",
+        },
       ],
     },
   },
   {
-    id: "twilio",
+    id: "litware",
     spec: {
-      id: "twilio",
-      name: "Twilio",
-      docs: "https://console.twilio.com/",
-      hosts: ["api.twilio.com"],
+      id: "litware",
+      name: "Litware",
+      docs: "https://console.litware.com/",
+      hosts: ["api.litware.com"],
       auth: {
         kind: "basic",
-        secret: "TWILIO_AUTH_TOKEN",
+        secret: "LITWARE_AUTH_TOKEN",
         as: "password",
-        user: { secret: "TWILIO_ACCOUNT_SID" },
+        user: { secret: "LITWARE_ACCOUNT_SID" },
       },
       secrets: [
-        { name: "TWILIO_ACCOUNT_SID", hint: "Starts with AC." },
-        { name: "TWILIO_AUTH_TOKEN", hint: "From the console's account page." },
+        { name: "LITWARE_ACCOUNT_SID", hint: "Starts with AC." },
+        {
+          name: "LITWARE_AUTH_TOKEN",
+          hint: "From the console's account page.",
+        },
       ],
     },
   },
@@ -42,8 +48,8 @@ describe("the settings model and the provider registry", () => {
   it("reads a registered provider's setting, with its hint, through the lookup it is given", () => {
     const manifest = {
       capabilities: {
-        stripe: { access: "read", why: "Shows charges." },
-        twilio: { access: "read", optional: true },
+        northwind: { access: "read", why: "Shows charges." },
+        litware: { access: "read", optional: true },
       },
     };
     // The catalog alone knows neither.
@@ -51,31 +57,31 @@ describe("the settings model and the provider registry", () => {
     expect(appSettings(manifest, registry)).toEqual([
       {
         kind: "capability",
-        id: "stripe",
-        label: "Stripe",
+        id: "northwind",
+        label: "Northwind",
         holder: "gateway",
-        names: ["STRIPE_API_KEY"],
+        names: ["NORTHWIND_API_KEY"],
         alsoReads: [],
         need: { kind: "required" },
         why: "Shows charges.",
-        docs: "https://dashboard.stripe.com/apikeys",
+        docs: "https://developer.northwind.io/keys",
         hint: "A restricted key from the dashboard. Read access to Customers is enough.",
       },
       {
         kind: "capability",
-        id: "twilio",
-        label: "Twilio",
+        id: "litware",
+        label: "Litware",
         holder: "gateway",
-        names: ["TWILIO_AUTH_TOKEN", "TWILIO_ACCOUNT_SID"],
+        names: ["LITWARE_AUTH_TOKEN", "LITWARE_ACCOUNT_SID"],
         alsoReads: [],
         need: { kind: "optional" },
-        docs: "https://console.twilio.com/",
+        docs: "https://console.litware.com/",
         // Several names: each hint carries its name, in the entry's order.
-        hint: "TWILIO_ACCOUNT_SID: Starts with AC. TWILIO_AUTH_TOKEN: From the console's account page.",
+        hint: "LITWARE_ACCOUNT_SID: Starts with AC. LITWARE_AUTH_TOKEN: From the console's account page.",
       },
     ]);
-    expect(providerLabel("stripe", registry)).toBe("Stripe");
-    expect(providerLabel("stripe")).toBe("stripe");
+    expect(providerLabel("northwind", registry)).toBe("Northwind");
+    expect(providerLabel("northwind")).toBe("northwind");
   });
 
   it("gives the catalog's entries their hints too, and an AI provider its label under providers only", () => {

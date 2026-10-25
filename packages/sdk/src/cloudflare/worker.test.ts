@@ -724,38 +724,41 @@ describe("everyAppWorker crons and the app's own secrets", () => {
   });
 
   it("hands the dev Worker the specs in .everyapp/providers, and the keys .dev.vars sets for the ones it lists", () => {
-    const stripe = {
-      id: "stripe",
-      name: "Stripe",
-      docs: "https://dashboard.stripe.com/apikeys",
-      hosts: ["api.stripe.com"],
-      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    const northwind = {
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://developer.northwind.io/keys",
+      hosts: ["api.northwind.io"],
+      auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
     };
-    const twilio = {
-      id: "twilio",
-      name: "Twilio",
-      docs: "https://console.twilio.com",
-      hosts: ["api.twilio.com"],
+    const litware = {
+      id: "litware",
+      name: "Litware",
+      docs: "https://console.litware.com",
+      hosts: ["api.litware.com"],
       auth: {
         kind: "basic",
-        secret: "TWILIO_AUTH_TOKEN",
+        secret: "LITWARE_AUTH_TOKEN",
         as: "password",
-        user: { secret: "TWILIO_ACCOUNT_SID" },
+        user: { secret: "LITWARE_ACCOUNT_SID" },
       },
     };
     const dir = path.join(root, ".everyapp", "providers");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "stripe.json"), JSON.stringify(stripe));
-    fs.writeFileSync(path.join(dir, "twilio.json"), JSON.stringify(twilio));
+    fs.writeFileSync(
+      path.join(dir, "northwind.json"),
+      JSON.stringify(northwind),
+    );
+    fs.writeFileSync(path.join(dir, "litware.json"), JSON.stringify(litware));
     fs.writeFileSync(path.join(dir, "broken.json"), "{not json");
     fs.writeFileSync(path.join(dir, "notes.txt"), "not a spec");
     fs.writeFileSync(
       path.join(root, ".dev.vars"),
-      "STRIPE_API_KEY=sk_test\nTWILIO_AUTH_TOKEN=t\nTWILIO_ACCOUNT_SID=AC1\n",
+      "NORTHWIND_API_KEY=sk_test\nLITWARE_AUTH_TOKEN=t\nLITWARE_ACCOUNT_SID=AC1\n",
     );
     const lists = {
       ...manifest,
-      capabilities: { stripe: { access: "read" } },
+      capabilities: { northwind: { access: "read" } },
     } as const;
     const env = (mode: string) =>
       everyAppWorker({ manifest: lists, entrypoint, ctx: { mode }, root })
@@ -767,21 +770,21 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       type: "text",
       value: JSON.stringify([
         { file: ".everyapp/providers/broken.json", spec: "{not json" },
-        { file: ".everyapp/providers/stripe.json", spec: stripe },
-        { file: ".everyapp/providers/twilio.json", spec: twilio },
+        { file: ".everyapp/providers/litware.json", spec: litware },
+        { file: ".everyapp/providers/northwind.json", spec: northwind },
       ]),
     });
     // The key of the provider the manifest lists, not of the one it doesn't.
     expect(env("development")).toMatchObject({
-      STRIPE_API_KEY: { type: "secret" },
+      NORTHWIND_API_KEY: { type: "secret" },
     });
-    expect(env("development")).not.toHaveProperty("TWILIO_AUTH_TOKEN");
+    expect(env("development")).not.toHaveProperty("LITWARE_AUTH_TOKEN");
     const both = everyAppWorker({
       manifest: {
         ...manifest,
         capabilities: {
-          stripe: { access: "read" },
-          twilio: { access: "read" },
+          northwind: { access: "read" },
+          litware: { access: "read" },
         },
       },
       entrypoint,
@@ -789,8 +792,8 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       root,
     }).env as Record<string, unknown>;
     expect(both).toMatchObject({
-      TWILIO_AUTH_TOKEN: { type: "secret" },
-      TWILIO_ACCOUNT_SID: { type: "secret" },
+      LITWARE_AUTH_TOKEN: { type: "secret" },
+      LITWARE_ACCOUNT_SID: { type: "secret" },
     });
     // A helper Worker gets them too.
     const helper = everyAppAuxiliaryWorker({
@@ -803,11 +806,11 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(helper[DEV_PROVIDERS_ENV]).toEqual(
       env("development")[DEV_PROVIDERS_ENV],
     );
-    expect(helper["STRIPE_API_KEY"]).toEqual({ type: "secret" });
+    expect(helper["NORTHWIND_API_KEY"]).toEqual({ type: "secret" });
 
     // Deployed, the gateway holds the specs and the keys.
     expect(env("production")).not.toHaveProperty(DEV_PROVIDERS_ENV);
-    expect(env("production")).not.toHaveProperty("STRIPE_API_KEY");
+    expect(env("production")).not.toHaveProperty("NORTHWIND_API_KEY");
     // No directory, no binding.
     fs.rmSync(path.join(root, ".everyapp"), { recursive: true });
     expect(env("development")).not.toHaveProperty(DEV_PROVIDERS_ENV);

@@ -276,7 +276,7 @@ describe("describeUnmet", () => {
     const { setup } = appSetupFrom({
       manifest: {
         capabilities: {
-          stripe: { access: "read", why: "Shows the last charges." },
+          northwind: { access: "read", why: "Shows the last charges." },
           linkedin: { access: "write" },
           dataforseo: { access: "read" },
         },
@@ -284,13 +284,13 @@ describe("describeUnmet", () => {
       appId: "shop",
       gatewayNames: [],
       secretNames: [],
-      lookup: STRIPE_REGISTRY,
+      lookup: NORTHWIND_REGISTRY,
     });
     expect(describeUnmetSettings(setup.unmet)).toEqual([
-      "Stripe: Shows the last charges.",
-      "A restricted key from the Stripe dashboard. Read access to Charges is enough.",
-      "Get it at https://dashboard.stripe.com/apikeys",
-      "Guide: pnpm everyapp provider show stripe",
+      "Northwind: Shows the last charges.",
+      "A restricted key from the Northwind dashboard. Read access to Charges is enough.",
+      "Get it at https://developer.northwind.io/keys",
+      "Guide: pnpm everyapp provider show northwind",
       "LinkedIn: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET",
       "Get it at https://www.linkedin.com/developers/apps",
       "Guide: pnpm everyapp provider show linkedin",
@@ -302,48 +302,48 @@ describe("describeUnmet", () => {
   });
 });
 
-/** A gateway's registry with one registered provider, Stripe, with the Gateway's host rule. */
-const STRIPE_SPEC = {
-  id: "stripe",
-  name: "Stripe",
-  docs: "https://dashboard.stripe.com/apikeys",
-  hosts: ["api.stripe.com"],
-  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
-  hint: "A restricted key from the Stripe dashboard.",
-  secrets: [{ name: "STRIPE_API_KEY", hint: "Read access to Charges is enough." }],
+/** A gateway's registry with one registered provider, Northwind, with the Gateway's host rule. */
+const NORTHWIND_SPEC = {
+  id: "northwind",
+  name: "Northwind",
+  docs: "https://developer.northwind.io/keys",
+  hosts: ["api.northwind.io"],
+  auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
+  hint: "A restricted key from the Northwind dashboard.",
+  secrets: [{ name: "NORTHWIND_API_KEY", hint: "Read access to Charges is enough." }],
 };
-const STRIPE_REGISTRY = providerRegistry([{ id: "stripe", spec: STRIPE_SPEC }]);
+const NORTHWIND_REGISTRY = providerRegistry([{ id: "northwind", spec: NORTHWIND_SPEC }]);
 
 describe("a gateway's registered providers", () => {
-  const manifest = { capabilities: { stripe: { access: "read" } }, secrets: ["MAIN_SECRET"] };
+  const manifest = { capabilities: { northwind: { access: "read" } }, secrets: ["MAIN_SECRET"] };
 
   it("are settings like a catalog provider's once the registry is the lookup, and nothing without it", () => {
-    expect(declaresSettings({ capabilities: { stripe: { access: "read" } } })).toBe(false);
-    expect(declaresSettings({ capabilities: { stripe: { access: "read" } } }, STRIPE_REGISTRY)).toBe(true);
-    expect(gatewayNamesRead(manifest, STRIPE_REGISTRY)).toEqual(["STRIPE_API_KEY"]);
+    expect(declaresSettings({ capabilities: { northwind: { access: "read" } } })).toBe(false);
+    expect(declaresSettings({ capabilities: { northwind: { access: "read" } } }, NORTHWIND_REGISTRY)).toBe(true);
+    expect(gatewayNamesRead(manifest, NORTHWIND_REGISTRY)).toEqual(["NORTHWIND_API_KEY"]);
     const { setup } = appSetupFrom({
       manifest,
       appId: "shop",
       gatewayNames: [],
       secretNames: ["MAIN_SECRET"],
-      lookup: STRIPE_REGISTRY,
+      lookup: NORTHWIND_REGISTRY,
     });
-    expect(setup.unmet.map((setting) => setting.names)).toEqual([["STRIPE_API_KEY"]]);
+    expect(setup.unmet.map((setting) => setting.names)).toEqual([["NORTHWIND_API_KEY"]]);
   });
 
   it("read a key that isn't bound to the row's hosts as not set, as the Gateway reads it", () => {
-    const set = { manifest, appId: "shop", gatewayNames: ["STRIPE_API_KEY"], secretNames: ["MAIN_SECRET"] };
+    const set = { manifest, appId: "shop", gatewayNames: ["NORTHWIND_API_KEY"], secretNames: ["MAIN_SECRET"] };
     // Never bound (just added, or replaced since): the Gateway doesn't read it.
-    expect(appSetupFrom({ ...set, lookup: STRIPE_REGISTRY }).setup.ready).toBe(false);
-    expect(boundGatewayNames(["STRIPE_API_KEY", "OPENAI_API_KEY"], STRIPE_REGISTRY)).toEqual(["OPENAI_API_KEY"]);
-    const parsed = parseProviderSpec(STRIPE_SPEC);
+    expect(appSetupFrom({ ...set, lookup: NORTHWIND_REGISTRY }).setup.ready).toBe(false);
+    expect(boundGatewayNames(["NORTHWIND_API_KEY", "OPENAI_API_KEY"], NORTHWIND_REGISTRY)).toEqual(["OPENAI_API_KEY"]);
+    const parsed = parseProviderSpec(NORTHWIND_SPEC);
     if (!parsed.ok) throw new Error("the spec parses");
     const bound = providerRegistry([
-      { id: "stripe", spec: STRIPE_SPEC, boundTo: providerBindingKey(parsed.capability) },
+      { id: "northwind", spec: NORTHWIND_SPEC, boundTo: providerBindingKey(parsed.capability) },
     ]);
     expect(appSetupFrom({ ...set, lookup: bound }).setup.ready).toBe(true);
     // The catalog alone has nothing to leave out.
-    expect(boundGatewayNames(["STRIPE_API_KEY"])).toEqual(["STRIPE_API_KEY"]);
+    expect(boundGatewayNames(["NORTHWIND_API_KEY"])).toEqual(["NORTHWIND_API_KEY"]);
   });
 });
 

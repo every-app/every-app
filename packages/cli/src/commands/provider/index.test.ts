@@ -32,13 +32,13 @@ import {
 
 const GATEWAY = "every-app-gateway";
 
-const STRIPE = {
-  id: "stripe",
-  name: "Stripe",
-  docs: "https://dashboard.stripe.com/apikeys",
-  hosts: ["api.stripe.com"],
-  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
-  hint: "A restricted key from the Stripe dashboard.",
+const NORTHWIND = {
+  id: "northwind",
+  name: "Northwind",
+  docs: "https://developer.northwind.io/keys",
+  hosts: ["api.northwind.io"],
+  auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
+  hint: "A restricted key from the Northwind dashboard.",
   data: "account",
 };
 
@@ -102,8 +102,8 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-/** A directory holding `spec` as stripe.json (or `name`). */
-function specDir(spec: unknown, name = "stripe.json"): string {
+/** A directory holding `spec` as northwind.json (or `name`). */
+function specDir(spec: unknown, name = "northwind.json"): string {
   const dir = tempDir("everyapp-provider-spec-");
   fs.writeFileSync(path.join(dir, name), typeof spec === "string" ? spec : JSON.stringify(spec));
   return dir;
@@ -116,7 +116,7 @@ function appDir(spec?: unknown): string {
   return dir;
 }
 
-const add = (cwd: string, source = "stripe.json", options: { replace?: boolean; fetch?: typeof fetch } = {}) =>
+const add = (cwd: string, source = "northwind.json", options: { replace?: boolean; fetch?: typeof fetch } = {}) =>
   addFromSpec(
     { flags: { ...flags, replace: options.replace }, out: out(), cwd, createCf, ...(options.fetch ? { fetch: options.fetch } : {}) },
     source,
@@ -151,25 +151,25 @@ async function registerApp(id: string, manifest: Record<string, unknown>) {
 
 describe("provider add", () => {
   it("registers a spec from a file, says where its key goes, and names the one command next", async () => {
-    await add(specDir(STRIPE));
+    await add(specDir(NORTHWIND));
 
     expect(await rows()).toEqual([
-      { id: "stripe", spec: JSON.stringify(STRIPE), added_by: "dev@example.com", bound_to: null, bound_at: null },
+      { id: "northwind", spec: JSON.stringify(NORTHWIND), added_by: "dev@example.com", bound_to: null, bound_at: null },
     ]);
     expect(steps("provider.add").map((step) => step["status"])).toEqual(["start", "ok"]);
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Registered Stripe (stripe) on example.com.\nIts key goes to api.stripe.com only, as a bearer token."),
+      message: expect.stringContaining("Registered Northwind (northwind) on example.com.\nIts key goes to api.northwind.io only, as a bearer token."),
       data: {
-        id: "stripe",
-        name: "Stripe",
-        hosts: ["api.stripe.com"],
-        settings: ["STRIPE_API_KEY"],
+        id: "northwind",
+        name: "Northwind",
+        hosts: ["api.northwind.io"],
+        settings: ["NORTHWIND_API_KEY"],
         source: "row",
         replaced: false,
         next: [
           {
-            command: "pnpm everyapp secret set STRIPE_API_KEY",
-            note: "Stripe's key, from https://dashboard.stripe.com/apikeys; the Gateway sends it only to api.stripe.com",
+            command: "pnpm everyapp secret set NORTHWIND_API_KEY",
+            note: "Northwind's key, from https://developer.northwind.io/keys; the Gateway sends it only to api.northwind.io",
           },
         ],
       },
@@ -179,28 +179,28 @@ describe("provider add", () => {
   });
 
   it("writes the spec for everyapp dev when run in an app's directory", async () => {
-    const dir = appDir(STRIPE);
+    const dir = appDir(NORTHWIND);
     await add(dir);
-    const file = path.join(dir, ".everyapp", "providers", "stripe.json");
-    const parsed = parseProviderSpec(STRIPE);
+    const file = path.join(dir, ".everyapp", "providers", "northwind.json");
+    const parsed = parseProviderSpec(NORTHWIND);
     if (!parsed.ok) throw new Error("the spec parses");
-    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual(providerSpecOf("stripe", parsed.capability));
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual(providerSpecOf("northwind", parsed.capability));
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Wrote .everyapp/providers/stripe.json for everyapp dev"),
-      data: { devFile: ".everyapp/providers/stripe.json" },
+      message: expect.stringContaining("Wrote .everyapp/providers/northwind.json for everyapp dev"),
+      data: { devFile: ".everyapp/providers/northwind.json" },
     });
   });
 
   it("fetches a spec from an https URL, 64 KiB at most, and refuses any other", async () => {
-    const fetcher = vi.fn(async () => Response.json(STRIPE));
-    await add(tempDir("everyapp-provider-url-"), "https://specs.example.org/stripe.json", { fetch: fetcher as never });
+    const fetcher = vi.fn(async () => Response.json(NORTHWIND));
+    await add(tempDir("everyapp-provider-url-"), "https://specs.example.org/northwind.json", { fetch: fetcher as never });
     expect(fetcher).toHaveBeenCalledOnce();
-    expect((await rows()).map((row) => row["id"])).toEqual(["stripe"]);
+    expect((await rows()).map((row) => row["id"])).toEqual(["northwind"]);
 
     const cwd = tempDir("everyapp-provider-url-");
-    await expect(add(cwd, "http://specs.example.org/stripe.json", { fetch: fetcher as never })).rejects.toMatchObject({
+    await expect(add(cwd, "http://specs.example.org/northwind.json", { fetch: fetcher as never })).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
-      message: "http://specs.example.org/stripe.json isn't https",
+      message: "http://specs.example.org/northwind.json isn't https",
     });
     const big = vi.fn(async () => new Response("x".repeat(MAX_SPEC_BYTES + 1)));
     await expect(add(cwd, "https://specs.example.org/big.json", { fetch: big as never })).rejects.toMatchObject({
@@ -227,18 +227,18 @@ describe("provider add", () => {
     await expect(add(cwd, "nope.json")).rejects.toMatchObject({ code: "PROVIDER_SPEC_INVALID", message: "No file at nope.json" });
     await expect(add(specDir("{not json"))).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
-      message: expect.stringMatching(/^stripe\.json isn't JSON: /),
+      message: expect.stringMatching(/^northwind\.json isn't JSON: /),
     });
-    await expect(add(specDir({ ...STRIPE, description: "x".repeat(MAX_SPEC_BYTES) }))).rejects.toMatchObject({
+    await expect(add(specDir({ ...NORTHWIND, description: "x".repeat(MAX_SPEC_BYTES) }))).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
-      message: "stripe.json is over 64 KiB",
+      message: "northwind.json is over 64 KiB",
     });
     expect(createCf).not.toHaveBeenCalled();
   });
 
   it("refuses a spec the parser or the rules refuse, naming why, and writes nothing", async () => {
     // Every problem, each with its path.
-    const invalid = add(specDir({ ...STRIPE, hosts: [], auth: { kind: "oauth2-user", secret: "STRIPE_ID" } }));
+    const invalid = add(specDir({ ...NORTHWIND, hosts: [], auth: { kind: "oauth2-user", secret: "NORTHWIND_ID" } }));
     await expect(invalid).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
       message: expect.stringMatching(/^The spec isn't one this Gateway takes\n.*hosts: required: at least one host/),
@@ -246,68 +246,68 @@ describe("provider add", () => {
     await expect(invalid).rejects.toMatchObject({
       message: expect.stringContaining("auth.kind: must be bearer, header, query or basic"),
     });
-    await expect(add(specDir({ ...STRIPE, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
+    await expect(add(specDir({ ...NORTHWIND, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
       code: "PROVIDER_BUILTIN",
       message: "dataforseo is built in\nA registered provider can't take a built-in provider's id.",
     });
-    await expect(add(specDir({ ...STRIPE, auth: { kind: "bearer", secret: "OPENAI_API_KEY" } }))).rejects.toMatchObject({
+    await expect(add(specDir({ ...NORTHWIND, auth: { kind: "bearer", secret: "OPENAI_API_KEY" } }))).rejects.toMatchObject({
       code: "PROVIDER_SECRET_TAKEN",
-      message: "stripe can't use that setting: OPENAI_API_KEY doesn't start with STRIPE_: a provider's settings carry its own id",
+      message: "northwind can't use that setting: OPENAI_API_KEY doesn't start with NORTHWIND_: a provider's settings carry its own id",
     });
-    await expect(add(specDir({ ...STRIPE, hosts: ["api.example.com"] }))).rejects.toMatchObject({
+    await expect(add(specDir({ ...NORTHWIND, hosts: ["api.example.com"] }))).rejects.toMatchObject({
       code: "PROVIDER_HOST_REFUSED",
-      message: "stripe's key can't be sent there: api.example.com is under this gateway's app domain example.com",
+      message: "northwind's key can't be sent there: api.example.com is under this gateway's app domain example.com",
     });
-    await expect(add(specDir({ ...STRIPE, hosts: ["10.0.0.1"] }))).rejects.toMatchObject({
+    await expect(add(specDir({ ...NORTHWIND, hosts: ["10.0.0.1"] }))).rejects.toMatchObject({
       code: "PROVIDER_HOST_REFUSED",
-      message: "stripe's key can't be sent there: 10.0.0.1 is an IP address, not a host name",
+      message: "northwind's key can't be sent there: 10.0.0.1 is an IP address, not a host name",
     });
     expect(await rows()).toEqual([]);
   });
 
   it("refuses a setting another row holds, or a registered app keeps as its own secret, naming the app", async () => {
-    await add(specDir({ ...STRIPE, id: "stripe-connect", name: "Stripe Connect", auth: { kind: "bearer", secret: "STRIPE_CONNECT_KEY" } }));
-    await expect(add(specDir({ ...STRIPE, auth: { kind: "bearer", secret: "STRIPE_CONNECT_KEY" } }))).rejects.toMatchObject({
+    await add(specDir({ ...NORTHWIND, id: "northwind-connect", name: "Northwind Connect", auth: { kind: "bearer", secret: "NORTHWIND_CONNECT_KEY" } }));
+    await expect(add(specDir({ ...NORTHWIND, auth: { kind: "bearer", secret: "NORTHWIND_CONNECT_KEY" } }))).rejects.toMatchObject({
       code: "PROVIDER_SECRET_TAKEN",
-      message: "stripe can't use that setting: STRIPE_CONNECT_KEY is another registered provider's",
+      message: "northwind can't use that setting: NORTHWIND_CONNECT_KEY is another registered provider's",
     });
 
-    await registerApp("shop", { secrets: ["STRIPE_API_KEY"] });
-    await expect(add(specDir(STRIPE))).rejects.toMatchObject({
+    await registerApp("shop", { secrets: ["NORTHWIND_API_KEY"] });
+    await expect(add(specDir(NORTHWIND))).rejects.toMatchObject({
       code: "PROVIDER_SECRET_TAKEN",
       message:
-        "STRIPE_API_KEY is shop's own secret\nshop's deployed manifest lists it under secrets, so a provider can't read it from the Gateway.",
+        "NORTHWIND_API_KEY is shop's own secret\nshop's deployed manifest lists it under secrets, so a provider can't read it from the Gateway.",
     });
-    expect((await rows()).map((row) => row["id"])).toEqual(["stripe-connect"]);
+    expect((await rows()).map((row) => row["id"])).toEqual(["northwind-connect"]);
   });
 
   it("refuses an id that has a row unless --replace, which writes the new spec and unbinds its key", async () => {
-    await add(specDir(STRIPE));
-    // As `secret set STRIPE_API_KEY` binds it.
-    await db().run([{ sql: "UPDATE providers SET bound_to = 'bound', bound_at = 1 WHERE id = 'stripe'" }]);
-    const moved = { ...STRIPE, hosts: ["api.stripe.com", "files.stripe.com"] };
+    await add(specDir(NORTHWIND));
+    // As `secret set NORTHWIND_API_KEY` binds it.
+    await db().run([{ sql: "UPDATE providers SET bound_to = 'bound', bound_at = 1 WHERE id = 'northwind'" }]);
+    const moved = { ...NORTHWIND, hosts: ["api.northwind.io", "files.northwind.io"] };
 
     await expect(add(specDir(moved))).rejects.toMatchObject({
       code: "PROVIDER_EXISTS",
-      message: expect.stringMatching(/^stripe is registered on this Gateway already\n/),
+      message: expect.stringMatching(/^northwind is registered on this Gateway already\n/),
       rerun: expect.stringContaining("--replace"),
       authorize: true,
     });
-    expect((await rows())[0]).toMatchObject({ spec: JSON.stringify(STRIPE), bound_to: "bound" });
+    expect((await rows())[0]).toMatchObject({ spec: JSON.stringify(NORTHWIND), bound_to: "bound" });
 
     events = [];
-    await add(specDir(moved), "stripe.json", { replace: true });
+    await add(specDir(moved), "northwind.json", { replace: true });
     expect((await rows())[0]).toMatchObject({ spec: JSON.stringify(moved), bound_to: null, bound_at: null });
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Replaced Stripe (stripe)"),
-      data: { replaced: true, hosts: ["api.stripe.com", "files.stripe.com"] },
+      message: expect.stringContaining("Replaced Northwind (northwind)"),
+      data: { replaced: true, hosts: ["api.northwind.io", "files.northwind.io"] },
     });
     expect(done()!["message"]).toContain("set it again before the Gateway sends it");
   });
 
   it("refuses on a Gateway from before the providers table, naming the update", async () => {
     await db().run([{ sql: "DROP TABLE providers" }]);
-    await expect(add(specDir(STRIPE))).rejects.toMatchObject({
+    await expect(add(specDir(NORTHWIND))).rejects.toMatchObject({
       code: "GATEWAY_OUTDATED",
       rerun: "pnpm everyapp update",
     });
@@ -320,23 +320,23 @@ describe("provider add", () => {
 
 describe("provider list", () => {
   it("lists the catalog's providers and the rows, each setting set or not, a row bound or not, and the apps using each", async () => {
-    await add(specDir(STRIPE));
+    await add(specDir(NORTHWIND));
     gatewayWorker().secrets["OPENROUTER_API_KEY"] = "sk-or";
-    await registerApp("shop", { capabilities: { stripe: { access: "read" } }, providers: ["openrouter"] });
+    await registerApp("shop", { capabilities: { northwind: { access: "read" } }, providers: ["openrouter"] });
     events = [];
     await list();
 
     const providers = done()!["data"]["providers"] as Array<Record<string, any>>;
     const ids = providers.map((provider) => provider["id"]);
     // The catalog first (no services), then the rows.
-    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "linkedin", "stripe"]));
+    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "linkedin", "northwind"]));
     expect(ids).not.toContain("email");
     expect(providers.at(-1)).toEqual({
-      id: "stripe",
-      name: "Stripe",
+      id: "northwind",
+      name: "Northwind",
       kind: "api key",
-      hosts: ["api.stripe.com"],
-      settings: [{ name: "STRIPE_API_KEY", set: false }],
+      hosts: ["api.northwind.io"],
+      settings: [{ name: "NORTHWIND_API_KEY", set: false }],
       bound: false,
       source: "row",
       addedBy: "dev@example.com",
@@ -364,7 +364,7 @@ describe("provider list", () => {
     const shown = await human((sink) => listProviders({ flags: {}, out: sink, createCf }));
     expect(shown).toMatch(/^ID +NAME +KIND +HOSTS +SETTINGS +SOURCE +APPS\n/);
     expect(shown).toMatch(
-      /\nstripe +Stripe +api key +api\.stripe\.com +STRIPE_API_KEY not set, not bound +registered by dev@example\.com +shop\n/,
+      /\nnorthwind +Northwind +api key +api\.northwind\.io +NORTHWIND_API_KEY not set, not bound +registered by dev@example\.com +shop\n/,
     );
     expect(shown).toMatch(/\nopenrouter +OpenRouter +ai +openrouter\.ai +OPENROUTER_API_KEY set +catalog +shop\n/);
     expect(shown).toMatch(/\nmastodon +Mastodon +oauth client +<MASTODON_URL> /);
@@ -376,7 +376,7 @@ describe("provider list", () => {
     await db().run([
       {
         sql: "INSERT INTO providers (id, spec, added_by, added_at, updated_at) VALUES ('evil', ?, 'x@example.com', 1, 1)",
-        params: [JSON.stringify({ ...STRIPE, id: "evil", name: "Evil", auth: { kind: "bearer", secret: "JWT_PRIVATE_KEY" } })],
+        params: [JSON.stringify({ ...NORTHWIND, id: "evil", name: "Evil", auth: { kind: "bearer", secret: "JWT_PRIVATE_KEY" } })],
       },
     ]);
     await list();
@@ -392,35 +392,35 @@ describe("provider list", () => {
 
 describe("provider show", () => {
   it("prints a registered provider's spec, who registered it, whether its key is bound, and the apps using it", async () => {
-    await add(specDir(STRIPE));
-    await registerApp("shop", { capabilities: { stripe: { access: "read" } } });
+    await add(specDir(NORTHWIND));
+    await registerApp("shop", { capabilities: { northwind: { access: "read" } } });
     events = [];
-    await show("stripe");
-    const parsed = parseProviderSpec(STRIPE);
+    await show("northwind");
+    const parsed = parseProviderSpec(NORTHWIND);
     if (!parsed.ok) throw new Error("the spec parses");
     expect(done()).toMatchObject({
-      message: "Stripe (stripe)",
+      message: "Northwind (northwind)",
       data: {
-        provider: providerSpecOf("stripe", parsed.capability),
+        provider: providerSpecOf("northwind", parsed.capability),
         source: "row",
         bound: false,
         addedBy: "dev@example.com",
         addedAt: expect.any(Number),
         apps: ["shop"],
-        next: [{ command: "pnpm everyapp secret set STRIPE_API_KEY" }],
+        next: [{ command: "pnpm everyapp secret set NORTHWIND_API_KEY" }],
       },
     });
-    const shown = await human((sink) => showProvider({ flags: {}, out: sink, createCf }, "stripe"));
-    expect(shown).toContain('"hosts": [\n    "api.stripe.com"\n  ]');
+    const shown = await human((sink) => showProvider({ flags: {}, out: sink, createCf }, "northwind"));
+    expect(shown).toContain('"hosts": [\n    "api.northwind.io"\n  ]');
     expect(shown).toContain("Registered by dev@example.com on ");
     expect(shown).toContain("its key isn't set for these hosts yet.\nUsed by shop.");
 
     // Once its key is bound, nothing is next.
     await db().run([
-      { sql: "UPDATE providers SET bound_to = ? WHERE id = 'stripe'", params: [providerBindingKey(parsed.capability)] },
+      { sql: "UPDATE providers SET bound_to = ? WHERE id = 'northwind'", params: [providerBindingKey(parsed.capability)] },
     ]);
     events = [];
-    await show("stripe");
+    await show("northwind");
     expect(done()!["data"]).toMatchObject({ bound: true });
     expect(done()!["data"]["next"]).toBeUndefined();
   });
@@ -454,9 +454,9 @@ describe("provider show", () => {
   });
 
   it("refuses an id the Gateway doesn't offer, and a service", async () => {
-    await expect(show("square")).rejects.toMatchObject({
+    await expect(show("nope")).rejects.toMatchObject({
       code: "PROVIDER_NOT_FOUND",
-      message: "square isn't a provider this Gateway offers",
+      message: "nope isn't a provider this Gateway offers",
       rerun: "pnpm everyapp provider list",
     });
     await expect(show("email")).rejects.toMatchObject({
@@ -466,8 +466,8 @@ describe("provider show", () => {
   });
 
   it("with --save, writes a registered provider's spec in an app's directory, and nowhere else", async () => {
-    await add(specDir(STRIPE));
-    await expect(show("stripe", tempDir("everyapp-provider-none-"), true)).rejects.toMatchObject({
+    await add(specDir(NORTHWIND));
+    await expect(show("northwind", tempDir("everyapp-provider-none-"), true)).rejects.toMatchObject({
       code: "MANIFEST_NOT_FOUND",
     });
     const dir = appDir();
@@ -476,47 +476,47 @@ describe("provider show", () => {
       message: "dataforseo is built in\neveryapp dev reaches it without a file. Nothing was written.",
     });
     events = [];
-    await show("stripe", dir, true);
-    expect(fs.existsSync(path.join(dir, ".everyapp", "providers", "stripe.json"))).toBe(true);
-    expect(done()!["data"]["saved"]).toBe(".everyapp/providers/stripe.json");
+    await show("northwind", dir, true);
+    expect(fs.existsSync(path.join(dir, ".everyapp", "providers", "northwind.json"))).toBe(true);
+    expect(done()!["data"]["saved"]).toBe(".everyapp/providers/northwind.json");
   });
 });
 
 describe("provider remove", () => {
   it("refuses a built-in id, an id with no row, and a row a registered app lists unless --force", async () => {
     await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
-    await expect(remove("stripe")).rejects.toMatchObject({
+    await expect(remove("northwind")).rejects.toMatchObject({
       code: "PROVIDER_NOT_FOUND",
-      message: "No provider stripe is registered on this Gateway",
+      message: "No provider northwind is registered on this Gateway",
     });
-    await add(specDir(STRIPE));
-    await registerApp("shop", { capabilities: { stripe: { access: "read" } } });
-    await expect(remove("stripe")).rejects.toMatchObject({
+    await add(specDir(NORTHWIND));
+    await registerApp("shop", { capabilities: { northwind: { access: "read" } } });
+    await expect(remove("northwind")).rejects.toMatchObject({
       code: "PROVIDER_IN_USE",
-      message: expect.stringMatching(/^shop lists stripe under capabilities\n/),
+      message: expect.stringMatching(/^shop lists northwind under capabilities\n/),
       rerun: expect.stringContaining("--force"),
       authorize: true,
     });
-    expect((await rows()).map((row) => row["id"])).toEqual(["stripe"]);
+    expect((await rows()).map((row) => row["id"])).toEqual(["northwind"]);
 
-    gatewayWorker().secrets["STRIPE_API_KEY"] = "sk_live";
+    gatewayWorker().secrets["NORTHWIND_API_KEY"] = "sk_live";
     events = [];
-    await remove("stripe", true);
+    await remove("northwind", true);
     expect(await rows()).toEqual([]);
     expect(done()).toMatchObject({
       data: {
-        id: "stripe",
-        name: "Stripe",
+        id: "northwind",
+        name: "Northwind",
         removed: true,
-        settings: [{ name: "STRIPE_API_KEY", set: true }],
+        settings: [{ name: "NORTHWIND_API_KEY", set: true }],
         apps: ["shop"],
-        next: [{ command: "pnpm everyapp secret unset STRIPE_API_KEY" }],
+        next: [{ command: "pnpm everyapp secret unset NORTHWIND_API_KEY" }],
       },
     });
     // The Gateway's setting stays until it is unset.
-    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBe("sk_live");
+    expect(gatewayWorker().secrets["NORTHWIND_API_KEY"]).toBe("sk_live");
     expect(done()!["message"]).toContain(
-      "STRIPE_API_KEY stays on the Gateway, read by nothing: pnpm everyapp secret unset STRIPE_API_KEY removes it.",
+      "NORTHWIND_API_KEY stays on the Gateway, read by nothing: pnpm everyapp secret unset NORTHWIND_API_KEY removes it.",
     );
   });
 });
@@ -550,7 +550,7 @@ describe("provider events", () => {
 
   it("provider add queues one provider.added in its batch, a replace another, and a refused add nothing", async () => {
     await organizationWithSubscriber();
-    await add(specDir(STRIPE));
+    await add(specDir(NORTHWIND));
 
     const [added, ...none] = await eventRows();
     expect(none).toEqual([]);
@@ -558,46 +558,46 @@ describe("provider events", () => {
       organization: ORG,
       type: "provider.added",
       actor: { kind: "operator", id: "dev@example.com" },
-      data: { provider: { id: "stripe", name: "Stripe" } },
+      data: { provider: { id: "northwind", name: "Northwind" } },
     });
     expect(await deliveryRows()).toEqual([{ event_id: added!.id, subscription_id: "sub_all", status: "pending" }]);
 
     // Refused: the id has a row, a built-in id, a setting another row holds.
-    await expect(add(specDir(STRIPE))).rejects.toMatchObject({ code: "PROVIDER_EXISTS" });
-    await expect(add(specDir({ ...STRIPE, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
+    await expect(add(specDir(NORTHWIND))).rejects.toMatchObject({ code: "PROVIDER_EXISTS" });
+    await expect(add(specDir({ ...NORTHWIND, id: "dataforseo", auth: { kind: "bearer", secret: "DATAFORSEO_X" } }))).rejects.toMatchObject({
       code: "PROVIDER_BUILTIN",
     });
     await expect(
-      add(specDir({ ...STRIPE, id: "stripe-connect", auth: { kind: "bearer", secret: "STRIPE_API_KEY" } })),
+      add(specDir({ ...NORTHWIND, id: "northwind-connect", auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" } })),
     ).rejects.toMatchObject({ code: "PROVIDER_SECRET_TAKEN" });
     expect(await eventRows()).toHaveLength(1);
 
-    await add(specDir({ ...STRIPE, name: "Stripe Billing" }), "stripe.json", { replace: true });
+    await add(specDir({ ...NORTHWIND, name: "Northwind Billing" }), "northwind.json", { replace: true });
     expect((await eventRows()).map((event) => [event.type, event.data])).toEqual([
-      ["provider.added", { provider: { id: "stripe", name: "Stripe" } }],
-      ["provider.added", { provider: { id: "stripe", name: "Stripe Billing" } }],
+      ["provider.added", { provider: { id: "northwind", name: "Northwind" } }],
+      ["provider.added", { provider: { id: "northwind", name: "Northwind Billing" } }],
     ]);
   });
 
   it("provider remove queues one provider.removed in its batch, and a refused remove nothing", async () => {
     await organizationWithSubscriber();
-    await add(specDir(STRIPE));
-    await registerApp("shop", { capabilities: { stripe: { access: "read" } } });
+    await add(specDir(NORTHWIND));
+    await registerApp("shop", { capabilities: { northwind: { access: "read" } } });
 
     // Refused: a built-in id, an id with no row, a row an app lists without --force.
     await expect(remove("dataforseo")).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
-    await expect(remove("stripe-connect")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
-    await expect(remove("stripe")).rejects.toMatchObject({ code: "PROVIDER_IN_USE" });
+    await expect(remove("northwind-connect")).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await expect(remove("northwind")).rejects.toMatchObject({ code: "PROVIDER_IN_USE" });
     expect((await eventRows()).map((event) => event.type)).toEqual(["provider.added"]);
 
-    await remove("stripe", true);
+    await remove("northwind", true);
     expect(await rows()).toEqual([]);
     const removed = (await eventRows()).filter((event) => event.type === "provider.removed");
     expect(removed).toEqual([
       expect.objectContaining({
         organization: ORG,
         actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
-        data: { provider: { id: "stripe", name: "Stripe" } },
+        data: { provider: { id: "northwind", name: "Northwind" } },
       }),
     ]);
     expect((await deliveryRows()).filter((delivery) => delivery["event_id"] === removed[0]!.id)).toEqual([
@@ -605,21 +605,21 @@ describe("provider events", () => {
     ]);
 
     // Gone: a second remove is refused and queues nothing.
-    await expect(remove("stripe", true)).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
+    await expect(remove("northwind", true)).rejects.toMatchObject({ code: "PROVIDER_NOT_FOUND" });
     expect((await eventRows()).filter((event) => event.type === "provider.removed")).toHaveLength(1);
   });
 
   it("writes the row and queues nothing on a Gateway without the event tables, or before it has an organization", async () => {
     // No organization yet: the registry changes, nothing is queued.
-    await add(specDir(STRIPE));
-    await remove("stripe");
+    await add(specDir(NORTHWIND));
+    await remove("northwind");
     expect(await eventRows()).toEqual([]);
 
     await organizationWithSubscriber();
     await db().run([{ sql: "DROP TABLE event_deliveries" }, { sql: "DROP TABLE events" }, { sql: "DROP TABLE event_subscriptions" }]);
-    await add(specDir(STRIPE));
-    expect((await rows()).map((row) => row["id"])).toEqual(["stripe"]);
-    await remove("stripe");
+    await add(specDir(NORTHWIND));
+    expect((await rows()).map((row) => row["id"])).toEqual(["northwind"]);
+    await remove("northwind");
     expect(await rows()).toEqual([]);
     const [tables = []] = await db().run([{ sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'event%'" }]);
     expect(tables).toEqual([]);

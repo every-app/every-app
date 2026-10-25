@@ -1,0 +1,68 @@
+{
+  "id": "resend",
+  "name": "Resend",
+  "description": "Transactional email: send messages and batches from your own verified domain.",
+  "docs": "https://resend.com/api-keys",
+  "api": "https://resend.com/docs/api-reference/introduction",
+  "hosts": [
+    "api.resend.com"
+  ],
+  "data": "account",
+  "auth": {
+    "kind": "bearer",
+    "secret": "RESEND_API_KEY"
+  },
+  "secrets": [
+    {
+      "name": "RESEND_API_KEY",
+      "hint": "A key with Sending access (optionally limited to one domain); it starts with re_."
+    }
+  ],
+  "access": [
+    "write"
+  ],
+  "readMethods": [],
+  "writeMethods": [
+    "POST"
+  ],
+  "accountWidePaths": [
+    [
+      "api-keys"
+    ],
+    [
+      "domains"
+    ],
+    [
+      "webhooks"
+    ],
+    [
+      "oauth"
+    ],
+    [
+      "logs"
+    ]
+  ],
+  "hint": "An API key from Resend's API Keys page, sent as a bearer token; Sending access is enough to send mail. The app sends its own User-Agent header, since Resend refuses calls without one.",
+  "smoke": {
+    "method": "GET",
+    "path": "/domains",
+    "expect": [
+      200
+    ],
+    "free": true,
+    "note": "Needs a full-access key (a sending-only key answers 401 restricted_api_key); account-wide, so run it from a terminal."
+  },
+  "rate": {
+    "perSecond": 10,
+    "note": "Per team, shared by all its API keys."
+  },
+  "example": "send a welcome email to a new signup",
+  "verified": {
+    "on": "2026-10-25",
+    "how": "docs"
+  },
+  "tags": [
+    "email",
+    "transactional"
+  ]
+}

@@ -101,34 +101,34 @@ describe("integrationFetch", () => {
 
   it("sends a provider outside the catalog over the binding for the gateway to resolve, and has no local fallback for it", async () => {
     const { env, bindingFetch } = bindingEnv();
-    const call = integrationFetch({ env, provider: "stripe" });
-    await call("https://api.stripe.com/v1/customers?limit=1", {
+    const call = integrationFetch({ env, provider: "northwind" });
+    await call("https://api.northwind.io/v1/customers?limit=1", {
       headers: { authorization: "Bearer app-key" },
     });
     const forwarded = bindingFetch.mock.calls[0]?.[0] as Request;
     expect(forwarded.url).toBe(
-      "http://every-app-gateway.internal/api/integrations/stripe/api.stripe.com/v1/customers?limit=1",
+      "http://every-app-gateway.internal/api/integrations/northwind/api.northwind.io/v1/customers?limit=1",
     );
     expect(forwarded.headers.get("authorization")).toBeNull();
     await expect(
-      call("http://api.stripe.com/v1/customers"),
+      call("http://api.northwind.io/v1/customers"),
     ).rejects.toThrowError(/https URLs only/);
     expect(() =>
-      integrationFetch({ env: { EVERYAPP_DEV: "1" }, provider: "stripe" }),
+      integrationFetch({ env: { EVERYAPP_DEV: "1" }, provider: "northwind" }),
     ).toThrowError(/isn't in the built-in provider catalog/);
   });
 
   describe("a registered provider in local dev, from .everyapp/providers", () => {
-    const stripe = {
-      id: "stripe",
-      name: "Stripe",
-      docs: "https://dashboard.stripe.com/apikeys",
-      hosts: ["api.stripe.com"],
-      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    const northwind = {
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://developer.northwind.io/keys",
+      hosts: ["api.northwind.io"],
+      auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
     };
     const devEnv = (
       files: Array<{ file: string; spec: unknown }>,
-      settings: Record<string, string> = { STRIPE_API_KEY: "sk_test_dev" },
+      settings: Record<string, string> = { NORTHWIND_API_KEY: "sk_test_dev" },
     ) => ({
       EVERYAPP_DEV: "1",
       EVERYAPP_DEV_PROVIDERS: JSON.stringify(files),
@@ -141,41 +141,43 @@ describe("integrationFetch", () => {
       );
       vi.stubGlobal("fetch", directFetch);
       const env = devEnv([
-        { file: ".everyapp/providers/stripe.json", spec: stripe },
+        { file: ".everyapp/providers/northwind.json", spec: northwind },
       ]);
-      await integrationFetch({ env, provider: "stripe" })(
-        "https://api.stripe.com/v1/customers?limit=1",
+      await integrationFetch({ env, provider: "northwind" })(
+        "https://api.northwind.io/v1/customers?limit=1",
         { headers: { authorization: "Bearer app-key" } },
       );
       const forwarded = directFetch.mock.calls[0]?.[0] as Request;
-      expect(forwarded.url).toBe("https://api.stripe.com/v1/customers?limit=1");
+      expect(forwarded.url).toBe(
+        "https://api.northwind.io/v1/customers?limit=1",
+      );
       expect(forwarded.headers.get("authorization")).toBe("Bearer sk_test_dev");
 
       // Only the spec's hosts.
       await expect(
-        integrationFetch({ env, provider: "stripe" })(
+        integrationFetch({ env, provider: "northwind" })(
           "https://attacker.example/v1/customers",
         ),
-      ).rejects.toThrowError(/only reaches api\.stripe\.com/);
+      ).rejects.toThrowError(/only reaches api\.northwind\.io/);
 
       // A query-key spec puts the key on the query string.
       directFetch.mockClear();
       const weather = {
-        id: "openweather",
-        name: "OpenWeather",
-        docs: "https://home.openweathermap.org/api_keys",
-        hosts: ["api.openweathermap.org"],
-        auth: { kind: "query", secret: "OPENWEATHER_API_KEY", param: "appid" },
+        id: "fabrikam",
+        name: "Fabrikam",
+        docs: "https://fabrikam.net/api",
+        hosts: ["api.fabrikam.net"],
+        auth: { kind: "query", secret: "FABRIKAM_API_KEY", param: "key" },
       };
       await integrationFetch({
         env: devEnv(
-          [{ file: ".everyapp/providers/openweather.json", spec: weather }],
-          { OPENWEATHER_API_KEY: "ow_dev" },
+          [{ file: ".everyapp/providers/fabrikam.json", spec: weather }],
+          { FABRIKAM_API_KEY: "fb_dev" },
         ),
-        provider: "openweather",
-      })("https://api.openweathermap.org/data/2.5/weather?q=Oslo");
+        provider: "fabrikam",
+      })("https://api.fabrikam.net/v1/forecast?q=Oslo");
       expect((directFetch.mock.calls[0]?.[0] as Request).url).toBe(
-        "https://api.openweathermap.org/data/2.5/weather?q=Oslo&appid=ow_dev",
+        "https://api.fabrikam.net/v1/forecast?q=Oslo&key=fb_dev",
       );
     });
 
@@ -183,13 +185,13 @@ describe("integrationFetch", () => {
       expect(() =>
         integrationFetch({
           env: devEnv(
-            [{ file: ".everyapp/providers/stripe.json", spec: stripe }],
+            [{ file: ".everyapp/providers/northwind.json", spec: northwind }],
             {},
           ),
-          provider: "stripe",
+          provider: "northwind",
         }),
       ).toThrowError(
-        "Stripe is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set STRIPE_API_KEY in .dev.vars for local development.",
+        "Northwind is unavailable: deploy with the EVERY_APP_GATEWAY binding, or set NORTHWIND_API_KEY in .dev.vars for local development.",
       );
     });
 
@@ -197,18 +199,20 @@ describe("integrationFetch", () => {
       const env = devEnv([
         { file: ".everyapp/providers/broken.json", spec: "{not json" },
         {
-          file: ".everyapp/providers/stripe.json",
-          spec: { ...stripe, hosts: [] },
+          file: ".everyapp/providers/northwind.json",
+          spec: { ...northwind, hosts: [] },
         },
       ]);
-      expect(() => integrationFetch({ env, provider: "stripe" })).toThrowError(
-        /^\.everyapp\/providers\/stripe\.json isn't a provider spec: hosts: required.*everyapp provider show stripe --save/,
+      expect(() =>
+        integrationFetch({ env, provider: "northwind" }),
+      ).toThrowError(
+        /^\.everyapp\/providers\/northwind\.json isn't a provider spec: hosts: required.*everyapp provider show northwind --save/,
       );
       expect(() => integrationFetch({ env, provider: "broken" })).toThrowError(
         /^\.everyapp\/providers\/broken\.json isn't JSON\./,
       );
-      expect(() => integrationFetch({ env, provider: "linear" })).toThrowError(
-        /"linear" isn't in the built-in provider catalog, and no \.everyapp\/providers\/linear\.json describes it/,
+      expect(() => integrationFetch({ env, provider: "nope" })).toThrowError(
+        /"nope" isn't in the built-in provider catalog, and no \.everyapp\/providers\/nope\.json describes it/,
       );
     });
 
@@ -218,30 +222,35 @@ describe("integrationFetch", () => {
         env: {
           ...env,
           EVERYAPP_DEV_PROVIDERS: JSON.stringify([
-            { file: ".everyapp/providers/stripe.json", spec: stripe },
+            { file: ".everyapp/providers/northwind.json", spec: northwind },
           ]),
-          STRIPE_API_KEY: "sk_test_dev",
+          NORTHWIND_API_KEY: "sk_test_dev",
         },
-        provider: "stripe",
-      })("https://api.stripe.com/v1/customers");
+        provider: "northwind",
+      })("https://api.northwind.io/v1/customers");
       const forwarded = bindingFetch.mock.calls[0]?.[0] as Request;
       expect(forwarded.url).toBe(
-        "http://every-app-gateway.internal/api/integrations/stripe/api.stripe.com/v1/customers",
+        "http://every-app-gateway.internal/api/integrations/northwind/api.northwind.io/v1/customers",
       );
       expect(forwarded.headers.get("authorization")).toBeNull();
     });
 
     it("reports its status from the spec and .dev.vars", async () => {
-      const files = [{ file: ".everyapp/providers/stripe.json", spec: stripe }];
+      const files = [
+        { file: ".everyapp/providers/northwind.json", spec: northwind },
+      ];
       expect(
-        await integrationStatus({ env: devEnv(files), provider: "stripe" }),
+        await integrationStatus({ env: devEnv(files), provider: "northwind" }),
       ).toEqual({ requested: true, configured: true, ready: true });
       expect(
-        await integrationStatus({ env: devEnv(files, {}), provider: "stripe" }),
+        await integrationStatus({
+          env: devEnv(files, {}),
+          provider: "northwind",
+        }),
       ).toEqual({ requested: true, configured: false, ready: false });
       await expect(
-        integrationStatus({ env: devEnv([]), provider: "stripe" }),
-      ).rejects.toThrowError(/no \.everyapp\/providers\/stripe\.json/);
+        integrationStatus({ env: devEnv([]), provider: "northwind" }),
+      ).rejects.toThrowError(/no \.everyapp\/providers\/northwind\.json/);
     });
   });
 
@@ -332,15 +341,15 @@ describe("integrationStatus", () => {
     await expect(
       integrationStatus({
         env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-        provider: "stripe",
+        provider: "northwind",
       }),
     ).resolves.toEqual({ requested: false, configured: false, ready: false });
     expect(bindingFetch).toHaveBeenCalledWith(
-      "http://every-app-gateway.internal/api/integrations/stripe",
+      "http://every-app-gateway.internal/api/integrations/northwind",
     );
     // Local dev knows the catalog only.
     await expect(
-      integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "stripe" }),
+      integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "northwind" }),
     ).rejects.toThrowError(ConfigurationError);
     await expect(
       integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "openai" }),

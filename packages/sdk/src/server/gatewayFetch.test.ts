@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { ConfigurationError } from "../internal/index";
 import { createGatewayFetch } from "./gatewayFetch";
 
@@ -116,11 +117,21 @@ describe("createGatewayFetch", () => {
         { method: "POST", body: "{}" },
       ),
     ).rejects.toThrow(/Set OPENROUTER_API_KEY in \.dev\.vars/);
-    await expect(
-      gatewayFetch("https://gateway.example.com/api/ai/anthropic/v1/messages"),
-    ).rejects.toThrow(
-      /\/api\/ai\/openai, \/api\/ai\/openrouter and \/api\/ai\/workers-ai/,
+    // A provider the catalog doesn't have: the message names every AI
+    // provider it does, the three it always named first.
+    const unknown = await gatewayFetch(
+      "https://gateway.example.com/api/ai/nope/v1/messages",
+    ).then(
+      () => null,
+      (error: unknown) => error,
     );
+    expect(unknown).toBeInstanceOf(ConfigurationError);
+    expect((unknown as Error).message).toMatch(
+      /\/api\/ai\/openai, \/api\/ai\/openrouter, \/api\/ai\/workers-ai/,
+    );
+    for (const id of Object.keys(DEV_AI_PROVIDERS)) {
+      expect((unknown as Error).message).toContain(`/api/ai/${id}`);
+    }
     expect(directFetch).not.toHaveBeenCalled();
   });
 

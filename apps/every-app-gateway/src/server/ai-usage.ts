@@ -8,7 +8,13 @@
 
 import { watchBody, type BodyEnd } from "./response-tap";
 
-export type AiUsage = { input: number; output: number; total: number };
+export type AiUsage = {
+  input: number;
+  output: number;
+  total: number;
+  /** The call's price in US dollars, where the provider's entry names the field that carries it (OpenRouter's `usage.cost`). */
+  cost?: number;
+};
 
 const TAIL_BYTES = 16 * 1024;
 
@@ -20,8 +26,15 @@ const USAGE_FIELDS: Record<string, keyof AiUsage> = {
   total_tokens: "total",
 };
 
-/** The last usage numbers reported in a response body (or its tail). */
-export function extractUsage(text: string): AiUsage | null {
+/**
+ * The last usage numbers reported in a response body (or its tail), and,
+ * where `costPath` names it (`cost.responseField` of the provider's entry,
+ * a dotted path such as `usage.cost`), the call's price: the last number
+ * under the path's final name after the last occurrence of its parent
+ * names, so a streamed answer reports the usage chunk's figure and never a
+ * `cost` the model wrote in its text before it.
+ */
+export function extractUsage(text: string, costPath?: string): AiUsage | null {
   const found: Partial<AiUsage> = {};
   const pattern =
     /"(input_tokens|prompt_tokens|output_tokens|completion_tokens|total_tokens)"\s*:\s*(\d+)/g;
@@ -32,7 +45,33 @@ export function extractUsage(text: string): AiUsage | null {
   if (found.input === undefined && found.output === undefined) return null;
   const input = found.input ?? 0;
   const output = found.output ?? 0;
-  return { input, output, total: found.total ?? input + output };
+  const cost = costPath === undefined ? undefined : extractCost(text, costPath);
+  return {
+    input,
+    output,
+    total: found.total ?? input + output,
+    ...(cost === undefined ? {} : { cost }),
+  };
+}
+
+/** The number under `path` (`usage.cost`): each parent narrows the text to after its last mention. */
+function extractCost(text: string, path: string): number | undefined {
+  const names = path.split(".");
+  const last = names.pop()!;
+  let scope = text;
+  for (const name of names) {
+    const at = scope.lastIndexOf(`"${name}"`);
+    if (at < 0) return undefined;
+    scope = scope.slice(at);
+  }
+  // The names passed the spec's rule: letters, digits and underscores.
+  const pattern = new RegExp(
+    `"${last}"\\s*:\\s*(\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)`,
+    "g",
+  );
+  let value: number | undefined;
+  for (const match of scope.matchAll(pattern)) value = Number(match[1]);
+  return value;
 }
 
 /**
@@ -47,6 +86,7 @@ export function extractUsage(text: string): AiUsage | null {
 export function tapUsage(
   body: ReadableStream<Uint8Array>,
   onDone: (usage: AiUsage | null, ended: BodyEnd) => void,
+  costPath?: string,
 ): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder();
   let tail = "";
@@ -57,7 +97,7 @@ export function tapUsage(
       );
     },
     end(how) {
-      onDone(extractUsage(tail + decoder.decode()), how);
+      onDone(extractUsage(tail + decoder.decode(), costPath), how);
     },
   });
 }

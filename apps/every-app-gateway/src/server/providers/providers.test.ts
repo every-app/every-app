@@ -30,19 +30,19 @@ const SETTINGS = {
 };
 
 const spec = {
-  id: "stripe",
-  name: "Stripe",
-  docs: "https://dashboard.stripe.com/apikeys",
-  hosts: ["api.stripe.com"],
-  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  id: "northwind",
+  name: "Northwind",
+  docs: "https://developer.northwind.io/keys",
+  hosts: ["api.northwind.io"],
+  auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
 };
 
 /** The row as `everyapp secret set` leaves it: bound to the hosts it has. */
 function boundRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
-  const registry = providerRegistry([{ id: "stripe", spec }]);
+  const registry = providerRegistry([{ id: "northwind", spec }]);
   const [row] = registry.rows();
   return {
-    id: "stripe",
+    id: "northwind",
     spec,
     boundTo: providerBindingKey(row!.capability),
     addedBy: "ben@example.com",
@@ -71,7 +71,7 @@ describe("the gateway's host rule", () => {
       }),
     ).toContain("third-party domain");
     expect(refusedGatewayHost("x.third-party.net", SETTINGS)).toBeNull();
-    expect(refusedGatewayHost("api.stripe.com", SETTINGS)).toBeNull();
+    expect(refusedGatewayHost("api.northwind.io", SETTINGS)).toBeNull();
     // A gateway with none set refuses nothing of its own.
     expect(refusedGatewayHost("apps.example.com", {})).toBeNull();
   });
@@ -104,16 +104,16 @@ describe("the gateway's host rule", () => {
 });
 
 describe("the key-binding rule", () => {
-  const env = { ...SETTINGS, STRIPE_API_KEY: "sk_live" };
+  const env = { ...SETTINGS, NORTHWIND_API_KEY: "nw_live" };
 
-  async function callStripe(rows: ProviderRow[]) {
+  async function callNorthwind(rows: ProviderRow[]) {
     const lookup = registryFromRows(rows, SETTINGS);
     let upstream: Request | undefined;
     const response = await handleIntegrationProxyRequest({
       request: new Request(
-        "http://every-app-gateway.internal/api/integrations/stripe/api.stripe.com/v1/balance",
+        "http://every-app-gateway.internal/api/integrations/northwind/api.northwind.io/v1/balance",
       ),
-      capabilities: { stripe: { access: "read" } },
+      capabilities: { northwind: { access: "read" } },
       lookup,
       env,
       admit: async () => ({
@@ -137,17 +137,17 @@ describe("the key-binding rule", () => {
   }
 
   it("reads the key for a row bound to the hosts it has, and not after the hosts change", async () => {
-    const bound = await callStripe([boundRow()]);
+    const bound = await callNorthwind([boundRow()]);
     expect(bound.response.status).toBe(200);
-    expect(bound.upstream?.headers.get("authorization")).toBe("Bearer sk_live");
+    expect(bound.upstream?.headers.get("authorization")).toBe("Bearer nw_live");
 
     // The row replaced with another host while the key stays set.
-    const replaced = await callStripe([
+    const replaced = await callNorthwind([
       boundRow({
-        spec: { ...spec, hosts: ["api.stripe.com", "attacker.example"] },
+        spec: { ...spec, hosts: ["api.northwind.io", "attacker.example"] },
       }),
     ]);
-    expect(replaced.lookup.bound("stripe")).toBe(false);
+    expect(replaced.lookup.bound("northwind")).toBe(false);
     expect(replaced.response.status).toBe(503);
     await expect(replaced.response.json()).resolves.toMatchObject({
       code: "integration_not_configured",
@@ -156,7 +156,7 @@ describe("the key-binding rule", () => {
     expect(replaced.upstream).toBeUndefined();
 
     // Never bound: a row added and not yet given a key.
-    const fresh = await callStripe([boundRow({ boundTo: null })]);
+    const fresh = await callNorthwind([boundRow({ boundTo: null })]);
     expect(fresh.response.status).toBe(503);
     expect(fresh.upstream).toBeUndefined();
   });
@@ -165,9 +165,9 @@ describe("the key-binding rule", () => {
     const lookup = registryFromRows([boundRow({ boundTo: null })], SETTINGS);
     const status = await handleIntegrationProxyRequest({
       request: new Request(
-        "http://every-app-gateway.internal/api/integrations/stripe",
+        "http://every-app-gateway.internal/api/integrations/northwind",
       ),
-      capabilities: { stripe: { access: "read" } },
+      capabilities: { northwind: { access: "read" } },
       lookup,
       env,
       admit: async () => {
@@ -178,7 +178,7 @@ describe("the key-binding rule", () => {
       },
     });
     await expect(status.json()).resolves.toEqual({
-      capability: "stripe",
+      capability: "northwind",
       requested: true,
       configured: false,
       ready: false,
@@ -191,7 +191,7 @@ describe("the key-binding rule", () => {
         secretNames: [],
         appId: "shop",
         tier: "service_binding",
-        manifest: { capabilities: { stripe: { access: "read" } } },
+        manifest: { capabilities: { northwind: { access: "read" } } },
         canFix: true,
       },
       {
@@ -201,7 +201,7 @@ describe("the key-binding rule", () => {
       },
     );
     expect(report?.ready).toBe(false);
-    expect(report?.unmet.map((setting) => setting.id)).toEqual(["stripe"]);
+    expect(report?.unmet.map((setting) => setting.id)).toEqual(["northwind"]);
 
     const boundReport = await appSettingsReport(
       {
@@ -210,7 +210,7 @@ describe("the key-binding rule", () => {
         secretNames: [],
         appId: "shop",
         tier: "service_binding",
-        manifest: { capabilities: { stripe: { access: "read" } } },
+        manifest: { capabilities: { northwind: { access: "read" } } },
         canFix: true,
       },
       {

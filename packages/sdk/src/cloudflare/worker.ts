@@ -273,17 +273,26 @@ type DatabaseEnv<M> = M extends { database: object }
 /**
  * The gateway secrets holding the keys of the AI providers and capabilities
  * an app may ask for, with the settings a provider needs besides its key
- * (Workers AI's account). With no gateway in development, the SDK reaches
- * them with the developer's own values under the same names. A copy of the
- * tables in ../internal, which the Worker loads: the Vite plugin hides
- * whatever cloudflare.config.ts imports from the Worker. A test keeps them
- * in step.
+ * (Workers AI's account, a Basic username held as a setting, a host
+ * setting). With no gateway in development, the SDK reaches them with the
+ * developer's own values under the same names. A copy of the catalog's
+ * settings (`capabilitySettings()` over every entry of
+ * ../internal/capabilities.ts), which the Worker loads and this file must
+ * not import (see ./index.ts: the Vite plugin hides whatever
+ * cloudflare.config.ts imports from the Worker). worker.test.ts keeps the
+ * copy in step: a provider added to the catalog is added here.
  */
 const DEV_GATEWAY_KEYS = {
   providers: {
     openai: ["OPENAI_API_KEY"],
     openrouter: ["OPENROUTER_API_KEY"],
     "workers-ai": ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+    // The AI providers of ../internal/catalog/inference.ts.
+    anthropic: ["ANTHROPIC_API_KEY"],
+    gemini: ["GEMINI_API_KEY"],
+    mistral: ["MISTRAL_API_KEY"],
+    groq: ["GROQ_API_KEY"],
+    cohere: ["COHERE_API_KEY"],
   },
   capabilities: {
     dataforseo: ["DATAFORSEO_API_KEY"],
@@ -331,6 +340,57 @@ const DEV_GATEWAY_KEYS = {
       "GOOGLE_WORKSPACE_CLIENT_SECRET",
     ],
     "microsoft-365": ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"],
+    // The API-key providers of ../internal/catalog/*.ts, in catalog order:
+    // the key, then a Basic username held as a setting, then the host
+    // setting of a provider whose host is the operator's.
+    stripe: ["STRIPE_API_KEY"],
+    lemonsqueezy: ["LEMONSQUEEZY_API_KEY"],
+    paddle: ["PADDLE_API_KEY"],
+    shopify: ["SHOPIFY_API_TOKEN", "SHOPIFY_HOST"],
+    plaid: ["PLAID_SECRET"],
+    attio: ["ATTIO_API_KEY"],
+    hubspot: ["HUBSPOT_API_TOKEN"],
+    pipedrive: ["PIPEDRIVE_API_TOKEN"],
+    airtable: ["AIRTABLE_API_TOKEN"],
+    notion: ["NOTION_API_TOKEN"],
+    postmark: ["POSTMARK_API_TOKEN"],
+    sendgrid: ["SENDGRID_API_KEY"],
+    twilio: ["TWILIO_API_SECRET", "TWILIO_API_KEY"],
+    intercom: ["INTERCOM_API_TOKEN"],
+    crisp: ["CRISP_API_KEY", "CRISP_API_IDENTIFIER"],
+    linear: ["LINEAR_API_KEY"],
+    github: ["GITHUB_API_TOKEN"],
+    gitlab: ["GITLAB_API_TOKEN"],
+    vercel: ["VERCEL_API_TOKEN"],
+    cloudflare: ["CLOUDFLARE_PROVIDER_API_TOKEN"],
+    posthog: ["POSTHOG_PERSONAL_API_KEY"],
+    mixpanel: [
+      "MIXPANEL_SERVICE_ACCOUNT_SECRET",
+      "MIXPANEL_SERVICE_ACCOUNT_USERNAME",
+    ],
+    segment: ["SEGMENT_WRITE_KEY"],
+    supabase: ["SUPABASE_SECRET_KEY", "SUPABASE_HOST"],
+    turso: ["TURSO_API_TOKEN"],
+    "turso-db": ["TURSO_DB_AUTH_TOKEN", "TURSO_DB_HOST"],
+    neon: ["NEON_API_KEY"],
+    pinecone: ["PINECONE_API_KEY", "PINECONE_HOST"],
+    mapbox: ["MAPBOX_ACCESS_TOKEN"],
+    openweather: ["OPENWEATHER_API_KEY"],
+    voyage: ["VOYAGE_API_KEY"],
+    perplexity: ["PERPLEXITY_API_KEY"],
+    jina: ["JINA_API_KEY"],
+    replicate: ["REPLICATE_API_TOKEN"],
+    huggingface: ["HUGGINGFACE_API_TOKEN"],
+    firecrawl: ["FIRECRAWL_API_KEY"],
+    exa: ["EXA_API_KEY"],
+    tavily: ["TAVILY_API_KEY"],
+    serper: ["SERPER_API_KEY"],
+    "brave-search": ["BRAVE_SEARCH_API_KEY"],
+    apify: ["APIFY_API_TOKEN"],
+    deepgram: ["DEEPGRAM_API_KEY"],
+    elevenlabs: ["ELEVENLABS_API_KEY"],
+    assemblyai: ["ASSEMBLYAI_API_KEY"],
+    newsapi: ["NEWSAPI_API_KEY"],
   },
 } as const;
 type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;

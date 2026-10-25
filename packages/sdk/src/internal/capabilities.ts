@@ -85,9 +85,12 @@ export interface ProviderCost {
   usd?: number;
   note?: string;
   /**
-   * A top-level field of the provider's JSON answer that reports the
-   * call's cost in US dollars (DataForSEO's `cost`); read off the head of
-   * every answer and added to the usage counters. Absent: nothing is read.
+   * The field of the provider's JSON answer that reports the call's cost
+   * in US dollars, added to the usage counters: a top-level name the
+   * capability proxy reads off the head of every answer (DataForSEO's
+   * `cost`), or a dotted path the AI proxy reads off the tail with the
+   * token usage (OpenRouter's `usage.cost`). Absent: nothing is read, and
+   * `usd` is the flat per-call price where the provider has one.
    */
   responseField?: string;
 }
@@ -133,6 +136,8 @@ export interface ProviderDetails {
   example?: string;
   cost?: ProviderCost;
   rate?: ProviderRate;
+  /** One request that costs nothing and proves the key works, for a person's terminal. */
+  smoke?: SmokeRequest;
   verified?: ProviderVerification;
   tags?: readonly string[];
 }
@@ -177,7 +182,6 @@ export interface ApiKeyCapability extends ProviderDetails {
    * provider account would show one app another's work.
    */
   accountWidePaths: readonly (readonly string[])[];
-  smoke?: SmokeRequest;
 }
 
 /**
@@ -398,6 +402,8 @@ export type Capability =
   | OAuthClientCapability
   | GatewayServiceCapability;
 
+import { CATALOG_ENTRIES } from "./catalog/index.js";
+
 export const CAPABILITIES = {
   // The AI providers, in the order the AI proxy's table had them.
   openai: {
@@ -445,6 +451,13 @@ export const CAPABILITIES = {
       "/api/v1/embeddings",
     ],
     hint: "An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.",
+    // Every answer's `usage.cost` is the call's price in USD, what
+    // OpenRouter charges the key: read off the tail with the tokens.
+    cost: {
+      unit: "token",
+      responseField: "usage.cost",
+      note: "The answer's usage.cost is the call's price in USD, per model.",
+    },
     verified: { on: "2026-10-25", how: "live" },
   },
   // Workers AI's OpenAI-compatible REST API, in the gateway's own account
@@ -1521,6 +1534,9 @@ export const CAPABILITIES = {
     api: ["graph.microsoft.com"],
     redirectPaths: ["/integrations/microsoft/callback"],
   },
+  // The first fifty beyond the entries above (catalog/*.ts, PR 3 of the
+  // provider registry), after them so the derived lists keep their order.
+  ...CATALOG_ENTRIES,
 } as const satisfies Record<string, Capability>;
 
 export type CapabilityId = keyof typeof CAPABILITIES;
@@ -1558,7 +1574,7 @@ export type OAuthScopeSetName<Id extends OAuthClientCapabilityId> =
 /** The Gateway settings an `auth` block names: the key, and a Basic username held as a setting. */
 type AuthSettingsOf<A> =
   | (A extends { secret: infer S extends string } ? S : never)
-  | (A extends { username: { secret: infer U extends string } } ? U : never);
+  | (A extends { user: { secret: infer U extends string } } ? U : never);
 
 type SettingsOf<C> = C extends {
   settings: readonly (infer S extends string)[];

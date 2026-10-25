@@ -29,19 +29,19 @@ import { ProviderRepository } from "@/server/repositories/ProviderRepository";
 import { createTestDb } from "@/test/sqlite-db";
 import { gatewayProviders, resetGatewayProvidersForTests } from "./index";
 
-const stripe = {
-  id: "stripe",
-  name: "Stripe",
-  docs: "https://dashboard.stripe.com/apikeys",
-  hosts: ["api.stripe.com"],
-  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+const northwind = {
+  id: "northwind",
+  name: "Northwind",
+  docs: "https://developer.northwind.io/keys",
+  hosts: ["api.northwind.io"],
+  auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
 };
-const exa = {
-  id: "exa",
-  name: "Exa",
-  docs: "https://dashboard.exa.ai/api-keys",
-  hosts: ["api.exa.ai"],
-  auth: { kind: "header", secret: "EXA_API_KEY", header: "x-api-key" },
+const contoso = {
+  id: "contoso",
+  name: "Contoso",
+  docs: "https://contoso.dev/docs/auth",
+  hosts: ["api.contoso.dev"],
+  auth: { kind: "header", secret: "CONTOSO_API_KEY", header: "x-api-key" },
 };
 
 beforeEach(async () => {
@@ -52,11 +52,13 @@ beforeEach(async () => {
 
 describe("the providers table", () => {
   it("reads rows in the order they were added, with their binding", async () => {
-    const [row] = providerRegistry([{ id: "stripe", spec: stripe }]).rows();
+    const [row] = providerRegistry([
+      { id: "northwind", spec: northwind },
+    ]).rows();
     await testDb.current!.insert(providers).values([
       {
-        id: "stripe",
-        spec: JSON.stringify(stripe),
+        id: "northwind",
+        spec: JSON.stringify(northwind),
         addedBy: "ben@example.com",
         addedAt: new Date(2000),
         updatedAt: new Date(2000),
@@ -64,30 +66,30 @@ describe("the providers table", () => {
         boundAt: new Date(3000),
       },
       {
-        id: "exa",
-        spec: JSON.stringify(exa),
+        id: "contoso",
+        spec: JSON.stringify(contoso),
         addedBy: "ben@example.com",
         addedAt: new Date(1000),
         updatedAt: new Date(1000),
       },
     ]);
     const rows = await ProviderRepository.all();
-    expect(rows.map((each) => each.id)).toEqual(["exa", "stripe"]);
+    expect(rows.map((each) => each.id)).toEqual(["contoso", "northwind"]);
     expect(rows[1]).toMatchObject({
       addedBy: "ben@example.com",
       addedAt: 2000,
     });
-    expect(await ProviderRepository.byId("exa")).toMatchObject({
-      id: "exa",
+    expect(await ProviderRepository.byId("contoso")).toMatchObject({
+      id: "contoso",
       boundTo: null,
     });
     expect(await ProviderRepository.byId("none")).toBeNull();
 
     const registry = await gatewayProviders();
-    expect(registry.sourceOf("stripe")).toBe("row");
-    expect(registry.bound("stripe")).toBe(true);
-    expect(registry.bound("exa")).toBe(false);
-    expect([...registry.unboundSettings()]).toEqual(["EXA_API_KEY"]);
+    expect(registry.sourceOf("northwind")).toBe("row");
+    expect(registry.bound("northwind")).toBe(true);
+    expect(registry.bound("contoso")).toBe(false);
+    expect([...registry.unboundSettings()]).toEqual(["CONTOSO_API_KEY"]);
     expect(registry.rejected).toEqual([]);
   });
 
@@ -95,16 +97,16 @@ describe("the providers table", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-25T12:00:00Z"));
     const before = await gatewayProviders();
-    expect(before.sourceOf("exa")).toBeUndefined();
+    expect(before.sourceOf("contoso")).toBeUndefined();
     await testDb.current!.insert(providers).values({
-      id: "exa",
-      spec: JSON.stringify(exa),
+      id: "contoso",
+      spec: JSON.stringify(contoso),
       addedAt: new Date(),
       updatedAt: new Date(),
     });
-    expect((await gatewayProviders()).sourceOf("exa")).toBeUndefined();
+    expect((await gatewayProviders()).sourceOf("contoso")).toBeUndefined();
     vi.advanceTimersByTime(31_000);
-    expect((await gatewayProviders()).sourceOf("exa")).toBe("row");
+    expect((await gatewayProviders()).sourceOf("contoso")).toBe("row");
   });
 
   it("serves the catalog alone when the rows can't be read, logging once", async () => {

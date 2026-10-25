@@ -749,35 +749,35 @@ describe("configure from a script", () => {
   });
 
   it("sets a registered provider's key on the Gateway and binds it to the row's hosts", async () => {
-    const stripe = {
-      id: "stripe",
-      name: "Stripe",
-      docs: "https://dashboard.stripe.com/apikeys",
-      hosts: ["api.stripe.com"],
-      auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
-      hint: "A restricted key from the Stripe dashboard.",
+    const northwind = {
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://developer.northwind.io/keys",
+      hosts: ["api.northwind.io"],
+      auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
+      hint: "A restricted key from the Northwind dashboard.",
     };
-    await addProvider(db(), { spec: stripe, deployer: { actor: "ops@example.com", email: "ops@example.com" }, install: (await readInstall(db()))! });
-    const shop: EveryAppCliManifest = { id: "shop", resources: { d1: ["DB"] }, capabilities: { stripe: { access: "read" } } };
+    await addProvider(db(), { spec: northwind, deployer: { actor: "ops@example.com", email: "ops@example.com" }, install: (await readInstall(db()))! });
+    const shop: EveryAppCliManifest = { id: "shop", resources: { d1: ["DB"] }, capabilities: { northwind: { access: "read" } } };
     await deploy(appDir(shop), shop);
 
     // At a terminal, the prompt says what the key is and where the spec is.
-    const asked = configureAt(emptyDir(), { values: { STRIPE_API_KEY: "sk_test" } }, { appId: "shop" });
+    const asked = configureAt(emptyDir(), { values: { NORTHWIND_API_KEY: "sk_test" } }, { appId: "shop" });
     await asked;
     expect(asked.prompter.questions[0]).toMatchObject({
       kind: "secret",
-      question: "STRIPE_API_KEY",
+      question: "NORTHWIND_API_KEY",
       context: [
-        "Stripe: STRIPE_API_KEY",
-        "A restricted key from the Stripe dashboard.",
-        "Get it at https://dashboard.stripe.com/apikeys",
-        "Guide: pnpm everyapp provider show stripe",
+        "Northwind: NORTHWIND_API_KEY",
+        "A restricted key from the Northwind dashboard.",
+        "Get it at https://developer.northwind.io/keys",
+        "Guide: pnpm everyapp provider show northwind",
       ],
     });
-    expect(gateway().secrets["STRIPE_API_KEY"]).toBe("sk_test");
-    const [row] = (await db().run([{ sql: "SELECT bound_to FROM providers WHERE id = 'stripe'" }]))[0]!;
-    expect(row!["bound_to"]).toEqual(expect.stringContaining('"hosts":["api.stripe.com"]'));
-    expect(done()).toMatchObject({ message: "Set STRIPE_API_KEY. shop is ready", data: { changed: { gateway: { bound: ["stripe"] } } } });
+    expect(gateway().secrets["NORTHWIND_API_KEY"]).toBe("sk_test");
+    const [row] = (await db().run([{ sql: "SELECT bound_to FROM providers WHERE id = 'northwind'" }]))[0]!;
+    expect(row!["bound_to"]).toEqual(expect.stringContaining('"hosts":["api.northwind.io"]'));
+    expect(done()).toMatchObject({ message: "Set NORTHWIND_API_KEY. shop is ready", data: { changed: { gateway: { bound: ["northwind"] } } } });
   });
 });
 

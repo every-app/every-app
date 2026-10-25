@@ -38,7 +38,13 @@ const SEGMENT = /^[a-z0-9_-]{1,64}$/;
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
 const QUERY_PARAM = /^[A-Za-z0-9_.-]{1,64}$/;
 const SCHEME = /^[A-Za-z][A-Za-z0-9-]{0,31}$/;
-const RESPONSE_FIELD = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+/**
+ * A JSON field name, or a dotted path to a nested one (`usage.cost`, at
+ * most four segments): the capability proxy reads a top-level name off the
+ * answer's head, the AI proxy a path into the usage object off its tail.
+ */
+const RESPONSE_FIELD =
+  /^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,3}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TAG = /^[a-z][a-z0-9-]{0,31}$/;
 /** Control and format characters: in no text a spec carries. */
@@ -546,12 +552,12 @@ function cost(value: unknown, problems: Problems): ProviderCost | undefined {
     value["responseField"],
     "cost.responseField",
     problems,
-    { max: 64 },
+    { max: 128 },
   );
   if (responseField !== undefined && !RESPONSE_FIELD.test(responseField)) {
     problems.push({
       path: "cost.responseField",
-      message: "must be a JSON field name",
+      message: "must be a JSON field name, or a dotted path to a nested one",
     });
   }
   if (unit !== "call" && unit !== "result" && unit !== "token")
@@ -727,8 +733,17 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
     problems.push({ path: "access", message: "must list read, write or both" });
   }
   const readMethods = methods(input["readMethods"], "readMethods", problems);
-  if (readMethods && readMethods.length === 0) {
-    problems.push({ path: "readMethods", message: "must list a method" });
+  // A write-only provider (a sender, a GraphQL API) reads with nothing:
+  // every call needs the write grant. Anything that offers read lists how.
+  if (
+    readMethods &&
+    readMethods.length === 0 &&
+    (!Array.isArray(access) || access.includes("read"))
+  ) {
+    problems.push({
+      path: "readMethods",
+      message: "must list a method unless access is write alone",
+    });
   }
   const writeMethods = methods(input["writeMethods"], "writeMethods", problems);
   const paths = accountWidePaths(input["accountWidePaths"], problems);

@@ -83,6 +83,8 @@ interface AiProvider {
   extraRoutes: boolean;
   /** Turns the provider's answer at a path into what OpenAI clients parse. */
   normalizeResponse?: (path: string, response: Response) => Response;
+  /** The dotted path in the answer that carries the call's price (`cost.responseField`: OpenRouter's `usage.cost`). */
+  costField?: string;
 }
 
 /** The proxy's view of an `ai` catalog entry. */
@@ -97,6 +99,9 @@ function aiProviderOf(capability: AiProviderCapability): AiProvider {
     extraRoutes: capability.extraRoutes ?? false,
     ...(capability.normalize === "workers-ai"
       ? { normalizeResponse: normalizeWorkersAiResponse }
+      : {}),
+    ...(capability.cost?.responseField
+      ? { costField: capability.cost.responseField }
       : {}),
   };
 }
@@ -322,7 +327,10 @@ export async function handleAuthenticatedAiProxyRequest({
     logUsage(null);
     return response;
   }
-  return new Response(tapUsage(response.body, logUsage), response);
+  return new Response(
+    tapUsage(response.body, logUsage, aiProvider.costField),
+    response,
+  );
 }
 
 function operatorRoutes(value: string | undefined): string[] {

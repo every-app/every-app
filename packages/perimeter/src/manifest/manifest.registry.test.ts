@@ -8,33 +8,33 @@ import { providerRegistry } from "@every-app/sdk/internal";
 import { describe, expect, it } from "vitest";
 import { capabilityEntrySchema, validateManifestStrict } from "./manifest";
 
-const stripe = {
-  id: "stripe",
+const northwind = {
+  id: "northwind",
   spec: {
-    id: "stripe",
-    name: "Stripe",
-    docs: "https://dashboard.stripe.com/apikeys",
-    hosts: ["api.stripe.com"],
-    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://developer.northwind.io/keys",
+    hosts: ["api.northwind.io"],
+    auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
     access: ["read"],
   },
 };
-const registry = providerRegistry([stripe]);
+const registry = providerRegistry([northwind]);
 
 describe("the strict validator and the provider registry", () => {
   it("refuses an id the catalog doesn't have, naming the catalog's capabilities and no AI provider", () => {
     expect(() =>
       validateManifestStrict({
         id: "shop",
-        capabilities: { stripe: { access: "read" } },
+        capabilities: { northwind: { access: "read" } },
       }),
     ).toThrow(
-      /capabilities\.stripe: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin/,
+      /capabilities\.northwind: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin/,
     );
     expect(() =>
       validateManifestStrict({
         id: "shop",
-        capabilities: { stripe: { access: "read" } },
+        capabilities: { northwind: { access: "read" } },
       }),
     ).not.toThrow(/openrouter/);
   });
@@ -44,26 +44,26 @@ describe("the strict validator and the provider registry", () => {
       validateManifestStrict(
         {
           id: "shop",
-          capabilities: { stripe: { access: "read", why: "Charges." } },
+          capabilities: { northwind: { access: "read", why: "Charges." } },
         },
         { capabilities: registry },
       ).capabilities,
-    ).toEqual({ stripe: { access: "read", why: "Charges." } });
+    ).toEqual({ northwind: { access: "read", why: "Charges." } });
     expect(() =>
       validateManifestStrict(
-        { id: "shop", capabilities: { stripe: { access: "write" } } },
+        { id: "shop", capabilities: { northwind: { access: "write" } } },
         { capabilities: registry },
       ),
-    ).toThrow(/capabilities\.stripe\.access: Stripe offers read access/);
+    ).toThrow(/capabilities\.northwind\.access: Northwind offers read access/);
     expect(() =>
       validateManifestStrict(
         {
           id: "shop",
-          capabilities: { stripe: { access: "read", scopes: ["x"] } },
+          capabilities: { northwind: { access: "read", scopes: ["x"] } },
         },
         { capabilities: registry },
       ),
-    ).toThrow(/Stripe takes no scopes/);
+    ).toThrow(/Northwind takes no scopes/);
     // Still refuses one nobody has.
     expect(() =>
       validateManifestStrict(
@@ -71,7 +71,7 @@ describe("the strict validator and the provider registry", () => {
         { capabilities: registry },
       ),
     ).toThrow(
-      /capabilities\.square: unknown capability \(the gateway offers: .*stripe\)/,
+      /capabilities\.square: unknown capability \(the gateway offers: .*northwind\)/,
     );
   });
 
@@ -132,17 +132,17 @@ describe("the strict validator and the provider registry", () => {
   it("refuses an app secret a registered provider holds, in the words it refuses a catalog key in", () => {
     expect(() =>
       validateManifestStrict(
-        { id: "shop", secrets: ["STRIPE_API_KEY"] },
+        { id: "shop", secrets: ["NORTHWIND_API_KEY"] },
         { capabilities: registry },
       ),
     ).toThrow(
-      "Invalid everyapp.config: secrets.0: STRIPE_API_KEY is a Gateway setting, which `everyapp secret set STRIPE_API_KEY` sets on the Gateway for every app; list `stripe` under capabilities instead",
+      "Invalid everyapp.config: secrets.0: NORTHWIND_API_KEY is a Gateway setting, which `everyapp secret set NORTHWIND_API_KEY` sets on the Gateway for every app; list `northwind` under capabilities instead",
     );
     // Without the registry the name is the app's to hold.
     expect(
-      validateManifestStrict({ id: "shop", secrets: ["STRIPE_API_KEY"] })
+      validateManifestStrict({ id: "shop", secrets: ["NORTHWIND_API_KEY"] })
         .secrets,
-    ).toEqual(["STRIPE_API_KEY"]);
+    ).toEqual(["NORTHWIND_API_KEY"]);
     // A catalog key is refused as before, with or without it.
     expect(() =>
       validateManifestStrict(
@@ -153,12 +153,14 @@ describe("the strict validator and the provider registry", () => {
   });
 
   it("builds an entry schema only for a capability the lookup has", () => {
-    expect(() => capabilityEntrySchema("stripe")).toThrow(/not a capability/);
+    expect(() => capabilityEntrySchema("northwind")).toThrow(
+      /not a capability/,
+    );
     expect(() => capabilityEntrySchema("openrouter")).toThrow(
       /not a capability/,
     );
     expect(
-      capabilityEntrySchema("stripe", registry).safeParse({ access: "read" })
+      capabilityEntrySchema("northwind", registry).safeParse({ access: "read" })
         .success,
     ).toBe(true);
   });

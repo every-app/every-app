@@ -28,61 +28,79 @@ function bound(spec: Record<string, unknown>) {
   };
 }
 
+// Fictional providers: none is in the built-in catalog.
 const registry = providerRegistry([
   bound({
-    id: "linear",
-    name: "Linear",
-    docs: "https://linear.app/settings/api",
-    hosts: ["api.linear.app"],
-    auth: { kind: "bearer", secret: "LINEAR_API_KEY" },
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://developer.northwind.io/keys",
+    hosts: ["api.northwind.io"],
+    auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
     access: ["read", "write"],
     readMethods: ["GET"],
     writeMethods: ["POST"],
   }),
   bound({
-    id: "openweather",
-    name: "OpenWeather",
-    docs: "https://home.openweathermap.org/api_keys",
-    hosts: ["api.openweathermap.org"],
-    auth: { kind: "query", secret: "OPENWEATHER_API_KEY", param: "appid" },
+    id: "fabrikam",
+    name: "Fabrikam",
+    docs: "https://fabrikam.net/api",
+    hosts: ["api.fabrikam.net"],
+    auth: { kind: "query", secret: "FABRIKAM_API_KEY", param: "key" },
   }),
   bound({
-    id: "stripe",
-    name: "Stripe",
-    docs: "https://dashboard.stripe.com/apikeys",
-    hosts: ["api.stripe.com"],
-    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+    id: "adatum",
+    name: "Adatum",
+    docs: "https://developer.adatum.com/keys",
+    hosts: ["api.adatum.com"],
+    auth: { kind: "bearer", secret: "ADATUM_API_KEY" },
     data: "account",
   }),
   bound({
-    id: "shopify",
-    name: "Shopify",
-    docs: "https://shopify.dev/",
-    hostSetting: "SHOPIFY_HOST",
+    id: "tailspin",
+    name: "Tailspin",
+    docs: "https://tailspin.example.com/docs",
+    hostSetting: "TAILSPIN_HOST",
     auth: {
       kind: "header",
-      secret: "SHOPIFY_API_KEY",
-      header: "X-Shopify-Access-Token",
+      secret: "TAILSPIN_API_TOKEN",
+      header: "X-Tailspin-Token",
     },
   }),
+  // A per-call search API: its POST is a read call.
   bound({
-    id: "exa",
-    name: "Exa",
-    docs: "https://dashboard.exa.ai/api-keys",
-    hosts: ["api.exa.ai"],
-    auth: { kind: "header", secret: "EXA_API_KEY", header: "x-api-key" },
+    id: "woodgrove",
+    name: "Woodgrove",
+    docs: "https://woodgrove.io/docs/api-keys",
+    hosts: ["api.woodgrove.io"],
+    auth: { kind: "bearer", secret: "WOODGROVE_API_KEY" },
     readMethods: ["POST"],
+  }),
+  // A sender: write-only, no read calls at all.
+  bound({
+    id: "wingtip",
+    name: "Wingtip",
+    docs: "https://wingtip.io/developer/api",
+    hosts: ["api.wingtip.io"],
+    auth: {
+      kind: "header",
+      secret: "WINGTIP_API_TOKEN",
+      header: "X-Wingtip-Server-Token",
+    },
+    access: ["write"],
+    readMethods: [],
+    writeMethods: ["POST"],
   }),
 ]);
 
 const ENV = {
   GATEWAY_DEPLOYMENT_MODE: "self_hosted",
-  LINEAR_API_KEY: "lin_key",
-  OPENWEATHER_API_KEY: "ow_key",
-  STRIPE_API_KEY: "sk_key",
-  SHOPIFY_API_KEY: "shpat_key",
-  SHOPIFY_HOST: "https://acme.myshopify.com",
-  EXA_API_KEY: "exa_key",
+  NORTHWIND_API_KEY: "nw_key",
+  FABRIKAM_API_KEY: "fb_key",
+  ADATUM_API_KEY: "ad_key",
+  TAILSPIN_API_TOKEN: "ts_key",
+  TAILSPIN_HOST: "https://acme.tailspin.example.com",
+  WOODGROVE_API_KEY: "wg_key",
+  WINGTIP_API_TOKEN: "wt_key",
 };
 
 function agent(scopes: string[]): EveryAppUser {
@@ -148,31 +166,35 @@ afterEach(() => {
 describe("a registered provider through the proxy", () => {
   it("is brokered like a catalog one, with its key where its auth says", async () => {
     const { response, upstream } = await call({
-      path: "/api/integrations/linear/api.linear.app/graphql?x=1",
+      path: "/api/integrations/northwind/api.northwind.io/graphql?x=1",
     });
     expect(response.status).toBe(200);
-    expect(upstream?.url).toBe("https://api.linear.app/graphql?x=1");
-    expect(upstream?.headers.get("authorization")).toBe("Bearer lin_key");
+    expect(upstream?.url).toBe("https://api.northwind.io/graphql?x=1");
+    expect(upstream?.headers.get("authorization")).toBe("Bearer nw_key");
     expect(upstream?.redirect).toBe("manual");
-    const exa = await call({
-      path: "/api/integrations/exa/api.exa.ai/search",
+    // A POST the spec lists as a read call goes through on the read grant.
+    const woodgrove = await call({
+      path: "/api/integrations/woodgrove/api.woodgrove.io/search",
       method: "POST",
     });
-    expect(exa.upstream?.headers.get("x-api-key")).toBe("exa_key");
-    expect(exa.upstream?.headers.get("authorization")).toBeNull();
+    expect(woodgrove.response.status).toBe(200);
+    expect(woodgrove.upstream?.headers.get("authorization")).toBe(
+      "Bearer wg_key",
+    );
+    expect(woodgrove.upstream?.headers.get("x-api-key")).toBeNull();
   });
 
   it("answers its status for an app that lists it, and configured only while its key is set", async () => {
-    const listed = await call({ path: "/api/integrations/linear" });
+    const listed = await call({ path: "/api/integrations/northwind" });
     await expect(listed.response.json()).resolves.toEqual({
-      capability: "linear",
+      capability: "northwind",
       requested: true,
       configured: true,
       ready: true,
     });
     const unset = await call({
-      path: "/api/integrations/linear",
-      env: { ...ENV, LINEAR_API_KEY: " " },
+      path: "/api/integrations/northwind",
+      env: { ...ENV, NORTHWIND_API_KEY: " " },
     });
     await expect(unset.response.json()).resolves.toMatchObject({
       configured: false,
@@ -180,8 +202,15 @@ describe("a registered provider through the proxy", () => {
     });
   });
 
-  it("forwards a write method only under a write grant, and never for a read-only agent", async () => {
-    const path = "/api/integrations/linear/api.linear.app/graphql";
+  it("has no read calls for a write-only provider: a GET is refused on any grant, a POST needs the write grant", async () => {
+    const path = "/api/integrations/wingtip/api.wingtip.io/email";
+    const get = await call({ path, entry: { access: "write" } });
+    expect(get.response.status).toBe(405);
+    await expect(get.response.json()).resolves.toMatchObject({
+      code: "integration_method_not_allowed",
+      message: "Wingtip calls may use POST.",
+    });
+    expect(get.upstream).toBeUndefined();
     const read = await call({
       path,
       method: "POST",
@@ -191,7 +220,32 @@ describe("a registered provider through the proxy", () => {
     await expect(read.response.json()).resolves.toMatchObject({
       code: "integration_method_not_allowed",
       message:
-        'Linear calls may use GET with access: "read"; POST needs access: "write" in the app\'s capabilities entry.',
+        'Wingtip offers no read calls; POST needs access: "write" in the app\'s capabilities entry.',
+    });
+    expect(read.upstream).toBeUndefined();
+    const write = await call({
+      path,
+      method: "POST",
+      entry: { access: "write" },
+    });
+    expect(write.response.status).toBe(200);
+    expect(write.upstream?.headers.get("x-wingtip-server-token")).toBe(
+      "wt_key",
+    );
+  });
+
+  it("forwards a write method only under a write grant, and never for a read-only agent", async () => {
+    const path = "/api/integrations/northwind/api.northwind.io/graphql";
+    const read = await call({
+      path,
+      method: "POST",
+      entry: { access: "read" },
+    });
+    expect(read.response.status).toBe(405);
+    await expect(read.response.json()).resolves.toMatchObject({
+      code: "integration_method_not_allowed",
+      message:
+        'Northwind calls may use GET with access: "read"; POST needs access: "write" in the app\'s capabilities entry.',
     });
     expect(read.upstream).toBeUndefined();
 
@@ -211,7 +265,7 @@ describe("a registered provider through the proxy", () => {
     });
     expect(del.response.status).toBe(405);
     await expect(del.response.json()).resolves.toMatchObject({
-      message: "Linear calls may use GET or POST.",
+      message: "Northwind calls may use GET or POST.",
     });
 
     const readOnlyAgent = await call({
@@ -239,13 +293,13 @@ describe("a registered provider through the proxy", () => {
 
   it("puts a query key on the URL in place of the app's, relays no redirect and no URL-naming header, and logs no message on failure", async () => {
     const path =
-      "/api/integrations/openweather/api.openweathermap.org/data/2.5/weather?q=Berlin&appid=app-copy";
+      "/api/integrations/fabrikam/api.fabrikam.net/v1/weather?q=Berlin&key=app-copy";
     const ok = await call({
       path,
       upstream: async () =>
         new Response("{}", {
           headers: {
-            location: "https://api.openweathermap.org/x?appid=ow_key",
+            location: "https://api.fabrikam.net/x?key=fb_key",
             "content-location": "/y",
             refresh: "0",
             "x-rate": "1",
@@ -253,7 +307,7 @@ describe("a registered provider through the proxy", () => {
         }),
     });
     expect(ok.upstream?.url).toBe(
-      "https://api.openweathermap.org/data/2.5/weather?q=Berlin&appid=ow_key",
+      "https://api.fabrikam.net/v1/weather?q=Berlin&key=fb_key",
     );
     expect(ok.response.status).toBe(200);
     expect(ok.response.headers.get("location")).toBeNull();
@@ -267,8 +321,7 @@ describe("a registered provider through the proxy", () => {
         new Response(null, {
           status: 301,
           headers: {
-            location:
-              "https://api.openweathermap.org/data/2.5/weather/?appid=ow_key",
+            location: "https://api.fabrikam.net/v1/weather/?key=fb_key",
           },
         }),
     });
@@ -283,7 +336,7 @@ describe("a registered provider through the proxy", () => {
       path,
       upstream: async () => {
         throw new TypeError(
-          "fetch failed: https://api.openweathermap.org/data/2.5/weather?appid=ow_key",
+          "fetch failed: https://api.fabrikam.net/v1/weather?key=fb_key",
         );
       },
     });
@@ -294,11 +347,71 @@ describe("a registered provider through the proxy", () => {
     >;
     expect(line["evt"]).toBe("integration.proxy.upstream_failed");
     expect(line["error"]).toBe("TypeError");
-    expect(JSON.stringify(line)).not.toContain("ow_key");
+    expect(JSON.stringify(line)).not.toContain("fb_key");
+  });
+
+  it("scrubs the key from a text answer of a query-key provider, passes a binary answer through, and refuses a text answer past the bound", async () => {
+    const path = "/api/integrations/fabrikam/api.fabrikam.net/v1/tiles.json";
+    // A value the URL form encodes, so both spellings must go.
+    const env = { ...ENV, FABRIKAM_API_KEY: "fb/key+1" };
+    const json = await call({
+      path,
+      env,
+      upstream: async () =>
+        new Response(
+          JSON.stringify({
+            tiles: [
+              "https://api.fabrikam.net/t/{z}/{x}/{y}.png?key=fb%2Fkey%2B1",
+            ],
+            raw: "https://api.fabrikam.net/t?key=fb/key+1",
+            n: 1,
+          }),
+          {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "content-length": "999",
+            },
+          },
+        ),
+    });
+    expect(json.upstream?.url).toBe(
+      "https://api.fabrikam.net/v1/tiles.json?key=fb%2Fkey%2B1",
+    );
+    expect(json.response.status).toBe(200);
+    const text = await json.response.text();
+    expect(text).not.toContain("fb/key+1");
+    expect(text).not.toContain("fb%2Fkey%2B1");
+    expect(text).toContain("?key=[redacted]");
+    expect(json.response.headers.get("content-length")).toBeNull();
+    expect(JSON.parse(text)).toMatchObject({ n: 1 });
+
+    const png = await call({
+      path: "/api/integrations/fabrikam/api.fabrikam.net/t/1/2/3.png",
+      upstream: async () =>
+        new Response(new Uint8Array([137, 80, 78, 71]), {
+          headers: { "content-type": "image/png" },
+        }),
+    });
+    expect(png.response.status).toBe(200);
+    expect(new Uint8Array(await png.response.arrayBuffer())).toEqual(
+      new Uint8Array([137, 80, 78, 71]),
+    );
+
+    const big = await call({
+      path,
+      upstream: async () =>
+        new Response("x".repeat(4 * 1024 * 1024 + 1), {
+          headers: { "content-type": "text/plain" },
+        }),
+    });
+    expect(big.response.status).toBe(502);
+    await expect(big.response.json()).resolves.toMatchObject({
+      code: "integration_upstream_failed",
+    });
   });
 
   it("serves an account-wide provider on a self-hosted gateway and refuses it on a hosted one", async () => {
-    const path = "/api/integrations/stripe/api.stripe.com/v1/customers";
+    const path = "/api/integrations/adatum/api.adatum.com/v1/customers";
     expect((await call({ path })).response.status).toBe(200);
     const hosted = await call({
       path,
@@ -313,17 +426,15 @@ describe("a registered provider through the proxy", () => {
 
   it("reaches the host a provider's host setting names, and no other", async () => {
     const shop = await call({
-      path: "/api/integrations/shopify/acme.myshopify.com/admin/api/2024-10/orders.json",
+      path: "/api/integrations/tailspin/acme.tailspin.example.com/admin/api/2024-10/orders.json",
     });
     expect(shop.response.status).toBe(200);
     expect(shop.upstream?.url).toBe(
-      "https://acme.myshopify.com/admin/api/2024-10/orders.json",
+      "https://acme.tailspin.example.com/admin/api/2024-10/orders.json",
     );
-    expect(shop.upstream?.headers.get("x-shopify-access-token")).toBe(
-      "shpat_key",
-    );
+    expect(shop.upstream?.headers.get("x-tailspin-token")).toBe("ts_key");
     const other = await call({
-      path: "/api/integrations/shopify/other.myshopify.com/admin/api/2024-10/orders.json",
+      path: "/api/integrations/tailspin/other.tailspin.example.com/admin/api/2024-10/orders.json",
     });
     expect(other.response.status).toBe(400);
     await expect(other.response.json()).resolves.toMatchObject({
@@ -331,8 +442,8 @@ describe("a registered provider through the proxy", () => {
     });
     // Without the setting the provider has no host at all.
     const unset = await call({
-      path: "/api/integrations/shopify/acme.myshopify.com/admin/api/2024-10/orders.json",
-      env: { ...ENV, SHOPIFY_HOST: "" },
+      path: "/api/integrations/tailspin/acme.tailspin.example.com/admin/api/2024-10/orders.json",
+      env: { ...ENV, TAILSPIN_HOST: "" },
     });
     expect(unset.response.status).toBe(400);
   });
@@ -341,7 +452,7 @@ describe("a registered provider through the proxy", () => {
     const onCost = vi.fn();
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const { response } = await call({
-      path: "/api/integrations/linear/api.linear.app/graphql",
+      path: "/api/integrations/northwind/api.northwind.io/graphql",
       upstream: async () => Response.json({ cost: 12.5, data: {} }),
       onCost,
     });
@@ -357,7 +468,7 @@ describe("a registered provider through the proxy", () => {
   it("never routes an AI provider or an unknown id through the capability proxy", async () => {
     for (const path of [
       "/api/integrations/openrouter/openrouter.ai/api/v1/credits",
-      "/api/integrations/square/connect.squareup.com/v2/payments",
+      "/api/integrations/nope/api.nope.example/v2/payments",
     ]) {
       const { response, upstream } = await call({ path });
       expect(response.status).toBe(400);

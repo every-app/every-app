@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, CAPABILITY_IDS } from "./capabilities";
+import { CAPABILITIES, CAPABILITY_IDS, type Capability } from "./capabilities";
 import {
   describeSpecProblems,
   parseProviderSpec,
@@ -247,7 +247,7 @@ describe("parseProviderSpec", () => {
 
   it("round-trips every API-key entry of the catalog through its JSON form", () => {
     for (const id of CAPABILITY_IDS) {
-      const capability = CAPABILITIES[id];
+      const capability: Capability = CAPABILITIES[id];
       if (capability.mode !== "api_key") continue;
       const spec = providerSpecOf(id, capability);
       const parsed = parseProviderSpec(JSON.parse(JSON.stringify(spec)));
@@ -259,6 +259,41 @@ describe("parseProviderSpec", () => {
       // The catalog's guide path is the one field the JSON shape doesn't carry.
       const { setup: _setup, ...withoutGuide } = capability;
       expect(parsed.capability).toEqual(withoutGuide);
+    }
+  });
+});
+
+describe("cost.responseField", () => {
+  const spec = (responseField: string) => ({
+    id: "woodgrove",
+    name: "Woodgrove",
+    docs: "https://woodgrove.io/keys",
+    hosts: ["api.woodgrove.io"],
+    auth: { kind: "bearer", secret: "WOODGROVE_API_KEY" },
+    cost: { unit: "call", responseField },
+  });
+
+  it("takes a field name or a dotted path to a nested one, and refuses anything else", () => {
+    for (const field of ["cost", "usage.cost", "data.usage.total_cost"]) {
+      const parsed = parseProviderSpec(spec(field));
+      expect(parsed.ok, field).toBe(true);
+      if (parsed.ok) expect(parsed.capability.cost?.responseField).toBe(field);
+    }
+    for (const field of [
+      "usage.",
+      ".cost",
+      "usage..cost",
+      "usage cost",
+      "a.b.c.d.e",
+      "cost[0]",
+    ]) {
+      const parsed = parseProviderSpec(spec(field));
+      expect(parsed.ok, field).toBe(false);
+      if (!parsed.ok) {
+        expect(describeSpecProblems(parsed.problems)).toContain(
+          "cost.responseField: must be a JSON field name, or a dotted path to a nested one",
+        );
+      }
     }
   });
 });

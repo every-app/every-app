@@ -244,8 +244,8 @@ describe("appSettings", () => {
     expect(appSettings({})).toEqual([]);
     expect(
       appSettings({
-        providers: ["anthropic"],
-        capabilities: { github: { access: "read" } },
+        providers: ["nope"],
+        capabilities: { northwind: { access: "read" } },
         ai: { routes: [] },
       }),
     ).toEqual([]);

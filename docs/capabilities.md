@@ -147,6 +147,51 @@ own (`pnpm everyapp provider list`):
 | --- | --- | --- | --- | --- | --- | --- |
 | `dataforseo` | DataForSEO | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `Authorization: Basic <DATAFORSEO_API_KEY>` (`login:password`, base64-encoded unless it already is) | `read` | GET, POST |
 | `context` | Context.dev | `CONTEXT_API_KEY` | `api.context.dev` | `Authorization: Bearer <CONTEXT_API_KEY>` | `read` | GET, POST |
+| `stripe` | Stripe | `STRIPE_API_KEY` | `api.stripe.com`, `files.stripe.com` | `Authorization: Bearer <STRIPE_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, DELETE |
+| `lemonsqueezy` | Lemon Squeezy | `LEMONSQUEEZY_API_KEY` | `api.lemonsqueezy.com` | `Authorization: Bearer <LEMONSQUEEZY_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
+| `paddle` | Paddle | `PADDLE_API_KEY` | `api.paddle.com`, `sandbox-api.paddle.com` | `Authorization: Bearer <PADDLE_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
+| `shopify` | Shopify | `SHOPIFY_API_TOKEN`, `SHOPIFY_HOST` | the host `<SHOPIFY_HOST>` names | `X-Shopify-Access-Token: <SHOPIFY_API_TOKEN>` | `write` | ; with `access: "write"` also POST |
+| `plaid` | Plaid | `PLAID_SECRET` | `sandbox.plaid.com`, `production.plaid.com` | `PLAID-SECRET: <PLAID_SECRET>` | `read` | POST |
+| `attio` | Attio | `ATTIO_API_KEY` | `api.attio.com` | `Authorization: Bearer <ATTIO_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `hubspot` | HubSpot | `HUBSPOT_API_TOKEN` | `api.hubapi.com` | `Authorization: Bearer <HUBSPOT_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `pipedrive` | Pipedrive | `PIPEDRIVE_API_TOKEN` | `api.pipedrive.com` | `x-api-token: <PIPEDRIVE_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `airtable` | Airtable | `AIRTABLE_API_TOKEN` | `api.airtable.com` | `Authorization: Bearer <AIRTABLE_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `notion` | Notion | `NOTION_API_TOKEN` | `api.notion.com` | `Authorization: Bearer <NOTION_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
+| `postmark` | Postmark | `POSTMARK_API_TOKEN` | `api.postmarkapp.com` | `X-Postmark-Server-Token: <POSTMARK_API_TOKEN>` | `write` | ; with `access: "write"` also POST |
+| `sendgrid` | SendGrid | `SENDGRID_API_KEY` | `api.sendgrid.com`, `api.eu.sendgrid.com` | `Authorization: Bearer <SENDGRID_API_KEY>` | `write` | ; with `access: "write"` also POST |
+| `twilio` | Twilio | `TWILIO_API_SECRET`, `TWILIO_API_KEY` | `api.twilio.com` | `Authorization: Basic base64(<TWILIO_API_KEY>:<TWILIO_API_SECRET>)` | `write` | ; with `access: "write"` also POST |
+| `intercom` | Intercom | `INTERCOM_API_TOKEN` | `api.intercom.io`, `api.eu.intercom.io`, `api.au.intercom.io` | `Authorization: Bearer <INTERCOM_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `crisp` | Crisp | `CRISP_API_KEY`, `CRISP_API_IDENTIFIER` | `api.crisp.chat` | `Authorization: Basic base64(<CRISP_API_IDENTIFIER>:<CRISP_API_KEY>)` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `linear` | Linear | `LINEAR_API_KEY` | `api.linear.app` | `Authorization: <LINEAR_API_KEY>` | `write` | ; with `access: "write"` also POST |
+| `github` | GitHub | `GITHUB_API_TOKEN` | `api.github.com` | `Authorization: Bearer <GITHUB_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `gitlab` | GitLab | `GITLAB_API_TOKEN` | `gitlab.com` | `PRIVATE-TOKEN: <GITLAB_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `vercel` | Vercel | `VERCEL_API_TOKEN` | `api.vercel.com` | `Authorization: Bearer <VERCEL_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `cloudflare` | Cloudflare | `CLOUDFLARE_PROVIDER_API_TOKEN` | `api.cloudflare.com` | `Authorization: Bearer <CLOUDFLARE_PROVIDER_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `posthog` | PostHog | `POSTHOG_PERSONAL_API_KEY` | `us.posthog.com`, `eu.posthog.com` | `Authorization: Bearer <POSTHOG_PERSONAL_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `mixpanel` | Mixpanel | `MIXPANEL_SERVICE_ACCOUNT_SECRET`, `MIXPANEL_SERVICE_ACCOUNT_USERNAME` | `mixpanel.com`, `eu.mixpanel.com`, `in.mixpanel.com`, `data.mixpanel.com`, `data-eu.mixpanel.com`, `data-in.mixpanel.com`, `api.mixpanel.com`, `api-eu.mixpanel.com`, `api-in.mixpanel.com` | `Authorization: Basic base64(<MIXPANEL_SERVICE_ACCOUNT_USERNAME>:<MIXPANEL_SERVICE_ACCOUNT_SECRET>)` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `segment` | Segment | `SEGMENT_WRITE_KEY` | `api.segment.io`, `events.eu1.segmentapis.com` | `Authorization: Basic base64(<SEGMENT_WRITE_KEY>:)` | `write` | ; with `access: "write"` also POST |
+| `supabase` | Supabase | `SUPABASE_SECRET_KEY`, `SUPABASE_HOST` | the host `<SUPABASE_HOST>` names | `apikey: <SUPABASE_SECRET_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `turso` | Turso | `TURSO_API_TOKEN` | `api.turso.tech` | `Authorization: Bearer <TURSO_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
+| `turso-db` | Turso database | `TURSO_DB_AUTH_TOKEN`, `TURSO_DB_HOST` | the host `<TURSO_DB_HOST>` names | `Authorization: Bearer <TURSO_DB_AUTH_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST |
+| `neon` | Neon | `NEON_API_KEY` | `console.neon.tech` | `Authorization: Bearer <NEON_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `pinecone` | Pinecone | `PINECONE_API_KEY`, `PINECONE_HOST` | `api.pinecone.io`, the host `<PINECONE_HOST>` names | `Api-Key: <PINECONE_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
+| `mapbox` | Mapbox | `MAPBOX_ACCESS_TOKEN` | `api.mapbox.com` | `?access_token=<MAPBOX_ACCESS_TOKEN>` on the URL, in place of the app's own | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `openweather` | OpenWeather | `OPENWEATHER_API_KEY` | `api.openweathermap.org`, `pro.openweathermap.org`, `history.openweathermap.org`, `tile.openweathermap.org`, `maps.openweathermap.org` | `?appid=<OPENWEATHER_API_KEY>` on the URL, in place of the app's own | `read` | GET, HEAD |
+| `voyage` | Voyage AI | `VOYAGE_API_KEY` | `api.voyageai.com` | `Authorization: Bearer <VOYAGE_API_KEY>` | `read` | POST |
+| `perplexity` | Perplexity | `PERPLEXITY_API_KEY` | `api.perplexity.ai` | `Authorization: Bearer <PERPLEXITY_API_KEY>` | `read` | GET, POST |
+| `jina` | Jina AI | `JINA_API_KEY` | `api.jina.ai`, `r.jina.ai`, `s.jina.ai` | `Authorization: Bearer <JINA_API_KEY>` | `read` | GET, POST |
+| `replicate` | Replicate | `REPLICATE_API_TOKEN` | `api.replicate.com` | `Authorization: Bearer <REPLICATE_API_TOKEN>` | `read` | POST |
+| `huggingface` | Hugging Face Inference | `HUGGINGFACE_API_TOKEN` | `router.huggingface.co` | `Authorization: Bearer <HUGGINGFACE_API_TOKEN>` | `read` | GET, POST |
+| `firecrawl` | Firecrawl | `FIRECRAWL_API_KEY` | `api.firecrawl.dev` | `Authorization: Bearer <FIRECRAWL_API_KEY>` | `read`, `write` | GET, POST; with `access: "write"` also DELETE |
+| `exa` | Exa | `EXA_API_KEY` | `api.exa.ai` | `x-api-key: <EXA_API_KEY>` | `read` | POST |
+| `tavily` | Tavily | `TAVILY_API_KEY` | `api.tavily.com` | `Authorization: Bearer <TAVILY_API_KEY>` | `read` | GET, POST |
+| `serper` | Serper | `SERPER_API_KEY` | `google.serper.dev`, `scrape.serper.dev` | `X-API-KEY: <SERPER_API_KEY>` | `read` | POST |
+| `brave-search` | Brave Search | `BRAVE_SEARCH_API_KEY` | `api.search.brave.com` | `X-Subscription-Token: <BRAVE_SEARCH_API_KEY>` | `read` | GET, POST |
+| `apify` | Apify | `APIFY_API_TOKEN` | `api.apify.com` | `Authorization: Bearer <APIFY_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, DELETE |
+| `deepgram` | Deepgram | `DEEPGRAM_API_KEY` | `api.deepgram.com`, `api.eu.deepgram.com`, `api.au.deepgram.com`, `api.in.deepgram.com` | `Authorization: Token <DEEPGRAM_API_KEY>` | `read` | GET, POST |
+| `elevenlabs` | ElevenLabs | `ELEVENLABS_API_KEY` | `api.elevenlabs.io` | `xi-api-key: <ELEVENLABS_API_KEY>` | `read` | GET, POST |
+| `assemblyai` | AssemblyAI | `ASSEMBLYAI_API_KEY` | `api.assemblyai.com`, `api.eu.assemblyai.com` | `Authorization: <ASSEMBLYAI_API_KEY>` | `read`, `write` | GET, POST; with `access: "write"` also DELETE |
+| `newsapi` | NewsAPI | `NEWSAPI_API_KEY` | `newsapi.org` | `X-Api-Key: <NEWSAPI_API_KEY>` | `read` | GET |
 
 <!-- api-key-providers:end -->
 

@@ -23,6 +23,39 @@ describe("extractUsage", () => {
   });
 });
 
+describe("extractUsage with a cost path", () => {
+  it("reads the call's price under the path, after the last mention of its parent, and never a cost in the text", () => {
+    const body =
+      '{"choices":[{"message":{"content":"the cost is 12 and \\"cost\\": 99"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cost":0.00042}}';
+    expect(extractUsage(body, "usage.cost")).toEqual({
+      input: 10,
+      output: 5,
+      total: 15,
+      cost: 0.00042,
+    });
+    // Without the path nothing is read; without the field nothing is reported.
+    expect(extractUsage(body)).toEqual({ input: 10, output: 5, total: 15 });
+    expect(
+      extractUsage(
+        '{"usage":{"prompt_tokens":1,"completion_tokens":1}}',
+        "usage.cost",
+      ),
+    ).toEqual({ input: 1, output: 1, total: 2 });
+    // A stream: the last usage chunk's figure wins.
+    const stream = [
+      'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"cost":0.001}}',
+      'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":9,"cost":0.004}}',
+      "data: [DONE]",
+    ].join("\n\n");
+    expect(extractUsage(stream, "usage.cost")).toEqual({
+      input: 3,
+      output: 9,
+      total: 12,
+      cost: 0.004,
+    });
+  });
+});
+
 describe("tapUsage", () => {
   it("passes the body through and reports usage at the end", async () => {
     const reported: unknown[] = [];

@@ -12,11 +12,11 @@ import {
 } from "./providerRegistry";
 
 const spec = {
-  id: "stripe",
-  name: "Stripe",
-  docs: "https://dashboard.stripe.com/apikeys",
-  hosts: ["api.stripe.com"],
-  auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  id: "northwind",
+  name: "Northwind",
+  docs: "https://developer.northwind.io/keys",
+  hosts: ["api.northwind.io"],
+  auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
 };
 
 function capability(input: unknown) {
@@ -28,16 +28,16 @@ function capability(input: unknown) {
 describe("providerBindingKey", () => {
   it("is the row's hosts, host setting and auth, in a canonical order", () => {
     expect(providerBindingKey(capability(spec))).toBe(
-      '{"auth":{"kind":"bearer","secret":"STRIPE_API_KEY"},"hostSetting":null,"hosts":["api.stripe.com"]}',
+      '{"auth":{"kind":"bearer","secret":"NORTHWIND_API_KEY"},"hostSetting":null,"hosts":["api.northwind.io"]}',
     );
     // Order and prose don't change it; hosts and auth do.
     expect(
       providerBindingKey(
         capability({
           ...spec,
-          name: "Stripe (live)",
+          name: "Northwind (live)",
           hint: "x",
-          hosts: ["api.stripe.com"],
+          hosts: ["api.northwind.io"],
         }),
       ),
     ).toBe(providerBindingKey(capability(spec)));
@@ -45,41 +45,48 @@ describe("providerBindingKey", () => {
       providerBindingKey(
         capability({
           ...spec,
-          auth: { secret: "STRIPE_API_KEY", kind: "bearer" },
+          auth: { secret: "NORTHWIND_API_KEY", kind: "bearer" },
         }),
       ),
     ).toBe(providerBindingKey(capability(spec)));
     expect(
       providerBindingKey(
-        capability({ ...spec, hosts: ["api.stripe.com", "files.stripe.com"] }),
+        capability({
+          ...spec,
+          hosts: ["api.northwind.io", "files.northwind.io"],
+        }),
       ),
     ).not.toBe(providerBindingKey(capability(spec)));
     expect(
       providerBindingKey(
         capability({
           ...spec,
-          auth: { kind: "bearer", secret: "STRIPE_API_KEY", scheme: "Token" },
+          auth: {
+            kind: "bearer",
+            secret: "NORTHWIND_API_KEY",
+            scheme: "Token",
+          },
         }),
       ),
     ).not.toBe(providerBindingKey(capability(spec)));
     expect(
       providerBindingKey(
-        capability({ ...spec, hosts: [], hostSetting: "STRIPE_HOST" }),
+        capability({ ...spec, hosts: [], hostSetting: "NORTHWIND_HOST" }),
       ),
     ).not.toBe(providerBindingKey(capability(spec)));
     // A nested auth object (a Basic username setting) is canonical too.
-    const twilio = {
+    const litware = {
       ...spec,
-      id: "twilio",
+      id: "litware",
       auth: {
         kind: "basic",
-        secret: "TWILIO_AUTH_TOKEN",
+        secret: "LITWARE_AUTH_TOKEN",
         as: "password",
-        user: { secret: "TWILIO_ACCOUNT_SID" },
+        user: { secret: "LITWARE_ACCOUNT_SID" },
       },
     };
-    expect(providerBindingKey(capability(twilio))).toContain(
-      '"user":{"secret":"TWILIO_ACCOUNT_SID"}',
+    expect(providerBindingKey(capability(litware))).toContain(
+      '"user":{"secret":"LITWARE_ACCOUNT_SID"}',
     );
   });
 });
@@ -90,7 +97,7 @@ describe("a registry's bound rows", () => {
     boundTo: string | null,
     overrides: Partial<ProviderRow> = {},
   ): ProviderRow => ({
-    id: "stripe",
+    id: "northwind",
     spec,
     boundTo,
     addedBy: "ben@example.com",
@@ -101,12 +108,12 @@ describe("a registry's bound rows", () => {
   it("reports the catalog bound, a row bound only while its key matches, and an unknown id unbound", () => {
     const bound = providerRegistry([row(key)]);
     expect(bound.bound("dataforseo")).toBe(true);
-    expect(bound.bound("stripe")).toBe(true);
-    expect(bound.bound("square")).toBe(false);
+    expect(bound.bound("northwind")).toBe(true);
+    expect(bound.bound("nope")).toBe(false);
     expect(bound.unboundSettings().size).toBe(0);
     expect(bound.rows()).toEqual([
       {
-        id: "stripe",
+        id: "northwind",
         capability: capability(spec),
         bound: true,
         addedBy: "ben@example.com",
@@ -121,9 +128,9 @@ describe("a registry's bound rows", () => {
       ]),
       providerRegistry([row("stale")]),
     ]) {
-      expect(unbound.bound("stripe")).toBe(false);
-      expect(unbound.get("stripe")).toBeDefined();
-      expect([...unbound.unboundSettings()]).toEqual(["STRIPE_API_KEY"]);
+      expect(unbound.bound("northwind")).toBe(false);
+      expect(unbound.get("northwind")).toBeDefined();
+      expect([...unbound.unboundSettings()]).toEqual(["NORTHWIND_API_KEY"]);
       expect(unbound.rows()[0]?.bound).toBe(false);
     }
   });

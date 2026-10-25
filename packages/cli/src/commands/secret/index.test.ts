@@ -634,23 +634,23 @@ describe("secret set --app", () => {
 
 describe("a registered provider's key", () => {
   /** A provider registered on the Gateway (`everyapp provider add`). */
-  const STRIPE = {
-    id: "stripe",
-    name: "Stripe",
-    docs: "https://dashboard.stripe.com/apikeys",
-    hosts: ["api.stripe.com"],
-    auth: { kind: "bearer", secret: "STRIPE_API_KEY" },
+  const NORTHWIND = {
+    id: "northwind",
+    name: "Northwind",
+    docs: "https://developer.northwind.io/keys",
+    hosts: ["api.northwind.io"],
+    auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
   };
   /** An app that lists it. */
   const SHOP: EveryAppCliManifest = {
     id: "shop",
     resources: { d1: ["DB"] },
-    capabilities: { stripe: { access: "read", why: "Shows the last charges." } },
+    capabilities: { northwind: { access: "read", why: "Shows the last charges." } },
   };
-  const register = async (spec: Record<string, unknown> = STRIPE, replace = false) =>
+  const register = async (spec: Record<string, unknown> = NORTHWIND, replace = false) =>
     addProvider(db(), { spec, deployer: { actor: "ops@example.com", email: "ops@example.com" }, replace, install: (await readInstall(db()))! });
   const row = async () =>
-    (await db().run([{ sql: "SELECT added_at, bound_to, bound_at FROM providers WHERE id = 'stripe'" }]))[0]![0]!;
+    (await db().run([{ sql: "SELECT added_at, bound_to, bound_at FROM providers WHERE id = 'northwind'" }]))[0]![0]!;
   const keyOf = (spec: Record<string, unknown>) => {
     const parsed = parseProviderSpec(spec);
     if (!parsed.ok) throw new Error("the spec parses");
@@ -658,7 +658,7 @@ describe("a registered provider's key", () => {
   };
 
   beforeEach(() => {
-    VALUES["STRIPE_API_KEY"] = "sk_test";
+    VALUES["NORTHWIND_API_KEY"] = "sk_test";
   });
 
   it("goes to the Gateway from anywhere, says who registered the row and where the key goes before asking, then binds the row", async () => {
@@ -669,63 +669,63 @@ describe("a registered provider's key", () => {
       saidBefore.push(...events.filter((event) => event["step"] === "secrets.provider"));
       return VALUES[name]!;
     });
-    await set(emptyDir(), "STRIPE_API_KEY");
+    await set(emptyDir(), "NORTHWIND_API_KEY");
 
-    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBe("sk_test");
+    expect(gatewayWorker().secrets["NORTHWIND_API_KEY"]).toBe("sk_test");
     const day = new Date(Number((await row())["added_at"])).toISOString().slice(0, 10);
     expect(saidBefore).toEqual([
       expect.objectContaining({
         type: "step",
         status: "ok",
-        message: `STRIPE_API_KEY is Stripe's, registered by ops@example.com on ${day}; the key is sent to api.stripe.com.`,
-        data: expect.objectContaining({ name: "STRIPE_API_KEY", provider: "stripe", hosts: ["api.stripe.com"] }),
+        message: `NORTHWIND_API_KEY is Northwind's, registered by ops@example.com on ${day}; the key is sent to api.northwind.io.`,
+        data: expect.objectContaining({ name: "NORTHWIND_API_KEY", provider: "northwind", hosts: ["api.northwind.io"] }),
       }),
     ]);
     // Bound to the hosts and auth the row has now: the Gateway reads the key.
-    expect(await row()).toMatchObject({ bound_to: keyOf(STRIPE), bound_at: expect.any(Number) });
+    expect(await row()).toMatchObject({ bound_to: keyOf(NORTHWIND), bound_at: expect.any(Number) });
     expect(done()).toMatchObject({
-      message: "Set STRIPE_API_KEY on the Gateway",
-      data: { gateway: { names: ["STRIPE_API_KEY"], bound: ["stripe"] } },
+      message: "Set NORTHWIND_API_KEY on the Gateway",
+      data: { gateway: { names: ["NORTHWIND_API_KEY"], bound: ["northwind"] } },
     });
-    expect(progress("secrets.bind")).toEqual(["Bound stripe's key to the hosts its row names"]);
+    expect(progress("secrets.bind")).toEqual(["Bound northwind's key to the hosts its row names"]);
   });
 
   it("goes to the Gateway from the directory of an app that lists the provider, and counts as set there once bound", async () => {
     await register();
     const dir = appDir(SHOP);
     await list(dir);
-    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ! not set");
-    expect(done()!["message"]).toContain("Guide: pnpm everyapp provider show stripe");
+    expect(done()!["message"]).toContain("NORTHWIND_API_KEY  Gateway  ! not set");
+    expect(done()!["message"]).toContain("Guide: pnpm everyapp provider show northwind");
 
     events = [];
-    await set(dir, "STRIPE_API_KEY");
-    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBe("sk_test");
+    await set(dir, "NORTHWIND_API_KEY");
+    expect(gatewayWorker().secrets["NORTHWIND_API_KEY"]).toBe("sk_test");
     events = [];
     await list(dir);
-    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ✓ set");
+    expect(done()!["message"]).toContain("NORTHWIND_API_KEY  Gateway  ✓ set");
 
     // Replaced, the row is unbound: the key it held reads as not set until it is set again.
-    await register({ ...STRIPE, hosts: ["api.stripe.com", "files.stripe.com"] }, true);
+    await register({ ...NORTHWIND, hosts: ["api.northwind.io", "files.northwind.io"] }, true);
     events = [];
     await list(dir);
-    expect(done()!["message"]).toContain("STRIPE_API_KEY  Gateway  ! not set");
-    expect(done()!["data"]["gateway"]["missing"]).toEqual(["STRIPE_API_KEY"]);
+    expect(done()!["message"]).toContain("NORTHWIND_API_KEY  Gateway  ! not set");
+    expect(done()!["data"]["gateway"]["missing"]).toEqual(["NORTHWIND_API_KEY"]);
     events = [];
-    await set(dir, "STRIPE_API_KEY");
-    expect((await row())["bound_to"]).toBe(keyOf({ ...STRIPE, hosts: ["api.stripe.com", "files.stripe.com"] }));
+    await set(dir, "NORTHWIND_API_KEY");
+    expect((await row())["bound_to"]).toBe(keyOf({ ...NORTHWIND, hosts: ["api.northwind.io", "files.northwind.io"] }));
     expect(events.find((event) => event["step"] === "secrets.provider")!["message"]).toContain(
-      "the key is sent to api.stripe.com and files.stripe.com.",
+      "the key is sent to api.northwind.io and files.northwind.io.",
     );
   });
 
   it("is removed from the Gateway by secret unset once its row is gone", async () => {
     await register();
-    await set(emptyDir(), "STRIPE_API_KEY");
-    await removeProvider(db(), "stripe", { actor: "ops@example.com", email: "ops@example.com" });
+    await set(emptyDir(), "NORTHWIND_API_KEY");
+    await removeProvider(db(), "northwind", { actor: "ops@example.com", email: "ops@example.com" });
     events = [];
-    await unset(emptyDir(), "STRIPE_API_KEY");
-    expect(gatewayWorker().secrets["STRIPE_API_KEY"]).toBeUndefined();
-    expect(done()).toMatchObject({ message: "Removed STRIPE_API_KEY from the Gateway" });
+    await unset(emptyDir(), "NORTHWIND_API_KEY");
+    expect(gatewayWorker().secrets["NORTHWIND_API_KEY"]).toBeUndefined();
+    expect(done()).toMatchObject({ message: "Removed NORTHWIND_API_KEY from the Gateway" });
   });
 });
 

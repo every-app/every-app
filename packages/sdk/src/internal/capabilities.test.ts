@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
+  authSettingNames,
   authorizationFor,
   capabilitySettings,
   describeTokenEndpoints,
@@ -13,6 +14,7 @@ import {
   parseIntegrationProxyPath,
   serviceRoutePath,
   tokenEndpointFor,
+  type AiProviderId,
   type ApiKeyAuth,
   type ApiKeyCapability,
   type ApiKeyCapabilityId,
@@ -24,7 +26,9 @@ import {
   type OAuthScopeSetName,
   type ServiceCapabilityId,
 } from "./capabilities";
+import { isInstallOwnedGatewaySetting } from "./gatewaySettings";
 import { requestedScopes, scopeRouteAllows } from "./oauthScopes";
+import { providerSettingPrefix } from "./providerRegistry";
 
 describe("integration proxy paths", () => {
   it("round-trips a provider URL", () => {
@@ -133,7 +137,7 @@ describe("integration proxy paths", () => {
   });
 
   it.each([
-    ["an unknown provider", "/api/integrations/github/api.github.com/user"],
+    ["an unknown provider", "/api/integrations/nope/api.nope.example/user"],
     [
       "a host outside the provider's",
       "/api/integrations/dataforseo/evil.example/v3/x",
@@ -365,14 +369,24 @@ describe("the capability registry", () => {
   );
 
   it.each(apiKeyIds)(
-    "%s sends its key only to https hosts and reads only with read methods",
+    "%s sends its key only to https hosts (or the one its host setting names) and reads only with read methods",
     (id) => {
-      const capability = CAPABILITIES[id];
-      expect(capability.hosts.length).toBeGreaterThan(0);
+      const capability: ApiKeyCapability = CAPABILITIES[id];
+      // A fixed host, or a host setting the operator fills (Shopify's store).
+      expect(
+        capability.hosts.length > 0 || capability.hostSetting !== undefined,
+      ).toBe(true);
       for (const host of capability.hosts) {
         expect(new URL(`https://${host}`).host).toBe(host);
       }
-      expect(capability.access).toContain("read");
+      expect(capability.access.length).toBeGreaterThan(0);
+      // Write-only providers (senders, GraphQL APIs) read with nothing.
+      if (capability.access.includes("read")) {
+        expect(capability.readMethods.length).toBeGreaterThan(0);
+      } else {
+        expect(capability.readMethods).toEqual([]);
+        expect(capability.writeMethods).toEqual(["POST"]);
+      }
       expect(capability.readMethods).not.toContain("DELETE");
     },
   );
@@ -397,15 +411,53 @@ describe("the capability registry", () => {
     ]);
     // The types follow the kinds.
     expectTypeOf<ServiceCapabilityId>().toEqualTypeOf<"email" | "members">();
-    expectTypeOf<ApiKeyCapabilityId>().toEqualTypeOf<
-      "dataforseo" | "context"
-    >();
+    expectTypeOf<
+      "dataforseo" | "context" | "stripe" | "exa"
+    >().toExtend<ApiKeyCapabilityId>();
+    expectTypeOf<"openai" | "anthropic" | "gemini">().toExtend<AiProviderId>();
+    // @ts-expect-error an OAuth client is not an API-key capability
+    expectTypeOf<"linkedin">().toExtend<ApiKeyCapabilityId>();
     expectTypeOf<"linkedin">().toExtend<OAuthClientCapabilityId>();
     expectTypeOf<"LINKEDIN_CLIENT_SECRET">().toExtend<CapabilitySecret>();
     expectTypeOf<"MASTODON_URL">().toExtend<CapabilitySecret>();
     expectTypeOf<"EMAIL_FROM">().toExtend<CapabilitySecret>();
     expectTypeOf<"CLOUDFLARE_ACCOUNT_ID">().toExtend<CapabilitySecret>();
     expectTypeOf<"DATAFORSEO_API_KEY">().toExtend<CapabilitySecret>();
+    // A Basic username held as a setting is a Gateway setting too.
+    expectTypeOf<
+      "TWILIO_API_KEY" | "CRISP_API_IDENTIFIER"
+    >().toExtend<CapabilitySecret>();
+  });
+
+  it("names every API-key and AI provider's settings after its id, so a row can never take a catalog name and the catalog never takes the install's", () => {
+    for (const id of CAPABILITY_IDS) {
+      const capability: Capability = CAPABILITIES[id];
+      if (capability.mode !== "api_key" && capability.mode !== "ai") continue;
+      const prefix = providerSettingPrefix(id);
+      const own = [
+        ...authSettingNames(capability.auth),
+        ...(capability.mode === "api_key" && capability.hostSetting
+          ? [capability.hostSetting]
+          : []),
+      ];
+      for (const name of own) {
+        expect(name.startsWith(prefix), `${id}: ${name} under ${prefix}`).toBe(
+          true,
+        );
+        expect(isInstallOwnedGatewaySetting(name), `${id}: ${name}`).toBe(
+          false,
+        );
+      }
+      // What the URL also needs is the install's (Workers AI's account id), never a key.
+      for (const name of capability.mode === "ai"
+        ? (capability.alsoNeeds ?? [])
+        : []) {
+        expect(isInstallOwnedGatewaySetting(name), `${id}: ${name}`).toBe(true);
+      }
+      // Every catalog provider says where it was checked, or that it wasn't.
+      expect(capability.verified, `${id}: verified`).toBeDefined();
+      expect(capability.docs.startsWith("https://"), `${id}: docs`).toBe(true);
+    }
   });
 
   it("knows only its own ids, the AI providers among them", () => {

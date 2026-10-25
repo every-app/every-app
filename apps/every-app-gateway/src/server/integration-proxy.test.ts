@@ -278,7 +278,7 @@ describe("AppGateway capabilities", () => {
       "a host outside the provider's",
       "/api/integrations/dataforseo/evil.example/v3/x",
     ],
-    ["an unknown provider", "/api/integrations/github/api.github.com/user"],
+    ["an unknown provider", "/api/integrations/nope/api.nope.example/user"],
     [
       "a path that would leave the host",
       "/api/integrations/dataforseo/api.dataforseo.com//evil.example/x",

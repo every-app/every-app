@@ -793,14 +793,7 @@ describe("AI proxy refusals", () => {
       status: number,
       code: string,
     ][] = [
-      [
-        "anthropic",
-        "/v1/messages",
-        json({}),
-        {},
-        404,
-        "ai_provider_not_supported",
-      ],
+      ["nope", "/v1/messages", json({}), {}, 404, "ai_provider_not_supported"],
       [
         "workers-ai",
         "/v1/chat/completions",
