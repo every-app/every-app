@@ -761,7 +761,7 @@ as an app's capability call (the provider's hosts, the account-wide paths,
 the key, the cost tap) and is counted and audited against the provider row.
 The agent docs page is
 [/docs/agent/mcp](https://everyapp.com/docs/agent/mcp#mcp-apps) ("MCP apps");
-how the launcher shows one is [docs/design/2026-10-mcp-apps-ui.md](design/2026-10-mcp-apps-ui.md).
+how the launcher shows one is [docs/design/2026-10-mcp-apps-ui.md](design/2026-10-mcp-apps-ui.md). An MCP server is not a capability: any remote one is added by its URL as an MCP app of its own (`pnpm everyapp mcp add <url>`; [docs/design/2026-10-mcp-by-url.md](design/2026-10-mcp-by-url.md), and "MCP apps" on the same agent page).
 
 ## Limits today
 

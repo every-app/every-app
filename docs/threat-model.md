@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 328 is
+  try first; the complete register of 337 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -265,7 +265,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 328 invariants
+stop, the invariants to try first (the complete register, 337 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -634,6 +634,14 @@ provider keys and client secrets, and the organization's attribution. The
 code is `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts`,
 `ai-proxy.ts`, `integration-proxy.ts`, `capabilities/` and `email/`, with
 the SDK's `createGatewayFetch` and `integrationFetch` on the app side.
+Since 2026-10-25 the gateway also holds the credentials of remote MCP
+servers an operator registered by URL (`everyapp mcp add`; Gateway
+settings in the `_MCP_TOKEN` family, each pinned to one origin) and sends
+them itself when a member's AI client calls such a server's tool through
+`/mcp` (B5); no app's Worker ever sees one. The code is
+`apps/every-app-gateway/src/server/remote-mcp/{index.ts,bind.ts,relist.ts}`
+and `packages/toolbus/src/remote/{client.ts,normalize.ts}` (#627); the
+design is `docs/design/2026-10-mcp-by-url.md`.
 
 **What it stops.** An app learning a provider key, a client secret, or
 whether a key exists for a capability it didn't request. An app reaching a
@@ -643,9 +651,11 @@ organization getting its calls attributed to another. An agent's identity
 sending mail, listing members or minting OAuth tokens it shouldn't. An
 app sending as a domain the operator didn't allow, or reading the
 directory of people who can't open it. Provider cookies and credentials
-leaking either way.
+leaking either way. A remote MCP credential sent anywhere but the origin
+the operator set it for, followed through a redirect, or a remote MCP app
+pointed at the gateway itself or at a host whose key the gateway holds.
 
-**Invariants.** The register has 42: the two the provider registry added (`providers.query-key-never-echoed`, `providers.account-data-self-host-only`, docs/design/2026-10-provider-registry.md) are in the register only.
+**Invariants.** The register has 47: the two the provider registry added (`providers.query-key-never-echoed`, `providers.account-data-self-host-only`, docs/design/2026-10-provider-registry.md) are in the register only.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -675,6 +685,11 @@ leaking either way.
 | `email.agent-needs-write-scope` | A send under an agent's identity goes through only with `mcp:write` or `*`. | `capabilities/email.ts:160-169` | `capabilities/email.test.ts` :: refuses an agent's read-only connection, and sends for one with write |
 | `email.daily-budgets` | App mail is counted before sending, once per distinct recipient, against daily budgets per address and per gateway (100 and 5,000 self-hosted; 20 and 5,000 hosted; none in an invalid mode). | `email/sendEmail.ts:131-215` | `capabilities/email.test.ts` :: spends one per recipient, per address and for the gateway |
 | `members.scoped-to-attributed-organization` | The members list returns only the attributed organization's live members in an active organization who are granted that app; an agent's identity is refused outright. | `capabilities/members.ts:76-90` | `members-capability.sqlite.test.ts` :: lists the organization's live members the app is granted to, and nobody else |
+| `remote-mcp.credential-only-to-bound-origin` | A remote MCP app's credential goes only to the origin `remote_mcp_credentials` pins its name to: the origin of the app that declared it when the operator ran `everyapp secret set`, or of the first row that used it; a row at another origin needs setup and gets nothing sent. | `remote-mcp/bind.ts` (credentialFor), #627; `packages/perimeter/src/registry/remoteMcpApps.ts:184`; `packages/cli/src/lib/gateway/remoteMcpApps.ts:849` | `packages/perimeter/src/registry/remoteMcpApps.test.ts` :: refuses a credential name another MCP app sends to a different origin; `remote-mcp.sqlite.test.ts :: refuses to send a credential bound to another origin, and reads as needing setup` (pinned (PR 2)) |
+| `remote-mcp.url-pinned-no-redirect` | The gateway fetches a remote MCP server only at the row's stored URL, checked again before every fetch, and follows no redirect, so the credential never reaches another host. | `remote/client.ts` (redirect: manual), `remote-mcp/index.ts` (refusal), #627 | `remote/client.test.ts :: sends the credential only to the registered URL and follows no redirect`; `remote-mcp.sqlite.test.ts :: forwards a call with the credential to the registered URL only, and never to a redirect` (pinned (PR 2)) |
+| `remote-mcp.credential-never-leaks` | A remote MCP credential appears only in the request headers to its pinned origin: never in a result, an error, an audit row, a usage row or a log line; only the operator sets it, never the UI or a tool. | `remote/client.ts` (sanitizedHead), `remote-mcp/index.ts` (upstreamFailure), #627; `packages/sdk/src/internal/remoteMcp.ts:551` | `remote/client.test.ts :: never carries the credential or the upstream body in an error`; `remote-mcp.sqlite.test.ts :: never puts the credential in a result, an audit row, a usage row or a log line` (pinned (PR 2)) |
+| `remote-mcp.secret-name-family` | A remote MCP credential is named in the `_MCP_TOKEN` family and nothing else, so an admin adding a server can't point a key the gateway holds at their own URL, and no app secret can take one. | `packages/sdk/src/internal/gatewaySettings.ts:122`; `packages/sdk/src/internal/remoteMcp.ts:296, 308`; `packages/perimeter/src/manifest/manifest.ts:795` | `packages/sdk/src/internal/remoteMcp.test.ts` :: refuses a missing or foreign secret name, a bad kind and a routing header (partial: the manifest's refusal is untested) |
+| `remote-mcp.reserved-hosts` | A remote MCP server's URL is `https:`, a host name, and never the gateway's own origin, a host under its app domains, or a host whose key or client the gateway holds. | `packages/sdk/src/internal/remoteMcp.ts:200, 230` (reservedUpstreamHosts, remoteMcpUrlProblem) | `packages/sdk/src/internal/remoteMcp.test.ts` :: takes a public https URL and refuses everything the Gateway holds or serves |
 
 **Not this boundary's job.** What the provider does with a valid call, an
 app's own secrets (its `secrets` in the manifest live on its Worker), and
@@ -789,6 +804,11 @@ one inner tool call down the same path as a direct call, which is how a
 client served the compact listing (the built-ins alone in `tools/list`:
 automatic past 256 tools or 1 MiB, or chosen with `X-EveryApp-Tools` or
 `?tools=`) reaches the apps' tools.
+Since 2026-10-25 a second in-process app kind crosses too: remote MCP
+apps, any MCP server registered by URL, whose tools the gateway lists from
+the server and whose calls it forwards there with the operator's
+credential (B4 holds the credential). The server's tool names, schemas,
+descriptions and results come back in as untrusted text the model reads.
 The code is
 `apps/every-app-gateway/src/server/mcp-auth/` (the OAuth 2.1 server on
 `@cloudflare/workers-oauth-provider`, consent, registration, validation),
@@ -810,8 +830,11 @@ alone; a hidden tool reached through a wrapper or found by the search
 (hidden stays `Unknown tool` on every path, where a compact listing only
 leaves tools unlisted); a wrapper minting an identity of its own, fanning
 out, or escaping the one audit row, which names the inner tool with `via`.
+A remote server's unhinted tool reaching a read-only connection; a tool
+the operator turned off staying callable; a member registering or
+changing a remote MCP app.
 
-**Invariants.** The register has 47.
+**Invariants.** The register has 51.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -844,6 +867,10 @@ out, or escaping the one audit row, which names the inner tool with `via`.
 | `toolbus.provider-call-through-proxy-key-never-relayed` | A provider tool reaches the provider only through the capability proxy's rules (B4), after the organization's monthly cap on the row is checked, attributed to the member and counted against the provider row; its answer never carries the key or a refusal body. | `apps/every-app-gateway/src/server/provider-apps/call.ts` | `provider-apps.sqlite.test.ts` :: calls the provider through the capability proxy with the gateway's key, tagged with the organization, and counts and audits the call |
 | `toolbus.workspace-tools-role-gated` | The `everyapp_workspace_*` tools (and `everyapp_my_tokens`, `everyapp_revoke_token`, `everyapp_my_connections`, `everyapp_revoke_connection`) are built-ins answered by the gateway's own services, each with a `minRole`: a tool is listed and runs only for a caller whose live role (re-read every request) reaches it and whose credential is not narrowed to apps (a one-app token or a selected-apps connection sees none), its write tools are hidden from and refused for a read-only connection like any write tool, the services' own rules (never an owner by an admin, never yourself, never the last owner) apply on top and come back as tool errors, `remove` and `app_delete` are owner-only and take `confirm: true`, and every call leaves one audit row (app `everyapp`, `via` when wrapped). | `packages/toolbus/src/workspace.ts`; `packages/toolbus/src/policy.ts` (minRole); `packages/toolbus/src/execute.ts` (kind `host`); `apps/every-app-gateway/src/server/toolbus/workspace-tools.ts` | `apps/every-app-gateway/src/server/toolbus/workspace-tools.sqlite.test.ts` :: a member sees no workspace tool; a read-only admin lists but cannot invite |
 | `toolbus.workspace-tools-no-credentials` | No built-in returns a credential (no invite link, no password-reset link, no token value) and none creates a personal access token: a revocable connection cannot mint itself something that outlives it. | `apps/every-app-gateway/src/server/toolbus/workspace-tools.ts` | `apps/every-app-gateway/src/server/toolbus/workspace-tools.sqlite.test.ts` :: the invite answer carries no URL; my_tokens carries no value |
+| `remote-mcp.risk-conservative-default` | A remote tool is `read` only when the operator says so or the server explicitly hints `readOnlyHint: true`; `destructiveHint: true` is destructive; anything else, no hint included, is `write`, hidden from read-only connections. | `packages/sdk/src/internal/remoteMcp.ts:498` (remoteToolRisk); `remote/normalize.ts`, #627 | `packages/sdk/src/internal/remoteMcp.test.ts` :: reads hints conservatively: explicit read-only is read, explicit destructive is destructive, else write; `remote-mcp.sqlite.test.ts :: treats an unhinted tool as write, a readOnlyHint as read, a destructiveHint as destructive, and lets the overrides win` (pinned (PR 2)) |
+| `remote-mcp.identity-verified-per-call` | The in-process remote app verifies the identity minted for this call alone (`aud` `provider:<row id>`, the `tc` claim, the gateway's key), the scope the tool's risk needs, and the organization's cap before anything goes upstream. | `remote-mcp/index.ts` (callTool), #627; `apps/every-app-gateway/src/server/provider-apps/index.ts:44` | `remote-mcp.sqlite.test.ts :: verifies the identity minted for this call alone` (pinned (PR 2)) |
+| `remote-mcp.registration-role-gated` | Only the operator and an organization's owners and admins register, change, turn on or off, refresh or read an MCP app; only owners remove one; a member is refused and nothing is written. | `apps/every-app-gateway/src/serverFunctions/mcpApps.ts` (organizationAdminMiddleware, organizationOwnerMiddleware) | `apps/every-app-gateway/src/server/mcp-apps.sqlite.test.ts` :: refuses a member, and writes nothing; `apps/every-app-gateway/src/serverFunctions/mcpApps.test.ts` :: removeMcpApp is the owners' |
+| `remote-mcp.tool-off-is-unknown` | A remote tool the operator turned off is not in the catalog: absent from `tools/list` and the search, `Unknown tool` on every path; an MCP app that is off serves no tool. | `packages/sdk/src/internal/remoteMcp.ts:516` (remoteToolEnabled); `remote/normalize.ts`, #627 | `remote-mcp.sqlite.test.ts :: leaves a tool the operator turned off out of the catalog and answers Unknown tool` (pinned (PR 2)) |
 
 **Not this boundary's job.** What a tool does with valid arguments (the
 app's code), the AI client's own storage of its tokens, and Access's
@@ -1428,13 +1455,39 @@ means it is on main (every boundary fix from this pass merged on
     status and registry rows; 120 s for an already-minted identity; up to
     7 days for a session no one revokes (B1, B2, B3; documented, listed so
     nobody expects less).
+32. **A remote MCP server that only takes OAuth can't be used, and its
+    credential is one identity for every member** (B4, B5, medium, known;
+    TODO "MCP apps by URL (2026-10-25)"). The gateway doesn't sign in to
+    MCP servers with OAuth yet: such a server can be added and serves
+    nothing ("Not supported yet"). An operator who pastes their own OAuth
+    access token or personal API key as a bearer credential instead gives
+    every member granted the app that person's reach on the server; the
+    server sees one caller. Being an OAuth client (discovery, client
+    registration, PKCE, a callback on the gateway, tokens encrypted at rest
+    and refreshed) is a new boundary, to be designed before it is built.
+33. **A credential set outside the CLI is pinned on first use** (B4, low;
+    `remote-mcp.credential-only-to-bound-origin`). A `_MCP_TOKEN` set in
+    the Cloudflare dashboard has no pin until the gateway first uses it,
+    and is pinned to whichever row uses it first; an owner or admin who
+    adds a row naming it before the intended one is served receives it.
+    `everyapp secret set` pins it to the declaring app, and `everyapp mcp
+    show` says where each credential is pinned.
+34. **A remote server's tool descriptions, schemas and results are
+    untrusted text the model reads** (B5, medium, known). The gateway
+    bounds their size, strips `x-mcp-header`, and believes a server's
+    explicit `readOnlyHint: true` (`remote-mcp.risk-conservative-default`).
+    It can't stop a description or a result from instructing the model,
+    from mislabelling a write tool as read-only, or from steering the model
+    to call another app's tools with what it read. The operator chooses
+    which servers to add, overrides a tool's risk or turns it off
+    (`everyapp mcp tool`), and Admin → Activity shows every call.
 
 **The operator's own exposure**
 
-32. **`CF_DEPLOY_TOKEN` on the public Worker is account-wide authority**
+35. **`CF_DEPLOY_TOKEN` on the public Worker is account-wide authority**
     (B7, high, known; TODO "Move `CF_DEPLOY_TOKEN` into a thin deployer
     Worker"). Whoever reads the Gateway's secrets is the operator.
-33. **The old gateway era's Workers ran in the dogfood account**
+36. **The old gateway era's Workers ran in the dogfood account**
     (`every-todo-app`, `every-open-seo`, `every-simple-todo` and fourteen
     more with `workers.dev` on; TODO "Paused"): pre-#267 code behind
     nothing. Not this repository's code, but the account that launches.
@@ -1452,18 +1505,18 @@ means it is on main (every boundary fix from this pass merged on
     `docs/overnight/2026-10-24-old-workers.md`, outside the public copy).
     The five old Workers without `workers.dev` answer nothing publicly and
     were left.
-34. **The published npm versions carry the holes this repository fixed**
+37. **The published npm versions carry the holes this repository fixed**
     (`everyapp` 0.2.2, `@every-app/sdk` 0.2.0; TODO "Paused"): deprecate
     them.
-35. **`everyapp dev` served any name pointed at 127.0.0.1, and its cron
+38. **`everyapp dev` served any name pointed at 127.0.0.1, and its cron
     trigger took a page's POST** (dev only, medium; fixed in #409, CLI).
     A DNS-rebinding page read and wrote the local app as the seeded owner
     and could spend the developer's own provider key from `.dev.vars`.
-36. **Privacy and `GATEWAY_URL` are enforced at deploy time only** (B7,
+39. **Privacy and `GATEWAY_URL` are enforced at deploy time only** (B7,
     low): a dashboard change (workers.dev on, a route added) goes unnoticed
     until the next deploy. `everyapp status` is the place to read the live
     Workers back.
-37. **The Zero Trust configuration isn't verified by the gateway** (B6,
+40. **The Zero Trust configuration isn't verified by the gateway** (B6,
     medium, known): one application instead of two, a bypass wider than
     the list, HttpOnly off, are silent weakenings. `everyapp access on`
     makes the right shape (since #622: the wildcard bypasses nothing,
@@ -1471,7 +1524,7 @@ means it is on main (every boundary fix from this pass merged on
     host, both sign-in methods) and `everyapp access show` says whether
     the applications it finds match it (paths, sign-in methods, the
     recorded settings); a read-back in `status` is the follow-up.
-38. **Hygiene before the public copy** (the launch-review thread's scan):
+41. **Hygiene before the public copy** (the launch-review thread's scan):
     no LICENSE file. The rest of its list is done: `docs/research/` (deleted, #433) and
     `apps/mobile-native/app.json` deleted, `/docs/internal` unpublished,
     the Postiz fixture's AGPL schema replaced with our own SQL (#458), all
@@ -1479,15 +1532,15 @@ means it is on main (every boundary fix from this pass merged on
 
 **Hosted only** (nothing here reaches a self-hosted gateway)
 
-39. A dispatch-tier Worker sends mail from the platform's own sender and
+42. A dispatch-tier Worker sends mail from the platform's own sender and
     spends the platform's provider keys with no per-organization bound
     (B8, medium; the launch gate's "capability calls refused for
     dispatch-tier rows").
-40. With open sign-up, anyone with an invite link can plant an account for
+43. With open sign-up, anyone with an invite link can plant an account for
     someone else's email, which the victim's own verification click then
     hands over (B2, medium; `HOSTED_OPEN_SIGNUP=false` keeps the preview
     invite-only, where the invite link's email binding stops it).
-41. `connect()` from a dispatched Worker is unverified against the egress
+44. `connect()` from a dispatched Worker is unverified against the egress
     policy; the org key in a dispatched Worker's name isn't compared with
     the row's organization; `secret set` on a shared app skips the
     platform-admin check; the platform-domain refusal doesn't cover

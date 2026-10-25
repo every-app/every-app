@@ -1,6 +1,6 @@
 # MCP apps: how the Gateway shows an app that has no page
 
-Date: 2026-10-24 (evening). Status: built; see section 9. Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier itself, PRs #485 and #489) and answers Ben's briefing of 2026-10-24.
+Date: 2026-10-24 (evening). Status: built; see section 9. Superseded in part on 2026-10-25 by [2026-10-mcp-by-url.md](2026-10-mcp-by-url.md): remote MCP servers are MCP apps too (`everyapp mcp add <url>`, Add app → Add an MCP server), "Turn off" in section 4 now stops serving and keeps everything (status `disabled`, shown "Off"), and the tombstone is a separate "Remove" (`everyapp mcp remove`). Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier itself, PRs #485 and #489) and answers Ben's briefing of 2026-10-24.
 
 ## 1. The ask
 

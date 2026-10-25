@@ -1,6 +1,6 @@
 # MCP apps by URL: any remote MCP server becomes an MCP app on a gateway
 
-Date: 2026-10-25. Status: being built (the PRs are listed in section 12 as they open). Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier, #485 and #489) and [2026-10-mcp-apps-ui.md](2026-10-mcp-apps-ui.md) (the name, the launcher section, the dialog, #599), and builds the "PR 3: remote-MCP proxy kind" and the "`everyapp mcp add <url>`" sketch those two planned, made registrable at run time.
+Date: 2026-10-25. Status: being built (the PRs are listed in section 12 as they open). The agent reference is `landing-page/content/agent/mcp.md`, "MCP apps"; the defaults to confirm are TODO.md's "MCP apps by URL (2026-10-25)". Follows [2026-10-mcp-provider-apps.md](2026-10-mcp-provider-apps.md) (the tier, #485 and #489) and [2026-10-mcp-apps-ui.md](2026-10-mcp-apps-ui.md) (the name, the launcher section, the dialog, #599), and builds the "PR 3: remote-MCP proxy kind" and the "`everyapp mcp add <url>`" sketch those two planned, made registrable at run time.
 
 ## 1. The ask
 
@@ -122,4 +122,12 @@ The MCP authorization spec with the gateway as the client needs protected-resour
 
 ## 12. What landed
 
-Filled in as the PRs merge.
+- #623, the foundation (merged 2026-10-25): the `remote` block and its parser, the `_MCP_TOKEN` family (`REMOTE_MCP_SECRET_PATTERN`), the URL and risk rules, the name normalization, the settings model's `remote-mcp` kind, the registry rules (`planRemoteMcpAppAdd`, `remoteMcpAppUpdate`, `mcpAppStatusUpdate`, `mcpAppRemoveUpdate`), migration 0011 (`remote_mcp_credentials`, `remote_mcp_tools`).
+- #627, the gateway (PR 2): the in-process remote app (`apps/every-app-gateway/src/server/remote-mcp/`), the ToolBus's remote client and normalizer (`packages/toolbus/src/remote/`), the credential pin and its first-use binding, unserved MCP apps named on `/mcp`, the hourly re-list, `remote-mcp.sqlite.test.ts`. Open.
+- #631, the CLI (PR 3): `everyapp mcp add|remove|show|refresh|tool`, `on`/`off` as serve and stop for both kinds, the probe, `secret set` pinning a credential and `secret list` naming it, `delete` naming `mcp remove`; cli.md and errors.md; the skill's `setup/remote-mcp.md`. Merged 2026-10-25.
+- #629, the UI (PR 4): Add app → Add an MCP server, the MCP app dialog, Turn off, Turn on and Remove in Admin → Apps, the server functions over `McpAppService`, the launcher's generic example. Merged 2026-10-25.
+- #630, the `claude -p` harness: Claude Code through the ToolBus to a fake credentialed server and a live public one. Open.
+- #635, the docs: the agent pages (mcp, secrets, manifest, json, troubleshooting), connect-ai and commands, the threat model's nine `remote-mcp.*` invariants and three known gaps, TODO.md's section, the status lines of the two earlier designs, and the agent-parity matrix's six rows for #629's server functions. Open.
+- The agent's workspace tools (PR 5, on #614's seam): not yet opened.
+
+The register's ids differ from section 5's list in one place: `remote-mcp.admin-registration-role-gated` landed as `remote-mcp.registration-role-gated` (it covers the operator too), and B4 gained `remote-mcp.reserved-hosts` and B5 `remote-mcp.tool-off-is-unknown`.
