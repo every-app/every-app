@@ -103,8 +103,8 @@ and `everyapp setup` sets it up; there is nothing to set by hand.
   older than `MCP_AUDIT_RETENTION_DAYS` (default 90), up to 20,000 a run,
   marks connections unused for 31 days as expired, deletes rate limit
   counters whose day is over, deletes usage counters past their retention
-  (daily rows after 13 months, monthly after 25; Admin → Usage), and sweeps
-  expired and
+  (daily rows after 13 months, monthly after 25; Manage workspace → Usage),
+  and sweeps expired and
   orphaned OAuth records from `OAUTH_KV`, 50 grants and 50 tokens a run,
   resuming from its cursor (after three failed runs in a row it starts a
   new sweep). Each run logs one `mcp.maintenance` line; `audit_behind: true`

@@ -1,0 +1,30 @@
+---
+title: Usage and caps
+description: See what your apps spend on AI and data providers, cap an app's calls per month, and be emailed when a cap is near.
+---
+
+Apps that use AI or a data provider like DataForSEO make those calls through your Gateway, with the key you added once, and the Gateway counts every call it makes for an app. Everything below is under **Manage workspace** at the bottom of the Gateway's sidebar, in the **Usage** tab, for owners and admins.
+
+## What is counted
+
+**Provider calls** is the number of calls the Gateway made for the app that month: to AI providers (OpenAI, OpenRouter, Workers AI) and to capabilities like DataForSEO, counted together, whether an app or an [MCP app](/docs/connect-ai) made them. A call is a call, whatever it cost.
+
+- **Calls, not dollars.** One call costs a fraction of a cent or several dollars, depending on the model and the endpoint. **Provider cost** shows money only where the provider reports it with the answer: DataForSEO and OpenRouter do; OpenAI reports tokens only; Workers AI reports nothing.
+- **Your provider bills you.** The Gateway holds the key and makes the call; the invoice comes from OpenAI, OpenRouter, DataForSEO or Cloudflare, and that invoice is the bill. [What it costs](/docs#what-it-costs)
+- **Only calls through the Gateway.** An app that calls a service with a key of its own is invisible here, and so is email the Gateway sends for an app.
+
+## Cap an app
+
+In the **Monthly cap** column, select **Set cap** and enter a number of calls, or in your `every-app` folder run `pnpm everyapp workspace app cap <app> 1000` (`off` removes it). The cap is per calendar month (UTC) and takes effect within 30 seconds.
+
+When the app reaches it, the Gateway refuses its AI and provider calls until the month ends or someone raises the cap. The app still opens and shows its data; only the calls that spend money stop. Its row says **Paused**, and so does its card on the Gateway's home. Select **Raise** in the row to set a higher cap for that app.
+
+A cap is a soft stop. The Gateway counts a call once the provider has answered, so a burst of calls can run a few past the cap.
+
+## A default for every app
+
+**Default monthly cap**, above the table, caps every app that has no cap of its own, including apps you add later. An app's own cap replaces the default for that app. To leave one app uncapped while the default stands, select **Edit** in its row and choose **No cap**. **Raise** on an app the default paused gives that app a cap of its own; the default itself changes in its own row.
+
+## Cap alerts
+
+Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under **Manage workspace → Events**. The alerts come with your first cap, the default included; an admin switches them off there, or adds a webhook that gets the same events. [Email alerts](/docs/events#email-alerts), [Send email](/docs/people#send-email)

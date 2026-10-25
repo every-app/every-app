@@ -723,12 +723,15 @@ which tokens it gets, not the calls it makes with them).
 
 - *No default limit on provider spend* (high, known;
   `cap.per-organization-limits` is **enforced only for an app an owner or
-  admin capped**, #416). Every AI call, every DataForSEO paid call and
-  every Context.dev render is attributed, logged and, since #381, counted
-  per organization and app; since #416 an owner or admin may cap an app's
-  calls per month (`org_app_settings.monthly_call_cap`, Admin → Usage,
-  null by default), refused at the cap with `429 app_monthly_cap_exceeded`
-  before any provider call. With no cap set nothing bounds the spend: on a
+  admin capped, or under a default they set**, #416 and #621). Every AI
+  call, every DataForSEO paid call and every Context.dev render is
+  attributed, logged and, since #381, counted per organization and app;
+  since #416 an owner or admin may cap an app's calls per month
+  (`org_app_settings.monthly_call_cap`, Manage workspace → Usage, null by
+  default) and, since #621, set one default cap for every app without its
+  own (`org_settings.default_monthly_call_cap`, null by default too),
+  refused at the effective cap with `429 app_monthly_cap_exceeded` before
+  any provider call. With no cap set nothing bounds the spend: on a
   self-hosted gateway with one organization this is "an app can spend
   your OpenAI key unless you cap it"; on hosted it is why the preview
   stays invite-only (`docs/design/2026-10-teams.md`).
@@ -802,7 +805,10 @@ which tokens it gets, not the calls it makes with them).
 **Merged this week** (the teams slice; #381 the counters, #416 the cap):
 usage counters (`usage_daily`, `usage_monthly`; counts only, never bodies
 or keys) written from the AppGateway entrypoint under `waitUntil`, and an
-opt-in per-app monthly cap in `org_app_settings` (null by default) refused
+opt-in per-app monthly cap in `org_app_settings` (null by default) or,
+since #621 (migration `0014_caps_defaults`), the organization's default
+in `org_settings` for every app without one (`org_app_settings.unlimited`
+takes an app out of it), refused at the effective cap
 with `429 app_monthly_cap_exceeded` and a `Retry-After` to the UTC month
 end, after attribution and before any provider call, a refused call not
 counted, the cap the attributed organization's own (a shared app's is per
@@ -1473,10 +1479,12 @@ means it is on main (every boundary fix from this pass merged on
    pinned on every upload" item.
 5. **Nothing bounds an app's spend on the operator's provider keys unless
    a cap is set** (B4, high, known; `cap.per-organization-limits` is
-   enforced only for an app an owner or admin capped, #416). A buggy loop
-   in any app runs on the operator's OpenAI or DataForSEO account until the
-   operator notices, or until the app's monthly cap (Admin → Usage; null,
-   unlimited, by default under Ben's 2026-10-16 ruling) stops it
+   enforced only for an app an owner or admin capped, or under a default
+   they set, #416 and #621). A buggy loop in any app runs on the
+   operator's OpenAI or DataForSEO account until the operator notices, or
+   until the app's monthly cap or the workspace's default cap (Manage
+   workspace → Usage; both null, unlimited, by default under Ben's
+   2026-10-16 ruling) stops it
    (`docs/design/2026-10-teams.md`).
 6. **A read-only MCP token could run write tools on an app that answers
    `/mcp` itself** (B3, B5, medium; mostly closed by #447, which deleted

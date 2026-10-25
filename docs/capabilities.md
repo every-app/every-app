@@ -752,8 +752,8 @@ and `everyapp email set --sender` refuses on a hosted install.
 `rate_limit_counters`, once for each distinct recipient, before it is sent:
 100 per recipient address and 5,000 for the whole gateway a day when
 self-hosted, 20 and 5,000 when hosted, none when the mode is invalid. There
-is no per-organization mail budget (the monthly cap in Admin → Usage counts
-provider calls, not mail). A message
+is no per-organization mail budget (the monthly cap under Manage workspace →
+Usage counts provider calls, not mail). A message
 any of whose recipients has had its share is refused whole, with
 `Retry-After` until the next UTC midnight.
 
@@ -941,8 +941,9 @@ how the launcher shows one is [docs/design/2026-10-mcp-apps-ui.md](design/2026-1
   providers (deploying already takes credentials that can change the
   gateway).
 - Calls are counted per organization, app, member and provider, with the
-  provider's reported cost (Admin → Usage; `usage_daily`, `usage_monthly`),
-  and an owner or admin can cap an app's provider calls per month there
+  provider's reported cost (Manage workspace → Usage; `usage_daily`,
+  `usage_monthly`), and an owner or admin can cap an app's provider calls
+  per month there, or set one default cap for every app without its own
   (off by default; over it, `app_monthly_cap_exceeded`, 429). App mail is
   the one capability with budgets (per recipient address and per gateway,
   not per organization).

@@ -335,17 +335,37 @@ does, once, in
   capability) is attributed to an organization (from the props, the
   forwarded identity or `x-everyapp-org`, as above), logged with it and
   counted per organization, app and member (`usage_daily`,
-  `usage_monthly`; Admin → Usage). An owner or admin may cap an app's
-  calls per month (`org_app_settings.monthly_call_cap`, Admin → Usage;
-  null, unlimited, by default): the AppGateway entrypoint then refuses
-  that organization's AI and capability calls to the app at the cap with
-  `429 app_monthly_cap_exceeded` and a `Retry-After` to the UTC month
-  end, after attribution and before any provider call; a refused call is
-  not counted; a shared app's cap is per organization; a changed cap
-  binds at once in the serving isolate and within 30 s (5 s from none)
-  elsewhere; a deleted app's caps go with it. With no cap set nothing
-  bounds an organization's provider spend (metering, the wallet, is a
-  later feature), so the hosted preview stays invite-only
+  `usage_monthly`; Manage workspace → Usage). An owner or admin may cap an
+  app's calls per month (`org_app_settings.monthly_call_cap`), set one
+  default cap for every app without a cap of its own
+  (`org_settings.default_monthly_call_cap`, migration `0014_caps_defaults`)
+  and leave one app out of the default (`org_app_settings.unlimited`);
+  each is null, unlimited, by default, and the app's own row wins over the
+  default (a row holds exactly one of a cap or `unlimited`, both columns
+  written in one statement; a row holding both keeps the app capped,
+  which fails safe). The effective cap is read in one query
+  (`OrgAppSettingsRepository.getEffectiveMonthlyCap`) and cached as before:
+  the AppGateway entrypoint then refuses that organization's AI and
+  capability calls to the app at the cap with
+  `429 app_monthly_cap_exceeded` and a `Retry-After` to the UTC month end,
+  after attribution and before any provider call; a refused call is not
+  counted; the refusal names the app, the cap (and the workspace default,
+  when that is what binds) and the role that raises it (an owner or
+  admin, under Manage workspace → Usage), never a member's name or
+  address, since the body reaches the app's code and, through an MCP
+  app's tool, a connected agent; a shared app's cap is per organization; a
+  changed cap binds at once in the serving isolate and within 30 s (5 s
+  from none) elsewhere, and a changed default clears the whole cache; a
+  deleted app's caps go with it. With a cap set the check answers the
+  month's count and the cap's source either way (`checkMonthlyCap`), and
+  the entrypoint hands that standing to the event bus after the answer
+  (`events/cap-events.ts`: `cap.warning` at 80%, `cap.reached` and
+  `app.paused_cap` at the cap, each once per organization, app, month and
+  cap); the alerts themselves (owners and admins emailed at 80% and at the
+  cap once the gateway can send mail; Manage workspace → Events) are the
+  events system's, outside this path. With no cap set nothing bounds an
+  organization's provider spend (metering, the wallet, is a later
+  feature), so the hosted preview stays invite-only
   (`HOSTED_OPEN_SIGNUP=false`).
 
 ## Operator Authority (Self-Host)
