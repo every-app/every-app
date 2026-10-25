@@ -6,6 +6,7 @@ import {
   groupAppAccess,
   mcpConnectionApps,
   orgAppSettings,
+  remoteMcpTools,
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
@@ -228,9 +229,9 @@ async function activate(id: string, organizationId: string) {
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
  * Everyone's access (direct and through groups), any personal access
- * tokens bound to it, its agent tools snapshot, its place in AI
- * connections and every organization's settings on it (a monthly cap)
- * go with it: the writes the CLI's `delete` makes (`deleteUpdate` in
+ * tokens bound to it, its agent tools snapshot (for a remote MCP app,
+ * what its server listed too), its place in AI connections and every
+ * organization's settings on it (a monthly cap) go with it: the writes the CLI's `delete` makes (`deleteUpdate` in
  * the perimeter), plus the group grants and the cap.
  */
 async function tombstone(
@@ -285,6 +286,14 @@ async function tombstone(
         and(
           eq(appToolCatalogs.appRowId, id),
           eq(appToolCatalogs.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(remoteMcpTools)
+      .where(
+        and(
+          eq(remoteMcpTools.appRowId, id),
+          eq(remoteMcpTools.organizationId, organizationId),
         ),
       ),
     // Out of every AI connection that chose it: a later deploy brings the

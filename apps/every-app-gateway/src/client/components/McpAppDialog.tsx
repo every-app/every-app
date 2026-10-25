@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/client/components/ui/dialog";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
 
 /** The person's page on connecting Claude, ChatGPT and Claude Code. */
 export const CONNECT_AI_DOCS_URL = "https://everyapp.com/docs/connect-ai";
@@ -40,7 +41,11 @@ function mcpAddress(): string | null {
  */
 export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
   const address = mcpAddress();
-  const example = isProviderAppId(appId) ? PROVIDER_APPS[appId].example : null;
+  // A built-in's own example; any other MCP app is a remote server the
+  // Gateway knows nothing about beyond its tools, so the sentence is generic.
+  const example = isProviderAppId(appId)
+    ? `Use ${name} to ${PROVIDER_APPS[appId].example}.`
+    : MCP_APP_COPY.useDialog.genericExample(name);
   return (
     <Dialog
       open
@@ -62,14 +67,11 @@ export function McpAppDialog({ name, appId, onClose }: McpAppDialogProps) {
         <div className="flex flex-col gap-2 text-sm">
           <p>
             Its tools start with{" "}
-            <span className="font-mono text-xs">{appId}_</span>.
-            {example ? " Try saying:" : null}
+            <span className="font-mono text-xs">{appId}_</span>. Try saying:
           </p>
-          {example ? (
-            <p className="rounded-lg border border-border bg-muted px-3 py-2.5">
-              “Use {name} to {example}.”
-            </p>
-          ) : null}
+          <p className="rounded-lg border border-border bg-muted px-3 py-2.5">
+            “{example}”
+          </p>
           <p className="text-muted-foreground">
             Agents can build skills on its tools, like any app's.
           </p>

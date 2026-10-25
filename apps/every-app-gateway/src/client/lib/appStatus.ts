@@ -1,5 +1,9 @@
 import type { ComponentProps } from "react";
-import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
+import {
+  hasRemoteMcpBlock,
+  PROVIDER_APP_TIER,
+  remoteMcpOf,
+} from "@every-app/sdk/internal";
 import type { Badge } from "@/client/components/ui/badge";
 import type { UserAccessApp } from "@/types/app";
 
@@ -10,6 +14,10 @@ export enum AppStatusLabel {
   Disabled = "Disabled",
   NeedsDeploy = "Needs deploy",
   NeedsSetup = "Needs setup",
+  /** An MCP app turned off (`everyapp mcp off`, Turn off): kept, not served. */
+  Off = "Off",
+  /** A remote MCP server that wants OAuth, which the Gateway doesn't do yet. */
+  NotSupported = "Not supported yet",
 }
 
 /**
@@ -19,11 +27,16 @@ export enum AppStatusLabel {
  * the setup dialog opens in its place. An MCP app (tier "provider") never
  * opens: once its key is set it is Active, and its tools are served to AI
  * clients; the card opens the "Use it from your agent" dialog instead
- * ({@link mcpAppUsable}). A status this gateway doesn't know (a newer
+ * ({@link mcpAppUsable}). An MCP app that is off reads "Off" (its access
+ * and tokens are kept; Turn on serves it again), and a remote one whose
+ * server wants OAuth reads "Not supported yet" where the list carries its
+ * manifest (Admin → Apps). A status this gateway doesn't know (a newer
  * CLI's) shows as it is, and doesn't open.
  */
 export function appStatus(
-  app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier">,
+  app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier"> & {
+    manifest?: string | null;
+  },
 ): {
   label: AppStatusLabel | string;
   variant: ComponentProps<typeof Badge>["variant"];
@@ -32,8 +45,15 @@ export function appStatus(
   if (isMcpApp(app)) {
     if (app.status !== "active") {
       return {
-        label: AppStatusLabel.Disabled,
+        label: AppStatusLabel.Off,
         variant: "secondary",
+        opens: false,
+      };
+    }
+    if (remoteMcpAuthKind(app) === "oauth") {
+      return {
+        label: AppStatusLabel.NotSupported,
+        variant: "outline",
         opens: false,
       };
     }
@@ -108,6 +128,34 @@ export function appNeedsSetup(
 /** The kind the launcher calls "MCP apps": a page-less app, its tools on `/mcp`. */
 export function isMcpApp(app: Pick<UserAccessApp, "tier">): boolean {
   return app.tier === PROVIDER_APP_TIER;
+}
+
+function parsedManifest(manifest: string | null | undefined): unknown {
+  if (!manifest) return null;
+  try {
+    return JSON.parse(manifest);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An MCP app registered by URL (a remote MCP server), rather than one of
+ * the Gateway's built-in ones: its stored manifest has a `remote` block.
+ * Only a list that carries the manifest (Admin → Apps) can tell.
+ */
+export function isRemoteMcpApp(
+  app: Pick<UserAccessApp, "tier"> & { manifest?: string | null },
+): boolean {
+  return isMcpApp(app) && hasRemoteMcpBlock(parsedManifest(app.manifest));
+}
+
+/** A remote MCP app's auth kind, or null (a built-in, or no manifest to read). */
+function remoteMcpAuthKind(
+  app: Pick<UserAccessApp, "tier"> & { manifest?: string | null },
+): string | null {
+  if (!isMcpApp(app)) return null;
+  return remoteMcpOf(parsedManifest(app.manifest))?.auth.kind ?? null;
 }
 
 /** The chip beside an MCP app's name, on the card and in Admin → Apps. */

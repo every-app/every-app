@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronRight, Plug, Sparkles } from "lucide-react";
+import { AddMcpServerView } from "@/client/components/onboarding/AddMcpServer";
 import {
   FeaturedAppIcon,
   GalleryIconTile,
@@ -23,25 +24,32 @@ import {
 } from "@/client/components/ui/dialog";
 import { FEATURED_APPS, type FeaturedApp } from "@/client/lib/featuredApps";
 import { FIRST_SCREEN } from "@/client/lib/firstScreen";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
+import type { AddedRemoteMcpApp } from "@/types/mcpApp";
 
 type View =
   | { kind: "list" }
   | { kind: "app"; app: FeaturedApp }
+  | { kind: "mcp" }
   | { kind: "build" };
 
 /**
  * The gallery folded into one dialog, for Manage workspace → Apps once the
- * home shows real apps: the four apps and Build your own as rows, each
- * opening the same content the home's cards open. Render it only while it
- * is open.
+ * home shows real apps: the four apps, "Add an MCP server" (any remote MCP
+ * server, added here by URL, for an owner or admin) and Build your own as
+ * rows, each opening its content in place. Render it only while it is
+ * open.
  */
 export function AddAppDialog({
   canRun,
   onClose,
+  onMcpAppAdded,
 }: {
   /** Whoever reads it can run the install command: an owner or admin. */
   canRun: boolean;
   onClose: () => void;
+  /** An MCP server was added: the app lists read it again. */
+  onMcpAppAdded?: (added: AddedRemoteMcpApp) => void;
 }) {
   const [view, setView] = useState<View>({ kind: "list" });
   // The button that opened a view unmounts with it, so the view that
@@ -92,6 +100,18 @@ export function AddAppDialog({
                   onClick={() => setView({ kind: "app", app })}
                 />
               ))}
+              {canRun ? (
+                <ChooserRow
+                  title={MCP_APP_COPY.chooserRow.title}
+                  line={MCP_APP_COPY.chooserRow.line}
+                  icon={
+                    <GalleryIconTile className="size-8 rounded-lg md:mb-0 md:size-8">
+                      <Plug className="size-4" aria-hidden />
+                    </GalleryIconTile>
+                  }
+                  onClick={() => setView({ kind: "mcp" })}
+                />
+              ) : null}
               <ChooserRow
                 title={FIRST_SCREEN.buildCard.title}
                 line={FIRST_SCREEN.buildCard.line}
@@ -115,6 +135,14 @@ export function AddAppDialog({
               </div>
             </DialogFooter>
           </>
+        ) : view.kind === "mcp" ? (
+          <AddMcpServerView
+            onBack={() => {
+              returned.current = true;
+              setView({ kind: "list" });
+            }}
+            onAdded={onMcpAppAdded}
+          />
         ) : (
           <>
             <BuildYourOwnContent />

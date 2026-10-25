@@ -38,7 +38,7 @@ export const FIRST_SCREEN = {
     button: "Add app",
     dialogTitle: "Add an app",
     dialogDescription:
-      "Choose one to see its install command, or build your own.",
+      "Choose one to see its install command, add any MCP server, or build your own.",
   },
   phoneNotice: "This part takes a computer. Open this page there.",
   empty: {

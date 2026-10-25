@@ -2,7 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
 import { Download, Plus } from "lucide-react";
-import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
+import { toast } from "sonner";
+import {
+  adminAppsCollection,
+  useQueryFailed,
+  userAppsCollection,
+} from "@/client/tanstack-db";
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { McpAppDialog } from "@/client/components/McpAppDialog";
@@ -11,11 +16,16 @@ import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
 import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessModal";
+import { McpAppEditDialog } from "@/client/components/admin/McpAppEditDialog";
 import { AddAppDialog } from "@/client/components/onboarding/AddAppDialog";
 import { Button } from "@/client/components/ui/button";
 import { useAppInstallAvailable } from "@/client/app-install";
+import { getRuleErrorMessage } from "@/client/errors";
 import { useSetupDialog } from "@/client/hooks/useSetupDialog";
+import { isMcpApp, isRemoteMcpApp } from "@/client/lib/appStatus";
 import { FIRST_SCREEN } from "@/client/lib/firstScreen";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
+import { removeMcpApp, setMcpAppStatus } from "@/serverFunctions/mcpApps";
 import type { AppWithAccessCount } from "@/types/app";
 import { authClient } from "@/client/auth-client";
 
@@ -26,6 +36,30 @@ export const Route = createFileRoute("/_app/admin/apps")({
 /** The admin list, from the server (not the query cache). */
 function refetchApps() {
   return adminAppsCollection.utils.refetch();
+}
+
+/** After an MCP app changed: this list and the launcher's read it again. */
+function refetchAppLists() {
+  void adminAppsCollection.utils.refetch();
+  void userAppsCollection.utils.refetch();
+}
+
+/** Turn an MCP app off when it is on, on when it is off (the row menu). */
+async function toggleMcpStatus(app: AppWithAccessCount) {
+  const on = app.status === "active";
+  try {
+    await setMcpAppStatus({
+      data: { id: app.id, status: on ? "disabled" : "active" },
+    });
+    toast.success(
+      on
+        ? MCP_APP_COPY.menu.turnedOff(app.name)
+        : MCP_APP_COPY.menu.turnedOn(app.name),
+    );
+    refetchAppLists();
+  } catch (error) {
+    toast.error(getRuleErrorMessage(error, MCP_APP_COPY.menu.statusFailed));
+  }
 }
 
 function AppsPage() {
@@ -60,9 +94,29 @@ function AppsPage() {
     close: closeSetup,
   } = useSetupDialog(apps, refetchApps);
 
+  // Removing an MCP app runs its own server function (the tombstone, with
+  // the snapshot and what its server listed); the dialog waits for it.
+  const [removing, setRemoving] = useState(false);
   const confirmDelete = (app: AppWithAccessCount) => {
-    adminAppsCollection.delete(app.id);
-    setDeletingApp(null);
+    if (!isMcpApp(app)) {
+      adminAppsCollection.delete(app.id);
+      setDeletingApp(null);
+      return;
+    }
+    setRemoving(true);
+    void removeMcpApp({ data: { id: app.id } })
+      .then(
+        () => {
+          toast.success(MCP_APP_COPY.menu.removed(app.name));
+          refetchAppLists();
+          setDeletingApp(null);
+        },
+        (error: unknown) =>
+          toast.error(
+            getRuleErrorMessage(error, MCP_APP_COPY.menu.removeFailed),
+          ),
+      )
+      .finally(() => setRemoving(false));
   };
 
   return (
@@ -105,12 +159,17 @@ function AppsPage() {
         onManageAccess={setAccessApp}
         onEdit={setEditingApp}
         onDelete={setDeletingApp}
+        onToggleMcpStatus={toggleMcpStatus}
         onAddApp={() => setAddingApp(true)}
         isOwner={isOwner}
       />
 
       {addingApp ? (
-        <AddAppDialog canRun={isAdmin} onClose={() => setAddingApp(false)} />
+        <AddAppDialog
+          canRun={isAdmin}
+          onClose={() => setAddingApp(false)}
+          onMcpAppAdded={refetchAppLists}
+        />
       ) : null}
 
       {setupApp ? (
@@ -133,12 +192,23 @@ function AppsPage() {
       ) : null}
 
       {editingApp ? (
-        <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />
+        // A remote MCP server has its own dialog (its credential, status,
+        // tools); every other app, a built-in MCP app included, the modal.
+        isRemoteMcpApp(editingApp) ? (
+          <McpAppEditDialog
+            app={editingApp}
+            onClose={() => setEditingApp(null)}
+            onChanged={refetchAppLists}
+          />
+        ) : (
+          <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />
+        )
       ) : null}
 
       {isOwner && deletingApp ? (
         <DeleteAppModal
           app={deletingApp}
+          pending={removing}
           onClose={() => setDeletingApp(null)}
           onConfirm={() => confirmDelete(deletingApp)}
         />

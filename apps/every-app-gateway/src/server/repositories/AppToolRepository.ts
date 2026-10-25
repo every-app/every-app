@@ -18,6 +18,7 @@ import {
   appToolCatalogs,
   appTools,
   mcpConnectionApps,
+  remoteMcpTools,
 } from "@/db/schema";
 import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { ToolBusTool } from "@every-app/toolbus";
@@ -528,10 +529,99 @@ async function findVisibleUnsyncedApps(
   );
 }
 
+/** An app's snapshot row as the MCP app dialog shows it, or null when never synced. */
+async function findCatalog(
+  appRowId: string,
+  organizationId: string,
+): Promise<{
+  status: CatalogStatus;
+  fetchedAt: Date;
+  lastError: string | null;
+  toolCount: number;
+  versionId: string | null;
+} | null> {
+  const [row] = await db
+    .select({
+      status: appToolCatalogs.status,
+      fetchedAt: appToolCatalogs.fetchedAt,
+      lastError: appToolCatalogs.lastError,
+      toolCount: appToolCatalogs.toolCount,
+      versionId: appToolCatalogs.versionId,
+    })
+    .from(appToolCatalogs)
+    .where(
+      and(
+        eq(appToolCatalogs.appRowId, appRowId),
+        eq(appToolCatalogs.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  return row ? { ...row, status: row.status as CatalogStatus } : null;
+}
+
+/** The local names of an app's snapshotted tools, sorted. */
+async function toolNames(
+  appRowId: string,
+  organizationId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ name: appTools.name })
+    .from(appTools)
+    .where(
+      and(
+        eq(appTools.appRowId, appRowId),
+        eq(appTools.organizationId, organizationId),
+      ),
+    )
+    .orderBy(asc(appTools.name));
+  return rows.map((row) => row.name);
+}
+
+/**
+ * Drop an app's snapshot in one batch: its catalog row, its tools and, for
+ * a remote MCP app, what the server listed tool by tool. The next sync
+ * (Refresh tools, or the next /mcp request that finds none) takes a fresh
+ * one; until then the app serves no tools.
+ */
+async function deleteSnapshot(
+  appRowId: string,
+  organizationId: string,
+): Promise<void> {
+  await db.batch([
+    db
+      .delete(appTools)
+      .where(
+        and(
+          eq(appTools.appRowId, appRowId),
+          eq(appTools.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(appToolCatalogs)
+      .where(
+        and(
+          eq(appToolCatalogs.appRowId, appRowId),
+          eq(appToolCatalogs.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(remoteMcpTools)
+      .where(
+        and(
+          eq(remoteMcpTools.appRowId, appRowId),
+          eq(remoteMcpTools.organizationId, organizationId),
+        ),
+      ),
+  ]);
+}
+
 export const AppToolRepository = {
   findByOrgApp,
   findVisibleCatalogs,
   findVisibleUnsyncedApps,
+  findCatalog,
+  toolNames,
   replace,
   recordError,
+  deleteSnapshot,
 } as const;

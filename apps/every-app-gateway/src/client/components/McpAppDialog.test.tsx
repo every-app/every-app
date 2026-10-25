@@ -8,6 +8,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
 import {
   CONNECT_AI_DOCS_URL,
   MCP_APPS_DOCS_URL,
@@ -76,11 +77,16 @@ it("closes from the footer", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("leaves the example out for a provider the registry doesn't know, rather than failing", () => {
+it("gives a remote MCP server (no built-in example) a generic sentence", () => {
   act(() =>
     root.render(<McpAppDialog name="Treg" appId="treg" onClose={onClose} />),
   );
-  expect(text()).toContain("Its tools start with treg_.");
-  expect(text()).not.toContain("Try saying");
+  expect(text()).toContain("Its tools start with treg_. Try saying:");
+  expect(text()).toContain(
+    `“${MCP_APP_COPY.useDialog.genericExample("Treg")}”`,
+  );
+  expect(text()).toContain(
+    "“List what Treg offers, then use one of its tools.”",
+  );
   expect(text()).not.toContain("Use Treg to");
 });

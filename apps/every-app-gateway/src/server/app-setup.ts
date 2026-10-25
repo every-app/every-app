@@ -26,7 +26,7 @@ import {
 } from "@every-app/sdk/internal";
 
 /** How an operator runs everyapp while publishing is paused. */
-const SETUP_CLI = "pnpm everyapp";
+export const SETUP_CLI = "pnpm everyapp";
 
 export interface AppSetupInput {
   /** The row's id, the version it runs and its recorded secret names: the cache key. */

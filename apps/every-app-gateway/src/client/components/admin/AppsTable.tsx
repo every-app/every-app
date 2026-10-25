@@ -21,6 +21,7 @@ import {
   appNeedsSetup,
   appStatus,
   isMcpApp,
+  isRemoteMcpApp,
 } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
@@ -38,7 +39,10 @@ type AppRowActions = {
   onUseMcp: (app: AppWithAccessCount) => void;
   onManageAccess: (app: AppWithAccessCount) => void;
   onEdit: (app: AppWithAccessCount) => void;
+  /** Deletes an app; removes an MCP app (owners only, either way). */
   onDelete: (app: AppWithAccessCount) => void;
+  /** Turns an MCP app off when it is on, and on when it is off. */
+  onToggleMcpStatus: (app: AppWithAccessCount) => void;
   /** Opens the Add app chooser, the empty table's one action. */
   onAddApp?: () => void;
   isOwner: boolean;
@@ -103,9 +107,10 @@ function AppNameCell({
           integrations are the Edit app dialog's, in full. */}
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">
-          {/* An MCP app has no deploy: the operator turned it on. */}
+          {/* An MCP app has no deploy: the operator turned it on, or
+              someone added the remote server. */}
           {mcp
-            ? `Turned on by ${app.deployedByActor}`
+            ? `${isRemoteMcpApp(app) ? "Added" : "Turned on"} by ${app.deployedByActor}`
             : deployedBy(app.deployedByActor)}
         </p>
       ) : null}
@@ -157,6 +162,7 @@ function buildColumns({
   onManageAccess,
   onEdit,
   onDelete,
+  onToggleMcpStatus,
   isOwner,
 }: AppRowActions): ColumnDef<AppWithAccessCount>[] {
   return [
@@ -242,10 +248,18 @@ function buildColumns({
                 : () => onManageAccess(row.original)
             }
             onEdit={() => onEdit(row.original)}
+            // An MCP app's Remove is the tombstone (`everyapp mcp remove`);
+            // Turn off keeps everything and stops serving it (`mcp off`).
             onDelete={() => onDelete(row.original)}
-            // Deleting an MCP app's row is turning it off (`everyapp mcp
-            // off` writes the same tombstone; `mcp on` brings it back).
-            deleteLabel={isMcpApp(row.original) ? "Turn off" : undefined}
+            mcp={
+              isMcpApp(row.original)
+                ? {
+                    onUseMcp: () => onUseMcp(row.original),
+                    on: row.original.status === "active",
+                    onToggle: () => onToggleMcpStatus(row.original),
+                  }
+                : undefined
+            }
             isOwner={isOwner}
           />
         ),
@@ -262,6 +276,7 @@ export function AppsTable({
   onManageAccess,
   onEdit,
   onDelete,
+  onToggleMcpStatus,
   onAddApp,
   isOwner,
 }: AppsTableProps) {
@@ -292,9 +307,18 @@ export function AppsTable({
         onManageAccess,
         onEdit,
         onDelete,
+        onToggleMcpStatus,
         isOwner,
       }),
-    [onSetup, onUseMcp, onManageAccess, onEdit, onDelete, isOwner],
+    [
+      onSetup,
+      onUseMcp,
+      onManageAccess,
+      onEdit,
+      onDelete,
+      onToggleMcpStatus,
+      isOwner,
+    ],
   );
 
   const table = useDataTable({

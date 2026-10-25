@@ -1,9 +1,18 @@
-import { Pencil, Power, Trash2, Users, Wrench } from "lucide-react";
+import {
+  Bot,
+  Pencil,
+  Power,
+  PowerOff,
+  Trash2,
+  Users,
+  Wrench,
+} from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/client/components/ui/dropdown-menu";
+import { MCP_APP_COPY } from "@/client/lib/mcpAppCopy";
 
 interface AppActionsMenuProps {
   appName: string;
@@ -12,9 +21,19 @@ interface AppActionsMenuProps {
   /** Absent for a shared app, whose access nobody manages. */
   onManageAccess?: () => void;
   onEdit: () => void;
+  /** Deletes an app; removes an MCP app (the tombstone). */
   onDelete: () => void;
-  /** "Turn off" for an MCP app, which `onDelete` turns off rather than deletes. */
-  deleteLabel?: string;
+  /**
+   * An MCP app's own actions: Use from your agent first, and Turn off or
+   * Turn on (by its status) before Remove. Owners and admins turn it on
+   * and off; only owners remove it, as only owners delete an app.
+   */
+  mcp?: {
+    onUseMcp: () => void;
+    /** Whether it is on (`active`) now. */
+    on: boolean;
+    onToggle: () => void;
+  };
   isOwner: boolean;
 }
 
@@ -25,9 +44,10 @@ export function AppActionsMenu({
   onManageAccess,
   onEdit,
   onDelete,
-  deleteLabel = "Delete app",
+  mcp,
   isOwner,
 }: AppActionsMenuProps) {
+  const copy = MCP_APP_COPY.menu;
   return (
     <RowActionsMenu label={`Actions for ${appName}`}>
       {onSetup ? (
@@ -36,22 +56,34 @@ export function AppActionsMenu({
           Setup…
         </DropdownMenuItem>
       ) : null}
+      {mcp ? (
+        <DropdownMenuItem onClick={mcp.onUseMcp}>
+          <Bot />
+          {copy.useFromAgent}
+        </DropdownMenuItem>
+      ) : null}
       {onManageAccess ? (
         <DropdownMenuItem onClick={onManageAccess}>
           <Users />
-          Manage access
+          {copy.manageAccess}
         </DropdownMenuItem>
       ) : null}
       <DropdownMenuItem onClick={onEdit}>
         <Pencil />
-        Edit app
+        {mcp ? copy.edit : "Edit app"}
       </DropdownMenuItem>
+      {mcp ? (
+        <DropdownMenuItem onClick={mcp.onToggle}>
+          {mcp.on ? <PowerOff /> : <Power />}
+          {mcp.on ? copy.turnOff : copy.turnOn}
+        </DropdownMenuItem>
+      ) : null}
       {isOwner ? (
         <>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={onDelete}>
-            {deleteLabel === "Delete app" ? <Trash2 /> : <Power />}
-            {deleteLabel}
+            <Trash2 />
+            {mcp ? copy.remove : "Delete app"}
           </DropdownMenuItem>
         </>
       ) : null}

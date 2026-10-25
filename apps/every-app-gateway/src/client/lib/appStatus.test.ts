@@ -7,6 +7,7 @@ import {
   appStatusLabel,
   AppStatusLabel,
   isMcpApp,
+  isRemoteMcpApp,
   mcpAppUsable,
 } from "./appStatus";
 
@@ -118,7 +119,7 @@ describe("an MCP app", () => {
     expect(mcpAppUsable(app({}))).toBe(false);
   });
 
-  it("needs setup while its key is unset, and is Disabled when off", () => {
+  it("needs setup while its key is unset, and is Off when turned off", () => {
     expect(appStatus(mcp({ setup: UNREADY }))).toEqual({
       label: AppStatusLabel.NeedsSetup,
       variant: "warning",
@@ -126,11 +127,50 @@ describe("an MCP app", () => {
     });
     expect(appNeedsSetup(mcp({ setup: UNREADY }))).toBe(true);
     expect(mcpAppUsable(mcp({ setup: UNREADY }))).toBe(false);
-    expect(appStatus(mcp({ status: "deleted" }))).toEqual({
-      label: AppStatusLabel.Disabled,
-      variant: "secondary",
+    for (const status of ["disabled", "deleted"]) {
+      expect(appStatus(mcp({ status, setup: UNREADY }))).toEqual({
+        label: AppStatusLabel.Off,
+        variant: "secondary",
+        opens: false,
+      });
+      expect(mcpAppUsable(mcp({ status }))).toBe(false);
+      expect(appNeedsSetup(mcp({ status, setup: UNREADY }))).toBe(false);
+    }
+    // An app with a page that is disabled still reads Disabled.
+    expect(appStatus(app({ status: "disabled" })).label).toBe(
+      AppStatusLabel.Disabled,
+    );
+  });
+
+  it("tells a remote MCP server from a built-in by its manifest, and reads one that wants OAuth as Not supported yet", () => {
+    const remote = (kind: string) => ({
+      ...mcp(),
+      manifest: JSON.stringify({
+        id: "treg",
+        name: "Treg",
+        description: "Treg's MCP server.",
+        remote: {
+          url: "https://treg.to/mcp/",
+          auth:
+            kind === "bearer" ? { kind, secret: "TREG_MCP_TOKEN" } : { kind },
+          risk: "annotations",
+          tools: {},
+          rev: 1,
+        },
+      }),
+    });
+    expect(isRemoteMcpApp(remote("none"))).toBe(true);
+    expect(isRemoteMcpApp(remote("bearer"))).toBe(true);
+    expect(isRemoteMcpApp({ ...mcp(), manifest: '{"id":"dataforseo"}' })).toBe(
+      false,
+    );
+    expect(isRemoteMcpApp(mcp())).toBe(false);
+    expect(appStatus(remote("none")).label).toBe(AppStatusLabel.Active);
+    expect(appStatus(remote("oauth"))).toEqual({
+      label: AppStatusLabel.NotSupported,
+      variant: "outline",
       opens: false,
     });
-    expect(mcpAppUsable(mcp({ status: "deleted" }))).toBe(false);
+    expect(mcpAppUsable(remote("oauth"))).toBe(false);
   });
 });

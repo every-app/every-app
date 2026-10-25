@@ -23,6 +23,7 @@ vi.mock("@/server/services/AppAccessService", () => ({
   AppAccessService: {},
 }));
 vi.mock("@/server/services/AppService", () => ({ AppService: {} }));
+vi.mock("@/server/services/McpAppService", () => ({ McpAppService: {} }));
 vi.mock("@/server/services/MembershipService", () => ({
   MembershipService: {},
 }));
@@ -56,6 +57,7 @@ const READS = [
   "getEmailStatus",
   "getGroupApps",
   "getGroupMembers",
+  "getMcpApp",
   "getMyApps",
   "getOnboardingStatus",
   "getUsage",

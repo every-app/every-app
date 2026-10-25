@@ -55,6 +55,13 @@ const PUBLIC_ERROR_CODES = [
   "DEPLOY_KEYS_UNAVAILABLE",
   "GROUP_NOT_FOUND",
   "GROUP_NAME_TAKEN",
+  // The MCP app registry rules (@every-app/perimeter/registry
+  // remoteMcpApps.ts): their messages are the rules' own sentences.
+  "REMOTE_MCP_INVALID",
+  "REMOTE_MCP_URL_REFUSED",
+  "REMOTE_MCP_EXISTS",
+  "REMOTE_MCP_SECRET_TAKEN",
+  "APP_TIER_MISMATCH",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

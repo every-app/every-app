@@ -81,7 +81,56 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
   GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
   GROUP_NAME_TAKEN: "A group with this name already exists.",
+  // The rules' own messages say more (getRuleErrorMessage); these are the
+  // fallbacks for an error that arrives without one.
+  REMOTE_MCP_INVALID: "Check the server's details and try again.",
+  REMOTE_MCP_URL_REFUSED: "The Gateway can't use that URL.",
+  REMOTE_MCP_EXISTS: "An MCP app with this name is on this Gateway already.",
+  REMOTE_MCP_SECRET_TAKEN:
+    "That credential name belongs to another MCP app; choose another.",
+  APP_TIER_MISMATCH: "That name belongs to another app on this Gateway.",
 };
+
+/**
+ * Codes whose message is a registry rule's own sentence, written to be
+ * read by the person who hit it (the URL rule, the credential's name):
+ * shown as the server sent it rather than as a canned line.
+ */
+const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
+  "REMOTE_MCP_INVALID",
+  "REMOTE_MCP_URL_REFUSED",
+  "REMOTE_MCP_EXISTS",
+  "REMOTE_MCP_SECRET_TAKEN",
+  "APP_TIER_MISMATCH",
+]);
+
+/** A rule's fragment as a sentence: a capital first, a full stop last. */
+export function asSentence(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  const capital = trimmed[0]!.toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+}
+
+/**
+ * The message to show for a server-function error: a registry rule's own
+ * sentence for its codes ({@link RULE_MESSAGE_CODES}), else the canned
+ * line for the code ({@link getServerErrorMessage}).
+ */
+export function getRuleErrorMessage(error: unknown, fallback: string): string {
+  const code = getErrorCode(error);
+  const message = (error as { message?: unknown } | null)?.message;
+  if (
+    code &&
+    RULE_MESSAGE_CODES.has(code) &&
+    typeof message === "string" &&
+    message.trim() &&
+    message !== code
+  ) {
+    return asSentence(message);
+  }
+  return getServerErrorMessage(error, fallback);
+}
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {
   INVALID_EMAIL_OR_PASSWORD: "Invalid email or password.",
