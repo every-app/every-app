@@ -8,6 +8,16 @@ Own your tools. Customize your tools. Pay as you go.
 
 It's easy to build now, but hard to get it off localhost and host it securely.
 
+## What's on our roadmap?
+oh, nothing much, just rebuilding every SaaS for Agents. 100% open source.
+
+## Why is this cool?
+- Self host hundreds of web applications (& agents) for $5/month
+- Agent first
+  - We don't like reading or manually doing things anymore either. 
+- Easily self host & customize open source apps
+- You can build your own apps too!
+
 ## What is EveryApp
 - An open source app store
 - A home for internal apps and personal software
