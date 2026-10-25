@@ -243,6 +243,13 @@ async function serveGatewayHost(request: Request): Promise<Response> {
     const served = await serveMcpAuthRoute(request);
     if (served) return served;
   }
+  if (pathname.startsWith("/connect/")) {
+    // The Gateway-owned OAuth flow (server/oauth/flow.ts): a signed-in
+    // member's connect and the provider's callback, on the session cookie.
+    const { serveConnectRoute } = await import("./server/oauth/flow");
+    const served = await serveConnectRoute(request);
+    if (served) return served;
+  }
   if (pathname === APPLE_CALLBACK_PATH) return serveControlPlane(request, env);
   if (isAccessBypassedPath(pathname)) return refuseBypassedPath();
   return serveControlPlane(request, env);

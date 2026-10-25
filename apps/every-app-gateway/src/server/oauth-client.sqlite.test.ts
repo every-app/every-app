@@ -157,6 +157,7 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
     });
     await expect(status.json()).resolves.toEqual({
       capability: "linkedin",
+      flow: "app",
       requested: false,
       configured: false,
       ready: false,
@@ -198,6 +199,8 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
 
     await expect((await googleStatus("crm")).json()).resolves.toEqual({
       capability: "google-workspace",
+      flow: "both",
+      connectPath: "/connect/google-workspace",
       requested: true,
       configured: true,
       ready: true,
@@ -221,6 +224,8 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
     expect(upstream).not.toHaveBeenCalled();
     await expect((await googleStatus("cal")).json()).resolves.toEqual({
       capability: "google-workspace",
+      flow: "both",
+      connectPath: "/connect/google-workspace",
       requested: true,
       configured: true,
       ready: false,

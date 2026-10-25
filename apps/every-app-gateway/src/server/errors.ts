@@ -69,6 +69,20 @@ const PUBLIC_ERROR_CODES = [
   "REMOTE_MCP_EXISTS",
   "REMOTE_MCP_SECRET_TAKEN",
   "APP_TIER_MISMATCH",
+  // OAuth providers (server/oauth/service.ts): the registry rules' codes
+  // (their messages are the rules' own sentences) and the flow's.
+  "PROVIDER_NOT_FOUND",
+  "PROVIDER_SPEC_INVALID",
+  "PROVIDER_EXISTS",
+  "PROVIDER_BUILTIN",
+  "PROVIDER_SECRET_TAKEN",
+  "PROVIDER_HOST_REFUSED",
+  "PROVIDER_IN_USE",
+  "PROVIDER_BOUND",
+  "OAUTH_PROVIDER_REQUIRED",
+  "OAUTH_CLIENT_REQUIRED",
+  "SEALING_UNAVAILABLE",
+  "ADMIN_REQUIRED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

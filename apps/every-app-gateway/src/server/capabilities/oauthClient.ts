@@ -41,6 +41,7 @@ import {
   type CapabilityLookup,
   type CapabilitySettings,
   type OAuthClientCapability,
+  type OAuthClientCredentials,
   type OAuthScopePolicy,
   type TokenRequest,
 } from "@every-app/sdk/internal";
@@ -70,6 +71,8 @@ export function oauthClientStatus({
   entry,
   env,
   lookup = CATALOG,
+  client: resolved,
+  connection,
 }: {
   id: string;
   /** The client `id` names in the gateway's registry. */
@@ -78,13 +81,48 @@ export function oauthClientStatus({
   env: CapabilitySettings;
   /** The registry the id came from: a registered row's client reads as unset while unbound. */
   lookup?: CapabilityLookup;
+  /**
+   * The client already resolved (the Worker env's, or the one sealed in
+   * D1: server/oauth/client.ts), when the gateway resolves it; absent, the
+   * env alone is read as before.
+   */
+  client?: OAuthClientCredentials | null;
+  /**
+   * For a provider with a Gateway-owned flow, the caller's connection as
+   * the proxy found it (null: none), with whether it covers the sets the
+   * entry declares; absent when the gateway didn't look.
+   */
+  connection?: HeldConnectionStatus | null;
 }): Response {
-  const isRequested = requested(entry);
+  const flow = capability.flow ? ("both" as const) : ("app" as const);
+  // A Gateway-owned flow is used with any grant (held-token calls read);
+  // the app-driven token endpoints still need the write grant.
+  const isRequested = capability.flow ? Boolean(entry) : requested(entry);
   const bound = !lookup.bound || lookup.bound(id);
-  const client =
-    isRequested && bound ? oauthClientCredentials(capability, env) : null;
+  const client = !isRequested
+    ? null
+    : resolved !== undefined
+      ? resolved
+      : bound
+        ? oauthClientCredentials(capability, env)
+        : null;
   const origin = client ? oauthClientOrigin(capability, env) : null;
   const policy = capability.scopePolicy;
+  const extra = capability.flow
+    ? {
+        flow,
+        connectPath: `/connect/${encodeURIComponent(id)}`,
+        ...(connection !== undefined ? { connection } : {}),
+      }
+    : { flow };
+  const readiness = (sets: readonly string[] | null) => {
+    if (!client) return false;
+    if (!capability.flow || connection === undefined) return true;
+    if (!connection || connection.reconnect) return false;
+    return (
+      sets === null || sets.every((name) => connection.scopeSets.includes(name))
+    );
+  };
   if (policy && isRequested) {
     const sets = declaredScopeSets(policy, { scopes: entry?.["scopes"] });
     if (!sets) {
@@ -94,6 +132,7 @@ export function oauthClientStatus({
         configured: Boolean(client),
         ready: false,
         scopeSets: [],
+        ...extra,
       });
     }
     const { scopes, userScopes } = requestedScopes(policy, sets);
@@ -101,22 +140,33 @@ export function oauthClientStatus({
       capability: id,
       requested: true,
       configured: Boolean(client),
-      ready: Boolean(client),
+      ready: readiness(sets),
       ...(client ? { clientId: client.clientId } : {}),
       ...(origin ? { origin } : {}),
       scopeSets: sets,
       scopes,
       ...(userScopes.length > 0 ? { userScopes } : {}),
+      ...extra,
     });
   }
   return Response.json({
     capability: id,
     requested: isRequested,
     configured: Boolean(client),
-    ready: Boolean(client),
+    ready: readiness(null),
     ...(client ? { clientId: client.clientId } : {}),
     ...(origin ? { origin } : {}),
+    ...extra,
   });
+}
+
+/** A connection as the status reports it (the SDK's `connection` field). */
+export interface HeldConnectionStatus {
+  account: "user" | "organization";
+  label: string | null;
+  scopeSets: readonly string[];
+  ready: boolean;
+  reconnect?: boolean;
 }
 
 /**
@@ -137,6 +187,7 @@ export async function handleOAuthClientCall({
   admit,
   fetchUpstream,
   onCall,
+  resolveClient,
 }: {
   request: Request;
   id: string;
@@ -151,6 +202,16 @@ export async function handleOAuthClientCall({
   fetchUpstream: (request: Request) => Promise<Response>;
   /** Told of each call the provider answered (integration-proxy.ts). */
   onCall?: (report: { capability: string; status: number }) => void;
+  /**
+   * Resolve the client beyond the Worker env (the one sealed in D1,
+   * server/oauth/client.ts); absent, the env alone is read as before.
+   */
+  resolveClient?: (input: {
+    id: string;
+    capability: OAuthClientCapability;
+    env: CapabilitySettings;
+    lookup: CapabilityLookup;
+  }) => Promise<OAuthClientCredentials | null>;
 }): Promise<Response> {
   const notConfigured = () =>
     capabilityRefusal(
@@ -221,8 +282,11 @@ export async function handleOAuthClientCall({
   // 4. The gateway's client: read only while a registered row still has
   // the endpoints, hosts and setting names it was set for
   // (`oauth.client-bound-to-endpoints`), as an API-key row's key is.
-  if (lookup.bound && !lookup.bound(id)) return notConfigured();
-  const client = oauthClientCredentials(capability, env);
+  const client = resolveClient
+    ? await resolveClient({ id, capability, env, lookup })
+    : lookup.bound && !lookup.bound(id)
+      ? null
+      : oauthClientCredentials(capability, env);
   if (!client) return notConfigured();
 
   // 5a. The body, under its cap.

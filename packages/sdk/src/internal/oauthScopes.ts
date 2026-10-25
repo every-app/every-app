@@ -513,6 +513,18 @@ const GOOGLE_ALIASES = new Map([
 const GRAPH_PREFIX = /^https:\/\/graph\.microsoft\.com\//i;
 
 /** `scopes` in the dialect's one spelling, deduplicated, order kept. */
+/**
+ * `scopes` in the dialect's canonical spelling (Google's long names,
+ * Microsoft's bare lower-case names), for comparing a set's scopes with
+ * what a token response says it granted.
+ */
+export function canonicalScopes(
+  dialect: OAuthScopeDialect,
+  scopes: readonly string[],
+): string[] {
+  return canonical(dialect, [...scopes]);
+}
+
 function canonical(dialect: OAuthScopeDialect, scopes: string[]): string[] {
   return pushNew(
     [],

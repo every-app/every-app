@@ -10,7 +10,11 @@ import {
   type CapabilityLookup,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
-import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
+import {
+  logEvent,
+  type AppRegistry,
+  type RegisteredApp,
+} from "@every-app/perimeter";
 import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 import {
   AI_DEFAULT_PROVIDER,
@@ -33,6 +37,7 @@ import {
 } from "./events/app-emit";
 import {
   handleIntegrationProxyRequest,
+  type OAuthProxyDeps,
   type IntegrationProxyEnv,
 } from "./integration-proxy";
 import { platformPolicy } from "./platform-policy";
@@ -114,6 +119,15 @@ interface HandleAppGatewayRequestOptions {
    */
   providers?: () => Promise<CapabilityLookup>;
   /**
+   * The Gateway-owned OAuth flow's side of the capability proxy (the
+   * sealed clients and the held connections); the gateway's own modules by
+   * default, loaded on first use. Tests pass fakes, or nothing for the
+   * token-endpoint branch alone.
+   */
+  oauth?: (
+    fetchUpstream: (request: Request) => Promise<Response>,
+  ) => Promise<Omit<OAuthProxyDeps, "identify"> | null>;
+  /**
    * The organization's stored default model provider (`org_settings.ai_default`,
    * ai-default.ts in the Worker), for the `default` route; the catalog's
    * order alone when absent (tests).
@@ -160,6 +174,39 @@ class AppGatewayError extends Error {
   }
 }
 
+let oauthDepsUnavailableLogged = false;
+
+/**
+ * The gateway's own OAuth clients and connections, loaded on first use
+ * (they read D1). A gateway where they can't load (no database bound, as
+ * in the unit tests of the proxy) serves the token-endpoint branch alone,
+ * logged once per isolate.
+ */
+async function loadOAuthProxyDeps(
+  fetchUpstream: (request: Request) => Promise<Response>,
+): Promise<Omit<OAuthProxyDeps, "identify"> | null> {
+  try {
+    const [{ resolveOAuthClient }, { gatewayHeldTokens }] = await Promise.all([
+      import("./oauth/client"),
+      import("./oauth/heldTokens"),
+    ]);
+    return {
+      resolveClient: resolveOAuthClient,
+      connections: gatewayHeldTokens({ fetchUpstream }),
+    };
+  } catch (error) {
+    if (!oauthDepsUnavailableLogged) {
+      oauthDepsUnavailableLogged = true;
+      logEvent(
+        "oauth.proxy_unavailable",
+        { error: error instanceof Error ? error.name : "unknown" },
+        "warn",
+      );
+    }
+    return null;
+  }
+}
+
 const callerCache = new Map<
   string,
   { app: RegisteredApp | null; expiresAt: number }
@@ -189,6 +236,7 @@ export async function handleAppGatewayRequest({
   waitUntil,
   caps,
   providers,
+  oauth = loadOAuthProxyDeps,
   aiDefault = readAiDefaultChoice,
   onCap = noteCapCheckLater,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
@@ -332,6 +380,7 @@ export async function handleAppGatewayRequest({
       const providerCall =
         parseIntegrationProxyPath(url.pathname, url.search, undefined, lookup)
           ?.kind !== "service";
+      const oauthDeps = await oauth(fetchUpstream ?? fetch);
       // Awaited so a refusal `admit` throws is answered below.
       return await handleIntegrationProxyRequest({
         request,
@@ -339,6 +388,27 @@ export async function handleAppGatewayRequest({
         lookup,
         emailSenders: app.emailSenders ?? [],
         env,
+        ...(oauthDeps
+          ? {
+              oauth: {
+                ...oauthDeps,
+                identify: async () => {
+                  try {
+                    const { organizationId, user } = await attributeCall(
+                      request,
+                      app,
+                      props,
+                      env,
+                      organizations,
+                    );
+                    return { organizationId, user };
+                  } catch {
+                    return null;
+                  }
+                },
+              },
+            }
+          : {}),
         admit: async () => {
           const { organizationId, orgSource, user } = await attributeCall(
             request,

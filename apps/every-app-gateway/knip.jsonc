@@ -15,6 +15,10 @@
     // deployer uses part of its surface, the CLI's fake-Cloudflare test
     // imports the rest by path.
     "src/server/deploy/cf-rest/index.ts",
+    // The OAuth providers service (docs/design/2026-10-oauth-providers.md):
+    // the contract Admin → Providers, Settings → Connected accounts and the
+    // provider tools call; a sibling lane's PR takes each export up.
+    "src/server/oauth/service.ts",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],

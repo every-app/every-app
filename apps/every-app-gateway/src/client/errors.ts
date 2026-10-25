@@ -102,6 +102,19 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   REMOTE_MCP_SECRET_TAKEN:
     "That credential name belongs to another MCP app; choose another.",
   APP_TIER_MISMATCH: "That name belongs to another app on this Gateway.",
+  PROVIDER_NOT_FOUND: "No such provider on this Gateway.",
+  PROVIDER_SPEC_INVALID: "The provider spec is not valid.",
+  PROVIDER_EXISTS: "That provider is registered already.",
+  PROVIDER_BUILTIN: "That provider is built in.",
+  PROVIDER_SECRET_TAKEN: "A setting that provider names is already taken.",
+  PROVIDER_HOST_REFUSED:
+    "A host that provider names can't be reached from this Gateway.",
+  PROVIDER_IN_USE: "An app still lists that provider.",
+  PROVIDER_BOUND: "That provider's settings are set from the terminal.",
+  OAUTH_PROVIDER_REQUIRED: "That provider is not an OAuth provider.",
+  OAUTH_CLIENT_REQUIRED: "Paste the client id and the client secret.",
+  SEALING_UNAVAILABLE: "This Gateway can't store a secret yet.",
+  ADMIN_REQUIRED: "Only an owner or admin can do that.",
 };
 
 /**
@@ -120,6 +133,18 @@ const RULE_MESSAGE_CODES: ReadonlySet<string> = new Set<PublicErrorCode>([
   "REMOTE_MCP_EXISTS",
   "REMOTE_MCP_SECRET_TAKEN",
   "APP_TIER_MISMATCH",
+  // The OAuth provider rules (server/oauth/service.ts) name what is wrong.
+  "PROVIDER_NOT_FOUND",
+  "PROVIDER_SPEC_INVALID",
+  "PROVIDER_EXISTS",
+  "PROVIDER_BUILTIN",
+  "PROVIDER_SECRET_TAKEN",
+  "PROVIDER_HOST_REFUSED",
+  "PROVIDER_IN_USE",
+  "PROVIDER_BOUND",
+  "OAUTH_PROVIDER_REQUIRED",
+  "OAUTH_CLIENT_REQUIRED",
+  "SEALING_UNAVAILABLE",
 ]);
 
 /** A rule's fragment as a sentence: a capital first, a full stop last. */

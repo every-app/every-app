@@ -1287,6 +1287,7 @@ describe("GET /api/integrations/<client>", () => {
   it("gives the public client id to an app that lists the client, once the gateway holds it", async () => {
     await expect(status("linkedin")).resolves.toEqual({
       capability: "linkedin",
+      flow: "app",
       requested: true,
       configured: true,
       ready: true,
@@ -1296,6 +1297,7 @@ describe("GET /api/integrations/<client>", () => {
       status("linkedin", { env: { LINKEDIN_CLIENT_SECRET: undefined } }),
     ).resolves.toEqual({
       capability: "linkedin",
+      flow: "app",
       requested: true,
       configured: false,
       ready: false,
@@ -1309,6 +1311,7 @@ describe("GET /api/integrations/<client>", () => {
       }),
     ).resolves.toEqual({
       capability: "linkedin",
+      flow: "app",
       requested: false,
       configured: false,
       ready: false,
@@ -1320,6 +1323,7 @@ describe("GET /api/integrations/<client>", () => {
       status("mastodon", { env: { MASTODON_URL: "fosstodon.org" } }),
     ).resolves.toEqual({
       capability: "mastodon",
+      flow: "app",
       requested: true,
       configured: true,
       ready: true,
@@ -1335,6 +1339,8 @@ describe("GET /api/integrations/<client>", () => {
       }),
     ).resolves.toEqual({
       capability: "google-workspace",
+      flow: "both",
+      connectPath: "/connect/google-workspace",
       requested: true,
       configured: true,
       ready: true,
@@ -1346,6 +1352,8 @@ describe("GET /api/integrations/<client>", () => {
       status("microsoft-365", { manifest: MICROSOFT_APP(["mail.read"]) }),
     ).resolves.toEqual({
       capability: "microsoft-365",
+      flow: "both",
+      connectPath: "/connect/microsoft-365",
       requested: true,
       configured: true,
       ready: true,
@@ -1363,6 +1371,8 @@ describe("GET /api/integrations/<client>", () => {
       }),
     ).resolves.toEqual({
       capability: "google-workspace",
+      flow: "both",
+      connectPath: "/connect/google-workspace",
       requested: true,
       configured: false,
       ready: false,
@@ -1377,6 +1387,8 @@ describe("GET /api/integrations/<client>", () => {
         status("google-workspace", { manifest: GOOGLE_APP(scopes) }),
       ).resolves.toEqual({
         capability: "google-workspace",
+        flow: "both",
+        connectPath: "/connect/google-workspace",
         requested: true,
         configured: true,
         ready: false,
@@ -1395,6 +1407,8 @@ describe("GET /api/integrations/<client>", () => {
       }),
     ).resolves.toEqual({
       capability: "google-workspace",
+      flow: "both",
+      connectPath: "/connect/google-workspace",
       requested: false,
       configured: false,
       ready: false,

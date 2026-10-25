@@ -12,8 +12,10 @@
  */
 import {
   CATALOG,
+  INTEGRATION_PROXY_PREFIX,
   MCP_WRITE_SCOPE,
   authorizationFor,
+  declaredScopeSets,
   capabilitySettings,
   isAccountWidePath,
   parseIntegrationProxyPath,
@@ -38,10 +40,14 @@ import {
   membersCapabilityStatus,
   type ListAppMembers,
 } from "./capabilities/members";
+import { handleHeldTokenCall } from "./capabilities/heldToken";
 import {
   handleOAuthClientCall,
   oauthClientStatus,
+  type HeldConnectionStatus,
 } from "./capabilities/oauthClient";
+import type { OAuthClientResolver } from "./oauth/client";
+import type { HeldTokenPort } from "./oauth/heldTokens";
 import { capabilityRefusal as refusal } from "./capabilities/refusal";
 import { platformPolicy } from "./platform-policy";
 import { watchBody } from "./response-tap";
@@ -113,6 +119,29 @@ interface HandleIntegrationProxyRequestOptions {
    * the gateway when the head of the body was read, or the body to its end.
    */
   onCost?: (report: IntegrationCostReport) => void;
+  /**
+   * The Gateway-owned OAuth flow's side of the proxy
+   * (docs/design/2026-10-oauth-providers.md section 7): where a client
+   * beyond the Worker env comes from, the connections a held-token call
+   * reads, and who is behind a status request (so it can report their
+   * connection). Absent: the token-endpoint branch alone, on the env's
+   * clients, as before.
+   */
+  oauth?: OAuthProxyDeps;
+}
+
+export interface OAuthProxyDeps {
+  resolveClient: OAuthClientResolver;
+  connections: HeldTokenPort;
+  /**
+   * Whom a status request is for, without admitting a call: the
+   * organization and the person (null for background work), or null when
+   * the request carries no usable attribution.
+   */
+  identify: () => Promise<{
+    organizationId: string;
+    user: EveryAppUser | null;
+  } | null>;
 }
 
 interface IntegrationCallReport {
@@ -137,6 +166,7 @@ export async function handleIntegrationProxyRequest({
   listMembers,
   onCall,
   onCost,
+  oauth,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
   const hosted = platformPolicy(env).hosted;
@@ -151,12 +181,49 @@ export async function handleIntegrationProxyRequest({
       : membersCapabilityStatus(entry);
   }
   if (status?.capability.mode === "oauth_client") {
+    const entry = capabilities?.[status.id];
+    if (!oauth) {
+      return oauthClientStatus({
+        id: status.id,
+        capability: status.capability,
+        entry,
+        env,
+        lookup,
+      });
+    }
+    const client = entry
+      ? await oauth.resolveClient({
+          id: status.id,
+          capability: status.capability,
+          env: env as never,
+          lookup,
+        })
+      : null;
+    let connection: HeldConnectionStatus | null | undefined;
+    try {
+      connection = status.capability.flow
+        ? await heldConnectionStatus(oauth, status.id, status.capability, entry)
+        : undefined;
+    } catch (error) {
+      // The status still answers; the connection is simply not reported.
+      logEvent(
+        "oauth.connection_lookup_failed",
+        {
+          capability: status.id,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+        "warn",
+      );
+      connection = undefined;
+    }
     return oauthClientStatus({
       id: status.id,
       capability: status.capability,
-      entry: capabilities?.[status.id],
+      entry,
       env,
       lookup,
+      client,
+      ...(connection === undefined ? {} : { connection }),
     });
   }
   if (status?.capability.mode === "api_key") {
@@ -175,6 +242,27 @@ export async function handleIntegrationProxyRequest({
   // An AI provider's status is the AI proxy's business: its path below
   // names no host, so it is refused as any malformed route is.
   const oauthClient = oauthClientCallId(url.pathname, lookup);
+  if (oauthClient && oauth && oauthClient.capability.flow) {
+    // A call to one of the provider's API hosts goes with the held token;
+    // its token endpoints keep the app-driven branch below.
+    const held = heldTokenUpstream(url, oauthClient.id, oauthClient.capability);
+    if (held) {
+      return handleHeldTokenCall({
+        request,
+        id: oauthClient.id,
+        capability: oauthClient.capability,
+        upstream: held,
+        entry: capabilities?.[oauthClient.id],
+        env,
+        lookup,
+        admit,
+        fetchUpstream,
+        resolveClient: oauth.resolveClient,
+        connections: oauth.connections,
+        ...(onCall ? { onCall } : {}),
+      });
+    }
+  }
   if (oauthClient) {
     return handleOAuthClientCall({
       request,
@@ -186,6 +274,7 @@ export async function handleIntegrationProxyRequest({
       admit,
       fetchUpstream,
       ...(onCall ? { onCall } : {}),
+      ...(oauth ? { resolveClient: oauth.resolveClient } : {}),
     });
   }
   // The settings resolve a provider's `hostSetting` (its host, when it is
@@ -535,6 +624,69 @@ function integrationStatusPath(
   const id = /^\/api\/integrations\/([a-z][a-z0-9-]*)\/?$/.exec(pathname)?.[1];
   const capability = id === undefined ? undefined : lookup.get(id);
   return id !== undefined && capability ? { id, capability } : null;
+}
+
+/**
+ * The upstream URL of a held-token call: `/api/integrations/<id>/<host>/<path>`
+ * where the host is one of the provider's `api` hosts (never a token
+ * endpoint's, which the app-driven branch serves). Null otherwise.
+ */
+function heldTokenUpstream(
+  url: URL,
+  id: string,
+  capability: OAuthClientCapability,
+): URL | null {
+  const prefix = `${INTEGRATION_PROXY_PREFIX}/${id}/`;
+  if (!url.pathname.startsWith(prefix)) return null;
+  const rest = url.pathname.slice(prefix.length);
+  const slash = rest.indexOf("/");
+  const host = (slash < 0 ? rest : rest.slice(0, slash)).toLowerCase();
+  if (!host || !(capability.api as readonly string[]).includes(host)) {
+    return null;
+  }
+  const tokenHosts = capability.token.map((endpoint) => endpoint.host);
+  if (tokenHosts.includes(host)) return null;
+  const path = slash < 0 ? "/" : rest.slice(slash);
+  try {
+    return new URL(`https://${host}${path}${url.search}`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The caller's connection for a status request: found by whom the
+ * request is for, with whether it covers the sets the entry declares.
+ */
+async function heldConnectionStatus(
+  oauth: OAuthProxyDeps,
+  id: string,
+  capability: OAuthClientCapability,
+  entry: CapabilityRequest | undefined,
+): Promise<HeldConnectionStatus | null> {
+  if (!entry) return null;
+  const who = await oauth.identify();
+  if (!who) return null;
+  const account = who.user ? "user" : "organization";
+  const connection = await oauth.connections.find({
+    organizationId: who.organizationId,
+    providerId: id,
+    account,
+    userId: who.user?.id ?? null,
+  });
+  if (!connection) return null;
+  const policy = capability.scopePolicy;
+  const declared =
+    (policy && declaredScopeSets(policy, { scopes: entry["scopes"] })) ?? [];
+  const covers = declared.every((name) => connection.scopeSets.includes(name));
+  const reconnect = connection.status === "expired" || !covers;
+  return {
+    account,
+    label: connection.label,
+    scopeSets: connection.scopeSets,
+    ready: !reconnect,
+    ...(reconnect ? { reconnect: true } : {}),
+  };
 }
 
 /** The OAuth client a call (`/api/integrations/<id>/...`) names, if it names one. */
