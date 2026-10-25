@@ -432,7 +432,9 @@ export async function addOAuthProvider(
 ): Promise<OAuthProviderSummary> {
   requireAdmin(org);
   const who = await actorFor(org, actor);
-  const addedBy = (who.kind === "user" && who.email) || org.userId;
+  // The caller's email: the member's, or the one the agent acts for.
+  const addedBy =
+    ((who.kind === "user" || who.kind === "agent") && who.email) || org.userId;
   let id: string;
   let capability: OAuthClientCapability;
   let rowSpec: unknown = null;

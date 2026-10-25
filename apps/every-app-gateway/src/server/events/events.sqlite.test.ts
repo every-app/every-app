@@ -103,6 +103,7 @@ import { AppCapService } from "@/server/services/AppCapService";
 import { AppService } from "@/server/services/AppService";
 import { GroupService } from "@/server/services/GroupService";
 import { OrganizationService } from "@/server/services/OrganizationService";
+import { listAudit, listAuditActors } from "@/server/events/audit";
 import { runWorkspaceTool } from "@/server/toolbus/workspace-tools";
 import { InvitationService } from "@/server/services/InvitationService";
 import { listedAppSetup } from "@/server/services/listedAppSetup";
@@ -3088,6 +3089,103 @@ describe("the event bus (SQLite)", () => {
       expect(text).not.toContain("querysecret");
       expect(text).not.toContain("https://");
       for (const event of all) expect(event.actor).toEqual(adaActor());
+    });
+
+    it("end to end: an admin's rename, lowered cap and MCP app removal read back from the audit log (listAudit and everyapp_workspace_audit) with the admin as the actor, by their current name and email", async () => {
+      const asAdmin = () => ctx(admin, "admin");
+      const app = await anApp("crm");
+      const mcpApp = (
+        await registerApp(db, {
+          organizationId: acme,
+          appSlug: "dataforseo",
+          name: "DataForSEO",
+        })
+      ).app;
+      await db
+        .update(apps)
+        .set({ tier: PROVIDER_APP_TIER })
+        .where(eq(apps.id, mcpApp.id));
+      await settleBackground();
+      await db.delete(events);
+
+      // A second apart, so the trail's order (time, id) is the actions'.
+      const tick = () => setClock(new Date(clock.getTime() + 1000));
+      await OrganizationService.rename(asAdmin(), "Acme Corp");
+      tick();
+      await AppCapService.setMonthlyCap(asAdmin(), {
+        appRowId: app.id,
+        cap: 1000,
+      });
+      tick();
+      await AppCapService.setMonthlyCap(asAdmin(), {
+        appRowId: app.id,
+        cap: 500,
+      });
+      tick();
+      await AppService.delete(asAdmin(), mcpApp.id);
+      await settleBackground();
+
+      // The trail, newest first, every row the admin's: the users row's
+      // name and email, never the owner.
+      const page = await listAudit(acme, {});
+      expect(page.events.map((row) => row.type)).toEqual([
+        "mcp_app.removed",
+        "cap.changed",
+        "cap.raised",
+        "organization.renamed",
+      ]);
+      const bo = {
+        kind: "user",
+        id: admin,
+        email: "bo@acme.example",
+        name: (await db.select().from(users).where(eq(users.id, admin)))[0]!
+          .name,
+      };
+      for (const row of page.events) expect(row.actor).toEqual(bo);
+      expect(page.events[0]).toMatchObject({
+        label: "An MCP app was removed",
+        subject: { mcpApp: { id: "dataforseo", name: "DataForSEO" } },
+      });
+      expect(page.events[1]).toMatchObject({
+        summary: expect.stringContaining("500"),
+        subject: { app: { id: "crm", name: "CRM" } },
+      });
+      expect(page.events[3]).toMatchObject({
+        type: "organization.renamed",
+        summary: `${bo.name} renamed the workspace to Acme Corp`,
+      });
+      // By the admin alone; the owner caused nothing.
+      expect((await listAudit(acme, { actorId: admin })).events).toHaveLength(
+        4,
+      );
+      expect((await listAudit(acme, { actorId: owner })).events).toEqual([]);
+      expect(await listAuditActors(acme)).toEqual([
+        expect.objectContaining({ ...bo, events: 4 }),
+      ]);
+      for (const row of page.events) expect(row).not.toHaveProperty("data");
+
+      // The same through the owner's AI client, the tool the CLI's
+      // `workspace audit` twins.
+      const result = await runWorkspaceTool(
+        "workspace_audit",
+        { actor: "bo@acme.example" },
+        {
+          userId: owner,
+          email: "ada@acme.example",
+          organizationId: acme,
+          orgRole: "owner",
+          credential: { kind: "oauth", id: "conn-1", clientName: "Claude" },
+          access: "read",
+        },
+      );
+      expect(result.isError).not.toBe(true);
+      const tool = result.structuredContent as {
+        events: { type: string; actor: unknown }[];
+      };
+      expect(tool.events.map((row) => row.type)).toEqual(
+        page.events.map((row) => row.type),
+      );
+      for (const row of tool.events) expect(row.actor).toEqual(bo);
     });
 
     it("names the agent as the actor when a write comes through the Gateway's MCP tools: the credential, the client name and the member it acts for", async () => {
