@@ -9,6 +9,7 @@ import { parseSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup } from "@every-app/sdk/internal";
 import { appSetupFrom, declaresSettings, listGatewaySecretNames } from "@/lib/app/settings";
 import { errorMessage } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
 import * as workspace from "@/lib/gateway/workspace";
 import { runCommand } from "@/lib/output/run";
 import { formatTable } from "@/lib/output/table";
@@ -220,7 +221,7 @@ export async function setCap(options: WorkspaceOptions, identifier: string, cap:
   const { ws } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: `Setting ${identifier}'s cap...` });
   const result = await workspace.setMonthlyCap(ws, identifier, cap);
-  const { app, was } = result;
+  const { app, was, capAlertsId } = result;
   const says = (value: number | null) => (value === null ? "no cap" : `${value.toLocaleString("en-US")} calls a month`);
   out.emit({ type: "step", step: STEP, status: "ok", message: `${app.appSlug}: ${says(cap)}`, data: { appRowId: app.id, cap, was } });
   const lines = [
@@ -231,10 +232,19 @@ export async function setCap(options: WorkspaceOptions, identifier: string, cap:
       ? "Its provider calls are no longer capped."
       : "Past it, a provider tool answers a tool error naming the cap, and an app's brokered call gets 429 app_monthly_cap_exceeded until the next UTC month.",
   ];
+  // The organization's first cap made the Gateway's built-in email subscription.
+  const capAlerts =
+    capAlertsId === null
+      ? null
+      : {
+          subscriptionId: capAlertsId,
+          message: `Owners and admins are emailed at 80% and at the cap (the built-in Cap alerts subscription; ${CLI} events list shows it).`,
+        };
+  if (capAlerts) lines.push(capAlerts.message);
   out.emit({
     type: "done",
     message: lines.join("\n"),
-    display: [lines[0], chalk.dim(lines[1]!)].join("\n"),
-    data: { organization: ws.organization, app: appData(app), cap, was },
+    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    data: { organization: ws.organization, app: appData(app), cap, was, capAlerts },
   });
 }

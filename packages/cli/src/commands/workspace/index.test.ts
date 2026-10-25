@@ -95,10 +95,10 @@ const writeBatches = () =>
     .map((call) => {
       const body = JSON.parse(call.files["query.json"]!) as { batch?: Array<{ sql: string }>; sql?: string };
       return (body.batch ?? [body as { sql: string }]).map(
-        (statement) => /^(?:UPDATE|DELETE FROM|INSERT INTO|SELECT) ?\w*/.exec(statement.sql.trim().replace(/\s+/g, " "))![0],
+        (statement) => /^(?:UPDATE|DELETE FROM|INSERT INTO|SELECT|PRAGMA) ?\w*/.exec(statement.sql.trim().replace(/\s+/g, " "))![0],
       );
     })
-    .filter((batch) => batch.some((statement) => !statement.startsWith("SELECT")));
+    .filter((batch) => batch.some((statement) => !statement.startsWith("SELECT") && !statement.startsWith("PRAGMA")));
 
 beforeEach(async () => {
   events = [];
@@ -836,6 +836,119 @@ describe("workspace apps", () => {
     await expect(setCap(opts(), "crm", 0)).rejects.toMatchObject({ code: "INVALID_CAP" });
     await expect(setCap(opts(), "crm", 1.5)).rejects.toMatchObject({ code: "INVALID_CAP" });
     await expect(setCap(opts(), "gone", 10)).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+});
+
+describe("workspace app cap and the event bus", () => {
+  const capAlerts = () =>
+    rows("SELECT id, name, sink, url, secret, recipients, events, enabled, builtin, description, created_at, updated_at, created_by FROM event_subscriptions WHERE organization_id = ? AND builtin = 'cap_alerts'", ORG);
+  // By app: the tests' clock is fixed, and ids made in one millisecond don't sort.
+  const capEvents = () =>
+    rows("SELECT organization_id, type, version, actor, data, app_row_id FROM events WHERE type = 'cap.raised' ORDER BY app_row_id").map((row) => ({
+      ...row,
+      actor: JSON.parse(String(row["actor"])),
+      data: JSON.parse(String(row["data"])),
+    }));
+  const CRM = { id: "crm", rowId: "app-crm", name: "CRM" };
+
+  it("the organization's first cap makes the built-in Cap alerts subscription and queues cap.raised, in the cap's batch", async () => {
+    // A webhook on cap.raised gets a delivery; the cap alerts row (cap.warning, cap.reached) doesn't.
+    sqlite().sqlite.prepare(
+      `INSERT INTO event_subscriptions (id, organization_id, name, sink, url, events, enabled, created_at, updated_at)
+VALUES ('sub_hook', ?, 'Ops', 'webhook', 'https://hooks.example.com/x', '["cap.raised"]', 1, 0, 0)`,
+    ).run(ORG);
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", 5000);
+    const [row] = capAlerts();
+    expect(capAlerts()).toHaveLength(1);
+    expect(row).toEqual({
+      id: expect.stringMatching(/^sub_[0-9a-f]{24}$/),
+      name: "Cap alerts",
+      sink: "email",
+      url: null,
+      secret: null,
+      recipients: "admins",
+      events: JSON.stringify(["cap.warning", "cap.reached"]),
+      enabled: 1,
+      builtin: "cap_alerts",
+      description: "Owners and admins get an email at 80% and at the cap.",
+      created_at: NOW,
+      updated_at: NOW,
+      created_by: "operator:dev@example.com",
+    });
+    expect(capEvents()).toEqual([
+      {
+        organization_id: ORG,
+        type: "cap.raised",
+        version: 1,
+        actor: { kind: "operator", id: "dev@example.com", email: "dev@example.com" },
+        data: { app: CRM, cap: 5000, previousCap: null, source: "app" },
+        app_row_id: "app-crm",
+      },
+    ]);
+    expect(rows("SELECT subscription_id, status FROM event_deliveries")).toEqual([{ subscription_id: "sub_hook", status: "pending" }]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_app_settings", "INSERT INTO event_subscriptions", "INSERT INTO events", "INSERT INTO event_deliveries"]]);
+    expect(data()["capAlerts"]).toEqual({ subscriptionId: row!["id"], message: expect.stringContaining("events list shows it") });
+    expect(done()!["message"]).toContain("Owners and admins are emailed at 80% and at the cap");
+
+    // A second cap, on another app: no second row, and the output says nothing of it.
+    events = [];
+    await setCap(opts(), "todo", 1000);
+    expect(capAlerts()).toHaveLength(1);
+    expect(data()["capAlerts"]).toBeNull();
+    expect(done()!["message"]).not.toContain("emailed");
+    expect(capEvents().map((event) => event.data)).toEqual([
+      { app: CRM, cap: 5000, previousCap: null, source: "app" },
+      { app: { id: "todo", rowId: "app-todo", name: "Todo" }, cap: 1000, previousCap: 500, source: "app" },
+    ]);
+  });
+
+  it("a lowered cap is not an event; a removed one is cap.raised with cap null, and makes no subscription", async () => {
+    await setCap(opts(), "todo", 100);
+    expect(capEvents()).toEqual([]);
+    expect(rows("SELECT monthly_call_cap FROM org_app_settings WHERE app_row_id = 'app-todo'")).toEqual([{ monthly_call_cap: 100 }]);
+    // The number set still makes the subscription, as the Gateway's does.
+    expect(capAlerts()).toHaveLength(1);
+    sqlite().sqlite.exec("DELETE FROM event_subscriptions");
+
+    events = [];
+    await setCap(opts(), "todo", null);
+    expect(capEvents().map((event) => event.data)).toEqual([
+      { app: { id: "todo", rowId: "app-todo", name: "Todo" }, cap: null, previousCap: 100, source: "app" },
+    ]);
+    expect(capAlerts()).toEqual([]);
+    expect(data()["capAlerts"]).toBeNull();
+
+    // Removing a cap that isn't there: nothing changed, nothing to announce.
+    events = [];
+    await setCap(opts(), "crm", null);
+    expect(capEvents()).toHaveLength(1);
+  });
+
+  it("leaves a disabled built-in row alone: a person turned it off", async () => {
+    sqlite().sqlite.prepare(
+      `INSERT INTO event_subscriptions (id, organization_id, name, sink, recipients, events, enabled, builtin, created_at, updated_at)
+VALUES ('sub_off', ?, 'Cap alerts', 'email', 'admins', '["cap.warning","cap.reached"]', 0, 'cap_alerts', 0, 0)`,
+    ).run(ORG);
+    await setCap(opts(), "crm", 5000);
+    expect(rows("SELECT id, enabled FROM event_subscriptions WHERE organization_id = ?", ORG)).toEqual([{ id: "sub_off", enabled: 0 }]);
+    expect(data()["capAlerts"]).toBeNull();
+    // Another organization's cap alerts are its own.
+    events = [];
+    await setCap(opts({ org: "beta" }), "shared", 10);
+    expect(rows("SELECT organization_id FROM event_subscriptions WHERE builtin = 'cap_alerts' ORDER BY organization_id")).toEqual([
+      { organization_id: ORG },
+      { organization_id: OTHER_ORG },
+    ]);
+  });
+
+  it("on a Gateway from before the event tables, writes the cap only", async () => {
+    sqlite().sqlite.exec("DROP TABLE event_deliveries; DROP TABLE events; DROP TABLE event_subscriptions");
+    account.cf.calls.length = 0;
+    await setCap(opts(), "crm", 5000);
+    expect(rows("SELECT monthly_call_cap FROM org_app_settings WHERE app_row_id = 'app-crm'")).toEqual([{ monthly_call_cap: 5000 }]);
+    expect(writeBatches()).toEqual([["INSERT INTO org_app_settings"]]);
+    expect(data()).toMatchObject({ cap: 5000, was: null, capAlerts: null });
   });
 });
 

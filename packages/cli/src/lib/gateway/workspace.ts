@@ -28,6 +28,7 @@ import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
+import { capAlertsStatement, operatorActor, queueEventFromCli } from "./events";
 import { anotherLiveOwnerSql } from "./members";
 import { installOrganization, registryCall, text, type Deployer, type Organization } from "./registry";
 
@@ -1396,13 +1397,18 @@ ON CONFLICT DO NOTHING`,
  * Set or clear the organization's monthly cap on an app's provider calls
  * (AppCapService.setMonthlyCap): a whole number of calls per UTC month, or
  * null for unlimited, which needs no row. The app must be one the
- * organization calls: its own, or a shared one.
+ * organization calls: its own, or a shared one. In the write's own batch,
+ * as the Gateway does: a number set makes the organization's built-in Cap
+ * alerts subscription when it has none (`capAlertsId`, the new row's id,
+ * else null), and a cap first set, raised or removed queues `cap.raised`
+ * (a lowered one is not an event). Neither on a Gateway from before the
+ * event tables.
  */
 export async function setMonthlyCap(
   ws: Workspace,
   identifier: string,
   cap: number | null,
-): Promise<{ app: WorkspaceApp; cap: number | null; was: number | null }> {
+): Promise<{ app: WorkspaceApp; cap: number | null; was: number | null; capAlertsId: string | null }> {
   const app = await findApp(ws, identifier, { callable: true });
   if (cap !== null && (!Number.isInteger(cap) || cap < 1 || cap > MONTHLY_CALL_CAP_MAX)) {
     throw new EveryAppError(
@@ -1417,7 +1423,22 @@ export async function setMonthlyCap(
     },
   ]);
   const was = before[0]?.["monthly_call_cap"] == null ? null : Number(before[0]["monthly_call_cap"]);
-  await ws.db.run([
+  const capAlerts =
+    cap === null
+      ? null
+      : await capAlertsStatement(ws.db, { organizationId: ws.organization.id, deployer: ws.operator, now: ws.now });
+  const raised = cap === null ? was !== null : was === null || cap > was;
+  const event = raised
+    ? await queueEventFromCli(ws.db, {
+        organizationId: ws.organization.id,
+        type: "cap.raised",
+        actor: operatorActor(ws.operator),
+        data: { app: { id: app.appSlug, rowId: app.id, name: app.name }, cap, previousCap: was, source: "app" },
+        appRowId: app.id,
+        now: ws.now,
+      })
+    : [];
+  const results = await ws.db.run([
     cap === null
       ? {
           sql: "DELETE FROM org_app_settings WHERE organization_id = ? AND app_row_id = ?",
@@ -1429,8 +1450,11 @@ VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT (organization_id, app_row_id) DO UPDATE SET monthly_call_cap = ?3, updated_at = ?4, updated_by = ?5`,
           params: [ws.organization.id, app.id, cap, ws.now, ws.operator.userId],
         },
+    ...(capAlerts ? [capAlerts] : []),
+    ...event,
   ]);
-  return { app, cap, was };
+  const capAlertsId = capAlerts ? text(results[1]?.[0]?.["id"]) : null;
+  return { app, cap, was, capAlertsId };
 }
 
 /** The provider totals every usage row carries (UsageTotals). */

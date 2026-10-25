@@ -183,6 +183,47 @@ WHERE EXISTS (SELECT 1 FROM events WHERE id = ?2)
   };
 }
 
+/**
+ * The organization's built-in "Cap alerts" subscription, as the Gateway's
+ * EventSubscriptionService.ensureCapAlerts makes it on the organization's
+ * first cap (docs/design/2026-10-events-out.md, section 6): owners and
+ * admins emailed on `cap.warning` and `cap.reached`.
+ */
+const CAP_ALERTS_BUILTIN = "cap_alerts";
+const CAP_ALERTS_NAME = "Cap alerts";
+const CAP_ALERTS_EVENTS = ["cap.warning", "cap.reached"];
+
+/**
+ * The statement that makes the organization's Cap alerts subscription when
+ * it has none, for a cap write's own batch; it returns the new row's id,
+ * and nothing when a row with the builtin is already there, even a
+ * disabled one: the Gateway never makes it again once a person turned it
+ * off. Null on a Gateway without the event tables.
+ */
+export async function capAlertsStatement(
+  db: D1Database,
+  input: { organizationId: string; deployer: Deployer; now: number },
+): Promise<D1Statement | null> {
+  if (!(await hasEventsTables(db))) return null;
+  return {
+    sql: `INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, recipients, events, enabled,
+  builtin, description, created_at, updated_at, created_by, consecutive_failures)
+SELECT ?1, ?2, ?3, 'email', NULL, NULL, 'admins', ?4, 1, ?5, ?6, ?7, ?7, ?8, 0
+WHERE NOT EXISTS (SELECT 1 FROM event_subscriptions WHERE organization_id = ?2 AND builtin = ?5)
+RETURNING id`,
+    params: [
+      subscriptionId(),
+      input.organizationId,
+      CAP_ALERTS_NAME,
+      JSON.stringify(CAP_ALERTS_EVENTS),
+      CAP_ALERTS_BUILTIN,
+      "Owners and admins get an email at 80% and at the cap.",
+      input.now,
+      `operator:${input.deployer.actor}`,
+    ],
+  };
+}
+
 /** A subscription's `events` column: its JSON list, or everything when it doesn't read as one. */
 function patternsOf(stored: unknown): string[] {
   try {
