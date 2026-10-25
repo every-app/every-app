@@ -163,9 +163,13 @@ describe("listing the provider tools", () => {
     expect(names(OWNER, registering, "compact")).toEqual([]);
     // A credential narrowed to apps sees none, whatever the role.
     expect(names({ ...OWNER, appScope: "selected" }, registering)).toEqual([]);
-    // No view (the docs' drift test) lists all three, after the workspace tools.
+    // No view (the docs' drift test) lists all three, right after the
+    // workspace tools (the five core built-ins first).
     const every = listBuiltinTools().map((tool) => tool.name);
-    expect(every.slice(-PROVIDER_NAMES.length)).toEqual(PROVIDER_NAMES);
+    const start = 5 + WORKSPACE_TOOLS.length;
+    expect(every.slice(start, start + PROVIDER_NAMES.length)).toEqual(
+      PROVIDER_NAMES,
+    );
   });
 });
 

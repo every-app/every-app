@@ -503,9 +503,11 @@ describe("the events tools", () => {
   });
 });
 
-/** The provider tools (providers.test.ts) share the host kind; these tests are the workspace tools'. */
+/** The provider tools (providers.test.ts) and the sign-in provider tools (signin.test.ts) share the host kind; these tests are the workspace tools'. */
 const isWorkspaceTool = (name: string) =>
-  builtinToolKind(name) === "host" && !name.startsWith("everyapp_provider_");
+  builtinToolKind(name) === "host" &&
+  !name.startsWith("everyapp_provider_") &&
+  !name.startsWith("everyapp_signin_");
 
 describe("listing the workspace tools", () => {
   const names = (
@@ -907,11 +909,14 @@ describe("running a workspace tool", () => {
     // By app id, the gateway's own tools come as a list, by name, as many
     // as the search returns at once (25) out of the total.
     // (The host registers no providers here, so of the provider tools only
-    // everyapp_provider_list is found; providers.test.ts has the rest.)
+    // everyapp_provider_list is found; providers.test.ts has the rest. The
+    // two sign-in provider reads are an owner's too; signin.test.ts.)
     const own = await search(OWNER, "full", { app: "everyapp" });
     const everyName = [
       ...WORKSPACE_TOOLS.map((tool) => listed(tool.name)),
       "everyapp_provider_list",
+      "everyapp_signin_list",
+      "everyapp_signin_show",
     ].sort();
     expect(own.total).toBe(everyName.length);
     expect(own.tools.map((tool) => tool.name)).toEqual(
@@ -927,6 +932,8 @@ describe("running a workspace tool", () => {
       [
         ...READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)),
         "everyapp_provider_list",
+        "everyapp_signin_list",
+        "everyapp_signin_show",
       ].sort(),
     );
     // A member finds their own four (and the provider list), and nothing of the admin's.

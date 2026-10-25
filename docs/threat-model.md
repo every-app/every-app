@@ -1473,7 +1473,7 @@ or manifest can take). A half-configured provider. The ring in front being
 bypassed: behind the outer ring a provider sign-in is still only the Access
 person's.
 
-**Invariants.** The register has 16. The gateway's tests are in
+**Invariants.** The register has 17. The gateway's tests are in
 `apps/every-app-gateway/src/auth/sign-in-providers/sign-in-providers.sqlite.test.ts`
 unless another file is named.
 
@@ -1495,6 +1495,7 @@ unless another file is named.
 | `signin.microsoft.verified-address-rule` | A Microsoft email counts as verified only in the pinned tenant's own directory or, on the multi-tenant endpoints, with `xms_edov: true`, `email_verified: true`, a matching `verified_primary_email` or a personal account. | `providers.ts:34` | `config.test.ts` :: trusts the pinned tenant's own directory, and only it; :: on the multi-tenant endpoints needs the token's word for the address |
 | `signin.passwords-off.lockout-protection` | `EMAIL_PASSWORD_SIGN_IN=false` closes the password paths only while an Access sign-in or a sign-in provider is on and an owner holds such an identity. | `apps/every-app-gateway/src/auth/cloudflare-access/membership.ts:207`; `cloudflare-access/config.ts:307`; `apps/every-app-gateway/src/auth/config.ts:582` | `sign-in-providers.sqlite.test.ts` :: takes effect only once an owner has connected the provider; :: is ignored while no provider and no Access sign-in is configured |
 | `signin.access-ring-unchanged` | Behind the outer ring a provider sign-in creates a session only for the person Access vouches for on the request, and none without an assertion; the Access plugin's hooks run on the provider callback like on any other HTTP flow. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:334` | `sign-in-providers.sqlite.test.ts` :: signs in only the person Access vouches for on the request; :: makes no session for a sign-in that didn't come through Access |
+| `signin.tools.read-state-only` | Manage workspace → Sign-in (`signin.listSignInProviders`, GET, owners and admins) and its twins `everyapp_signin_list` and `everyapp_signin_show` (`minRole: "admin"`) read each provider's state and its settings by name with whether each is set, never a value; nothing in the UI and no tool writes a sign-in setting: there is no add or remove twin. | `apps/every-app-gateway/src/server/sign-in-providers.ts`; `apps/every-app-gateway/src/serverFunctions/signin.ts`; `packages/toolbus/src/signin.ts`; `apps/every-app-gateway/src/server/toolbus/signin-tools.ts` | `apps/every-app-gateway/src/server/toolbus/signin-tools.sqlite.test.ts` :: lists every catalog provider with its state, the settings by name and whether each is set, the redirect URL and the command; never a value; :: lists both to an owner, an admin and a read-only admin, in both deployment modes, and neither to a member, who gets Unknown tool; `packages/toolbus/src/signin.test.ts` :: are a list and a show, both reads for owners and admins, needing nothing beyond a host; there is no add or remove |
 
 **Not this boundary's job.** The providers' own correctness (Google's,
 GitHub's, Microsoft's and Apple's token endpoints, their ID-token handling
@@ -1532,7 +1533,8 @@ through a provider). Session cookies, CSRF and the Origin rules (B1, B2).
 - *No MCP twin for `signin add` and `signin remove`* (info, by design). The
   settings are Worker secrets the gateway can't write to itself, and a
   twin would let a stolen agent token add a way in; `signin list` and
-  `signin show` have twins.
+  `signin show` have twins (`everyapp_signin_list`, `everyapp_signin_show`;
+  `signin.tools.read-state-only`).
 
 ## Known gaps, ranked
 

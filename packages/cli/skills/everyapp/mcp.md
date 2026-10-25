@@ -193,6 +193,14 @@ Provider tools (Gateway connector only; one audit row per call like the
          both writers. No key is ever set through a tool: `everyapp secret
          set NAME` from the terminal. Full reference:
          /docs/agent/mcp#provider-tools.
+Sign-in provider tools (Gateway connector only, owners and admins, reads):
+         `everyapp_signin_list` (Manage workspace → Sign-in: each sign-in
+         provider on, off or needing setup, its settings by name with
+         whether each is set, the redirect URL to register and the
+         command) and `everyapp_signin_show` (`{ id }`). Never a value, and
+         no tool adds or removes a provider: `pnpm everyapp signin add
+         <id>` from the terminal. Full reference:
+         /docs/agent/mcp#sign-in-provider-tools.
 Listing: full (the built-ins, the workspace tools, then every tool) until a connection's full list
          would pass 256 tools or 1 MiB, then compact (the built-ins only:
          find tools with `everyapp_search_tools`, run them through the

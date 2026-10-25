@@ -536,7 +536,7 @@ describe("gateway.md", () => {
       fileURLToPath(new URL("../../../../apps/every-app-gateway/src/routes/_app/admin.tsx", import.meta.url)),
       "utf8",
     );
-    const tabs = [...admin.matchAll(/label: "([^"]+)",\s*to: "(\/admin\/[a-z]+)"/g)].map((match) => ({
+    const tabs = [...admin.matchAll(/label: "([^"]+)",\s*to: "(\/admin\/[a-z-]+)"/g)].map((match) => ({
       label: match[1]!,
       to: match[2]!,
     }));

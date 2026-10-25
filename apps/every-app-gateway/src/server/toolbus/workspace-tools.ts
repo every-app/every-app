@@ -62,6 +62,7 @@ import { OrganizationService } from "@/server/services/OrganizationService";
 import { UserPatService } from "@/server/services/UserPatService";
 import { MCP_APP_HANDLERS } from "./mcp-app-tools";
 import { PROVIDER_HANDLERS } from "./provider-tools";
+import { SIGNIN_HANDLERS } from "./signin-tools";
 
 type Handler = (
   ctx: OrgContext,
@@ -487,8 +488,10 @@ function deliveriesCursor(value: unknown): string | undefined {
 }
 
 const HANDLERS: Record<string, Handler> = {
-  // The provider tools (provider-tools.ts), run the same way.
+  // The provider tools (provider-tools.ts) and the sign-in provider tools
+  // (signin-tools.ts), run the same way.
   ...PROVIDER_HANDLERS,
+  ...SIGNIN_HANDLERS,
 
   async workspace_show(ctx) {
     const [organization, { users }, { groups }, apps] = await Promise.all([

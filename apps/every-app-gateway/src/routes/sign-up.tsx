@@ -19,7 +19,10 @@ import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
-import { useSignInMethods } from "@/client/sign-in-methods";
+import {
+  offeredProvidersText,
+  useSignInMethods,
+} from "@/client/sign-in-methods";
 import {
   verifyEmailCallbackURL,
   verifyEmailSearch,
@@ -85,10 +88,15 @@ function SignUp() {
   }
 
   // With password sign-in off, an invited person signs in with Cloudflare
-  // Access instead; that accepts the invitation for their verified email.
+  // Access or a sign-in provider instead; that accepts the invitation for
+  // their verified email.
   if (isInvitationFlow && methods && !methods.emailPassword) {
     return (
-      <SignInWithAccessInstead redirect={redirect} return_to={return_to} />
+      <SignInWithProviderInstead
+        ways={offeredProvidersText(methods)}
+        redirect={redirect}
+        return_to={return_to}
+      />
     );
   }
 
@@ -393,11 +401,14 @@ function SetupPending({
   );
 }
 
-/** Invited, with password sign-in off: Cloudflare Access is the way in. */
-function SignInWithAccessInstead({
+/** Invited, with password sign-in off: Cloudflare Access or a sign-in provider is the way in. */
+function SignInWithProviderInstead({
+  ways,
   redirect,
   return_to,
 }: {
+  /** "Google or GitHub": the providers the sign-in page offers. */
+  ways: string;
   redirect?: string;
   return_to?: string;
 }) {
@@ -406,7 +417,7 @@ function SignInWithAccessInstead({
       <AuthCard title="Sign in to join">
         <p className="text-sm text-muted-foreground">
           This gateway doesn&apos;t use passwords. Sign in with your invited
-          email through Cloudflare Access, and you&apos;ll join automatically.
+          email through {ways}, and you&apos;ll join automatically.
         </p>
         <Button
           className={authSubmitClassName}

@@ -104,3 +104,4 @@ export {
   type WorkspaceToolDefinition,
 } from "./workspace";
 export { PROVIDER_TOOLS } from "./providers";
+export { SIGNIN_TOOLS } from "./signin";

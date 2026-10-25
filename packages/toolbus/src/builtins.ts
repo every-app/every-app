@@ -14,7 +14,9 @@
  * connections, run by the host through `ToolBusDeps.workspace`; and the
  * provider tools (providers.ts): the API provider registry, read by any
  * member and written by owners and admins where the host registers
- * providers (`WorkspaceHost.providers`). They are listed in the full
+ * providers (`WorkspaceHost.providers`); and the sign-in provider tools
+ * (signin.ts), which read Manage workspace → Sign-in for owners and admins
+ * and write nothing. They are listed in the full
  * listing only, to a caller whose role reaches each tool's `minRole` and
  * whose credential reaches every app (never to a token bound to one app
  * or a connection consented to some), and found by the search and run by
@@ -34,6 +36,7 @@ import type {
   WorkspaceRole,
 } from "./types";
 import { PROVIDER_TOOLS } from "./providers";
+import { SIGNIN_TOOLS } from "./signin";
 import { WORKSPACE_TOOLS } from "./workspace";
 
 /** The reserved app id the built-in tools are namespaced under. */
@@ -470,21 +473,24 @@ const BUILTINS: BuiltinTool[] = [
     kind: "wrapper",
     ceiling: "write",
   },
-  // The workspace tools, then the provider tools, in the full listing
-  // only: a compact listing's client finds them with everyapp_search_tools
-  // and runs them through the wrappers, like an app's tools.
-  ...[...WORKSPACE_TOOLS, ...PROVIDER_TOOLS].map((tool): BuiltinTool => ({
-    name: tool.name,
-    title: tool.title,
-    description: tool.description,
-    risk: tool.risk,
-    inputSchema: tool.inputSchema,
-    listedIn: ["full"],
-    kind: "host",
-    minRole: tool.minRole,
-    ...(tool.irreversible ? { irreversible: true } : {}),
-    ...(tool.needs ? { needs: tool.needs } : {}),
-  })),
+  // The workspace tools, then the provider tools, then the sign-in
+  // provider tools, in the full listing only: a compact listing's client
+  // finds them with everyapp_search_tools and runs them through the
+  // wrappers, like an app's tools.
+  ...[...WORKSPACE_TOOLS, ...PROVIDER_TOOLS, ...SIGNIN_TOOLS].map(
+    (tool): BuiltinTool => ({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description,
+      risk: tool.risk,
+      inputSchema: tool.inputSchema,
+      listedIn: ["full"],
+      kind: "host",
+      minRole: tool.minRole,
+      ...(tool.irreversible ? { irreversible: true } : {}),
+      ...(tool.needs ? { needs: tool.needs } : {}),
+    }),
+  ),
 ];
 
 /** The listed name of the wrapper that runs write tools, for messages. */

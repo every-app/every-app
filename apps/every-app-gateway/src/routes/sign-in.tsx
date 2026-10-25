@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { CircleAlert, Info, ShieldCheck } from "lucide-react";
+import { CircleAlert, Info } from "lucide-react";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
 import { Address, withAddresses } from "@/client/components/auth/Address";
+import { SignInProviderIcon } from "@/client/components/auth/SignInProviderIcon";
 import {
   AuthCard,
   AuthDivider,
@@ -23,9 +24,11 @@ import { useSession } from "@/client/hooks/useSession";
 import {
   ACCESS_SIGN_OUT_PATH,
   accessEmailMismatchMessage,
-  accessSignInErrorMessage,
   mayAutoContinue,
   shouldLinkAfterPasswordSignIn,
+  signInErrorLabel,
+  signInErrorMessage,
+  signInErrorProvider,
   signInPageParts,
   useSignInMethods,
 } from "@/client/sign-in-methods";
@@ -41,8 +44,13 @@ const searchSchema = z.object({
   // Absolute URL back to an app subdomain, set by the perimeter when it
   // redirects an unauthenticated navigation to the login page.
   return_to: z.string().optional(),
-  // Set by Better Auth when a Cloudflare Access sign-in comes back refused.
+  // Set by Better Auth when a provider sign-in (Cloudflare Access, Google…)
+  // comes back refused.
   error: z.string().optional(),
+  // Which provider that was: this page puts it on every error URL it hands
+  // Better Auth, so a refusal names the right one and the password sign-in
+  // after `account_not_linked` connects that one.
+  provider: z.string().optional(),
 });
 
 const signInSchema = z.object({
@@ -67,9 +75,16 @@ function getAuthSearch({
   return redirect || return_to ? search : undefined;
 }
 
-/** This page's own URL, for coming back to it after Cloudflare Access. */
-function signInPath(search: { redirect?: string; return_to?: string }) {
+/**
+ * This page's own URL, for coming back to it after a provider; with
+ * `provider` for the error URL, so a refusal says which one it was.
+ */
+function signInPath(
+  search: { redirect?: string; return_to?: string },
+  provider?: string,
+) {
   const params = new URLSearchParams(getAuthSearch(search));
+  if (provider) params.set("provider", provider);
   const query = params.toString();
   return query ? `/sign-in?${query}` : "/sign-in";
 }
@@ -84,18 +99,31 @@ type SignInError = { code?: string; message: string };
 
 function SignIn() {
   const [error, setError] = useState<SignInError | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
+  // The provider whose sign-in is under way (the browser is leaving).
+  const [redirecting, setRedirecting] = useState<string | null>(null);
   const [stalled, setStalled] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { redirect, return_to, error: accessError } = Route.useSearch();
+  const {
+    redirect,
+    return_to,
+    error: accessError,
+    provider: providerParam,
+  } = Route.useSearch();
   const safeRedirect = getSafeRedirect(redirect);
   const session = useSession();
   const { data: methods } = useSignInMethods();
-  const accessProvider = methods?.providers[0];
+  // The provider the `?error=` came back from, if one did.
+  const errorProvider = signInErrorProvider(
+    methods,
+    providerParam,
+    accessError,
+  );
+  const errorLabel = signInErrorLabel(errorProvider, providerParam);
   // Until the methods load (or if they can't), offer the password form.
   const passwordSignIn = methods?.emailPassword ?? true;
   const backHere = signInPath({ redirect, return_to });
+  const backHereFrom = (id: string) => signInPath({ redirect, return_to }, id);
 
   // Where to land after login: a validated app-subdomain URL from the
   // perimeter wins over the internal redirect path. Cross-origin, so it must
@@ -139,23 +167,23 @@ function SignIn() {
     }
   }, [session.isFetchedAfterMount, session.data?.user]);
 
-  const signInWithAccess = async () => {
-    if (!accessProvider) return;
+  const signInWith = async (provider: { id: string; label: string }) => {
     setError(null);
-    setRedirecting(true);
+    setRedirecting(provider.id);
     // Back to this page either way: it moves on once signed in, and shows
-    // what went wrong otherwise.
+    // what went wrong otherwise, knowing from `provider=` which one it was.
     const { error: startError } = await authClient.signIn.social({
-      provider: accessProvider.id,
+      provider: provider.id,
       callbackURL: backHere,
-      errorCallbackURL: backHere,
+      errorCallbackURL: backHereFrom(provider.id),
     });
     if (startError) {
-      setRedirecting(false);
+      setRedirecting(null);
+      // SIGNIN_PROVIDER_UNAVAILABLE: an SSO issuer that can't be reached.
       setError({
-        message: accessSignInErrorMessage(
-          "",
-          accessProvider.label,
+        message: signInErrorMessage(
+          startError.code ?? "",
+          provider.label,
           passwordSignIn,
         ),
       });
@@ -196,14 +224,14 @@ function SignIn() {
         {
           onSuccess: async () => {
             continued.current = true;
-            // An Access sign-in found this account but couldn't link it:
-            // now that the password proved it, connect Access.
-            if (accessProvider && shouldLinkAfterPasswordSignIn(accessError)) {
-              setRedirecting(true);
+            // A provider sign-in found this account but couldn't link it:
+            // now that the password proved it, connect that provider.
+            if (errorProvider && shouldLinkAfterPasswordSignIn(accessError)) {
+              setRedirecting(errorProvider.id);
               await authClient.linkSocial({
-                provider: accessProvider.id,
+                provider: errorProvider.id,
                 callbackURL: backHere,
-                errorCallbackURL: backHere,
+                errorCallbackURL: backHereFrom(errorProvider.id),
               });
               return;
             }
@@ -276,18 +304,18 @@ function SignIn() {
   const signedInAs = session.data?.user?.email;
   const accessMessage =
     accessError && !error
-      ? accessSignInErrorMessage(
+      ? signInErrorMessage(
           accessError,
-          accessProvider?.label ?? "Cloudflare Access",
+          errorLabel,
           passwordSignIn,
           methods?.accessEmail ?? null,
         )
       : null;
   const isStalled = Boolean(stalled && signedInAs);
   const authSearch = getAuthSearch({ redirect, return_to });
-  // The Access refusal on screen, if any: the one the URL brought (shown
+  // The provider refusal on screen, if any: the one the URL brought (shown
   // while no attempt has failed since) or a refused password sign-in.
-  const accessErrorCode =
+  const errorCode =
     accessMessage && accessError
       ? accessError
       : error?.code === "ACCESS_EMAIL_MISMATCH"
@@ -295,7 +323,7 @@ function SignIn() {
         : null;
   const parts = signInPageParts(methods, {
     signedIn: Boolean(signedInAs),
-    accessErrorCode,
+    errorCode,
   });
   const accessAlert = accessMessage ? (
     <ErrorAlert signOut={parts.accessSignOut}>
@@ -370,22 +398,32 @@ function SignIn() {
 
             {accessAlert}
 
-            {parts.accessButton && accessProvider ? (
-              <Button
-                variant="outline"
-                className="w-full bg-card font-semibold dark:border-border dark:bg-card"
-                onClick={() => void signInWithAccess()}
-                disabled={isRunning}
-                pending={redirecting}
-              >
-                {redirecting ? null : <ShieldCheck data-icon="inline-start" />}
-                Continue with {accessProvider.label}
-              </Button>
+            {parts.buttons.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {parts.buttons.map((provider) => (
+                  <Button
+                    key={provider.id}
+                    variant="outline"
+                    className="w-full bg-card font-semibold dark:border-border dark:bg-card"
+                    onClick={() => void signInWith(provider)}
+                    disabled={
+                      isRunning ||
+                      (redirecting !== null && redirecting !== provider.id)
+                    }
+                    pending={redirecting === provider.id}
+                  >
+                    {redirecting === provider.id ? null : (
+                      <SignInProviderIcon id={provider.id} />
+                    )}
+                    Continue with {provider.label}
+                  </Button>
+                ))}
+              </div>
             ) : null}
 
             {passwordSignIn ? (
               <>
-                {parts.accessButton ? <AuthDivider /> : null}
+                {parts.buttons.length > 0 ? <AuthDivider /> : null}
                 <form.AppForm>
                   <form.Form className="space-y-4">
                     <form.AppField name="email">
@@ -397,7 +435,7 @@ function SignIn() {
                           className={authInputClassName}
                           autoComplete="email"
                           required
-                          disabled={isRunning || redirecting}
+                          disabled={isRunning || redirecting !== null}
                         />
                       )}
                     </form.AppField>
@@ -410,7 +448,7 @@ function SignIn() {
                           className={authInputClassName}
                           autoComplete="current-password"
                           required
-                          disabled={isRunning || redirecting}
+                          disabled={isRunning || redirecting !== null}
                         />
                       )}
                     </form.AppField>
@@ -423,7 +461,7 @@ function SignIn() {
                       type="submit"
                       className={authSubmitClassName}
                       pending={isRunning}
-                      disabled={redirecting}
+                      disabled={redirecting !== null}
                     >
                       Sign in
                     </Button>
@@ -432,7 +470,9 @@ function SignIn() {
               </>
             ) : null}
 
-            {!passwordSignIn && !accessProvider && !methods?.accessEmail ? (
+            {!passwordSignIn &&
+            !methods?.providers.length &&
+            !methods?.accessEmail ? (
               <p className="text-sm text-muted-foreground">
                 Open this gateway through Cloudflare Access to sign in.
               </p>

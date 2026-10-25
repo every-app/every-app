@@ -12,6 +12,8 @@ import { preconnectTo } from "@/client/lib/appLaunchPrefetch";
 import { appNeedsSetup, appStatus, mcpAppUsable } from "@/client/lib/appStatus";
 import {
   ACCESS_SIGN_OUT_PATH,
+  connectErrorPath,
+  connectableProviders,
   useSignInMethods,
 } from "@/client/sign-in-methods";
 import { BrandLink } from "@/client/components/BrandLink";
@@ -231,18 +233,17 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   const { setOpenMobile } = useSidebar();
   const email = session?.user.email;
   const { data: methods } = useSignInMethods();
-  const accessProvider = methods?.providers[0];
-  // Whether this account can already sign in with Cloudflare Access.
-  const { data: accessLinked } = useQuery({
-    queryKey: ["auth", "access-linked"],
-    enabled: Boolean(email && accessProvider),
+  // Which providers this account can already sign in with (Cloudflare
+  // Access, Google…): the others offered get a Connect item.
+  const { data: linkedProviderIds } = useQuery({
+    queryKey: ["auth", "linked-providers"],
+    enabled: Boolean(email && methods?.providers.length),
     queryFn: async () => {
       const { data } = await authClient.listAccounts();
-      return (data ?? []).some(
-        (account) => account.providerId === accessProvider?.id,
-      );
+      return (data ?? []).map((account) => account.providerId);
     },
   });
+  const connectable = connectableProviders(methods, linkedProviderIds);
 
   const handleSignOut = async () => {
     await signOutAndForget();
@@ -253,12 +254,14 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
       : "/sign-in";
   };
 
-  const connectAccess = async () => {
-    if (!accessProvider) return;
+  // Connect a provider while signed in (Better Auth's /link-social, which
+  // refuses an identity of another email or an unverified one); a refusal
+  // lands on the sign-in page, which names the provider from `provider=`.
+  const connect = async (providerId: string) => {
     await authClient.linkSocial({
-      provider: accessProvider.id,
+      provider: providerId,
       callbackURL: window.location.pathname,
-      errorCallbackURL: "/sign-in",
+      errorCallbackURL: connectErrorPath(providerId),
     });
   };
 
@@ -301,11 +304,15 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" className="w-56">
-                  {accessProvider && accessLinked === false && (
-                    <DropdownMenuItem onClick={() => void connectAccess()}>
-                      Connect {accessProvider.label}
+                  {connectable.map((provider) => (
+                    <DropdownMenuItem
+                      key={provider.id}
+                      onClick={() => void connect(provider.id)}
+                    >
+                      Connect {provider.label}
                     </DropdownMenuItem>
-                  )}
+                  ))}
+                  {connectable.length > 0 ? <DropdownMenuSeparator /> : null}
                   <DropdownMenuItem
                     render={
                       <Link

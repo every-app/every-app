@@ -43,6 +43,9 @@ vi.mock("@/server/repositories/UsageRepository", () => ({
 vi.mock("@/server/events/subscriptions", () => ({
   EventSubscriptionService: {},
 }));
+vi.mock("@/server/sign-in-providers", () => ({
+  listSignInProviders: vi.fn(),
+}));
 
 /**
  * A GET server function runs on any GET that carries `?payload=`, including a
@@ -69,6 +72,7 @@ const READS = [
   "listEventTypes",
   "listGroups",
   "listMembers",
+  "listSignInProviders",
   "listToolCallApps",
   "listToolCalls",
   "listUserTokens",

@@ -11,6 +11,7 @@ import {
   Activity as ActivityIcon,
   AppWindow,
   KeyRound,
+  LogIn,
   Pencil,
   ScrollText,
   ShieldAlert,
@@ -46,6 +47,7 @@ export const Route = createFileRoute("/_app/admin")({
 
 enum AdminTab {
   Users = "users",
+  SignIn = "sign-in",
   Groups = "groups",
   Apps = "apps",
   Tokens = "tokens",
@@ -56,6 +58,12 @@ enum AdminTab {
 
 const adminTabs = [
   { value: AdminTab.Users, label: "Users", to: "/admin/users", icon: Users },
+  {
+    value: AdminTab.SignIn,
+    label: "Sign-in",
+    to: "/admin/sign-in",
+    icon: LogIn,
+  },
   {
     value: AdminTab.Groups,
     label: "Groups",

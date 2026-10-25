@@ -28,6 +28,7 @@ import { Route as AppAdminActivityRouteImport } from './routes/_app/admin/activi
 import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
 import { Route as AppAdminEventsRouteImport } from './routes/_app/admin/events'
 import { Route as AppAdminGroupsRouteImport } from './routes/_app/admin/groups'
+import { Route as AppAdminSignInRouteImport } from './routes/_app/admin/sign-in'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
@@ -134,6 +135,11 @@ const AppAdminGroupsRoute = AppAdminGroupsRouteImport.update({
   path: '/groups',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminSignInRoute = AppAdminSignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminTokensRoute = AppAdminTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
@@ -209,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
@@ -239,6 +246,7 @@ export interface FileRoutesByTo {
   '/admin/apps': typeof AppAdminAppsRoute
   '/admin/events': typeof AppAdminEventsRoute
   '/admin/groups': typeof AppAdminGroupsRoute
+  '/admin/sign-in': typeof AppAdminSignInRoute
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/usage': typeof AppAdminUsageRoute
   '/admin/users': typeof AppAdminUsersRoute
@@ -272,6 +280,7 @@ export interface FileRoutesById {
   '/_app/admin/apps': typeof AppAdminAppsRoute
   '/_app/admin/events': typeof AppAdminEventsRoute
   '/_app/admin/groups': typeof AppAdminGroupsRoute
+  '/_app/admin/sign-in': typeof AppAdminSignInRoute
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/usage': typeof AppAdminUsageRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
@@ -305,6 +314,7 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/events'
     | '/admin/groups'
+    | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
@@ -335,6 +345,7 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/events'
     | '/admin/groups'
+    | '/admin/sign-in'
     | '/admin/tokens'
     | '/admin/usage'
     | '/admin/users'
@@ -367,6 +378,7 @@ export interface FileRouteTypes {
     | '/_app/admin/apps'
     | '/_app/admin/events'
     | '/_app/admin/groups'
+    | '/_app/admin/sign-in'
     | '/_app/admin/tokens'
     | '/_app/admin/usage'
     | '/_app/admin/users'
@@ -536,6 +548,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminGroupsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/sign-in': {
+      id: '/_app/admin/sign-in'
+      path: '/sign-in'
+      fullPath: '/admin/sign-in'
+      preLoaderRoute: typeof AppAdminSignInRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/tokens': {
       id: '/_app/admin/tokens'
       path: '/tokens'
@@ -621,6 +640,7 @@ interface AppAdminRouteChildren {
   AppAdminAppsRoute: typeof AppAdminAppsRoute
   AppAdminEventsRoute: typeof AppAdminEventsRoute
   AppAdminGroupsRoute: typeof AppAdminGroupsRoute
+  AppAdminSignInRoute: typeof AppAdminSignInRoute
   AppAdminTokensRoute: typeof AppAdminTokensRoute
   AppAdminUsageRoute: typeof AppAdminUsageRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
@@ -632,6 +652,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminAppsRoute: AppAdminAppsRoute,
   AppAdminEventsRoute: AppAdminEventsRoute,
   AppAdminGroupsRoute: AppAdminGroupsRoute,
+  AppAdminSignInRoute: AppAdminSignInRoute,
   AppAdminTokensRoute: AppAdminTokensRoute,
   AppAdminUsageRoute: AppAdminUsageRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
