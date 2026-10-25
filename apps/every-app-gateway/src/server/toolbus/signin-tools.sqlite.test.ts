@@ -313,9 +313,10 @@ describe("the sign-in provider tools on /mcp", () => {
       missing: [],
       problem: expect.stringContaining("OIDC_SIGNIN_ISSUER must be an https"),
     });
+    // Off, not missing anything: nobody started setting it up (#678).
     expect(byId.get("apple")).toMatchObject({
       status: "off",
-      missing: ["APPLE_SIGNIN_CLIENT_ID", "APPLE_SIGNIN_CLIENT_SECRET"],
+      missing: [],
       set: [],
     });
     expect(answer.data).toMatchObject({

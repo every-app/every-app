@@ -252,7 +252,7 @@ export const SIGN_IN_PROVIDERS: Readonly<
       "the ID token's `email` (else the userinfo endpoint's), counted as verified only when `email_verified` is true",
     setup: "setup/signin-oidc.md",
     notes: [
-      "Cloudflare Access has its own settings (CLOUDFLARE_ACCESS_OIDC_*, `everyapp access`): use those for Access, this for Okta, Entra ID, Google Workspace as an OIDC issuer, Keycloak, Auth0 and the like.",
+      "Cloudflare Access has its own settings (CLOUDFLARE_ACCESS_OIDC_*, `everyapp access`): use those for Access, this for Okta, Keycloak, Auth0, Authentik, Google Workspace as an OIDC issuer and the like. For Microsoft Entra ID use the `microsoft` provider: Entra's ID tokens carry no `email_verified`, so through this entry every sign-in would be refused as unverified.",
       "ID tokens must be signed with RS256 (every major provider's default).",
     ],
   },
@@ -331,10 +331,17 @@ export function signInProviderState(
   const set = provider.settings
     .filter((setting) => isSet(setting.name))
     .map((setting) => setting.name);
-  const missing = provider.settings
+  const unset = provider.settings
     .filter((setting) => setting.required && !isSet(setting.name))
     .map((setting) => setting.name);
   const status: SignInProviderStatus =
-    missing.length === 0 ? "on" : set.length === 0 ? "off" : "incomplete";
-  return { id: provider.id, status, missing, set };
+    unset.length === 0 ? "on" : set.length === 0 ? "off" : "incomplete";
+  // `missing` names what a half-set provider still needs; a provider nobody
+  // started setting up isn't missing anything, it is off.
+  return {
+    id: provider.id,
+    status,
+    missing: status === "incomplete" ? unset : [],
+    set,
+  };
 }

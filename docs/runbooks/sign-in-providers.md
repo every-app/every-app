@@ -3,7 +3,7 @@
 People can sign in to your gateway with an account they already have,
 beside their password: "Continue with Google" on the sign-in page, and the
 same for Microsoft, GitHub, Apple, Cloudflare and any OpenID Connect
-issuer (Okta, Entra ID, Keycloak, Auth0, Google Workspace as an issuer…).
+issuer (Okta, Keycloak, Auth0, Google Workspace as an issuer…).
 It is one more way to sign in, not a second login system: Better Auth
 stays the system of record for users, sessions, organizations, roles,
 invitations, personal access tokens and the OAuth server MCP clients use,
@@ -216,8 +216,10 @@ password.
 
 ### Any OpenID Connect issuer (`oidc`)
 
-For Okta, Entra ID as an issuer, Keycloak, Auth0, Google Workspace as an
-issuer, Authentik and the like: create an OpenID Connect client (web
+For Okta, Keycloak, Auth0, Google Workspace as an issuer, Authentik and
+the like (for Microsoft Entra ID use the `microsoft` provider above: Entra's
+ID tokens carry no `email_verified`, so through this entry every sign-in
+would be refused as unverified): create an OpenID Connect client (web
 application, authorization code, with the redirect URL). Settings:
 `OIDC_SIGNIN_ISSUER` (the issuer URL, `https://…`, which serves
 `/.well-known/openid-configuration`; the document must name the same
