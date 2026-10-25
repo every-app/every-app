@@ -118,7 +118,7 @@ export interface AppState {
 }
 
 /** An app that is up, as far as the registry and the live Gateway know, and so would open if ready. */
-function isServed(app: Pick<AppState, "status" | "bound">): boolean {
+export function isServed(app: Pick<AppState, "status" | "bound">): boolean {
   return app.bound && (app.status === "active" || app.status === "binding");
 }
 

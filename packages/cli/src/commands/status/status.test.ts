@@ -150,6 +150,8 @@ async function shown(cloudflare = account) {
 
 const fixCodes = (done: Record<string, any>) =>
   (done["data"]["fixes"] as Array<{ code: string }>).map((fix) => fix.code);
+const nextCodes = (done: Record<string, any>) =>
+  (done["data"]["next"] as Array<{ code: string }>).map((step) => step.code);
 
 describe("everyapp status", () => {
   it("reads the gateway, its apps and owner from D1 and cf, and asks nothing of the gateway", async () => {
@@ -212,8 +214,12 @@ describe("everyapp status", () => {
     );
   });
 
-  it("shows an API token's deploys as such, and an empty Gateway as one with a deploy to run", async () => {
-    expect(await shown()).toContain("No apps yet. Deploy one from its directory: pnpm everyapp deploy");
+  it("shows an API token's deploys as such, and an empty Gateway as one with an app to create", async () => {
+    const empty = await shown();
+    expect(empty).toContain("\nNo apps yet.\n");
+    // Unclaimed: `access on` waits for the owner (it refuses with nobody to let in).
+    expect(empty).toContain("\nNext:\n  pnpm everyapp create my-app  start your first app\n");
+    expect(empty).not.toContain("pnpm everyapp access on");
 
     await deployed("todo");
     account.database("every-app-gateway").sqlite.exec(
@@ -803,7 +809,7 @@ describe("everyapp status", () => {
     const off = await status();
     expect(off["data"]["access"]).toEqual({ on: false, teamDomain: null });
     expect(await shown()).toMatch(
-      /\nOwner +none yet\nAccess +off · pnpm everyapp access on puts Cloudflare Access in front \(recommended\)\nRelease /,
+      /\nOwner +none yet\nAccess +off\nRelease /,
     );
 
     // Two of three: still off (the Gateway needs all three).
@@ -847,7 +853,153 @@ describe("everyapp status", () => {
 
     expect(done["data"]).toMatchObject({ mode: "hosted", access: null });
     expect(fixCodes(done)).not.toContain("ACCESS_UNKNOWN");
+    expect(nextCodes(done)).not.toContain("ACCESS_OFF");
     expect(await shown()).not.toMatch(/\nAccess /);
+  });
+
+  it("says what to do next from the Gateway's state, never what a fix says already, and at most four things", async () => {
+    const gatewayWorker = () => account.workers.get("every-app-gateway")!;
+    const sqlite = account.database("every-app-gateway").sqlite;
+
+    // Fresh and unclaimed: nothing to open, and the fix says setup. Access
+    // waits for the owner (`access on` refuses with nobody to let in), and
+    // the owner's counts aren't read before there is one.
+    const fresh = await status();
+    expect(fresh["data"]["next"]).toEqual([
+      {
+        code: "CREATE_APP",
+        command: "pnpm everyapp create my-app",
+        note: "start your first app",
+        why: "No apps yet.",
+      },
+    ]);
+    // After the fixes, in setup's style: the command, then the note.
+    expect(await shown()).toContain(
+      [
+        "  Run: pnpm everyapp setup",
+        "",
+        "Next:",
+        "  pnpm everyapp create my-app  start your first app",
+        "",
+      ].join("\n"),
+    );
+
+    // The owner claims (so Access is now worth turning on); crm (AI
+    // optional) and todo go live, todo serving tools; the DataForSEO key is
+    // set while the MCP app is off.
+    const { userId, organizationId } = new GatewayWorker(account).claim(
+      (await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url,
+    );
+    await deployed("crm", {
+      manifest: { id: "crm", providers: [{ id: "openrouter", why: "Drafts replies.", optional: true }] },
+    });
+    const todo = await deployed("todo");
+    for (const host of ["crm", "todo"]) await new GatewayWorker(account).fetch(`https://${host}.example.com/`);
+    gatewayWorker().secrets["DATAFORSEO_API_KEY"] = "login:password";
+    sqlite
+      .prepare(
+        "INSERT INTO app_tool_catalogs (app_row_id, organization_id, status, tool_count, fetched_at) VALUES (?, ?, 'ok', 3, ?)",
+      )
+      .run(todo.id, organizationId, Date.now());
+
+    const done = await status();
+    expect(done["data"]["next"]).toEqual([
+      expect.objectContaining({
+        code: "AI_KEY",
+        command: "pnpm everyapp secret set OPENROUTER_API_KEY",
+        note: "AI for crm",
+        why: "crm uses AI once OPENROUTER_API_KEY is set; no AI key is set on the Gateway.",
+      }),
+      expect.objectContaining({
+        code: "PROVIDER_OFFER",
+        command: "pnpm everyapp mcp on dataforseo",
+        why: "DATAFORSEO_API_KEY is set and DataForSEO is off.",
+      }),
+      expect.objectContaining({
+        code: "ACCESS_OFF",
+        command: "pnpm everyapp access on",
+        note: "put Cloudflare Access in front (recommended)",
+        why: "Cloudflare Access is off; the Gateway's own sign-in is the only check in front of your apps.",
+      }),
+      expect.objectContaining({
+        code: "INVITE",
+        url: "https://example.com/admin/users",
+        note: "invite people",
+        why: "owner@example.com is the only member.",
+      }),
+    ]);
+    expect(fixCodes(done)).toEqual([]);
+    expect(done["message"]).toBe("Gateway https://example.com: 2 apps live, nothing to fix");
+    expect(await shown()).toContain(
+      [
+        "Next:",
+        "  pnpm everyapp secret set OPENROUTER_API_KEY  AI for crm",
+        "  pnpm everyapp mcp on dataforseo              offer DataForSEO's tools to AI clients (each call spends DataForSEO credit)",
+        "  pnpm everyapp access on                      put Cloudflare Access in front (recommended)",
+        "  https://example.com/admin/users              invite people",
+      ].join("\n"),
+    );
+
+    // With Access on, the fifth step takes the fourth place: no AI client
+    // is connected while an app serves tools.
+    for (const name of ACCESS_SETTINGS) gatewayWorker().secrets[name] = "b".repeat(64);
+    const accessOn = await status();
+    expect(nextCodes(accessOn)).toEqual(["AI_KEY", "PROVIDER_OFFER", "INVITE", "CONNECT_AI"]);
+    expect(accessOn["data"]["next"]).toContainEqual({
+      code: "CONNECT_AI",
+      url: "https://everyapp.com/docs/connect-ai",
+      note: "connect an AI client to https://example.com/mcp",
+      why: "No AI client is connected; 1 app serves tools.",
+    });
+
+    // A fix that names the key already: openseo needs it, so AI_KEY goes.
+    await deployed("openseo", {
+      manifest: { id: "openseo", providers: [{ id: "openrouter", why: "Writes audits." }] },
+    });
+    await new GatewayWorker(account).fetch("https://openseo.example.com/");
+    const needsSetup = await status();
+    expect(fixCodes(needsSetup)).toContain("APP_NEEDS_SETUP");
+    expect(nextCodes(needsSetup)).toEqual(["PROVIDER_OFFER", "INVITE", "CONNECT_AI"]);
+
+    // A connected client, the provider on, the key set: each line goes with its state.
+    sqlite
+      .prepare(
+        "INSERT INTO mcp_connections (id, user_id, organization_id, client_id, client_name, redirect_uri, redirect_host, app_scope, access, created_at) VALUES (?, ?, ?, 'client-1', 'Claude', 'https://claude.ai/callback', 'claude.ai', 'all', 'write', ?)",
+      )
+      .run(`mcpc_${"a".repeat(32)}`, userId, organizationId, Date.now());
+    gatewayWorker().secrets["OPENROUTER_API_KEY"] = "sk-or";
+    sqlite
+      .prepare(
+        "INSERT INTO apps (id, organization_id, app_slug, name, description, tier, manifest, status, is_default, created_at, updated_at, scope) VALUES ('app_dataforseo', ?, 'dataforseo', 'DataForSEO', 'SEO data', 'provider', '{}', 'active', 0, ?, ?, 'org')",
+      )
+      .run(organizationId, Date.now(), Date.now());
+    const connected = await status();
+    expect(nextCodes(connected)).toEqual(["INVITE"]);
+    // Someone is invited and hasn't joined: the owner has done their part.
+    // An expired invitation counts for nothing.
+    sqlite
+      .prepare(
+        "INSERT INTO invitations (id, organization_id, email, status, expires_at, inviter_id) VALUES ('inv-sam', ?, 'sam@example.com', 'pending', ?, ?)",
+      )
+      .run(organizationId, Date.now() + 86_400_000, userId);
+    expect(nextCodes(await status())).toEqual([]);
+    sqlite.prepare("UPDATE invitations SET expires_at = ? WHERE id = 'inv-sam'").run(Date.now() - 1);
+    expect(nextCodes(await status())).toEqual(["INVITE"]);
+    // An MCP app on without its key asks for it.
+    delete gatewayWorker().secrets["DATAFORSEO_API_KEY"];
+    expect((await status())["data"]["next"]).toContainEqual({
+      code: "PROVIDER_KEY",
+      command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
+      note: "DataForSEO is on and needs its key",
+      why: 'DataForSEO shows "needs setup" and serves no tools until DATAFORSEO_API_KEY is set.',
+    });
+
+    // A Gateway from before one of the counted tables: the counts go
+    // unread, the rules that need them are skipped, and nothing is raised.
+    sqlite.exec("DROP TABLE mcp_connections");
+    const older = await status();
+    expect(events.filter((event) => event["type"] === "warning" || event["type"] === "error")).toEqual([]);
+    expect(nextCodes(older)).toEqual(["PROVIDER_KEY"]);
   });
 
   it("logs in through cf's device link under --json, and waits for it", async () => {

@@ -1,7 +1,8 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { storedSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup } from "@every-app/sdk/internal";
-import { readAccessState } from "@/lib/access/settings";
+import { readAccessSettingsRecord } from "@/lib/access/record";
+import { accessStateOf, type AccessState } from "@/lib/access/settings";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
 import {
@@ -21,15 +22,22 @@ import { checkoutSource } from "@/lib/gateway/checkoutRelease";
 import type { FoundGateway } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { CandidateRelease } from "@/lib/gateway/release";
+import { readOrganizationCounts } from "@/lib/gateway/counts";
 import { readLiveLeases } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
-import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
+import {
+  PROVIDER_APP_IDS,
+  PROVIDER_APP_TIER,
+  PROVIDER_APPS,
+  providerAppKeySetting,
+} from "@every-app/sdk/internal";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
-import { readOwner } from "@/lib/gateway/setup-link";
+import { readOwnerOrganization } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
 import { existingGateway } from "@/lib/gateway/connect";
 import { runCommand } from "@/lib/output/run";
 import { plural } from "@/lib/output/text";
+import { nextStepsFor, type NextStep, type ProviderFact } from "./next";
 import {
   needsFixing,
   notInstalled,
@@ -62,7 +70,9 @@ interface StatusFlags {
  * host where the manifest asks for it), each published hostname's
  * certificate (Cloudflare's certificate packs), whether Cloudflare Access
  * is in front (the Gateway Worker's settings, by name), any deploy in
- * progress, and `fixes`: what is off, and what to run about it.
+ * progress, `fixes`: what is off, and what to run about it, and `next`:
+ * what isn't done yet (next.ts), from the same reads plus the MCP app
+ * rows and five counts in the install organization.
  */
 export async function status(flags: StatusFlags,
 ): Promise<void> {
@@ -128,28 +138,55 @@ export async function reportStatus({
     });
     return;
   }
+  const uploaded = install.liveVersionId !== null;
   // Access is the Gateway Worker's: a hosted Gateway ignores its settings,
   // and before the first upload there is no Worker to read.
-  const accessApplies = install.deploymentMode !== "hosted" && install.liveVersionId !== null;
-  const [desired, registered, leases, owner, serving, emailRoutes, access] = await Promise.all([
-    readDesiredState(db, workerExistence(cf)),
-    // A provider app has no Worker or host to report on; `provider list` is its command.
-    listApps(db).then((apps) => apps.filter((app) => app.tier !== PROVIDER_APP_TIER)),
-    readLiveLeases(db),
-    readOwner(db),
-    getWorkerDeployment(cf, GATEWAY_WORKER_NAME),
-    readResourcesOfKind(db, "email-route"),
-    accessApplies ? readOrUnread(() => readAccessState(cf, db)) : null,
-  ]);
+  const accessApplies = install.deploymentMode !== "hosted" && uploaded;
+  const [desired, allApps, leases, claimed, serving, emailRoutes, gatewayNames, accessRecord] =
+    await Promise.all([
+      readDesiredState(db, workerExistence(cf)),
+      listApps(db),
+      readLiveLeases(db),
+      readOwnerOrganization(db),
+      getWorkerDeployment(cf, GATEWAY_WORKER_NAME),
+      readResourcesOfKind(db, "email-route"),
+      // The Gateway Worker's secret names, once: Access, each app's settings
+      // and the next steps read them. Nothing to list before the first upload.
+      uploaded ? readOrUnread(() => listGatewaySecretNames(cf)) : null,
+      accessApplies ? readOrUnread(() => readAccessSettingsRecord(db)) : null,
+    ]);
+  const owner = claimed?.owner ?? null;
+  // An MCP app (tier `provider`) has no Worker or host to report on; `mcp
+  // list` is its command. Its row says whether it is on, for the next steps.
+  const registered = allApps.filter((app) => app.tier !== PROVIDER_APP_TIER);
+  const providers: ProviderFact[] = PROVIDER_APP_IDS.map((id) => ({
+    id,
+    name: PROVIDER_APPS[id].name,
+    capability: PROVIDER_APPS[id].capability,
+    keySetting: providerAppKeySetting(id),
+    on: allApps.some((app) => app.tier === PROVIDER_APP_TIER && app.appSlug === id),
+  }));
+  const access: { value: AccessState } | Unread | null = !accessApplies
+    ? null
+    : gatewayNames && "error" in gatewayNames
+      ? gatewayNames
+      : accessRecord && "error" in accessRecord
+        ? accessRecord
+        : { value: accessStateOf(gatewayNames!.value, accessRecord!.value) };
   const accessState = access && "value" in access ? access.value : null;
   const accessUnread = access && "error" in access ? access : null;
   const missingWorkers = new Set(desired.missing.map((row) => row.workerName));
-  const [certificates, emailProblems, settings] = await Promise.all([
+  const [certificates, emailProblems, settings, counts] = await Promise.all([
     readOrUnread(() => certificateStatus(cf, install.zoneId, install.liveDomains)),
     readOrUnread(async () =>
       emailRoutes.length === 0 ? [] : emailRouteProblems(cf, emailRoutes),
     ),
-    readSettings(cf, db, registered, missingWorkers),
+    readSettings(cf, db, registered, missingWorkers, gatewayNames),
+    // The install organization's counts, for the next steps; a Gateway
+    // from before one of the tables, or cf failing, leaves them unread.
+    claimed
+      ? readOrganizationCounts(db, claimed.organizationId).catch(() => null)
+      : null,
   ]);
 
   const gatewayUrl = `https://${install.gatewayHost}`;
@@ -213,6 +250,18 @@ export async function reportStatus({
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
     settings: settings.unread,
   });
+  const next = nextStepsFor({
+    mode: install.deploymentMode,
+    uploaded,
+    gatewayUrl,
+    owner,
+    apps,
+    gatewayNames: gatewayNames && "value" in gatewayNames ? gatewayNames.value : null,
+    access: accessState,
+    providers,
+    counts,
+    problems,
+  });
   const display = renderStatus({
     install,
     accountName,
@@ -262,8 +311,20 @@ export async function reportStatus({
       access: accessState,
       leases,
       fixes: problems.map(fixData),
+      next: next.map(nextData),
     },
   });
+}
+
+/** A next step as `data.next` carries it: its code, the command or the page, what it does and why. */
+function nextData(step: NextStep) {
+  return {
+    code: step.code,
+    ...(step.command ? { command: step.command } : {}),
+    ...(step.url ? { url: step.url } : {}),
+    note: step.note,
+    why: step.why,
+  };
 }
 
 /** The report in one line, for a script: "Gateway https://…: 1 app live, nothing to fix". */
@@ -282,12 +343,15 @@ function summary(gatewayUrl: string, apps: AppState[], problems: Problem[]): str
  * dispatch-tier app's settings the platform doesn't gate, so it is left
  * out too (`setup: null`). A list that fails leaves its names unknown
  * (`set: null`, which never blocks) and is said once, as SETTINGS_UNKNOWN.
+ * The Gateway Worker's names come from the caller when it listed them
+ * already; null means it had no Worker to list.
  */
 async function readSettings(
   cf: FoundGateway["cf"],
   db: FoundGateway["db"],
   apps: RegisteredAppInfo[],
   missingWorkers: Set<string>,
+  gatewayNames: { value: string[] } | Unread | null,
 ): Promise<{ setups: Map<string, AppSetup>; unread: Unread | null }> {
   const setups = new Map<string, AppSetup>();
   const declaring = apps.filter(
@@ -300,7 +364,7 @@ async function readSettings(
   );
   if (declaring.length === 0) return { setups, unread: null };
   let unread: Unread | null = null;
-  const gateway = await readOrUnread(() => listGatewaySecretNames(cf));
+  const gateway = gatewayNames ?? (await readOrUnread(() => listGatewaySecretNames(cf)));
   if ("error" in gateway) unread = gateway;
   for (const app of declaring) {
     const own = await readOrUnread(() => listAppSecretNames(cf, app.workerName));

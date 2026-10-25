@@ -58,8 +58,11 @@ is set, ask before using data.rerun. waiting: true = keep reading (5 min
 for the device login, up to 15 for the owner link).
 
 State:   pnpm everyapp status --json   (data.fixes says what to run when something is off;
-         data.apps[].setup says what each app needs set: ready, settings, unmet
-         (each with why and docs), and command, pnpm everyapp configure <app>)
+         data.next says what to do next: at most four { code, command | url, note, why }
+         from the Gateway's state, never repeating a fix; tell the person
+         each why and offer the command or page; data.apps[].setup says what each
+         app needs set: ready, settings, unmet (each with why and docs), and
+         command, pnpm everyapp configure <app>)
 Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
          a fresh install runs 5-20 min: build, certificate, then up to 15 min
          waiting for the owner link, so give it a long timeout or background

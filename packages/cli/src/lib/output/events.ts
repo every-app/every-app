@@ -1040,20 +1040,24 @@ function publicValue(routes: readonly PublicRouteSummary[]): string {
   }`;
 }
 
-/** `data.next`: commands, each as a string or `{ command, note }`. */
-function nextItems(value: unknown): Array<{ command: string; note?: string }> {
-  if (!Array.isArray(value)) return [];
-  return value.map((item: string | { command: string; note?: string }) =>
-    typeof item === "string" ? { command: item } : item,
-  );
+/** One `data.next` item: a command to run, or a page to open (`status`), with a note after it. */
+interface NextItem {
+  command?: string;
+  url?: string;
+  note?: string;
 }
 
-function formatNext(items: Array<{ command: string; note?: string }>): string[] {
-  const width = Math.max(...items.map((item) => item.command.length));
+/** `data.next`: each item a command string, or `{ command, note }`, or `{ url, note }`. */
+function nextItems(value: unknown): NextItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item: string | NextItem) => (typeof item === "string" ? { command: item } : item));
+}
+
+function formatNext(items: NextItem[]): string[] {
+  const label = (item: NextItem) => item.command ?? item.url ?? "";
+  const width = Math.max(...items.map((item) => label(item).length));
   return items.map((item) =>
-    item.note
-      ? `  ${item.command.padEnd(width)}  ${chalk.dim(item.note)}`
-      : `  ${item.command}`,
+    item.note ? `  ${label(item).padEnd(width)}  ${chalk.dim(item.note)}` : `  ${label(item)}`,
   );
 }
 

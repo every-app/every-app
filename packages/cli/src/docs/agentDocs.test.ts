@@ -33,6 +33,7 @@ import {
 } from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
 import { commandPaths } from "@/app";
+import { NextCode } from "@/commands/status/next";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
 import { manifestFields } from "./manifestFields";
@@ -254,6 +255,13 @@ describe("json.md", () => {
       "retryable",
     ]);
     expectDocumented("json", "the exit codes", ["0", "1", "2", "130", "251", "252"]);
+  });
+  it("documents every next-step code status reports", () => {
+    expectDocumented(
+      "json",
+      "the next-step codes of status (NextCode in packages/cli/src/commands/status/next.ts)",
+      Object.values(NextCode),
+    );
   });
 });
 

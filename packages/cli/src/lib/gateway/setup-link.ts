@@ -30,7 +30,7 @@ export interface GatewayOwner {
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
-const OWNERS = `SELECT users.email AS email, organizations.name AS organization_name
+const OWNERS = `SELECT users.email AS email, organizations.name AS organization_name, organizations.id AS organization_id
 FROM members
 JOIN users ON users.id = members.user_id
 JOIN organizations ON organizations.id = members.organization_id
@@ -44,14 +44,26 @@ function toOwner(row: Record<string, unknown> | undefined): GatewayOwner | null 
   };
 }
 
-/** The gateway's first owner (of the oldest organization with one), or null. */
-export async function readOwner(db: D1Database): Promise<GatewayOwner | null> {
+/**
+ * The gateway's first owner (of the oldest organization with one) and that
+ * organization's id, the install organization's; null when nobody has
+ * claimed the gateway yet.
+ */
+export async function readOwnerOrganization(
+  db: D1Database,
+): Promise<{ owner: GatewayOwner; organizationId: string } | null> {
   const [rows = []] = await db.run([
     {
       sql: `${OWNERS} ORDER BY organizations.created_at, organizations.id, members.created_at LIMIT 1`,
     },
   ]);
-  return toOwner(rows[0]);
+  const owner = toOwner(rows[0]);
+  return owner ? { owner, organizationId: String(rows[0]!["organization_id"]) } : null;
+}
+
+/** The gateway's first owner (of the oldest organization with one), or null. */
+export async function readOwner(db: D1Database): Promise<GatewayOwner | null> {
+  return (await readOwnerOrganization(db))?.owner ?? null;
 }
 
 /**

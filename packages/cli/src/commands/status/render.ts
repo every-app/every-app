@@ -13,7 +13,6 @@ import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
 import type { GatewayOwner } from "@/lib/gateway/setup-link";
-import { CLI } from "@/lib/output/command";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { capitalize, plural } from "@/lib/output/text";
 import {
@@ -128,11 +127,8 @@ export function renderStatus({
           ]),
           // Most apps open nothing: no blanks trail their rows.
         ).map((line) => line.trimEnd())
-      : [
-          uploaded
-            ? `${chalk.dim("No apps yet.")} Deploy one from its directory: ${chalk.bold(`${CLI} deploy`)}`
-            : chalk.dim("No apps yet."),
-        ]),
+      // What to do about it is the Next block's (`create my-app`, next.ts).
+      : [chalk.dim("No apps yet.")]),
     ...(mailing.length > 0 ? ["", ...emailTable(mailing, emailProblems)] : []),
     ...(settings.length > 0 ? ["", ...renderSettingsTable(settings)] : []),
     ...renderProblems(problems),
@@ -152,11 +148,11 @@ function release(install: InstallRecord, servingRecorded: boolean, checkout: Che
   return version;
 }
 
-/** The Access row: on, off with the command that turns it on, or what cf couldn't say. */
+/** The Access row: on, off, or what cf couldn't say. What to do about off is the Next block's (`access on`, next.ts). */
 function accessRow(access: AccessState | Unread): string {
   if ("error" in access) return chalk.yellow("! couldn't check");
   if (access.on) return `${chalk.green("on")}${chalk.dim(" · everyone signs in through Cloudflare Access first")}`;
-  return `off${chalk.dim(" · ")}${chalk.bold(`${CLI} access on`)}${chalk.dim(" puts Cloudflare Access in front (recommended)")}`;
+  return chalk.dim("off");
 }
 
 function tls(

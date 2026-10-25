@@ -5,11 +5,6 @@
  * values can't be read back from a Worker; the team domain comes from the
  * record `access on` keeps in the Gateway's D1 (lib/access/record.ts).
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import type { D1Database } from "@/lib/cf/d1";
-import type { CfRunner } from "@/lib/cf/runner";
-import { listWorkerSecrets } from "@/lib/cf/secrets";
-import { readAccessSettingsRecord } from "./record";
 
 /** The Gateway settings the outer ring runs on. */
 export const ACCESS_SETTINGS = [
@@ -33,13 +28,13 @@ function accessSettingsOn(secretNames: readonly string[]): boolean {
 
 /**
  * The Access state as `status` reports it, from the Gateway Worker's secret
- * names and the record alone: nothing is asked of Zero Trust (that is
- * `access show`'s job).
+ * names (listed once by the caller, for every setting it checks) and the
+ * record `access on` wrote (lib/access/record.ts): nothing is asked of Zero
+ * Trust (that is `access show`'s job).
  */
-export async function readAccessState(cf: CfRunner, db: D1Database): Promise<AccessState> {
-  const [names, record] = await Promise.all([
-    listWorkerSecrets(cf, GATEWAY_WORKER_NAME),
-    readAccessSettingsRecord(db),
-  ]);
-  return { on: accessSettingsOn(names), teamDomain: record?.teamDomain ?? null };
+export function accessStateOf(
+  secretNames: readonly string[],
+  record: { teamDomain: string } | null,
+): AccessState {
+  return { on: accessSettingsOn(secretNames), teamDomain: record?.teamDomain ?? null };
 }
