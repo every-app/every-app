@@ -639,6 +639,16 @@ describe("the threat model's invariant register", () => {
     }
   });
 
+  it("names the provider tools in providers.tools-self-host-admin", () => {
+    const row = rowOf("providers.tools-self-host-admin");
+    expect(row, "docs/threat-model-invariants.md has no row providers.tools-self-host-admin").toBeDefined();
+    const named = namedIn(row!);
+    const expected = BUILTIN_TOOLS.filter((name) => name.startsWith("everyapp_provider_"));
+    expect(expected.length, "no provider tool among the built-ins").toBeGreaterThan(0);
+    const missing = expected.filter((name) => !named.has(name));
+    expect(missing, `the row providers.tools-self-host-admin in docs/threat-model-invariants.md doesn't name: ${missing.join(", ")}`).toEqual([]);
+  });
+
   it("has the row that says no built-in returns a credential", () => {
     expect(rowOf("toolbus.workspace-tools-no-credentials"), "docs/threat-model-invariants.md has no row toolbus.workspace-tools-no-credentials").toBeDefined();
   });

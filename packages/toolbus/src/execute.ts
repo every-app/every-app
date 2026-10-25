@@ -321,6 +321,7 @@ async function runBuiltin(
   if (builtin.kind === "answer") {
     const answer = runBuiltinTool(builtin, view, checked.args, {
       workspace: deps.workspace !== undefined,
+      providers: deps.workspace?.providers === true,
     });
     if ("problem" in answer) return refuse(answer.problem, digest);
     audit(name, {
@@ -385,6 +386,12 @@ async function runHostTool(
 
   const workspace = deps.workspace;
   if (!workspace) return unknown("unknown_tool");
+  // A tool that writes the provider registry runs only where the host
+  // registers providers (a self-hosted gateway): elsewhere it is as unknown
+  // as without a host.
+  if (builtin.needs === "providers" && workspace.providers !== true) {
+    return unknown("unknown_tool");
+  }
   const policy = evaluateToolPolicy(builtin, view.principal);
   if (policy.action !== "allow") return unknown(policy.reason);
   if (ctx.via?.ceiling === "read" && builtin.risk !== "read") {

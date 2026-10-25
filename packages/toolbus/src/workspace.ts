@@ -45,6 +45,13 @@ export interface WorkspaceToolDefinition {
    * with `destructiveHint: true` so a client can ask its user first.
    */
   irreversible?: true;
+  /**
+   * What the host must offer beyond the handlers: `providers` for a tool
+   * that writes the provider registry (`WorkspaceHost.providers`, a
+   * self-hosted gateway). Without it the tool is hidden and a call answers
+   * Unknown tool, like one without a host.
+   */
+  needs?: "providers";
 }
 
 /**

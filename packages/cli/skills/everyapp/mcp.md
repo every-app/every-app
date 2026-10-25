@@ -166,6 +166,19 @@ Workspace tools (Gateway connector only; every admin action of the UI, listed
          `everyapp_mcp_refresh`, `everyapp_mcp_tool`, and for owners
          `everyapp_mcp_remove` (`confirm: true`). Full reference:
          /docs/agent/mcp#workspace-tools.
+Provider tools (Gateway connector only; one audit row per call like the
+         workspace tools): every member gets `everyapp_provider_list` (the
+         API providers this Gateway brokers, catalog and rows, with their
+         settings and hints and which of this organization's apps list
+         each; set-ness and the key binding for owners and admins only);
+         owners and admins on a self-hosted Gateway also get
+         `everyapp_provider_add` (`{ spec }`: the spec object, never a URL,
+         never a replace of a row that is there) and
+         `everyapp_provider_remove` (`{ id }`: refuses a built-in, a row
+         whose key is set, and a row an app lists). A hosted Gateway hides
+         both writers. No key is ever set through a tool: `everyapp secret
+         set NAME` from the terminal. Full reference:
+         /docs/agent/mcp#provider-tools.
 Listing: full (the built-ins, the workspace tools, then every tool) until a connection's full list
          would pass 256 tools or 1 MiB, then compact (the built-ins only:
          find tools with `everyapp_search_tools`, run them through the

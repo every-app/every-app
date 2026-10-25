@@ -76,7 +76,7 @@ import {
   RETRY_FAILED_SYNC_MS,
   syncUnsyncedCatalogs,
 } from "./catalog-sync";
-import { servedApp, toolBusHttp } from "./runtime";
+import { registersProviders, servedApp, toolBusHttp } from "./runtime";
 
 /**
  * Browser origins allowed to call the gateway's /mcp besides its own:
@@ -446,6 +446,7 @@ async function gatewayView(input: GatewayViewInput): Promise<ToolBusView> {
       // the caller counted), on this read and on every re-read.
       ...(listing ? { listing } : {}),
       workspace: true,
+      providers: registersProviders(),
     }),
     refresh: async () => {
       await input.recheck();

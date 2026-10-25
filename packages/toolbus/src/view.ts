@@ -183,12 +183,17 @@ export function gatewaySurfaceView(
     listing?: ListingMode;
     /** Whether the host runs the workspace tools (`ToolBusDeps.workspace`). */
     workspace?: boolean;
+    /** Whether the host registers providers here (`WorkspaceHost.providers`). */
+    providers?: boolean;
   } = {},
 ): ToolBusView {
   const unavailable = options.unavailable ?? [];
   const listing =
     options.listing ??
-    defaultListing(principal, apps, { workspace: options.workspace === true });
+    defaultListing(principal, apps, {
+      workspace: options.workspace === true,
+      providers: options.providers === true,
+    });
   return {
     surface: "gateway",
     principal,

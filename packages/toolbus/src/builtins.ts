@@ -11,12 +11,15 @@
  *
  * The third kind, `host`, is the workspace tools (workspace.ts): every
  * admin action of the gateway's UI, and a member's own tokens and
- * connections, run by the host through `ToolBusDeps.workspace`. They are
- * listed in the full listing only, to a caller whose role reaches each
- * tool's `minRole` and whose credential reaches every app (never to a
- * token bound to one app or a connection consented to some), and found by
- * the search and run by the wrappers in either mode; without a host to run
- * them they are not listed at all.
+ * connections, run by the host through `ToolBusDeps.workspace`; and the
+ * provider tools (providers.ts): the API provider registry, read by any
+ * member and written by owners and admins where the host registers
+ * providers (`WorkspaceHost.providers`). They are listed in the full
+ * listing only, to a caller whose role reaches each tool's `minRole` and
+ * whose credential reaches every app (never to a token bound to one app
+ * or a connection consented to some), and found by the search and run by
+ * the wrappers in either mode; without a host to run them they are not
+ * listed at all.
  */
 import type { Tool } from "@modelcontextprotocol/server";
 import type { ToolCallResultV1 } from "@every-app/sdk/internal";
@@ -30,6 +33,7 @@ import type {
   ToolBusView,
   WorkspaceRole,
 } from "./types";
+import { PROVIDER_TOOLS } from "./providers";
 import { WORKSPACE_TOOLS } from "./workspace";
 
 /** The reserved app id the built-in tools are namespaced under. */
@@ -40,10 +44,24 @@ export type ListingMode = NonNullable<ToolBusView["listing"]>;
 
 /**
  * What the host supplies, as the listing and the search need to know it:
- * whether the workspace tools have handlers (`ToolBusDeps.workspace`).
+ * whether the workspace tools have handlers (`ToolBusDeps.workspace`), and
+ * whether the host registers providers here (`WorkspaceHost.providers`),
+ * which the provider tools that write rows need.
  */
 export interface BuiltinHostOptions {
   workspace?: boolean;
+  providers?: boolean;
+}
+
+/** Whether the host runs this `host`-kind tool: its handlers, and what the tool needs beyond them. */
+function hostRuns(
+  tool: { needs?: "providers" },
+  host: BuiltinHostOptions,
+): boolean {
+  return (
+    host.workspace === true &&
+    (tool.needs !== "providers" || host.providers === true)
+  );
 }
 
 /**
@@ -94,6 +112,8 @@ export type BuiltinTool = ToolBusTool & {
         kind: "host";
         minRole: WorkspaceRole;
         irreversible?: true;
+        /** Hidden unless the host offers this too (`BuiltinHostOptions.providers`). */
+        needs?: "providers";
       }
   );
 
@@ -170,14 +190,13 @@ function visibleTools(
   host: BuiltinHostOptions,
 ): SearchableTool[] {
   const visible: SearchableTool[] = [];
-  if (host.workspace) {
-    for (const tool of BUILTINS) {
-      if (
-        tool.kind === "host" &&
-        evaluateToolPolicy(tool, view.principal).action === "allow"
-      ) {
-        visible.push({ appId: BUILTIN_APP_ID, tool });
-      }
+  for (const tool of BUILTINS) {
+    if (
+      tool.kind === "host" &&
+      hostRuns(tool, host) &&
+      evaluateToolPolicy(tool, view.principal).action === "allow"
+    ) {
+      visible.push({ appId: BUILTIN_APP_ID, tool });
     }
   }
   for (const app of view.apps) {
@@ -443,10 +462,10 @@ const BUILTINS: BuiltinTool[] = [
     kind: "wrapper",
     ceiling: "write",
   },
-  // The workspace tools, in the full listing only: a compact listing's
-  // client finds them with everyapp_search_tools and runs them through the
-  // wrappers, like an app's tools.
-  ...WORKSPACE_TOOLS.map((tool): BuiltinTool => ({
+  // The workspace tools, then the provider tools, in the full listing
+  // only: a compact listing's client finds them with everyapp_search_tools
+  // and runs them through the wrappers, like an app's tools.
+  ...[...WORKSPACE_TOOLS, ...PROVIDER_TOOLS].map((tool): BuiltinTool => ({
     name: tool.name,
     title: tool.title,
     description: tool.description,
@@ -456,6 +475,7 @@ const BUILTINS: BuiltinTool[] = [
     kind: "host",
     minRole: tool.minRole,
     ...(tool.irreversible ? { irreversible: true } : {}),
+    ...(tool.needs ? { needs: tool.needs } : {}),
   })),
 ];
 
@@ -498,8 +518,9 @@ function toTool(tool: BuiltinTool): Tool {
  * The built-in tools as tools/list shows them, in a stable order: with a
  * view, those its listing mode shows to that caller (the wrappers only in
  * compact mode, `everyapp_call_write` only to a read & write caller, the
- * workspace tools only in full mode, only to a caller whose role reaches
- * each tool's `minRole`, and only when the host runs them, `host.workspace`);
+ * workspace and provider tools only in full mode, only to a caller whose
+ * role reaches each tool's `minRole`, and only when the host runs them,
+ * `host.workspace`, and offers what the tool needs, `host.providers`);
  * without one, every built-in the gateway has, for the docs' drift test.
  */
 export function listBuiltinTools(
@@ -511,7 +532,7 @@ export function listBuiltinTools(
     (tool) =>
       !view ||
       (tool.listedIn.includes(mode) &&
-        (tool.kind !== "host" || host.workspace === true) &&
+        (tool.kind !== "host" || hostRuns(tool, host)) &&
         evaluateToolPolicy(tool, view.principal).action === "allow"),
   ).map(toTool);
 }

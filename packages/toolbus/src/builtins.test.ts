@@ -13,6 +13,7 @@ import {
 } from "./names";
 import { PRINCIPAL, todoApp } from "./test-fixtures";
 import { gatewaySurfaceView } from "./view";
+import { PROVIDER_TOOLS } from "./providers";
 import { WORKSPACE_TOOLS } from "./workspace";
 
 const READ_ONLY = { ...PRINCIPAL, access: "read" as const };
@@ -29,10 +30,12 @@ const CORE = [
 describe("the built-in tools", () => {
   const every = listBuiltinTools().map((tool) => tool.name);
 
-  it("are the five core ones (three answered from the view, two wrappers), then every workspace tool", () => {
+  it("are the five core ones (three answered from the view, two wrappers), then every workspace tool, then the provider tools", () => {
     expect(every.slice(0, CORE.length)).toEqual(CORE);
     expect(every.slice(CORE.length)).toEqual(
-      WORKSPACE_TOOLS.map((tool) => `everyapp_${tool.name}`),
+      [...WORKSPACE_TOOLS, ...PROVIDER_TOOLS].map(
+        (tool) => `everyapp_${tool.name}`,
+      ),
     );
     for (const name of every) {
       expect(builtinToolKind(name), name).toBe(
@@ -84,7 +87,7 @@ describe("the built-in tools", () => {
 
   it("spell out their hints: read-only but the write ones, destructive only for a workspace tool that asks confirm, never open-world", () => {
     for (const tool of listBuiltinTools()) {
-      const definition = WORKSPACE_TOOLS.find(
+      const definition = [...WORKSPACE_TOOLS, ...PROVIDER_TOOLS].find(
         (candidate) => `everyapp_${candidate.name}` === tool.name,
       );
       expect(tool.annotations, tool.name).toEqual(

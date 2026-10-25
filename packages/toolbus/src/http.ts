@@ -278,7 +278,10 @@ function viewOf(context: McpRequestContext): ToolBusView {
 
 /** What the listing needs to know of the host: whether it runs the workspace tools. */
 function hostOf(deps: ToolBusDeps): BuiltinHostOptions {
-  return { workspace: deps.workspace !== undefined };
+  return {
+    workspace: deps.workspace !== undefined,
+    providers: deps.workspace?.providers === true,
+  };
 }
 
 async function serveLegacy(

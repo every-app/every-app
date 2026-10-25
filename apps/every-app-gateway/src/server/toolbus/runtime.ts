@@ -16,6 +16,7 @@ import type {
   ToolBusHttpHandler,
   ToolCallAuditEvent,
 } from "@every-app/toolbus";
+import { resolveDeploymentMode } from "@/server/deployment-mode";
 import { announceToolCall, toolCallIsEvent } from "@/server/events/tool-events";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import {
@@ -23,6 +24,16 @@ import {
   scheduleCatalogResync,
   type SyncableApp,
 } from "./catalog-sync";
+
+/**
+ * Whether this gateway registers API providers through the provider tools
+ * (`everyapp_provider_add`, `everyapp_provider_remove`): a self-hosted
+ * gateway does; a hosted one hides them, since its rows would be every
+ * tenant's (docs/design/2026-10-provider-registry.md, section 10).
+ */
+export function registersProviders(): boolean {
+  return resolveDeploymentMode(env.GATEWAY_DEPLOYMENT_MODE) === "self_hosted";
+}
 
 /** Keyed digest context for argument fingerprints (see createArgumentsDigester). */
 const ARGS_DIGEST_CONTEXT = "every-app-gateway:mcp-args:v1";
@@ -113,6 +124,9 @@ export function toolBusHttp(): Promise<ToolBusHttpHandler> {
               args,
               principal,
             ),
+          // A self-hosted gateway registers API providers through the
+          // provider tools; a hosted one hides the two that write rows.
+          providers: registersProviders(),
         },
         audit: auditToolCall,
         digestArguments: createArgumentsDigester(

@@ -322,8 +322,27 @@ async function tombstone(
   ]);
 }
 
+/**
+ * Every live app on this gateway, whichever organization, with its
+ * deployed manifest: what the provider tools check a registry row against
+ * (an app's own secret names, the capability ids it lists).
+ */
+async function findAllManifests() {
+  return db
+    .select({
+      id: apps.id,
+      organizationId: apps.organizationId,
+      appSlug: apps.appSlug,
+      manifest: apps.manifest,
+    })
+    .from(apps)
+    .where(notDeleted)
+    .orderBy(apps.appSlug, apps.organizationId);
+}
+
 export const AppRepository = {
   findAll,
+  findAllManifests,
   findAllWithAccessCounts,
   findAllShared,
   findById,

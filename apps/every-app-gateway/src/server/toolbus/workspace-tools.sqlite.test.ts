@@ -476,14 +476,18 @@ describe("who sees which workspace tools", () => {
         app: { slug: "everyapp" },
       });
     }
-    // And through the search, nothing of the admin's.
+    // And through the search, nothing of the admin's (the provider tools
+    // are provider-tools.sqlite.test.ts's).
     const found = await data(
       "everyapp_search_tools",
       { app: "everyapp", limit: 25 },
       member(),
     );
     expect(
-      (found["tools"] as { name: string }[]).map((tool) => tool.name).sort(),
+      (found["tools"] as { name: string }[])
+        .map((tool) => tool.name)
+        .filter((name) => WORKSPACE_NAMES.includes(name))
+        .sort(),
     ).toEqual([...MEMBER_NAMES].sort());
   });
 

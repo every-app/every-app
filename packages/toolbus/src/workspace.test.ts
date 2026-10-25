@@ -221,6 +221,10 @@ describe("the workspace tool definitions", () => {
   });
 });
 
+/** The provider tools (providers.test.ts) share the host kind; these tests are the workspace tools'. */
+const isWorkspaceTool = (name: string) =>
+  builtinToolKind(name) === "host" && !name.startsWith("everyapp_provider_");
+
 describe("listing the workspace tools", () => {
   const names = (
     principal: McpPrincipal,
@@ -229,7 +233,7 @@ describe("listing the workspace tools", () => {
   ) =>
     listBuiltinTools({ principal, listing }, { workspace })
       .map((tool) => tool.name)
-      .filter((name) => builtinToolKind(name) === "host");
+      .filter(isWorkspaceTool);
 
   it("lists them in the full listing only, to the caller's role, writes only to a read & write caller, and only when the host runs them", () => {
     // The owner: every one, in definition order.
@@ -260,7 +264,7 @@ describe("listing the workspace tools", () => {
     expect(
       listBuiltinTools()
         .map((tool) => tool.name)
-        .filter((name) => builtinToolKind(name) === "host"),
+        .filter(isWorkspaceTool),
     ).toEqual(WORKSPACE_TOOLS.map((tool) => listed(tool.name)));
   });
 
@@ -624,8 +628,13 @@ describe("running a workspace tool", () => {
     }
     // By app id, the gateway's own tools come as a list, by name, as many
     // as the search returns at once (25) out of the total.
+    // (The host registers no providers here, so of the provider tools only
+    // everyapp_provider_list is found; providers.test.ts has the rest.)
     const own = await search(OWNER, "full", { app: "everyapp" });
-    const everyName = WORKSPACE_TOOLS.map((tool) => listed(tool.name)).sort();
+    const everyName = [
+      ...WORKSPACE_TOOLS.map((tool) => listed(tool.name)),
+      "everyapp_provider_list",
+    ].sort();
     expect(own.total).toBe(everyName.length);
     expect(own.tools.map((tool) => tool.name)).toEqual(
       everyName.slice(0, own.tools.length),
@@ -636,13 +645,18 @@ describe("running a workspace tool", () => {
       (await search(readOnly(ADMIN), "compact", { app: "everyapp" })).tools.map(
         (tool) => tool.name,
       ),
-    ).toEqual(READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)).sort());
-    // A member finds their own four, and nothing of the admin's.
+    ).toEqual(
+      [
+        ...READ_TOOLS.filter((name) => !OWNER_TOOLS.includes(name)),
+        "everyapp_provider_list",
+      ].sort(),
+    );
+    // A member finds their own four (and the provider list), and nothing of the admin's.
     expect(
       (await search(MEMBER, "compact", { app: "everyapp" })).tools.map(
         (tool) => tool.name,
       ),
-    ).toEqual([...MEMBER_TOOLS].sort());
+    ).toEqual([...MEMBER_TOOLS, "everyapp_provider_list"].sort());
     expect((await search(MEMBER, "full", { query: "invite" })).tools).toEqual(
       [],
     );

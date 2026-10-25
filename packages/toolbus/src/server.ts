@@ -182,7 +182,10 @@ export function createToolBusServer(
   );
 
   server.setRequestHandler("tools/list", async () => ({
-    tools: listTools(view, { workspace: deps.workspace !== undefined }),
+    tools: listTools(view, {
+      workspace: deps.workspace !== undefined,
+      providers: deps.workspace?.providers === true,
+    }),
   }));
 
   server.setRequestHandler("tools/call", async (request) => {

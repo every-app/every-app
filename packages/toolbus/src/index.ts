@@ -100,3 +100,4 @@ export {
   WORKSPACE_TOOLS,
   type WorkspaceToolDefinition,
 } from "./workspace";
+export { PROVIDER_TOOLS } from "./providers";

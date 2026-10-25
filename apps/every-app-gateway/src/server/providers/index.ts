@@ -31,8 +31,17 @@ let cached: { at: number; registry: Promise<ProviderRegistry> } | undefined;
 let unavailableLogged = false;
 let rejectedLogged = new Set<string>();
 
-export function resetGatewayProvidersForTests(): void {
+/**
+ * Forget the cached registry: the next request on this isolate reads the
+ * rows again. The provider tools call it after a write; other isolates
+ * pick the change up within the 30 seconds.
+ */
+export function invalidateGatewayProviders(): void {
   cached = undefined;
+}
+
+export function resetGatewayProvidersForTests(): void {
+  invalidateGatewayProviders();
   unavailableLogged = false;
   rejectedLogged = new Set();
 }

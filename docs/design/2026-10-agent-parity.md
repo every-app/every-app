@@ -293,6 +293,9 @@ The fixture `packages/cli/src/docs/parity.test.ts` reads this section:
 | The "Use it from your agent" dialog of an MCP app (card, Admin chip, `/?mcp=<id>`) | client-only: shows `<gateway>/mcp`, the tool prefix and an example (#599) | `mcp list` | `everyapp_list_apps` | both twins carry the same facts |
 | Forgot-password page: whether the Gateway can mail (UI review thread) | `GET /api/auth/sign-in-methods` gains `emailConfigured` | `status` | `everyapp_workspace_show` | a public read field; `status` and the tool say the same |
 | Accept-invitation page: look an invite token up while signed out (UI review thread) | `POST /api/invitations/lookup` (token → organization name, masked address) | — | — | no twin: a sign-in page lookup, nothing an agent needs |
+| The API provider registry: list the providers this Gateway brokers (no UI page; docs/design/2026-10-provider-registry.md section 8) | not a UI action: `provider list` reads the catalog and the `providers` rows | `provider list` | `everyapp_provider_list` | every member; whether a setting is set, and a row's key binding, show to owners and admins only; the apps listing a provider are the caller's organization's |
+| The API provider registry: register a provider from its spec | not a UI action: `provider add` writes a row under the Cloudflare login | `provider add` | `everyapp_provider_add` | owners and admins on a self-hosted Gateway only (hidden on hosted); the tool takes the spec object, never a URL, and never replaces a row (`--replace` is the terminal's) |
+| The API provider registry: remove a registered provider | not a UI action: `provider remove` deletes the row | `provider remove` | `everyapp_provider_remove` | owners and admins on a self-hosted Gateway only; the tool refuses a row whose key is bound and a row an app lists (`--force` is the terminal's) |
 
 ## Browser installs and the deploy token (Ben's Q11c)
 

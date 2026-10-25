@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 338 is
+  try first; the complete register of 339 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -263,7 +263,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 338 invariants
+stop, the invariants to try first (the complete register, 339 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -431,7 +431,7 @@ owner, or on an account that belongs to another organization too. A
 sign-in page redirecting off-site. Error bodies leaking internals. A
 misconfigured deployment mode turning anything on.
 
-**Invariants.** The register has 46; the ones to try first:
+**Invariants.** The register has 52 (`providers.tools-self-host-admin`, the provider tools on /mcp, is in the register only); the ones to try first:
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -665,7 +665,7 @@ left out and logged `provider.row_invalid`, never served. A row is
 gateway-wide (its key is every organization's on that Gateway), which is
 why a provider whose `data` is `account` is refused on a hosted Gateway.
 What it does not change: whoever can deploy an app can list any provider,
-as before, and no MCP tool writes rows yet.
+as before. PR 2c added the MCP tools: `everyapp_provider_add` and `everyapp_provider_remove` write rows for owners and admins on a self-hosted Gateway only, never replace a row and never remove a bound or listed one (`providers.tools-self-host-admin`, B5).
 
 **Invariants.** The register has 53. The eight the provider registry added are in the register (`providers.row-secret-is-its-own`, `providers.value-bound-to-hosts`, `providers.row-hosts-public-https`, `providers.builtin-precedence`, `providers.spec-names-no-values`, `providers.add-is-privileged`, `providers.query-key-never-echoed`, `providers.account-data-self-host-only`); the three worth trying first are at the end of the table below.
 

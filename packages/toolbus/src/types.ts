@@ -225,6 +225,12 @@ export interface WorkspaceHost {
     args: JsonObject,
     principal: McpPrincipal,
   ): Promise<ToolCallResultV1>;
+  /**
+   * Whether this host registers API providers here: a self-hosted gateway
+   * does, a hosted one doesn't. Without it the provider tools that write
+   * rows (`needs: "providers"`) are hidden and answer Unknown tool.
+   */
+  providers?: boolean;
 }
 
 export interface ToolBusDeps {
