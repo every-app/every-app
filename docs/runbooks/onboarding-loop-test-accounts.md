@@ -150,3 +150,12 @@ Seen on the first live wipe (2026-10-24, a test account with a Gateway and one a
 ## What teardown leaves in place
 
 The zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Trust team (Cloudflare has no API to delete one; its applications and policy are removed, its identity providers stay) and the user itself. Anything whose name doesn't start with `every-` and that no app recorded in the Gateway's database is never touched. In DNS, only A, AAAA and CNAME records at the published names go (what a Workers Custom Domain creates; `everyapp` writes no other record): a zone's MX, TXT, CAA and the rest at those names are someone else's and are listed under `kept`, as are Email Routing's own records while routing stays on for a rule or catch-all that isn't Every App's. R2 buckets created in the EU or FedRAMP jurisdiction aren't listed (cf lists the default jurisdiction alone): delete those in the dashboard. Everything else that `everyapp` created is removed.
+
+## Live facts
+
+### loop-1 is no longer a never-enabled account (2026-10-25)
+
+- Its Zero Trust team `everyapp-loop1.cloudflareaccess.com` exists since 2026-10-24T23:25Z (created by API for the Access live check; the API cannot delete a team, and `teardown` never tries).
+- It carries two identity providers: the one-time PIN that `access on` added, and a `cloudflare` provider (`restrict_to_account_members: true`) that the public-surface thread's CLI lane added at about 2026-10-25T00:02Z to check that a Cloudflare provider can be created by API on a team the API created (dashboard-created teams get one automatically; API-created ones do not). `teardown` removes Access applications and policies, not identity providers, so every later `access on` on loop-1 finds both and lists both in `allowed_idps`.
+- A check that needs a never-enabled account, or a team with the PIN only, needs the second test account.
+- Token rule, applied to that lane's read of `accounts.json`: a process on this machine reading the file in-process and passing the value only through a child's environment is inside the file's threat model (anyone running as Ben can read it); the loop's rotate rule is about the value reaching a transcript, a stream or a file it does not own. Not rolled for that. Other threads touching loop-1 live should check `~/.config/everyapp/onboarding-loop/locks/` first so they never overlap a run.
