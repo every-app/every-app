@@ -154,6 +154,13 @@ The zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Tru
 
 ## Live facts
 
+### loop-1 after the provisioners probes (2026-10-25)
+
+- The resource-kind live tests (`packages/cli/test/provisioners/*.live.test.ts`, run with `EVERYAPP_LIVE_PROVISIONERS=1`, skipped otherwise) and the two research probes of 2026-10-24 ran on loop-1 and deleted everything they made (`every-provisioners-*` Workers, queues, Vectorize indexes and AI Gateways); `workers list`, `queues list`, `vectorize list`, `ai-gateway gateways list`, `secrets-store stores list`, `kv namespaces list` and `d1 list` all answered `[]` afterwards. The account holds no Secrets Store, so the Secrets Store live test stops at `SECRETS_STORE_MISSING` until someone makes a store in its dashboard (a person's action; the CLI can't).
+- The token in `accounts.json` is NOT the least-privilege template of step 5: it is an account-owned token carrying nearly every account and zone permission group (Queues, Vectorize, AI Gateway, Secrets Store, Workers AI, Browser Rendering, Images, Email Sending, Account Analytics included), plus **Account API Tokens Write** and **Billing Write**, so a leaked copy could mint tokens inside the account. No probe hit a permission error, so the rows the new kinds need are not proven minimal; by permission name they are Queues Edit, Vectorize Edit, AI Gateway Edit, Secrets Store Edit and Workers Scripts Edit. Roll it to the template after launch week (section 8) and add those rows.
+- cf reads a `.cloudflare/cache/cloudflare-account.json` it finds in the working directory or a parent, and `/tmp` holds one for whoever ran cf there: anything that runs cf against a test account runs it from a private directory (the CLI's runner does), never from under `/tmp`.
+- Whoami prints `scopes` and an `expiresAt` from a stored OAuth profile even when it authenticated with the environment token; the gate to trust is `authSource` naming `CLOUDFLARE_API_TOKEN`, `tokenValid: true` and exactly one account.
+
 ### loop-1 is no longer a never-enabled account (2026-10-25)
 
 - Its Zero Trust team `everyapp-loop1.cloudflareaccess.com` exists since 2026-10-24T23:25Z (created by API for the Access live check; the API cannot delete a team, and `teardown` never tries).

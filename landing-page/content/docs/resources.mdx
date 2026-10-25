@@ -1,0 +1,46 @@
+---
+title: Cloudflare resources your app can use
+description: Databases, files, queues, search by meaning, AI, a headless browser, images, analytics, email and secrets. Declare them in your app's everyapp.config.ts and the deploy makes them in your Cloudflare account.
+---
+
+An app on Every App runs in your own Cloudflare account, so it can use what Cloudflare offers: a database, a place for files, a queue of jobs, search by meaning, AI models, a headless browser, image resizing, analytics, sending email and a store for secrets. Your app says what it needs in its `everyapp.config.ts`, under `resources`, and `pnpm everyapp deploy` makes each one, named after the app, and connects it to the app. Nothing is created in your account that an app you deployed didn't declare.
+
+Your coding agent knows every field: the full reference is [everyapp.config.ts](/docs/agent/manifest) and the patterns to copy from are in [Example patterns](/docs/agent/patterns). This page is what each one is, what it costs, and the one-time steps that are yours.
+
+## What you can declare
+
+| What               | Field                         | What it is for                                                                 | Cost                                                              |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Database           | `d1`                          | The app's own SQL database (SQLite). The starter has one.                      | Included in Workers Paid up to a free allowance                   |
+| Key-value store    | `kv`                          | Settings and small values read on every request                                | Included up to a free allowance                                   |
+| Files              | `r2`                          | Uploads, exports, images the app stores                                        | Free until something is stored; turn R2 on once in your dashboard |
+| Postgres           | `hyperdrive`                  | Your own Postgres (Neon, Supabase, any URL) reached quickly from the app       | Cloudflare's part is included; the database is yours to pay       |
+| Background objects | `durableObjects`, `workflows` | Long-running jobs, per-user state, multi-step work with retries                | Included up to a free allowance                                   |
+| Queues             | `queues`                      | Jobs the app sends now and works through later, in order and with retries      | Workers Paid                                                      |
+| Search by meaning  | `vectorize`                   | An index for finding similar text or images (embeddings, RAG)                  | Included up to a free allowance                                   |
+| AI models          | `ai`                          | Run Cloudflare's models directly from the app (`env.AI`)                       | Workers Paid, billed by use after a free daily allowance          |
+| AI Gateway         | `aiGateway`                   | A log, cache and rate limit in front of the AI calls an app makes              | Free                                                              |
+| Headless browser   | `browser`                     | Screenshots, PDFs, crawling a page as a browser sees it                        | Workers Paid, billed by browser time                              |
+| Images             | `images`                      | Resize, crop and convert images on the fly                                     | Included up to a free allowance, then by use                      |
+| Analytics          | `analyticsEngine`             | Counters and events the app writes and you query later                         | Included                                                          |
+| Email sending      | `sendEmail`                   | Send mail with Cloudflare's own binding, from an address on a domain you route | Free (Email Routing on the domain)                                |
+| Secrets Store      | `secretsStore`                | A key the app reads from Cloudflare's store rather than from its own settings  | Free; make a store once in your dashboard                         |
+
+The deploy creates the database, key-value store, files bucket, Hyperdrive config, queues, index, AI Gateway and store secret for each app and records them as that app's. `pnpm everyapp delete <app> --purge` deletes what it recorded, and `everyapp status` lists what each app has. The ones with nothing to create (AI, browser, images, analytics, email) are turned on by declaring them.
+
+## One-time steps that are yours
+
+- **Workers Paid** ($5 a month) is the plan every Gateway needs anyway ([Set up Cloudflare](/docs/cloudflare)); AI, Browser Rendering and Queues bill by use on top of it.
+- **R2**: the first app that stores files stops with `R2_NOT_ENABLED` until you open R2 Object Storage in your dashboard once and choose Get started. Nothing to make by hand.
+- **A Secrets Store**: the first app that declares one stops with `SECRETS_STORE_MISSING` until you make a store once in your dashboard (Secrets Store → Create store). The deploy puts the secret in it from the app's `.everyapp/secrets.env`.
+- **Email sending**: the app names the addresses it sends as, and their domain must be set up for Email Sending in your account (the same step as the Gateway's own sender, [Send email](/docs/people)); Cloudflare refuses the rest when the app sends.
+
+## Postgres
+
+If your app wants Postgres rather than the built-in database, make one anywhere that gives you a URL (Neon, Supabase, PlanetScale Postgres, Xata, Crunchy Bridge, your own server), put the URL in the app's `.everyapp/secrets.env` as `POSTGRES_DATABASE_URL=postgres://user:password@host:5432/db`, and have the app declare `resources: { hyperdrive: [{ name: "HYPERDRIVE" }] }` with `database: { provider: "postgres" }`. The deploy makes a Hyperdrive config pointed at your database (Cloudflare keeps the connection warm near your app) and runs the app's migrations against it before anything goes live. The URL stays on the machine that deploys; it never reaches the Worker. Neon and Supabase have a pooled and a direct URL: use the direct one.
+
+Turso is not Postgres, so it isn't Hyperdrive: an app uses it with its own client and two app secrets, `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, set like any [key only one app uses](/docs/create-an-app).
+
+## On your computer
+
+`pnpm dev` runs the app with local stand-ins for the database, files, queues, the browser, images, analytics and email (mail is written to a file, not sent). Two have no local version: AI models and search by meaning call your Cloudflare account instead, once the app's `vite.config.ts` turns `remoteBindings` on and you've run `cf auth login`; until then a call to them says `needs to be run remotely`. An AI Gateway binding is present in development with an empty address, so the app calls the provider directly.

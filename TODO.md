@@ -1372,6 +1372,33 @@ Ben asked, over ratstack.sh, what converting the Gateway and the CLI's provision
 - [ ] **Pin the gateway test fixture to the real `cf build`** inside `packages/cli/src/lib/cfDryRun.test.ts` (CI only): `gateway-worker.config.json` is hand-copied, last touched 2026-10-13, and 42 apply tests run on it.
 - [ ] **A gateway binding fence test**: every name `patchBuildOutput` writes is declared with the same type in `cloudflare.config.ts`, no `KV` or `APP__*` there, then delete the legacy `delete env["KV"]`.
 
+### Provisioners (2026-10-24)
+
+Ben's mandate, 2026-10-24: "support as much of Cloudflare's developer-platform surface area as possible" so people aren't waiting on PRs after Monday; later that evening: "it doesn't need to be generic", one small PR per kind in the order Queues, Workers AI, Vectorize, AI Gateway, Hyperdrive, Browser Rendering, Email sending, Images, Analytics Engine, Secrets Store. The contract is [docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md) (section 2 per kind; the scope change at its top; the Alchemy decision in section 6, one paragraph). Landed 2026-10-25, each squash-merged on green: Workers AI #669, Hyperdrive and the Postgres answer #679, Browser Rendering #682, Images #689, Vectorize #670, AI Gateway #673, Queues #684, Email sending #681, Secrets Store #686, Analytics Engine #691; the docs repair #695 (two merges had duplicated paragraphs) and #705 (the `everyAppAuxiliaryWorker` typing regression against the Vite plugin, from #323's typed Durable Object namespaces, found by the OAuth providers thread). Each kind's own section follows this one ("Provisioners: <kind>"), with its defaults and follow-ups. Shared across the kinds: the byte-for-byte pin of the six older kinds (#665, `pnpm -C packages/cli test -- deployApp.pinned`), the live harness on the loop test account (#667, `EVERYAPP_LIVE_PROVISIONERS=1`), the people's page [landing-page/content/docs/resources.mdx](landing-page/content/docs/resources.mdx), and the runbook's live facts (docs/runbooks/onboarding-loop-test-accounts.md, "loop-1 after the provisioners probes").
+
+**Defaults to confirm**
+
+- [ ] **`cf`, not Alchemy and not a REST client of the CLI's own.** Every kind goes through the CLI's `CfRunner` (#657's blocker stands: Alchemy's upload replaces the whole binding set). Re-probe with the assessment on 2026-12-01; the extra flip is three kinds without a working `cf` command (today one: `secrets-store stores create`), which would earn a thin REST client behind the same seam, still not Alchemy.
+- [ ] **Ledger, not adopt, for the kinds that hold data or credentials** (queues, Vectorize, AI Gateways, store secrets): a resource of the app's name that no deploy recorded is `RESOURCE_NAME_TAKEN`, as for D1. R2 keeps #611's named model. Walk-back: an `adopt: true` per entry.
+- [ ] **Binding-only kinds must be declared** (`ai`, `browser`, `images`, `analyticsEngine`, `sendEmail`): the policy refuses the binding type unless `everyapp.config.ts` names it, so a `cloudflare.config.ts` can't add account-wide capabilities on its own. Walk-back: allow by type alone.
+- [ ] **`cfDeploy` passes `--no-provision`** (the Queues PR): cf's deploy otherwise creates a missing queue, KV, D1 or R2 bucket on its own, unrecorded. The pinned cf args changed by that one flag.
+- [ ] **The hosted deployer refuses every new kind** (its bundle allowlist already did; the manifest sentences are per-kind follow-ups). Teaching it is after launch.
+- [ ] **No `everyapp status` RESOURCES cell yet**: each kind's section lists it as a follow-up; one small PR adds the cell from the stored manifest for all kinds at once.
+
+**Needs Ben**
+
+- [ ] **A Secrets Store on loop-1** (dashboard: Secrets Store → Create store), so the Secrets Store live test can run its create, upload, read-back and delete path; today it stops at `SECRETS_STORE_MISSING` by design.
+- [ ] **Roll loop-1's token to the runbook's template** after launch week: the one in `accounts.json` carries nearly every permission group plus Account API Tokens Write and Billing Write (runbook, live facts), and add the rows the new kinds need (Queues, Vectorize, AI Gateway, Secrets Store Edit).
+- [ ] **A Postgres for the loop account** (a free Neon database, its URL in `providers.env`) if a live Hyperdrive test is wanted; none exists today.
+
+**Follow-ups**
+
+- [ ] `everyapp dev`'s ready block: one `Remote bindings:` line for Workers AI and Vectorize (they call the account once `remoteBindings` is on), one line for an unseeded Secrets Store secret.
+- [ ] The threat model: B7 rows for the per-kind policy rules, the ledger kinds, the Secrets Store value path and the queue deletion order (each kind's PR body lists its rule and test under "For the threat-model lane"); a lane is writing them.
+- [ ] OpenSEO's port still casts its `auxiliaryWorkers` callback `as never` (every-app/private-open-seo-everyapp, `vite-plugin-every-app.ts`); drop it once its SDK pin includes #705 (rc.2 or a vendored tarball).
+- [ ] The design note's reason for Email sending (`message.reply()` needs no binding) is wrong; the kind's docs give the real reasons (code written against `env.EMAIL.send()`, mail beyond what `reply()` allows).
+- [ ] An end-to-end deploy of one app declaring every kind through `everyapp deploy` on a Gateway on loop-1 (the loop's `keep` flag holds the Gateway up), then `delete --purge` and the account teardown finding nothing of it.
+
 ### Provisioners: Workers AI (2026-10-25)
 
 `resources.ai: ["AI"]` binds Workers AI (`env.AI.run()`) on every Worker of an app: nothing created, recorded or purged, billed to the account ([docs/design/2026-10-provisioners.md](docs/design/2026-10-provisioners.md), section 2's `ai` row; `landing-page/content/agent/manifest.md`, "Workers AI").
