@@ -9,7 +9,9 @@
  * without an address, a switch that is neither on nor off) is refused
  * here, where it can be fixed, instead of in the Worker's logs. The
  * checks (`PLAIN_SETTINGS`) follow how the Gateway reads each setting;
- * a plain name with no check takes anything.
+ * a plain name with no check takes anything. An app's own plain setting
+ * (`settings` in its manifest) is read the same way, checked against
+ * what its entry says it takes (a URL, a number, one of a list).
  */
 import { text } from "node:stream/consumers";
 import {
@@ -18,9 +20,12 @@ import {
   isPlainGatewaySetting,
   oauthClientOrigin,
   parseEmailSender,
+  settingValueProblem,
+  settingValueTakes,
   type Capability,
   type OAuthClientCapability,
   type PLAIN_GATEWAY_SETTINGS,
+  type SettingValueRule,
 } from "@every-app/sdk/internal";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
@@ -281,8 +286,13 @@ function oauthClientHostSetting(name: string): PlainSetting | undefined {
   };
 }
 
-/** A plain setting's rule: the table above, else an OAuth client's instance, else a sign-in provider's (lib/signinValues.ts). */
-function plainSetting(name: string): PlainSetting | undefined {
+/**
+ * A plain setting's rule: an app's own plain setting's (`settings` in its
+ * manifest, `rule`), else the table above, else an OAuth client's
+ * instance, else a sign-in provider's (lib/signinValues.ts).
+ */
+function plainSetting(name: string, rule?: SettingValueRule): PlainSetting | undefined {
+  if (rule) return { takes: settingValueTakes(rule), check: (value) => settingValueProblem(rule, value) };
   return (
     (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name] ??
     oauthClientHostSetting(name) ??
@@ -291,18 +301,19 @@ function plainSetting(name: string): PlainSetting | undefined {
 }
 
 /** The lines above a plain setting's prompt: what it takes. */
-export function plainContext(name: string): string[] {
-  const setting = plainSetting(name);
+export function plainContext(name: string, rule?: SettingValueRule): string[] {
+  const setting = plainSetting(name, rule);
   return setting ? [`Takes ${setting.takes}`] : [];
 }
 
 /**
  * Why `value`, as typed, won't do for the plain setting `name`: one
- * sentence to re-ask with, or null when the Gateway will read it.
+ * sentence to re-ask with, or null when the Gateway (or, with `rule`,
+ * the app) will read it.
  */
-export function plainValueProblem(name: string, value: string): string | null {
+export function plainValueProblem(name: string, value: string, rule?: SettingValueRule): string | null {
   if (!value.trim()) return "Enter a value.";
-  return plainSetting(name)?.check?.(value.trim()) ?? null;
+  return plainSetting(name, rule)?.check?.(value.trim()) ?? null;
 }
 
 /**
@@ -311,11 +322,11 @@ export function plainValueProblem(name: string, value: string): string | null {
  * names the setting and the value (a plain value is nothing to hide), the
  * detail says what's wrong with it, and the fix what it takes.
  */
-export function checkedPlainValue(name: string, value: string): string {
+export function checkedPlainValue(name: string, value: string, rule?: SettingValueRule): string {
   const trimmed = value.trim();
-  const problem = plainValueProblem(name, trimmed);
+  const problem = plainValueProblem(name, trimmed, rule);
   if (problem === null) return trimmed;
-  const setting = plainSetting(name);
+  const setting = plainSetting(name, rule);
   const shown = trimmed.replace(/\s+/g, " ").slice(0, 64);
   throw new EveryAppError(
     "SETTING_VALUE_INVALID",
@@ -337,9 +348,10 @@ export function checkedPlainValue(name: string, value: string): string {
  */
 export async function readSecretValue(
   name: string,
-  options: { fromEnv?: string; json?: boolean },
+  options: { fromEnv?: string; json?: boolean; rule?: SettingValueRule | undefined },
 ): Promise<string> {
-  const plain = isPlainGatewaySetting(name);
+  const { rule } = options;
+  const plain = rule !== undefined || isPlainGatewaySetting(name);
   const variable = options.fromEnv;
   const source = secretSource(variable);
   if (source === SecretSource.Env) {
@@ -351,13 +363,13 @@ export async function readSecretValue(
         fix: `export ${variable} first, or name another variable with --from-env`,
       });
     }
-    return plain ? checkedPlainValue(name, value) : value;
+    return plain ? checkedPlainValue(name, value, rule) : value;
   }
   if (source === SecretSource.Stdin) {
     // One value, its trailing newline (echo's) dropped.
     const raw = (await text(process.stdin)).replace(/\r?\n$/, "");
     const value = plain ? raw.trim() : raw;
-    if (value) return plain ? checkedPlainValue(name, value) : value;
+    if (value) return plain ? checkedPlainValue(name, value, rule) : value;
   }
   if (source === SecretSource.Stdin || !canPromptInTerminal(options.json ?? false)) {
     throw new EveryAppError(
@@ -366,23 +378,28 @@ export async function readSecretValue(
       { rerun: `${CLI} secret set ${name} --from-env ${name}` },
     );
   }
-  return askSettingValue(name, { question: plain ? name : `Value for ${name}` });
+  return askSettingValue(name, { question: plain ? name : `Value for ${name}`, rule });
 }
 
 /**
  * Ask the person at the terminal for `name`'s value, as `secret set` does:
- * hidden for a credential, visible and checked for a plain Gateway
- * setting (under a line saying what it takes). With `optional`, Enter on
- * nothing answers "" (the caller sets nothing). Trimmed.
+ * hidden for a credential, visible and checked for a plain setting (a
+ * Gateway one, or with `rule` one of the app's own `settings`), under a
+ * line saying what it takes. With `optional`, Enter on nothing answers ""
+ * (the caller sets nothing). Trimmed.
  */
 export async function askSettingValue(
   name: string,
-  { question = name, optional = false }: { question?: string; optional?: boolean } = {},
+  {
+    question = name,
+    optional = false,
+    rule,
+  }: { question?: string; optional?: boolean; rule?: SettingValueRule | undefined } = {},
 ): Promise<string> {
-  if (isPlainGatewaySetting(name)) {
+  if (rule || isPlainGatewaySetting(name)) {
     const value = await askText(question, {
-      context: plainContext(name),
-      validate: (typed) => (optional && !typed.trim() ? null : plainValueProblem(name, typed)),
+      context: plainContext(name, rule),
+      validate: (typed) => (optional && !typed.trim() ? null : plainValueProblem(name, typed, rule)),
     });
     return value.trim();
   }

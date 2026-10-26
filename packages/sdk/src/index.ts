@@ -11,6 +11,7 @@ export {
   type EveryAppQueueConsumer,
   type EveryAppResources,
   type EveryAppSecretEntry,
+  type EveryAppSettingEntry,
   type EveryAppSettingNeed,
   type EveryAppWorkerLimits,
 } from "./manifest.js";

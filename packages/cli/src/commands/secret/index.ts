@@ -55,8 +55,10 @@ import {
   isSignInSettingName,
   PROVIDER_APP_TIER,
   PROVIDER_SECRET_NAME,
+  appWorkerNames,
   secretEntries,
-  secretNames,
+  settingEntries,
+  settingValueRule,
   SETTABLE_GATEWAY_SETTINGS,
   SIGN_IN_PROVIDER_IDS,
   SIGN_IN_PROVIDERS,
@@ -64,6 +66,8 @@ import {
   type AppSetup,
   type RegisteredProvider,
   type SecretEntry,
+  type SettingEntry,
+  type SettingValueRule,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
@@ -147,8 +151,12 @@ interface SecretOptions {
 
 interface SetSecretsOptions extends SecretOptions {
   names: string[];
-  /** A name's value: the hidden prompt, stdin or `--from-env`. */
-  readValue: (name: string) => Promise<string>;
+  /**
+   * A name's value: the hidden prompt, stdin or `--from-env`; with `rule`
+   * (one of the app's plain settings), a visible prompt and the value
+   * checked against it.
+   */
+  readValue: (name: string, rule?: SettingValueRule) => Promise<string>;
 }
 
 export async function set(
@@ -161,7 +169,7 @@ export async function set(
       flags,
       out,
       names,
-      readValue: (name) => readSecretValue(name, { fromEnv: flags["from-env"], json: flags.json }),
+      readValue: (name, rule) => readSecretValue(name, { fromEnv: flags["from-env"], json: flags.json, rule }),
     });
   });
 }
@@ -202,7 +210,13 @@ export async function applySecretValues(options: SetSecretsOptions) {
   // it and where it is sent, before the person types it.
   sayWhereKeysGo(reached.providers, options.names, options.out);
   const changes: Record<string, string> = {};
-  for (const name of options.names) changes[name] = await options.readValue(name);
+  const settings = reached.route.app ? settingEntries(reached.route.app.manifest) : [];
+  for (const name of options.names) {
+    const setting = reached.route.app?.names.includes(name)
+      ? settings.find((entry) => entry.name === name)
+      : undefined;
+    changes[name] = await options.readValue(name, setting ? settingValueRule(setting) : undefined);
+  }
   const applied = (await apply(reached, changes, options, SecretAction.Set))!;
   return { applied, gatewayHost: reached.gatewayHost };
 }
@@ -526,7 +540,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     : await findRegisteredApp(db, local!.id);
   const manifest = options.appId ? storedManifestOf(registered!) : local!;
   const workerName = registered && registered.status !== "pending" ? registered.workerName : null;
-  const declared = secretNames(manifest);
+  const declared = appWorkerNames(manifest);
   // The app's Workers, once it is deployed: its own, then each helper, with
   // every name each holds (everyapp's own included) and the declared names
   // it lacks: `data.app.workers`, as the setup skills have read it.
@@ -638,10 +652,11 @@ export enum ManifestSource {
   Registry = "registry",
 }
 
-/** What the secret command reads of a manifest: the app's id and its own secrets. */
+/** What the secret command reads of a manifest: the app's id, its own secrets and its plain settings. */
 export interface SecretsManifest {
   id: string;
   secrets?: ReadonlyArray<string | SecretEntry>;
+  settings?: ReadonlyArray<SettingEntry>;
 }
 
 /** Where a call's names go, decided from the name list and the manifest alone. */
@@ -694,7 +709,7 @@ function routeNames(
   const gateway = names.filter(isGateway);
   const rest = names.filter((name) => !isGateway(name));
   if (rest.length === 0) return { gateway, app: null, undeclared: [] };
-  const declared = manifest ? secretNames(manifest) : [];
+  const declared = manifest ? appWorkerNames(manifest) : [];
   const undeclared: string[] = [];
   for (const name of rest) {
     const refusal = notRoutable(name, names, manifest, source, action);
@@ -715,7 +730,7 @@ function notRoutable(
   source: ManifestSource,
   action: SecretAction,
 ): EveryAppError | null {
-  const declared = manifest ? secretNames(manifest) : [];
+  const declared = manifest ? appWorkerNames(manifest) : [];
   if (manifest && declared.includes(name)) return null;
   const appFlag = source === ManifestSource.Registry && manifest ? ` --app ${manifest.id}` : "";
   // A Gateway setting typed differently: the command with it.
@@ -895,7 +910,7 @@ interface Reached {
  * routed without asking the Gateway.
  */
 function mayBeProviders(names: readonly string[], manifest: SecretsManifest | null): string[] {
-  const declared = manifest ? secretNames(manifest) : [];
+  const declared = manifest ? appWorkerNames(manifest) : [];
   return names.filter(
     (name) =>
       !isSettableGatewaySetting(name) &&
@@ -982,7 +997,7 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
       );
     }
     const stored = storedManifestOf(found);
-    const manifest = { id: stored.id, secrets: secretEntries(stored) };
+    const manifest = { id: stored.id, secrets: secretEntries(stored), settings: settingEntries(stored) };
     const held = await heldByGateway(names, manifest, connection, action);
     const route = routeNames(names, manifest, ManifestSource.Registry, action, held.names);
     return reached(

@@ -14,6 +14,7 @@ import {
   CATALOG,
   evaluateAppSettings,
   isReservedAppSecretName,
+  settingValueTakes,
   type AppSettingsReport,
   type CapabilityLookup,
   type AppSetup,
@@ -243,7 +244,8 @@ export function renderSettingsTable(
  * What an unmet setting is, for whoever sets it: "<label>: <why>" (the
  * names when the manifest says no why and the label doesn't name them),
  * then what the key is and where it comes from (the provider's `hint`),
- * then "Get it at <docs>" when the registry or manifest knows where.
+ * what one of the app's plain settings takes ("Takes an http or https
+ * URL"), then "Get it at <docs>" when the registry or manifest knows where.
  */
 export function describeUnmet(setting: AppSetupSetting): string[] {
   const names = setting.names.join(" and ");
@@ -251,6 +253,8 @@ export function describeUnmet(setting: AppSetupSetting): string[] {
   return [
     what ? `${setting.label}: ${what}` : setting.label,
     ...(setting.hint ? [setting.hint] : []),
+    // One of the app's plain settings: what its value must be.
+    ...(setting.value ? [`Takes ${settingValueTakes(setting.value)}`] : []),
     ...(setting.docs ? [`Get it at ${setting.docs}`] : []),
   ];
 }

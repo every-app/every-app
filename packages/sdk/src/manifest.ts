@@ -122,6 +122,23 @@ export interface EveryAppCapabilityEntry extends EveryAppSettingNeed {
   readonly scopes?: readonly string[];
 }
 
+/**
+ * One of the app's plain settings: a value that isn't a secret and
+ * differs per install (a PostHog host, a region), set with `everyapp
+ * configure <app>` and read from `env`.
+ */
+export interface EveryAppSettingEntry {
+  readonly name: string;
+  /** Why the app needs it: what whoever installs the app reads. */
+  readonly why: string;
+  readonly docs?: string;
+  readonly optional?: boolean;
+  /** What it takes; text when not given. */
+  readonly type?: "text" | "url" | "number" | "boolean";
+  /** The values a text setting may take. */
+  readonly values?: readonly string[];
+}
+
 /** One of the app's own secrets, with its need. */
 export interface EveryAppSecretEntry extends EveryAppSettingNeed {
   readonly name: string;
@@ -166,6 +183,8 @@ export interface EveryAppManifest {
   readonly capabilities?: { readonly [id: string]: EveryAppCapabilityEntry };
   /** The app's own secrets, by name or with their need. */
   readonly secrets?: readonly (string | EveryAppSecretEntry)[];
+  /** The app's plain settings: per-install values that aren't secrets. */
+  readonly settings?: readonly EveryAppSettingEntry[];
   /** App-domain scopes personal access tokens may request, with descriptions. */
   readonly scopes?: { readonly [scope: string]: string };
   readonly ai?: {

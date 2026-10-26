@@ -123,11 +123,12 @@ Two commands carry an app's setup state as `setup`, an `AppSetup` (`packages/sdk
   unmet: Setting[],               // the ones that keep the app closed
   groups: [{ group, met, members: string[] }],
   command: { command } | null }   // "pnpm everyapp configure <app>"; null once ready
-Setting = { kind: "provider" | "capability" | "secret" | "ai-routes", id, label,
+Setting = { kind: "provider" | "capability" | "secret" | "setting" | "ai-routes" | "ai-default" | "remote-mcp", id, label,
   holder: "gateway" | "app", names: string[],
   need: { kind: "required" | "optional" | "anyOf", group? },
   set: true | false | null,       // null: the app Worker's names were never recorded; never blocks
-  blocking: boolean, why?, hint?, docs?, setup? }
+  blocking: boolean, why?, hint?, docs?, setup?,
+  value? }                        // a plain setting (kind "setting"): { type: "text" | "url" | "number" | "boolean", values? }
   // hint: what the key is and where it comes from, from the provider's entry (its hint, then each setting's own)
   // setup: the guide, "setup/<name>.md" in the everyapp skill; none for a provider registered on the Gateway
 ```

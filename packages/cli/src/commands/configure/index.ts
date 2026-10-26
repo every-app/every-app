@@ -13,7 +13,8 @@
  * whether it is set (names only, never values), asks for each required
  * setting that isn't (a hidden prompt, with why the app needs it, where
  * the key comes from and the setup guide above it; a plain setting's
- * prompt is visible and checked), asks which member of an unmet any-of
+ * prompt, the Gateway's or one of the app's own `settings`, is visible
+ * and checked), asks which member of an unmet any-of
  * group to set, offers the optional ones (one keystroke skips them all;
  * Enter skips one), and sets everything in one go, each name where it
  * belongs, through the secret command's machinery (leases, the
@@ -405,7 +406,7 @@ function introduction(target: Target, { report }: State): string[] {
   );
   return [
     chalk.dim(
-      `${target.appId}'s settings are held as the Gateway's secrets: an AI key or a capability's client on the Gateway Worker, once for every app; ${target.appId}'s own secrets on its Worker. Changes are live at once, no deploy needed.`,
+      `${target.appId}'s settings are held as the Gateway's secrets: an AI key or a capability's client on the Gateway Worker, once for every app; ${target.appId}'s own secrets and settings on its Worker. Changes are live at once, no deploy needed.`,
     ),
     "",
     ...(rows.length > 0
@@ -454,8 +455,10 @@ async function providedValues(
   options: ConfigureOptions,
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
-  const checked = (name: string, value: string) =>
-    isPlainGatewaySetting(name) ? checkedPlainValue(name, value) : value;
+  const checked = (name: string, value: string) => {
+    const rule = settingOf(state, name)?.value;
+    return rule || isPlainGatewaySetting(name) ? checkedPlainValue(name, value, rule) : value;
+  };
   // With --from-env, stdin is left alone (as `secret set --from-env` leaves
   // it): a parent that keeps the pipe open would otherwise hold the run.
   const piped = options.flags["from-env"] ? null : await (options.readStdin ?? readPipedStdin)();
@@ -629,13 +632,21 @@ async function askValue(
   { optional, context }: { optional: boolean; context: boolean },
 ): Promise<string> {
   const guide = guideLine(setting);
+  // An app's plain setting is checked against its own entry (`settings`).
+  const rule = setting.value;
+  // describeUnmet says what an app's plain setting takes; a Gateway one's is said here.
   const lines = context
-    ? [...describeUnmet(setting), ...(guide ? [guide] : []), ...plainContext(name)]
-    : plainContext(name);
+    ? [...describeUnmet(setting), ...(guide ? [guide] : []), ...(rule ? [] : plainContext(name))]
+    : plainContext(name, rule);
   const question = optional ? `${name} (Enter to skip)` : name;
-  const value = isPlainGatewaySetting(name)
-    ? await prompter.text(question, { context: lines, optional, validate: (typed) => plainValueProblem(name, typed) })
-    : await prompter.secret(question, { context: lines, optional });
+  const value =
+    rule || isPlainGatewaySetting(name)
+      ? await prompter.text(question, {
+          context: lines,
+          optional,
+          validate: (typed) => plainValueProblem(name, typed, rule),
+        })
+      : await prompter.secret(question, { context: lines, optional });
   return value.trim();
 }
 

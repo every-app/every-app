@@ -29,6 +29,7 @@ import {
   RESERVED_APP_SECRET_NAMES_TEXT,
   secretEntries,
   secretNames,
+  settingNames,
   type CapabilityLookup,
   type SettingNeedFields,
 } from "@every-app/sdk/internal";
@@ -889,6 +890,17 @@ export const ManifestSchema = z
       )
       .max(100)
       .optional(),
+    /**
+     * The app's plain settings: values that aren't secrets and differ per
+     * install (a PostHog host, a region), set like its secrets with
+     * `everyapp configure <app>` and read from `env`: each
+     * `{ name, why, type?, values?, optional?, docs? }`.
+     * Default: none.
+     */
+    settings: z
+      .array(z.object({ name: SecretNameSchema }).passthrough())
+      .max(100)
+      .optional(),
     /** Opaque app-domain scopes that PATs may request. */
     scopes: ScopesSchema.optional(),
     /** Limits on what the app may do through the gateway's AI proxy. */
@@ -1039,41 +1051,101 @@ function appSecretsSchemaStrict(lookup?: CapabilityLookup) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
         if (seen.has(name)) issue(`duplicate secret ${name}`);
         seen.add(name);
-        if (isReservedAppSecretName(name)) {
-          issue(
-            `${name} is set by everyapp itself (${RESERVED_APP_SECRET_NAMES_TEXT})`,
-          );
-          return;
-        }
-        const upper = name.toUpperCase();
-        if (isSignInSettingName(upper)) {
-          issue(
-            `${name} is a sign-in provider's setting name (every <ID>_SIGNIN_<FIELD> name is the Gateway's, set with \`everyapp signin add\`); give the app's secret another name`,
-          );
-          return;
-        }
-        const registered = isSettableGatewaySetting(upper)
-          ? null
-          : registeredSettingOwner(lookup, upper);
-        if (!isSettableGatewaySetting(upper) && !registered) return;
-        if (isRemoteMcpSecretName(upper)) {
-          issue(
-            `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's secret another name`,
-          );
-          return;
-        }
-        const owner = registered ?? gatewaySettingOwner(upper);
-        const instead = owner
-          ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`
-          : "give the app's secret another name";
-        issue(
-          `${name} is a Gateway setting, which \`everyapp secret set ${upper}\` sets on the Gateway for every app; ${instead}`,
-        );
+        const refused = ownNameRefusal(name, "secret", lookup);
+        if (refused) issue(refused);
       });
     });
 }
 
+/**
+ * Why `name` can't be one of the app's own secrets or settings (`what`),
+ * or null when it can: not a name the deploy sets, not a sign-in
+ * provider's, a remote MCP app's or any other Gateway setting (with a
+ * gateway's registry, one a registered provider holds counts too). Read
+ * without regard to case.
+ */
+function ownNameRefusal(
+  name: string,
+  what: "secret" | "setting",
+  lookup?: CapabilityLookup,
+): string | null {
+  if (isReservedAppSecretName(name)) {
+    return `${name} is set by everyapp itself (${RESERVED_APP_SECRET_NAMES_TEXT})`;
+  }
+  const upper = name.toUpperCase();
+  if (isSignInSettingName(upper)) {
+    return `${name} is a sign-in provider's setting name (every <ID>_SIGNIN_<FIELD> name is the Gateway's, set with \`everyapp signin add\`); give the app's ${what} another name`;
+  }
+  const registered = isSettableGatewaySetting(upper)
+    ? null
+    : registeredSettingOwner(lookup, upper);
+  if (!isSettableGatewaySetting(upper) && !registered) return null;
+  if (isRemoteMcpSecretName(upper)) {
+    return `${name} is a remote MCP app's credential name (every name ending in _MCP_TOKEN is the Gateway's, set with \`everyapp secret set\`); give the app's ${what} another name`;
+  }
+  const owner = registered ?? gatewaySettingOwner(upper);
+  const instead = owner
+    ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`
+    : `give the app's ${what} another name`;
+  return `${name} is a Gateway setting, which \`everyapp secret set ${upper}\` sets on the Gateway for every app; ${instead}`;
+}
+
 const AppSecretsSchemaStrict = appSecretsSchemaStrict();
+
+/**
+ * One of the app's plain settings, as an author writes it: a value that
+ * isn't a secret and differs per install (a PostHog host, a region),
+ * held on the app's Workers like a secret and read from `env`. `why` is
+ * required: whoever installs the app is asked for it.
+ */
+const SettingEntrySchemaStrict = z
+  .object({
+    name: BindingNameSchema,
+    why: z.string().min(1).max(200),
+    docs: HttpsUrlSchema.optional(),
+    optional: z.boolean().optional(),
+    type: z.enum(["text", "url", "number", "boolean"]).optional(),
+    values: z
+      .array(z.string().trim().min(1).max(200))
+      .min(2)
+      .max(50)
+      .optional(),
+  })
+  .strict()
+  .superRefine((entry, ctx) => {
+    const issue = (path: string, message: string) =>
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+    if (entry.values && entry.type && entry.type !== "text") {
+      issue(
+        "values",
+        `values lists what a text setting may be; drop type "${entry.type}" or values`,
+      );
+      return;
+    }
+    if (entry.values && new Set(entry.values).size !== entry.values.length) {
+      issue("values", "each value once");
+    }
+  });
+
+/** The strict `settings` schema: the same name rules as `secrets`, each once. */
+function appSettingsSchemaStrict(lookup?: CapabilityLookup) {
+  return z
+    .array(SettingEntrySchemaStrict)
+    .max(100)
+    .superRefine((entries, ctx) => {
+      const seen = new Set<string>();
+      entries.forEach((entry, index) => {
+        const issue = (message: string) =>
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
+        if (seen.has(entry.name)) issue(`duplicate setting ${entry.name}`);
+        seen.add(entry.name);
+        const refused = ownNameRefusal(entry.name, "setting", lookup);
+        if (refused) issue(refused);
+      });
+    });
+}
+
+const AppSettingsSchemaStrict = appSettingsSchemaStrict();
 
 /**
  * A Vectorize index as an author writes it: `{ name, dimensions, metric }`
@@ -1276,6 +1348,10 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
       ? appSecretsSchemaStrict(options.capabilities)
       : AppSecretsSchemaStrict
     ).optional(),
+    settings: (options.capabilities
+      ? appSettingsSchemaStrict(options.capabilities)
+      : AppSettingsSchemaStrict
+    ).optional(),
     email: EmailSchemaStrict.optional(),
     database: DatabaseSchema.strict().optional(),
     limits: WorkerLimitsSchema.strict().optional(),
@@ -1365,6 +1441,19 @@ export function validateManifestStrict(
     throw new ManifestError(
       `Invalid everyapp.config: secrets: ${taken} is one of the app's bindings; pick another name for the secret`,
     );
+  }
+  const secrets = new Set(secretNames(manifest));
+  for (const name of settingNames(manifest)) {
+    if (bindings.has(name)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: settings: ${name} is one of the app's bindings; pick another name for the setting`,
+      );
+    }
+    if (secrets.has(name)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: settings: ${name} is one of the app's secrets too; declare it once, under secrets when it is a key, under settings when it isn't`,
+      );
+    }
   }
   if (isReservedAppId(manifest.id)) {
     throw new ManifestError(
@@ -1610,11 +1699,11 @@ export function bindingNamesOf(
  * Secrets Store secrets: the store is the platform account's. Nor Analytics
  * Engine: a dataset's name is account-wide, and its writes bill the account.
  * Nor inbound mail: the platform's zones aren't an organization's to route.
- * Nor secrets of its own: a third-party Worker gets GATEWAY_URL and
+ * Nor secrets or settings of its own: a third-party Worker gets GATEWAY_URL and
  * EVERY_APP_ORG_ID only, and nothing sets another.
  */
 export function manifestTierProblems(
-  manifest: Pick<Manifest, "resources" | "email" | "secrets">,
+  manifest: Pick<Manifest, "resources" | "email" | "secrets" | "settings">,
   tier: string,
 ): string[] {
   if (tier === "service_binding") return [];
@@ -1679,6 +1768,11 @@ export function manifestTierProblems(
   if (manifest.secrets?.length) {
     problems.push(
       "secrets: third-party apps can't have secrets of their own yet",
+    );
+  }
+  if (manifest.settings?.length) {
+    problems.push(
+      "settings: third-party apps can't have settings of their own yet",
     );
   }
   return problems;

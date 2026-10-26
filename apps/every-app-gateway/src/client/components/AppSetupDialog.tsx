@@ -119,8 +119,8 @@ export function AppSetupDialog({
 }
 
 /**
- * One setting: its label and names, why the app needs it, where it comes
- * from. An app's own secret is labelled by its name, so the label is set
+ * One setting: its label and names, why the app needs it, what a plain
+ * setting takes, where it comes from. An app's own secret is labelled by its name, so the label is set
  * in the same type as a name.
  */
 function SettingRow({ row }: { row: SetupDialogRow }) {
@@ -140,6 +140,9 @@ function SettingRow({ row }: { row: SetupDialogRow }) {
       </div>
       {row.why ? (
         <p className="text-sm text-muted-foreground">{row.why}</p>
+      ) : null}
+      {row.takes ? (
+        <p className="text-sm text-muted-foreground">Takes {row.takes}</p>
       ) : null}
       {row.docs ? (
         <a

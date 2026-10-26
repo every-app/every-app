@@ -2020,3 +2020,15 @@ Defaults taken for setup info on statuses and refusals, and for `aiStatus()` (`a
 - [ ] **`GET /api/ai/<provider>` (the bare path) is now the AI status.** Before, it was proxied to the provider's root. It is never counted or capped. The default resolves on the organization's choice when `for` says whose; it falls back to the order alone when attribution fails.
 - [ ] **A status for something the app doesn't ask for carries no setup info**, as `configured` already said nothing.
 - [ ] **`refusalFromError()` reads local dev's missing-key `ConfigurationError` as a 503 refusal**, `ai_provider_not_configured` or `ai_default_not_configured`, with the `.dev.vars` names and a null command.
+
+## Platform shortcuts (2026-10-26)/lane 8 manifest settings
+
+Per-install plain settings (`settings` in the manifest). Defaults taken; confirm or change:
+
+- [ ] **Held as Worker secrets.** A setting's value is a `secret_text` binding on the app's Workers, not a `plain_text` var. It takes the secrets' path (`configure`, `secret set`, leases, `apps.secret_names`, kept by deploys) with no new storage or migration. The catch: the values aren't readable back, so `status` and Admin show set/unset and what the setting takes, never the value.
+- [ ] **`why` is required** on a setting (it's optional on a secret): whoever installs the app gets asked for it.
+- [ ] **Four types:** `text`, `url` (http or https), `number`, `boolean` (`true`/`false`), plus `values` for a text enum. No regex patterns, no min/max.
+- [ ] **No `anyOf` or `setup` on settings.** Add them if an app asks.
+- [ ] **`secret set NAME` sets a declared setting too,** checked against its rule. `configure` is still the documented path.
+- [ ] **Provider name clashes.** The `PROVIDER_SECRET_TAKEN` checks (`provider add`, the gateway's provider routes; lane 6's files) still read `secrets` only. A provider registered later could take a setting's name. Follow-up: switch them to `appWorkerNames()`.
+- [ ] **After the flip (stacked PR):** `default` on a setting (the deploy writes it while unset; `everyAppWorker()` binds it as text in dev), `install` offering `configure` at a terminal, and the `patterns.md` row.

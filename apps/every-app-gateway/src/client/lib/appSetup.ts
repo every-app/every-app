@@ -6,7 +6,11 @@
  * else could be set. Pure, so
  * the dialog's wording is tested without rendering it.
  */
-import type { AppSetup, AppSetupSetting } from "@every-app/sdk/internal";
+import {
+  settingValueTakes,
+  type AppSetup,
+  type AppSetupSetting,
+} from "@every-app/sdk/internal";
 
 /** How an operator re-reads the app Worker's secrets after setting one another way. */
 export const STATUS_COMMAND = "pnpm everyapp status";
@@ -26,6 +30,8 @@ export interface SetupDialogRow {
    */
   names: string[];
   why: string | null;
+  /** What one of the app's plain settings takes ("an http or https URL, default …"); null for a key. */
+  takes: string | null;
   docs: SetupDocsLink | null;
 }
 
@@ -93,6 +99,7 @@ function row(setting: AppSetupSetting): SetupDialogRow {
     label: setting.label,
     names: setting.names.filter((name) => name !== setting.label),
     why: setting.why ?? null,
+    takes: setting.value ? settingValueTakes(setting.value) : null,
     docs: docsLink(setting.docs),
   };
 }

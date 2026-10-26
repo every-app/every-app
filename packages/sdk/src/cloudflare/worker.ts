@@ -211,6 +211,15 @@ export interface EveryAppWorkerManifest {
    * app opens without it, and why it is needed.
    */
   secrets?: ReadonlyArray<string | { readonly name: string }>;
+  /**
+   * The app's plain settings: values that aren't secrets and differ per
+   * install (a PostHog host, a region), as `{ name, why, type, values,
+   * optional }`. A deployed Worker holds them like its secrets
+   * (`everyapp configure <app>` sets them), so production builds don't
+   * declare them. In development each one set locally (`.dev.vars`,
+   * `.env`, as for secrets) is declared as a secret.
+   */
+  settings?: ReadonlyArray<{ readonly name: string }>;
 }
 
 /** The names of the manifest's `secrets`, whichever form each took. */
@@ -1797,9 +1806,9 @@ function classBindings(
 }
 
 /**
- * Check the names of the manifest's `secrets`, and in dev declare the ones
- * set locally, with the developer's own keys for the manifest's providers
- * and capabilities.
+ * Check the names of the manifest's `secrets` and `settings`, and in dev
+ * declare the ones set locally, with the developer's own keys for the manifest's providers and
+ * capabilities.
  */
 function addSecrets(
   env: Record<string, EveryAppBinding>,
@@ -1809,14 +1818,20 @@ function addSecrets(
   >,
   deploy: EveryAppDeployTarget | undefined,
 ): void {
-  const secrets = manifestSecretNames(options.manifest);
+  const settings = options.manifest.settings ?? [];
+  const secrets = [
+    ...manifestSecretNames(options.manifest),
+    ...settings.map((setting) => setting.name),
+  ];
+  const settingNames = new Set(settings.map((setting) => setting.name));
   for (const secret of secrets) {
+    const field = settingNames.has(secret) ? "settings" : "secrets";
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
-      throw new Error(`secrets: "${secret}" isn't a valid binding name.`);
+      throw new Error(`${field}: "${secret}" isn't a valid binding name.`);
     }
     if (env[secret] || RESERVED_SECRET_NAME.test(secret)) {
       throw new Error(
-        `secrets: ${secret} is a name the deploy sets or a binding it builds.`,
+        `${field}: ${secret} is a name the deploy sets or a binding it builds.`,
       );
     }
   }

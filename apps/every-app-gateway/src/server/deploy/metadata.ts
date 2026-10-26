@@ -172,6 +172,11 @@ export function manifestProblems(
   if (manifest.secrets?.length) {
     problems.push("it declares secrets, which third-party apps can't have yet");
   }
+  if (manifest.settings?.length) {
+    problems.push(
+      "it declares settings, which third-party apps can't have yet",
+    );
+  }
   // The platform's zones aren't an organization's to route (manifestTierProblems).
   if (manifest.email?.inbound === true) {
     problems.push(

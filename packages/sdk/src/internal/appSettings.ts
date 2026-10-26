@@ -15,7 +15,10 @@
  * member is set; only for an app that picks among the set members at run
  * time). Each may say `why` it is needed and where it comes from
  * (`docs`, an https URL); for providers and capabilities the registries
- * here supply a default.
+ * here supply a default. An app's plain settings (`settings`: a host, a
+ * project id, a region) are held like its secrets, on its Worker, but are
+ * values rather than keys: each says what it takes (a URL, a number, one
+ * of a list).
  *
  * Everything in this module is pure and tenant-neutral: a manifest ships
  * in a release, and what is set is asked of the caller (`isSet`), which
@@ -58,6 +61,32 @@ export interface SecretEntry extends SettingNeedFields {
   name: string;
 }
 
+/** What a plain setting's value is: text by default, or a URL, a number, a switch. */
+export type SettingValueType = "text" | "url" | "number" | "boolean";
+
+/**
+ * An app's plain setting as `settings` lists it: a value that isn't a
+ * secret (a PostHog host, a project id, a region) and differs per
+ * install, set like a secret with `everyapp configure <app>` and read
+ * from `env` as a string.
+ */
+export interface SettingEntry {
+  name: string;
+  why?: string;
+  docs?: string;
+  optional?: boolean;
+  /** What it takes; `text` when not given. */
+  type?: SettingValueType;
+  /** The values it may take, for a `text` setting that is one of a list. */
+  values?: readonly string[];
+}
+
+/** What a plain setting's value must be: what `configure` checks and every surface says. */
+export interface SettingValueRule {
+  type: SettingValueType;
+  values?: string[];
+}
+
 /** What any declaration may say about its need. */
 export interface SettingNeedFields {
   /** Why the app needs it, for whoever sets it (200 characters at most). */
@@ -86,6 +115,7 @@ export interface SettingsManifestLike {
   readonly providers?: ReadonlyArray<string | ProviderEntry>;
   readonly capabilities?: { readonly [id: string]: unknown };
   readonly secrets?: ReadonlyArray<string | SecretEntry>;
+  readonly settings?: ReadonlyArray<SettingEntry>;
   readonly ai?: {
     readonly routes?: readonly string[];
     /** The app needs the Gateway's default chat model (`/api/ai/default`): `true`, or an entry with its need. */
@@ -100,6 +130,8 @@ export type SettingKind =
   | "provider"
   | "capability"
   | "secret"
+  /** An app's plain setting (`settings`): a value on its Worker, not a key. */
+  | "setting"
   | "ai-routes"
   /** The Gateway's default model provider (`ai.chat`): one key of any provider in the order, or the operator's choice. */
   | "ai-default"
@@ -159,6 +191,12 @@ export interface AppSetting {
    * has no guide, so this is what an agent reads for it.
    */
   hint?: string;
+  /**
+   * For an app's plain setting (`kind: "setting"`): what its value must
+   * be, and its default. A setting without one is a credential, never
+   * shown.
+   */
+  value?: SettingValueRule;
 }
 
 /** A setting with whether it is set, and whether that keeps the app closed. */
@@ -252,6 +290,124 @@ export function secretNames(
   manifest: Pick<SettingsManifestLike, "secrets">,
 ): string[] {
   return secretEntries(manifest).map((entry) => entry.name);
+}
+
+/** The app's plain settings the manifest lists, each as an entry. */
+export function settingEntries(
+  manifest: Pick<SettingsManifestLike, "settings">,
+): SettingEntry[] {
+  return (manifest.settings ?? []).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || typeof entry.name !== "string") {
+      return [];
+    }
+    const record = entry as unknown as Record<string, unknown>;
+    const type = record["type"];
+    const values = record["values"];
+    return [
+      {
+        name: entry.name,
+        ...needFields(entry),
+        ...(type === "url" ||
+        type === "number" ||
+        type === "boolean" ||
+        type === "text"
+          ? { type }
+          : {}),
+        ...(Array.isArray(values) &&
+        values.every((value) => typeof value === "string")
+          ? { values: values as string[] }
+          : {}),
+      },
+    ];
+  });
+}
+
+/** The names of the app's plain settings, in order. */
+export function settingNames(
+  manifest: Pick<SettingsManifestLike, "settings">,
+): string[] {
+  return settingEntries(manifest).map((entry) => entry.name);
+}
+
+/**
+ * Every name the manifest puts on the app's own Workers: its secrets,
+ * then its plain settings. What `secret set` routes to the app and what
+ * `apps.secret_names` records.
+ */
+export function appWorkerNames(
+  manifest: Pick<SettingsManifestLike, "secrets" | "settings">,
+): string[] {
+  return [...secretNames(manifest), ...settingNames(manifest)];
+}
+
+/** A plain setting's rule, from its entry. */
+export function settingValueRule(entry: SettingEntry): SettingValueRule {
+  return {
+    type: entry.type ?? "text",
+    ...(entry.values?.length ? { values: [...entry.values] } : {}),
+  };
+}
+
+/** `a, b or c`. */
+function either(values: readonly string[]): string {
+  return values.length < 2
+    ? (values[0] ?? "")
+    : `${values.slice(0, -1).join(", ")} or ${values.at(-1)}`;
+}
+
+/**
+ * What a plain setting takes, completing "Takes …": "an http or https
+ * URL", "one of us or eu".
+ */
+export function settingValueTakes(rule: SettingValueRule): string {
+  return rule.values?.length
+    ? `${rule.values.length > 2 ? "one of " : ""}${either(rule.values)}`
+    : {
+        text: "any text",
+        url: "an http or https URL",
+        number: "a number",
+        boolean: "true or false",
+      }[rule.type];
+}
+
+/**
+ * Why `value` won't do for a plain setting (one sentence), or null when
+ * it will: never empty, and of its type, or one of its values exactly.
+ */
+export function settingValueProblem(
+  rule: Pick<SettingValueRule, "type" | "values">,
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Enter a value.";
+  if (rule.values?.length) {
+    return rule.values.includes(trimmed)
+      ? null
+      : `Not ${rule.values.length > 2 ? "one of " : ""}${either(rule.values)}.`;
+  }
+  switch (rule.type) {
+    case "text":
+      return null;
+    case "url": {
+      let url: URL | null = null;
+      try {
+        url = new URL(trimmed);
+      } catch {
+        url = null;
+      }
+      return url && (url.protocol === "http:" || url.protocol === "https:")
+        ? null
+        : `"${trimmed}" isn't an http or https URL.`;
+    }
+    case "number":
+      return /^-?\d+(\.\d+)?$/.test(trimmed)
+        ? null
+        : `"${trimmed}" isn't a number.`;
+    case "boolean":
+      return trimmed === "true" || trimmed === "false"
+        ? null
+        : "Not true or false.";
+  }
 }
 
 /**
@@ -507,6 +663,22 @@ export function appSettings(
         entry,
       ),
     );
+  }
+  for (const entry of settingEntries(manifest)) {
+    settings.push({
+      ...withNeed(
+        {
+          kind: "setting",
+          id: entry.name,
+          label: entry.name,
+          holder: "app",
+          names: [entry.name],
+          alsoReads: [],
+        },
+        entry,
+      ),
+      value: settingValueRule(entry),
+    });
   }
   return settings;
 }

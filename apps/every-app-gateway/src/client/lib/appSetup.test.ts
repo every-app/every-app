@@ -68,6 +68,7 @@ describe("setupDialogModel", () => {
         label: "DataForSEO",
         names: ["DATAFORSEO_API_KEY"],
         why: "Keyword data.",
+        takes: null,
         docs: {
           href: "https://app.dataforseo.com/api-access",
           label: "app.dataforseo.com/api-access",
@@ -91,6 +92,30 @@ describe("setupDialogModel", () => {
     expect(model.statusHint).toBe(false);
   });
 
+  it("says what one of the app's plain settings takes", () => {
+    const model = setupDialogModel(
+      setupOf(
+        {
+          id: "mc",
+          settings: [
+            {
+              name: "POSTHOG_HOST",
+              why: "Where the PostHog API is.",
+              type: "url",
+            },
+            { name: "REGION", why: "Where data lives.", values: ["us", "eu"] },
+          ],
+        },
+        [],
+      ),
+      { name: "Mission Control", canRun: true },
+    );
+    expect(model.unmet.map((row) => [row.label, row.takes])).toEqual([
+      ["POSTHOG_HOST", "an http or https URL"],
+      ["REGION", "us or eu"],
+    ]);
+  });
+
   it("names an app's own secret once, and says status re-reads the Worker", () => {
     const admin = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
       name: "Research Desk",
@@ -102,6 +127,7 @@ describe("setupDialogModel", () => {
         label: "MAIN_SECRET",
         names: [],
         why: "Signs share links.",
+        takes: null,
         docs: null,
       },
     ]);

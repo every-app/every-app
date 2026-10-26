@@ -800,3 +800,69 @@ describe("the setup state configure records", () => {
     expect(await types()).toEqual(["app.installed", "app.needs_setup", "app.settings_changed", "app.settings_changed", "app.ready"]);
   });
 });
+
+/** An app with plain settings: a URL and a number it needs, a region it may take. */
+const MC: EveryAppCliManifest = {
+  id: "mc",
+  resources: { d1: ["DB"] },
+  settings: [
+    { name: "POSTHOG_HOST", why: "Where the PostHog API is.", type: "url" },
+    { name: "POSTHOG_PROJECT_ID", why: "Which PostHog project the dashboards read.", type: "number" },
+    { name: "REGION", why: "Where reports are dated.", values: ["us", "eu"], optional: true },
+  ],
+};
+
+describe("an app's plain settings", () => {
+  it("sets them on the app's Worker from stdin, each checked, and the app opens", async () => {
+    const dir = appDir(MC);
+    const workerName = await deploy(dir, MC);
+    await configureFrom({ cwd: dir, stdin: "POSTHOG_HOST=https://eu.i.posthog.com\nPOSTHOG_PROJECT_ID=42\n" });
+    expect(secretsOf(workerName)["POSTHOG_HOST"]).toBe("https://eu.i.posthog.com");
+    expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBe("42");
+    expect(done()!["message"]).toBe("Set POSTHOG_HOST and POSTHOG_PROJECT_ID. mc is ready");
+  });
+
+  it("asks for one at a visible prompt, says what it takes, and checks the answer", async () => {
+    const dir = appDir(MC);
+    const workerName = await deploy(dir, MC);
+    const run = configureAt(dir, { values: { POSTHOG_HOST: "https://us.i.posthog.com", POSTHOG_PROJECT_ID: "123" } });
+    await run;
+    const asked = run.prompter.questions.find((question) => question["question"] === "POSTHOG_PROJECT_ID")!;
+    expect(asked["kind"]).toBe("text");
+    expect(asked["context"]).toEqual([
+      "POSTHOG_PROJECT_ID: Which PostHog project the dashboards read.",
+      "Takes a number",
+    ]);
+    expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBe("123");
+    expect(done()!["message"]).toBe("Set POSTHOG_HOST and POSTHOG_PROJECT_ID. mc is ready");
+
+    const other = appDir({ ...MC, id: "mc2" });
+    await deploy(other, { ...MC, id: "mc2" });
+    const refused = configureAt(other, { values: { POSTHOG_HOST: "https://us.i.posthog.com", POSTHOG_PROJECT_ID: "abc" } });
+    expect((await failureOf(refused)).message).toContain('POSTHOG_PROJECT_ID: "abc" isn\'t a number.');
+  });
+
+  it("refuses a piped or exported value the setting doesn't take, before anything is written", async () => {
+    const dir = appDir(MC);
+    const workerName = await deploy(dir, MC);
+    const piped = await failureOf(configureFrom({ cwd: dir, stdin: "POSTHOG_PROJECT_ID=12\nREGION=mars\n" }));
+    expect(piped.code).toBe("SETTING_VALUE_INVALID");
+    expect(piped.message).toBe('REGION can\'t be "mars"\nNot us or eu.');
+    expect(piped.fix).toBe("use us or eu");
+    const exported = await failureOf(
+      configureFrom({ cwd: dir, fromEnv: true, env: { POSTHOG_PROJECT_ID: "twelve" } }),
+    );
+    expect(exported.code).toBe("SETTING_VALUE_INVALID");
+    expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBeUndefined();
+  });
+
+  it("needs setup while a required one is unset, and says what it takes", async () => {
+    const dir = appDir(MC);
+    await deploy(dir, MC);
+    await configureFrom({ cwd: dir, stdin: "POSTHOG_HOST=https://us.i.posthog.com\nREGION=eu\n" });
+    const warning = warnings().find((event) => event["code"] === "APP_NEEDS_SETUP")!;
+    const unmet = warning["data"].setup.unmet;
+    expect(unmet.map((setting: { id: string }) => setting.id)).toEqual(["POSTHOG_PROJECT_ID"]);
+    expect(unmet[0].value).toEqual({ type: "number" });
+  });
+});
