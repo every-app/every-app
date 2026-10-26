@@ -469,6 +469,7 @@ An OpenAI Codex Security scan of this repository at main `3848d329` (the day bef
 **Done**
 
 - [x] Findings 5 and 6 (#709): `issuer-revocation.ts`; the register row `issuer.revocation-ends-what-they-issued`; gap 12 marked fixed.
+- [x] Finding 14 (#711): the Access plugin enforces the outer ring's assertion whenever the ring is configured and signs people in only with a usable `GATEWAY_URL`; register row `access.outer-ring.enforced-without-gateway-url`; gap 23 marked fixed. Default taken: a missing `GATEWAY_URL` is a logged problem, not a refused startup (a gateway that can't start can't be fixed from `everyapp update` either).
 
 ### Setup skills (2026-10-24)
 

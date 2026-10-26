@@ -597,7 +597,9 @@ apps**).
   keys can't be fetched, nobody is signed in by Access.
 - It signs people in only on the gateway's own host (`GATEWAY_URL`), during
   the browser's session check, and only with the gateway application's
-  token (`CLOUDFLARE_ACCESS_AUD`).
+  token (`CLOUDFLARE_ACCESS_AUD`). Without a usable `GATEWAY_URL` it signs
+  nobody in but keeps vouching: a session still counts only with Access's
+  word for the person (the gateway logs `access.config_problem` once).
 - On `/mcp` (Managed OAuth, above) a verified assertion is the caller's
   credential: the `Cf-Access-Jwt-Assertion` header only, never the
   `CF_Authorization` cookie (on a bypassed `/mcp` the cookie reaches the

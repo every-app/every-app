@@ -88,12 +88,49 @@ function withoutCookies(headers: Headers, names: string[]): Headers {
   return new Headers({ cookie: kept.join("; ") });
 }
 
-/** The outer ring's settings, when it can sign people in on the gateway's host. */
+/**
+ * The outer ring's settings, when it can sign people in on the gateway's
+ * host. Signing in needs the host (`GATEWAY_URL`); vouching does not: with
+ * the outer ring configured and no usable `GATEWAY_URL`, the plugin still
+ * honours no session Access doesn't vouch for (`enforcedOuterRing`), and
+ * signs nobody in. Separate on purpose, so a lost `GATEWAY_URL` fails closed
+ * rather than turning the ring off while the settings say it is on.
+ */
 function outerRingOf(
   config: AccessConfig,
   gatewayHost: string | null,
 ): AccessOuterRingConfig | null {
   return config.outerRing && gatewayHost ? config.outerRing : null;
+}
+
+const missingGatewayUrlReported = new Set<string>();
+
+/**
+ * The outer ring as it is enforced: whenever it is configured. Says once
+ * per isolate when `GATEWAY_URL` is missing or unparseable, since nobody
+ * can be signed in through Access until it is set.
+ */
+function enforcedOuterRingOf(
+  config: AccessConfig,
+  gatewayUrl: string | undefined,
+  gatewayHost: string | null,
+): AccessOuterRingConfig | null {
+  if (config.outerRing && !gatewayHost) {
+    const key = gatewayUrl ?? "";
+    if (!missingGatewayUrlReported.has(key)) {
+      missingGatewayUrlReported.add(key);
+      logEvent(
+        "access.config_problem",
+        {
+          problem: gatewayUrl
+            ? "GATEWAY_URL is not a URL: the outer ring can't sign anyone in, and a session counts only with its assertion."
+            : "GATEWAY_URL is unset: the outer ring can't sign anyone in, and a session counts only with its assertion.",
+        },
+        "warn",
+      );
+    }
+  }
+  return config.outerRing;
 }
 
 /**
@@ -117,7 +154,15 @@ export async function outerRingSignInIdentity(
 export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
   const { config } = options;
   const gatewayHost = hostOf(options.gatewayUrl);
+  // Signing in (the database hooks' "is this the vouched person", the
+  // session swap on /get-session) needs the gateway's host; vouching (the
+  // two hooks below) applies whenever the ring is configured.
   const outerRing = outerRingOf(config, gatewayHost);
+  const enforcedOuterRing = enforcedOuterRingOf(
+    config,
+    options.gatewayUrl,
+    gatewayHost,
+  );
   const oidcProvider = config.oidc
     ? createAccessOidcProvider(config.oidc)
     : null;
@@ -150,11 +195,15 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
                   const mode = accessSignInMode(hookCtx);
                   // Behind the outer ring, nothing is made over HTTP for
                   // anyone but the person Access vouches for (below).
-                  if (outerRing && mode !== "outer-ring" && hookCtx?.request) {
+                  if (
+                    enforcedOuterRing &&
+                    mode !== "outer-ring" &&
+                    hookCtx?.request
+                  ) {
                     await assertAccessVouchesFor(
                       user.email,
                       hookCtx.request.headers,
-                      outerRing,
+                      enforcedOuterRing,
                     );
                   }
                   if (!mode) return;
@@ -175,7 +224,11 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
                   // now, and say why, instead of making one the next request
                   // ignores (or a membership for it). The outer ring's own
                   // sign-in is that person.
-                  if (outerRing && mode !== "outer-ring" && hookCtx?.request) {
+                  if (
+                    enforcedOuterRing &&
+                    mode !== "outer-ring" &&
+                    hookCtx?.request
+                  ) {
                     const user =
                       await hookCtx.context.internalAdapter.findUserById(
                         session.userId,
@@ -183,7 +236,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
                     await assertAccessVouchesFor(
                       user?.email ?? null,
                       hookCtx.request.headers,
-                      outerRing,
+                      enforcedOuterRing,
                     );
                   }
                   if (mode) {
@@ -204,13 +257,13 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
           // the request is taken out of it, so they answer as if there were
           // none (a 401 where they need one).
           matcher: (ctx) =>
-            outerRing !== null &&
+            enforcedOuterRing !== null &&
             Boolean(ctx.request) &&
             ctx.path !== "/get-session" &&
             ctx.path !== "/sign-out",
           handler: createAuthMiddleware(async (ctx) => {
             const headers = ctx.headers ?? ctx.request?.headers;
-            if (!outerRing || !headers) return;
+            if (!enforcedOuterRing || !headers) return;
             const { sessionToken, sessionData, dontRememberToken } =
               ctx.context.authCookies;
             const token = await ctx.getSignedCookie(
@@ -218,7 +271,10 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
               ctx.context.secret,
             );
             if (!token) return;
-            const identity = await verifyOuterRingAssertion(headers, outerRing);
+            const identity = await verifyOuterRingAssertion(
+              headers,
+              enforcedOuterRing,
+            );
             if (identity) {
               const found =
                 await ctx.context.internalAdapter.findSession(token);
@@ -244,10 +300,11 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
       ],
       after: [
         {
-          matcher: (ctx) => outerRing !== null && ctx.path === "/get-session",
+          matcher: (ctx) =>
+            enforcedOuterRing !== null && ctx.path === "/get-session",
           handler: createAuthMiddleware(async (ctx) => {
             const returned = ctx.context.returned;
-            if (isAPIError(returned) || !outerRing) return;
+            if (isAPIError(returned) || !enforcedOuterRing) return;
             // The live session get-session answered with (none when it had
             // none, or only an expired one).
             const current = returned
@@ -255,7 +312,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
               : null;
             const headers = ctx.request?.headers ?? ctx.headers;
             const identity = headers
-              ? await verifyOuterRingAssertion(headers, outerRing)
+              ? await verifyOuterRingAssertion(headers, enforcedOuterRing)
               : null;
 
             // Anywhere but the browser's own session check on the gateway's
@@ -267,6 +324,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
             // the gateway swaps someone else's.
             if (
               !identity?.maySignIn ||
+              !outerRing ||
               ctx.request?.method !== "GET" ||
               requestHost(ctx.request) !== gatewayHost
             ) {

@@ -970,6 +970,64 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     }
   });
 
+  it("without GATEWAY_URL, signs nobody in and still honours no session Access doesn't vouch for (fails closed)", async () => {
+    // The ring's settings are present; the gateway's own URL is not. The
+    // ring can't tell its own host, so it signs nobody in, and a session
+    // still counts only with Access's word for the person. (A GATEWAY_URL
+    // that isn't a URL stops Better Auth itself from starting.)
+    const owner = await claimGateway();
+    await seedVerifiedMember(owner.organizationId, "alice@acme.com");
+    {
+      delete workerEnv.GATEWAY_URL;
+
+      // No sign-in through the ring, on any host.
+      const fresh = new Browser();
+      const signIn = await getSession(fresh, { email: "alice@acme.com" });
+      await expect(signIn.json()).resolves.toBeNull();
+      expect(fresh.has("better-auth.session_token")).toBe(false);
+
+      // A password sign-in behind the ring is still only the vouched
+      // person's: the owner's with Access's word for the owner goes through,
+      // without it there is no session.
+      const browser = new Browser();
+      await passwordSignIn(
+        browser,
+        OWNER.email,
+        OWNER.password,
+        await throughAccess(OWNER.email),
+      );
+      const cookie = browser.header();
+      const auth = createAuth();
+      await expect(
+        auth.api.getSession({ headers: new Headers({ cookie }) }),
+      ).resolves.toBeNull();
+      await expect(
+        (await getSession(browser, null)).json(),
+      ).resolves.toBeNull();
+      await expect(
+        auth.api.getSession({
+          headers: new Headers({
+            cookie,
+            "cf-access-jwt-assertion": await access.assertion({
+              email: OWNER.email,
+            }),
+          }),
+        }),
+      ).resolves.toMatchObject({ user: { id: owner.userId } });
+      const unvouched = new Browser();
+      const refused = await send(
+        "https://gateway.example.com/api/auth/sign-in/email",
+        {
+          method: "POST",
+          browser: unvouched,
+          body: { email: OWNER.email, password: OWNER.password },
+        },
+      );
+      expect(refused.status).toBe(403);
+    }
+    workerEnv.GATEWAY_URL = GATEWAY_URL;
+  });
+
   it("tells the sign-in page who Access says is here, only from a verified assertion", async () => {
     await claimGateway();
     const verified = await api("/sign-in-methods", {

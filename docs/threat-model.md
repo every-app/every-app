@@ -1722,9 +1722,13 @@ means it is on main (every boundary fix from this pass merged on
 22. **An admin could mail a reset link to the owner, another admin,
     themselves or a deactivated member** (B2, low; fixed in #407, merged).
 23. **With `GATEWAY_URL` missing, the outer ring stops vouching as well as
-    signing in, while the config still reports it on** (B6, low). Every
-    session check then honours a cookie with no assertion. A one-line
-    separation of the two uses in the plugin.
+    signing in, while the config still reports it on** (B6, low; fixed in
+    #711, `access.outer-ring.enforced-without-gateway-url`). Vouching
+    is now separate from signing in: with the ring configured and no usable
+    `GATEWAY_URL`, every session still counts only with Access's word for
+    the person and HTTP sign-ins are still refused for anyone else; the
+    ring only stops signing people in, and logs the problem once. The
+    2026-10-25 scan's finding 14.
 24. **A held `subscriptions/listen` stream on an app host's `/mcp`
     outlives the token or session that opened it** for up to ten minutes
     (B5, low); the gateway's own `/mcp` re-checks on every poll, ends the
