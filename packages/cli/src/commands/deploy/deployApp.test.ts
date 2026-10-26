@@ -2225,7 +2225,7 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
   });
 
-  it("with --yes installs without a question, browser installs included, then deploys", async () => {
+  it("with --yes installs without a question, browser installs included, then deploys behind Access", async () => {
     const asked: string[] = [];
     const setup = setupSeams();
 
@@ -2246,11 +2246,19 @@ describe("deploy with no Gateway in the account yet", () => {
               return null;
             },
           },
+          // --yes skips setup's questions, not the Zero Trust team's name:
+          // the account has none, and a person at the terminal picks it.
+          askTeam: async (suggested) => {
+            asked.push(`Zero Trust team name (${suggested})`);
+            return `${suggested}-team`;
+          },
         },
       },
     });
 
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["Zero Trust team name (example)"]);
+    expect(events).toContainEqual(expect.objectContaining({ step: "setup.access", status: "ok" }));
+    expect(account.zeroTrust.applications.size).toBe(2);
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
     expect(account.gatewayDomains().sort()).toEqual(["apps.example.com", "todo.apps.example.com"]);
   });

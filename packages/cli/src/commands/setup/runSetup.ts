@@ -554,7 +554,9 @@ async function accessFromSetup(context: AccessFromSetup, asking: boolean): Promi
     accessLeftOff(out, chosen);
     return false;
   }
-  return runAccessOn(context, { interactive: false });
+  // --yes at a terminal skips the question, not the team's name: a person
+  // is there to pick it, so it is asked, as the zone is.
+  return runAccessOn(context, { interactive: deps.interactive });
 }
 
 const accessOffBecause: Record<AccessOffReason, string> = {
