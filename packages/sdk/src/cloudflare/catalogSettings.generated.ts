@@ -20,6 +20,7 @@ export const DEV_GATEWAY_KEYS = {
     mistral: ["MISTRAL_API_KEY"],
     groq: ["GROQ_API_KEY"],
     cohere: ["COHERE_API_KEY"],
+    opper: ["OPPER_API_KEY"],
   },
   capabilities: {
     dataforseo: ["DATAFORSEO_API_KEY"],
@@ -156,6 +157,7 @@ export const CATALOG_GATEWAY_SETTINGS = [
   "MISTRAL_API_KEY",
   "GROQ_API_KEY",
   "COHERE_API_KEY",
+  "OPPER_API_KEY",
   "VOYAGE_API_KEY",
   "PERPLEXITY_API_KEY",
   "JINA_API_KEY",

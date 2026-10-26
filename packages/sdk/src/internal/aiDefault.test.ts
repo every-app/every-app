@@ -104,8 +104,10 @@ describe("resolveAiDefault", () => {
     expect(resolution.settings).toEqual(["OPENROUTER_API_KEY"]);
     expect(resolution.via).toBe("direct");
     expect(resolution.model).toBe("anthropic/claude-haiku-5.5");
+    // Then every other entry with a chat route, after the shipped order.
     expect(resolution.candidates.map((candidate) => candidate.id)).toEqual([
       ...AI_DEFAULT_ORDER,
+      "opper",
     ]);
   });
 
@@ -195,6 +197,20 @@ describe("resolveAiDefault", () => {
       ]),
     });
     expect(gemini.via).toBe("direct");
+  });
+
+  it("takes an entry after the shipped order when its key is the only one set", () => {
+    const resolution = resolveAiDefault({
+      provider: null,
+      isSet: setOf(["OPPER_API_KEY"]),
+    });
+    expect(resolution.provider).toBe("opper");
+    expect(resolution.source).toBe("order");
+    expect(resolution.configured).toBe(true);
+    expect(resolution.settings).toEqual(["OPPER_API_KEY"]);
+    expect(resolution.model).toBe("gpt-5.4-mini");
+    expect(resolution.embeddingsModel).toBe("text-embedding-3-small");
+    expect(resolution.via).toBe("direct");
   });
 
   it("lists every candidate with its state", () => {

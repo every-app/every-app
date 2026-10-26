@@ -1,5 +1,5 @@
 /**
- * Inference: five AI providers (`ai` entries) and five per-call model APIs.
+ * Inference: six AI providers (`ai` entries) and five per-call model APIs.
  *
  * Catalog entries written from each provider's own documentation on
  * 2026-10-25 by one research agent per batch and checked by a second
@@ -256,6 +256,57 @@ export const INFERENCE = {
       how: "docs",
     },
     tags: ["ai", "llm", "embeddings", "rerank"],
+  },
+  // An AI gateway hosted in the EU (AWS Stockholm), OpenAI-shaped, in front
+  // of many model providers. Written from docs.opper.ai and the public
+  // OpenAPI spec (api.opper.ai/v3/openapi.yaml) on 2026-10-27. No `aig`: AI
+  // Gateway has no Opper endpoint. No `cost.responseField`: the price comes
+  // back in the X-Opper-Cost header, not the body.
+  opper: {
+    mode: "ai",
+    label: "Opper",
+    description:
+      "One key for many providers' models, hosted in the EU, through OpenAI's API shape: chat, responses, embeddings.",
+    auth: {
+      kind: "bearer",
+      secret: "OPPER_API_KEY",
+    },
+    docs: "https://platform.opper.ai",
+    api: "https://docs.opper.ai",
+    origin: "https://api.opper.ai",
+    inferenceRoutes: [
+      "/v3/compat/chat/completions",
+      "/v3/compat/responses",
+      "/v3/compat/embeddings",
+    ],
+    chat: { path: "/v3/compat/chat/completions", seedModel: "gpt-5.4-mini" },
+    embeddings: {
+      path: "/v3/compat/embeddings",
+      seedModel: "text-embedding-3-small",
+    },
+    hint: "An API key from the Opper platform; the Gateway sends it as a bearer token. Apps call the OpenAI-shaped paths under /v3/compat; a bare model name such as gpt-5.4-mini lets Opper pick the route, a provider/model id pins one.",
+    secrets: [
+      {
+        name: "OPPER_API_KEY",
+        hint: "A key from API Keys on platform.opper.ai.",
+      },
+    ],
+    smoke: {
+      method: "GET",
+      path: "/v3/compat/models",
+      expect: [200],
+      free: true,
+    },
+    cost: {
+      unit: "token",
+      note: "Token rates are the model providers' rates with no markup; Opper charges a 3% fee when you buy credits (5.5% with Control Plane features).",
+    },
+    example: "draft a reply to this customer email",
+    verified: {
+      on: "2026-10-27",
+      how: "docs",
+    },
+    tags: ["ai", "llm", "embeddings"],
   },
   voyage: {
     mode: "api_key",

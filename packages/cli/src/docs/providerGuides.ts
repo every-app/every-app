@@ -202,6 +202,15 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Copy the key.",
     ],
   },
+  opper: {
+    blurb:
+      "One key for many providers' models through OpenAI's API shape, from a gateway hosted in the EU. Requests can be pinned to EU-hosted regions, and audit logs and traces stay in EU storage.",
+    key: [
+      "Sign in or sign up at [platform.opper.ai](https://platform.opper.ai).",
+      "Open **API Keys** and create a key.",
+      "Copy the key.",
+    ],
+  },
   "workers-ai": {
     blurb:
       "Cloudflare's own models, billed to your Gateway's Cloudflare account. No separate sign-up.",

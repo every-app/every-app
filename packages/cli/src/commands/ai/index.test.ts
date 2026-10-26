@@ -106,6 +106,7 @@ describe("ai show and ai list", () => {
       "groq",
       "mistral",
       "gemini",
+      "opper",
     ]);
     expect(done()!["message"]).toContain("Nothing is set yet");
 

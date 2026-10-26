@@ -2790,6 +2790,7 @@ describe("the default model provider over /mcp", () => {
       "groq",
       "mistral",
       "gemini",
+      "opper",
     ]);
     expect(candidates[0]).not.toHaveProperty("configured");
   });

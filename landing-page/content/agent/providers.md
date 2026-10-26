@@ -515,7 +515,7 @@ Generated from `CAPABILITIES` by `pnpm -C packages/cli docs:update`; a test fail
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
+The built-in catalog has 60 providers: 47 API-key, 10 AI, 3 OAuth clients.
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -575,6 +575,7 @@ The built-in catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
 | `mistral` | Mistral AI | `ai` | `MISTRAL_API_KEY` | `api.mistral.ai` | `Authorization: Bearer <MISTRAL_API_KEY>` | https://console.mistral.ai; API reference https://docs.mistral.ai/api/ | `GET https://api.mistral.ai/v1/models`, expecting 200; free | 2026-10-25, docs |
 | `groq` | Groq | `ai` | `GROQ_API_KEY` | `api.groq.com` | `Authorization: Bearer <GROQ_API_KEY>` | https://console.groq.com/keys; API reference https://console.groq.com/docs/api-reference | `GET https://api.groq.com/openai/v1/models`, expecting 200; free | 2026-10-25, docs |
 | `cohere` | Cohere | `ai` | `COHERE_API_KEY` | `api.cohere.com` | `Authorization: Bearer <COHERE_API_KEY>` | https://dashboard.cohere.com/api-keys; API reference https://docs.cohere.com/reference/about | `GET https://api.cohere.com/v1/models`, expecting 200; free | 2026-10-25, docs |
+| `opper` | Opper | `ai` | `OPPER_API_KEY` | `api.opper.ai` | `Authorization: Bearer <OPPER_API_KEY>` | https://platform.opper.ai; API reference https://docs.opper.ai | `GET https://api.opper.ai/v3/compat/models`, expecting 200; free | 2026-10-27, docs |
 
 OAuth clients (`oauth_client`: the Gateway completes their token endpoints only, and the spec parser takes none as a row): `slack`, `google-workspace`, `microsoft-365`. Their settings, consoles, redirect URIs, token endpoints and scope sets are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (`service`: no host, no spec): `email`, `members`.
 
@@ -634,6 +635,7 @@ Each company the Gateway supports has a page in the user docs, under [/docs/prov
 | [mistral](/docs/providers/mistral) | `mistral` | `MISTRAL_API_KEY` | `secret set MISTRAL_API_KEY` | https://console.mistral.ai |
 | [groq](/docs/providers/groq) | `groq` | `GROQ_API_KEY` | `secret set GROQ_API_KEY` | https://console.groq.com/keys |
 | [cohere](/docs/providers/cohere) | `cohere` | `COHERE_API_KEY` | `secret set COHERE_API_KEY` | https://dashboard.cohere.com/api-keys |
+| [opper](/docs/providers/opper) | `opper` | `OPPER_API_KEY` | `secret set OPPER_API_KEY` | https://platform.opper.ai |
 | [voyage](/docs/providers/voyage) | `voyage` | `VOYAGE_API_KEY` | `secret set VOYAGE_API_KEY` | https://dashboard.voyageai.com/organization/api-keys |
 | [perplexity](/docs/providers/perplexity) | `perplexity` | `PERPLEXITY_API_KEY` | `secret set PERPLEXITY_API_KEY` | https://console.perplexity.ai/project/keys |
 | [jina](/docs/providers/jina) | `jina` | `JINA_API_KEY` | `secret set JINA_API_KEY` | https://jina.ai/api-dashboard/key-manager |

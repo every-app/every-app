@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 60 providers: 47 API-key, 10 AI, 3 OAuth clients.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -76,6 +76,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`mistral`](#mistral) | Mistral AI | AI | `MISTRAL_API_KEY` |  |
 | [`groq`](#groq) | Groq | AI | `GROQ_API_KEY` |  |
 | [`cohere`](#cohere) | Cohere | AI | `COHERE_API_KEY` |  |
+| [`opper`](#opper) | Opper | AI | `OPPER_API_KEY` |  |
 | [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [slack.md](slack.md) |
 | [`google-workspace`](#google-workspace) | Google (Gmail, Calendar, Search Console and Analytics) | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | [google.md](google.md) |
 | [`microsoft-365`](#microsoft-365) | Microsoft 365 (Outlook mail and calendar) | OAuth client | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | [microsoft-365.md](microsoft-365.md) |
@@ -1035,6 +1036,23 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** Production: 500 calls a minute for Command A chat and most endpoints, rerank 1,000. Trial: 20 chat calls a minute, 1,000 calls a month.
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set COHERE_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** none beyond this section
+
+### opper
+
+**Opper** (`ai`): One key for many providers' models, hosted in the EU, through OpenAI's API shape: chat, responses, embeddings.
+
+- **Settings:** `OPPER_API_KEY`
+- **What the key is:** An API key from the Opper platform; the Gateway sends it as a bearer token. Apps call the OpenAI-shaped paths under /v3/compat; a bare model name such as gpt-5.4-mini lets Opper pick the route, a provider/model id pins one. A key from API Keys on platform.opper.ai.
+- **Where the key comes from:** https://platform.opper.ai
+- **API reference:** https://docs.opper.ai
+- **How it is sent:** `Authorization: Bearer <OPPER_API_KEY>`, to `api.opper.ai` only, over https
+- **What apps may do:** list it under `providers` and call `/api/ai/opper/…` with `createGatewayFetch()`: POST to `/v3/compat/chat/completions`, `/v3/compat/responses`, `/v3/compat/embeddings`; as the Gateway's default (`ai: { chat: true }`, `/api/ai/default/v1/chat/completions`) it serves `/v3/compat/chat/completions` with the operator's chat model (`ai model`), seeded with `gpt-5.4-mini`, when the app names no model and `/v3/compat/embeddings` with the embeddings model, seeded with `text-embedding-3-small`
+- **Smoke request:** `GET https://api.opper.ai/v3/compat/models`, expecting 200; free
+- **Cost:** per token. Token rates are the model providers' rates with no markup; Opper charges a 3% fee when you buy credits (5.5% with Control Plane features).
+- **Rate:** not recorded
+- **Verified:** 2026-10-27, docs
+- **Set it:** `pnpm everyapp secret set OPPER_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
 ## OAuth clients

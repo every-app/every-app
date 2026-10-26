@@ -13,6 +13,7 @@
     "mistral",
     "groq",
     "cohere",
+    "opper",
     "---Speech, images and embeddings---",
     "voyage",
     "replicate",
