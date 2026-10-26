@@ -8,6 +8,8 @@ import {
   FIXTURE_ACTIONS,
   isDomainQuestion,
   isEarlyAdopterQuestion,
+  isFourAppsQuestion,
+  FOUR_APPS_REPLY,
   EARLY_ADOPTER_REPLY,
   parseBlocked,
   parseDone,
@@ -87,6 +89,27 @@ describe("the reply table", () => {
         hadResultEvent: true,
       }),
     ).toMatchObject({ trigger: "early_adopter_question" });
+  });
+  it("answers step 4's four-apps question as an expected hand-off once the app is live (launch gate run 1)", () => {
+    const u = user();
+    u.onInput({ kind: "setup_ended", status: "done" });
+    u.onInput({ kind: "app_deployed" });
+    const action = u.onInput({
+      kind: "turn_end",
+      text: "`hello` is live at https://hello.apps.example.com.\n\nI'll install OpenSEO, OpenCRM, OpenAnalytics and OpenMail. Any you don't want?",
+      hadResultEvent: true,
+    });
+    expect(action).toEqual({
+      type: "reply",
+      trigger: "four_apps_question",
+      text: FOUR_APPS_REPLY,
+      expected: true,
+    });
+    expect(u.state.interventions).toHaveLength(0);
+    expect(isFourAppsQuestion("Next I'll ask you which ones to skip.")).toBe(
+      false,
+    );
+    expect(isFourAppsQuestion("Which should I skip?")).toBe(true);
   });
   it("tells the question from narration about it", () => {
     expect(isEarlyAdopterQuestion(notice)).toBe(true);
@@ -417,13 +440,14 @@ describe("detectors", () => {
     );
     expect(parseBlocked("fine")).toBeNull();
   });
-  it("lists the six expected hand-offs", () => {
+  it("lists the seven expected hand-offs", () => {
     expect(EXPECTED_HANDOFFS).toEqual([
       "early_adopter_question",
       "domain_question",
       "claim_owner",
       "register_workers_subdomain",
       "create_app",
+      "four_apps_question",
       "ACCESS_TEAM_REQUIRED",
     ]);
   });

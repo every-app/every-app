@@ -25,6 +25,7 @@ const HANDOFFS: ExpectedHandoff[] = [
   "claim_owner",
   "register_workers_subdomain",
   "create_app",
+  "four_apps_question",
   "ACCESS_TEAM_REQUIRED",
 ];
 

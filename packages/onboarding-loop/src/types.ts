@@ -372,6 +372,8 @@ export type ExpectedHandoff =
   | "claim_owner"
   | "register_workers_subdomain"
   | "create_app"
+  /** Step 4 of the prompt: "I'll install OpenSEO, OpenCRM, OpenAnalytics and OpenMail. Any you don't want?" */
+  | "four_apps_question"
   | "ACCESS_TEAM_REQUIRED";
 
 /** What made the scripted user speak. */

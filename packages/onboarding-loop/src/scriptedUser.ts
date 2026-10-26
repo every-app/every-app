@@ -20,6 +20,7 @@ export const EXPECTED_HANDOFFS: readonly ExpectedHandoff[] = [
   "claim_owner",
   "register_workers_subdomain",
   "create_app",
+  "four_apps_question",
   "ACCESS_TEAM_REQUIRED",
 ];
 
@@ -83,6 +84,26 @@ export function isDomainQuestion(text: string): boolean {
         DOMAIN_WORD.test(sentence) &&
         !NARRATION.test(sentence) &&
         QUESTION_FORM.test(sentence),
+    );
+}
+
+/** The answer to step 4's question: keep all four. */
+export const FOUR_APPS_REPLY = "Install all four.";
+
+/** Step 4's question, in the prompt's words or close to them. */
+const FOUR_APPS =
+  /\b(any (of them )?you don'?t want|which (ones? )?(to|should I) skip|want me to skip)\b/i;
+
+/** Does the turn end on step 4's question (which of the four apps to skip)? */
+export function isFourAppsQuestion(text: string): boolean {
+  return text
+    .split(/(?<=[.?!])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .some(
+      (sentence) =>
+        FOUR_APPS.test(sentence) &&
+        !NARRATION.test(sentence) &&
+        /\?\s*["”]?\s*$/.test(sentence),
     );
 }
 
@@ -390,6 +411,13 @@ export function createScriptedUser(options: ScriptedUserOptions): ScriptedUser {
             !state.exercised.includes("create_app")
           ) {
             return expectedReply("create_app", CREATE_APP_REPLY);
+          }
+          if (
+            state.setupDone &&
+            isFourAppsQuestion(input.text) &&
+            !state.exercised.includes("four_apps_question")
+          ) {
+            return expectedReply("four_apps_question", FOUR_APPS_REPLY);
           }
           if (state.setupDone && state.appDeployed) {
             // Everything happened, DONE was never printed: one nudge asks for it, recorded as no_done.

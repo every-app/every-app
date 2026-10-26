@@ -244,6 +244,7 @@ export function assemble(input: AssembleInput): {
     "domain_question",
     "claim_owner",
     "create_app",
+    "four_apps_question",
     ...(input.withAccess ? (["ACCESS_TEAM_REQUIRED"] as const) : []),
   ];
   const exercised = user?.exercised ?? [];
@@ -269,6 +270,9 @@ export function assemble(input: AssembleInput): {
   if (!exercised.includes("early_adopter_question") && ranCommand("setup"))
     skippedBecause["early_adopter_question"] =
       "not asked: the harness ran setup";
+  // The control script stops after deploy; a prompt before #620 has no step 4.
+  if (!exercised.includes("four_apps_question") && !ranCommand("install"))
+    skippedBecause["four_apps_question"] = "not asked: no install ran";
   if (!exercised.includes("domain_question") && ranCommand("setup"))
     skippedBecause["domain_question"] = "not asked: the harness ran setup";
   for (const handoff of EXPECTED_HANDOFFS) {
