@@ -1,8 +1,8 @@
 /**
  * Deploying the gateway, shared by `everyapp setup` (install, upgrade,
- * repair) and the rebind of `deploy` and `delete`. The release is always the one the
- * checkout builds (./checkoutRelease.ts), so a rebind also upgrades the
- * gateway when the checkout is newer than the live release.
+ * repair; ./source.ts picks the release) and the rebind of `deploy` and
+ * `delete`, which deploys the live release again (./liveRelease.ts) and
+ * so never changes the Gateway's code.
  *
  * Under the `gateway` deploy lease, in this order:
  *
@@ -195,19 +195,6 @@ export function olderThanInstalled(
     return false;
   }
   return compareReleaseOrder(release.order, install.releaseOrder) < 0;
-}
-
-/**
- * App commands write the Gateway's registry with this CLI's rules and
- * rebind it with the Gateway this run deploys (lib/gateway/checkoutRelease.ts:
- * the checkout's build), so none runs against a Gateway newer
- * than that: they stop before anything changes.
- */
-export async function refuseOlderCheckout(
-  install: InstallRecord,
-  source: () => Promise<CandidateRelease>,
-): Promise<void> {
-  refuseDowngrade(await source(), install);
 }
 
 /** Throw DOWNGRADE_REFUSED when `release` is older than the live Gateway. */

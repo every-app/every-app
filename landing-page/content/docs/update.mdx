@@ -45,7 +45,7 @@ pnpm everyapp update
 
 Your people, apps and data stay, and if Cloudflare Access is in front it is brought in step with the new Gateway on the way (what it lets through without a login, the ways to sign in). The apps you made in `apps/` are yours, not EveryApp's: git neither tracks nor ignores them, and `git pull` leaves them alone. If it stops with **Your local changes to the following files would be overwritten by merge: pnpm-lock.yaml**, run `git checkout -- pnpm-lock.yaml` and pull again: creating an app rewrote that file, and `pnpm install` adds your app back to it.
 
-When there's an update to take, `pnpm everyapp status` says **Your every-app folder has a newer Gateway than the one online**. That isn't a problem: your Gateway keeps working until you update it. Deploying a new app from the newer folder updates the Gateway on the way; deploying an app again never touches it.
+When there's an update to take, `pnpm everyapp status` says **Your every-app folder has a newer Gateway than the one online**. That isn't a problem: your Gateway keeps working until you update it. Deploying or deleting an app never updates it: only `pnpm everyapp update` does.
 
 ## Remove an app
 

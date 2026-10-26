@@ -71,6 +71,7 @@ import {
   awaitLive,
   bindIfNeeded,
   gatewayFor,
+  refuseGatewayNewerThanCli,
   registerFromManifest,
   type ReconcileSeams,
 } from "@/commands/appGateway";
@@ -133,7 +134,6 @@ import { preflightAppHost } from "@/lib/domains/preflight";
 import { afterMigration, errorMessage, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
-import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { gatewayRegistry } from "@/lib/gateway/providers";
 import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
@@ -370,10 +370,12 @@ async function deploySteps(
         : {}),
     },
   });
-  // The Gateway a rebind deploys: the live one again, when it can be had.
+  // The Gateway a rebind deploys: the live one again. A deploy that will
+  // bind the app refuses before anything is registered when it can't be
+  // had (GATEWAY_RELEASE_UNAVAILABLE); a redeploy of a bound app needs none.
+  refuseGatewayNewerThanCli(install);
   const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
-  // Before anything is registered: never with a Gateway behind the live one.
-  await refuseOlderCheckout(install, gateway.source);
+  if (!registered || !install.liveAppWorkers.includes(registered.workerName)) await gateway.source();
   const identityKey = install.jwtPublicKey;
   if (!identityKey) {
     throw new EveryAppError(

@@ -816,7 +816,7 @@ describe("everyapp status", () => {
       code: "GATEWAY_OUTDATED",
       severity: "info",
       message:
-        "Your every-app folder has a newer Gateway than the one online\nRun update now, or leave it: the next new app's deploy updates it too.",
+        "Your every-app folder has a newer Gateway than the one online\nRun update to take it; deploying an app never changes the Gateway.",
       run: "pnpm everyapp update",
       note: "updates it now",
     });
@@ -825,7 +825,7 @@ describe("everyapp status", () => {
     expect(updatable).toContain(
       [
         "i Your every-app folder has a newer Gateway than the one online",
-        "  Run update now, or leave it: the next new app's deploy updates it too.",
+        "  Run update to take it; deploying an app never changes the Gateway.",
         "  Run: pnpm everyapp update  updates it now",
       ].join("\n"),
     );

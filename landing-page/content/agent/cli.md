@@ -483,8 +483,8 @@ with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's ac
   4. Bookmarks the production D1 database, then applies its migrations
   5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email
      Routing rules for its inbound addresses (turning routing on for a domain asks first)
-  6. Rebinds the Gateway from this checkout when the app is new (upgrading the Gateway too
-     when the checkout is newer), then waits for the app's hostname to go live
+  6. Binds a new app on the Gateway by redeploying the live Gateway's own release (never a
+     newer one: that is pnpm everyapp update), then waits for the app's hostname to go live
 
 No Gateway in any account the login sees, and none named? At a terminal it offers to install one at
 apps.<zone> (what pnpm everyapp setup does), then deploys; otherwise it stops with action_required

@@ -236,7 +236,7 @@ export function problemsFor({
       code: ProblemCode.GatewayOutdated,
       severity: Severity.Info,
       headline: "Your every-app folder has a newer Gateway than the one online",
-      detail: ["Run update now, or leave it: the next new app's deploy updates it too."],
+      detail: ["Run update to take it; deploying an app never changes the Gateway."],
       run: command`${UPDATE}`,
       runNote: "updates it now",
     });

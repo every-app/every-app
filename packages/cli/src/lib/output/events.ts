@@ -517,11 +517,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // when its migrations ran.
     "gateway.migrations": (event, running) => {
       const inSetup = running("setup.gateway");
-      const upgrade = running("gateway.upgrade");
       if (event.status === "start") return inSetup ? null : { spin: "" };
-      if (!inSetup && !upgrade && strings(event.data?.["applied"]).length === 0) return null;
-      const shown = migrated(event, inSetup || upgrade ? "Database" : "Gateway database");
-      return upgrade ? under(shown) : shown;
+      if (!inSetup && strings(event.data?.["applied"]).length === 0) return null;
+      return migrated(event, inSetup ? "Database" : "Gateway database");
     },
     "gateway.deploy": (event, running) => {
       if (event.status === "start") {
@@ -534,7 +532,6 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         };
       }
       if (event.status !== "ok") return null;
-      if (running("gateway.upgrade")) return under({ done: "Uploaded" });
       return running("setup.gateway") ? { done: "Uploaded" } : null;
     },
     "gateway.reconcile": (event) =>
@@ -643,14 +640,14 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         : null,
     "app.lease": leaseWaited,
     "gateway.lease": leaseWaited,
-    "gateway.release": (event, running) => {
+    "gateway.release": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
       if (data["downloaded"] === true) return { done: `Downloaded Gateway ${text(data["release"])}` };
       const file = text((data["origin"] as { path?: unknown } | undefined)?.path);
       if (file) return { done: `Loaded Gateway ${text(data["release"])} from ${file}`, detail: "" };
       if (data["cached"] !== false) return null;
-      return running("gateway.upgrade") ? under({ done: "Built" }) : { done: "Built from this checkout" };
+      return { done: "Built from this checkout" };
     },
     "app.email": (event) => {
       const data = event.data ?? {};
@@ -693,13 +690,6 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         : event.status === "ok"
           ? { done: "Added to the Gateway" }
           : null,
-    // Adding an app upgrades the Gateway: its steps go under this heading.
-    "gateway.upgrade": (event) =>
-      event.status === "start"
-        ? {
-            line: chalk.bold(`Gateway ${text(event.data?.["from"])} → ${text(event.data?.["to"])}`),
-          }
-        : null,
     "app.live": (event) => {
       const data = event.data ?? {};
       const url = text(data["url"]) ?? `https://${text(data["hostname"])}`;
@@ -939,16 +929,6 @@ function migrated(event: StepEvent, what: string): Shown | null {
     done: `${what} migrated`,
     detail: applied.join(", "),
     notes: restore ? [`Restore point saved. To undo: ${restore}`] : [],
-  };
-}
-
-/** A ticked line indented under a heading (`Gateway 0.2.0 → 0.2.1`), its notes too. */
-function under(shown: Shown | null): Shown | null {
-  if (!shown || !("done" in shown)) return shown;
-  return {
-    ...shown,
-    done: `  ${shown.done}`,
-    ...(shown.notes ? { notes: shown.notes.map((note) => `  ${note}`) } : {}),
   };
 }
 

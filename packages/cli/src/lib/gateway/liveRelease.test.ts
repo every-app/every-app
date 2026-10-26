@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkoutRoot } from "@/lib/checkout";
+import { EveryAppError } from "@/lib/errors";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { fakeGithubReleases } from "@/test/fakeGithub";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
@@ -48,9 +49,26 @@ function installed(
 }
 
 const CLI = "0.3.0-rc.4";
+
+/** The rebind refuses (GATEWAY_RELEASE_UNAVAILABLE), naming `update`, and says nothing was deployed. */
+async function expectUnavailable(attempt: Promise<unknown>, why: string): Promise<EveryAppError> {
+  const error = await attempt.then(
+    () => {
+      throw new Error("expected GATEWAY_RELEASE_UNAVAILABLE");
+    },
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(EveryAppError);
+  const refusal = error as EveryAppError;
+  expect(refusal.code).toBe("GATEWAY_RELEASE_UNAVAILABLE");
+  expect(refusal.message).toContain(why);
+  expect(refusal.rerun).toMatch(/ update$/);
+  expect(said()).toEqual([]);
+  return refusal;
+}
 const noCheckout = () => null;
 
-describe("the Gateway a rebind deploys: the live one, had again", () => {
+describe("the Gateway a rebind deploys: the live one, had again, or a refusal", () => {
   it("from its GitHub release by tag, whatever this CLI's version; the guard needs no download", async () => {
     const github = fakeGithubReleases({
       "every-app/every-app": [
@@ -79,40 +97,41 @@ describe("the Gateway a rebind deploys: the live one, had again", () => {
     expect(said()).toEqual(["Using the live Gateway 0.2.0 from every-app/every-app release gateway-v0.3.0-rc.3"]);
   });
 
-  it("warns when the tag's asset isn't the live bytes any more, and deploys it as an update", async () => {
+  it("refuses when the tag's asset isn't the live bytes any more: never deployed as an update", async () => {
     const replaced = await buildGatewayRelease({ builtAt: "2026-10-20T00:00:00.000Z" });
     const github = fakeGithubReleases({
       "every-app/every-app": [{ tag: "gateway-v0.3.0", assets: { [RELEASE_TARBALL]: replaced } }],
     });
-    const release = await liveGatewaySource({
+    const source = liveGatewaySource({
       install: installed({ kind: "github", repo: "every-app/every-app", tag: "gateway-v0.3.0" }),
       out,
       cliVersion: CLI,
       checkoutRoot: noCheckout,
       fetch: github.fetch,
-    }).open();
-    await release.cleanup();
-    expect(release.manifest.sha256).not.toBe(sha256);
-    expect(said()).toEqual(["warning GATEWAY_RELEASE_DIFFERS"]);
+    });
+    await expectUnavailable(source.open(), "its SHA-256 changed");
   });
 
-  it("falls back to what setup would deploy when the tag is gone, and says so", async () => {
+  it("refuses when the tag is gone, naming update; nothing else is deployed", async () => {
     const github = fakeGithubReleases({
       "every-app/every-app": [{ tag: "gateway-v0.3.0-rc.4", assets: { [RELEASE_TARBALL]: tarball } }],
     });
-    const release = await liveGatewaySource({
+    const source = liveGatewaySource({
       install: installed({ kind: "github", repo: "every-app/every-app", tag: "gateway-v0.2.9" }),
       out,
       cliVersion: CLI,
       checkoutRoot: noCheckout,
       fetch: github.fetch,
-    }).open();
-    await release.cleanup();
-    expect(release.source.origin).toEqual({ kind: "github", repo: "every-app/every-app", tag: "gateway-v0.3.0-rc.4" });
-    expect(said()[0]).toMatch(/^The live Gateway 0\.2\.0 \(from every-app\/every-app release gateway-v0\.2\.9\) can't be taken again: every-app\/every-app release gateway-v0\.2\.9 can't be downloaded any more\. Deploying the published release for this everyapp instead\.$/);
+    });
+    const error = await expectUnavailable(
+      source.open(),
+      "every-app/every-app release gateway-v0.2.9 can't be downloaded any more",
+    );
+    expect(error.message).toMatch(/^The live Gateway 0\.2\.0 \(from every-app\/every-app release gateway-v0\.2\.9\) can't be fetched again/);
+    expect(github.requests.some((request) => request.url.includes("gateway-v0.3.0-rc.4"))).toBe(false);
   });
 
-  it("from a checkout's build cache, by the row's tree hash; without that build, this checkout's own Gateway, said so", async () => {
+  it("from a checkout's build cache, by the row's tree hash; without that build, refused", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "checkout-"));
     try {
       fs.mkdirSync(releaseCacheDir(root), { recursive: true });
@@ -133,27 +152,59 @@ describe("the Gateway a rebind deploys: the live one, had again", () => {
         liveGatewaySource({ install: installed(null, { sourceTreeSha256: "tree-1" }), out, cliVersion: CLI, checkoutRoot: () => root }).describe(),
       ).resolves.toMatchObject({ treeSha256: "tree-1" });
 
-      // Not cached: this (real) checkout's sources, for the guard to order, announced once.
-      events = [];
+      // Not cached: refused, never this checkout's own sources.
       const miss = liveGatewaySource({
         install: installed({ kind: "checkout" }, { sourceTreeSha256: "tree-2" }),
         out,
         cliVersion: CLI,
         checkoutRoot: () => checkoutRoot(),
       });
-      const described = await miss.describe();
-      expect(described.origin).toEqual({ kind: "checkout" });
-      expect(described.treeSha256).not.toBe("tree-2");
-      await miss.describe();
-      expect(said()).toEqual([
-        "The live Gateway 0.2.0 (from this checkout) can't be taken again: this checkout hasn't built that tree (its build cache keeps the last few builds). Deploying this checkout's Gateway instead.",
-      ]);
+      await expectUnavailable(miss.describe(), "this checkout's Gateway sources aren't the live ones");
+      await expectUnavailable(miss.open(), "this checkout's Gateway sources aren't the live ones");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("a checkout-built Gateway, from an everyapp with no checkout: the published release, said so", async () => {
+  it("builds again from this checkout when its sources are the live tree: the same Gateway, not an upgrade", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "checkout-"));
+    try {
+      const built: string[] = [];
+      const source = (tree: string | null) =>
+        liveGatewaySource({
+          install: installed(null, { sourceTreeSha256: "tree-live" }),
+          out,
+          cliVersion: CLI,
+          checkoutRoot: () => root,
+          checkoutTree: async () => tree,
+          buildCheckout: async () => {
+            built.push("build");
+            // A build of the same tree, whose bytes differ from the live ones.
+            const rebuilt = await buildGatewayRelease({ builtAt: "2026-10-20T00:00:00.000Z" });
+            return openRelease(rebuilt, { origin: { kind: "checkout" }, treeSha256: "tree-live", committedAt: 0 });
+          },
+        });
+
+      await expect(source("tree-live").describe()).resolves.toMatchObject({ treeSha256: "tree-live" });
+      const release = await source("tree-live").open();
+      await release.cleanup();
+      expect(release.source.treeSha256).toBe("tree-live");
+      expect(release.manifest.sha256).not.toBe(sha256);
+      expect(built).toEqual(["build"]);
+      expect(said()).toEqual(["Using the live Gateway 0.2.0 from this checkout"]);
+
+      // Other sources (or none git can list): refused, nothing built, and the row's age said.
+      events = [];
+      const refusal = await expectUnavailable(source("tree-other").open(), "installed before everyapp recorded where a Gateway comes from");
+      expect(refusal.data).toMatchObject({ origin: { kind: "checkout" } });
+      await expectUnavailable(source(null).describe(), "installed before everyapp recorded");
+      expect(built).toEqual(["build"]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("a checkout-built Gateway, from an everyapp with no checkout: refused, not the published release", async () => {
     const github = fakeGithubReleases({
       "every-app/every-app": [{ tag: "gateway-v0.3.0-rc.4", assets: { [RELEASE_TARBALL]: tarball } }],
     });
@@ -164,15 +215,11 @@ describe("the Gateway a rebind deploys: the live one, had again", () => {
       checkoutRoot: noCheckout,
       fetch: github.fetch,
     });
-    await expect(source.describe()).resolves.toMatchObject({
-      origin: { kind: "github", repo: "every-app/every-app", tag: "gateway-v0.3.0-rc.4" },
-    });
-    expect(said()[0]).toBe(
-      "The live Gateway 0.2.0 (from this checkout) can't be taken again: it was built from a checkout, and this everyapp isn't running from one. Deploying the published release for this everyapp instead.",
-    );
+    await expectUnavailable(source.describe(), "it was built from a checkout, and this everyapp isn't running from one");
+    expect(github.requests).toHaveLength(0);
   });
 
-  it("from the file it was installed with, while it is there", async () => {
+  it("from the file it was installed with, while it is there; refused once it is gone", async () => {
     const source = liveGatewaySource({
       install: installed({ kind: "file", path: tarball }),
       out,
@@ -184,14 +231,14 @@ describe("the Gateway a rebind deploys: the live one, had again", () => {
     await release.cleanup();
     expect(release.manifest.sha256).toBe(sha256);
 
+    events = [];
     const gone = liveGatewaySource({
       install: installed({ kind: "file", path: "/nowhere/every-app-gateway-release.tar.gz" }),
       out,
       cliVersion: CLI,
       checkoutRoot: () => checkoutRoot(),
     });
-    await expect(gone.describe()).resolves.toMatchObject({ origin: { kind: "checkout" } });
-    expect(said().at(-1)).toContain("/nowhere/every-app-gateway-release.tar.gz is gone");
+    await expectUnavailable(gone.describe(), "/nowhere/every-app-gateway-release.tar.gz is gone");
   });
 
   it("with no Gateway installed yet: what setup deploys", async () => {

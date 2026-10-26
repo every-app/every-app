@@ -2,31 +2,40 @@
  * The Gateway an app command's rebind deploys (`deploy` binding a new
  * app or hostname, `delete`): the release that is live, taken again
  * from where the install row says it came (./install.ts `releaseOrigin`),
- * so that deploying an app never changes the Gateway's code on the way.
- * `update` is the verb for that.
+ * so that deploying or deleting an app never changes the Gateway's code.
+ * `update` (and `setup`) is the only verb that does.
  *
  * Where the live release is had again:
  *
- *  - a GitHub release: that tag, downloaded (checked against the row's
- *    SHA-256 once opened; a tag whose asset was replaced is said so);
- *  - a tarball's URL: downloaded again; a file: the file, when it is there;
+ *  - a GitHub release: that tag, downloaded and checked against the row's
+ *    SHA-256 once opened;
+ *  - a tarball's URL: downloaded again, checked the same way; a file: the
+ *    file, when it is there;
  *  - a checkout's build: this checkout's build cache for the row's tree
- *    hash (./checkoutRelease.ts keeps the last few builds by tree).
+ *    hash (./checkoutRelease.ts keeps the last few builds by tree), or a
+ *    new build when this checkout's Gateway sources hash to that tree (an
+ *    untagged Gateway such as one deployed from main: the same sources
+ *    are no upgrade). A row from before origins were recorded counts as a
+ *    checkout's.
  *
  * When it can't be (a row from before origins were recorded, a file that
  * is gone, a build cache without that tree, a published-release CLI
- * facing a checkout-built Gateway), the rebind deploys what `setup` would
- * (./source.ts: this checkout's build, or the published release for this
- * everyapp), said so, and the downgrade guard orders it as ever
- * (./apply.ts `olderThanInstalled`): a rebind can upgrade the Gateway,
- * never silently and never downgrade it.
+ * facing a checkout-built Gateway, a tag that is gone or whose asset was
+ * replaced), the rebind refuses before anything changes:
+ * GATEWAY_RELEASE_UNAVAILABLE, whose way on is `everyapp update` (which
+ * deploys what setup would, ./source.ts, under the downgrade guard), then
+ * the same command. Cloudflare's own settings PATCH would bind an app
+ * without any upload, but cf has no command for it and a `cf auth login`
+ * session gives everyapp no API token of its own.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { findCheckoutRoot } from "@/lib/checkout";
+import { EveryAppError } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { downloadRelease, fetchGithubReleaseAsset } from "@/lib/release/github";
-import { releaseCacheDir } from "./checkoutRelease";
+import { hashCheckoutTree, openCheckoutGatewayRelease, releaseCacheDir } from "./checkoutRelease";
 import type { InstallRecord } from "./install";
 import {
   describeOrigin,
@@ -50,6 +59,8 @@ export function liveGatewaySource({
   cliVersion,
   checkoutRoot = findCheckoutRoot,
   fetch: fetchImpl,
+  checkoutTree = hashCheckoutTree,
+  buildCheckout = (root) => openCheckoutGatewayRelease({ root, out, verbose }),
 }: {
   /** The install row; null before any Gateway is installed (then setup's source). */
   install: LiveInstall | null;
@@ -58,9 +69,12 @@ export function liveGatewaySource({
   cliVersion: string;
   checkoutRoot?: () => string | null;
   fetch?: typeof fetch;
+  /** The tree hash of a checkout's Gateway sources (tests). */
+  checkoutTree?: (root: string) => Promise<string | null>;
+  /** The Gateway a checkout builds (tests). */
+  buildCheckout?: (root: string) => Promise<GatewayRelease>;
 }): GatewayReleaseSource {
-  const fallback = gatewayReleaseSource({ out, verbose, cliVersion, checkoutRoot, fetch: fetchImpl });
-  if (!install) return fallback;
+  if (!install) return gatewayReleaseSource({ out, verbose, cliVersion, checkoutRoot, fetch: fetchImpl });
   const root = checkoutRoot();
   const origin = install.releaseOrigin ?? { kind: "checkout" };
   /** The live release, as the downgrade guard sees it: never older than itself. */
@@ -76,33 +90,28 @@ export function liveGatewaySource({
       ? path.join(releaseCacheDir(root), `${install.sourceTreeSha256}.tar.gz`)
       : null;
 
-  /** Whether the live release can be had again, told without fetching. */
-  const obtainable = (): boolean => {
-    switch (origin.kind) {
-      case "github":
-      case "url":
-        return true;
-      case "file":
-        return fs.existsSync(origin.path);
-      case "checkout":
-        return cached !== null && fs.existsSync(cached);
-    }
-  };
-
-  let saidFallback = false;
-  const useFallback = (why: string) => {
-    if (!saidFallback) {
-      saidFallback = true;
-      out.emit({
-        type: "step",
-        step: "gateway.release",
-        status: "start",
-        message: `The live Gateway ${install.releaseVersion} (from ${describeOrigin(origin)}) can't be taken again: ${why}. Deploying ${root ? "this checkout's Gateway" : "the published release for this everyapp"} instead.`,
-        data: { live: install.releaseVersion, origin, why },
-      });
-    }
-    return fallback;
-  };
+  const tree = install.sourceTreeSha256;
+  /**
+   * How the live release can be had again, told without fetching; null
+   * when it can't. A checkout's Gateway comes from the build cache for the
+   * row's tree hash, or is built again when this checkout's sources hash
+   * to it: builds aren't byte-reproducible, so the tree is what is live
+   * (./apply.ts `isLiveRelease` says the same), and that build is no upgrade.
+   */
+  let how: Promise<"fetch" | "cache" | "build" | null> | null = null;
+  const obtainable = () =>
+    (how ??= (async () => {
+      switch (origin.kind) {
+        case "github":
+        case "url":
+          return "fetch";
+        case "file":
+          return fs.existsSync(origin.path) ? "fetch" : null;
+        case "checkout":
+          if (cached !== null && fs.existsSync(cached)) return "cache";
+          return root && tree && (await checkoutTree(root)) === tree ? "build" : null;
+      }
+    })());
 
   let fetched: Promise<{ tarball: string; cleanup: () => Promise<void> }> | null = null;
   const fetchLive = () =>
@@ -134,60 +143,91 @@ export function liveGatewaySource({
       }
     })());
 
-  const openLive = async (): Promise<GatewayRelease> => {
-    const { tarball } = await fetchLive();
-    const from: Parameters<typeof openRelease>[1] =
-      origin.kind === "checkout"
-        ? { origin, treeSha256: install.sourceTreeSha256, committedAt: install.releaseOrder.committedAt }
-        : { origin };
-    const release = await openRelease(tarball, from);
-    if (release.manifest.sha256 !== install.releaseSha256) {
-      // Not the bytes that are live (an asset replaced under its tag): the
-      // downgrade guard orders it as any other release.
-      out.emit({
-        type: "warning",
-        code: "GATEWAY_RELEASE_DIFFERS",
-        step: "gateway.release",
-        message: `The Gateway release at ${describeOrigin(origin)} isn't the one that is live any more (its SHA-256 changed)\nDeploying it as an update; a Gateway older than the live one is refused.`,
-        data: { origin, live: install.releaseSha256, found: release.manifest.sha256 },
-      });
-    } else {
-      out.emit({
-        type: "step",
-        step: "gateway.release",
-        status: "ok",
-        message: `Using the live Gateway ${release.manifest.version} from ${describeOrigin(origin)}`,
-        data: { release: release.manifest.version, origin, sha256: release.manifest.sha256, live: true },
-      });
-    }
+  const said = (release: GatewayRelease): GatewayRelease => {
+    out.emit({
+      type: "step",
+      step: "gateway.release",
+      status: "ok",
+      message: `Using the live Gateway ${release.manifest.version} from ${describeOrigin(origin)}`,
+      data: { release: release.manifest.version, origin, sha256: release.manifest.sha256, live: true },
+    });
     return release;
+  };
+
+  const openLive = async (way: "fetch" | "cache" | "build"): Promise<GatewayRelease> => {
+    if (way === "build") {
+      const release = await buildCheckout(root!);
+      // Sources changed while it built: not the live tree any more.
+      if (release.source.treeSha256 !== tree) {
+        await release.cleanup();
+        throw unavailable(install, origin, "this checkout's Gateway sources changed while it built");
+      }
+      return said(release);
+    }
+    let tarball: string;
+    try {
+      ({ tarball } = await fetchLive());
+    } catch (error) {
+      if (isNotFound(error)) throw unavailable(install, origin, `${describeOrigin(origin)} can't be downloaded any more`);
+      throw error;
+    }
+    if (way === "cache") {
+      return said(await openRelease(tarball, { origin, treeSha256: tree, committedAt: install.releaseOrder.committedAt }));
+    }
+    const release = await openRelease(tarball, { origin });
+    // Not the bytes that are live (an asset replaced under its tag): never
+    // deployed by an app command, whatever its version.
+    if (release.manifest.sha256 !== install.releaseSha256) {
+      await release.cleanup();
+      throw unavailable(install, origin, `the release at ${describeOrigin(origin)} isn't the live one any more (its SHA-256 changed)`);
+    }
+    return said(release);
   };
 
   return {
     async describe() {
-      return obtainable() ? live : useFallback(notObtainable(origin, root)).describe();
+      if (!(await obtainable())) throw unavailable(install, origin, notObtainable(install, root));
+      return live;
     },
     async open() {
-      if (!obtainable()) return useFallback(notObtainable(origin, root)).open();
-      try {
-        return await openLive();
-      } catch (error) {
-        // A tag or URL gone since the install: what setup would deploy.
-        if (isNotFound(error)) return useFallback(`${describeOrigin(origin)} can't be downloaded any more`).open();
-        throw error;
-      }
+      const way = await obtainable();
+      if (!way) throw unavailable(install, origin, notObtainable(install, root));
+      return openLive(way);
     },
   };
 }
 
-/** Why the live release can't be had again, for the line that says so. */
-function notObtainable(origin: ReleaseOrigin, root: string | null): string {
+/**
+ * The live Gateway's release can't be had again, so an app command can't
+ * rebind it without changing its code: `update` first, which may.
+ */
+function unavailable(install: LiveInstall, origin: ReleaseOrigin, why: string): EveryAppError {
+  return new EveryAppError(
+    "GATEWAY_RELEASE_UNAVAILABLE",
+    `The live Gateway ${install.releaseVersion} (from ${describeOrigin(origin)}) can't be fetched again: ${why}\nDeploying or deleting an app never changes the Gateway's code, so nothing has changed. Update the Gateway first.`,
+    {
+      rerun: `${CLI} update`,
+      rerunNote: "then run this again",
+      data: { live: install.releaseVersion, origin, why },
+    },
+  );
+}
+
+/** Why the live release can't be had again, for the error that says so. */
+function notObtainable(install: LiveInstall, root: string | null): string {
+  const origin = install.releaseOrigin;
+  if (origin === null) {
+    // Installed before the row recorded where Gateways come from.
+    return root
+      ? "it was installed before everyapp recorded where a Gateway comes from, and this checkout neither holds its build nor has its sources"
+      : "it was installed before everyapp recorded where a Gateway comes from";
+  }
   switch (origin.kind) {
     case "file":
       return `${origin.path} is gone`;
     case "checkout":
       return root
-        ? "this checkout hasn't built that tree (its build cache keeps the last few builds)"
+        ? "this checkout's Gateway sources aren't the live ones, and its build cache doesn't hold that build"
         : "it was built from a checkout, and this everyapp isn't running from one";
     default:
       return "it is out of reach";

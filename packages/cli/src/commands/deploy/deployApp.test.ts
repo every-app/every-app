@@ -17,7 +17,9 @@ import { deletionSummary, removeApp } from "@/commands/delete";
 import { queryAppD1 } from "@/commands/db";
 import { restoreDatabase } from "@/commands/db/restore";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
+import { getWorkerDeployment } from "@/lib/cf/workers";
 import { rollbackFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
@@ -1010,43 +1012,46 @@ describe("deploy", () => {
     expect(appRow("todo")).toMatchObject({ status: "deleted" });
   });
 
-  it("refuses a checkout behind the live Gateway, before anything happens, and says git pull", async () => {
-    // A checkout that hasn't pulled the Gateway that is live.
-    const behind = {
-      ...rebind,
-      source: async () => ({
-        ...(await releaseSource(tarball)),
-        version: "0.1.0",
-        order: { schema: 0, committedAt: 0 },
-      }),
-    };
+  it("never changes the Gateway's code: refuses, before anything happens, when the live release can't be had again", async () => {
+    // A Gateway built from a checkout whose build this machine doesn't have.
+    const gatewayDb = account.database("every-app-gateway").sqlite;
+    gatewayDb.exec(
+      `UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', source_tree_sha256 = NULL`,
+    );
+    const versionBefore = (await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId;
 
-    const refused = await deploy(TODO, { reconcile: behind }).catch((error: unknown) => error);
-
+    const refused = await deploy(TODO, { reconcile: seams }).catch((error: unknown) => error);
     expect(refused).toMatchObject({
-      code: "DOWNGRADE_REFUSED",
-      message: "This checkout's Gateway (0.1.0) is older than the live one (0.2.0)",
-      fix: "git pull",
-      rerun: expect.stringMatching(/^pnpm everyapp/),
-      authorize: false,
+      code: "GATEWAY_RELEASE_UNAVAILABLE",
+      message: expect.stringMatching(/^The live Gateway 0\.2\.0 \(from this checkout\) can't be fetched again: /),
+      rerun: `${CLI} update`,
+      rerunNote: "then run this again",
     });
-    expect((refused as { rerun: string }).rerun).not.toContain("--allow-downgrade");
     expect(appRow("todo")).toBeUndefined();
     expect(account.workers.has("every-acme-todo")).toBe(false);
 
-    // Nor does a delete touch the registry.
+    // An app the Gateway already binds redeploys without it; a delete is refused before the registry changes.
+    gatewayDb.exec(`UPDATE _everyapp_install SET release_origin = NULL`);
     await deploy();
+    gatewayDb.exec(`UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', source_tree_sha256 = NULL`);
+    const versionBound = (await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId;
+    await expect(deploy(TODO, { reconcile: seams })).resolves.toMatchObject({ live: true });
     await expect(
-      removeApp({
-        appId: "todo",
-        out: out(),
-        interactive: false,
-        purge: false,
-        createCf: () => account.cf,
-        reconcile: behind,
-      }),
-    ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+      removeApp({ appId: "todo", out: out(), interactive: false, purge: false, createCf: () => account.cf, reconcile: seams }),
+    ).rejects.toMatchObject({ code: "GATEWAY_RELEASE_UNAVAILABLE" });
     expect(appRow("todo")).toMatchObject({ status: "active" });
+    expect((await getWorkerDeployment(account.cf, GATEWAY_WORKER_NAME))?.versionId).toBe(versionBound);
+    expect(versionBound).not.toBe(versionBefore);
+  });
+
+  it("refuses a Gateway newer than this everyapp, before anything happens", async () => {
+    account.database("every-app-gateway").sqlite.exec(`UPDATE _everyapp_install SET release_version = '9.0.0'`);
+    await expect(deploy()).rejects.toMatchObject({
+      code: "CLI_TOO_OLD",
+      message: expect.stringMatching(/^Gateway 9\.0\.0 needs everyapp 9\.0\.0 or newer/),
+    });
+    expect(appRow("todo")).toBeUndefined();
+    await expect(remove("todo")).rejects.toMatchObject({ code: "CLI_TOO_OLD" });
   });
 
   it("refuses a --gateway that isn't the one in the Cloudflare account, before anything happens", async () => {

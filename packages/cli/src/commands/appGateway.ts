@@ -11,12 +11,7 @@ import { readInstall, type InstallRecord } from "@/lib/gateway/install";
 import { liveGatewaySource } from "@/lib/gateway/liveRelease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { register, type Deployer } from "@/lib/gateway/registry";
-import {
-  describeOrigin,
-  releaseName,
-  type CandidateRelease,
-  type GatewayRelease,
-} from "@/lib/gateway/release";
+import { refuseNewerThanCli, type CandidateRelease, type GatewayRelease } from "@/lib/gateway/release";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { version as cliVersion } from "../../package.json";
@@ -56,15 +51,14 @@ export function gatewayFor(
 }
 
 /**
- * Whether what a rebind would deploy is the live release: the same bytes,
- * a build of the same sources, or, told neither, the same version.
+ * App commands write the Gateway's registry with this CLI's rules, so none
+ * runs against a Gateway newer than this everyapp: a Gateway release and
+ * the CLI that may deploy it share a version (its `minCli` is the CLI's at
+ * the same commit). Checked before anything changes; `update` alone moves
+ * the Gateway, and never past this CLI without saying so.
  */
-function isLiveCandidate(next: CandidateRelease, install: InstallRecord): boolean {
-  if (next.sha256 !== undefined) {
-    return next.sha256 === install.releaseSha256 || (next.treeSha256 !== null && next.treeSha256 === install.sourceTreeSha256);
-  }
-  if (next.treeSha256 !== null) return next.treeSha256 === install.sourceTreeSha256;
-  return next.version === install.releaseVersion;
+export function refuseGatewayNewerThanCli(install: Pick<InstallRecord, "releaseVersion">): void {
+  refuseNewerThanCli({ version: install.releaseVersion, minCli: install.releaseVersion }, cliVersion);
 }
 
 /** Register the app its manifest describes, one label below the Gateway's base. */
@@ -141,24 +135,8 @@ export async function bindIfNeeded({
     message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
     data: { appId },
   });
-  // The Gateway this run deploys is the live one, unless it can't be had
-  // again (lib/gateway/liveRelease.ts): then whatever it is, said before
-  // it goes, by version when that differs and by source when it doesn't.
-  const next = await seams.source?.();
-  const upgrade = next !== undefined && install !== null && !isLiveCandidate(next, install);
-  const to = next?.version;
-  if (upgrade) {
-    const sameVersion = to === install.releaseVersion;
-    out.emit({
-      type: "step",
-      step: "gateway.upgrade",
-      status: "start",
-      message: sameVersion
-        ? `Redeploying the Gateway ${to} from ${describeOrigin(next.origin)} (${releaseName(next)}; not the live release)...`
-        : `Upgrading the Gateway ${install.releaseVersion} → ${to}...`,
-      data: { from: install.releaseVersion, to, origin: next.origin, sameVersion },
-    });
-  }
+  // The Gateway this run deploys is the live one (lib/gateway/liveRelease.ts):
+  // binding an app never changes its code.
   try {
     const result = await reconcileGateway({
       cf,
@@ -171,7 +149,6 @@ export async function bindIfNeeded({
       forceDns,
       ...seams,
     });
-    if (upgrade) out.emit({ type: "step", step: "gateway.upgrade", status: "ok", data: { to } });
     out.emit({
       type: "step",
       step: "app.bind",

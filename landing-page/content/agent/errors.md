@@ -378,14 +378,11 @@ Source: `packages/cli/src/commands/setup/runSetup.ts` (`pickDomain`).
 
 ### DOWNGRADE_REFUSED
 
-The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)` (every Gateway deploy builds its release from the checkout, `lib/gateway/checkoutRelease.ts`); `data.live`, `data.candidate`. Two forms:
-
-- `setup` and `update` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag).
-- `deploy` and `delete`, which rebind the Gateway with the one this checkout builds and so stop before anything changes (`refuseOlderCheckout`), and the rebind's recheck under the Gateway lease: `fix`: `git pull`; `rerun`: this same command, `rerunNote`: `after that`. No takeover.
+The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)` (every Gateway deploy builds its release from the checkout, `lib/gateway/checkoutRelease.ts`); `data.live`, `data.candidate`. Raised by `setup` and `update` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag). `deploy` and `delete` never raise it: their rebind deploys the live release itself ([`GATEWAY_RELEASE_UNAVAILABLE`](#gateway_release_unavailable) when it can't be had).
 
 **Fix:** as above: `git pull`, then the same command; a deliberate rollback is `setup --allow-downgrade`, after asking. Not retryable.
 
-Source: `packages/cli/src/lib/gateway/apply.ts` (`downgradeRefused`, `refuseDowngrade`, `refuseOlderCheckout`), called from `packages/cli/src/commands/setup/runSetup.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/delete/index.ts`.
+Source: `packages/cli/src/lib/gateway/apply.ts` (`downgradeRefused`, `refuseDowngrade`), called from `packages/cli/src/commands/setup/runSetup.ts`.
 
 ### DRIZZLE_KIT_MISSING
 
@@ -615,7 +612,7 @@ Source: `packages/cli/src/commands/workspace/shared.ts` (`listChange`).
 
 ### GATEWAY_BUILD_FAILED
 
-Building the Gateway's release from this checkout failed (step `gateway.release`; raised by `setup`, and by `deploy`, `install` and `delete` when they rebind a Gateway from the checkout). The build is two children, `pnpm --filter @every-app/sdk build` at the root, then `pnpm run build:release` in `apps/every-app-gateway`; the first to exit non-zero raises this. Headline: `Building the Gateway failed`, then `<command> exited with code <n>. Its last lines:` (or `was stopped by <signal>`), the last 20 lines indented, and `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Under `--json`, after the `gateway.release` start event (`Building the Gateway from this checkout (usually 1–2m)`) nothing more arrives until the build ends: give it the time.
+Building the Gateway's release from this checkout failed (step `gateway.release`; raised by `setup` and `update`, and by `deploy` when it offers to install a Gateway; a rebind never builds one). The build is two children, `pnpm --filter @every-app/sdk build` at the root, then `pnpm run build:release` in `apps/every-app-gateway`; the first to exit non-zero raises this. Headline: `Building the Gateway failed`, then `<command> exited with code <n>. Its last lines:` (or `was stopped by <signal>`), the last 20 lines indented, and `Full log: $TMPDIR/everyapp/gateway-build-<time>-<pid>.log`; `data.command`, `data.exitCode`, `data.tail`, `data.log`. Under `--json`, after the `gateway.release` start event (`Building the Gateway from this checkout (usually 1–2m)`) nothing more arrives until the build ends: give it the time.
 
 **Fix:** `fix`: `fix the build error above, then run this again` (a type error in the checkout, a missing dependency after `git pull` without `pnpm install`, a blocked build script). No rerun; not retryable. `--verbose` echoes the child's output as it runs. On Linux, `connect ECONNREFUSED 127.0.0.1` inside the build is on [troubleshooting](/docs/agent/troubleshooting), "Build fails with `connect ECONNREFUSED 127.0.0.1` on Linux".
 
@@ -1212,7 +1209,7 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/a
 
 The release `install <source>` names isn't there. A source that is neither a URL nor an existing file: `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `install` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
 
-For the Gateway (`setup`, `update`, and the rebind an app's `deploy` or `delete` runs, outside a checkout and without `--release`): `https://github.com/every-app/every-app has no Gateway release everyapp <version> can install`, then `Neither gateway-v<version> nor a latest release with every-app-gateway-release.tar.gz can be downloaded without signing in.`; `fix`: `pass --release <url|file> (a Gateway release you have), or run everyapp from a checkout (pnpm everyapp), which builds the Gateway`; `data.repo`, `data.tag`, `data.cliVersion`. With `--release <path>` that isn't there: `<path> doesn't exist` then `--release takes a GitHub repository, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz. Check the path, or leave out --release for the published release.` Source: `packages/cli/src/lib/gateway/source.ts`.
+For the Gateway (`setup` and `update`, outside a checkout and without `--release`): `https://github.com/every-app/every-app has no Gateway release everyapp <version> can install`, then `Neither gateway-v<version> nor a latest release with every-app-gateway-release.tar.gz can be downloaded without signing in.`; `fix`: `pass --release <url|file> (a Gateway release you have), or run everyapp from a checkout (pnpm everyapp), which builds the Gateway`; `data.repo`, `data.tag`, `data.cliVersion`. With `--release <path>` that isn't there: `<path> doesn't exist` then `--release takes a GitHub repository, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz. Check the path, or leave out --release for the published release.` Source: `packages/cli/src/lib/gateway/source.ts`.
 
 **Fix:** none offered beyond the message; not retryable.
 
@@ -2465,11 +2462,13 @@ Source: `packages/cli/src/commands/events/add.ts`
 
 Source: `packages/cli/src/commands/setup/deployGateway.ts`
 
-### GATEWAY_RELEASE_DIFFERS
+### GATEWAY_RELEASE_UNAVAILABLE
 
-A rebind (`deploy` binding a new app or hostname, `delete`), step `gateway.release`: the live Gateway's release was fetched again from where the install row says it came (`data.origin`, a GitHub release by tag or a URL), but its `release.json` SHA-256 isn't the row's (`data.live` against `data.found`): the asset was replaced under its tag. It is deployed as an update, and the downgrade guard refuses it when it is older. Message `The Gateway release at <origin> isn't the one that is live any more (its SHA-256 changed)` then `Deploying it as an update; a Gateway older than the live one is refused.`
+A rebind (`deploy` binding a new app or one whose Worker the install row doesn't list, `delete`) needs the live Gateway's own release again, and it can't be had: deploying or deleting an app never changes the Gateway's code, so the run stops before anything is registered, removed or uploaded. Raised before the registry changes (`deploy`, after `app.deploy`; `delete`, before `app.delete`), or by step `gateway.release` when the download fails. A checkout-built Gateway, and a row from before origins were recorded (`release_origin` null, every Gateway installed before 2026-10-26), is had from this checkout's build cache for the row's tree hash, or built again when this checkout's Gateway sources hash to that tree (the same sources are no upgrade); otherwise refused. The reasons (`data.why`): installed before everyapp recorded where a Gateway comes from (and this checkout neither holds its build nor has its sources); this checkout's Gateway sources aren't the live ones and its cache doesn't hold that build; built from a checkout while this everyapp isn't running from one; the file it was installed from is gone; its GitHub release or URL can't be downloaded any more; its sources changed while it built; or the release at its tag or URL isn't the live one any more (its SHA-256 changed: an asset replaced). Message `The live Gateway <version> (from <origin>) can't be fetched again: <why>` then `Deploying or deleting an app never changes the Gateway's code, so nothing has changed. Update the Gateway first.`; `data.live`, `data.origin`, `data.why`.
 
-Source: `packages/cli/src/lib/gateway/liveRelease.ts`
+**Fix:** `rerun`: `pnpm everyapp update`, `rerunNote`: `then run this again`. `update` deploys what `setup` would (the published release for this everyapp, this checkout's build, or `--release`) under the downgrade guard, and records where it came from, so the next rebind can take it again: one `update` (or `setup`) is needed once on every Gateway installed before origins were recorded, unless the deploying checkout has its exact sources. Not retryable as is.
+
+Source: `packages/cli/src/lib/gateway/liveRelease.ts` (`unavailable`), called through `gatewayFor` in `packages/cli/src/commands/appGateway.ts`.
 
 ### GATEWAY_RELEASE_LATEST
 
@@ -2660,7 +2659,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### GATEWAY_OUTDATED
 
-Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run update now, or leave it: the next new app's deploy updates it too.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
+Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run update to take it; deploying an app never changes the Gateway.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
 
 Also an error: `provider add` and `provider remove` on a Gateway whose database predates the `providers` table (migration 0013): `This Gateway predates the provider registry`, nothing changed, `data.rerun` `pnpm everyapp update`, `data.rerunNote` `then run this again`. Every other reader treats such a Gateway as having no registered providers.
 

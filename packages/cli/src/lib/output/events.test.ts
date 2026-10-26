@@ -624,37 +624,6 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("indents an upgrade of the Gateway under its heading while an app is added", () => {
-    const { sink, lines } = human();
-    sink.emit({ type: "step", step: "app.bind", status: "start", data: { appId: "todo" } });
-    sink.emit({
-      type: "step",
-      step: "gateway.upgrade",
-      status: "start",
-      data: { from: "0.2.0", to: "0.2.1" },
-    });
-    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { cached: false } });
-    sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
-    sink.emit({
-      type: "step",
-      step: "gateway.migrations",
-      status: "ok",
-      data: { applied: ["0007_x.sql"], restoreCommand: "pnpm everyapp db restore --gateway" },
-    });
-    sink.emit({ type: "step", step: "gateway.deploy", status: "start" });
-    sink.emit({ type: "step", step: "gateway.deploy", status: "ok" });
-    sink.emit({ type: "step", step: "gateway.upgrade", status: "ok" });
-    sink.emit({ type: "step", step: "app.bind", status: "ok" });
-    expect(lines()).toEqual([
-      "Gateway 0.2.0 → 0.2.1",
-      "  Built ✓",
-      "  Database migrated ✓ 0007_x.sql",
-      "    Restore point saved. To undo: pnpm everyapp db restore --gateway",
-      "  Uploaded ✓",
-      "Added to the Gateway ✓",
-    ]);
-  });
-
   it("ends a deploy that isn't live yet with its URL and when it goes live, or that nothing routes to it", () => {
     const end = (data: Record<string, unknown>) => {
       const { sink, lines } = human();

@@ -95,7 +95,8 @@ Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
          pattern kill of vite or workerd; a pnpm install or deploy meanwhile
          rebuilds the SDK and breaks dev for a few seconds)
 Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
-         also upgrades the Gateway to this checkout when it has to rebind).
+         never changes the Gateway's code; GATEWAY_RELEASE_UNAVAILABLE says
+         to run update first).
          No Gateway yet: action_required install_gateway; ask the user, run
          its data.rerun (setup), then deploy again. done.data.publicRoutes
          lists the routes the manifest opens to the internet without

@@ -1,7 +1,7 @@
 import path from "node:path";
 import chalk from "chalk";
 import { queueNameFor, vectorizeNameFor } from "@every-app/perimeter/manifest";
-import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
+import { gatewayFor, refuseGatewayNewerThanCli, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   describeResource,
@@ -28,7 +28,6 @@ import { deleteWorkflowIfExists, listWorkflows } from "@/lib/cf/workflows";
 import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { CancelledError } from "@/lib/errors";
-import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { readPublicSurfaces, syncAppsAccessAfter } from "@/lib/access/sync";
@@ -127,9 +126,11 @@ export async function removeApp({
     createCf,
   });
   const { cf, db: registry } = connection;
-  // Before the registry changes: never with a Gateway behind the live one.
+  // The live Gateway again, without the app's binding: refused before the
+  // registry changes when it can't be had (GATEWAY_RELEASE_UNAVAILABLE).
+  refuseGatewayNewerThanCli(connection.install);
   const newGateway = gatewayFor(reconcile, connection.install, out);
-  await refuseOlderCheckout(connection.install, newGateway.source);
+  await newGateway.source();
   out.emit({
     type: "step",
     step: "app.delete",
