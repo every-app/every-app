@@ -39,6 +39,12 @@ export const setupCommand = buildCommand({
         optional: true,
         hidden: true,
       },
+      "no-access": {
+        kind: "boolean",
+        brief:
+          "Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later",
+        optional: true,
+      },
       yes: yesFlag,
       json: jsonFlag,
       verbose: {
@@ -69,6 +75,9 @@ export const setupCommand = buildCommand({
       "     waits for its certificate",
       "  4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;",
       "     in CI there is no link, and the run ends with a warning to run setup at a terminal",
+      "  5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default;",
+      "     with --yes or --json, done when the account can, else a warning names access on);",
+      "     --no-access leaves it off",
       "",
       "The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own",
       "questions; never cf's). With --json each step is an NDJSON event; a run that stops on",

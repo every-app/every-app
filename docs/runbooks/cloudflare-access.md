@@ -299,8 +299,12 @@ PIN is created again whenever the team lacks it: a team meant to sign in
 with an MFA provider alone gets it back on every run. With more than one
 provider Access shows a chooser page first. The team's global session is
 left alone unless you pass `--team-session`; it applies to every Access
-application in the account. Interactive `everyapp setup` offers this command
-once the owner exists (Yes by default; never with `--yes` or `--json`).
+application in the account. `everyapp setup` runs this command by default
+once the owner exists: offered at a terminal (Yes by default), done without
+a question with `--yes` or `--json` when the account can (a Zero Trust team
+exists, and the Cloudflare login is an owner or admin of the gateway), else
+a warning says why and names it; `setup --no-access` leaves Access off, and
+`everyapp access off` takes it off later.
 
 Run it again any time: after inviting someone (so Access lets them in), or
 after a change by hand. It changes only what differs and reports "as it

@@ -688,13 +688,14 @@ Install or repair the Gateway.
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
 | `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
+| `--no-access` | switch | no |  | Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later |
 | `--yes` | switch | no |  | Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
 | `--verbose` | switch | no |  | Show every step and progress line, and stream the Gateway's build output to stderr |
 
 ```text
 USAGE
-  pnpm everyapp setup [--domain value] [--account-id value] [--force-dns] [--yes] [--json] [--verbose]
+  pnpm everyapp setup [--domain value] [--account-id value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
   pnpm everyapp setup --help
 
 One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its
@@ -713,6 +714,9 @@ long timeout, or run it in the background and watch its output.
      waits for its certificate
   4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;
      in CI there is no link, and the run ends with a warning to run setup at a terminal
+  5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default;
+     with --yes or --json, done when the account can, else a warning names access on);
+     --no-access leaves it off
 
 The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own
 questions; never cf's). With --json each step is an NDJSON event; a run that stops on
@@ -724,6 +728,7 @@ FLAGS
      [--domain]                    Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)
      [--account-id]                The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
      [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+     [--no-access/--no-no-access]  Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later
   -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
      [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
      [--verbose/--no-verbose]      Show every step and progress line, and stream the Gateway's build output to stderr

@@ -15,10 +15,14 @@ team lacks it), an allow policy with every member's and invitee's email, two
 Access applications, and the three Gateway settings, in one run. At the end
 the person has Access's login before the Gateway, MCP clients, the Gateway's
 `/health` and each app's public routes still reachable without it, and
-optionally no passwords. A person running `pnpm everyapp setup` at a
-terminal is offered the same by setup itself ("Put Cloudflare Access in
-front of your Gateway?", Yes by default); under `--json` nobody is, so the
-offer is yours, after the owner exists. This
+optionally no passwords. `pnpm everyapp setup` does the same by
+default once the owner exists: a person at a terminal is asked ("Put
+Cloudflare Access in front of your Gateway?", Yes by default); under
+`--json` or `--yes` it goes on without a question when the account can (a
+Zero Trust team exists, the Cloudflare login is an owner or admin of the
+Gateway), and otherwise the warning `ACCESS_SETUP_SKIPPED` says why and
+names `access on`: then the offer is yours. `setup --no-access` leaves it
+off. This
 is the "outer ring" of `docs/runbooks/cloudflare-access.md`; the other way,
 a "Continue with Company SSO" button, is
 the runbook's "OIDC sign-in" and isn't covered here.

@@ -287,9 +287,12 @@ Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
-It then offers Cloudflare Access (Yes by default; the team name asked for
-when the account has none); under --json neither is asked, and --yes
-answers No to both.
+It then puts Cloudflare Access in front by default (asked at a terminal,
+Yes by default; the team name asked for when the account has none); under
+--json or --yes it goes on without a question when the account can (a Zero
+Trust team exists, the Cloudflare login is an owner or admin), else the
+warning ACCESS_SETUP_SKIPPED says why and names access on; --no-access
+leaves it off. --yes answers No to browser deployment.
 Handing off: stop, tell the person in one or two lines what to do (the
 action's url and code, what to click, what to come back with), and resume
 with data.rerun when they say it is done. Two more only a person can do:

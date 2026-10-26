@@ -3,11 +3,11 @@ title: Sign in through Cloudflare Access
 description: Put Cloudflare Access in front of your Gateway, so people sign in with their Cloudflare account or a code emailed to them (or your company login) before they reach it.
 ---
 
-Optional, and offered by setup. Your Gateway already has its own sign-in, and while EveryApp is alpha we strongly recommend a second one in front of it. Cloudflare Access is that second door, at Cloudflare's edge, from a company that does nothing else: nobody reaches the Gateway or its apps until Access has checked who they are, with their Cloudflare account, a one-time code emailed to them, or your company's identity provider. A bug in the Gateway's sign-in pages then needs someone Access already let in, and a stolen session cookie gets nothing on its own. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
+On by default: setup puts it in front of your Gateway once your owner account exists, and `pnpm everyapp access off` takes it off. Your Gateway already has its own sign-in, and while EveryApp is alpha we strongly recommend a second one in front of it. Cloudflare Access is that second door, at Cloudflare's edge, from a company that does nothing else: nobody reaches the Gateway or its apps until Access has checked who they are, with their Cloudflare account, a one-time code emailed to them, or your company's identity provider. A bug in the Gateway's sign-in pages then needs someone Access already let in, and a stolen session cookie gets nothing on its own. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
 
 ## Turn it on
 
-`pnpm everyapp setup` asks **Put Cloudflare Access in front of your Gateway?** once your owner account exists, and Enter says Yes. If you said No then, or set up in a script, run this in your `every-app` folder:
+`pnpm everyapp setup` asks **Put Cloudflare Access in front of your Gateway?** once your owner account exists, and Enter says Yes; in a script, or run by an agent, it goes on without asking when it can (your account has a Zero Trust team and your Cloudflare login is an owner or admin), and otherwise says why. If you said No then, passed `--no-access`, or setup couldn't, run this in your `every-app` folder:
 
 ```bash
 pnpm everyapp access on
