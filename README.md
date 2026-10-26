@@ -34,6 +34,7 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 
 **Standardized**
 
+- When you add an app, it’s immediately accessible through the Every App MCP Gateway.
 - No infra decisions. Every app runs on Cloudflare's building blocks: Workers, D1, R2 and KV.
 - Your agent builds with our stack and component library, so it never has to invent patterns.
 
@@ -69,9 +70,9 @@ Always `pnpm everyapp` from the checkout, never `npx everyapp`: publishing to np
 
 Oh, nothing much. Just rebuilding every SaaS for agents.
 
-⭐ Star the repo to follow along.
-
 ## Community
+
+⭐ Star the repo to follow along.
 
 - Docs: [everyapp.com/docs](https://everyapp.com/docs) (for your agent: [everyapp.com/llms.txt](https://everyapp.com/llms.txt))
 - Join [Discord](https://discord.gg/c9uGs3cFXr) to chat
