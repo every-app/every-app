@@ -61,6 +61,17 @@ export const universalReply = (zone: string) =>
 export const subdomainFor = (accountName: string) =>
   `everyapp-${accountName.replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
 
+/**
+ * A sentence without its markdown dressing: "**Which domain should I use?**"
+ * (Claude Code, launch gate run 2) reads as "Which domain should I use?".
+ */
+const plainSentence = (sentence: string) =>
+  sentence
+    .trim()
+    .replace(/^(?:[*_`>#]+|[-+] )+\s*/, "")
+    .replace(/[*_`]+$/, "")
+    .trim();
+
 /** A sentence that asks: ends in a question mark, or opens as a request. */
 const QUESTION_FORM =
   /\?\s*$|^(please|tell me|provide|what is|what's|which|could you|can you|would you|let me know|i need (you to|your))\b/i;
@@ -78,7 +89,7 @@ const DOMAIN_WORD = /\b(domain|zone)\b/i;
 export function isDomainQuestion(text: string): boolean {
   return text
     .split(/(?<=[.?!])\s+|\n+/)
-    .map((sentence) => sentence.trim())
+    .map(plainSentence)
     .some(
       (sentence) =>
         DOMAIN_WORD.test(sentence) &&
@@ -98,7 +109,7 @@ const FOUR_APPS =
 export function isFourAppsQuestion(text: string): boolean {
   return text
     .split(/(?<=[.?!])\s+|\n+/)
-    .map((sentence) => sentence.trim())
+    .map(plainSentence)
     .some(
       (sentence) =>
         FOUR_APPS.test(sentence) &&
@@ -120,7 +131,7 @@ const EARLY_ADOPTER =
 export function isEarlyAdopterQuestion(text: string): boolean {
   return text
     .split(/(?<=[.?!])\s+|\n+/)
-    .map((sentence) => sentence.trim())
+    .map(plainSentence)
     .some(
       (sentence) =>
         EARLY_ADOPTER.test(sentence) &&

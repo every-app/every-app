@@ -29,8 +29,13 @@ export const VERIFIER_VERSION = 1;
 
 /** Statuses that mean "still coming" at the edge: retried within the window. */
 const EDGE_RETRY = new Set([502, 503, 520, 521, 522, 523, 524, 525, 526, 530]);
-/** A fix code that depends on the verifier's own checkout, not the install. */
-const IGNORED_FIXES = new Set(["CHECKOUT_BEHIND"]);
+/**
+ * Fix codes S1 never counts against the run: CHECKOUT_BEHIND depends on the
+ * verifier's own checkout, not the install; APP_NEEDS_SETUP is where the
+ * prompt's step 4 tells the agent to stop (an installed app whose keys only
+ * the person can set; launch gate run 2 failed S1 on it).
+ */
+const IGNORED_FIXES = new Set(["CHECKOUT_BEHIND", "APP_NEEDS_SETUP"]);
 /** Fixes that settle by themselves: re-poll S1 while only these remain. */
 const SETTLING_FIXES = new Set([
   "CERT_PENDING",

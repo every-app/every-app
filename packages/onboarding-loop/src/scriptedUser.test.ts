@@ -293,6 +293,15 @@ describe("turn ends", () => {
       expected: true,
     });
   });
+  it("hears a question dressed in markdown (launch gate run 2)", () => {
+    expect(
+      isDomainQuestion(
+        "**Which domain should I use?** Your Gateway will be at `apps.<your domain>`.",
+      ),
+    ).toBe(true);
+    expect(isDomainQuestion("- _Which domain should I use?_")).toBe(true);
+    expect(isFourAppsQuestion("**Any you don't want?**")).toBe(true);
+  });
   it("stops waiting after the setup cap", () => {
     let t = Date.UTC(2026, 9, 25, 14, 0, 0);
     const u = user({ now: () => new Date(t) });

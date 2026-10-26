@@ -741,6 +741,8 @@ describe("helpers", () => {
       fixes: [
         { code: "CERT_PENDING", severity: "settling" },
         { code: "APP_NOT_UPLOADED", severity: "warning" },
+        // The prompt's step 4 stops at Needs setup: never against the run (launch gate run 2).
+        { code: "APP_NEEDS_SETUP", severity: "warning" },
       ],
     })!;
     expect(view.blocking).toEqual(["APP_NOT_UPLOADED"]);
