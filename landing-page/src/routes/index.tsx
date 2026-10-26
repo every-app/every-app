@@ -340,7 +340,13 @@ function Home() {
               </ul>
               <p className="text-base text-stone-400">
                 Run one as it is, or fork it as the starting point for your own.
-                Many more are coming.
+                Many more are coming.{" "}
+                <a
+                  href="/docs/apps"
+                  className="font-medium text-white underline decoration-stone-600 underline-offset-4 transition-colors hover:decoration-stone-400"
+                >
+                  See all apps
+                </a>
               </p>
             </div>
           </div>
