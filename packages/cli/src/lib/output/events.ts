@@ -440,6 +440,10 @@ function saidByMessage(event: StepEvent): Shown | null {
   return event.status === "ok" && event.message ? { done: event.message } : null;
 }
 
+/** Said once to a person installing a Gateway; never in --json (the setup prompt has the agent ask). */
+const EARLY_ADOPTERS =
+  "EveryApp is in early development, so expect some rough edges: https://everyapp.com/docs/early-adopters";
+
 /** The milestones: the steps a person sees, by name, and how. */
 const MILESTONES: Readonly<Record<string, Milestone>> =
   {
@@ -450,7 +454,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (data["gateway"] === true) return null;
       const email = text(data["email"]);
       return {
-        line: `Setting up EveryApp in ${text(data["name"]) ?? text(data["id"])}${email ? chalk.dim(` (${email})`) : ""}`,
+        line: `Setting up EveryApp in ${text(data["name"]) ?? text(data["id"])}${email ? chalk.dim(` (${email})`) : ""}\n${chalk.dim(EARLY_ADOPTERS)}`,
       };
     },
     "setup.gateway": (event) => {

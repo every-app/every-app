@@ -1,0 +1,45 @@
+---
+title: For early adopters
+description: EveryApp is in early development. What's rough today, how to get help, and how to tell us what could be smoother.
+---
+
+EveryApp is in early development, so expect some rough edges. Thank you for trying it this early. If you'd rather skip the rough edges, come back in a few weeks.
+
+## What's rough today
+
+- Setup takes about 15 minutes and sometimes more: it builds, deploys, then waits for a certificate.
+- Publishing to npm is paused, so you work from a clone of the repository: always `pnpm everyapp`, never `npx everyapp`.
+- Some apps show **Needs setup** until you add their keys. `pnpm everyapp configure <app>` sets them.
+- The docs can lag behind the code by a day or two.
+
+## Get help
+
+- Ask in our [Discord](https://discord.gg/c9uGs3cFXr). Run the command again with `--verbose` at the end and bring the output.
+- Open an issue on [GitHub](https://github.com/every-app/every-app/issues).
+- Email [support@everyapp.dev](mailto:support@everyapp.dev).
+
+Expect a fast, informal reply from a very small team. [Troubleshooting](/docs/troubleshooting) covers the errors we already know.
+
+## Tell us what could be smoother
+
+We want to hear about the small things too: a step that confused you, a message that didn't say what to do, a wait that felt too long. A line in Discord or a GitHub issue is enough.
+
+## Stay up to date
+
+From your `every-app` folder:
+
+```bash
+git pull
+pnpm install
+pnpm everyapp update
+```
+
+Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
+
+## What "trying not to break things" means
+
+- A deploy keeps your data and saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
+- When something must change, the release notes say so.
+- We don't promise backwards compatibility yet.
+
+⭐ [Star the repository](https://github.com/every-app/every-app) to follow along.

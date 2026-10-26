@@ -696,6 +696,7 @@ describe("everyapp setup", () => {
     expect(out.exitCode).toBe(0);
     expect(plain(stdout)).toEqual([
       "Setting up EveryApp in Acme (dev@example.com)",
+      "EveryApp is in early development, so expect some rough edges: https://everyapp.com/docs/early-adopters",
       "Installing the Gateway at apps.example.com (0.2.0) (usually 5–10 minutes, then the owner link)",
       expect.stringMatching(/^Database created ✓/),
       expect.stringMatching(/^Uploaded ✓/),

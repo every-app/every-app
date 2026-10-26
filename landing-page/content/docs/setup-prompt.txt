@@ -1,6 +1,13 @@
 Set up EveryApp for me. Docs: https://everyapp.com/llms.txt (read index.md
 and setup.md there; the everyapp skill in the repo says the same).
 
+Before you start, tell me exactly this and wait for my answer:
+"EveryApp is in early development so expect some rough edges. Here's a
+link with more details about giving feedback:
+https://everyapp.com/docs/early-adopters
+Do you still want to get set up or would you rather wait a few weeks?"
+If I'd rather wait, stop there.
+
 1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
    and run every command from that folder. Always `pnpm everyapp`, never npx.
 2. Ask me which domain to use, then run
