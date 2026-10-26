@@ -5,7 +5,7 @@ import setupPrompt from "../../content/docs/setup-prompt.txt?raw";
 import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
-const homeTitle = "EveryApp: Make every app open source";
+const homeTitle = "EveryApp: Open source apps in your own Cloudflare account";
 const homeDescription =
   "Own your tools. Customize your tools. Pay as you go. EveryApp puts the web apps you build online, in your own Cloudflare account. Open source, alpha.";
 // What the Open Graph card says, so a screen reader hears the same words a sighted reader sees.

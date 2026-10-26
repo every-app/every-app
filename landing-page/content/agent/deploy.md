@@ -1,6 +1,7 @@
 ---
 title: The deploy pipeline
 description: What pnpm everyapp deploy does from its first line to Live, in order, with every check that can stop it, what the app policy refuses, every flag, release installs (install), release, the Gateway's own deploy API and browser installs, delete, and what a redeploy keeps.
+metaDescription: "What everyapp deploy does from its first line to Live: every check that can stop it, every flag, release installs, delete, and what a redeploy keeps."
 ---
 
 `pnpm everyapp deploy` deploys the app in the current directory (or an app release) as a private Cloudflare Worker behind the Gateway. The one-sentence model: Cloudflare's own CLI, `cf`, does everything in the Cloudflare account with your Cloudflare login, including writing the app registry in the Gateway's own D1 with the rules in `@every-app/perimeter/registry`; binding an app is a redeploy of the Gateway this run builds, and the Gateway makes a bound app live itself on the first request that reaches it. The entry point is `packages/cli/src/commands/deploy/index.ts`; the pipeline is `packages/cli/src/commands/deploy/deployApp.ts`. In an app, `pnpm run deploy` runs the same command (the template's `package.json` script is `everyapp deploy`, `starter/package.json`; the user docs spell it that way); an agent runs `pnpm everyapp deploy --json` from the app directory.

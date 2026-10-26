@@ -1,6 +1,7 @@
 ---
 title: Troubleshooting by symptom
 description: What a symptom from everyapp, the Gateway or an app usually means, how to confirm it (status --json fixes, --verbose, the log file) and the fix, with a link to each error code's entry.
+metaDescription: "What a symptom from everyapp, the Gateway or an app usually means, how to confirm it with status, --verbose or the log file, and the fix."
 ---
 
 This page starts from what a person sees or says, not from a code. Each entry says what it usually is, how to confirm it, and what to run. A code's own entry is on [Error codes](/docs/agent/errors); the `--json` event shapes are on [The --json protocol](/docs/agent/json).

@@ -1,6 +1,7 @@
 ---
 title: The open apps
 description: The apps EveryApp publishes, for an agent installing one for a person. Each app's manifest id, repository, install command, every setting it declares (required or optional, held by the Gateway or by the app), its public routes, who can open it, and whether it needs R2.
+metaDescription: "The open apps EveryApp publishes, for an agent installing one: manifest id, repository, install command, settings, public routes and who can open it."
 ---
 
 Five open source apps run behind a Gateway as the person's own: four the README, the docs home and the Gateway's empty home offer, and RepoLens. The user page for each is under [/docs/apps](/docs/apps); this page is the same facts as an agent needs them, from each app's `everyapp.config.ts` and README. The one-line descriptions here are the lines the README, the docs home and the Gateway's home print.

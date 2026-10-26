@@ -1,6 +1,7 @@
 ---
 title: "Everything a Gateway offers"
 description: "The one page an agent reads to make the most of a Gateway for a person: apps, MCP apps and the compact MCP surface, people and their roles, groups, caps and Activity from the Admin UI, a terminal or an AI client, Cloudflare Access, every CLI verb by job, what to suggest next, and which other MCP servers to recommend."
+metaDescription: "Everything an EveryApp Gateway offers, for an agent helping a person: apps, MCP apps, people, roles, groups, caps, Activity, Access and the CLI."
 ---
 
 A Gateway is one Worker (`every-app-gateway`) with one D1 database (`every-app-gateway`) in the person's own Cloudflare account, at `https://<gateway host>`, installed by `pnpm everyapp setup --domain <host>`. It signs people in, decides who may open which app, holds every key, and serves one MCP connector for every app. This page says what it offers and how an agent reads each part; the deeper pages are linked, not repeated.

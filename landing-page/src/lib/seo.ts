@@ -37,7 +37,7 @@ export function buildPageSeo({
   ogType = "website",
   noindex = false,
 }: BuildSeoParams) {
-  const fullTitle = titleSuffix ? `${title} - ${titleSuffix}` : title;
+  const fullTitle = titleSuffix ? `${title} | ${titleSuffix}` : title;
   const canonicalUrl = toCanonicalUrl(path);
 
   return {

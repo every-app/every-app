@@ -1,6 +1,8 @@
 ---
 title: "API providers: the registry and the catalog"
 description: "What an API provider is (beside an MCP app), the built-in catalog and the providers one Gateway registers, the spec's JSON fields and their rules, the request each auth kind makes, what a registered row may say, everyapp provider add, list, show and remove with their --json data, the codes, local development, and every catalog provider."
+metaTitle: "API providers: the registry and catalog"
+metaDescription: "What an API provider is on EveryApp, the built-in catalog, the JSON spec for your own, each auth kind, and everyapp provider add, list, show and remove."
 ---
 
 An **API provider** is an API the Gateway holds a key for and brokers calls to (DataForSEO, Context.dev, Stripe): an app lists it under `capabilities` in `everyapp.config.ts` and calls the provider's real URLs with `integrationFetch()`, and the Gateway puts the key on the call, so no app ever holds it. An **MCP app** (`pnpm everyapp mcp on dataforseo`, [/docs/agent/mcp](/docs/agent/mcp#mcp-apps)) is something else: an app of the Gateway's own with no page, whose tools members' AI clients call on `/mcp`. An MCP app is built on an API provider's entry (DataForSEO's tools call DataForSEO through the same proxy), and nothing on this page changes MCP apps. The design and its decisions are in the repository's docs/design/2026-10-provider-registry.md.

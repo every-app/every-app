@@ -52,7 +52,8 @@ const SITE_URL = "https://everyapp.com";
 
 /**
  * Repository path → page under /docs/agent/repo, its one-line description
- * for llms.txt, and for a document the code has moved past, a `note` the
+ * for llms.txt, a metaTitle or metaDescription where search results need a
+ * shorter one, and for a document the code has moved past, a `note` the
  * page opens with (the source stays as its authors wrote it). Not here:
  * docs/threat-model-invariants.md, the register behind the threat model
  * (350 KB of tables that would swamp llms-full.txt); links to it from the
@@ -68,6 +69,8 @@ const DOCUMENTS = [
   {
     from: "docs/threat-model.md",
     to: "threat-model",
+    metaDescription:
+      "EveryApp's threat model: assets, actors, trust boundaries, one tested invariant per boundary, what Cloudflare Access adds, what is out of scope, known gaps.",
     description:
       "The threat model: assets, actors, trust boundaries, one testable invariant per boundary with the code that enforces it and the test that pins it, what Cloudflare Access adds, what is out of scope, known gaps.",
   },
@@ -80,12 +83,15 @@ const DOCUMENTS = [
   {
     from: "docs/TESTING.md",
     to: "testing",
+    metaTitle: "Testing and verification",
     description:
       "How to run the repository's test suites, test locally with everyapp dev, and verify or roll back a production deploy.",
   },
   {
     from: "docs/hosted-vision.md",
     to: "hosted-vision",
+    metaDescription:
+      "The hosted EveryApp tier after the self-host launch: its end state, the rulings that stand, and the invariants every self-host change keeps.",
     description:
       "The hosted tier, which comes after the self-host-only launch: its end state, the rulings that stand (self-hosting keeps working from the same code), and the invariants every self-host change keeps.",
   },
@@ -124,6 +130,8 @@ const DOCUMENTS = [
     from: "docs/runbooks/hosted-install.md",
     note: "Written for the 2026-10-16 hosted build. The hosted tier is not open to third-party deploys at launch, and the CLI surface this runbook drives was removed on 2026-10-24 (its first paragraph says what).",
     to: "runbooks/hosted-install",
+    metaDescription:
+      "Operator runbook for the hosted Gateway (post-launch): install, shared first-party apps, the gated third-party deploy API, deploy keys and launch checks.",
     description:
       "Operator runbook (hosted tier, post-launch): the hosted Gateway (app.everyapp.com): install, shared first-party apps, the gated third-party deploy API and its deploy keys, launch checks.",
   },
@@ -137,6 +145,7 @@ const DOCUMENTS = [
   {
     from: "adr/ADR-0003-self-host-authority.md",
     to: "adr/0003-self-host-authority",
+    metaTitle: "ADR-0003: Self-host operator authority",
     description:
       "Architecture decision: on a self-hosted Gateway, operator authority is Cloudflare account access; there is no deploy API.",
   },
@@ -240,7 +249,11 @@ for (const doc of present) {
     .join("\n")
     .replace(/^\n+/, "");
   const note = `> Mirrored from [\`${doc.from}\`](${GITHUB}/${doc.from}) in the EveryApp repository, where it is edited.${doc.note ? `\n>\n> **Read with care:** ${doc.note}` : ""}\n\n`;
-  const content = `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(doc.description)}\n---\n\n${note}${escapeTags(rewriteLinks(body, doc.from))}`;
+  const meta = ["metaTitle", "metaDescription"]
+    .filter((field) => doc[field])
+    .map((field) => `${field}: ${JSON.stringify(doc[field])}\n`)
+    .join("");
+  const content = `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(doc.description)}\n${meta}---\n\n${note}${escapeTags(rewriteLinks(body, doc.from))}`;
   const target = join(outDir, `${doc.to}.md`);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, content);
@@ -367,7 +380,12 @@ for (const path of walk(contentDir)) {
   files.push({
     type: "page",
     path,
-    data: { title: data.title, description: data.description },
+    data: {
+      title: data.title,
+      description: data.description,
+      metaTitle: data.metaTitle,
+      metaDescription: data.metaDescription,
+    },
   });
   const slugs = path.replace(/\.md$/, "").split("/");
   if (slugs.at(-1) === "index") slugs.pop();

@@ -25,10 +25,11 @@ export const Route = createFileRoute("/docs/agent/$")({
   },
   head: ({ loaderData }) =>
     buildPageSeo({
-      title: loaderData?.title ?? "Docs for coding agents",
-      description: loaderData?.description,
+      title:
+        loaderData?.metaTitle ?? loaderData?.title ?? "Docs for coding agents",
+      description: loaderData?.metaDescription ?? loaderData?.description,
       path: loaderData?.url ?? "/docs/agent",
-      titleSuffix: "EveryApp Agent Docs",
+      titleSuffix: "EveryApp",
       ogType: "article",
     }),
   component: Page,

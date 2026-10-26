@@ -1,6 +1,7 @@
 ---
 title: "everyapp status: the report and its fixes"
 description: Drive `pnpm everyapp status --json` to learn what is left to do on a Gateway and its apps, read the report line by line against `done.data`, and apply each fix in order until `fixes` is empty.
+metaDescription: "Drive everyapp status --json to learn what is left to do on a Gateway and its apps, read the report line by line, and apply each fix in order."
 ---
 
 `pnpm everyapp status` is the one command that says where a Gateway stands and what to run next. Run it after setup, after every deploy or install, and whenever the person asks "is it working", "what is left", "why does it say Needs setup". It reads the Gateway's D1 and cf (`packages/cli/src/commands/status/index.ts`), asks nothing of the Gateway over HTTPS, changes nothing, and ends with one `done` event. The user docs explain the same report for the person: [Check your setup with everyapp status](/docs/status).

@@ -1,6 +1,8 @@
 ---
 title: "AI: the default model provider and AI Gateway"
 description: "How an app gets a chat model without naming a provider: the manifest's ai.chat, the SDK's ai(), the /api/ai/default route, the order the Gateway resolves the default in (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral, Gemini), the default chat and embeddings models per provider (an operator setting seeded by the catalog), everyapp ai default|model|show|list|gateway with their --json data and the MCP twins, Cloudflare AI Gateway in front of every provider, what each AI entry's fields mean, the usage by model, the ai.default_changed event, and why OpenRouter is the first default and AI Gateway is never one."
+metaTitle: "AI providers and Cloudflare AI Gateway"
+metaDescription: "How an EveryApp app gets a chat model without naming a provider: ai(), the order the default resolves in, default models, and Cloudflare AI Gateway."
 ---
 
 Two ways an app reaches a model through the Gateway. It **pins a provider**: lists `openrouter` (or any `ai` entry of [the catalog](/docs/agent/providers#the-catalog)) under `providers`, calls `/api/ai/openrouter/…` with `createGatewayFetch()`, and names the model itself ([the identity page](/docs/agent/identity#ai-creategatewayfetch)). Or it **takes the default**: says `ai: { chat: true }` in `everyapp.config.ts`, calls `/api/ai/default/v1/chat/completions` with the SDK's `ai()`, and the Gateway's operator decides which provider and model that is. The second is for an app that needs "a model" rather than one vendor (a draft writer, a summarizer, a research agent), so that a person installing four such apps sets one key, not one per app. The design and its decisions are in the repository's docs/design/2026-10-model-providers.md.

@@ -1,6 +1,7 @@
 ---
 title: Error codes
 description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors), the codes the Gateway's deploy API and browser install answer, every warning, and every problem status reports, each with what it means and how to fix it.
+metaDescription: "Every code an everyapp command or the Gateway's deploy API can end with, every warning and status problem, what each means and how to fix it."
 ---
 
 Codes are stable strings for scripts; messages are for people. With `--json` a code arrives on an `error` event (`code`, `message`, `retryable`, `data.fix`, `data.rerun`, `data.rerunNote`, `data.authorize`), a `warning` event (`code`) or in `status --json`'s `data.fixes[]` ([the protocol](/docs/agent/json)). An entry's anchor is its code, lowercased (`#dns_record_conflict`); `DEPLOY_ABANDONED` is described under [`DEPLOY_FAILED`](#deploy_failed), and the registry rules under [Codes raised with a dynamic value](#codes-raised-with-a-dynamic-value) in prose and a table; neither has an anchor of its own. Where a fix is a command that takes something over (`--force-dns`, `--allow-delete-*`, `--yes`, `--enable-email-routing`), the event carries `data.authorize: true`: show it to the person and ask before running it.

@@ -1,6 +1,7 @@
 ---
 title: Identity, headers and the SDK
 description: What an app Worker receives from the Gateway on every request (headers, the identity token and its claims, env and bindings), what @every-app/sdk/server exports, and how the app calls the Gateway back for AI, capabilities, email and members.
+metaDescription: "What an app Worker receives from the EveryApp Gateway on every request: headers, the identity token and its claims, bindings, and the SDK's exports."
 ---
 
 Everything on this page is what app code behind the Gateway sees and can rely on. The user-facing summary is [How it works](/docs/how-it-works); the trust model in full is [the security model](/docs/agent/repo/security-model).

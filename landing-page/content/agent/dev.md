@@ -1,6 +1,7 @@
 ---
 title: Development vs production
 description: What everyapp dev starts and in what order, the seeded dev identity and why it is loopback-only, which perimeter rules are identical to production and what has no Gateway behind it locally (AI, capabilities, email, members, secrets, D1, MCP), which .dev.vars names the ready block's Dev vars line asks for, and why only everyapp deploy makes a production build.
+metaDescription: "What everyapp dev starts, the loopback-only dev identity, which perimeter rules match production, and what has no Gateway behind it locally."
 ---
 
 `everyapp dev` runs the app's own dev server (`cf dev`, or the manifest's `dev` command) on an internal loopback port and puts a **gateway-lite** in front of it: the real perimeter from `packages/perimeter/src/gateway.ts` with this one app registered, signing identities with the SDK's well-known dev keypair. Nothing is written into the app: `everyAppWorker()` gives a development build the dev public key and issuer itself. Source: `packages/cli/src/commands/dev/index.ts`.

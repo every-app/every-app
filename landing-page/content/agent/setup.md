@@ -1,6 +1,7 @@
 ---
 title: Driving setup for a person
 description: The procedure an agent follows when a person says "set up EveryApp for me" or "deploy this" — the commands in order, the exact points where it must stop and hand off to the person and what to say, how to resume with the same command, and how to verify with status --json.
+metaDescription: "The procedure an agent follows to set up EveryApp for a person: the commands in order, where to stop and hand off, how to resume, and how to verify."
 ---
 
 This is the agent's side of the journey the user docs describe in [/docs/gateway](/docs/gateway), [/docs/create-an-app](/docs/create-an-app), [/docs/update](/docs/update) and [/docs/people](/docs/people). Its short form is the `everyapp` skill, `packages/cli/skills/everyapp/SKILL.md`, which `create` copies into every new app; this page follows the skill's rules and spells out what each command emits and where it stops. Step-by-step setup of each integration (the Gateway, Access, email, the AI providers, Google, Microsoft 365, Slack) is in `packages/cli/skills/everyapp/setup/` (index `README.md`), copied into every app as `.claude/skills/everyapp/setup/` and `.agents/skills/everyapp/setup/`; the matching file is named at each step below. The prompt a person pastes into their agent is in [/docs/gateway](/docs/gateway#or-let-your-coding-agent-do-it).

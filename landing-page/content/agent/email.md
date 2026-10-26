@@ -1,6 +1,8 @@
 ---
 title: "Email: senders, inbound and the email capability"
 description: How an app sends mail through the Gateway with sendEmail(), receives mail at addresses routed to its email() handler, what everyapp email set, unset and show configure on an installation, and what the operator sets up once.
+metaTitle: "Email for apps: sending and inbound"
+metaDescription: "How an EveryApp app sends mail through the Gateway with sendEmail(), receives mail in its email() handler, and what everyapp email set configures."
 ---
 
 ## The model

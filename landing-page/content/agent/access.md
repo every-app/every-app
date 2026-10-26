@@ -1,6 +1,7 @@
 ---
 title: Cloudflare Access
 description: "How to put Cloudflare Access in front of a self-hosted Gateway (OIDC sign-in or the outer ring), every CLOUDFLARE_ACCESS_* setting, what everyapp access on, off and show change, which paths stay bypassed and why, how MCP clients behave behind Access, and how to get back in."
+metaDescription: "Put Cloudflare Access in front of a self-hosted EveryApp Gateway: every setting, what access on, off and show change, the bypassed paths, and recovery."
 ---
 
 Cloudflare Access is a way for people to sign in to a self-hosted Gateway: their Cloudflare account ("Sign in with Cloudflare", for the members of the operator's Cloudflare account), Access's one-time PIN (a code emailed to everyone else), the company's identity provider, Access's MFA and device rules. It is optional (the Gateway signs people in by itself) and recommended for a company's Gateway; the person's page is [Sign in through Cloudflare Access](/docs/access). Better Auth stays the system of record for users, sessions, organizations, roles, invitations, personal access tokens and the OAuth server MCP clients use; an Access sign-in ends in an ordinary Better Auth session, so everything after it (the perimeter, the identity tokens apps get, app access, `/mcp` and its OAuth, personal tokens, deactivation) works as after a password. Passwords can stay on or be turned off (`EMAIL_PASSWORD_SIGN_IN`).

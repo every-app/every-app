@@ -1,6 +1,7 @@
 ---
 title: The --json protocol
 description: What an everyapp command writes on stdout with --json (NDJSON events), how the run ends (exit codes 0, 1, 2, 130, 251, 252), and what an agent does with each event, action and error.
+metaDescription: "What an everyapp command writes on stdout with --json (NDJSON events), its exit codes, and what an agent does with each event, action and error."
 ---
 
 Every `pnpm everyapp` command that does work takes `--json`, except `dev` (long-running and for a person; `dev --json` is `UNKNOWN_FLAG`, exit 252). With it, stdout carries a stream of events an agent reads line by line, nothing prompts, and the exit code says how the run ended. This page is the protocol; the commands are on [/docs/agent/cli](/docs/agent/cli), the error codes on [/docs/agent/errors](/docs/agent/errors), and the handoffs `setup` makes on [/docs/agent/setup](/docs/agent/setup). The source of truth is the header comment of `packages/cli/src/lib/output/events.ts`.

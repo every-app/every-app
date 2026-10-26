@@ -1,6 +1,7 @@
 ---
 title: everyapp.config.ts reference
 description: Every field of the app manifest (everyapp.config.ts), with its type, default, validation rule and exact error message, how the deploy turns it into the Worker, and what the Gateway does with it at request time.
+metaDescription: "Every field of everyapp.config.ts with its type, default and validation error, how the deploy builds the Worker, and what the Gateway does with it."
 ---
 
 The manifest is the single source of truth for an app's identity, resources and public surface. It is authored as `everyapp.config.ts` in the app's root, turned into the Worker definition by the app's `cloudflare.config.ts` (`everyAppWorker()` from `@every-app/sdk/cloudflare`), validated and snapshotted by the CLI into the Gateway's `apps` registry row as JSON at deploy time, and read by the Gateway's perimeter on every request. The schema lives in `packages/perimeter/src/manifest/manifest.ts`; everything below is derived from it and from the code that consumes each field.

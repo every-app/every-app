@@ -1,6 +1,7 @@
 ---
 title: "MCP: tools, the connector and OAuth"
 description: How an app exposes tools to AI clients with defineTools(), how the Gateway serves them on its one /mcp connector under app-prefixed names, and how claude.ai, Claude Code, Cursor and scripts connect with OAuth or a personal access token.
+metaDescription: "How an EveryApp app exposes MCP tools with defineTools(), how the Gateway serves them on one /mcp connector, and how Claude, Cursor and scripts connect."
 ---
 
 ## The model

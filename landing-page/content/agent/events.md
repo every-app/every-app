@@ -1,6 +1,7 @@
 ---
 title: "Events: webhooks, email alerts and emit()"
 description: The Gateway's event bus. Every event type with its version and data shape, the envelope and headers, how deliveries are signed, retried and refused, the email sink and the built-in Cap alerts, how an app emits its own events with emit(), every everyapp events command, the admin MCP tools, the error codes and the limits.
+metaDescription: "The Gateway's event bus: every event type and data shape, signed and retried webhooks, email alerts, emit() from apps, and the events commands."
 ---
 
 ## The model

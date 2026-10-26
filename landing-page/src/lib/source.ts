@@ -1,5 +1,13 @@
-import { createGetUrl, loader, type VirtualFile } from "fumadocs-core/source";
+import {
+  createGetUrl,
+  loader,
+  type MetaData,
+  type PageData,
+  type VirtualFile,
+} from "fumadocs-core/source";
+import { pageSchema } from "fumadocs-core/source/schema";
 import { defineDocs } from "fumadocs-mdx/macro";
+import { z } from "zod";
 import agentPages from "@/lib/agent-pages.generated.json";
 
 /** Where the docs are served from, for the absolute URLs llms.txt gives agents. */
@@ -8,6 +16,13 @@ export const SITE_URL = "https://everyapp.com";
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
+    // metaTitle and metaDescription are what search results and link
+    // previews show, when the page's own title or description is written
+    // for the page (or for llms.txt) rather than for a results page.
+    schema: pageSchema.extend({
+      metaTitle: z.string().optional(),
+      metaDescription: z.string().optional(),
+    }),
     async: true,
     postprocess: {
       includeProcessedMarkdown: true,
@@ -30,8 +45,18 @@ export const source = loader({
 // is all this source holds. The Worker reads a page's text through its
 // ASSETS binding (src/lib/agent-docs.ts) when it needs it; llms.txt,
 // llms-full.txt and the `.md` routes are src/lib/llms.ts.
+type AgentPageData = PageData & {
+  metaTitle?: string;
+  metaDescription?: string;
+};
+
 export const agentSource = loader({
-  source: { files: agentPages.files as VirtualFile[] },
+  source: {
+    files: agentPages.files as VirtualFile<{
+      pageData: AgentPageData;
+      metaData: MetaData;
+    }>[],
+  },
   baseUrl: "/docs/agent",
 });
 
