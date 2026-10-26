@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { publishedRange } from "@/lib/app/publishedVersions";
+import { PUBLISHED_VERSION, publishedRange } from "@/lib/app/publishedVersions";
 import { isInCheckout } from "@/lib/checkout";
 
-/** Where the published packages live in the checkout, for `EVERYAPP_CREATE_LINK`. */
+/** Where the published packages live in the checkout, for an app linked to it. */
 const CHECKOUT_PACKAGES: Readonly<Record<string, string>> = {
   "@every-app/sdk": "packages/sdk",
   everyapp: "packages/cli",
@@ -15,41 +15,50 @@ interface UpdatePackageJsonOptions {
   appId: string;
 }
 
+/** Where a new app takes `@every-app/sdk` and `everyapp` from. */
+export type AppDependencies =
+  /** An app in the checkout's apps/: the checkout's workspace packages. */
+  | { kind: "workspace" }
+  /** An app beside a checkout, made by its everyapp: linked to that checkout's packages. */
+  | { kind: "linked"; root: string }
+  /** An app made by an everyapp installed from npm: the published range. */
+  | { kind: "published"; version: string };
+
 /**
- * Name the copied template's package.json after the app. The template
- * takes the SDK and the CLI from this workspace (`workspace:*`), which
- * pnpm links inside the checkout: an app in the checkout's apps/ keeps
- * them, so it runs on the checkout's own SDK and CLI. An app made
- * anywhere else, by a checkout's everyapp or one installed from npm, is
- * its own repository and takes both from npm at the published range
- * (lib/app/publishedVersions.ts); its install writes the lockfile its
- * first commit records.
+ * Name the copied template's package.json after the app, and point its
+ * `@every-app/sdk` and `everyapp` (`workspace:*` in the template) at the
+ * everyapp that made it:
  *
- * `EVERYAPP_CREATE_LINK=1`, from a checkout, links the checkout's
- * packages by path instead: for testing this commit's SDK and CLI in a
- * standalone app before they are published (the built-CLI test in CI).
+ * - in the checkout's apps/, they stay workspace packages;
+ * - anywhere else, made by a checkout's everyapp (`pnpm everyapp create
+ *   ../my-app`), they link that checkout's packages/sdk and packages/cli,
+ *   so the app's `pnpm run deploy` runs the checkout's CLI, which can
+ *   rebuild and rebind a Gateway set up from the checkout;
+ * - made by an everyapp installed from npm, they take the published range
+ *   (lib/app/publishedVersions.ts), and the install writes the lockfile
+ *   the first commit records.
  */
 export async function updatePackageJson({
   targetDir,
   appId,
   root,
-  env = process.env,
 }: UpdatePackageJsonOptions & {
   /** The checkout everyapp runs from; null from an installed package. */
   root: string | null;
-  env?: NodeJS.ProcessEnv;
-}): Promise<void> {
+}): Promise<AppDependencies> {
   const packageJsonPath = path.join(targetDir, "package.json");
   const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
 
   packageJson.name = appId;
 
+  let dependencies: AppDependencies = { kind: "workspace" };
   if (!isInCheckout(targetDir, root)) {
     // Real paths both ends: pnpm resolves link: from where the app really is.
     const linkFrom =
-      root !== null && env["EVERYAPP_CREATE_LINK"] === "1"
-        ? { root: await fs.realpath(root), app: await fs.realpath(targetDir) }
-        : null;
+      root !== null ? { root: await fs.realpath(root), app: await fs.realpath(targetDir) } : null;
+    dependencies = linkFrom
+      ? { kind: "linked", root: linkFrom.root }
+      : { kind: "published", version: PUBLISHED_VERSION };
     for (const section of ["dependencies", "devDependencies"] as const) {
       const deps = packageJson[section];
       if (!deps) continue;
@@ -77,6 +86,7 @@ export async function updatePackageJson({
     JSON.stringify(packageJson, null, 2) + "\n",
     "utf-8",
   );
+  return dependencies;
 }
 
 /**

@@ -10,6 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  type AppDependencies,
   updateEveryappManifest,
   updatePackageJson,
   updateReadme,
@@ -93,21 +94,22 @@ export async function copyStarter({
   source: TemplateSource;
   targetDir: string;
   appId: string;
-}): Promise<void> {
+}): Promise<AppDependencies> {
   const { root } = source;
   await copyDirectory(source.starterDir, targetDir, { exclude: LOCAL_ONLY });
   const packed = path.join(targetDir, PACKED_GITIGNORE);
   if (await fileExists(packed)) await fs.rename(packed, path.join(targetDir, ".gitignore"));
-  if (isInCheckout(targetDir, root)) {
-    // A workspace package of the checkout, not a repository: no Release
-    // workflow (an app anywhere else is its own repository, on npm ranges
-    // and a committed lockfile, which the workflow installs from).
-    await fs.rm(path.join(targetDir, ".github"), { recursive: true, force: true });
-  }
   if (!isInCheckout(targetDir, root)) {
     await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
   }
-  await updatePackageJson({ targetDir, appId, root });
+  const dependencies = await updatePackageJson({ targetDir, appId, root });
+  if (dependencies.kind !== "published") {
+    // The Release workflow installs from npm ranges and a committed
+    // lockfile: an app in the checkout's apps/ isn't a repository, and one
+    // linked to a checkout installs only next to it.
+    await fs.rm(path.join(targetDir, ".github"), { recursive: true, force: true });
+  }
   await updateEveryappManifest({ targetDir, appId });
   await updateReadme({ targetDir, appId });
+  return dependencies;
 }

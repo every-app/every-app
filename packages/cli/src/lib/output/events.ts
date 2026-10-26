@@ -788,6 +788,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // `events test`: a spinner while the Gateway's sweep sends the ping; the done line says how it went.
     "events.deliver": saidByMessage,
     "create.skill": saidByMessage,
+    // Where the app's SDK and CLI come from: this checkout, or npm.
+    "create.deps": saidByMessage,
     "create.install": spinThenDone("Installing dependencies...", "Installed dependencies"),
     "create.types": spinThenDone("Generating types...", "Generated types"),
     "create.git": (event) =>

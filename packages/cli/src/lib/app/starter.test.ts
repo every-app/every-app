@@ -86,19 +86,20 @@ describe("the starter template", () => {
     expect(fs.existsSync(path.join(target, "pnpm-workspace.yaml"))).toBe(false);
   });
 
-  it("copies as its own pnpm workspace, on the published packages, anywhere else", async () => {
+  it("copies as its own pnpm workspace, linked to the checkout, beside it", async () => {
     const root = fakeCheckout();
     const target = path.join(tmp(), "my-app");
 
-    await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app" });
+    const dependencies = await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app" });
 
+    expect(dependencies).toEqual({ kind: "linked", root: fs.realpathSync(root) });
     const packageJson = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
-    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
-    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.dependencies["@every-app/sdk"]).toMatch(/^link:/);
+    expect(packageJson.devDependencies.everyapp).toMatch(/^link:/);
     // Its lockfile is committed: the template's .gitignore doesn't ignore it.
     expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).not.toMatch(/^pnpm-lock\.yaml$/m);
-    // Its own repository: the Release workflow comes with it.
-    expect(fs.existsSync(path.join(target, ".github", "workflows", "release.yml"))).toBe(true);
+    // No Release workflow: a linked app installs only next to the checkout.
+    expect(fs.existsSync(path.join(target, ".github"))).toBe(false);
     // Its own pnpm-workspace.yaml allows the build scripts the checkout's
     // does, so `pnpm install` there doesn't warn about ignored builds.
     const workspace = fs.readFileSync(path.join(target, "pnpm-workspace.yaml"), "utf8");
@@ -133,6 +134,8 @@ describe("the starter template", () => {
     expect(JSON.stringify(packageJson)).not.toContain("workspace:");
     expect(JSON.stringify(packageJson)).not.toContain("link:");
     expect(fs.existsSync(path.join(target, ".gitignore"))).toBe(true);
+    // Its own repository on npm ranges: the Release workflow comes with it.
+    expect(fs.existsSync(path.join(target, ".github", "workflows", "release.yml"))).toBe(true);
     expect(fs.existsSync(path.join(target, "gitignore"))).toBe(false);
     expect(fs.existsSync(path.join(target, "pnpm-workspace.yaml"))).toBe(true);
     // Its own repository on npm ranges: the Release workflow comes with it,

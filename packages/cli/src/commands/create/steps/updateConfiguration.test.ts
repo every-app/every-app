@@ -164,30 +164,28 @@ describe("updatePackageJson", () => {
     expect(packageJson.scripts.deploy).toBe("everyapp deploy");
   });
 
-  it("takes the published packages from npm for an app outside the checkout, or with none", async () => {
-    for (const root of [await fakeCheckout(), null]) {
-      const targetDir = path.join(await tmp(), "my-new-app");
-      await copiedPackageJson(targetDir);
+  it("takes the published packages from npm for an app made by an installed everyapp", async () => {
+    const targetDir = path.join(await tmp(), "my-new-app");
+    await copiedPackageJson(targetDir);
 
-      await updatePackageJson({ targetDir, appId: "my-new-app", root });
+    const dependencies = await updatePackageJson({ targetDir, appId: "my-new-app", root: null });
 
-      const packageJson = await readPackageJson(targetDir);
-      expect(packageJson.name).toBe("my-new-app");
-      expect(packageJson.dependencies["@every-app/sdk"]).toBe(
-        `^${PUBLISHED_VERSION}`,
-      );
-      expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
-      expect(JSON.stringify(packageJson)).not.toMatch(/workspace:|link:|file:/);
-    }
+    expect(dependencies).toEqual({ kind: "published", version: PUBLISHED_VERSION });
+    const packageJson = await readPackageJson(targetDir);
+    expect(packageJson.name).toBe("my-new-app");
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+    expect(JSON.stringify(packageJson)).not.toMatch(/workspace:|link:|file:/);
   });
 
-  it("links the checkout's packages under EVERYAPP_CREATE_LINK=1, and only from a checkout", async () => {
+  it("links the checkout's packages for an app a checkout makes beside it", async () => {
     const root = await fakeCheckout();
     const targetDir = path.join(await tmp(), "my-new-app");
     await copiedPackageJson(targetDir);
 
-    await updatePackageJson({ targetDir, appId: "my-new-app", root, env: { EVERYAPP_CREATE_LINK: "1" } });
+    const dependencies = await updatePackageJson({ targetDir, appId: "my-new-app", root });
 
+    expect(dependencies).toEqual({ kind: "linked", root: await fs.realpath(root) });
     const packageJson = await readPackageJson(targetDir);
     const linked = (spec: string) => {
       expect(spec).toMatch(/^link:\.\.\//);
@@ -199,11 +197,6 @@ describe("updatePackageJson", () => {
     expect(await linked(packageJson.devDependencies.everyapp)).toBe(
       await fs.realpath(path.join(root, "packages", "cli")),
     );
-
-    const noCheckout = path.join(await tmp(), "my-new-app");
-    await copiedPackageJson(noCheckout);
-    await updatePackageJson({ targetDir: noCheckout, appId: "my-new-app", root: null, env: { EVERYAPP_CREATE_LINK: "1" } });
-    expect((await readPackageJson(noCheckout)).devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
   });
 
   it("refuses a workspace package that isn't published", async () => {

@@ -72,7 +72,7 @@ pnpm install
 pnpm everyapp setup --domain apps.yourcompany.com
 ```
 
-`pnpm everyapp` runs the CLI and builds the Gateway from your checkout. `pnpm everyapp create ../my-app` links a new app to it.
+`pnpm everyapp` runs the CLI and builds the Gateway from your checkout. `pnpm everyapp create ../my-app` makes a new app linked to your checkout's SDK and CLI, so its `pnpm run deploy` uses your checkout too. An app made with the npm `everyapp` is pinned to the published packages instead.
 
 ## What's on the roadmap?
 

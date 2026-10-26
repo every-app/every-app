@@ -128,7 +128,7 @@ export async function createApp({
     // where they are.
     data: { appId, shown, elsewhere: target.dir === null && relative.startsWith("..") },
   });
-  await copyStarter({ source, targetDir, appId });
+  const dependencies = await copyStarter({ source, targetDir, appId });
   out.emit({
     type: "step",
     step: "create.copy",
@@ -136,6 +136,18 @@ export async function createApp({
     message: "Copied the starter template",
     data: { appId, dir: targetDir },
   });
+  if (dependencies.kind !== "workspace") {
+    out.emit({
+      type: "step",
+      step: "create.deps",
+      status: "ok",
+      message:
+        dependencies.kind === "linked"
+          ? `Linked to this checkout: @every-app/sdk and everyapp from ${dependencies.root}`
+          : `Pinned to everyapp ^${dependencies.version} and @every-app/sdk ^${dependencies.version} from npm`,
+      data: dependencies,
+    });
+  }
   const skill = await linkSkill({ skillsDir: source.skillsDir, appDir: targetDir });
   out.emit({
     type: "step",

@@ -565,7 +565,7 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
       // This commit's SDK and CLI, linked from the checkout: the published
       // range may name a version that isn't on npm yet (it is set before
       // publishing). Without the variable, create writes the range.
-      const run = await everyapp(["create", APP_ID, "--json"], { cwd: tmp, env: { EVERYAPP_CREATE_LINK: "1" } });
+      const run = await everyapp(["create", APP_ID, "--json"], { cwd: tmp });
       const last = expectProtocol(run);
       expect(run.exitCode, describeRun(run)).toBe(0);
       expect(

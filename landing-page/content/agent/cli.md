@@ -301,8 +301,10 @@ USAGE
   everyapp create --help
 
 A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there,
-named after its last part. Each is its own git repository on the published
-@every-app/sdk and everyapp from npm, its pnpm-lock.yaml in the first commit.
+named after its last part. Each is its own git repository, its pnpm-lock.yaml in
+the first commit. Made by everyapp installed from npm, it is pinned to the published
+@every-app/sdk and everyapp; made from a checkout, it is linked to that checkout's,
+so its deploy runs the checkout's CLI.
 Dependencies are installed and the local database is ready, so `pnpm dev` works
 straight away. Then: cd into it and `pnpm run deploy`.
 

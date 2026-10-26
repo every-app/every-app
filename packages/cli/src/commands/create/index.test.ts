@@ -160,6 +160,7 @@ describe("everyapp create", () => {
     ).toEqual([
       "create.copy start",
       "create.copy ok",
+      "create.deps ok",
       "create.skill ok",
       "create.install start",
       "create.install ok",
@@ -375,7 +376,7 @@ describe("everyapp create", () => {
     });
   });
 
-  it("makes the app beside the checkout from ../my-app, as its own repository on the published packages", async () => {
+  it("makes the app beside the checkout from ../my-app, as its own repository linked to the checkout", async () => {
     const outer = tmp();
     const root = fakeCheckout(path.join(outer, "every-app"));
     const { cf, install } = seams();
@@ -386,11 +387,15 @@ describe("everyapp create", () => {
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
     expect(fs.existsSync(path.join(app, ".git"))).toBe(true);
     expect(fs.existsSync(path.join(root, "apps"))).toBe(false);
-    // From npm, as an app made anywhere else is.
+    // The checkout's SDK and CLI, so its deploy runs this checkout's everyapp.
     const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
-    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
-    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe("link:../every-app/packages/sdk");
+    expect(packageJson.devDependencies.everyapp).toBe("link:../every-app/packages/cli");
     expect(fs.existsSync(path.join(app, "pnpm-workspace.yaml"))).toBe(true);
+    expect(events.find((event) => event["step"] === "create.deps")).toMatchObject({
+      message: `Linked to this checkout: @every-app/sdk and everyapp from ${fs.realpathSync(root)}`,
+      data: { kind: "linked" },
+    });
     expect(install).toHaveBeenCalledWith(expect.objectContaining({ cwd: app }));
     // Said as the path was given: no note about apps/, and `cd ../my-app`.
     expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
@@ -418,6 +423,10 @@ describe("everyapp create", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
     expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
     expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+    expect(events.find((event) => event["step"] === "create.deps")).toMatchObject({
+      message: `Pinned to everyapp ^${PUBLISHED_VERSION} and @every-app/sdk ^${PUBLISHED_VERSION} from npm`,
+      data: { kind: "published", version: PUBLISHED_VERSION },
+    });
     expect(fs.existsSync(path.join(app, ".agents", "skills", "everyapp", "SKILL.md"))).toBe(true);
     expect(fs.existsSync(path.join(app, ".claude", "skills", "build-every-app", "SKILL.md"))).toBe(true);
     expect(events.at(-1)).toMatchObject({
