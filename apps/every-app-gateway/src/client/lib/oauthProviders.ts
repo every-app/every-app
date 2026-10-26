@@ -95,6 +95,14 @@ export function scopeSetsText(sets: readonly string[]): string {
   return sets.length > 0 ? sets.join(", ") : "default";
 }
 
+/** A space- or comma-separated field as a list, blanks dropped. */
+export function splitList(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const SLUG = /[^a-z0-9-]+/g;
 
 /** `Acme Cloud` → `acme-cloud`, for the id a custom provider gets by default. */

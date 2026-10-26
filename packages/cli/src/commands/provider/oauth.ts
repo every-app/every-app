@@ -268,7 +268,9 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
   let rowSource: "catalog" | "row";
   if (source.kind === "catalog") {
     id = source.id;
-    capability = source.capability;
+    // The client as this Gateway serves it: an operator's scope sets included.
+    const served = (await gatewayRegistry(gateway.db, gateway.install)).get(id);
+    capability = served?.mode === "oauth_client" ? served : source.capability;
     rowSource = "catalog";
     out.emit({
       type: "step",

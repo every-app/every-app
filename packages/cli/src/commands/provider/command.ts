@@ -280,6 +280,101 @@ const removeCommand = buildCommand({
   },
 });
 
+const providerParameter = {
+  placeholder: "provider",
+  brief: "A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack",
+  parse: String,
+} as const;
+
+const scopeSetAddCommand = buildCommand({
+  loader: async () => {
+    const { scopeSetAdd } = await import("./scopeSets");
+    return scopeSetAdd;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        providerParameter,
+        {
+          placeholder: "spec",
+          brief: "The set as JSON: a file, or an https URL to one (64 KiB at most)",
+          parse: String,
+        },
+      ],
+    },
+    flags: {
+      replace: {
+        kind: "boolean",
+        brief: "Replace the set of the same name added before",
+        optional: true,
+      },
+      ...connectFlags,
+    },
+  },
+  docs: {
+    brief: "Add a scope set to a built-in OAuth client, so apps can list it under scopes",
+    fullDescription: [
+      "The set says its name (identity, or <area>.<access>: gmail.send), its label, its access",
+      "(read or write, said outright), the provider's scopes it asks for, and the routes on the",
+      "client's own API hosts it unlocks: { host, paths, posts? } (posts are anchored patterns of",
+      "the POST paths a read set admits). It is checked by the rules a built-in set is checked",
+      "by; a name the client already has, or a host outside the client's, is refused. Live within",
+      "30 seconds. The client's authorize scopes grow by the set's: allow them on the OAuth client",
+      "at the provider's console, and people connect again to grant them.",
+      "",
+      "Example:",
+      `  ${CLI} provider scope-set add google-workspace gmail-send.json`,
+      '  gmail-send.json: { "name": "gmail.send", "label": "Gmail (send)", "access": "write",',
+      '    "scopes": ["https://www.googleapis.com/auth/gmail.send"],',
+      '    "routes": [{ "host": "gmail.googleapis.com", "paths": ["/gmail/v1/users/"] }] }',
+    ].join("\n"),
+  },
+});
+
+const scopeSetRemoveCommand = buildCommand({
+  loader: async () => {
+    const { scopeSetRemove } = await import("./scopeSets");
+    return scopeSetRemove;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        providerParameter,
+        { placeholder: "name", brief: "The set's name, as provider show lists it (added ones marked)", parse: String },
+      ],
+    },
+    flags: {
+      force: {
+        kind: "boolean",
+        brief: "Remove it even though deployed apps list it (their calls under it stop)",
+        optional: true,
+      },
+      ...connectFlags,
+    },
+  },
+  docs: {
+    brief: "Remove a scope set added to a built-in OAuth client",
+    fullDescription: [
+      "Only a set added with scope-set add can be removed; the client's own stay. A set a deployed",
+      "app lists under scopes is refused unless --force. Connections keep their tokens; calls",
+      "under the set answer integration_scopes_undeclared within 30 seconds.",
+      "",
+      "Example:",
+      `  ${CLI} provider scope-set remove google-workspace gmail.send`,
+    ].join("\n"),
+  },
+});
+
+const scopeSetRoutes = buildRouteMap({
+  routes: { add: scopeSetAddCommand, remove: scopeSetRemoveCommand },
+  aliases: { rm: "remove" },
+  docs: {
+    brief: "Scope sets an operator adds to the built-in OAuth clients (Google, Microsoft, Slack)",
+  },
+});
+
 /** `provider on|off`: what `everyapp mcp on|off` was called until 2026-10-24, kept through launch week. */
 const mcpAlias = (verb: "on" | "off") =>
   buildCommand({
@@ -300,10 +395,12 @@ const mcpAlias = (verb: "on" | "off") =>
   });
 
 /**
- * `everyapp provider add|list|show|remove|presets|connections|disconnect`:
- * the provider registry, the API providers the Gateway brokers
- * (docs/design/2026-10-provider-registry.md) and the OAuth providers people
- * connect their accounts to (docs/design/2026-10-oauth-providers.md).
+ * `everyapp provider add|list|show|remove|presets|connections|disconnect`
+ * and `provider scope-set add|remove`: the provider registry, the API
+ * providers the Gateway brokers (docs/design/2026-10-provider-registry.md),
+ * the OAuth providers people connect their accounts to
+ * (docs/design/2026-10-oauth-providers.md) and the scope sets an operator
+ * adds to the built-in clients.
  * `on` and `off` are hidden: they run `mcp on|off` and say so, for
  * documents that still say `provider on`.
  */
@@ -316,6 +413,7 @@ export const providerRoutes = buildRouteMap({
     presets: presetsCommand,
     connections: connectionsCommand,
     disconnect: disconnectCommand,
+    "scope-set": scopeSetRoutes,
     on: mcpAlias("on"),
     off: mcpAlias("off"),
   },

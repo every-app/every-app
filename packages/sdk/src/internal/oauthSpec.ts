@@ -328,6 +328,72 @@ function routes(
   return out;
 }
 
+/** The fields one scope set may carry, in a spec's `scopeSets` or an overlay. */
+const SCOPE_SET_FIELDS = ["label", "access", "scopes", "userScopes", "routes"];
+
+/**
+ * One scope set (`{ label, access, scopes, userScopes?, routes? }`) at
+ * `at`, its routes on `hosts` alone; undefined when a field is wrong,
+ * every problem reported. `overlay`: a set added to a built-in client
+ * must name a scope and say what it unlocks (a set with no routes unlocks
+ * nothing on the held-token path); a spec's own set may leave both empty
+ * (Notion's sets carry no scope string).
+ */
+export function parseScopeSet(
+  raw: unknown,
+  at: string,
+  hosts: readonly string[],
+  problems: SpecProblem[],
+  { overlay = false }: { overlay?: boolean } = {},
+): OAuthScopeSet | undefined {
+  if (!isRecord(raw)) {
+    problems.push({ path: at, message: "must be { label, access, scopes }" });
+    return undefined;
+  }
+  for (const field of Object.keys(raw)) {
+    if (!SCOPE_SET_FIELDS.includes(field)) {
+      problems.push({ path: `${at}.${field}`, message: "unknown field" });
+    }
+  }
+  const label = printable(raw["label"], `${at}.label`, problems, 80);
+  if (raw["label"] === undefined) {
+    problems.push({ path: `${at}.label`, message: "required" });
+  }
+  const access = raw["access"];
+  if (access !== "read" && access !== "write") {
+    problems.push({ path: `${at}.access`, message: "must be read or write" });
+  }
+  const scopes = scopeList(raw["scopes"], `${at}.scopes`, problems);
+  if (raw["scopes"] === undefined) {
+    problems.push({ path: `${at}.scopes`, message: "required" });
+  } else if (overlay && scopes && scopes.length === 0) {
+    problems.push({ path: `${at}.scopes`, message: "must list a scope" });
+  }
+  const userScopes = scopeList(raw["userScopes"], `${at}.userScopes`, problems);
+  const parsedRoutes = routes(raw["routes"], `${at}.routes`, hosts, problems);
+  if (overlay && (!parsedRoutes || parsedRoutes.length === 0)) {
+    problems.push({
+      path: `${at}.routes`,
+      message:
+        "required: at least one { host, paths } the set unlocks, on one of the client's API hosts",
+    });
+  }
+  if (
+    label === undefined ||
+    (access !== "read" && access !== "write") ||
+    scopes === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    label,
+    access,
+    scopes,
+    ...(userScopes === undefined ? {} : { userScopes }),
+    routes: parsedRoutes ?? [],
+  };
+}
+
 function scopeSets(
   value: unknown,
   hosts: readonly string[],
@@ -360,51 +426,113 @@ function scopeSets(
       });
       continue;
     }
-    if (!isRecord(raw)) {
-      problems.push({ path: at, message: "must be { label, access, scopes }" });
-      continue;
-    }
-    for (const field of Object.keys(raw)) {
-      if (
-        !["label", "access", "scopes", "userScopes", "routes"].includes(field)
-      ) {
-        problems.push({ path: `${at}.${field}`, message: "unknown field" });
-      }
-    }
-    const label = printable(raw["label"], `${at}.label`, problems, 80);
-    if (raw["label"] === undefined) {
-      problems.push({ path: `${at}.label`, message: "required" });
-    }
-    const access = raw["access"];
-    if (access !== "read" && access !== "write") {
-      problems.push({ path: `${at}.access`, message: "must be read or write" });
-    }
-    const scopes = scopeList(raw["scopes"], `${at}.scopes`, problems);
-    if (raw["scopes"] === undefined) {
-      problems.push({ path: `${at}.scopes`, message: "required" });
-    }
-    const userScopes = scopeList(
-      raw["userScopes"],
-      `${at}.userScopes`,
-      problems,
-    );
-    const parsedRoutes = routes(raw["routes"], `${at}.routes`, hosts, problems);
-    if (
-      label === undefined ||
-      (access !== "read" && access !== "write") ||
-      scopes === undefined
-    ) {
-      continue;
-    }
-    out[name] = {
-      label,
-      access,
-      scopes,
-      ...(userScopes === undefined ? {} : { userScopes }),
-      routes: parsedRoutes ?? [],
-    };
+    const set = parseScopeSet(raw, at, hosts, problems);
+    if (set) out[name] = set;
   }
   return out;
+}
+
+/** The fields a scope-set overlay carries: a set's, with its `name` and the client it belongs to. */
+const OVERLAY_FIELDS = ["provider", "name", ...SCOPE_SET_FIELDS];
+
+/** What `parseScopeSetOverlay` returns. */
+export type ParsedScopeSetOverlay =
+  | { ok: true; name: string; set: OAuthScopeSet }
+  | { ok: false; problems: SpecProblem[] };
+
+/**
+ * A scope set an operator adds to a built-in OAuth client
+ * (`everyapp provider scope-set add google-workspace gmail-send.json`):
+ * `{ "name": "gmail.send", "label", "access", "scopes", "routes" }`, held
+ * to the rules a built-in set is (the set's shape, routes on the client's
+ * `api` hosts alone, anchored `posts`) plus two of its own: `access` is
+ * said outright (a write set is never implied by its scopes) and `routes`
+ * is required. A `provider` field, when present, must be `id`. The name
+ * may not be one of the client's own sets: an overlay adds, never
+ * replaces. Nothing here reads a value.
+ */
+export function parseScopeSetOverlay(
+  input: unknown,
+  client: { id: string; capability: OAuthClientCapability },
+): ParsedScopeSetOverlay {
+  const problems: SpecProblem[] = [];
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      problems: [{ path: "(root)", message: "must be a JSON object" }],
+    };
+  }
+  for (const field of Object.keys(input)) {
+    if (!OVERLAY_FIELDS.includes(field)) {
+      problems.push({ path: field, message: "unknown field" });
+    }
+  }
+  const policy = client.capability.scopePolicy;
+  if (!policy) {
+    problems.push({
+      path: "(root)",
+      message: `${client.id} has no scope sets: the whole client is the grant`,
+    });
+  }
+  if (input["provider"] !== undefined && input["provider"] !== client.id) {
+    problems.push({
+      path: "provider",
+      message: `is ${String(input["provider"])}, not ${client.id}`,
+    });
+  }
+  const name = input["name"];
+  if (typeof name !== "string" || !SCOPE_SET_NAME.test(name)) {
+    problems.push({
+      path: "name",
+      message:
+        "required: identity, or <area>.<access> in lowercase (gmail.send)",
+    });
+  } else if (policy && Object.hasOwn(policy.sets, name)) {
+    problems.push({
+      path: "name",
+      message: `${name} is one of ${client.id}'s own sets; an overlay adds a set, never replaces one`,
+    });
+  }
+  // The set's own fields alone: an unknown one was reported above.
+  const fields = Object.fromEntries(
+    Object.entries(input).filter(([field]) => SCOPE_SET_FIELDS.includes(field)),
+  );
+  const set = parseScopeSet(fields, "(set)", client.capability.api, problems, {
+    overlay: true,
+  });
+  if (problems.length > 0 || !set || typeof name !== "string") {
+    return { ok: false, problems };
+  }
+  return { ok: true, name, set };
+}
+
+/**
+ * `capability` with `sets` added to its scope policy: the sets after the
+ * client's own, in the order given, and each set's scopes added to the
+ * authorize URL's list (what the operator's client must be allowed), as
+ * `parseOAuthUserSpec` builds it. A name the client already has is left
+ * as the client's (the registry refuses such an overlay before this).
+ */
+export function withScopeSets(
+  capability: OAuthClientCapability,
+  sets: Readonly<Record<string, OAuthScopeSet>>,
+): OAuthClientCapability {
+  const policy = capability.scopePolicy;
+  if (!policy) return capability;
+  const merged: Record<string, OAuthScopeSet> = { ...policy.sets };
+  const scopes = [...capability.authorize.scopes];
+  for (const [name, set] of Object.entries(sets)) {
+    if (Object.hasOwn(merged, name)) continue;
+    merged[name] = set;
+    for (const scope of set.scopes) {
+      if (!scopes.includes(scope)) scopes.push(scope);
+    }
+  }
+  return {
+    ...capability,
+    authorize: { ...capability.authorize, scopes },
+    scopePolicy: { ...policy, sets: merged },
+  };
 }
 
 function identity(

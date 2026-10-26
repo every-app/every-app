@@ -946,15 +946,17 @@ export const catalogue = {
     return built("provider.removed", { provider: provider(input.provider) });
   },
 
-  /** A provider's spec was replaced, or its OAuth client uploaded again. */
+  /** A provider's spec was replaced, its OAuth client uploaded again, or a scope set added to or removed from a built-in client. */
   providerUpdated(input: {
     provider: EventProvider;
-    /** What changed: the spec, or the client (never its value). */
-    change: "spec" | "client";
+    /** What changed: the spec, the client (never its value), or the scope sets (`scopeSet` names which). */
+    change: "spec" | "client" | "scope_sets";
+    scopeSet?: { name: string; action: "added" | "removed" };
   }): BuiltEvent {
     return built("provider.updated", {
       provider: provider(input.provider),
       change: input.change,
+      ...(input.scopeSet ? { scopeSet: { ...input.scopeSet } } : {}),
     });
   },
 

@@ -29,6 +29,7 @@ import {
   registerApp,
   startDeploy,
 } from "./run";
+import { gatewayProviders } from "@/server/providers";
 
 // server.ts routes this prefix here.
 const DEPLOY_API_PREFIX = "/api/v1/";
@@ -72,6 +73,7 @@ async function registerRoute(request: Request, caller: DeployCaller) {
   const manifest = parseManifest(
     body.manifest ?? { id: body.appId },
     body.appId,
+    await gatewayProviders(),
   );
   const existing = await findOrgApp(caller.organizationId, manifest.id);
   assertBoundApp(caller, existing);
@@ -90,7 +92,11 @@ async function deployRoute(
   appId: string,
 ) {
   const bundle = await parseDeployUpload(request);
-  const manifest = parseManifest(bundle.manifest, appId);
+  const manifest = parseManifest(
+    bundle.manifest,
+    appId,
+    await gatewayProviders(),
+  );
   const existing = await findOrgApp(caller.organizationId, appId);
   if (!existing || existing.status === "deleted") {
     throw new DeployError(

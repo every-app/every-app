@@ -1899,6 +1899,20 @@ From "Hosted build":
 - [x] **The CLI's hosted-deploy success line** (bearer tokens only). Superseded: #316 (31a85593) dropped the wording; `deployToGateway.ts` now says what version was deployed and where the app is. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 - [x] **OpenSEO's first deploy is the Alchemy stage, registered with `everyapp register`.** Superseded by what runs: the live OpenSEO on everyapp.team came through `everyapp deploy` from its manifest (the item's stated target), and `register` refuses a gateway that isn't hosted. The Alchemy-stage path remains for a hosted gateway. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 
+### Platform shortcuts (2026-10-26)/6 extensibility
+
+Lane 6 of the platform shortcuts swath (the brief in the coordinator thread): three things an app needed a platform release for, now registrable. HELD: egress and OAuth; Ben reviews the PRs. Defaults taken; confirm or change each.
+
+- [ ] **Scope-set overlays extend the three built-in clients with scope sets** (`google-workspace`, `microsoft-365`, `slack`) and nothing else: a registered OAuth provider's sets are in its spec (`provider add --replace`), the social-network clients have no sets (the whole client is the grant). Alternative: overlays on registered rows too.
+- [ ] **An overlay adds, never replaces or widens a built-in set.** A name the client has is `SCOPE_SET_BUILTIN`; changing a built-in set stays a reviewed catalog change. Alternative: let an overlay shadow a built-in set.
+- [ ] **An overlay must name `routes` (on the client's `api` hosts alone) and say `access` outright**; a set with no routes unlocks nothing on the held-token path, so it is refused rather than accepted empty. A write set is never inferred from its scope strings.
+- [ ] **The client's authorize scopes grow by the overlay's**, so the operator's OAuth client at the console must be allowed them and every person connects again to grant them; the CLI, the dialog and the tool say so. The binding key excludes the sets, so an uploaded client stays live. Alternative: a per-set consent (`sets=` on `/connect`) only, leaving `authorize.scopes` as the catalog has it.
+- [ ] **Local development doesn't know an overlay set**: `everyapp dev` reaches a built-in client from the catalog alone, so an app listing `gmail.send` gets `integration_scopes_undeclared` locally until the SDK's dev fallback reads overlays (a follow-up: `provider show <client> --save` writing the effective client, and the dev path preferring the file). The local validator accepts a well-formed name (`unknownCapabilities: "accept"`); `deploy` checks it against the Gateway.
+- [ ] **Removal is refused while a deployed app lists the set** unless `--force` (`SCOPE_SET_IN_USE`, the apps named); the UI and the tool never force. Connections keep their tokens; calls under the set answer `integration_scopes_undeclared`.
+- [ ] **The hosted deploy API checks scope sets against the Gateway's registry** (overlays included) rather than the catalog alone (`manifestProblems` takes a lookup; `parseManifest`, `bundleProblems` and the pipeline's `DeployTarget.lookup` thread it).
+- [ ] **Events:** an add or remove emits `provider.updated` with `change: "scope_sets"` and `scopeSet: { name, action }` rather than a type of its own.
+- [ ] **Migration 0019 (`provider_scope_sets`)** was generated with drizzle-kit, which named it 0017 because the journal's indices lag the file names (earlier migrations were renumbered by hand); renamed to 0019 with its journal tag and snapshot. Regenerate against main at merge time.
+
 ## Ben's briefing answers (2026-10-24, afternoon)
 
 - [ ] **Turn on GitHub private vulnerability reporting** when the repo flips public (Ben's choice for Q11a; SECURITY.md already points there). Yours, Ben.

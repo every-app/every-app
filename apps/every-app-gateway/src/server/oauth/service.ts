@@ -17,8 +17,10 @@ import {
   checkProviderRow,
   describeSpecProblems,
   OAUTH_PRESETS,
+  overlayableClient,
   parseProviderSpec,
   providerBindingKey,
+  resolveScopeSetRow,
   secretNames,
   type Capability,
   type OAuthClientCapability,
@@ -42,6 +44,7 @@ import { AppRepository } from "@/server/repositories/AppRepository";
 import { OAuthClientRepository } from "@/server/repositories/OAuthClientRepository";
 import { ProviderConnectionRepository } from "@/server/repositories/ProviderConnectionRepository";
 import { ProviderRepository } from "@/server/repositories/ProviderRepository";
+import { ScopeSetRepository } from "@/server/repositories/ScopeSetRepository";
 import { SealingUnavailableError } from "@/server/secrets/sealed";
 import { resolveOAuthClient } from "./client";
 import { flowOf, revokeAtProvider, type Fetch } from "./tokens";
@@ -68,7 +71,7 @@ export interface OAuthProviderSummary {
   /** Whether a client is live for the provider as it is now. */
   bound: boolean;
   redirectUri: string;
-  scopeSets: { name: string; label: string; access: "read" | "write" }[];
+  scopeSets: ScopeSetSummary[];
   /** Where the operator registers the client. */
   console: string;
   /** How many connections the organization has at it. */
@@ -76,6 +79,21 @@ export interface OAuthProviderSummary {
   docs?: string;
   /** The Gateway setting names a terminal `secret set` uses for the client. */
   settings: string[];
+}
+
+/** One scope set as Admin → Providers and `provider show` list it. */
+export interface ScopeSetSummary {
+  name: string;
+  label: string;
+  access: "read" | "write";
+  /** The provider's scope strings the set asks for. */
+  scopes: string[];
+  /** The hosts its routes unlock (what a person checks before adding a set beside it). */
+  hosts: string[];
+  /** The client's own set, or one an operator added here (`provider_scope_sets`). */
+  source: "catalog" | "row";
+  addedBy?: string | null;
+  addedAt?: number | null;
 }
 
 /** Any registry entry, for the Admin list beside the OAuth ones. */
@@ -187,10 +205,31 @@ function capabilityIdsOf(manifest: Record<string, unknown> | null): string[] {
 }
 
 function scopeSetsOf(
+  id: string,
   capability: OAuthClientCapability,
-): OAuthProviderSummary["scopeSets"] {
+  registry: ProviderRegistry,
+): ScopeSetSummary[] {
+  const overlays = new Map(
+    registry
+      .scopeSets()
+      .filter((each) => each.providerId === id)
+      .map((each) => [each.name, each]),
+  );
   return Object.entries(capability.scopePolicy?.sets ?? {}).map(
-    ([name, set]) => ({ name, label: set.label, access: set.access }),
+    ([name, set]) => {
+      const overlay = overlays.get(name);
+      return {
+        name,
+        label: set.label,
+        access: set.access,
+        scopes: [...set.scopes],
+        hosts: [...new Set(set.routes.map((route) => route.host))],
+        source: overlay ? "row" : "catalog",
+        ...(overlay
+          ? { addedBy: overlay.addedBy, addedAt: overlay.addedAt }
+          : {}),
+      };
+    },
   );
 }
 
@@ -246,7 +285,7 @@ async function oauthSummary(
     client,
     bound,
     redirectUri: redirectUriFor(id),
-    scopeSets: scopeSetsOf(capability),
+    scopeSets: scopeSetsOf(id, capability, registry),
     console: capability.console,
     connections: counts[id] ?? 0,
     ...(capability.reference ? { docs: capability.reference } : {}),
@@ -626,6 +665,180 @@ export async function addOAuthProvider(
   const registry = await gatewayProviders();
   const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
   return oauthSummary(org, id, capability, registry, counts);
+}
+
+/** The deployed apps whose manifest lists `name` under `scopes` for `providerId`. */
+async function appsListingScopeSet(
+  providerId: string,
+  name: string,
+): Promise<string[]> {
+  const apps: string[] = [];
+  for (const app of await AppRepository.findAllManifests()) {
+    const manifest = manifestOf(app.manifest);
+    const entry = (
+      manifest?.["capabilities"] as Record<string, unknown> | undefined
+    )?.[providerId];
+    const scopes =
+      entry && typeof entry === "object"
+        ? (entry as { scopes?: unknown }).scopes
+        : undefined;
+    if (Array.isArray(scopes) && scopes.includes(name)) apps.push(app.appSlug);
+  }
+  return apps;
+}
+
+/**
+ * Add a scope set to a built-in OAuth client (Admin → Providers → Scope
+ * sets, `everyapp_provider_scope_set_add`): the set checked against the
+ * client's catalog entry by the registry's rules (its routes on the
+ * client's API hosts alone, an explicit access, never one of the client's
+ * own names), written as a `provider_scope_sets` row, live within 30
+ * seconds. Never replaces a row (`everyapp provider scope-set add
+ * --replace` is the terminal's). Returns the provider as the list shows it.
+ */
+export async function addScopeSet(
+  org: OrgContext,
+  actor: EventActor | null | undefined,
+  input: { providerId: string; name: string; spec: unknown },
+): Promise<OAuthProviderSummary> {
+  requireAdmin(org);
+  const who = await actorFor(org, actor);
+  const addedBy =
+    ((who.kind === "user" || who.kind === "agent") && who.email) || org.userId;
+  const client = overlayableClient(input.providerId);
+  if (!client) {
+    throw new PublicError(
+      "SCOPE_SET_PROVIDER_UNKNOWN",
+      `${input.providerId} isn't a built-in OAuth client with scope sets (google-workspace, microsoft-365, slack); a registered provider's sets are in its spec`,
+    );
+  }
+  const text = JSON.stringify(input.spec);
+  if (!text || text.length > 64 * 1024) {
+    throw new PublicError(
+      "INVALID_INPUT",
+      "spec must be an object under 64 KiB",
+    );
+  }
+  const resolved = resolveScopeSetRow({
+    providerId: input.providerId,
+    name: input.name,
+    spec: input.spec,
+  });
+  if (!resolved.ok) {
+    throw new PublicError(resolved.refusal.code, resolved.refusal.message);
+  }
+  let written: boolean;
+  try {
+    written = await ScopeSetRepository.insert({
+      providerId: input.providerId,
+      name: input.name,
+      spec: text,
+      addedBy,
+    });
+  } catch {
+    throw new PublicError(
+      "GATEWAY_OUTDATED",
+      "This Gateway's database has no provider_scope_sets table yet; its operator runs: everyapp update",
+    );
+  }
+  if (!written) {
+    throw new PublicError(
+      "SCOPE_SET_EXISTS",
+      `${input.providerId} has a scope set ${input.name} already; replacing it is the terminal's: everyapp provider scope-set add ${input.providerId} <spec> --replace`,
+    );
+  }
+  invalidateGatewayProviders();
+  logEvent("provider.scope_set_added", {
+    provider: input.providerId,
+    scopeSet: input.name,
+    org: org.orgId,
+    user_id: org.userId,
+  });
+  await emit(async () => ({
+    organizationId: org.orgId,
+    actor: who,
+    ...catalogue.providerUpdated({
+      provider: { id: input.providerId, name: client.label, kind: "oauth" },
+      change: "scope_sets",
+      scopeSet: { name: input.name, action: "added" },
+    }),
+  }));
+  const registry = await gatewayProviders();
+  const capability = registry.get(input.providerId);
+  if (capability?.mode !== "oauth_client") throw new Error("unreachable");
+  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  return oauthSummary(org, input.providerId, capability, registry, counts);
+}
+
+/**
+ * Remove a scope set an operator added (never one of the client's own);
+ * refused while a deployed app lists it under `scopes`, naming the apps
+ * (`--force` is the terminal's). Connections that granted the set keep
+ * their tokens; calls under the set stop at once.
+ */
+export async function removeScopeSet(
+  org: OrgContext,
+  actor: EventActor | null | undefined,
+  input: { providerId: string; name: string },
+): Promise<OAuthProviderSummary> {
+  requireAdmin(org);
+  const who = await actorFor(org, actor);
+  const client = overlayableClient(input.providerId);
+  if (!client) {
+    throw new PublicError(
+      "SCOPE_SET_PROVIDER_UNKNOWN",
+      `${input.providerId} isn't a built-in OAuth client with scope sets`,
+    );
+  }
+  if (Object.hasOwn(client.scopePolicy!.sets, input.name)) {
+    throw new PublicError(
+      "SCOPE_SET_BUILTIN",
+      `${input.name} is one of ${input.providerId}'s own sets and can't be removed`,
+    );
+  }
+  const apps = await appsListingScopeSet(input.providerId, input.name);
+  if (apps.length > 0) {
+    throw new PublicError(
+      "SCOPE_SET_IN_USE",
+      `${apps.join(", ")} ${apps.length === 1 ? "lists" : "list"} ${input.name} under ${input.providerId}'s scopes; removing it stops ${apps.length === 1 ? "its" : "their"} calls under it at once (from the terminal: everyapp provider scope-set remove ${input.providerId} ${input.name} --force)`,
+    );
+  }
+  let removed: boolean;
+  try {
+    removed = await ScopeSetRepository.remove(input.providerId, input.name);
+  } catch {
+    throw new PublicError(
+      "GATEWAY_OUTDATED",
+      "This Gateway's database has no provider_scope_sets table yet; its operator runs: everyapp update",
+    );
+  }
+  if (!removed) {
+    throw new PublicError(
+      "SCOPE_SET_NOT_FOUND",
+      `${input.providerId} has no scope set ${input.name} added on this Gateway`,
+    );
+  }
+  invalidateGatewayProviders();
+  logEvent("provider.scope_set_removed", {
+    provider: input.providerId,
+    scopeSet: input.name,
+    org: org.orgId,
+    user_id: org.userId,
+  });
+  await emit(async () => ({
+    organizationId: org.orgId,
+    actor: who,
+    ...catalogue.providerUpdated({
+      provider: { id: input.providerId, name: client.label, kind: "oauth" },
+      change: "scope_sets",
+      scopeSet: { name: input.name, action: "removed" },
+    }),
+  }));
+  const registry = await gatewayProviders();
+  const capability = registry.get(input.providerId);
+  if (capability?.mode !== "oauth_client") throw new Error("unreachable");
+  const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  return oauthSummary(org, input.providerId, capability, registry, counts);
 }
 
 /** Upload or replace a provider's client (sealed in D1). */

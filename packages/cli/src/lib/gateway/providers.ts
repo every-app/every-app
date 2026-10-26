@@ -17,6 +17,11 @@
  * organization, whose Gateway the registry is, as the operator: only when
  * the write lands, and nothing on a Gateway without the event tables or
  * before it has an organization.
+ *
+ * The scope-set overlays (`provider_scope_sets`, migration 0019;
+ * `everyapp provider scope-set add|remove`) are read into the same
+ * registry and written here under the same login, checked by the SDK's
+ * `resolveScopeSetRow` against the built-in client's catalog entry.
  */
 import {
   capabilitySettings,
@@ -24,14 +29,18 @@ import {
   CAPABILITY_IDS,
   describeSpecProblems,
   gatewayHostRefusal,
+  overlayableClient,
   parseProviderSpec,
   providerBindingKey,
   providerRegistry,
+  resolveScopeSetRow,
   secretNames,
+  type OAuthScopeSet,
   type RegistrableCapability,
   type ProviderRegistry,
   type ProviderRow,
   type RegisteredProvider,
+  type ScopeSetRow,
 } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
@@ -104,6 +113,33 @@ async function readProviderRows(db: D1Database): Promise<StoredProviderRow[]> {
   }));
 }
 
+/** Whether the Gateway's D1 has the `provider_scope_sets` table (migration 0019, 2026-10-26). */
+function hasScopeSetsTable(db: D1Database): Promise<boolean> {
+  return hasTable(db, "provider_scope_sets");
+}
+
+/** A stored overlay row, with the spec's text as stored. */
+interface StoredScopeSetRow extends ScopeSetRow {
+  spec: string;
+}
+
+/** Every `provider_scope_sets` row, in the order they were added; none on a Gateway without the table. */
+async function readScopeSetRows(db: D1Database): Promise<StoredScopeSetRow[]> {
+  if (!(await hasScopeSetsTable(db))) return [];
+  const [rows = []] = await db.run([
+    {
+      sql: "SELECT provider_id, name, spec, added_by, added_at FROM provider_scope_sets ORDER BY added_at, provider_id, name",
+    },
+  ]);
+  return rows.map((row) => ({
+    providerId: String(row["provider_id"]),
+    name: String(row["name"]),
+    spec: String(row["spec"]),
+    addedBy: text(row["added_by"]),
+    addedAt: row["added_at"] == null ? null : Number(row["added_at"]),
+  }));
+}
+
 /** This Gateway's host rule: its own host and everything under its apps' base domain. */
 function refuseHostFor(install: ProviderInstall): (host: string) => string | null {
   return (host) =>
@@ -113,24 +149,27 @@ function refuseHostFor(install: ProviderInstall): (host: string) => string | nul
     });
 }
 
-/** The catalog and `rows` as the Gateway resolves them, with its host rule. */
+/** The catalog, `rows` and the scope-set overlays as the Gateway resolves them, with its host rule. */
 function registryOf(
   rows: readonly ProviderRow[],
   install: ProviderInstall,
+  scopeSets: readonly ScopeSetRow[] = [],
 ): ProviderRegistry {
-  return providerRegistry(rows, { refuseHost: refuseHostFor(install) });
+  return providerRegistry(rows, { refuseHost: refuseHostFor(install), scopeSets });
 }
 
 /**
  * The catalog and this Gateway's registered providers, as the Gateway
- * reads them: what `status`, `secret`, `configure` and `deploy` validate
- * and describe an app's settings against once connected.
+ * reads them (the scope-set overlays on its built-in clients included):
+ * what `status`, `secret`, `configure` and `deploy` validate and describe
+ * an app's settings against once connected.
  */
 export async function gatewayRegistry(
   db: D1Database,
   install: ProviderInstall,
 ): Promise<ProviderRegistry> {
-  return registryOf(await readProviderRows(db), install);
+  const [rows, scopeSets] = await Promise.all([readProviderRows(db), readScopeSetRows(db)]);
+  return registryOf(rows, install, scopeSets);
 }
 
 /** The registered rows holding any of `names`, with the names each holds. */
@@ -200,6 +239,7 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
   const others = registryOf(
     rows.filter((row) => row.id !== id),
     input.install,
+    await readScopeSetRows(db),
   );
   const refusal = checkProviderRow(id, capability, {
     rowSettings: new Set(others.rows().flatMap((row) => capabilitySettings(row.capability))),
@@ -383,11 +423,13 @@ export async function removeProvider(
  */
 async function providerEvent(
   db: D1Database,
-  type: "provider.added" | "provider.removed",
+  type: "provider.added" | "provider.removed" | "provider.updated",
   provider: { id: string; name: string; kind?: "api_key" | "oauth" },
   deployer: Deployer,
   now: number,
   onlyIf: { sql: string; params: Array<string | number> },
+  /** `provider.updated`'s `change`, and which scope set when that is what changed. */
+  change?: { change: "scope_sets"; scopeSet: { name: string; action: "added" | "removed" } },
 ): Promise<D1Statement[]> {
   const found = await installOrganization(db);
   if (!found) return [];
@@ -397,10 +439,191 @@ async function providerEvent(
     actor: operatorActor(deployer),
     data: {
       provider: { id: provider.id, name: provider.name, ...(provider.kind ? { kind: provider.kind } : {}) },
+      ...(change ?? {}),
     },
     onlyIf,
     now,
   });
+}
+
+// Scope-set overlays on built-in OAuth clients (migration 0019).
+
+interface AddScopeSetInput {
+  /** The built-in OAuth client (`google-workspace`). */
+  providerId: string;
+  /** The set's spec as JSON parsed it (`{ name, label, access, scopes, routes }`). */
+  spec: unknown;
+  deployer: Deployer;
+  /** Replace the row of the same name. */
+  replace?: boolean;
+  now?: number;
+}
+
+interface AddedScopeSet {
+  providerId: string;
+  name: string;
+  set: OAuthScopeSet;
+  /** The client's label. */
+  label: string;
+  replaced: boolean;
+}
+
+/** `scope-set add|remove` on a Gateway whose D1 predates the table. */
+function scopeSetsOutdated(): EveryAppError {
+  return new EveryAppError(
+    "GATEWAY_OUTDATED",
+    "This Gateway predates scope-set overlays\nIts database has no provider_scope_sets table until the Gateway is updated. Nothing was changed.",
+    { rerun: `${CLI} update`, rerunNote: "then run this again" },
+  );
+}
+
+/** The client `scope-set` acts on: a built-in OAuth client with scope sets, or the refusal. */
+function requireOverlayableClient(providerId: string) {
+  const client = overlayableClient(providerId);
+  if (!client) {
+    throw new EveryAppError(
+      "SCOPE_SET_PROVIDER_UNKNOWN",
+      `${providerId} isn't a built-in OAuth client with scope sets\nScope sets are added to google-workspace, microsoft-365 or slack; a registered provider's sets are in its spec (${CLI} provider add --replace).`,
+      { rerun: `${CLI} provider presets`, rerunNote: "names the built-in clients" },
+    );
+  }
+  return client;
+}
+
+/**
+ * Add a scope set to a built-in OAuth client: the spec parsed and checked
+ * against the client's catalog entry (SCOPE_SET_INVALID: its routes on
+ * the client's API hosts alone, an explicit access, a well-formed name;
+ * SCOPE_SET_BUILTIN: one of the client's own names), written as a
+ * `provider_scope_sets` row the Gateway serves within 30 seconds. A row
+ * of the same name is SCOPE_SET_EXISTS unless `replace`. Queues
+ * `provider.updated` (`change: "scope_sets"`) in the same batch.
+ */
+export async function addScopeSet(db: D1Database, input: AddScopeSetInput): Promise<AddedScopeSet> {
+  const client = requireOverlayableClient(input.providerId);
+  const spec = input.spec;
+  const name =
+    spec && typeof spec === "object" && !Array.isArray(spec) && typeof (spec as { name?: unknown }).name === "string"
+      ? (spec as { name: string }).name
+      : "";
+  const resolved = resolveScopeSetRow({ providerId: input.providerId, name, spec });
+  if (!resolved.ok) {
+    const { code, message } = resolved.refusal;
+    throw new EveryAppError(
+      code === "SCOPE_SET_BUILTIN" ? "SCOPE_SET_BUILTIN" : "SCOPE_SET_INVALID",
+      code === "SCOPE_SET_BUILTIN"
+        ? `${name} is ${input.providerId}'s own\n${message}.`
+        : `The scope set isn't one ${client.label} takes\n${message}`,
+      { fix: code === "SCOPE_SET_BUILTIN" ? "give the set another name" : "fix each field named above, then add it again" },
+    );
+  }
+  if (!(await hasScopeSetsTable(db))) throw scopeSetsOutdated();
+  const rows = await readScopeSetRows(db);
+  const existing = rows.find((row) => row.providerId === input.providerId && row.name === name);
+  if (existing && !input.replace) {
+    throw new EveryAppError(
+      "SCOPE_SET_EXISTS",
+      `${input.providerId} has a scope set ${name} already\nReplacing it changes what every app listing it may call.`,
+      { rerun: thisCommand(["--replace"]), rerunNote: "replaces it", authorize: true },
+    );
+  }
+  const now = input.now ?? Date.now();
+  const stored = JSON.stringify(spec);
+  const event = await providerEvent(
+    db,
+    "provider.updated",
+    { id: input.providerId, name: client.label, kind: "oauth" },
+    input.deployer,
+    now,
+    {
+      sql: "EXISTS (SELECT 1 FROM provider_scope_sets WHERE provider_id = ? AND name = ? AND spec = ? AND updated_at = ?)",
+      params: [input.providerId, name, stored, now],
+    },
+    { change: "scope_sets", scopeSet: { name, action: "added" } },
+  );
+  const [written = []] = await db.run([
+    existing
+      ? {
+          sql: "UPDATE provider_scope_sets SET spec = ?, updated_at = ? WHERE provider_id = ? AND name = ? RETURNING name",
+          params: [stored, now, input.providerId, name],
+        }
+      : {
+          sql: `INSERT INTO provider_scope_sets (provider_id, name, spec, added_by, added_at, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?5) ON CONFLICT(provider_id, name) DO NOTHING RETURNING name`,
+          params: [input.providerId, name, stored, input.deployer.actor, now],
+        },
+    ...event,
+  ]);
+  if (written.length === 0) {
+    throw new EveryAppError("SCOPE_SET_EXISTS", `${input.providerId}'s ${name} changed on this Gateway while this ran`, {
+      rerun: `${CLI} provider show ${input.providerId}`,
+      rerunNote: "shows its sets as they are now",
+    });
+  }
+  return { providerId: input.providerId, name, set: resolved.set, label: client.label, replaced: Boolean(existing) };
+}
+
+interface RemovedScopeSet {
+  providerId: string;
+  name: string;
+  label: string;
+  /** The registered apps that list the set (removed anyway with --force). */
+  apps: string[];
+}
+
+/**
+ * Remove a scope set an operator added (never one of the client's own:
+ * SCOPE_SET_BUILTIN; none of that name: SCOPE_SET_NOT_FOUND). A set a
+ * registered app's stored manifest lists under `scopes` is
+ * SCOPE_SET_IN_USE, naming the apps, unless `force`. Queues
+ * `provider.updated` in the batch that deletes the row.
+ */
+export async function removeScopeSet(
+  db: D1Database,
+  providerId: string,
+  name: string,
+  deployer: Deployer,
+  { force = false, now = Date.now() }: { force?: boolean; now?: number } = {},
+): Promise<RemovedScopeSet> {
+  const client = requireOverlayableClient(providerId);
+  if (Object.hasOwn(client.scopePolicy!.sets, name)) {
+    throw new EveryAppError("SCOPE_SET_BUILTIN", `${name} is ${providerId}'s own\nOnly a set added with ${CLI} provider scope-set add can be removed.`, {
+      rerun: `${CLI} provider show ${providerId}`,
+      rerunNote: "shows which were added",
+    });
+  }
+  if (!(await hasScopeSetsTable(db))) throw scopeSetsOutdated();
+  const row = (await readScopeSetRows(db)).find((each) => each.providerId === providerId && each.name === name);
+  if (!row) {
+    throw new EveryAppError("SCOPE_SET_NOT_FOUND", `${providerId} has no scope set ${name} added on this Gateway`, {
+      rerun: `${CLI} provider show ${providerId}`,
+      rerunNote: "shows its sets",
+    });
+  }
+  const apps = (await listApps(db))
+    .filter((app) => {
+      const entry = app.manifest?.capabilities?.[providerId] as { scopes?: unknown } | undefined;
+      return Array.isArray(entry?.scopes) && entry.scopes.includes(name);
+    })
+    .map((app) => app.appSlug);
+  if (apps.length > 0 && !force) {
+    throw new EveryAppError(
+      "SCOPE_SET_IN_USE",
+      `${listed(apps)} ${apps.length === 1 ? "lists" : "list"} ${name} under ${providerId}'s scopes\nRemoving it stops ${apps.length === 1 ? "its" : "their"} calls under it at once: the Gateway answers integration_scopes_undeclared.`,
+      { rerun: thisCommand(["--force"]), rerunNote: "removes it anyway", authorize: true },
+    );
+  }
+  const event = await providerEvent(
+    db,
+    "provider.updated",
+    { id: providerId, name: client.label, kind: "oauth" },
+    deployer,
+    now,
+    { sql: "EXISTS (SELECT 1 FROM provider_scope_sets WHERE provider_id = ? AND name = ?)", params: [providerId, name] },
+    { change: "scope_sets", scopeSet: { name, action: "removed" } },
+  );
+  await db.run([...event, { sql: "DELETE FROM provider_scope_sets WHERE provider_id = ? AND name = ?", params: [providerId, name] }]);
+  return { providerId, name, label: client.label, apps };
 }
 
 function safeJson(text: string): unknown {
@@ -426,7 +649,7 @@ export async function bindProviderSettings(
 ): Promise<string[]> {
   const rows = await readProviderRows(db);
   if (rows.length === 0) return [];
-  const registry = registryOf(rows, install);
+  const registry = registryOf(rows, install, await readScopeSetRows(db));
   const bound = providerRowsNaming(registry, names);
   if (bound.length === 0) return [];
   const results = await db.run(

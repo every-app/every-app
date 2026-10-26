@@ -161,6 +161,7 @@ COMMANDS
   presets      List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and more, and the built-in clients
   connections  List the accounts people (and the organization) connected to OAuth providers on the Gateway
   disconnect   Remove a person's or the organization's connection to an OAuth provider from the Gateway
+  scope-set    Scope sets an operator adds to the built-in OAuth clients (Google, Microsoft, Slack)
 
 EXAMPLES
   $ pnpm everyapp provider list
@@ -1834,6 +1835,102 @@ FLAGS
 
 ARGUMENTS
   id  The OAuth provider's id: github-oauth
+```
+
+### `everyapp provider scope-set add`
+
+Add a scope set to a built-in OAuth client, so apps can list it under scopes.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<provider>` | yes | A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack |
+| `<spec>` | yes | The set as JSON: a file, or an https URL to one (64 KiB at most) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--replace` | switch | no |  | Replace the set of the same name added before |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider scope-set add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <spec>
+  pnpm everyapp provider scope-set add --help
+
+The set says its name (identity, or <area>.<access>: gmail.send), its label, its access
+(read or write, said outright), the provider's scopes it asks for, and the routes on the
+client's own API hosts it unlocks: { host, paths, posts? } (posts are anchored patterns of
+the POST paths a read set admits). It is checked by the rules a built-in set is checked
+by; a name the client already has, or a host outside the client's, is refused. Live within
+30 seconds. The client's authorize scopes grow by the set's: allow them on the OAuth client
+at the provider's console, and people connect again to grant them.
+
+Example:
+  pnpm everyapp provider scope-set add google-workspace gmail-send.json
+  gmail-send.json: { "name": "gmail.send", "label": "Gmail (send)", "access": "write",
+    "scopes": ["https://www.googleapis.com/auth/gmail.send"],
+    "routes": [{ "host": "gmail.googleapis.com", "paths": ["/gmail/v1/users/"] }] }
+
+FLAGS
+     [--replace/--no-replace]  Replace the set of the same name added before
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  provider  A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack
+  spec      The set as JSON: a file, or an https URL to one (64 KiB at most)
+```
+
+### `everyapp provider scope-set remove`
+
+Remove a scope set added to a built-in OAuth client.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<provider>` | yes | A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack |
+| `<name>` | yes | The set's name, as provider show lists it (added ones marked) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--force` | switch | no |  | Remove it even though deployed apps list it (their calls under it stop) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp provider scope-set remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <name>
+  pnpm everyapp provider scope-set remove --help
+
+Only a set added with scope-set add can be removed; the client's own stay. A set a deployed
+app lists under scopes is refused unless --force. Connections keep their tokens; calls
+under the set answer integration_scopes_undeclared within 30 seconds.
+
+Example:
+  pnpm everyapp provider scope-set remove google-workspace gmail.send
+
+ALIASES
+  pnpm everyapp provider scope-set rm
+
+FLAGS
+     [--force/--no-force]      Remove it even though deployed apps list it (their calls under it stop)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  provider  A built-in OAuth client with scope sets: google-workspace, microsoft-365 or slack
+  name      The set's name, as provider show lists it (added ones marked)
 ```
 
 ### `everyapp provider on` (hidden)

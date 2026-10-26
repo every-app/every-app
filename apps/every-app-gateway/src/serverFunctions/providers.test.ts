@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
     setOAuthClient: vi.fn(),
     removeOAuthClient: vi.fn(),
     removeProvider: vi.fn(),
+    addScopeSet: vi.fn(),
+    removeScopeSet: vi.fn(),
   },
 }));
 
@@ -63,11 +65,13 @@ vi.mock("@/server/toolbus/runtime", () => ({
 
 import {
   addOAuthProvider,
+  addScopeSet,
   listOAuthPresets,
   listOAuthProviders,
   listProviders,
   removeOAuthClient,
   removeProvider,
+  removeScopeSet,
   setOAuthClient,
   type OAuthPresetSummary,
 } from "./providers";
@@ -92,6 +96,8 @@ const serverFns = {
   setOAuthClient,
   removeOAuthClient,
   removeProvider,
+  addScopeSet,
+  removeScopeSet,
 } as unknown as Record<string, ServerFnBuilder>;
 
 const context = {
@@ -259,5 +265,67 @@ describe("provider server functions", () => {
       expect(github.scopeSets.map((set) => set.name)).toContain("repo.read");
       expect(github.pkce).toBe(true);
     });
+  });
+});
+
+describe("the scope-set server functions", () => {
+  const validate = serverFns["addScopeSet"]!.validatorFn!;
+  const input = {
+    providerId: "google-workspace",
+    name: "gmail.send",
+    label: "Gmail (send)",
+    access: "write",
+    scopes: ["https://www.googleapis.com/auth/gmail.send"],
+    routes: [
+      {
+        host: "gmail.googleapis.com",
+        paths: ["/gmail/v1/users/"],
+        posts: ["^/gmail/v1/users/[^/]+/messages/send$"],
+      },
+    ],
+  };
+
+  it("takes a set with one route, and refuses a bad name, no scope and no route", () => {
+    expect(validate(input)).toEqual(input);
+    expect(() => validate({ ...input, name: "Gmail Send" })).toThrow();
+    expect(() => validate({ ...input, scopes: [] })).toThrow();
+    expect(() => validate({ ...input, routes: [] })).toThrow();
+    expect(() => validate({ ...input, access: "admin" })).toThrow();
+  });
+
+  it("hands the service the client, the name, the set and the actor; removal the same", async () => {
+    mocks.service.addScopeSet.mockResolvedValue({ id: "google-workspace" });
+    await serverFns["addScopeSet"]!.serverHandler({ data: input, context });
+    expect(mocks.service.addScopeSet).toHaveBeenCalledWith(
+      context.org,
+      { kind: "user", id: "user_1", email: "ada@example.com", name: "Ada" },
+      {
+        providerId: "google-workspace",
+        name: "gmail.send",
+        spec: {
+          label: input.label,
+          access: "write",
+          scopes: input.scopes,
+          routes: input.routes,
+        },
+      },
+    );
+    mocks.service.removeScopeSet.mockResolvedValue({ id: "google-workspace" });
+    await serverFns["removeScopeSet"]!.serverHandler({
+      data: { providerId: "google-workspace", name: "gmail.send" },
+      context,
+    });
+    expect(mocks.service.removeScopeSet).toHaveBeenCalledWith(
+      context.org,
+      { kind: "user", id: "user_1", email: "ada@example.com", name: "Ada" },
+      { providerId: "google-workspace", name: "gmail.send" },
+    );
+  });
+
+  it("are refused on a hosted gateway", async () => {
+    mocks.registersProviders.mockReturnValueOnce(false);
+    await expect(
+      serverFns["addScopeSet"]!.serverHandler({ data: input, context }),
+    ).rejects.toMatchObject({ code: "PROVIDER_HOSTED" });
   });
 });

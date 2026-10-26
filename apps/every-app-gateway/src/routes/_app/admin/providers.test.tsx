@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   setOAuthClient: vi.fn(),
   removeOAuthClient: vi.fn(),
   removeProvider: vi.fn(),
+  addScopeSet: vi.fn(),
+  removeScopeSet: vi.fn(),
   listAllConnections: vi.fn(),
   disconnectConnection: vi.fn(),
   getAiDefault: vi.fn(),
@@ -39,6 +41,8 @@ vi.mock("@/serverFunctions/providers", () => ({
   setOAuthClient: mocks.setOAuthClient,
   removeOAuthClient: mocks.removeOAuthClient,
   removeProvider: mocks.removeProvider,
+  addScopeSet: mocks.addScopeSet,
+  removeScopeSet: mocks.removeScopeSet,
 }));
 vi.mock("@/serverFunctions/connections", () => ({
   listAllConnections: mocks.listAllConnections,
@@ -437,12 +441,13 @@ describe("the providers table", () => {
     );
   });
 
-  it("offers no Remove on a built-in client, and no menu on an API-key entry", async () => {
+  it("offers no Remove on a built-in client (its scope sets instead), and no menu on an API-key entry", async () => {
     await render();
     await showAll();
     await openRowMenu("Google Workspace");
     expect(menuItems()).toEqual([
       "Replace client",
+      "Scope sets",
       "Connect for the organization",
     ]);
     expect(

@@ -39,7 +39,11 @@ vi.mock("better-auth/tanstack-start", () => ({
 }));
 
 import { generateKeyPairSync } from "node:crypto";
-import { providerBindingKey, providerRegistry } from "@every-app/sdk/internal";
+import {
+  CAPABILITIES,
+  providerBindingKey,
+  providerRegistry,
+} from "@every-app/sdk/internal";
 import { PROVIDER_TOOLS, type McpPrincipal } from "@every-app/toolbus";
 import { eq } from "drizzle-orm";
 import { providers } from "@/db/schema";
@@ -728,5 +732,143 @@ describe("the provider tools on /mcp", () => {
       decision: "allowed",
       outcome: "ok",
     });
+  });
+});
+
+describe("the scope-set tools", () => {
+  const gmailSend = {
+    provider: "google-workspace",
+    name: "gmail.send",
+    label: "Gmail (send)",
+    access: "write",
+    scopes: ["https://www.googleapis.com/auth/gmail.send"],
+    routes: [
+      {
+        host: "gmail.googleapis.com",
+        paths: ["/gmail/v1/users/"],
+        posts: ["^/gmail/v1/users/[^/]+/messages/send$"],
+      },
+    ],
+  };
+
+  it("adds a set to a built-in client for an admin, lists it as a row, and removes it", async () => {
+    const added = await data(
+      "everyapp_provider_scope_set_add",
+      gmailSend,
+      admin(),
+    );
+    expect(added["provider"]).toEqual({
+      id: "google-workspace",
+      name: CAPABILITIES["google-workspace"].label,
+    });
+    expect((added["scopeSet"] as { name: string; source: string }).source).toBe(
+      "row",
+    );
+    const google = (await listed(member())).find(
+      (p) => p.id === "google-workspace",
+    ) as
+      | (ListedProvider & {
+          scopeSets: { name: string; source: string; scopes: string[] }[];
+        })
+      | undefined;
+    const set = google?.scopeSets.find((each) => each.name === "gmail.send");
+    expect(set).toMatchObject({ source: "row", scopes: gmailSend.scopes });
+    expect(
+      google?.scopeSets.find((each) => each.name === "gmail.read")?.source,
+    ).toBe("catalog");
+    // The registry serves it: the client's policy has it and the authorize scopes grew.
+    const capability = (await gatewayProviders()).get("google-workspace");
+    if (capability?.mode !== "oauth_client") throw new Error("google");
+    expect(capability.scopePolicy!.sets["gmail.send"]?.access).toBe("write");
+    expect(capability.authorize.scopes).toContain(gmailSend.scopes[0]);
+
+    const removed = await data(
+      "everyapp_provider_scope_set_remove",
+      { provider: "google-workspace", name: "gmail.send" },
+      admin(),
+    );
+    expect(removed["removed"]).toEqual({ name: "gmail.send" });
+    expect(
+      (removed["scopeSets"] as { name: string }[]).map((each) => each.name),
+    ).not.toContain("gmail.send");
+    const rows = await activityRows();
+    expect(rows.map((row) => row.tool.name)).toEqual(
+      expect.arrayContaining([
+        "everyapp_provider_scope_set_add",
+        "everyapp_provider_scope_set_remove",
+      ]),
+    );
+  });
+
+  it("refuses a built-in name, a host outside the client, a client without sets, a second add, and removal while an app lists it", async () => {
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_add",
+        { ...gmailSend, name: "gmail.read" },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_BUILTIN: /);
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_add",
+        { ...gmailSend, routes: [{ host: "evil.example", paths: ["/"] }] },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_INVALID: .*must be one of hosts/);
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_add",
+        { ...gmailSend, provider: "linkedin" },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_PROVIDER_UNKNOWN: /);
+    await data("everyapp_provider_scope_set_add", gmailSend, admin());
+    expect(
+      await refusal("everyapp_provider_scope_set_add", gmailSend, admin()),
+    ).toMatch(/^SCOPE_SET_EXISTS: .*--replace/);
+    await deploy("mailer", {
+      capabilities: {
+        "google-workspace": {
+          access: "write",
+          scopes: ["gmail.send"],
+          why: "Sends mail.",
+        },
+      },
+    });
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_remove",
+        { provider: "google-workspace", name: "gmail.send" },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_IN_USE: mailer lists gmail.send/);
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_remove",
+        { provider: "google-workspace", name: "gmail.read" },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_BUILTIN: /);
+    expect(
+      await refusal(
+        "everyapp_provider_scope_set_remove",
+        { provider: "google-workspace", name: "nothing.read" },
+        admin(),
+      ),
+    ).toMatch(/^SCOPE_SET_NOT_FOUND: /);
+  });
+
+  it("is an admin's, and absent on a hosted gateway", async () => {
+    const asMember = await call(
+      "everyapp_provider_scope_set_add",
+      gmailSend,
+      member(),
+    );
+    expect(asMember.ok).toBe(false);
+    hoisted.env["GATEWAY_DEPLOYMENT_MODE"] = "hosted";
+    resetToolBusForTests();
+    expect(await providerToolNames(admin())).not.toContain(
+      "everyapp_provider_scope_set_add",
+    );
   });
 });

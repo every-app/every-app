@@ -39,6 +39,7 @@ import {
 } from "./metadata";
 import type { DeployerPort } from "./port";
 import { recordDispatchDeployed } from "./registry";
+import { gatewayProviders } from "@/server/providers";
 
 interface DeployInput {
   /** The app's registry row, registered for this deploy. */
@@ -165,11 +166,13 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
 
   // 1. Every refusal first: nothing is created, and the database never
   // changes, for a bundle that can't go.
+  const lookup = await gatewayProviders();
   const problems = bundleProblems(
     bundle.worker,
     manifest,
     limits,
     bundle.assets.size > 0,
+    lookup,
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const modules = workerModules(bundle);
@@ -233,6 +236,7 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       d1,
       limits,
       durableObjects,
+      lookup,
       ...(assetsJwt ? { assetsJwt } : {}),
     },
   });

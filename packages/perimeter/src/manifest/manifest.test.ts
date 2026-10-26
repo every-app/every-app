@@ -2498,3 +2498,45 @@ describe("Analytics Engine (resources.analyticsEngine)", () => {
     ).toEqual([]);
   });
 });
+
+describe("scope sets an operator may have added on the gateway", () => {
+  const base = { id: "mailer", name: "Mailer" };
+  it("accepts a well-formed set name the catalog lacks when unknown capabilities are accepted, and refuses it otherwise", () => {
+    const manifest = {
+      ...base,
+      capabilities: {
+        "google-workspace": {
+          access: "write",
+          scopes: ["gmail.read", "gmail.send"],
+          why: "Sends mail.",
+        },
+      },
+    };
+    expect(() =>
+      validateManifestStrict(manifest, { unknownCapabilities: "accept" }),
+    ).not.toThrow();
+    expect(() => validateManifestStrict(manifest)).toThrow(
+      /capabilities\.google-workspace\.scopes\.1: unknown scope set/,
+    );
+  });
+
+  it("still refuses a malformed name and a prototype property with unknown capabilities accepted", () => {
+    for (const name of [
+      "https://www.googleapis.com/auth/gmail.send",
+      "Gmail Send",
+      "constructor",
+    ]) {
+      expect(() =>
+        validateManifestStrict(
+          {
+            ...base,
+            capabilities: {
+              "google-workspace": { access: "write", scopes: [name], why: "x" },
+            },
+          },
+          { unknownCapabilities: "accept" },
+        ),
+      ).toThrow(/capabilities\.google-workspace\.scopes\.0: unknown scope set/);
+    }
+  });
+});

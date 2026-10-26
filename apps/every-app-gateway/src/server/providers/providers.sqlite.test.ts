@@ -22,9 +22,13 @@ vi.mock("cloudflare:workers", () => ({
   WorkerEntrypoint: class {},
 }));
 
-import { providerBindingKey, providerRegistry } from "@every-app/sdk/internal";
+import {
+  CAPABILITIES,
+  providerBindingKey,
+  providerRegistry,
+} from "@every-app/sdk/internal";
 import { sql } from "drizzle-orm";
-import { providers } from "@/db/schema";
+import { providerScopeSets, providers } from "@/db/schema";
 import { ProviderRepository } from "@/server/repositories/ProviderRepository";
 import { createTestDb } from "@/test/sqlite-db";
 import { gatewayProviders, resetGatewayProvidersForTests } from "./index";
@@ -120,5 +124,83 @@ describe("the providers table", () => {
       .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
       .filter((entry) => entry["evt"] === "provider.rows_unavailable");
     expect(lines).toHaveLength(1);
+  });
+});
+
+describe("the provider_scope_sets table", () => {
+  const gmailSend = {
+    label: "Gmail (send)",
+    access: "write",
+    scopes: ["https://www.googleapis.com/auth/gmail.send"],
+    routes: [{ host: "gmail.googleapis.com", paths: ["/gmail/v1/users/"] }],
+  };
+
+  it("adds an operator's set to the built-in client, and leaves out one that fails the rules", async () => {
+    await testDb.current!.insert(providerScopeSets).values([
+      {
+        providerId: "google-workspace",
+        name: "gmail.send",
+        spec: JSON.stringify(gmailSend),
+        addedBy: "ops@example.com",
+        addedAt: new Date(1000),
+        updatedAt: new Date(1000),
+      },
+      {
+        // Its route names a host outside the client's: refused on read.
+        providerId: "google-workspace",
+        name: "drive.read",
+        spec: JSON.stringify({
+          ...gmailSend,
+          routes: [{ host: "evil.example", paths: ["/"] }],
+        }),
+        addedBy: "ops@example.com",
+        addedAt: new Date(2000),
+        updatedAt: new Date(2000),
+      },
+      {
+        // Not an OAuth client with sets.
+        providerId: "dataforseo",
+        name: "x.read",
+        spec: JSON.stringify(gmailSend),
+        addedBy: "ops@example.com",
+        addedAt: new Date(3000),
+        updatedAt: new Date(3000),
+      },
+    ]);
+    const registry = await gatewayProviders();
+    const google = registry.get("google-workspace");
+    expect(google?.mode).toBe("oauth_client");
+    if (google?.mode !== "oauth_client") return;
+    expect(Object.keys(google.scopePolicy!.sets)).toContain("gmail.send");
+    expect(Object.keys(google.scopePolicy!.sets)).not.toContain("drive.read");
+    expect(google.authorize.scopes).toContain(
+      "https://www.googleapis.com/auth/gmail.send",
+    );
+    expect(
+      registry
+        .scopeSets()
+        .map((set) => [set.providerId, set.name, set.addedBy]),
+    ).toEqual([["google-workspace", "gmail.send", "ops@example.com"]]);
+    expect(
+      registry.rejectedScopeSets.map((r) => [r.providerId, r.name, r.code]),
+    ).toEqual([
+      ["google-workspace", "drive.read", "SCOPE_SET_INVALID"],
+      ["dataforseo", "x.read", "SCOPE_SET_PROVIDER_UNKNOWN"],
+    ]);
+    // The client's binding key doesn't move: an uploaded client stays live.
+    expect(providerBindingKey(google)).toBe(
+      providerBindingKey(CAPABILITIES["google-workspace"]),
+    );
+  });
+
+  it("serves the client's own sets alone when the table can't be read", async () => {
+    await testDb.current!.run(sql`DROP TABLE provider_scope_sets`);
+    const registry = await gatewayProviders();
+    const google = registry.get("google-workspace");
+    if (google?.mode !== "oauth_client") throw new Error("google");
+    expect(Object.keys(google.scopePolicy!.sets)).toEqual(
+      Object.keys(CAPABILITIES["google-workspace"].scopePolicy!.sets),
+    );
+    expect(registry.scopeSets()).toEqual([]);
   });
 });

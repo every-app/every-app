@@ -667,6 +667,8 @@ An `events` command (every one but `events types`) against a Gateway whose D1 pr
 
 Source: `packages/cli/src/lib/gateway/events.ts` (`requireEventsTables`, `requireAuditColumns`).
 
+`provider scope-set add|remove` raise it the same way on a Gateway whose database has no `provider_scope_sets` table (migration 0019, 2026-10-26): `This Gateway predates scope-set overlays`, `data.rerun` `pnpm everyapp update`.
+
 ### GATEWAY_PREDATES_AI_DEFAULT
 
 `ai default` against a Gateway whose D1 predates migration `0017_ai_default_and_usage_models` (2026-10-25): `org_settings` has no `ai_default` column, so there is nowhere to store the choice (`ai show` reads it as no choice meanwhile).
@@ -1330,6 +1332,42 @@ Same step as `SCHEMA_CHECK_FAILED`: `drizzle-kit generate` wrote a new `.sql` fi
 **Fix:** `rerun`: `pnpm db:generate`, `rerunNote`: `then run this again`. Not retryable.
 
 Source: `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
+
+### SCOPE_SET_BUILTIN
+
+`provider scope-set add <client> <spec>` with a set named like one of the client's own (`gmail.read` on `google-workspace`): `<name> is <client>'s own` / the rule's sentence (an overlay adds a set, never replaces one); `data.fix` `give the set another name`. `provider scope-set remove <client> <name>` of a built-in name: only a set added with `scope-set add` can be removed (`data.rerun` `pnpm everyapp provider show <client>`). Nothing is written.
+
+Source: `packages/cli/src/lib/gateway/providers.ts` (`addScopeSet`, `removeScopeSet`), `packages/sdk/src/internal/providerRegistry.ts` (`resolveScopeSetRow`)
+
+### SCOPE_SET_EXISTS
+
+`provider scope-set add` for a client that has a set of that name added already. Nothing is written. `data.rerun` is the same command with `--replace` (`authorize: true`: replacing changes what every app listing the set may call). Also raised when the row changed between the read and the write (`data.rerun` `pnpm everyapp provider show <client>`).
+
+Source: `packages/cli/src/lib/gateway/providers.ts`
+
+### SCOPE_SET_IN_USE
+
+`provider scope-set remove <client> <name>` of a set a registered app's manifest lists under `scopes`: `<apps> list <name> under <client>'s scopes` / `Removing it stops their calls under it at once …`. Nothing is removed. `data.rerun` is the same command with `--force` (`authorize: true`).
+
+Source: `packages/cli/src/lib/gateway/providers.ts`
+
+### SCOPE_SET_INVALID
+
+`provider scope-set add <client> <spec>`: the set fails a built-in set's rules or an overlay's own: `The scope set isn't one <Client> takes` then every problem as `<field>: <problem>` (`parseScopeSetOverlay` in `packages/sdk/src/internal/oauthSpec.ts`: a route on a host outside the client's `api` is `(set).routes.<n>.host: must be one of hosts`, a missing `routes` or `access`, an unanchored `posts` pattern, an empty `scopes`). Nothing is written; `data.fix` says what to change.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/sdk/src/internal/oauthSpec.ts`
+
+### SCOPE_SET_NOT_FOUND
+
+`provider scope-set remove <client> <name>` where no set of that name was added to the client: `<client> has no scope set <name> added on this Gateway`. `data.rerun`: `pnpm everyapp provider show <client>`.
+
+Source: `packages/cli/src/lib/gateway/providers.ts`
+
+### SCOPE_SET_PROVIDER_UNKNOWN
+
+`provider scope-set add|remove <id> …` where `<id>` isn't a built-in OAuth client with scope sets (`google-workspace`, `microsoft-365`, `slack`): `<id> isn't a built-in OAuth client with scope sets` / a registered provider's sets are in its spec (`pnpm everyapp provider add --replace`). Nothing is written. `data.rerun`: `pnpm everyapp provider presets`.
+
+Source: `packages/cli/src/lib/gateway/providers.ts` (`requireOverlayableClient`), `packages/sdk/src/internal/providerRegistry.ts` (`overlayableClient`)
 
 ### SECRETS_PARTIALLY_APPLIED
 

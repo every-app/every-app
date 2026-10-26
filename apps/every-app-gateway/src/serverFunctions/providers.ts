@@ -15,7 +15,9 @@ import type { EventActor } from "@/server/events/catalogue";
 import * as oauth from "@/server/oauth/service";
 import {
   addOAuthProviderSchema,
+  addScopeSetSchema,
   providerActionSchema,
+  removeScopeSetSchema,
   setOAuthClientSchema,
 } from "@/schemas/oauth-provider";
 
@@ -192,4 +194,31 @@ export const removeProvider = createServerFn({ method: "POST" })
       actorOf(context.user),
       data.providerId,
     );
+  });
+
+/**
+ * Add a scope set to a built-in OAuth client (Google, Microsoft, Slack):
+ * its name, label, access, scopes and the routes on the client's hosts it
+ * unlocks. Apps then list it under `scopes` like a built-in set.
+ */
+export const addScopeSet = createServerFn({ method: "POST" })
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .validator((data: unknown) => addScopeSetSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    requireSelfHosted();
+    const { providerId, name, ...set } = data;
+    return oauth.addScopeSet(context.org, actorOf(context.user), {
+      providerId,
+      name,
+      spec: set,
+    });
+  });
+
+/** Remove a scope set an operator added; refused while a deployed app lists it. */
+export const removeScopeSet = createServerFn({ method: "POST" })
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .validator((data: unknown) => removeScopeSetSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    requireSelfHosted();
+    return oauth.removeScopeSet(context.org, actorOf(context.user), data);
   });

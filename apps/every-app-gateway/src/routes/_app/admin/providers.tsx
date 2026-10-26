@@ -2,10 +2,18 @@ import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { KeyRound, Link2, Plus, Trash2, Unplug } from "lucide-react";
+import {
+  KeyRound,
+  Link2,
+  ListChecks,
+  Plus,
+  Trash2,
+  Unplug,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
+import { ScopeSetsDialog } from "@/client/components/admin/ScopeSetsDialog";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -40,9 +48,11 @@ import {
 } from "@/serverFunctions/connections";
 import {
   addOAuthProvider,
+  addScopeSet,
   listProviders,
   removeOAuthClient,
   removeProvider,
+  removeScopeSet,
   setOAuthClient,
 } from "@/serverFunctions/providers";
 
@@ -259,14 +269,17 @@ function SetKeyDialog({
 interface ProviderActionHandlers {
   onReplaceClient: (provider: OAuthProvider) => void;
   onForgetClient: (provider: OAuthProvider) => void;
+  /** A built-in client's scope sets: the client's own and the ones added here. */
+  onScopeSets: (provider: Provider) => void;
   onRemove: (provider: Provider) => void;
 }
 
-/** A provider's menu: its client for an OAuth one, Remove for a registered row; none for a built-in key. */
+/** A provider's menu: its client for an OAuth one, Scope sets for a built-in client with sets, Remove for a registered row; none for a built-in key. */
 function ProviderActions({
   provider,
   onReplaceClient,
   onForgetClient,
+  onScopeSets,
   onRemove,
 }: { provider: Provider } & ProviderActionHandlers) {
   const entry = provider.oauth;
@@ -283,6 +296,12 @@ function ProviderActions({
         <DropdownMenuItem onClick={() => onForgetClient(entry)}>
           <Unplug />
           Forget pasted client
+        </DropdownMenuItem>
+      ) : null}
+      {entry && provider.source === "catalog" && entry.scopeSets.length > 0 ? (
+        <DropdownMenuItem onClick={() => onScopeSets(provider)}>
+          <ListChecks />
+          Scope sets
         </DropdownMenuItem>
       ) : null}
       {entry?.client.source ? (
@@ -515,6 +534,7 @@ function ProvidersPage() {
   const [replacing, setReplacing] = useState<OAuthProvider | null>(null);
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
+  const [scopeSetsFor, setScopeSetsFor] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
   const [settingKey, setSettingKey] = useState<Provider | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -569,6 +589,20 @@ function ProvidersPage() {
     onError: (error) =>
       toast.error(getRuleErrorMessage(error, "Failed to forget the client")),
   });
+  const addScopeSetMutation = useMutation({
+    mutationFn: addScopeSet,
+    onSuccess: async (provider) => {
+      await refresh();
+      toast.success(`${provider.name} scope set added`);
+    },
+  });
+  const removeScopeSetMutation = useMutation({
+    mutationFn: removeScopeSet,
+    onSuccess: async () => {
+      await refresh();
+      toast.success("Scope set removed");
+    },
+  });
   const removeMutation = useMutation({
     mutationFn: removeProvider,
     onSuccess: async () => {
@@ -592,10 +626,17 @@ function ProvidersPage() {
     () => ({
       onReplaceClient: setReplacing,
       onForgetClient: setForgetting,
+      onScopeSets: (provider) => setScopeSetsFor(provider.id),
       onRemove: setRemoving,
     }),
     [],
   );
+  // The dialog reads the provider from the query, so its list refreshes
+  // after an add or a remove.
+  const scopeSetsProvider =
+    providersQuery.data?.providers.find(
+      (provider) => provider.id === scopeSetsFor,
+    ) ?? null;
   const providerCols = useMemo(() => providerColumns(actions), [actions]);
   const groups = useMemo(
     () => partitionProviders(providersQuery.data?.providers ?? []),
@@ -822,6 +863,27 @@ function ProvidersPage() {
         <SetKeyDialog
           provider={settingKey}
           onClose={() => setSettingKey(null)}
+        />
+      ) : null}
+
+      {scopeSetsProvider?.oauth ? (
+        <ScopeSetsDialog
+          provider={{
+            id: scopeSetsProvider.id,
+            name: scopeSetsProvider.name,
+            console: scopeSetsProvider.oauth.console,
+            hosts: scopeSetsProvider.hosts,
+            scopeSets: scopeSetsProvider.oauth.scopeSets,
+          }}
+          onAdd={async (input) => {
+            await addScopeSetMutation.mutateAsync({ data: input });
+          }}
+          onRemove={async (name) => {
+            await removeScopeSetMutation.mutateAsync({
+              data: { providerId: scopeSetsProvider.id, name },
+            });
+          }}
+          onClose={() => setScopeSetsFor(null)}
         />
       ) : null}
 

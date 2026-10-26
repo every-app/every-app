@@ -44,7 +44,9 @@ import { actorFor } from "@/server/events/subjects";
 import { PublicError } from "@/server/errors";
 import {
   addOAuthProvider,
+  addScopeSet,
   listOAuthProviders,
+  removeScopeSet,
   type OAuthProviderSummary,
 } from "@/server/oauth/service";
 import type { OrgContext } from "@/server/organization/orgContext";
@@ -227,7 +229,14 @@ function listed(
               flow: oauth.flow,
               redirectUri: oauth.redirectUri,
               console: oauth.console,
-              scopeSets: oauth.scopeSets.map((set) => ({ ...set })),
+              scopeSets: oauth.scopeSets.map((set) => ({
+                name: set.name,
+                label: set.label,
+                access: set.access,
+                scopes: [...set.scopes],
+                hosts: [...set.hosts],
+                source: set.source,
+              })),
               connections: oauth.connections,
               connectPath: `/connect/${id}`,
               ...(options.admin
@@ -470,6 +479,54 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
         capability.mode === "api_key"
           ? `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`
           : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${id} once the client is set.`,
+    };
+  },
+
+  async provider_scope_set_add(ctx, args) {
+    const provider =
+      typeof args["provider"] === "string" ? args["provider"] : "";
+    const name = typeof args["name"] === "string" ? args["name"] : "";
+    const { provider: _p, name: _n, ...set } = args;
+    let summary: OAuthProviderSummary;
+    try {
+      summary = await addScopeSet(ctx, await actorFor(ctx), {
+        providerId: provider,
+        name,
+        spec: set,
+      });
+    } catch (error) {
+      if (error instanceof PublicError)
+        return refuse(error.code, error.message);
+      throw error;
+    }
+    const added = summary.scopeSets.find((each) => each.name === name);
+    return {
+      provider: { id: summary.id, name: summary.name },
+      scopeSet: added ? { ...added } : { name },
+      scopeSets: summary.scopeSets.map((each) => ({ ...each })),
+      next: `Apps list it as capabilities: { ${JSON.stringify(summary.id)}: { access: "${added?.access ?? "read"}", scopes: [${JSON.stringify(name)}], why: "..." } }. Allow its scopes on the OAuth client at ${summary.console}; people connect again at /connect/${summary.id} to grant them.`,
+    };
+  },
+
+  async provider_scope_set_remove(ctx, args) {
+    const provider =
+      typeof args["provider"] === "string" ? args["provider"] : "";
+    const name = typeof args["name"] === "string" ? args["name"] : "";
+    let summary: OAuthProviderSummary;
+    try {
+      summary = await removeScopeSet(ctx, await actorFor(ctx), {
+        providerId: provider,
+        name,
+      });
+    } catch (error) {
+      if (error instanceof PublicError)
+        return refuse(error.code, error.message);
+      throw error;
+    }
+    return {
+      provider: { id: summary.id, name: summary.name },
+      removed: { name },
+      scopeSets: summary.scopeSets.map((each) => ({ ...each })),
     };
   },
 

@@ -19,6 +19,17 @@
  *    an IP literal, localhost, or a `.local`, `.internal` or `.arpa` name)
  *    and not one the gateway serves itself (`refuseHost`, which knows the
  *    gateway's own host and `APP_BASE_DOMAIN`).
+ *
+ * A second kind of row, a scope-set overlay (`provider_scope_sets`,
+ * `everyapp provider scope-set add`), adds a named scope set to a
+ * built-in OAuth client that has scope sets (Google, Microsoft, Slack):
+ * its scopes, and the routes on the client's own API hosts it unlocks,
+ * checked by the rules a built-in set is checked by
+ * (`providers.scope-set-overlay-within-client`). An overlay never replaces
+ * one of the client's own sets, never names a host outside the client's
+ * `api`, and never applies to a registered row (an operator replaces the
+ * row's spec instead). Apps list an overlay set under `scopes` as they
+ * list a built-in one.
  */
 import {
   CAPABILITIES,
@@ -27,6 +38,8 @@ import {
   type ApiKeyCapability,
   type Capability,
   type CapabilityLookup,
+  type OAuthClientCapability,
+  type OAuthScopeSet,
 } from "./capabilities.js";
 import {
   isDevOnlyGatewaySetting,
@@ -34,6 +47,7 @@ import {
   isReservedAppSecretName,
   isSettableGatewaySetting,
 } from "./gatewaySettings.js";
+import { parseScopeSetOverlay, withScopeSets } from "./oauthSpec.js";
 import { isSignInSettingName } from "./signInProviders.js";
 import {
   describeSpecProblems,
@@ -58,6 +72,40 @@ export interface ProviderRow {
   addedBy?: string | null;
   /** When, in epoch milliseconds. */
   addedAt?: number | null;
+}
+
+/** A `provider_scope_sets` row as the gateway or the CLI read it. */
+export interface ScopeSetRow {
+  /** The built-in OAuth client the set belongs to (`google-workspace`). */
+  providerId: string;
+  /** The set's name, what an app lists under `scopes` (`gmail.send`). */
+  name: string;
+  /** The set's spec, as JSON text or already parsed (`parseScopeSetOverlay`'s shape). */
+  spec: unknown;
+  addedBy?: string | null;
+  addedAt?: number | null;
+}
+
+/** One overlay the registry serves, as `provider show` reports it. */
+export interface RegisteredScopeSet {
+  providerId: string;
+  name: string;
+  set: OAuthScopeSet;
+  addedBy: string | null;
+  addedAt: number | null;
+}
+
+export type ScopeSetRefusalCode =
+  | "SCOPE_SET_INVALID"
+  | "SCOPE_SET_PROVIDER_UNKNOWN"
+  | "SCOPE_SET_BUILTIN";
+
+/** Why an overlay row is not a scope set on this gateway. */
+export interface ScopeSetRefusal {
+  providerId: string;
+  name: string;
+  code: ScopeSetRefusalCode;
+  message: string;
 }
 
 /**
@@ -146,6 +194,15 @@ export interface ProviderRegistry extends CapabilityLookup {
   rows(): readonly RegisteredProvider[];
   /** The rows this registry left out, each with why. */
   readonly rejected: readonly RowRefusal[];
+  /** The scope-set overlays this registry applied to built-in clients, in row order. */
+  scopeSets(): readonly RegisteredScopeSet[];
+  /** Where a client's scope set comes from: its catalog entry, an overlay row, or nowhere. */
+  scopeSetSource(
+    providerId: string,
+    name: string,
+  ): "catalog" | "row" | undefined;
+  /** The overlay rows this registry left out, each with why. */
+  readonly rejectedScopeSets: readonly ScopeSetRefusal[];
 }
 
 export interface ProviderRegistryOptions {
@@ -155,6 +212,8 @@ export interface ProviderRegistryOptions {
    * the rest (IP literals, localhost, `.internal`).
    */
   refuseHost?: (host: string) => string | null;
+  /** The scope-set overlays (`provider_scope_sets`), applied to the catalog's OAuth clients. */
+  scopeSets?: readonly ScopeSetRow[];
 }
 
 /** The reserved app id no provider may take. */
@@ -377,6 +436,64 @@ export function resolveProviderRow(
 }
 
 /**
+ * The built-in OAuth client an overlay may extend: a catalog entry of mode
+ * `oauth_client` with a scope policy. Null for anything else (an API-key
+ * entry, a client without sets, a registered row, an unknown id).
+ */
+export function overlayableClient(
+  providerId: string,
+): OAuthClientCapability | null {
+  if (!CAPABILITY_IDS.includes(providerId as never)) return null;
+  const capability = CAPABILITIES[
+    providerId as keyof typeof CAPABILITIES
+  ] as Capability;
+  return capability.mode === "oauth_client" && capability.scopePolicy
+    ? capability
+    : null;
+}
+
+/** An overlay row's spec parsed and checked against its client: the set, or the refusal. */
+export function resolveScopeSetRow(
+  row: ScopeSetRow,
+): { ok: true; set: OAuthScopeSet } | { ok: false; refusal: ScopeSetRefusal } {
+  const refuse = (code: ScopeSetRefusalCode, message: string) => ({
+    ok: false as const,
+    refusal: { providerId: row.providerId, name: row.name, code, message },
+  });
+  const client = overlayableClient(row.providerId);
+  if (!client) {
+    return refuse(
+      "SCOPE_SET_PROVIDER_UNKNOWN",
+      `${row.providerId} isn't a built-in OAuth client with scope sets (google-workspace, microsoft-365, slack); a registered provider's sets are in its spec`,
+    );
+  }
+  if (Object.hasOwn(client.scopePolicy!.sets, row.name)) {
+    return refuse(
+      "SCOPE_SET_BUILTIN",
+      `${row.name} is one of ${row.providerId}'s own sets; an overlay adds a set, never replaces one`,
+    );
+  }
+  let spec: unknown = row.spec;
+  if (typeof spec === "string") {
+    try {
+      spec = JSON.parse(spec);
+    } catch {
+      return refuse("SCOPE_SET_INVALID", "the stored spec isn't JSON");
+    }
+  }
+  const parsed = parseScopeSetOverlay(
+    typeof spec === "object" && spec !== null && !Array.isArray(spec)
+      ? { ...(spec as Record<string, unknown>), name: row.name }
+      : spec,
+    { id: row.providerId, capability: client },
+  );
+  if (!parsed.ok) {
+    return refuse("SCOPE_SET_INVALID", describeSpecProblems(parsed.problems));
+  }
+  return { ok: true, set: parsed.set };
+}
+
+/**
  * The catalog and `rows` as one registry. Rows are taken in order; a row
  * whose settings another earlier row holds is the one refused.
  */
@@ -387,6 +504,47 @@ export function providerRegistry(
   const catalog = new Map<string, Capability>(
     CAPABILITY_IDS.map((id) => [id, CAPABILITIES[id] as Capability]),
   );
+  // Scope-set overlays on the catalog's OAuth clients, before any row is
+  // looked at: a row never shadows the catalog, with or without overlays.
+  const overlays: RegisteredScopeSet[] = [];
+  const rejectedScopeSets: ScopeSetRefusal[] = [];
+  const overlaySets = new Map<string, Record<string, OAuthScopeSet>>();
+  for (const row of options.scopeSets ?? []) {
+    if (
+      overlays.some(
+        (each) => each.providerId === row.providerId && each.name === row.name,
+      )
+    ) {
+      rejectedScopeSets.push({
+        providerId: row.providerId,
+        name: row.name,
+        code: "SCOPE_SET_INVALID",
+        message: "listed twice",
+      });
+      continue;
+    }
+    const resolved = resolveScopeSetRow(row);
+    if (!resolved.ok) {
+      rejectedScopeSets.push(resolved.refusal);
+      continue;
+    }
+    overlays.push({
+      providerId: row.providerId,
+      name: row.name,
+      set: resolved.set,
+      addedBy: row.addedBy ?? null,
+      addedAt: row.addedAt ?? null,
+    });
+    const sets = overlaySets.get(row.providerId) ?? {};
+    sets[row.name] = resolved.set;
+    overlaySets.set(row.providerId, sets);
+  }
+  for (const [id, sets] of overlaySets) {
+    const client = catalog.get(id);
+    if (client?.mode === "oauth_client") {
+      catalog.set(id, withScopeSets(client, sets));
+    }
+  }
   const accepted = new Map<string, RegisteredProvider>();
   const rejected: RowRefusal[] = [];
   const rowSettings = new Set<string>();
@@ -451,6 +609,25 @@ export function providerRegistry(
     },
     rows: () => [...accepted.values()],
     rejected,
+    scopeSets: () => [...overlays],
+    scopeSetSource: (providerId, name) => {
+      if (
+        overlays.some(
+          (each) => each.providerId === providerId && each.name === name,
+        )
+      ) {
+        return "row";
+      }
+      const capability = CAPABILITY_IDS.includes(providerId as never)
+        ? (CAPABILITIES[providerId as keyof typeof CAPABILITIES] as Capability)
+        : undefined;
+      return capability?.mode === "oauth_client" &&
+        capability.scopePolicy &&
+        Object.hasOwn(capability.scopePolicy.sets, name)
+        ? "catalog"
+        : undefined;
+    },
+    rejectedScopeSets,
   };
 }
 

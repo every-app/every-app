@@ -39,6 +39,8 @@ import { bundleProblems, manifestProblems } from "./metadata";
 import { runDeploy } from "./pipeline";
 import { registerDispatchApp, toAppRow } from "./registry";
 import { BROWSER_INSTALL_LIMITS, withInstallLease } from "./browser-install";
+import type { CapabilityLookup } from "@every-app/sdk/internal";
+import { gatewayProviders } from "@/server/providers";
 
 export function deployLimits() {
   return platformPolicy(env).mode === "self_hosted"
@@ -96,7 +98,12 @@ export async function jobAnswer(
 }
 
 /** A manifest the hosted policy takes, for the app id `appId`. */
-export function parseManifest(raw: unknown, appId: string): Manifest {
+export function parseManifest(
+  raw: unknown,
+  appId: string,
+  /** The gateway's registry, so an operator's scope-set overlays count; the catalog alone when absent. */
+  lookup?: CapabilityLookup,
+): Manifest {
   let manifest: Manifest;
   try {
     manifest = validateManifest(raw);
@@ -114,7 +121,7 @@ export function parseManifest(raw: unknown, appId: string): Manifest {
       `manifest.id "${manifest.id}" does not match the app id "${appId}".`,
     );
   }
-  const problems = manifestProblems(manifest, deployLimits());
+  const problems = manifestProblems(manifest, deployLimits(), lookup);
   if (problems.length > 0) throw bundleRefused(problems);
   return manifest;
 }
@@ -276,6 +283,7 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
     manifest,
     limits,
     bundle.assets.size > 0,
+    await gatewayProviders(),
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const selfHosted = platformPolicy(env).mode === "self_hosted";

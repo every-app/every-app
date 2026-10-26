@@ -56,6 +56,7 @@ import {
   registerApp,
   startDeploy,
 } from "./run";
+import { gatewayProviders } from "@/server/providers";
 
 interface InstallCaller {
   userId: string;
@@ -295,7 +296,12 @@ export function serveInstall(request: Request): Promise<Response> {
       body?.releaseUrl !== undefined
         ? await fetchReleaseUrl(body.releaseUrl)
         : await fetchAppRelease(parseRepoUrl(body?.repoUrl));
-    const manifest = parseManifest(release.bundle.manifest, release.appId);
+    const lookup = await gatewayProviders();
+    const manifest = parseManifest(
+      release.bundle.manifest,
+      release.appId,
+      lookup,
+    );
     // Refused before the app is registered: a release that can't go
     // leaves no row behind. startDeploy checks again.
     const problems = bundleProblems(
@@ -303,6 +309,7 @@ export function serveInstall(request: Request): Promise<Response> {
       manifest,
       deployLimits(),
       release.bundle.assets.size > 0,
+      lookup,
     );
     if (problems.length > 0) throw bundleRefused(problems);
     // Registered as the deploy API's POST /apps registers it, then deployed.

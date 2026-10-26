@@ -27,6 +27,7 @@ import {
   isSettableGatewaySetting,
   providerEntries,
   RESERVED_APP_SECRET_NAMES_TEXT,
+  SCOPE_SET_NAME,
   secretEntries,
   secretNames,
   settingNames,
@@ -511,6 +512,14 @@ export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
 export function capabilityEntrySchema(
   id: string,
   lookup: CapabilityLookup = CATALOG,
+  /**
+   * What to do with a scope-set name the client's policy doesn't have:
+   * refuse it (the default: the lookup is the gateway's registry, overlays
+   * included), or accept a well-formed one for the gateway to check (the
+   * CLI before it has asked a gateway: an operator may have added the set
+   * with `everyapp provider scope-set add`).
+   */
+  unknown: UnknownCapabilities = "refuse",
 ) {
   const capability = lookup.get(id);
   if (!capability || capability.mode === "ai") {
@@ -547,13 +556,25 @@ export function capabilityEntrySchema(
   // Own keys only: `constructor` is not a set.
   const names = Object.keys(policy.sets) as [string, ...string[]];
   const needsScopes = `${capability.label} needs scopes: one or more of ${names.join(", ")}`;
+  const name =
+    unknown === "accept"
+      ? // A well-formed name the catalog's policy lacks may be an
+        // operator's overlay on the gateway: the deploy checks it there.
+        z
+          .string()
+          .regex(
+            SCOPE_SET_NAME,
+            `unknown scope set (${capability.label} offers: ${names.join(", ")}; a set an operator added is named identity, or <area>.<access>)`,
+          )
+          .refine(
+            (set) => !(set in Object.prototype),
+            `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
+          )
+      : z.enum(names, {
+          error: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
+        });
   const scopes = z
-    .array(
-      z.enum(names, {
-        error: `unknown scope set (${capability.label} offers: ${names.join(", ")})`,
-      }),
-      { error: needsScopes },
-    )
+    .array(name, { error: needsScopes })
     .min(1, needsScopes)
     .refine(
       (list) => new Set(list).size === list.length,
@@ -585,7 +606,7 @@ const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
       z
         .string()
         .regex(
-          /^[a-z][a-z0-9-]{0,31}(?:\.[a-z][a-z0-9-]{0,31})?$/,
+          SCOPE_SET_NAME,
           "a scope set is named identity, or <area>.<access> (repo.read)",
         ),
       {
@@ -652,7 +673,9 @@ function capabilitiesSchemaStrict(
           });
           continue;
         }
-        const parsed = capabilityEntrySchema(id, lookup).safeParse(entry);
+        const parsed = capabilityEntrySchema(id, lookup, unknown).safeParse(
+          entry,
+        );
         if (parsed.success) continue;
         for (const issue of parsed.error.issues) {
           ctx.addIssue({ ...issue, path: [id, ...issue.path] });

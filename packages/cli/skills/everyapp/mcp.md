@@ -191,8 +191,13 @@ Provider tools (Gateway connector only; one audit row per call like the
          `everyapp_provider_add` (`{ spec }`: the spec object, never a URL,
          never a replace of a row that is there) and
          `everyapp_provider_remove` (`{ id }`: refuses a built-in, a row
-         whose key is set, and a row an app lists). A hosted Gateway hides
-         both writers. `everyapp_provider_add` also takes `{ preset }`, an
+         whose key is set, and a row an app lists), and the scope-set
+         pair `everyapp_provider_scope_set_add` (`{ provider, name, label,
+         access, scopes, routes }`: a set added to google-workspace,
+         microsoft-365 or slack, routes on the client's hosts alone) and
+         `everyapp_provider_scope_set_remove` (`{ provider, name }`;
+         refuses a built-in set and one a deployed app lists). A hosted
+         Gateway hides the four writers. `everyapp_provider_add` also takes `{ preset }`, an
          OAuth preset (github-oauth, notion-oauth, …; the list tool's
          `presets`) or a built-in client (google-workspace), and answers
          the redirect URI to register at the provider's console. Every

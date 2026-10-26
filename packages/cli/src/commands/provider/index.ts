@@ -713,9 +713,11 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
 /**
  * The spec of `id` as `provider show` prints it: an API-key entry's whole
  * spec (`providerSpecOf`, what `provider add` takes), or for an AI
- * provider or an OAuth client, what a person needs to set it up.
+ * provider or an OAuth client, what a person needs to set it up. A
+ * built-in client's scope sets come with where each is from: the catalog,
+ * or an operator's `provider scope-set add`.
  */
-function specOf(id: string, capability: Capability): Record<string, unknown> {
+function specOf(id: string, capability: Capability, registry?: ProviderRegistry): Record<string, unknown> {
   const settings = [...capabilitySettings(capability)];
   switch (capability.mode) {
     case "api_key":
@@ -746,7 +748,18 @@ function specOf(id: string, capability: Capability): Record<string, unknown> {
         tokenEndpoints: describeTokenEndpoints(capability).split(", "),
         authorize: { url: capability.authorize.url, scopes: [...capability.authorize.scopes] },
         redirectPaths: [...capability.redirectPaths],
-        ...(capability.scopePolicy ? { scopeSets: Object.keys(capability.scopePolicy.sets) } : {}),
+        ...(capability.scopePolicy
+          ? {
+              scopeSets: Object.entries(capability.scopePolicy.sets).map(([name, set]) => ({
+                name,
+                label: set.label,
+                access: set.access,
+                scopes: [...set.scopes],
+                hosts: [...new Set(set.routes.map((route) => route.host))],
+                source: registry?.scopeSetSource(id, name) ?? "catalog",
+              })),
+            }
+          : {}),
         ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
@@ -796,7 +809,7 @@ export async function showProvider(
     );
   }
   const row = registry.rows().find((each) => each.id === id);
-  const spec = specOf(id, capability);
+  const spec = specOf(id, capability, registry);
   let saved: string | null = null;
   if (flags.save) {
     if (!row || capability.mode !== "api_key") {
@@ -844,6 +857,12 @@ export async function showProvider(
         ]
       : []),
     using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
+    ...(() => {
+      const added = registry.scopeSets().filter((set) => set.providerId === id);
+      return added.length > 0
+        ? [`Scope sets added here: ${listed(added.map((set) => `${set.name} (by ${set.addedBy ?? "someone"})`))}; ${CLI} provider scope-set remove ${id} <name> removes one.`]
+        : [];
+    })(),
     ...(saved ? [`Wrote ${saved} for everyapp dev.`] : []),
   ];
   out.emit({

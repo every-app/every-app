@@ -19,6 +19,11 @@
  * either: a spec names its secrets, the key or client is set from the
  * terminal (`everyapp secret set`) or pasted under Admin → Providers.
  *
+ * `everyapp_provider_scope_set_add` and `everyapp_provider_scope_set_remove`
+ * add a scope set to a built-in OAuth client (Google, Microsoft, Slack) and
+ * remove one an operator added, for owners and admins where the host
+ * registers providers, through the OAuth service the Admin page uses.
+ *
  * `everyapp_provider_connections` lists the caller's own connections to
  * OAuth providers (every member) or the whole organization's (owners and
  * admins, `all: true`); `everyapp_provider_disconnect` removes the
@@ -95,6 +100,120 @@ export const PROVIDER_TOOLS: readonly WorkspaceToolDefinition[] = [
         },
       },
       required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "write",
+    minRole: "admin",
+    needs: "providers",
+    name: "provider_scope_set_add",
+    title: "Add a scope set to a built-in OAuth client",
+    description:
+      "Add a named scope set to a built-in OAuth client that has scope sets (google-workspace, microsoft-365, slack), so apps can list it under `scopes` like a built-in set: its `name` (identity, or <area>.<access>: gmail.send), `label`, `access` (read or write, said outright: a write set is never implied), the provider's `scopes` it asks for, and the `routes` on the client's own API hosts it unlocks (`{ host, paths, posts? }`; `posts` are anchored patterns of POST paths a read set admits). Checked by the rules a built-in set is checked by; a name the client already has is refused (an overlay adds, never replaces), and so is a host outside the client's. The client's `authorize` scopes grow by the set's, so the operator's OAuth client must be allowed them at the provider's console. Live within 30 seconds; people connect again to grant the new scopes. Never replaces an added set (`everyapp provider scope-set add --replace` from the terminal does). Owners and admins, on a self-hosted Gateway.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: {
+          type: "string",
+          description:
+            "The built-in OAuth client's id: google-workspace, microsoft-365 or slack.",
+          minLength: 2,
+          maxLength: PROVIDER_ID_MAX,
+        },
+        name: {
+          type: "string",
+          description:
+            "The set's name, what apps list under scopes: identity, or <area>.<access> in lowercase (gmail.send).",
+          minLength: 1,
+          maxLength: 65,
+        },
+        label: {
+          type: "string",
+          description:
+            "What Admin and the consent page call it (Gmail (send)).",
+          minLength: 1,
+          maxLength: 80,
+        },
+        access: {
+          type: "string",
+          enum: ["read", "write"],
+          description:
+            "read: GET, HEAD and the posts listed; write: the write methods too, for an app with access write.",
+        },
+        scopes: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 200 },
+          minItems: 1,
+          maxItems: 40,
+          description: "The provider's scope strings, verbatim.",
+        },
+        routes: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: "object",
+            properties: {
+              host: {
+                type: "string",
+                description:
+                  "One of the client's API hosts (gmail.googleapis.com).",
+                minLength: 1,
+                maxLength: 253,
+              },
+              paths: {
+                type: "array",
+                items: { type: "string", minLength: 1, maxLength: 500 },
+                minItems: 1,
+                maxItems: 50,
+                description:
+                  "Path prefixes (ending in /) or exact paths the set unlocks on that host.",
+              },
+              posts: {
+                type: "array",
+                items: { type: "string", minLength: 1, maxLength: 500 },
+                maxItems: 50,
+                description:
+                  "Anchored patterns (^…$) of POST paths a read set admits (queries, watches).",
+              },
+            },
+            required: ["host", "paths"],
+            additionalProperties: false,
+          },
+          description: "What the set unlocks, on the client's hosts alone.",
+        },
+      },
+      required: ["provider", "name", "label", "access", "scopes", "routes"],
+      additionalProperties: false,
+    },
+  },
+  {
+    risk: "write",
+    minRole: "admin",
+    needs: "providers",
+    name: "provider_scope_set_remove",
+    title: "Remove a scope set added to a built-in OAuth client",
+    description:
+      "Remove a scope set an operator added to a built-in OAuth client (never one of the client's own). Refused while a deployed app lists it under `scopes`, naming the apps (`everyapp provider scope-set remove --force` from the terminal removes it anyway). Calls under the set stop within 30 seconds; connections keep their tokens. Owners and admins, on a self-hosted Gateway.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: {
+          type: "string",
+          description: "The built-in OAuth client's id.",
+          minLength: 2,
+          maxLength: PROVIDER_ID_MAX,
+        },
+        name: {
+          type: "string",
+          description:
+            "The set's name, as everyapp_provider_list lists it with source row.",
+          minLength: 1,
+          maxLength: 65,
+        },
+      },
+      required: ["provider", "name"],
       additionalProperties: false,
     },
   },

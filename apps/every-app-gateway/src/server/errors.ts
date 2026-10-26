@@ -84,6 +84,14 @@ const PUBLIC_ERROR_CODES = [
   "OAUTH_CLIENT_REQUIRED",
   "SEALING_UNAVAILABLE",
   "ADMIN_REQUIRED",
+  // Scope-set overlays on built-in OAuth clients (server/oauth/service.ts).
+  "SCOPE_SET_INVALID",
+  "SCOPE_SET_PROVIDER_UNKNOWN",
+  "SCOPE_SET_BUILTIN",
+  "SCOPE_SET_EXISTS",
+  "SCOPE_SET_NOT_FOUND",
+  "SCOPE_SET_IN_USE",
+  "GATEWAY_OUTDATED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

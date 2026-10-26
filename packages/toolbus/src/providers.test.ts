@@ -76,7 +76,7 @@ function harness(providers?: boolean) {
 }
 
 describe("the provider tool definitions", () => {
-  it("are the five the designs name: the list and the connections for any member, add and remove for admins where the host registers providers, disconnect for a member's own", () => {
+  it("are the seven the designs name: the list and the connections for any member, add, remove and the scope-set pair for admins where the host registers providers, disconnect for a member's own", () => {
     expect(
       PROVIDER_TOOLS.map((tool) => [
         tool.name,
@@ -88,6 +88,8 @@ describe("the provider tool definitions", () => {
       ["provider_list", "read", "member", null],
       ["provider_add", "write", "admin", "providers"],
       ["provider_remove", "write", "admin", "providers"],
+      ["provider_scope_set_add", "write", "admin", "providers"],
+      ["provider_scope_set_remove", "write", "admin", "providers"],
       ["provider_connections", "read", "member", null],
       ["provider_disconnect", "write", "member", null],
     ]);

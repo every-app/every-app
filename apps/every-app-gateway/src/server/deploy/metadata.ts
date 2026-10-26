@@ -35,7 +35,7 @@ import {
   type Manifest,
 } from "@every-app/perimeter/manifest";
 import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
-import { CAPABILITIES, isCapabilityId } from "@every-app/sdk/internal";
+import { CATALOG, type CapabilityLookup } from "@every-app/sdk/internal";
 import type {
   WorkerAssetsConfig,
   WorkerBinding,
@@ -123,6 +123,8 @@ function durableObjects(manifest: Manifest) {
 export function manifestProblems(
   manifest: Manifest,
   limits: ThirdPartyLimits,
+  /** Where the scope sets are looked up: the gateway's registry (an operator's overlays included), or the catalog alone. */
+  lookup: CapabilityLookup = CATALOG,
 ): string[] {
   const problems: string[] = [];
   if (manifest.workers?.length) {
@@ -188,9 +190,9 @@ export function manifestProblems(
   // here: a hand-crafted bundle never gets a row whose grant the token
   // endpoint would void.
   for (const [id, entry] of Object.entries(manifest.capabilities ?? {})) {
-    if (!isCapabilityId(id)) continue;
-    const capability = CAPABILITIES[id];
-    if (!("scopePolicy" in capability)) continue;
+    const capability = lookup.get(id);
+    if (capability?.mode !== "oauth_client" || !capability.scopePolicy)
+      continue;
     const { sets } = capability.scopePolicy;
     if (!entry.scopes?.length) {
       problems.push(
@@ -233,9 +235,10 @@ export function bundleProblems(
   manifest: Manifest,
   limits: ThirdPartyLimits,
   hasAssets: boolean,
+  lookup: CapabilityLookup = CATALOG,
 ): string[] {
   const built = config(worker);
-  const problems = manifestProblems(manifest, limits);
+  const problems = manifestProblems(manifest, limits, lookup);
   if (built.name !== BUILD_SENTINEL.workerName) {
     problems.push(
       `its Worker is named "${String(built.name)}": a deploy through the gateway uploads the tenant-neutral build, uninstalled (everyapp deploy --gateway)`,
@@ -386,6 +389,8 @@ export interface DeployTarget {
   };
   /** The completion token of the assets upload, when the app has assets. */
   assetsJwt?: string;
+  /** Where capability ids are looked up: the gateway's registry (scope-set overlays included); the catalog alone when absent. */
+  lookup?: CapabilityLookup;
 }
 
 /**
@@ -521,6 +526,7 @@ export function buildUserWorkerMetadata({
     manifest,
     target.limits,
     Boolean(target.assetsJwt),
+    target.lookup,
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const built = config(worker);
