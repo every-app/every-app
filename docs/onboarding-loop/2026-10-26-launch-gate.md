@@ -47,9 +47,64 @@ New warnings in this run: `LOCAL_DNS_STALE` (the container's resolver still reme
 - **Another lane was using loop-1 without the lock.** Shortcuts L4 (`mcp:04cae247`) ran live tests on loop-1 while the control run was going. Its `update` at 07:34Z came right after the control run's post-run wipe. With no Gateway left, it installed a new one. My lifecycle setup then found that Gateway "up to date with commit 6f73c77", unclaimed, and minted a new owner link ("The link shown before no longer works"), which I claimed. L4's `rebindcheck` app shows up in the lifecycle pass's status tables. Nothing in the results above depends on it, and the runbook teardown removed it. L4 and the shortcuts coordinator have been asked to keep off loop-1 until the gate is done, and to take the loop's lock (`~/.config/everyapp/onboarding-loop/locks/<accountId>.json`) before any live test.
 - **Product finding from that collision (code, L4 reported it too):** `everyapp update` on an account with no Gateway installs a fresh one without asking. "Update" never says it's installing. It should stop with `GATEWAY_NOT_FOUND` and point to `setup`.
 
-## Run 2 (public clone)
+## Run 2 (the gate): published rc.7 and the public repository
 
-Not run yet. It waits for the orchestrator's go once the public repositories exist and the Agentic Inbox → **OpenMail** rename has merged (app id `openmail`, repository every-app/open-mail). Run 1's tree still has the old name everywhere (setup prompt step 4 names `agentic-inbox`). That's expected and isn't counted as a mismatch. Run 2's four-apps step installs every-app/open-mail. R2 must be enabled on loop-1 first. Today's teardown answered R2 with "[10042] Please enable R2", so it's still off, and enabling it is a dashboard click only Ben can do.
+Run 2 is the launch gate (run 1 became advisory). It ran on loop-1 in three parts. Part A is the no-checkout path from npm at 0.3.0-rc.7. Part B is the contributor path from a fresh clone of https://github.com/every-app/every-app. Part B also ran the loop's Claude Code and control harnesses with the verbatim public prompt. Hosts were pinned through the zone's authoritative nameserver. Right after a wipe the container's own resolver keeps the Gateway host cached as missing (setup warns `LOCAL_DNS_STALE`), and an owner claim through it fails with HTTP 000.
+
+### Part A: npm, no checkout (V = 0.3.0-rc.7)
+
+The first attempt on rc.6 failed at setup. The published CLI had its version baked in at build time as `0.3.0`, so setup asked for `gateway-v0.3.0`, got `GATEWAY_RELEASE_LATEST`, then `RELEASE_NOT_FOUND`. #820 now reads the version at run time, and `pnpm publish:rc` checks `--version` before publishing. rc.7 then passed:
+
+| step | result | evidence |
+| --- | --- | --- |
+| no checkout above the directory | pass | no pnpm-workspace.yaml up the tree |
+| `npm i -g everyapp@0.3.0-rc.7`, `--version` | pass | `everyapp 0.3.0-rc.7` |
+| `update` with no Gateway (#803) | pass | `GATEWAY_NOT_FOUND` pointing at setup; nothing created |
+| `create demo` | pass | pins `^0.3.0-rc.6` (`PUBLISHED_VERSION` not bumped for rc.7; the caret admits rc.7) |
+| `deploy` with no Gateway (#794) | pass | `GATEWAY_NOT_FOUND` pointing at setup, no install offer, no Gateway D1 created |
+| setup | pass | "Downloading the Gateway release gateway-v0.3.0-rc.7…", then "Using Gateway 0.3.0-rc.7 from every-app/every-app release gateway-v0.3.0-rc.7"; no `GATEWAY_RELEASE_LATEST`; owner claimed |
+| status | pass | release origin `{github, every-app/every-app, gateway-v0.3.0-rc.7}` |
+| deploy outside a checkout (#764) | pass | "Using the live Gateway 0.3.0-rc.7…", rebind upload, no `gateway.upgrade`, release sha256 unchanged |
+| signed in through the Gateway (#755) | pass | `/` 200, `/health` 200 as the owner; anonymous 401 |
+| WebSocket through the relay (#759) | pass | connected; app→client and client→app→client echo; close 1000 |
+| `pnpm dev` + tools over `/mcp` (#755) | pass | tools/list, create_todo, list_todos all 200, todo round-tripped; no org mismatch |
+| `deploy --gateway https://nope.apps.<zone>` (#794) | pass | no install offer; the code is `GATEWAY_URL_MISMATCH`, not `GATEWAY_NOT_FOUND` |
+| an older CLI refuses (#764 `CLI_TOO_OLD`) | inconclusive | rc.5 also has `0.3.0` baked in, which ranks above rc.7, so it deployed; the release sha was unchanged. Retest with the next correctly built rc |
+| install open-seo, open-crm, open-analytics, open-mail | pass | all four live from their public releases, "needs setup" (keys unset); open-seo after its v0.1.18 release appeared |
+| update | pass | "up-to-date", rc.7 by sha |
+| delete outside a checkout (#764) | pass | release sha unchanged from setup to the end |
+
+### Part B: the contributor path from the public clone
+
+| step | result | evidence |
+| --- | --- | --- |
+| clone, `pnpm install`, `pnpm everyapp setup` | pass | owner claimed; `Release 0.3.0 · matches this checkout`; status Next now says `create ../my-app` (run 1 mismatch 3 fixed) |
+| `create ../my-app`, `pnpm dev`, tools over `/mcp` | pass | all 200 |
+| `pnpm run deploy` in ../my-app, on fc35694d (before #827) | **fail** | "The live Gateway 0.3.0 (from this checkout) can't be fetched again: it was built from a checkout, and this everyapp isn't running from one". Since #747, ../my-app ran the npm everyapp, which can't rebuild a checkout-built Gateway (#764). The suggested `pnpm everyapp update` loops. Fixed by #827 |
+| the same on df0fed7e (#827) | pass | create prints "Linked to this checkout: @every-app/sdk and everyapp from /work/every-app ✓"; deploy live; signed-in `/` and `/health` 200; deploy again ok |
+| four installs from the clone | pass | open-seo, open-crm, open-analytics, open-mail all live, "needs setup" |
+| status, update no-op | pass | |
+| delete --purge | pass on retry | first try: bare `✗ fetch failed` (`CF_UNKNOWN`, `retryable: false`) during the Gateway upload, after the app was already off the registry; status then said the live Gateway was out of date. The retry finished the purge and `setup` brought the Gateway back in step |
+| teardown | pass | 0 left, 0 DNS records |
+| Claude Code loop, public prompt (df0fed7e) | fail-onboarding (false_done) by the loop's rules; a pass on the fixed rules (#835) | app-live; G1–A3 and T1 pass; S1 failed only on the four `APP_NEEDS_SETUP` warnings, which is where the prompt stops. The one nudge came from a domain question in markdown bold ("**Which domain should I use?**") that the matcher missed. Both fixed in #835. The early-adopter and four-apps questions were answered as expected hand-offs. The agent used `create ../hello`, deployed it, and installed all four apps. 793 s, $0.71 (record `2026-10-26T11:24-claude-opus55-dacece`) |
+| control loop, public prompt (df0fed7e) | **pass** | app-live, all verifier rows, 321 s, 0 interventions (record `2026-10-26T13:01-script-none-afe986`). The first start stalled in its 30-min gap wait while the Mac slept, and was restarted |
+
+### Findings from run 2
+
+Code:
+1. The rc.6 package had its version baked in at build time (fixed: #820 + `pnpm publish:rc`).
+2. `create ../my-app` from a checkout ran the npm CLI against a checkout-built Gateway (fixed: #827).
+3. `PUBLISHED_VERSION` in `packages/cli/src/lib/app/publishedVersions.ts` was still rc.6 at rc.7. Bump it in the publish script.
+4. A transient undici `fetch failed` surfaces as `CF_UNKNOWN`, `retryable: false`: in setup's owner wait ("fetch failed Envelope Error", after ~9 min) and in delete's Gateway upload (which leaves the delete half done). Retry once and name the rerun.
+5. status's SETTING table lists `OPENROUTER_API_KEY` twice for crm and openmail ("! not set" and "not set (optional)"), and Next suggests `secret set WORKERS_AI_API_TOKEN` while the block says OpenRouter comes first.
+6. `CLI_TOO_OLD` couldn't be exercised: every published CLI before rc.7 reports 0.3.0.
+
+Docs:
+- `create-an-app.mdx` should say what create prints now ("Linked to this checkout" from a clone; published pins from npm). Check the "It links to your every-app folder" sentence against #827.
+- npx-path.md expected `GATEWAY_NOT_FOUND` for a wrong `--gateway`. It's `GATEWAY_URL_MISMATCH`. Fix whichever doc names it.
+
+- `AGENTS.md` (and so `CLAUDE.md`) says "never `npx everyapp` (publishing is paused)". The public prompt now installs from npm, and an agent inside a clone obeyed AGENTS.md instead. It also called the npm package "behind (0.3.0-rc.7 vs 0.3.0 here)", because the repository's package.json names 0.3.0 while rc.7 is the release. This PR rewrites the AGENTS.md line: `pnpm everyapp` inside the checkout, npm for people without one.
+- The loop's `public` variant still pre-clones the checkout into /work, so it can't test the prompt's npm start from an empty directory. Part A's script covers that path.
 
 ## The docs against the terminal
 

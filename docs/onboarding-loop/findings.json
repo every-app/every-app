@@ -12,9 +12,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
-        "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
-        "at": "2026-10-26T08:28:25.860Z"
+        "runId": "2026-10-26T13:01-script-none-afe986",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T13:06:49.978Z"
       },
       "occurrences": [
         {
@@ -86,6 +86,20 @@
           "model": "claude-opus-5-5",
           "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
           "promptSha": "4e2e4017da7f07d054e2f187e88a32bd6de2533af45751e0391fd650d4f17373"
+        },
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        },
+        {
+          "runId": "2026-10-26T13:01-script-none-afe986",
+          "harness": "script",
+          "model": null,
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
         }
       ],
       "excerpt": "CUSTOM_DOMAIN_OWNER_UNCHECKED from `everyapp setup --domain apps.<zone> --json`",
@@ -103,9 +117,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
-        "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
-        "at": "2026-10-26T08:28:25.860Z"
+        "runId": "2026-10-26T13:01-script-none-afe986",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T13:06:49.978Z"
       },
       "occurrences": [
         {
@@ -170,6 +184,20 @@
           "model": "claude-opus-5-5",
           "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
           "promptSha": "4e2e4017da7f07d054e2f187e88a32bd6de2533af45751e0391fd650d4f17373"
+        },
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        },
+        {
+          "runId": "2026-10-26T13:01-script-none-afe986",
+          "harness": "script",
+          "model": null,
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
         }
       ],
       "excerpt": "CUSTOM_DOMAIN_OWNER_UNCHECKED from `everyapp deploy --json`",
@@ -390,7 +418,7 @@
       "id": "40c60687b8b52ac6a81bd70770de4afe542f250a",
       "area": "prompt",
       "key": "asked_user|-|-",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-24T10:40-claude-opus55-022ccf",
         "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
@@ -453,16 +481,16 @@
       "id": "ef4f21fc3656a3587af59799f9c34e854ec91482",
       "area": "loop",
       "key": "ended_turn_without_done|-|-",
-      "status": "fixed",
+      "status": "open",
       "firstSeen": {
         "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
         "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
         "at": "2026-10-24T11:34:41.746Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
-        "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
-        "at": "2026-10-24T11:34:41.746Z"
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
       },
       "occurrences": [
         {
@@ -471,6 +499,13 @@
           "model": "gpt-5.3-codex",
           "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
           "promptSha": "e4216a2423a5ca121f971d6339d8fb00a5ce7a982871f6745a4cb1e503e36d49"
+        },
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
         }
       ],
       "excerpt": "Great — I’ll start in `/work/every-app`, install deps, then pause to ask your domain before running setup.",
@@ -537,7 +572,7 @@
       "id": "dd1b3f3fa58dc5302866ebec57e27af792b3f09b",
       "area": "loop",
       "key": "tool_output_truncated|-|-",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
         "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
@@ -824,9 +859,9 @@
         "at": "2026-10-26T07:32:55.188Z"
       },
       "lastSeen": {
-        "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
-        "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
-        "at": "2026-10-26T08:28:25.860Z"
+        "runId": "2026-10-26T13:01-script-none-afe986",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T13:06:49.978Z"
       },
       "occurrences": [
         {
@@ -842,6 +877,20 @@
           "model": "claude-opus-5-5",
           "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
           "promptSha": "4e2e4017da7f07d054e2f187e88a32bd6de2533af45751e0391fd650d4f17373"
+        },
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        },
+        {
+          "runId": "2026-10-26T13:01-script-none-afe986",
+          "harness": "script",
+          "model": null,
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
         }
       ],
       "excerpt": "ACCESS_SETUP_SKIPPED from `everyapp setup --domain apps.<zone> --json`",
@@ -852,7 +901,7 @@
       "id": "272c777758f96d51eea78b840eb879c8d28287af",
       "area": "cli",
       "key": "LOCAL_DNS_STALE|setup",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
         "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
@@ -880,7 +929,7 @@
       "id": "0d91c0f7540298b3d994c3a5d7caacede612cc1b",
       "area": "cli",
       "key": "NO_RELEASE|install",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
         "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
@@ -908,7 +957,7 @@
       "id": "4e01d78f1e25866ff0e42823f054d11cccdf1b00",
       "area": "prompt",
       "key": "ended_turn_without_done|cd /work/every-app/apps/hello && pnpm everyapp deploy --json > /tmp/deploy.log 2>&1; echo EXIT $?; grep -E \"done\"|\"error\"|action_required /tmp/deploy.log|-",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
         "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
@@ -936,7 +985,7 @@
       "id": "dfbbc997d485ae654219ab029c68a77b0303e139",
       "area": "prompt",
       "key": "asked_user|cd /work/every-app/apps/hello && pnpm everyapp deploy --json > /tmp/deploy.log 2>&1; echo EXIT $?; grep -E \"done\"|\"error\"|action_required /tmp/deploy.log|-",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
         "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
@@ -964,7 +1013,7 @@
       "id": "b3d7262baa45fa070c7beba799aea4de0b638d35",
       "area": "cli",
       "key": "repeated_command|install <url> --json|1",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-26T07:51-claude-opus55-bdaffd",
         "cliCommit": "6f73c77f508d2be2befd61b3c22d0241b78c1d90",
@@ -985,6 +1034,286 @@
         }
       ],
       "excerpt": "install <url> --json",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "d69180ac5ea128a3426d98817d1c2a3889551d55",
+      "area": "cli",
+      "key": "GIT_FAILED|create",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "GIT_FAILED from `everyapp create ../hello --json`",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "1a30d6996a208568ca178cebaf19b199efaf7899",
+      "area": "cli",
+      "key": "CUSTOM_DOMAIN_OWNER_UNCHECKED|install",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "CUSTOM_DOMAIN_OWNER_UNCHECKED from `everyapp install <url> --json`",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "f07ac62367eb9f0607477b1d9a611e0e6954ca91",
+      "area": "cli",
+      "key": "APP_NEEDS_SETUP|install",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "APP_NEEDS_SETUP from `everyapp install <url> --json`",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "c902f138601e350d6002123490b34731df2c78cc",
+      "area": "loop",
+      "key": "tool_output_truncated|--version; pnpm --version; npm view everyapp version 2>&1 | tail -2; cat /work/every-app/packages/cli/package.json | grep \"version\"; ls /work/every-app/landing-page/content/agent/|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "tool output cut at 1927 chars",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "79c4beeb2dee3dd5bb75fc988391ce157684b001",
+      "area": "prompt",
+      "key": "ended_turn_without_done|--version; pnpm --version; npm view everyapp version 2>&1 | tail -2; cat /work/every-app/packages/cli/package.json | grep \"version\"; ls /work/every-app/landing-page/content/agent/|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "Node 22.23.4 and pnpm 10.34.5 are both installed. One change from your steps: we're inside the EveryApp repo, and its instructions say to run `pnpm everyapp` from here instead of the npm package. The",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "63837b1e556fbd60b6803b8cc3fa548fae164374",
+      "area": "prompt",
+      "key": "asked_user|--version; pnpm --version; npm view everyapp version 2>&1 | tail -2; cat /work/every-app/packages/cli/package.json | grep \"version\"; ls /work/every-app/landing-page/content/agent/|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "Which domain should I use?",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "3e11fc0db07f362cd8e10280899e7046b3be4916",
+      "area": "loop",
+      "key": "ended_turn_without_done|cd /work/hello; pnpm everyapp deploy --json 2>&1 | cut -c1-400; echo exit=${PIPESTATUS[0]}|-",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "The Gateway is live at <url> and your owner account (<email>) is claimed. **hello** is deployed at **<url> Its first git commit in `/",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "b8dfcf35a2ca97335a6dd413d8cc0ec9e3576229",
+      "area": "prompt",
+      "key": "false_done",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "the harness printed DONE while a check was red",
+      "proposedFix": "the prompt should tie DONE to the deploy's done event and URL",
+      "link": null
+    },
+    {
+      "id": "5829f55808974335f315cb3a3ea6baa021821bb7",
+      "area": "template",
+      "key": "verify|S1",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "S1 red with an app deployed by the harness",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "a2e58c442f841e7b94603f4e3e329a23d8145bbb",
+      "area": "prompt",
+      "key": "app_name_not_hello",
+      "status": "open",
+      "firstSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-26T11:24-claude-opus55-dacece",
+        "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+        "at": "2026-10-26T11:59:55.137Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-26T11:24-claude-opus55-dacece",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "cliCommit": "df0fed7e1640100ac54cb391788dea3d5cf629e7",
+          "promptSha": "8e73bee94bb9820159d94d65d952e81e54d86e9f5c8ebe5560d9214d7c22374a"
+        }
+      ],
+      "excerpt": "the app was named ../hello, not hello",
       "proposedFix": null,
       "link": null
     }
