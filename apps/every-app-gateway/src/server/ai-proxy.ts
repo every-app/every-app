@@ -210,7 +210,17 @@ interface AiUsageReport extends AiAnswerReport {
 }
 
 type PreparedBody =
-  | { ok: true; body: BodyInit | null; model: string | null }
+  | {
+      ok: true;
+      body: BodyInit | null;
+      model: string | null;
+      /**
+       * Every other model the request could run on: OpenRouter's `models`
+       * fallback list (tried in order when `model` is unavailable). Each
+       * one passes the manifest's allowlist too.
+       */
+      alternates: string[];
+    }
   | { ok: false; response: Response };
 
 /**
@@ -407,22 +417,29 @@ export async function handleAuthenticatedAiProxyRequest({
   );
   if (!prepared.ok) return prepared.response;
 
-  // The model allowlist covers inference, where the gateway reads the model.
-  // Endpoints an app opted into with `ai.routes` stream through unread. On
-  // the default route the operator chose the model, so the list doesn't apply.
+  // The model allowlist covers inference, where the gateway reads the model:
+  // the `model` field and every alternate the request could fall back to
+  // (OpenRouter's `models`). Endpoints an app opted into with `ai.routes`
+  // stream through unread. On the default route the operator chose the
+  // model, so the list doesn't apply.
   if (
     !isDefault &&
     policy?.models &&
-    aiProvider.inferenceRoutes.has(upstreamPath) &&
-    !policy.models.includes(prepared.model ?? "")
+    aiProvider.inferenceRoutes.has(upstreamPath)
   ) {
-    return aiRefusal(
-      "model_not_allowed",
-      403,
-      prepared.model
-        ? `The app manifest does not allow this model (${prepared.model}); list it in ai.models.`
-        : "The app manifest does not allow this model: the request names none.",
+    const allowed = policy.models;
+    const disallowed = [prepared.model ?? "", ...prepared.alternates].find(
+      (candidate) => !allowed.includes(candidate),
     );
+    if (disallowed !== undefined) {
+      return aiRefusal(
+        "model_not_allowed",
+        403,
+        disallowed
+          ? `The app manifest does not allow this model (${disallowed}); list it in ai.models.`
+          : "The app manifest does not allow this model: the request names none.",
+      );
+    }
   }
 
   const requestBody = prepared.body;
@@ -539,10 +556,10 @@ async function prepareBody(
   fillModel: string | null = null,
 ): Promise<PreparedBody> {
   if (!canIncludeBody(request.method) || !request.body) {
-    return { ok: true, body: null, model: null };
+    return { ok: true, body: null, model: null, alternates: [] };
   }
   if (!provider.inferenceRoutes.has(path)) {
-    return { ok: true, body: request.body, model: null };
+    return { ok: true, body: request.body, model: null, alternates: [] };
   }
 
   const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
@@ -571,7 +588,7 @@ async function prepareBody(
       form.set("model", fillModel);
       model = fillModel;
     }
-    return { ok: true, body: form, model };
+    return { ok: true, body: form, model, alternates: [] };
   }
 
   let payload: unknown;
@@ -595,6 +612,26 @@ async function prepareBody(
   if (provider.unstoredRoutes.has(path)) {
     body.store = false;
   }
+  // OpenRouter's fallback list: the request runs on any of these when the
+  // first choice is unavailable, so each one is a model selector. Anything
+  // but a list of names is refused rather than forwarded unread.
+  let alternates: string[] = [];
+  if (body.models !== undefined) {
+    if (
+      !Array.isArray(body.models) ||
+      body.models.some((entry) => typeof entry !== "string")
+    ) {
+      return {
+        ok: false,
+        response: aiRefusal(
+          "ai_request_invalid",
+          400,
+          "Expected `models` to be a list of model names",
+        ),
+      };
+    }
+    alternates = body.models as string[];
+  }
   if (
     fillModel !== null &&
     (body.model === undefined ||
@@ -608,6 +645,7 @@ async function prepareBody(
     ok: true,
     body: JSON.stringify(body),
     model: typeof body.model === "string" ? body.model : null,
+    alternates,
   };
 }
 

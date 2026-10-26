@@ -529,6 +529,59 @@ describe("OpenRouter", () => {
     expect((await response).status).toBe(403);
     expect(fetchUpstream).not.toHaveBeenCalled();
   });
+
+  it("applies the allowlist to every `models` fallback too, and refuses a malformed list", async () => {
+    const allowed = ["openai/gpt-5-mini", "anthropic/claude-haiku-5.5"];
+    const withFallbacks = (models: unknown): RequestInit => ({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "openai/gpt-5-mini",
+        models,
+        route: "fallback",
+        messages: [],
+      }),
+    });
+
+    // A disallowed fallback is a disallowed model, named in the refusal.
+    const denied = call(
+      "/api/v1/chat/completions",
+      withFallbacks(["anthropic/claude-haiku-5.5", "openrouter/auto"]),
+      allowed,
+    );
+    const refused = await denied.response;
+    expect(refused.status).toBe(403);
+    await expect(refused.json()).resolves.toMatchObject({
+      code: "model_not_allowed",
+      message: expect.stringContaining("openrouter/auto"),
+    });
+    expect(denied.fetchUpstream).not.toHaveBeenCalled();
+
+    // Allowed fallbacks pass, as sent.
+    const ok = call(
+      "/api/v1/chat/completions",
+      withFallbacks(["anthropic/claude-haiku-5.5"]),
+      allowed,
+    );
+    expect((await ok.response).status).toBe(200);
+    await expect(
+      ok.fetchUpstream.mock.calls[0]![0].json(),
+    ).resolves.toMatchObject({
+      model: "openai/gpt-5-mini",
+      models: ["anthropic/claude-haiku-5.5"],
+    });
+
+    // Something that isn't a list of names never reaches the provider.
+    for (const malformed of ["openrouter/auto", [{ id: "x" }], 7]) {
+      const bad = call(
+        "/api/v1/chat/completions",
+        withFallbacks(malformed),
+        allowed,
+      );
+      expect((await bad.response).status).toBe(400);
+      expect(bad.fetchUpstream).not.toHaveBeenCalled();
+    }
+  });
 });
 
 /** Live captures from Workers AI's /v1/chat/completions (llama-4-scout, 2026-10-17). */

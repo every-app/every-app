@@ -1752,7 +1752,11 @@ means it is on main (every boundary fix from this pass merged on
     `openid-configuration`) that legacy MCP discovery honours (B1, low; fixed in #406, merged: both paths are reserved like
     the protected-resource one).
 28. **`ai.models` checks only the JSON `model` field; OpenRouter's `models`
-    fallback list is forwarded unchecked** (B4, low).
+    fallback list is forwarded unchecked** (B4, low; fixed in #714,
+    `ai.model-allowlist`). Every entry of `models` now passes the allowlist
+    too, and a `models` that isn't a list of names is refused. OpenRouter's
+    `provider` routing object picks a provider for the same model, not
+    another model, and is forwarded. The 2026-10-25 scan's finding 13.
 29. **Consent grants `mcp:write` to a client that asked for `mcp:read`**
     (B5, low; fixed in #712, `oauth.scopes-are-the-users-choice`). A
     grant is now requested ∩ supported ∩ approved, the connection row
