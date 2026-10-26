@@ -50,7 +50,10 @@ Publishing is one script, then the tag:
    It sets both packages to that version, builds the SDK then the CLI,
    checks that the built CLI says that version, publishes both under `next`
    (npm asks for web authentication), puts the package.json files back,
-   moves `latest`, and prints the next two commands.
+   moves `latest`, and prints the next commands. It also sets
+   `PUBLISHED_VERSION` (`packages/cli/src/lib/app/publishedVersions.ts`), the
+   version `everyapp create` pins new apps at, before building; commit that
+   one-line change afterwards.
 2. Push that commit to the public repository, then tag it there:
    `git tag gateway-v<version> <commit> && git push public gateway-v<version>`.
    The workflow publishes the release in a few minutes.

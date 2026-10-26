@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cfD1Database } from "@/lib/cf/d1";
+import { cfD1Database, type D1Database } from "@/lib/cf/d1";
+import { CfError } from "@/lib/cf/errors";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import {
   createSqliteD1,
@@ -147,6 +148,62 @@ describe("waitForSetupLink", () => {
     await expect(
       waitForSetupLink({ db: db(), id: other.id, timeoutMs: 0 }),
     ).resolves.toEqual({ status: "waiting" });
+  });
+});
+
+describe("waitForSetupLink on a network that drops", () => {
+  /** The gateway's D1, failing on the network while `down()` says so. */
+  const flaky = (down: () => boolean, error: () => Error): D1Database => ({
+    run: (statements, options) => (down() ? Promise.reject(error()) : db().run(statements, options)),
+  });
+  const cfDrop = () =>
+    new CfError({ message: "fetch failed Envelope Error", apiCodes: [], kind: "unknown" }, { exitCode: 1, stderr: "" });
+
+  it("rides out a drop shorter than two minutes and still sees the claim", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x" });
+    let now = Date.now();
+    let polls = 0;
+    const state = await waitForSetupLink({
+      db: flaky(() => polls >= 2 && polls < 12, cfDrop),
+      id: link.id,
+      now: () => now,
+      sleep: async (ms) => {
+        polls += 1;
+        now += ms;
+        if (polls === 14) claim(link.id, now);
+      },
+    });
+    expect(state).toMatchObject({ status: "claimed" });
+  });
+
+  it("stops with OWNER_WAIT_NETWORK once reads have failed for two minutes, saying setup picks up again", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x" });
+    let now = Date.now();
+    await expect(
+      waitForSetupLink({
+        db: flaky(() => true, () => new TypeError("fetch failed")),
+        id: link.id,
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "OWNER_WAIT_NETWORK",
+      retryable: true,
+      message: expect.stringContaining("The network dropped while waiting for the owner link"),
+      rerunNote: expect.stringContaining("picks up at the owner step"),
+      data: { cause: "fetch failed" },
+    });
+  });
+
+  it("doesn't wait out an answer from Cloudflare that isn't the network", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x" });
+    const denied = () =>
+      new CfError({ message: "Authentication error [code: 10000]", apiCodes: [10000], kind: "unknown" }, { exitCode: 1, stderr: "" });
+    await expect(
+      waitForSetupLink({ db: flaky(() => true, denied), id: link.id, sleep: async () => undefined }),
+    ).rejects.toBeInstanceOf(CfError);
   });
 });
 

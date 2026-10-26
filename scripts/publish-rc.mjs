@@ -8,12 +8,16 @@
  *
  * 1. Refuses unless the git tree is clean (what is published is HEAD).
  * 2. Sets the version in packages/sdk and packages/cli package.json and
- *    drops `"private": true` from both.
+ *    drops `"private": true` from both, and sets PUBLISHED_VERSION
+ *    (packages/cli/src/lib/app/publishedVersions.ts), the version
+ *    `everyapp create` pins new apps at, so the published CLI pins itself.
  * 3. Builds the SDK, then the CLI (which packs starter/ into the package).
  * 4. Runs the built CLI's `--version` and stops unless it says this version.
  * 5. Publishes the SDK, then the CLI, under the dist-tag `next`
  *    (npm asks for web authentication, once per package).
  * 6. Puts both package.json files back as git has them, whatever happened.
+ *    PUBLISHED_VERSION keeps the new version after a publish (commit it:
+ *    it records what is on npm) and goes back after a failure.
  * 7. Moves `latest` to this version for both, retrying while npm catches up.
  * 8. Prints the two commands that tag HEAD gateway-v<version> and push the
  *    tag to the `public` remote, which publishes the Gateway release the
@@ -30,6 +34,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const PUBLISHED_VERSIONS = path.join(ROOT, "packages/cli/src/lib/app/publishedVersions.ts");
 const PACKAGES = [
   { dir: "packages/sdk", name: "@every-app/sdk" },
   { dir: "packages/cli", name: "everyapp" },
@@ -70,8 +75,19 @@ for (const { name } of PACKAGES) {
 }
 
 const originals = new Map();
+const publishedVersionsText = fs.readFileSync(PUBLISHED_VERSIONS, "utf8");
 let published = false;
 try {
+  // The version `everyapp create` pins new apps at.
+  const pinned = publishedVersionsText.replace(
+    /export const PUBLISHED_VERSION = "[^"]*";/,
+    `export const PUBLISHED_VERSION = "${version}";`,
+  );
+  if (pinned === publishedVersionsText && !publishedVersionsText.includes(`PUBLISHED_VERSION = "${version}"`)) {
+    throw new Error(`couldn't find PUBLISHED_VERSION in ${path.relative(ROOT, PUBLISHED_VERSIONS)}`);
+  }
+  fs.writeFileSync(PUBLISHED_VERSIONS, pinned);
+
   // 2. One version for both, nothing private.
   for (const { dir } of PACKAGES) {
     const file = path.join(ROOT, dir, "package.json");
@@ -110,6 +126,7 @@ try {
 } finally {
   // 6. The repository keeps its own versions.
   for (const [file, text] of originals) fs.writeFileSync(file, text);
+  if (!published) fs.writeFileSync(PUBLISHED_VERSIONS, publishedVersionsText);
 }
 if (!published) fail("nothing more was done; both package.json files are back as they were.");
 
@@ -126,6 +143,11 @@ for (const { name } of PACKAGES) {
 
 console.log(`
 Published @every-app/sdk@${version} and everyapp@${version} (latest and next).
+
+Commit the pin new apps get (it records what is on npm), on a PR or main:
+
+  git add packages/cli/src/lib/app/publishedVersions.ts
+  git commit -m "PUBLISHED_VERSION ${version}"
 
 Now the Gateway release for this version. Push HEAD to the public repository
 first if it isn't there yet, then tag it there:

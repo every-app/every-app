@@ -9,6 +9,9 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { execa } from "execa";
 import type { D1Database } from "@/lib/cf/d1";
+import { CfError } from "@/lib/cf/errors";
+import { EveryAppError } from "@/lib/errors";
+import { thisCommand } from "@/lib/output/command";
 
 const SETUP_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -146,16 +149,42 @@ export async function readSetupLink(
 
 const OWNER_WAIT_MS = 15 * 60 * 1000;
 const OWNER_POLL_MS = 5_000;
+/** How long reads may keep failing on the network before the wait gives up. */
+const NETWORK_GRACE_MS = 2 * 60 * 1000;
+
+/**
+ * Whether a failed read of the link's row is the network's (a Wi-Fi drop,
+ * a laptop that slept, a reset connection), which the wait rides out,
+ * rather than an answer from Cloudflare. cf reports Node's
+ * `fetch failed` as an unknown error ("fetch failed Envelope Error").
+ */
+function isNetworkDrop(error: unknown): boolean {
+  const message =
+    error instanceof CfError
+      ? error.kind === "unknown"
+        ? error.message
+        : ""
+      : error instanceof TypeError
+        ? error.message
+        : "";
+  return /fetch failed|Envelope Error|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|network/i.test(
+    message,
+  );
+}
 
 /**
  * Read the link's row every five seconds, for up to fifteen minutes, until
  * someone claims it or it is gone. Still `waiting` when time ran out.
+ * Reads that fail on the network are retried; once they have failed for two
+ * minutes in a row (or until the end of the wait), it stops with
+ * OWNER_WAIT_NETWORK, which says that setup again picks up at the owner step.
  */
 export async function waitForSetupLink({
   db,
   id,
   timeoutMs = OWNER_WAIT_MS,
   intervalMs = OWNER_POLL_MS,
+  networkGraceMs = NETWORK_GRACE_MS,
   sleep = setTimeout,
   now = Date.now,
 }: {
@@ -163,15 +192,42 @@ export async function waitForSetupLink({
   id: string;
   timeoutMs?: number;
   intervalMs?: number;
+  networkGraceMs?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }): Promise<SetupLinkState> {
   const deadline = now() + timeoutMs;
+  let failingSince: number | null = null;
   for (;;) {
-    const state = await readSetupLink(db, id, now());
-    if (state.status !== "waiting" || now() >= deadline) return state;
+    let state: SetupLinkState | null = null;
+    try {
+      state = await readSetupLink(db, id, now());
+      failingSince = null;
+    } catch (error) {
+      if (!isNetworkDrop(error)) throw error;
+      failingSince ??= now();
+      if (now() - failingSince >= networkGraceMs || now() >= deadline) {
+        throw ownerWaitNetwork(error);
+      }
+    }
+    if (state && (state.status !== "waiting" || now() >= deadline)) return state;
     await sleep(intervalMs);
   }
+}
+
+/** The network dropped for good while setup waited for the owner. */
+function ownerWaitNetwork(error: unknown): EveryAppError {
+  const cause = (error as Error).message.split("\n")[0] ?? "";
+  return new EveryAppError(
+    "OWNER_WAIT_NETWORK",
+    "The network dropped while waiting for the owner link\nThe Gateway is installed; only the owner account is left. If you created it in the browser meanwhile, setup finds it.",
+    {
+      retryable: true,
+      rerun: thisCommand(),
+      rerunNote: "once you're back online: it picks up at the owner step (with a new link if nobody used this one)",
+      data: { cause },
+    },
+  );
 }
 
 /**

@@ -1050,6 +1050,12 @@ Every `workspace …` command, and every `events …` command but `events types`
 
 Source: `packages/cli/src/lib/gateway/workspace.ts` (`openWorkspace` for `workspace`, `organizationFor` for `events`, `resolveOrganization` for both).
 
+### OWNER_WAIT_NETWORK
+
+`setup`, step `setup.owner`: while it waited for the owner link to be used, reading the Gateway's database failed on the network (a Wi-Fi drop, a laptop that slept; cf reports it as `fetch failed Envelope Error`) for two minutes in a row, or until the 15-minute wait ended. Shorter drops are ridden out. Message `The network dropped while waiting for the owner link` then `The Gateway is installed; only the owner account is left. If you created it in the browser meanwhile, setup finds it.`; `data.cause` is the first line of the network error. Retryable: `data.rerun` is the same `setup` command, `data.rerunNote` `once you're back online: it picks up at the owner step (with a new link if nobody used this one)`.
+
+Source: `packages/cli/src/lib/gateway/setup-link.ts` (`waitForSetupLink`, `isNetworkDrop`)
+
 ### PASSWORD_RESET_REQUIRES_ACTIVE_USER
 
 `workspace reset-link <email>`: the member is deactivated (`users.banned`, with `ban_expires` unset or still to come), and a password-reset link is only made for an active account, the Gateway's own rule. Headline: `<email> is deactivated, and a password-reset link is only for an active account`.
