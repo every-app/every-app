@@ -5,9 +5,16 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { BadgeCheck, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
-import { ConnectAiHint } from "@/client/components/ConnectAiHint";
+import {
+  ConnectAgentDocsLink,
+  ConnectAgentSteps,
+} from "@/client/components/ConnectAgent";
 import { ErrorState } from "@/client/components/ErrorState";
-import { Page, PageHeader } from "@/client/components/PageHeader";
+import {
+  Page,
+  PageHeader,
+  SectionHeader,
+} from "@/client/components/PageHeader";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { domainCoversRedirect } from "@/client/components/oauth/clientSite";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
@@ -16,6 +23,7 @@ import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import { authClient } from "@/client/auth-client";
+import { CONNECT_AGENT_COPY } from "@/client/lib/connectAgentCopy";
 import { queryClient } from "@/client/tanstack-db";
 import {
   listMyMcpConnections,
@@ -151,7 +159,7 @@ function connectionColumns({
 
 function ConnectionsPage() {
   const [revoking, setRevoking] = useState<Connection | null>(null);
-  // The empty state's tokens line: owners and admins are sent to
+  // The steps' tokens line: owners and admins are sent to
   // Manage workspace → Tokens, which refuses members.
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const connectionsQuery = useQuery({
@@ -188,6 +196,25 @@ function ConnectionsPage() {
     <Page>
       <PageHeader title="AI connections" />
 
+      {/* How to connect one, before and after the first: the same steps
+          as the sidebar's Connect your agent. */}
+      <section
+        aria-label={CONNECT_AGENT_COPY.title}
+        className="max-w-2xl space-y-3"
+      >
+        <SectionHeader
+          title={CONNECT_AGENT_COPY.title}
+          action={
+            <span className="text-xs text-muted-foreground">
+              <ConnectAgentDocsLink />
+            </span>
+          }
+        />
+        <div className="rounded-xl border border-border bg-card p-4">
+          <ConnectAgentSteps role={activeMemberRole?.role} />
+        </div>
+      </section>
+
       <DataTable
         table={table}
         isLoading={connectionsQuery.isLoading}
@@ -202,8 +229,7 @@ function ConnectionsPage() {
         }
         empty={{
           title: "No AI connections yet",
-          description: "Claude, ChatGPT and Claude Code connect here.",
-          action: <ConnectAiHint role={activeMemberRole?.role} />,
+          description: "Agents you connect show here, to revoke any time.",
         }}
       />
 
