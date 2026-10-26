@@ -363,7 +363,8 @@ until they are set, AI calls and integrations answer that they aren't set up
 Every request goes through the real perimeter (identity header, public-route
 policy, CSRF). Public routes are auth-optional; to call them anonymously send
 the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1
-(browser). Requests straight to the app's internal port get 401, by design.
+(browser). Requests straight to the app's internal port get 401 unless they
+carry an identity token in x-everyapp-identity: `pnpm everyapp dev token` prints one.
 
 An app that declares crons runs one on demand with
   curl -X POST http://<app-id>.localhost:8787/__everyapp/cron -d '<schedule>'
@@ -390,6 +391,65 @@ FLAGS
      [--skip-migrations/--no-skip-migrations]  Start without applying local database migrations
   -h  --help                                   Print help information and exit
       --                                       All subsequent inputs should be interpreted as arguments
+
+COMMANDS
+  token  Print a dev identity token for scripts that call the app's dev port
+
+Run pnpm everyapp dev <command> --help for its flags.
+```
+
+### `everyapp dev token`
+
+Print a dev identity token for scripts that call the app's dev port.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--role` | `owner`, `admin`, `member` | no | `owner` | The organization role the token carries |
+| `--user` | `<email>` | no |  | Who the token speaks for (default: the dev user for owner, <role>@everyapp.localhost otherwise) |
+| `--org` | `<id>` | no |  | The organization id (default dev-org, the dev user's) |
+| `--app` | `<id>` | no |  | The app id the token is for (default: everyapp.config.ts's id in this directory) |
+| `--ttl` | `<duration>` | no |  | How long it lasts: seconds, or 90s, 15m, 1h (default 1h, at most 24h) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+
+```text
+USAGE
+  pnpm everyapp dev token [--role owner|admin|member] [--user email] [--org id] [--app id] [--ttl duration] [--json]
+  pnpm everyapp dev token --help
+
+Prints an identity token the app accepts while it runs under `pnpm everyapp dev`, for
+scripts and curl that call the app's internal dev port directly as someone other
+than the gateway-lite's seeded user: a member, an admin, another organization.
+Send it as the x-everyapp-identity header. The gateway-lite itself replaces that
+header with its own, so use the internal port the ready block prints (App port).
+
+The token is minted as the gateway-lite mints its own: the SDK's well-known dev
+key and kid, the dev issuer https://gateway.dev.localhost, aud = the app id, a
+full session (channel web, scopes *). Only a development build of the app
+(EVERYAPP_DEV, set by everyAppWorker() under dev) accepts it; a deployed app
+refuses it whatever it says.
+
+Without --user, owner is the dev user (dev@everyapp.localhost, sub dev-user);
+admin and member are people of their own (<role>@everyapp.localhost, sub
+dev-<role>). With --user, the sub is dev-<email>. Agent tools are reached through
+<app-id>.localhost:8787/mcp, not with this token.
+
+Prints the token alone; --json prints a done event whose data has token,
+expiresAt, header, appId and user.
+
+Examples:
+  curl -H "x-everyapp-identity: $(pnpm everyapp dev token --role member)" http://127.0.0.1:<app port>/api/me
+  pnpm everyapp dev token --user ana@example.com --role admin --ttl 15m
+  pnpm everyapp dev token --app my-app --org other-org --json
+
+FLAGS
+     [--role]            The organization role the token carries                                                                                    [owner|admin|member, default = owner]
+     [--user]            Who the token speaks for (default: the dev user for owner, <role>@everyapp.localhost otherwise)
+     [--org]             The organization id (default dev-org, the dev user's)
+     [--app]             The app id the token is for (default: everyapp.config.ts's id in this directory)
+     [--ttl]             How long it lasts: seconds, or 90s, 15m, 1h (default 1h, at most 24h)
+     [--json/--no-json]  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+  -h  --help             Print help information and exit
+      --                 All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp deploy`

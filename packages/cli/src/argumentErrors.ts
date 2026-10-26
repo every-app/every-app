@@ -91,6 +91,8 @@ function valueNote(input: string): string {
 export function commandPath(
   routes: Routes,
   args: readonly string[],
+  /** A group that runs a command of its own (`dev`) as that command, as stricli does. */
+  { defaults = true }: { defaults?: boolean } = {},
 ): { path: string[]; target: RoutingTarget<CommandContext> } {
   const path: string[] = [];
   let target: RoutingTarget<CommandContext> = routes;
@@ -101,6 +103,7 @@ export function commandPath(
     path.push(arg);
     target = next;
   }
+  if (defaults && "getDefaultCommand" in target) target = target.getDefaultCommand() ?? target;
   return { path, target };
 }
 
@@ -161,7 +164,7 @@ export function unknownCommand(
   args: readonly string[],
   input: string,
 ): ArgumentProblem {
-  const { path, target } = commandPath(routes, args);
+  const { path, target } = commandPath(routes, args, { defaults: false });
   const names =
     "getAllEntries" in target
       ? target

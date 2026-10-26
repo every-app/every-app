@@ -203,6 +203,18 @@ describe("help", () => {
     expect(groupHelp(["create"])).toBeNull();
   });
 
+  it("runs dev typed bare, and shows its own flags and its token command under --help", async () => {
+    expect(groupHelp(["dev"])).toBeNull();
+    const help = groupHelp(["dev", "--help"])!;
+    expect(help).toContain(`${CLI} dev [--port value]`);
+    expect(help).toMatch(/\n {2}token {2}Print a dev identity token/);
+    expect(commandPaths()).toEqual(expect.arrayContaining(["dev", "dev token"]));
+    expect(commandPaths()).not.toContain("dev run");
+    expect((await parse("dev", "token", "--role", "guest")).problems[0]).toMatchObject({
+      code: "INVALID_VALUE",
+    });
+  });
+
   it("says under email what the Gateway's own sender is, and the command that sets it", () => {
     for (const args of [["email"], ["email", "--help"]]) {
       expect(groupHelp(args)).toContain(

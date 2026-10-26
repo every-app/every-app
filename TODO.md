@@ -1959,6 +1959,13 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 
 ## Platform shortcuts (2026-10-26)/9 create-release
 
+- **dev token** (`everyapp dev token`, replaces the inbox's `scripts/mint-dev-identity.mjs`). Defaults taken for Ben:
+  - [ ] `--role` defaults to `owner`. Without `--user`, an owner token is the seeded dev user (`dev-user`). An admin or member token is a separate person (`dev-admin`, `admin@everyapp.localhost`), as in the inbox script, so the seeded owner keeps its role in apps that mirror users. With `--user`, the sub is `dev-<email>`.
+  - [ ] `--ttl` defaults to 1 hour, and 24 hours is the most it allows. The gateway-lite's own tokens last 120 s, and the SDK puts no cap on lifetime.
+  - [ ] The token is a full web session: `chan: "web"`, `scopes: ["*"]`. It opens no tools, because `/__everyapp/tools/call` only takes the ToolBus's `tc` token. Tools stay on `<app>.localhost:8787/mcp`.
+  - [ ] Scripts send it straight to the app's internal port, which the ready block now prints as `App port`. The gateway-lite keeps replacing any inbound identity header, so the perimeter is unchanged.
+  - [ ] `dev` became a route group whose default command runs the app (stricli `defaultCommand`, a hidden `run` route). `everyapp dev --help` and the CLI reference still show it as `everyapp dev`. `everyapp dev run` also works.
+  - [ ] The patterns.md row pointing scripts at `dev token` waits for the flip, in its own PR.
 - **skills update** (`pnpm everyapp skills update`, `packages/cli/src/commands/skills`). Defaults taken for Ben:
   - [ ] Only the skills the CLI ships (`everyapp`, `build-every-app`) are touched; any other directory under `.agents/skills` or `.claude/skills` is left alone, so a skill the CLI stops shipping stays in old apps until someone deletes it (no retired-names list yet).
   - [ ] A copy that differs is replaced whole (local edits to a shipped skill are lost; the app's own skills go under other names, as the build-every-app skill now says). An identical copy is not rewritten. A `.claude/skills/<name>` symlink becomes a plain copy, as `create` makes.

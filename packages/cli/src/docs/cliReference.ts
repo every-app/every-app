@@ -106,19 +106,26 @@ export function commandDocs(): CommandDoc[] {
   const docs: CommandDoc[] = [];
   const visit = (target: Target, path: string[], hidden: boolean) => {
     if ("getAllEntries" in target) {
+      // A group's default command (`dev`'s hidden `run`) is documented as
+      // the group itself, the way it is typed, with the group's help.
+      const runs = target.getDefaultCommand();
+      if (runs) push(runs, path, hidden, plain(groupHelp([...path, "--help"]) ?? ""));
       for (const entry of target.getAllEntries()) {
+        if (entry.target === runs) continue;
         visit(entry.target, [...path, entry.name.original], hidden || entry.hidden);
       }
       return;
     }
-    const route = path.join(" ");
+    push(target, path, hidden, helpByRoute.get(path.join(" ")) ?? "");
+  };
+  const push = (target: Command<CommandContext>, path: string[], hidden: boolean, help: string) => {
     docs.push({
-      path: route,
+      path: path.join(" "),
       brief: target.brief,
       hidden,
       flags: flagDocs(target),
       positional: positionalDocs(target),
-      help: helpByRoute.get(route) ?? "",
+      help,
     });
   };
   visit(app.root as unknown as Target, [], false);

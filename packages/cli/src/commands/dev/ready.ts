@@ -75,6 +75,11 @@ export function readyBlock({
             value: `${DEV_USER.email} ${chalk.dim(`(${DEV_USER.orgRole} of ${DEV_USER.orgId})`)}`,
           },
         ]),
+    // The app's own dev server, for scripts that bring their own identity.
+    {
+      label: "App port",
+      value: `http://127.0.0.1:${appPort}  ${chalk.dim(`direct: send x-everyapp-identity: $(${CLI} dev token)`)}`,
+    },
     // Workflows run under cf dev too; the Vite plugin's local explorer, on
     // the app's own dev server, starts, inspects, pauses and restarts their
     // instances.

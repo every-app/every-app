@@ -2,6 +2,7 @@ import chalk from "chalk";
 import {
   buildApplication,
   buildRouteMap,
+  generateHelpTextForAllCommands,
   text_en,
   type Application,
   type Command,
@@ -22,7 +23,7 @@ import { createCommand } from "./commands/create/command";
 import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
-import { devCommand } from "./commands/dev/command";
+import { devRoutes } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
 import { eventsRoutes } from "./commands/events/command";
 import { installCommand } from "./commands/install/command";
@@ -45,7 +46,7 @@ import { CLI } from "./lib/output/command";
 const routes = buildRouteMap({
   routes: {
     create: createCommand,
-    dev: devCommand,
+    dev: devRoutes,
     deploy: deployCommand,
     release: releaseCommand,
     db: dbRoutes,
@@ -89,7 +90,10 @@ export function commandPaths(): string[] {
   const walk = (target: RouteMap<CommandContext> | Command<CommandContext>, prefix: string[]) => {
     if (prefix.length > 0) paths.push(prefix.join(" "));
     if (!("getAllEntries" in target)) return;
+    // A group's default command is the group itself (`dev`, not `dev run`).
+    const runs = target.getDefaultCommand();
     for (const entry of target.getAllEntries()) {
+      if (entry.target === runs) continue;
       for (const name of [entry.name.original, ...entry.aliases]) walk(entry.target, [...prefix, name]);
     }
   };
@@ -239,9 +243,14 @@ export function rootHelp(): string {
 export function groupHelp(args: readonly string[]): string | null {
   const rest = args.filter((arg) => arg !== "--help" && arg !== "-h");
   if (rest.length !== 1 || args.length - rest.length > 1) return null;
-  const { path, target } = commandPath(routeMap, rest);
+  const { path, target } = commandPath(routeMap, rest, { defaults: false });
   if (path.length !== 1 || !("getAllEntries" in target)) return null;
   const group = path[0]!;
+  // A group that is also a command (`dev`, whose hidden default runs the
+  // app) shows that command's help, then the group's other commands.
+  const runs = target.getDefaultCommand();
+  // Typed bare (`everyapp dev`), it runs.
+  if (runs) return rest.length < args.length ? defaultCommandHelp(group, runs, target) : null;
   // The examples and notes are keyed by the group's own name; an alias of a
   // group gets the same help, under the name typed.
   const canonical =
@@ -262,6 +271,34 @@ export function groupHelp(args: readonly string[]): string | null {
     ...(examples.length > 0
       ? ["", chalk.bold("EXAMPLES"), ...examples.map((example) => `  $ ${CLI} ${example}`)]
       : []),
+    "",
+    `Run ${chalk.bold(`${CLI} ${group} <command> --help`)} for its flags.`,
+    "",
+  ].join("\n");
+}
+
+/** `everyapp dev --help`: the default command's help as `everyapp dev`, and the group's commands. */
+function defaultCommandHelp(
+  group: string,
+  runs: Command<CommandContext>,
+  target: RouteMap<CommandContext>,
+): string {
+  const entries = target.getAllEntries().filter((entry) => !entry.hidden);
+  // stricli's help leaves hidden routes out, so the command's own help
+  // comes from an application whose root it is, named as it is typed.
+  const [[, help]] = generateHelpTextForAllCommands(
+    buildApplication(runs, {
+      name: `${CLI} ${group}`,
+      scanner: { allowArgumentEscapeSequence: true, caseStyle: "allow-kebab-for-camel" },
+      documentation: { caseStyle: "convert-camel-to-kebab", disableAnsiColor: true },
+    }),
+  ) as [[string, string]];
+  const width = Math.max(...entries.map((entry) => entry.name.original.length));
+  return [
+    help.trimEnd(),
+    "",
+    chalk.bold("COMMANDS"),
+    ...entries.map((entry) => `  ${entry.name.original.padEnd(width)}  ${entry.target.brief}`),
     "",
     `Run ${chalk.bold(`${CLI} ${group} <command> --help`)} for its flags.`,
     "",
