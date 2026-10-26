@@ -21,7 +21,7 @@ export const updateTodo = createServerFn({ method: "POST" })
   .validator((data: unknown) => todos.updateTodoInput.parse(data))
   .handler(async ({ data, context }) => {
     const todo = await todos.updateTodo(context.user.id, data);
-    emitIfCompleted({ env, request: getRequest(), waitUntil }, data, todo);
+    emitIfCompleted({ env, waitUntil }, data, todo);
     return todo;
   });
 

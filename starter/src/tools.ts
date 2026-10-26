@@ -28,10 +28,10 @@ export const tools = defineTools(
       risk: "write",
       idempotent: true,
       input: todos.updateTodoInput,
-      handler: async (input, { user, env, request, ctx }) => {
+      handler: async (input, { user, env, ctx }) => {
         const todo = await todos.updateTodo(user.id, input);
         emitIfCompleted(
-          { env, request, waitUntil: (promise) => ctx.waitUntil(promise) },
+          { env, waitUntil: (promise) => ctx.waitUntil(promise) },
           input,
           todo,
         );

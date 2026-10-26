@@ -47,7 +47,7 @@ export const getHome = createServerFn()
         ),
         tools: tools.names,
       },
-      members: await whoCanOpen(request),
+      members: await whoCanOpen(),
       // The Gateway's URL is the identity issuer the deploy sets. `everyapp dev`
       // mints with a placeholder issuer, so there it is the host one label up.
       launcher: env.EVERYAPP_DEV
@@ -58,12 +58,11 @@ export const getHome = createServerFn()
 
 // A capability call. The Gateway answers because everyapp.config.ts lists
 // `members`; a refusal is a state the page shows, never a crash. Only the
-// count leaves the server: the page shows no more.
-async function whoCanOpen(
-  request: Request,
-): Promise<number | { refused: string }> {
+// count leaves the server: the page shows no more. No `for`: the call is
+// the request's, which everyApp() keeps in the request context.
+async function whoCanOpen(): Promise<number | { refused: string }> {
   try {
-    const { members } = await listMembers({ env, for: request });
+    const { members } = await listMembers({ env });
     return members.length;
   } catch (error) {
     if (error instanceof GatewayRefusalError) return { refused: error.code };

@@ -2,8 +2,6 @@ import { emit } from "@every-app/sdk/server";
 
 interface EmitScope {
   env: object;
-  /** The inbound request: its user becomes the event's actor. */
-  request: Request;
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -12,10 +10,12 @@ interface EmitScope {
  * workspace, Events: `app.<your app id>.todo.completed`). The UI and the
  * update_todo tool both call it, so a todo an AI client ticks goes out too.
  * The id only: titles are each person's own. Under waitUntil, so an emit
- * that fails never fails the change.
+ * that fails never fails the change. No `for`: the event is the request's
+ * (its user becomes the actor), which everyApp() keeps in the request
+ * context for the UI's server function and the tool call alike.
  */
 export function emitIfCompleted(
-  { env, request, waitUntil }: EmitScope,
+  { env, waitUntil }: EmitScope,
   change: { completed?: boolean },
   todo: { id: string } | null,
 ): void {
@@ -23,7 +23,6 @@ export function emitIfCompleted(
   waitUntil(
     emit({
       env,
-      for: request,
       event: "todo.completed",
       data: { todoId: todo.id },
     }),

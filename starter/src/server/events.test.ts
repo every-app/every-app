@@ -7,11 +7,9 @@ const { emitIfCompleted } = await import("./events");
 
 describe("emitIfCompleted", () => {
   const env = { EVERYAPP_DEV: "1" };
-  const request = new Request("https://app.example/");
   let waited: Promise<unknown>[];
   const scope = () => ({
     env,
-    request,
     waitUntil: (promise: Promise<unknown>) => void waited.push(promise),
   });
 
@@ -25,7 +23,6 @@ describe("emitIfCompleted", () => {
 
     expect(emit).toHaveBeenCalledWith({
       env,
-      for: request,
       event: "todo.completed",
       data: { todoId: "t1" },
     });
