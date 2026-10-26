@@ -14,7 +14,7 @@
  *   2. deletes the vendored tarballs (vendor/everyapp-*.tgz,
  *      vendor/every-app-sdk-*.tgz) and vendor/README.md an older version of
  *      this script left, and vendor/ when that empties it;
- *   3. with --workflow, installs scripts/pack-for-app/release.yml as the
+ *   3. with --workflow, installs starter/.github/workflows/release.yml as the
  *      app's .github/workflows/release.yml (overwriting it): the GitHub
  *      Actions workflow whose one step, `everyapp release --publish`,
  *      packs the app and publishes everyapp-release.tar.gz on a GitHub
@@ -33,7 +33,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const WORKFLOW_TEMPLATE = path.join(ROOT, "scripts", "pack-for-app", "release.yml");
+/** The one template: what `everyapp create` gives a new app, too. */
+const WORKFLOW_TEMPLATE = path.join(ROOT, "starter", ".github", "workflows", "release.yml");
 const PACKAGES = [
   { name: "everyapp", section: "devDependencies" },
   { name: "@every-app/sdk", section: "dependencies" },

@@ -82,6 +82,7 @@ const STANDALONE_WORKSPACE = "allowBuilds:\n  esbuild: true\n  sharp: true\n  wo
  */
 const PACKED_GITIGNORE = "gitignore";
 
+
 /** Copy the starter, without local state, to `targetDir` as app `appId`. */
 export async function copyStarter({
   source,
@@ -97,6 +98,12 @@ export async function copyStarter({
   await copyDirectory(source.starterDir, targetDir, { exclude: LOCAL_ONLY });
   const packed = path.join(targetDir, PACKED_GITIGNORE);
   if (await fileExists(packed)) await fs.rename(packed, path.join(targetDir, ".gitignore"));
+  if (isInCheckout(targetDir, root)) {
+    // A workspace package of the checkout, not a repository: no Release
+    // workflow (an app anywhere else is its own repository, on npm ranges
+    // and a committed lockfile, which the workflow installs from).
+    await fs.rm(path.join(targetDir, ".github"), { recursive: true, force: true });
+  }
   if (!isInCheckout(targetDir, root)) {
     await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
   }

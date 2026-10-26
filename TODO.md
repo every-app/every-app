@@ -1995,7 +1995,7 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
   - [ ] Release notes say `everyapp install https://github.com/<repo>` (no `pnpm`, no "from your EveryApp checkout").
   - [ ] Two new codes: `GITHUB_RUN_MISSING` (not in Actions, or no token) and `RELEASE_PUBLISH_FAILED` (retryable on 5xx/429).
   - [ ] `--publish` ships in the next rc. The four app repositories pinned to `0.3.0-rc.3` keep their 118-line workflow until their pin moves; then `pnpm pack-for-app <app> --npm <rc> --workflow` swaps it in.
-  - [ ] `everyapp create` writing `.github/workflows/release.yml` into new apps is a separate after-flip PR (the starter is frozen).
+  - [ ] `everyapp create` writes `.github/workflows/release.yml` into every app made outside the checkout (`starter/.github/workflows/release.yml` is now the one template, `pack-for-app --workflow` copies it). An app created inside the checkout (`apps/<name>`, `workspace:*`) gets none: it's not a repository of its own. Every other app, on npm ranges with a committed lockfile (#768), gets it.
 - **pack-for-app** (npm only). Defaults taken for Ben:
   - [ ] The vendor mode is gone: `--npm <version>` is required, `--no-build` went with it. Nothing on main used it; Mission Control, its last user, moved to rc.3 (lane 10). An app that needs something unpublished waits for an rc.
   - [ ] `--npm` still deletes `vendor/everyapp-*.tgz`, `vendor/every-app-sdk-*.tgz` and `vendor/README.md` (and an emptied `vendor/`), so apps migrate off them.

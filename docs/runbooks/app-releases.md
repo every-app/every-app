@@ -50,7 +50,7 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    app's directory) deploys the checkout's Gateway instead.
 
 2. **A Release workflow.** `release.yml` in the app's `.github/workflows`
-   (`scripts/pack-for-app/release.yml`, about 30 lines) runs
+   (`starter/.github/workflows/release.yml`, about 30 lines) runs
    `pnpm install --frozen-lockfile`, then one step,
    `pnpm exec everyapp release --publish` with `GITHUB_TOKEN`, and keeps the
    tarball as a run artifact. The CLI decides the rest from GitHub's
@@ -88,7 +88,7 @@ pnpm pack-for-app ../open-crm --npm 0.3.0-rc.3 --workflow
 `scripts/pack-for-app.mjs` with `--npm <version>` points the app's
 `package.json` at that exact published version of both packages (each in
 the dependency section it already lives in), deletes any `vendor/` tarballs
-an older version of the script left (and `vendor/README.md`), copies `scripts/pack-for-app/release.yml` into the app's
+an older version of the script left (and `vendor/README.md`), copies `starter/.github/workflows/release.yml` into the app's
 `.github/workflows` as `release.yml` with `--workflow`, and runs
 `pnpm install` in the app so its lockfile records the pin. Commit
 `package.json`, `pnpm-lock.yaml` and the workflow (and `vendor/`'s removal).

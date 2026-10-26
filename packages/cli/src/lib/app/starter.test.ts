@@ -76,9 +76,9 @@ describe("the starter template", () => {
     expect(packageJson.name).toBe("my-app");
     expect(packageJson.dependencies["@every-app/sdk"]).toBe("workspace:*");
     expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).toContain(".dev.vars");
-    // No workflow at all: no release until the CLI is on npm (an Actions
-    // runner can't resolve workspace:*), and the security review runs
-    // locally (the everyapp skill's security-review.md), not in CI.
+    // No Release workflow: a workspace package of the checkout isn't a
+    // repository of its own.
+    expect(fs.existsSync(path.join(starterTemplateDir(root), ".github", "workflows", "release.yml"))).toBe(true);
     expect(fs.existsSync(path.join(target, ".github"))).toBe(false);
     expect(fs.existsSync(path.join(target, ".cloudflare"))).toBe(false);
     expect(fs.existsSync(path.join(target, ".dev.vars"))).toBe(false);
@@ -97,6 +97,8 @@ describe("the starter template", () => {
     expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
     // Its lockfile is committed: the template's .gitignore doesn't ignore it.
     expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).not.toMatch(/^pnpm-lock\.yaml$/m);
+    // Its own repository: the Release workflow comes with it.
+    expect(fs.existsSync(path.join(target, ".github", "workflows", "release.yml"))).toBe(true);
     // Its own pnpm-workspace.yaml allows the build scripts the checkout's
     // does, so `pnpm install` there doesn't warn about ignored builds.
     const workspace = fs.readFileSync(path.join(target, "pnpm-workspace.yaml"), "utf8");
@@ -133,6 +135,12 @@ describe("the starter template", () => {
     expect(fs.existsSync(path.join(target, ".gitignore"))).toBe(true);
     expect(fs.existsSync(path.join(target, "gitignore"))).toBe(false);
     expect(fs.existsSync(path.join(target, "pnpm-workspace.yaml"))).toBe(true);
+    // Its own repository on npm ranges: the Release workflow comes with it,
+    // and the lockfile its --frozen-lockfile install needs isn't ignored.
+    expect(fs.readFileSync(path.join(target, ".github", "workflows", "release.yml"), "utf8")).toContain(
+      "pnpm exec everyapp release --publish",
+    );
+    expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).not.toContain("pnpm-lock.yaml");
     expect(newAppDir({ appId: "my-app", cwd: "/somewhere", root: null })).toBe(path.join("/somewhere", "my-app"));
   });
 });

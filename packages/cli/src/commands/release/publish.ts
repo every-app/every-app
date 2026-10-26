@@ -3,7 +3,7 @@
  * release of the repository a GitHub Actions run builds, with the asset
  * `everyapp install https://github.com/<owner>/<repo>` downloads. What the
  * app repositories' Release workflow used to do in shell, so the workflow
- * is one step (scripts/pack-for-app/release.yml):
+ * is one step (starter/.github/workflows/release.yml):
  *
  *   pull_request        nothing is published (the build is the check)
  *   push to the default branch
@@ -53,7 +53,7 @@ export async function githubRun(vars: NodeJS.ProcessEnv = process.env): Promise<
       "GITHUB_RUN_MISSING",
       `--publish runs in GitHub Actions: ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} set`,
       {
-        fix: "run it from the app repository's Release workflow (scripts/pack-for-app/release.yml in the EveryApp repository), or attach the tarball to a GitHub release by hand",
+        fix: "run it from the app repository's Release workflow (starter/.github/workflows/release.yml in the EveryApp repository), or attach the tarball to a GitHub release by hand",
         data: { missing },
       },
     );

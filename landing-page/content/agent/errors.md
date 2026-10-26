@@ -703,7 +703,7 @@ Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gatewa
 
 ### GITHUB_RUN_MISSING
 
-`everyapp release --publish` (or `--dry-run`) outside a GitHub Actions run: `--publish runs in GitHub Actions: <GITHUB_REPOSITORY, GITHUB_SHA, GITHUB_EVENT_NAME> isn't|aren't set`, raised before anything is built; `data.missing` lists them, `data.fix` `run it from the app repository's Release workflow (scripts/pack-for-app/release.yml in the EveryApp repository), or attach the tarball to a GitHub release by hand`. And when a release is to be created with no token: `--publish needs a token to create the release: GITHUB_TOKEN isn't set`, `data.missing` `["GITHUB_TOKEN"]`, `data.fix` `pass GITHUB_TOKEN: ${{ github.token }} to the step, with permissions: contents: write on the job`.
+`everyapp release --publish` (or `--dry-run`) outside a GitHub Actions run: `--publish runs in GitHub Actions: <GITHUB_REPOSITORY, GITHUB_SHA, GITHUB_EVENT_NAME> isn't|aren't set`, raised before anything is built; `data.missing` lists them, `data.fix` `run it from the app repository's Release workflow (starter/.github/workflows/release.yml in the EveryApp repository), or attach the tarball to a GitHub release by hand`. And when a release is to be created with no token: `--publish needs a token to create the release: GITHUB_TOKEN isn't set`, `data.missing` `["GITHUB_TOKEN"]`, `data.fix` `pass GITHUB_TOKEN: ${{ github.token }} to the step, with permissions: contents: write on the job`.
 
 **Fix:** as `data.fix`; not retryable.
 
