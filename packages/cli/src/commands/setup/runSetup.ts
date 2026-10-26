@@ -121,6 +121,8 @@ import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
   domain?: string;
+  /** The Gateway release to deploy: a GitHub repository or release URL, a tarball's URL, or a file (lib/gateway/source.ts). */
+  release?: string;
   "account-id"?: string;
   "force-dns"?: boolean;
   /** Put a Gateway older than the live one back on purpose (hidden). */

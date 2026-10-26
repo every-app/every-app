@@ -173,7 +173,7 @@ describe("help", () => {
   it("lists the commands by what the person is doing, as they run everyapp", () => {
     const help = rootHelp();
     expect(help).toMatch(/\nBUILD AN APP\n  create {2,}Create .*\n  dev /);
-    expect(help).toMatch(/\nRUN A GATEWAY\n  login {2,}Log in .*\n  setup {2,}Install or repair the Gateway\n  update {2,}Update the Gateway to this checkout \(after git pull\)\n  install /);
+    expect(help).toMatch(/\nRUN A GATEWAY\n  login {2,}Log in .*\n  setup {2,}Install or repair the Gateway\n  update {2,}Update the Gateway to a newer release\n  install /);
     expect(help).toMatch(
       /\n  email {2,}.*\n  events {2,}Send the Gateway's events to Slack, Zapier, n8n or your own endpoint \(signed\), or by email\n  teardown /,
     );

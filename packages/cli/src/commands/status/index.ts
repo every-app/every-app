@@ -318,6 +318,8 @@ export async function reportStatus({
       release: {
         version: install.releaseVersion,
         sha256: install.releaseSha256,
+        origin: install.releaseOrigin,
+        gitSha: install.releaseGitSha,
       },
       versionId: serving?.versionId ?? null,
       recordedVersionId: install.liveVersionId,

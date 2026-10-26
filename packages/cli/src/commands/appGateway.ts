@@ -8,7 +8,7 @@ import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { readInstall, type InstallRecord } from "@/lib/gateway/install";
-import { checkoutGateway } from "@/lib/gateway/checkoutRelease";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { register, type Deployer } from "@/lib/gateway/registry";
 import type { CandidateRelease, GatewayRelease } from "@/lib/gateway/release";
@@ -19,8 +19,8 @@ import { LiveWaitVerb, waitForLive, type LiveWaitSeams } from "./deploy/steps/wa
 
 /**
  * The rebind's seams (tests): how long it waits for the gateway's lease,
- * how it sleeps, and the release it deploys (default: the checkout's build,
- * lib/gateway/checkoutRelease.ts).
+ * how it sleeps, and the release it deploys (default: lib/gateway/source.ts,
+ * the checkout's build or the published release).
  */
 export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
@@ -40,7 +40,7 @@ export function gatewayFor(
   out: EventSink,
   verbose?: boolean,
 ): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
-  const gateway = checkoutGateway({ out, verbose });
+  const gateway = gatewayReleaseSource({ out, verbose, cliVersion });
   return {
     openRelease: seams?.openRelease ?? gateway.open,
     source: seams?.source ?? gateway.describe,

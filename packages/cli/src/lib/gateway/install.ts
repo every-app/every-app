@@ -16,7 +16,7 @@ import type { D1Database } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { textOrNull } from "@/lib/output/text";
-import type { ReleaseOrder } from "./release";
+import { parseReleaseOrigin, type ReleaseOrder, type ReleaseOrigin } from "./release";
 import { DEPLOYMENT_MODES, type DeploymentMode } from "./secretsFile";
 
 const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
@@ -41,6 +41,13 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   deployment_mode TEXT
 )`;
 
+/**
+ * Columns added after the table's first shape, which CREATE TABLE IF NOT
+ * EXISTS can't add: SQLite has no ADD COLUMN IF NOT EXISTS, so a write
+ * looks them up first.
+ */
+const ADDED_COLUMNS = ["release_origin", "release_git_sha"] as const;
+
 export interface InstallRecord {
   accountId: string;
   zoneId: string;
@@ -61,6 +68,16 @@ export interface InstallRecord {
    * (lib/gateway/checkoutRelease.ts); null when it wasn't built from one.
    */
   sourceTreeSha256: string | null;
+  /**
+   * Where the live release came from (lib/gateway/release.ts
+   * `ReleaseOrigin`): a checkout, a GitHub release by tag, a URL or a
+   * file. The rebind an app's deploy runs takes the same release again
+   * from it (lib/gateway/liveRelease.ts). Null for a row written before
+   * origins were recorded.
+   */
+  releaseOrigin: ReleaseOrigin | null;
+  /** The commit the live release was built from, as its release.json says; null before it was recorded. */
+  releaseGitSha: string | null;
   liveVersionId: string | null;
   liveDomains: string[];
   liveAppWorkers: string[];
@@ -132,6 +149,8 @@ export async function readInstall(
       committedAt: Number(row["release_committed_at"]),
     },
     sourceTreeSha256: textOrNull(row["source_tree_sha256"]),
+    releaseOrigin: parseReleaseOrigin(row["release_origin"]),
+    releaseGitSha: textOrNull(row["release_git_sha"]),
     liveVersionId: textOrNull(row["live_version_id"]),
     liveDomains: list(row["live_domains"]),
     liveAppWorkers: list(row["live_app_workers"]),
@@ -165,15 +184,28 @@ export async function writeInstall(
     record.updatedBy,
     record.jwtPublicKey,
     record.deploymentMode,
+    record.releaseOrigin ? JSON.stringify(record.releaseOrigin) : null,
+    record.releaseGitSha,
   ];
-  await db.run([
+  const [, columns = []] = await db.run([
     { sql: CREATE_INSTALL_TABLE },
+    { sql: "PRAGMA table_info(_everyapp_install)" },
+  ]);
+  const have = new Set(columns.map((column) => String(column["name"])));
+  const missing = ADDED_COLUMNS.filter((column) => !have.has(column));
+  if (missing.length > 0) {
+    await db.run(
+      missing.map((column) => ({ sql: `ALTER TABLE _everyapp_install ADD COLUMN ${column} TEXT` })),
+    );
+  }
+  await db.run([
     {
       sql: `INSERT INTO _everyapp_install (id, account_id, zone_id, zone_name, gateway_host,
   app_base_domain, oauth_kv_id, release_version, release_sha256, release_schema,
   release_committed_at, source_tree_sha256, live_version_id, live_domains,
-  live_app_workers, updated_at, updated_by, jwt_public_key, deployment_mode)
-VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+  live_app_workers, updated_at, updated_by, jwt_public_key, deployment_mode,
+  release_origin, release_git_sha)
+VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
 ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   zone_id = excluded.zone_id, zone_name = excluded.zone_name,
   gateway_host = excluded.gateway_host, app_base_domain = excluded.app_base_domain,
@@ -185,7 +217,8 @@ ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   live_app_workers = excluded.live_app_workers, updated_at = excluded.updated_at,
   updated_by = excluded.updated_by,
   jwt_public_key = COALESCE(excluded.jwt_public_key, _everyapp_install.jwt_public_key),
-  deployment_mode = COALESCE(excluded.deployment_mode, _everyapp_install.deployment_mode)`,
+  deployment_mode = COALESCE(excluded.deployment_mode, _everyapp_install.deployment_mode),
+  release_origin = excluded.release_origin, release_git_sha = excluded.release_git_sha`,
       params: values,
     },
   ]);

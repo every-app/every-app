@@ -10,7 +10,7 @@ never `npx everyapp`.
 
 A Gateway deploy (`everyapp setup`, `everyapp update`, and the rebind an
 app's `deploy` or `delete` runs) takes the Gateway from one of three
-places, in this order (the CLI's Gateway source module, beside `packages/cli/src/lib/gateway/release.ts`):
+places, in this order (`packages/cli/src/lib/gateway/source.ts`):
 
 1. `--release <url|path>` on `setup` or `update`: that release. A
    github.com repository URL means its latest release

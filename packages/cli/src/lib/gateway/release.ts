@@ -15,6 +15,17 @@ import { EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
+/**
+ * Where published Gateway releases are: a GitHub Release of this
+ * repository per CLI version, tagged `gateway-v<version>` with a
+ * {@link RELEASE_TARBALL} asset (.github/workflows/gateway-release.yml).
+ */
+export const GATEWAY_RELEASE_REPO = "https://github.com/every-app/every-app";
+
+/** The tag of the Gateway release published with everyapp `cliVersion`. */
+export function gatewayReleaseTag(cliVersion: string): string {
+  return `gateway-v${cliVersion.replace(/^v/, "")}`;
+}
 const SUPPORTED_BUILD_OUTPUT = "v0";
 /** What a release deploys: the Gateway, or an app (lib/app/release.ts). */
 type ReleaseKind = "gateway" | "app";
@@ -116,6 +127,24 @@ export interface CheckoutCommit {
 export function releaseName({ version, commit }: Pick<CandidateRelease, "version" | "commit">): string {
   if (!commit) return version;
   return `commit ${commit.hash}${commit.uncommittedChanges ? " with uncommitted changes" : ""}`;
+}
+
+const ReleaseOriginSchema: z.ZodType<ReleaseOrigin> = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("checkout") }),
+  z.object({ kind: z.literal("github"), repo: z.string(), tag: z.string() }),
+  z.object({ kind: z.literal("url"), url: z.string() }),
+  z.object({ kind: z.literal("file"), path: z.string() }),
+]);
+
+/** An origin as the install row keeps it (JSON); null for anything else. */
+export function parseReleaseOrigin(json: unknown): ReleaseOrigin | null {
+  if (typeof json !== "string") return null;
+  try {
+    const parsed = ReleaseOriginSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** "this checkout", "every-app/every-app release gateway-v0.3.0", a URL or a path. */

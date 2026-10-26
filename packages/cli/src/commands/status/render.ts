@@ -12,6 +12,7 @@ import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import { describeMcp, listPublicRoutes } from "@/lib/app/publicRoutes";
 import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
+import { describeOrigin } from "@/lib/gateway/release";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
 import type { GatewayOwner } from "@/lib/gateway/setup-link";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
@@ -136,17 +137,43 @@ export function renderStatus({
   ].join("\n");
 }
 
-/** The Release row: the version, and how it stands against the Worker and this checkout. */
+/**
+ * The Release row: the version, where it came from (the install row's
+ * origin: a published release by tag, a checkout by commit, a URL or a
+ * file), and how it stands against the Worker and this checkout.
+ */
 function release(install: InstallRecord, servingRecorded: boolean, checkout: CheckoutState): string {
   const version = install.releaseVersion;
+  const from = releaseFrom(install);
+  const named = from ? `${version}${chalk.dim(` · ${from}`)}` : version;
+  // Something off: the version and the problem, nothing between them.
   const flagged = (note: string) => `${version} ${chalk.dim("·")} ${chalk.yellow(note)}`;
   if (install.liveVersionId === null) return chalk.yellow(`${version}, never uploaded`);
   if (!servingRecorded) return flagged("changed outside everyapp");
   if (checkout.behind) return flagged("this checkout is behind");
   // An update to take or leave, not something off: dim, as the block under the report says.
-  if (checkout.upToDate === false) return `${version}${chalk.dim(" · this checkout has newer Gateway changes")}`;
+  if (checkout.upToDate === false) return `${named}${chalk.dim(" · this checkout has newer Gateway changes")}`;
+  // Built from this very checkout: where it came from goes without saying.
   if (checkout.upToDate === true) return `${version}${chalk.dim(" · matches this checkout")}`;
-  return version;
+  return named;
+}
+
+/**
+ * "from every-app/every-app release gateway-v0.3.0", "from a checkout at
+ * 302315f5", "from <url>", "from <file>"; null for a row written before
+ * origins were recorded.
+ */
+function releaseFrom(
+  install: Pick<InstallRecord, "releaseOrigin" | "releaseGitSha">,
+): string | null {
+  const origin = install.releaseOrigin;
+  if (!origin) return null;
+  if (origin.kind === "checkout") {
+    const sha = install.releaseGitSha?.replace(/-dirty$/, "");
+    const dirty = install.releaseGitSha?.endsWith("-dirty") ? " with uncommitted changes" : "";
+    return sha && sha !== "unknown" ? `from a checkout at ${sha.slice(0, 8)}${dirty}` : "from a checkout";
+  }
+  return `from ${describeOrigin(origin)}`;
 }
 
 /**

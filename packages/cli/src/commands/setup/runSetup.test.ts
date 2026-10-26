@@ -9,7 +9,8 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readInstall } from "@/lib/gateway/install";
 import { markDeployed, register } from "@/lib/gateway/registry";
-import { openRelease } from "@/lib/gateway/release";
+import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -17,6 +18,7 @@ import { CancelledError } from "@/lib/errors";
 import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
+import { fakeGithubReleases } from "@/test/fakeGithub";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
@@ -552,6 +554,106 @@ describe("everyapp setup", () => {
     const older = await releaseSource(tarball);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
       releaseOrder: older.order,
+    });
+  });
+
+  describe("from a published release, with no checkout", () => {
+    /** The events a Gateway source emits, among the run's. */
+    const sink = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
+    const fromSource = (source: { open: SetupDeps["openRelease"]; describe: SetupDeps["source"] }) => ({
+      openRelease: source.open,
+      source: source.describe,
+    });
+    const published = (fetch: typeof globalThis.fetch, release?: string) =>
+      fromSource(gatewayReleaseSource({ out: sink(), cliVersion: "0.3.0", checkoutRoot: () => null, fetch, release }));
+
+    it("installs this version's release of every-app/every-app, records where it came from, and is up to date next time", async () => {
+      const github = fakeGithubReleases({
+        "every-app/every-app": [{ tag: "gateway-v0.3.0", assets: { [RELEASE_TARBALL]: tarball } }],
+      });
+
+      const { result, exitCode } = await setup({ domain: GW }, published(github.fetch));
+
+      expect(exitCode).toBe(0);
+      expect(result).toMatchObject({ gateway: "installed", release: "0.2.0" });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          step: "gateway.release",
+          message: "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.3.0",
+        }),
+      );
+      // No checkout: no tree hash, ordered by the release's release.json; the origin kept for rebinds.
+      await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+        sourceTreeSha256: null,
+        releaseOrder: { committedAt: Date.parse("2026-10-12T00:00:00.000Z") },
+        releaseOrigin: { kind: "github", repo: "every-app/every-app", tag: "gateway-v0.3.0" },
+        releaseGitSha: "test",
+      });
+
+      // Run again, the same release is up to date, by its SHA-256.
+      events = [];
+      const again = await setup({}, published(github.fetch));
+      expect(again.exitCode).toBe(0);
+      expect(again.result).toMatchObject({ gateway: "up-to-date" });
+    });
+
+    it("installs --release <file>", async () => {
+      const { result, exitCode } = await setup(
+        { domain: GW, release: tarball },
+        fromSource(gatewayReleaseSource({ out: sink(), cliVersion: "0.3.0", release: tarball })),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(result).toMatchObject({ gateway: "installed", release: "0.2.0" });
+      expect(events).toContainEqual(
+        expect.objectContaining({ step: "gateway.release", message: `Using Gateway 0.2.0 from ${tarball}` }),
+      );
+      await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+        releaseOrigin: { kind: "file", path: tarball },
+      });
+      expect(account.deploys).toHaveLength(1);
+    });
+
+    it("refuses a release that needs a newer everyapp, before anything is deployed", async () => {
+      const needsNewer = await buildGatewayRelease({ version: "0.4.0", minCli: "0.4.0" });
+
+      const { exitCode } = await setup({ domain: GW, release: needsNewer }, published(fetch, needsNewer));
+
+      expect(exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        code: "CLI_TOO_OLD",
+        message: "Gateway 0.4.0 needs everyapp 0.4.0 or newer (this is 0.3.0)",
+      });
+      // Before anything is asked or created.
+      expect(account.deploys).toHaveLength(0);
+      expect(account.databases.size).toBe(0);
+    });
+
+    it("refuses a release older than the live Gateway, by its release.json, whichever source each came from", async () => {
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+      await setup({ domain: GW, release: newer }, published(fetch, newer));
+      const deploys = account.deploys.length;
+      events = [];
+
+      // The published release for this CLI is the older build.
+      const github = fakeGithubReleases({
+        "every-app/every-app": [{ tag: "gateway-v0.3.0", assets: { [RELEASE_TARBALL]: tarball } }],
+      });
+      const { exitCode } = await setup({}, published(github.fetch));
+
+      expect(exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        code: "DOWNGRADE_REFUSED",
+        message: "The Gateway from every-app/every-app release gateway-v0.3.0 (0.2.0 from Oct 12) is older than the live one (from Oct 13)",
+        data: {
+          fix: "pass --release a newer Gateway release",
+          rerun: expect.stringContaining("--allow-downgrade"),
+          authorize: true,
+        },
+      });
+      expect(account.deploys).toHaveLength(deploys);
     });
   });
 

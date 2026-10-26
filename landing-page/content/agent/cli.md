@@ -46,7 +46,7 @@ BUILD AN APP
 RUN A GATEWAY
   login      Log in to Cloudflare
   setup      Install or repair the Gateway
-  update     Update the Gateway to this checkout (after git pull)
+  update     Update the Gateway to a newer release
   install    Install an app someone published, from GitHub or a release file
   configure  Set up an app: asks for each setting it needs, required ones first, then the optional ones
   status     Show the Gateway, its apps and anything to fix
@@ -685,6 +685,7 @@ Install or repair the Gateway.
 | --- | --- | --- | --- | --- |
 | `--domain` | `<value>` | no |  | Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one) |
+| `--release` | `<value>` | no |  | The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version) |
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
 | `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
@@ -695,13 +696,13 @@ Install or repair the Gateway.
 
 ```text
 USAGE
-  pnpm everyapp setup [--domain value] [--account-id value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
+  pnpm everyapp setup [--domain value] [--account-id value] [--release value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
   pnpm everyapp setup --help
 
 One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its
 owner, and the one to run when something is off. Run it again any time: it picks up where it
-stopped, and does nothing once everything is there. After a git pull, pnpm everyapp update takes
-the newer Gateway from this checkout (setup does that too, on its way).
+stopped, and does nothing once everything is there. pnpm everyapp update takes a newer Gateway
+later (setup does that too, on its way).
 
 A fresh install takes 5 to 20 minutes, most of it waiting for you at the owner link: give it a
 long timeout, or run it in the background and watch its output.
@@ -710,8 +711,11 @@ long timeout, or run it in the background and watch its output.
      the login's accounts; with none, picks the account to install it in
   2. Picks where the Gateway lives (--domain, or asked): any hostname under one of the
      account's domains, apps.example.com; apps get one each below it, todo.apps.example.com
-  3. Installs the Gateway from this checkout (apps/every-app-gateway), or repairs it, and
-     waits for its certificate
+  3. Installs the Gateway, or repairs it, and waits for its certificate. Where the Gateway
+     comes from: --release (a GitHub repository or release URL, a tarball's URL, or a
+     downloaded every-app-gateway-release.tar.gz); otherwise this checkout's build when
+     everyapp runs from one; otherwise the published release for this everyapp version
+     (https://github.com/every-app/every-app, gateway-v<version>)
   4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;
      in CI there is no link, and the run ends with a warning to run setup at a terminal
   5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default;
@@ -727,6 +731,7 @@ More: https://everyapp.com/docs/gateway
 FLAGS
      [--domain]                    Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)
      [--account-id]                The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
+     [--release]                   The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
      [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
      [--no-access/--no-no-access]  Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later
   -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
@@ -738,11 +743,12 @@ FLAGS
 
 ### `everyapp update`
 
-Update the Gateway to this checkout (after git pull).
+Update the Gateway to a newer release.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--release` | `<value>` | no |  | The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version) |
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
 | `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
@@ -752,26 +758,30 @@ Update the Gateway to this checkout (after git pull).
 
 ```text
 USAGE
-  pnpm everyapp update [--account-id value] [--force-dns] [--yes] [--json] [--verbose]
+  pnpm everyapp update [--account-id value] [--release value] [--force-dns] [--yes] [--json] [--verbose]
   pnpm everyapp update --help
 
-Deploys the Gateway built from this checkout (apps/every-app-gateway) over the one your
-Cloudflare login finds, where it is, keeping its data, users and apps. It never installs a
-Gateway: with none, it stops and says to run pnpm everyapp setup.
+Deploys a newer Gateway over the one your Cloudflare login finds, where it is, keeping its
+data, users and apps. It never installs a Gateway: with none, it stops and says to run
+pnpm everyapp setup. The Gateway comes from --release (a GitHub repository or release URL, a
+tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise this checkout's
+build when everyapp runs from one; otherwise the published release for this everyapp
+version (https://github.com/every-app/every-app, gateway-v<version>).
 
   1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in
      the login's accounts (--account-id when there is one in more than one)
-  2. Upgrades it (migrations first, with a restore point). When it runs this checkout's
-     Gateway already, binds and publishes every registered app if the live Gateway doesn't,
-     and otherwise says it is up to date. A Gateway newer than this checkout is refused
-     (git pull)
+  2. Upgrades it (migrations first, with a restore point). When it runs that Gateway
+     already, binds and publishes every registered app if the live Gateway doesn't, and
+     otherwise says it is up to date. A live Gateway newer than this one is refused (in a
+     checkout: git pull)
 
-The release is named by its version when this checkout's Gateway is that version's release
-(the gateway-v<version> tag), and by the checkout's commit otherwise.
+A checkout's Gateway is named by its version when it is that version's release (the
+gateway-v<version> tag), and by the checkout's commit otherwise.
 With --json, each step is an NDJSON event.
 
 FLAGS
      [--account-id]                The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--release]                   The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
      [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
   -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
      [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)

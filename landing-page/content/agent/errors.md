@@ -236,11 +236,11 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkCapabilitiesOffer
 
 ### CHECKOUT_MISSING
 
-everyapp isn't running from a checkout of the EveryApp repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout) and by every Gateway deploy (`checkoutGateway` in `lib/gateway/checkoutRelease.ts` builds the Gateway's release from the checkout: `setup`, `update`, and the rebind `deploy` and `delete` run). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the EveryApp repository`, then `This copy is installed in <package dir>, outside any checkout.`
+everyapp isn't running from a checkout of the EveryApp repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout). Gateway deploys no longer raise it: outside a checkout, `setup`, `update` and the rebind `deploy` and `delete` run take the published Gateway release for this everyapp version (`gatewayReleaseSource` in `lib/gateway/source.ts`; `--release` names another). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the EveryApp repository`, then `This copy is installed in <package dir>, outside any checkout.`
 
 **Fix:** `fix`: `in your checkout, run pnpm everyapp <the same arguments>`. No rerun; not retryable.
 
-Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`, `findCheckoutRoot`), called from `packages/cli/src/commands/create/index.ts`, `packages/cli/src/lib/gateway/checkoutRelease.ts`, `packages/cli/src/commands/status/index.ts`.
+Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`, `findCheckoutRoot`), called from `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/status/index.ts`.
 
 ### CLI_TOO_OLD
 
@@ -1207,6 +1207,8 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/a
 ### RELEASE_NOT_FOUND
 
 The release `install <source>` names isn't there. A source that is neither a URL nor an existing file: `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `install` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
+
+For the Gateway (`setup`, `update`, and the rebind an app's `deploy` or `delete` runs, outside a checkout and without `--release`): `https://github.com/every-app/every-app has no Gateway release everyapp <version> can install`, then `Neither gateway-v<version> nor a latest release with every-app-gateway-release.tar.gz can be downloaded without signing in.`; `fix`: `pass --release <url|file> (a Gateway release you have), or run everyapp from a checkout (pnpm everyapp), which builds the Gateway`; `data.repo`, `data.tag`, `data.cliVersion`. With `--release <path>` that isn't there: `<path> doesn't exist` then `--release takes a GitHub repository, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz. Check the path, or leave out --release for the published release.` Source: `packages/cli/src/lib/gateway/source.ts`.
 
 **Fix:** none offered beyond the message; not retryable.
 
@@ -2458,6 +2460,12 @@ Source: `packages/cli/src/commands/events/add.ts`
 `setup`: the Gateway's domain is a zone's apex, so its sign-in cookie covers every subdomain; `data.suggestedDomain`: `apps.<zone>`.
 
 Source: `packages/cli/src/commands/setup/deployGateway.ts`
+
+### GATEWAY_RELEASE_LATEST
+
+`setup` or `update` outside a checkout, step `gateway.release`: `https://github.com/every-app/every-app` has no release tagged `gateway-v<this everyapp's version>` yet, so the newest stable Gateway release is taken instead. Message `There is no Gateway release for everyapp <version> yet (<repo> has no <tag>)` then `Using the latest stable Gateway release instead. To take another: --release <url|file>.`; `data.cliVersion`, `data.tag`, `data.repo`.
+
+Source: `packages/cli/src/lib/gateway/source.ts`
 
 ### GATEWAY_UNREACHABLE
 

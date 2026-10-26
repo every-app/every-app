@@ -677,6 +677,8 @@ function installRecord(
     releaseSha256: options.release.manifest.sha256,
     releaseOrder: options.release.source.order,
     sourceTreeSha256: options.release.source.treeSha256,
+    releaseOrigin: options.release.source.origin,
+    releaseGitSha: options.release.manifest.gitSha,
     ...live,
     updatedAt: Date.now(),
     updatedBy: `everyapp ${options.cliVersion} on ${os.hostname()}`,

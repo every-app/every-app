@@ -757,6 +757,31 @@ describe("everyapp status", () => {
     );
   });
 
+  it("names where the live release came from, for a CLI with no checkout", async () => {
+    // Installed from the published release: the install row keeps the tag and the commit.
+    account.database("every-app-gateway").sqlite.exec(
+      `UPDATE _everyapp_install SET release_origin = '{"kind":"github","repo":"every-app/every-app","tag":"gateway-v0.3.0-rc.4"}', release_git_sha = '302315f511eb18f26c34e7db2d07ecc305d903b1'`,
+    );
+    checkout = null;
+    const done = await status();
+    expect(done["data"]["release"]).toMatchObject({
+      origin: { kind: "github", repo: "every-app/every-app", tag: "gateway-v0.3.0-rc.4" },
+      gitSha: "302315f511eb18f26c34e7db2d07ecc305d903b1",
+    });
+    expect(done["data"]["checkout"]).toBeNull();
+    expect(await shown()).toMatch(
+      /\nRelease +0\.2\.0 · from every-app\/every-app release gateway-v0\.3\.0-rc\.4\n/,
+    );
+
+    // Built from a checkout: its commit.
+    account.database("every-app-gateway").sqlite.exec(
+      `UPDATE _everyapp_install SET release_origin = '{"kind":"checkout"}', release_git_sha = '302315f511eb18f26c34e7db2d07ecc305d903b1-dirty'`,
+    );
+    expect(await shown()).toMatch(
+      /\nRelease +0\.2\.0 · from a checkout at 302315f5 with uncommitted changes\n/,
+    );
+  });
+
   it("says whether the live Gateway is the one this checkout builds, and what to run when not", async () => {
     // The live release was built from sources that hash to "tree-1".
     account.database("every-app-gateway").sqlite.exec(
@@ -796,7 +821,7 @@ describe("everyapp status", () => {
       note: "updates it now",
     });
     const updatable = await shown();
-    expect(updatable).toMatch(/\nRelease +0\.2\.0 · this checkout has newer Gateway changes\n/);
+    expect(updatable).toMatch(/\nRelease +0\.2\.0 · from .*every-app-gateway-release\.tar\.gz · this checkout has newer Gateway changes\n/);
     expect(updatable).toContain(
       [
         "i Your every-app folder has a newer Gateway than the one online",

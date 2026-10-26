@@ -44,6 +44,8 @@ async function account(
       appBaseDomain: gatewayHost,
       oauthKvId: "kv",
       sourceTreeSha256: null,
+      releaseOrigin: null,
+      releaseGitSha: null,
       releaseVersion: "0.2.0",
       releaseSha256: "a".repeat(64),
       releaseOrder: { schema: 1, committedAt: 1 },

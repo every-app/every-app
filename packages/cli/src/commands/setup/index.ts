@@ -1,12 +1,13 @@
 import chalk from "chalk";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
-import { checkoutGateway } from "@/lib/gateway/checkoutRelease";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts } from "@/lib/output/table";
 import { duration } from "@/lib/output/time";
+import { version as cliVersion } from "../../../package.json";
 import {
   runSetup,
   setupDeps,
@@ -27,7 +28,12 @@ export async function runGatewayCommand(
 ): Promise<void> {
   const began = Date.now();
   await runCommand(flags, async (out) => {
-    const gateway = checkoutGateway({ out, verbose: flags.verbose });
+    const gateway = gatewayReleaseSource({
+      release: flags.release,
+      out,
+      verbose: flags.verbose,
+      cliVersion,
+    });
     const result = await run(
       out,
       setupDeps({

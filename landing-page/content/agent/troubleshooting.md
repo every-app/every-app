@@ -182,7 +182,7 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 ### npx everyapp
 
 - Symptom: a person ran `npx everyapp …` and gets commands that don't exist, a different `--version`, or [`CHECKOUT_MISSING`](/docs/agent/errors#checkout_missing).
-- Cause: npx fetches whatever `everyapp` is on npm, which is not what this repository runs (publishing is paused; `packages/cli/src/lib/checkout.ts` and `.github/RELEASE.md`), and that copy isn't inside a checkout.
+- Cause: npx fetches whatever `everyapp` is on npm, which may be older than what this repository runs (`.github/RELEASE.md` says what is published), and that copy isn't inside a checkout: `create` needs one (`packages/cli/src/lib/checkout.ts`); Gateway deploys don't, they take the published release for that version (`packages/cli/src/lib/gateway/source.ts`).
 - Confirm: `pnpm everyapp --version` in the checkout against `npx everyapp --version`; `which everyapp` or the shell history shows what was run.
 - Fix: always `pnpm everyapp …` from the `every-app` clone. Compare `pnpm everyapp --version` with what the person ran.
 

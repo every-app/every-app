@@ -1,10 +1,10 @@
 /**
- * Where the Gateway's code comes from, for every Gateway deploy: `setup`,
- * `update`, and the rebind an app's deploy or delete runs. everyapp
- * runs from a checkout (lib/checkout.ts; the CLI isn't published while
- * publishing is paused), and every Gateway deploy deploys a release built from it
- * (`openCheckoutGatewayRelease` below: the SDK's build, then the Gateway's
- * `build:release`, one to two minutes). So that a rebind after the first
+ * The Gateway a checkout builds, for every Gateway deploy everyapp runs
+ * from one (lib/gateway/source.ts decides when that is; a CLI installed
+ * from npm takes a published release instead). A deploy from a checkout
+ * deploys a release built from it (`openCheckoutGatewayRelease` below:
+ * the SDK's build, then the Gateway's `build:release`, one to two
+ * minutes). So that a rebind after the first
  * build takes seconds, the built tarball is kept under the checkout's gitignored
  * `node_modules/.cache/everyapp/<tree>.tar.gz`, keyed by the tree hash of
  * every source the release is built from: the Gateway, the SDK, perimeter
@@ -22,7 +22,6 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { checkoutRoot } from "@/lib/checkout";
 import { runLogged } from "@/lib/childLog";
 import { fileExists } from "@/lib/file-operations";
 import type { EventSink } from "@/lib/output/events";
@@ -49,30 +48,6 @@ const GATEWAY_SOURCES = [
 
 /** How many builds the cache keeps: the latest, and a few to switch back to. */
 const KEEP_BUILDS = 3;
-
-/**
- * The Gateway a deploy takes from the checkout everyapp runs in: what it
- * is without building (`describe`, for the downgrade guard) and the
- * release itself (`open`; the caller cleans it up). Outside a checkout it
- * refuses (CHECKOUT_MISSING).
- */
-export function checkoutGateway({
-  out,
-  verbose,
-}: {
-  out: EventSink;
-  /** Stream a checkout build's output to stderr too. */
-  verbose?: boolean;
-}): {
-  describe(): Promise<CandidateRelease>;
-  open(): Promise<GatewayRelease>;
-} {
-  const root = checkoutRoot();
-  return {
-    describe: () => checkoutSource(root),
-    open: () => openCheckoutGatewayRelease({ root, out, verbose }),
-  };
-}
 
 /** Where built releases are kept, by tree hash. */
 export function releaseCacheDir(root: string): string {
@@ -268,7 +243,7 @@ async function store(tarball: string, target: string, keep: number): Promise<voi
  * The Gateway release the checkout at `root` builds, from the build cache
  * when its sources haven't changed since.
  */
-function openCheckoutGatewayRelease({
+export function openCheckoutGatewayRelease({
   root,
   out,
   verbose,
