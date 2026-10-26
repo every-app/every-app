@@ -1,24 +1,33 @@
 ---
 title: RepoLens
-description: Keeps the GitHub traffic, star, fork and download history GitHub forgets.
+description: Keep the GitHub traffic history GitHub drops after 14 days.
 ---
 
-RepoLens keeps the GitHub numbers GitHub forgets. GitHub drops views, clones, referrers and popular paths after 14 days, and shows stars, forks, watchers and release downloads as current totals. RepoLens captures them every six hours into a database in your own Cloudflare account, for as long as you run it. Your read-only GitHub token stays on your Worker; nothing goes to a hosted service. Only the star badges are public.
+> **Keep the GitHub traffic history GitHub drops after 14 days.**
+>
+> RepoLens captures views, clones, referrers, stars, forks and release downloads every six hours into a database in your own Cloudflare account. Your read-only GitHub token stays on your Worker.
 
 ## Features
 
-- **Traffic history.** Views, clones, referrers and popular paths, kept past GitHub's 14 days.
-- **Stars, forks and watchers over time**, with a backfill of the history when you start tracking.
-- **Release downloads and issues**, by day.
-- **A stars badge** with a 30-day sparkline for any tracked repository, for your README.
-- **CSV export** of a repository's daily history.
-- **Capture on a schedule** every six hours, or now, from the dashboard.
-- **Four MCP tools** for your AI clients: list repositories, one repository's stats, track a repository, capture now.
-- **Public-stats-only mode** for repositories the token can't administer: stars, forks and releases still capture.
+- Views, clones, referrers and popular paths, kept past GitHub's 14 days.
+- Stars, forks and watchers over time, backfilled when you start tracking.
+- Release downloads and issues, by day.
+- A stars badge with a 30-day sparkline for your README.
+- CSV export of a repository's daily history.
+- Capture every six hours, or now from the dashboard.
+- MCP tools for your AI clients.
+- Public-stats-only mode for repositories the token can't administer.
 
-## Install
+## Install on EveryApp
 
-RepoLens's repository is private today, so there is no address to install it from yet. Once it is public, the install is the same two commands as for every app, from your EveryApp folder: `pnpm everyapp install <its repository URL>`, then `pnpm everyapp configure repolens`. Until then, someone with access clones it next to your EveryApp folder, runs `pnpm install` in it, and from its folder runs your checkout's CLI: `node ../every-app/packages/cli/bin/everyapp.js deploy`. Then `pnpm everyapp configure repolens`.
+```bash
+pnpm everyapp install <its repository URL>
+pnpm everyapp configure repolens
+```
+
+Needs a read-only GitHub token. No R2, no other key. The repository is private today, so there is no address to install from yet; until then, someone with access clones it next to your EveryApp folder, runs `pnpm install` in it, and from its folder runs `node ../every-app/packages/cli/bin/everyapp.js deploy`.
+
+### Settings
 
 | Setting        | Held by  | Needed | Why                                                                                                                                                                                   |
 | -------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,12 +36,3 @@ RepoLens's repository is private today, so there is no address to install it fro
 Avoid OAuth-app tokens, the GitHub CLI's included: organizations that restrict third-party OAuth apps make the star and fork history return 404 for them. A fine-grained token with public-repository read access avoids this.
 
 **Public without sign-in:** the badges, `/badge/OWNER/REPO.svg` (GET), cached for an hour. That holds for private repositories too: anyone who knows a tracked private repository's name can see its star count. Everything else, the CSV export included, needs a signed-in member. A new install opens for you and the workspace's owners and admins; grant others under **Admin → Apps** on your Gateway.
-
-## What you need
-
-- A GitHub token that can read every repository you want to track.
-- Nothing else beyond your Gateway. No R2, no other key.
-
-## The code
-
-The repository is private while its owner decides; this page gets its address when it is public.

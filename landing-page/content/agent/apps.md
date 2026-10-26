@@ -24,7 +24,7 @@ A Gateway setting is held once for every app: `OPENROUTER_API_KEY` serves OpenSE
 
 ## OpenSEO (`openseo`)
 
-SEO research, rank tracking, site audits and AI visibility for your sites.
+SEO research you pay for by use, not by the month.
 
 ```bash
 pnpm everyapp install https://github.com/every-app/open-seo
@@ -44,7 +44,7 @@ Resources: D1 `DB`, KV `KV`, Durable Objects `SAM_CHAT` and `AUDIT_SCRATCHPAD`, 
 
 ## OpenCRM (`crm`)
 
-Companies, contacts and deals, kept up to date by a research agent.
+A CRM that fills itself in.
 
 ```bash
 pnpm everyapp install https://github.com/every-app/open-crm
@@ -68,7 +68,7 @@ Resources: D1 `DB`, Durable Object `CRM_AGENT`, an R2 bucket named after the Wor
 
 ## OpenAnalytics (`analytics`)
 
-Web analytics for your sites. No cookies, no stored IP addresses.
+Web analytics on your own Cloudflare account. No cookies.
 
 ```bash
 pnpm everyapp install https://github.com/every-app/open-analytics
@@ -85,7 +85,7 @@ Resources: D1 `DB`, KV `SITE_SETTINGS_KV`, Durable Object `INGEST_DO` (one per s
 
 ## OpenMail (`openmail`)
 
-A team inbox with an AI agent that reads, drafts and sends email on your domain.
+An inbox where an AI agent drafts your replies and you hit send.
 
 ```bash
 pnpm everyapp install https://github.com/every-app/open-mail
@@ -104,7 +104,7 @@ No secrets of its own. `email: { inbound: true }`: the Worker has an `email()` h
 
 ## RepoLens (`repolens`)
 
-Keeps the GitHub traffic, star, fork and download history GitHub forgets.
+Keep the GitHub traffic history GitHub drops after 14 days.
 
 The repository is private at the time of writing, so there is no URL to `install` from (an install by URL would answer `NO_RELEASE`: no anonymous download). A person with access clones it beside the checkout, runs `pnpm install` in it, and deploys with the checkout's CLI from its directory: `node ../every-app/packages/cli/bin/everyapp.js deploy`, then `pnpm everyapp configure repolens`. When it is public, the install is `pnpm everyapp install <repository URL>` like the others.
 

@@ -40,10 +40,10 @@ We don't promise backwards compatibility yet. Expect rough edges. [For early ado
 
 Each is open source and runs behind your Gateway. Run one as it is, or fork it as the starting recipe for your own. Each has a page with what it does, what it needs and how to install it: [Apps](/docs/apps).
 
-- **[OpenSEO](/docs/apps/openseo)**: SEO research, rank tracking, site audits and AI visibility for your sites.
-- **[OpenCRM](/docs/apps/crm)**: Companies, contacts and deals, kept up to date by a research agent.
-- **[OpenAnalytics](/docs/apps/analytics)**: Web analytics for your sites. No cookies, no stored IP addresses.
-- **[OpenMail](/docs/apps/openmail)**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
+- **[OpenSEO](/docs/apps/openseo)**: SEO research you pay for by use, not by the month.
+- **[OpenCRM](/docs/apps/crm)**: A CRM that fills itself in.
+- **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
+- **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
 
 `pnpm everyapp install https://github.com/every-app/<repo>` from your EveryApp folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and OpenMail use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
 

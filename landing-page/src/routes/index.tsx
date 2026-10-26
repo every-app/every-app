@@ -23,22 +23,22 @@ const openSeoStars = "25k";
 const apps: Array<{ name: string; line: string; href: string }> = [
   {
     name: "OpenSEO",
-    line: "SEO research, rank tracking, site audits and AI visibility for your sites.",
+    line: "SEO research you pay for by use, not by the month.",
     href: "/docs/apps/openseo",
   },
   {
     name: "OpenCRM",
-    line: "Companies, contacts and deals, kept up to date by a research agent.",
+    line: "A CRM that fills itself in.",
     href: "/docs/apps/crm",
   },
   {
     name: "OpenAnalytics",
-    line: "Web analytics for your sites. No cookies, no stored IP addresses.",
+    line: "Web analytics on your own Cloudflare account. No cookies.",
     href: "/docs/apps/analytics",
   },
   {
     name: "OpenMail",
-    line: "A team inbox with an AI agent that reads, drafts and sends email on your domain.",
+    line: "An inbox where an AI agent drafts your replies and you hit send.",
     href: "/docs/apps/openmail",
   },
 ];

@@ -1,32 +1,39 @@
 ---
 title: OpenMail
-description: A team inbox with an AI agent that reads, drafts and sends email on your domain.
+description: An inbox where an AI agent drafts your replies and you hit send.
 ---
 
-OpenMail is a team inbox on your own domain. Mail arrives through Cloudflare Email Routing, each mailbox lives in its own Durable Object with a SQLite database, and attachments go to R2. An AI agent reads new mail and drafts a reply, and nothing is sent until you confirm. Everyone in your workspace can use every mailbox, in the browser or from an AI client through your Gateway's MCP connector. It is based on Cloudflare's [agentic-inbox](https://github.com/cloudflare/agentic-inbox) (see the [blog post](https://blog.cloudflare.com/email-for-agents/)), modified to run behind an Every App Gateway.
-
-![OpenMail: an inbox list, an open thread with a draft reply, and the agent panel reporting the drafts it made](/apps/openmail/inbox.png)
+> **An inbox where an AI agent drafts your replies and you hit send.**
+>
+> Mail on your own domain arrives through Cloudflare Email Routing. The agent reads each new message and drafts a reply; nothing goes out until you confirm.
 
 ## Features
 
-- **A full email client.** Send and receive on your domain, with a rich text composer, reply and forward threading, folders, search and attachments.
-- **One Durable Object per mailbox**, with its own SQLite storage. Attachments in R2.
-- **An agent in the side panel**, with tools for reading, searching, drafting and sending.
-- **Auto-draft on new mail.** The agent reads each inbound message and drafts a reply; sending always needs your confirmation.
-- **A custom system prompt per mailbox**, persistent chat history, and every tool call shown.
-- **MCP tools** for your AI clients, through your Gateway's connector, acting on a mailbox by its address.
+- Send and receive on your own domain: composer, threads, folders, search and attachments.
+- An agent in the side panel that reads, searches, drafts and sends.
+- Auto-drafts a reply to new mail; sending always needs your confirmation.
+- A custom system prompt per mailbox, with chat history and every tool call shown.
+- Each mailbox in its own Durable Object with SQLite; attachments in R2.
+- MCP tools for your AI clients, acting on a mailbox by its address.
 
-## Install
-
-From your EveryApp folder:
+## Install on EveryApp
 
 ```bash
 pnpm everyapp install https://github.com/every-app/open-mail
 pnpm everyapp configure openmail
+```
+
+Needs a model key (OpenRouter first), a mail domain on Cloudflare with Email Sending, and R2 enabled. Code: [github.com/every-app/open-mail](https://github.com/every-app/open-mail)
+
+### Settings
+
+The second command asks for the keys below. Then tell the Gateway which addresses the inbox sends as and receives for, with your own domain in place of `example.com`; it offers to turn on Email Routing for the domain:
+
+```bash
 pnpm everyapp email set --sender '*@example.com' --inbound '*@example.com'
 ```
 
-The second command asks for the keys below. The third tells the Gateway which addresses the inbox sends as and receives for, with your own domain in place of `example.com`; it offers to turn on Email Routing for the domain. Then open `https://openmail.<your gateway domain>` as an owner or admin and create a mailbox. Run the first command again later to update.
+Then open `https://openmail.<your gateway domain>` as an owner or admin and create a mailbox. Run the install command again later to update.
 
 | Setting                                            | Held by | Needed | Why                                                                                                                    |
 | -------------------------------------------------- | ------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
@@ -35,16 +42,6 @@ The second command asks for the keys below. The third tells the Gateway which ad
 
 The app has no keys of its own. A Worker built with `AI_PROVIDER=openrouter` or `AI_PROVIDER=workers-ai` pins that provider instead of the Gateway's default; nobody needs that for the install above.
 
+A catch-all address (`*@example.com`) works only on a domain's apex; mail for a subdomain needs its addresses listed one by one. Mail to an address with no mailbox is dropped.
+
 Nothing in OpenMail is public: every page needs a signed-in member. Once installed, every member of your workspace can open it; owners and admins manage mailboxes.
-
-## What you need
-
-- **R2 enabled** on your Cloudflare account, once, before the install.
-- **A mail domain on Cloudflare DNS, in the Gateway's account**, onboarded to Cloudflare Email Sending. A catch-all address (`*@example.com`) works only on a domain's apex; mail for a subdomain needs its addresses listed one by one.
-- **A model key.** The same key serves the other apps that use AI.
-
-Mail to an address with no mailbox is dropped. Deleting a mailbox removes its settings; its stored mail and attachments stay.
-
-## The code
-
-[github.com/every-app/open-mail](https://github.com/every-app/open-mail). Apache 2.0, with upstream's license kept. Its `docs/EVERY_APP.md` is the full runbook.

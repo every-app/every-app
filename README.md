@@ -39,10 +39,10 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 
 ## Apps
 
-- [OpenSEO](https://github.com/every-app/open-seo): SEO research, rank tracking, site audits and AI visibility for your sites.
-- [OpenCRM](https://github.com/every-app/open-crm): Companies, contacts and deals, kept up to date by a research agent.
-- [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics for your sites. No cookies, no stored IP addresses.
-- [OpenMail](https://github.com/every-app/open-mail): A team inbox with an AI agent that reads, drafts and sends email on your domain.
+- [OpenSEO](https://github.com/every-app/open-seo): SEO research you pay for by use, not by the month.
+- [OpenCRM](https://github.com/every-app/open-crm): A CRM that fills itself in.
+- [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics on your own Cloudflare account. No cookies.
+- [OpenMail](https://github.com/every-app/open-mail): An inbox where an AI agent drafts your replies and you hit send.
 
 Run one as it is, or fork it as the starting point for your own. Many more are coming.
 
