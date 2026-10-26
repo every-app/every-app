@@ -18,6 +18,8 @@
 
 /** Issuer of locally minted dev identity tokens. */
 export const DEV_ISSUER = "https://gateway.dev.localhost";
+/** The organization the dev gateway's seeded user belongs to (`everyAppWorker()` sets it as `EVERY_APP_ORG_ID` in dev). */
+export const DEV_ORG_ID = "dev-org";
 
 /** SPKI PEM public half of the dev keypair. */
 export const DEV_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----

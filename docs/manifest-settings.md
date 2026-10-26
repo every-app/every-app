@@ -623,7 +623,7 @@ const context = await integrationStatus({ env, provider: "context" });
 if (!context.configured) return { available: false, note: NOT_SET_UP };
 
 // Where the feature runs: the setting may have been unset since.
-const render = integrationFetch({ env, provider: "context", for: request });
+const render = integrationFetch({ env, provider: "context" });
 const response = await render("https://api.context.dev/v1/render", {
   method: "POST",
   body: JSON.stringify({ url }),

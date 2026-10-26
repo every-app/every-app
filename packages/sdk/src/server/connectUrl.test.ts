@@ -2,7 +2,8 @@
  * `connectUrl()` and the local-dev twin of the Gateway's held-token
  * branch (docs/design/2026-10-oauth-providers.md sections 5 and 7).
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, vi } from "vitest";
+import { it } from "../../test/inOrganization";
 import { ACCOUNT_HEADER, OAUTH_PRESETS } from "../internal/index.js";
 import { connectPath, connectUrl } from "./connectUrl.js";
 import {

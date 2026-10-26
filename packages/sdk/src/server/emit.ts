@@ -21,7 +21,7 @@ import {
 } from "../internal/index.js";
 import {
   applyAttribution,
-  checkAttribution,
+  attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
 import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
@@ -79,11 +79,11 @@ export interface EmitOptions {
  */
 export async function emit({
   env,
-  for: target,
+  for: explicitTarget,
   event,
   data,
 }: EmitOptions): Promise<EmitEventResult> {
-  checkAttribution(env, target, "emit");
+  const target = attributionFor(env, explicitTarget, "emit");
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding

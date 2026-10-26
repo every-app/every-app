@@ -433,7 +433,7 @@ describe("getIdentityFromRequest", () => {
       audience: "todo",
       publicKeys: [publicPem],
     });
-    expect(res).toEqual({ user: null, isPublic: true });
+    expect(res).toEqual({ user: null, isPublic: true, expiresAt: null });
   });
 
   it("rejects a signed public marker without an exp claim", async () => {

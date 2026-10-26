@@ -75,6 +75,18 @@ export const ISSUER_ENV = "EVERYAPP_IDENTITY_ISSUER";
 export const SHARED_ENV = "EVERYAPP_SHARED";
 /** When set to `1` or `true` in the worker env, the dev identity kid is accepted. */
 export const DEV_ENV = "EVERYAPP_DEV";
+/**
+ * The organization an app's Worker is pinned to (a secret the deploy sends;
+ * in development the stub gateway's organization). `everyApp()` refuses an
+ * identity for any other organization; absent on a shared app's Workers.
+ */
+export const ORG_ID_ENV = "EVERY_APP_ORG_ID";
+/**
+ * The organization the dev gateway's seeded user belongs to. The same value
+ * as `@every-app/sdk/dev`'s, kept apart like {@link DEV_ISSUER} (the same
+ * test pins the two together).
+ */
+export const DEV_ORG_ID = "dev-org";
 /** `sub` claim the gateway mints public-route markers with. */
 export const PUBLIC_MARKER_SUB = "public";
 /** `sub` claim of gateway system tokens. */
@@ -97,12 +109,29 @@ export interface IdentitySubject {
   orgRole: string;
 }
 
+/**
+ * A member's role in the organization, as the identity token carries it.
+ * Owners and admins manage; anything the Gateway might mint that an app
+ * doesn't know is read as `member`.
+ */
+export type OrgRole = "owner" | "admin" | "member";
+
+/** `role` as an {@link OrgRole}: `owner` and `admin` as they are, anything else `member`. */
+export function toOrgRole(role: unknown): OrgRole {
+  return role === "owner" || role === "admin" ? role : "member";
+}
+
+/** Whether `user` manages the organization: an owner or an admin. */
+export function isAdmin(user: { orgRole: OrgRole | string }): boolean {
+  return user.orgRole === "owner" || user.orgRole === "admin";
+}
+
 export interface EveryAppUser {
   /** User id (the `sub` claim). */
   id: string;
   email: string;
   orgId: string;
-  orgRole: string;
+  orgRole: OrgRole;
   channel: IdentityChannel;
   /** The acting principal (user, or `mcp:<client>` / agent). */
   actor: IdentityActor;
@@ -213,7 +242,7 @@ export function identityClaimsToEveryAppUser(
     id: sub,
     email,
     orgId,
-    orgRole,
+    orgRole: toOrgRole(orgRole),
     channel: chan,
     actor: { sub: act.sub ?? sub },
     scopes,

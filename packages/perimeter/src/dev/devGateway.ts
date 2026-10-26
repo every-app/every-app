@@ -29,7 +29,11 @@ import {
   mintPublicMarkerJwt,
   IDENTITY_DEV_KEY_ID,
 } from "@every-app/sdk/internal";
-import { DEV_ISSUER, DEV_PRIVATE_KEY_PEM } from "@every-app/sdk/dev";
+import {
+  DEV_ISSUER,
+  DEV_ORG_ID,
+  DEV_PRIVATE_KEY_PEM,
+} from "@every-app/sdk/dev";
 
 // Re-exported for the `everyapp dev` runner in the CLI, which consumes this
 // module via the package export "@every-app/perimeter/dev".
@@ -44,7 +48,7 @@ export type { McpInterceptInput } from "../gateway";
 export const DEV_USER: AuthenticatedSession = {
   sub: "dev-user",
   email: "dev@everyapp.localhost",
-  orgId: "dev-org",
+  orgId: DEV_ORG_ID,
   orgRole: "owner",
 };
 

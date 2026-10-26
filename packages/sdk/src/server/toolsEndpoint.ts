@@ -22,12 +22,12 @@ import {
   TOOLS_CALL_PATH,
   TOOLS_LIST_PATH,
   TOOLS_PROTOCOL_VERSION,
+  assertOrganizationPin,
   catalogHash,
   requiredScopeForRisk,
   resolveVerifyOptions,
-  verifyIdentityJwt,
+  verifyIdentity,
   verifySystemJwt,
-  type EveryAppUser,
   type RequestIdentityOptions,
   type ToolCallResultV1,
   type ToolIssueV1,
@@ -36,6 +36,7 @@ import {
   type ToolsListResponseV1,
   type VerifyOptions,
 } from "../internal/index.js";
+import { serveRequest } from "./context.js";
 import type { ExecutionContextLike } from "./everyApp.js";
 import {
   SDK_VERSION,
@@ -231,12 +232,15 @@ async function callTool(
   verify: VerifyOptions,
   options: ToolsEndpointOptions,
 ): Promise<Response> {
-  let user: EveryAppUser;
+  let user, expiresAt;
   try {
-    user = await verifyIdentityJwt(
+    ({ user, expiresAt } = await verifyIdentity(
       request.headers.get(IDENTITY_HEADER) ?? "",
       verify,
-    );
+    ));
+    // The same pin as the handler path: a call for another organization's
+    // install never runs a tool here.
+    assertOrganizationPin(user, options.identity.organizationId);
   } catch (error) {
     if (error instanceof IdentityError) {
       return toolsError(401, "unauthenticated", error.message);
@@ -309,13 +313,17 @@ async function callTool(
   );
   let result: ToolCallResultV1;
   try {
-    const value = await tool.handler(input.value, {
-      user,
-      env: env as Cloudflare.Env,
-      ctx,
-      request,
-      callId: call.callId,
-    });
+    // The call runs in the request context like a page would: currentUser()
+    // is the caller, and its Gateway calls are attributed to them.
+    const value = await serveRequest({ request, user, expiresAt }, () =>
+      tool.handler(input.value, {
+        user,
+        env: env as Cloudflare.Env,
+        ctx,
+        request,
+        callId: call.callId,
+      }),
+    );
     result = await toToolResult(tool, value);
   } catch (error) {
     if (error instanceof ToolError) {

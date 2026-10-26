@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, vi } from "vitest";
+import { it } from "../../test/inOrganization";
 import { ConfigurationError } from "../internal/index";
 import { AttributionError } from "./attribution";
 import { emit } from "./emit";
@@ -75,7 +76,11 @@ describe("emit through the gateway", () => {
   it("refuses a shared app's event that doesn't say whom it is for, before calling", async () => {
     const { env, bindingFetch } = gateway();
     await expect(
-      emit({ env: { ...env, EVERYAPP_SHARED: "1" }, ...EVENT }),
+      emit({
+        env: { ...env, EVERYAPP_SHARED: "1" },
+        for: { background: true },
+        ...EVENT,
+      }),
     ).rejects.toBeInstanceOf(AttributionError);
     expect(bindingFetch).not.toHaveBeenCalled();
   });

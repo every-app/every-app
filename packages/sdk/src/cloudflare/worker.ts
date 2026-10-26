@@ -2,7 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
+import { DEV_ISSUER, DEV_ORG_ID, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
 import {
   sentinelDeployTarget,
   type AiGatewayValue,
@@ -788,6 +788,8 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
     EVERYAPP_DEV_PROVIDERS?: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
+    /** The stub dev gateway's organization (`dev-org`), so `withOrganization(env.EVERY_APP_ORG_ID, …)` works in development as deployed. */
+    EVERY_APP_ORG_ID: TextBinding;
   } & { [K in DevGatewayKeys<M>]: SecretBinding };
 
 /** Bindings in production: the deployed identity and the gateway binding. */
@@ -1094,6 +1096,11 @@ export function everyAppWorker<
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
+    // The stub gateway's organization, as the deploy's secret would be, so
+    // background work's withOrganization(env.EVERY_APP_ORG_ID, …) runs
+    // here too. Not a pin: under the dev opt-in everyApp() enforces none,
+    // so `everyapp dev --mode mirror`'s real organizations still open.
+    env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);
   }
 
@@ -1252,6 +1259,7 @@ export function everyAppAuxiliaryWorker<
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
+    env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);
   }
   addAiBindings(env, manifest, deploy);

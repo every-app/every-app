@@ -23,13 +23,16 @@ export * from "./devProviders.js";
 export {
   ConfigurationError,
   IdentityError,
+  assertOrganizationPin,
   getIdentityFromRequest,
   parsePublicKeys,
   resolveVerifyOptions,
+  verifyIdentity,
   verifyIdentityJwt,
   verifyPublicMarkerJwt,
   verifySystemJwt,
   type IdentityResult,
   type RequestIdentityOptions,
+  type VerifiedIdentity,
   type VerifyOptions,
 } from "./identity.js";

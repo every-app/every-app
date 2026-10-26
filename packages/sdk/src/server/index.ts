@@ -9,13 +9,22 @@ export {
   everyApp,
   getEveryAppUser,
   hasScope,
+  isAdmin,
+  requireCurrentUser,
   requireEveryAppUser,
   type EveryAppOptions,
   type EveryAppManifestLike,
   type EveryAppHandler,
   type EveryAppUser,
   type IdentityResult,
+  type OrgRole,
 } from "./everyApp.js";
+export {
+  OrganizationMismatchError,
+  RequestContextError,
+  currentUser,
+  withOrganization,
+} from "./context.js";
 export { AttributionError, type GatewayCallFor } from "./attribution.js";
 export { authorizeUrl, type AuthorizeUrlOptions } from "./authorizeUrl.js";
 export {

@@ -10,10 +10,13 @@ import {
   everyApp,
   getEveryAppUser,
   hasScope,
+  isAdmin,
+  requireCurrentUser,
   requireEveryAppUser,
   type EveryAppHandler,
   type EveryAppUser,
 } from "./everyApp";
+import { RequestContextError, currentUser } from "./context";
 import {
   IDENTITY_ALG,
   IDENTITY_DEV_KEY_ID,
@@ -37,6 +40,7 @@ async function mint(
   aud = "every-todo",
   iss = issuer,
   kid = IDENTITY_KEY_ID,
+  claims: Record<string, unknown> = {},
 ): Promise<string> {
   const key = await importPKCS8(privatePem, IDENTITY_ALG);
   return new SignJWT({
@@ -47,6 +51,7 @@ async function mint(
     chan: "web",
     act: { sub: "user_1" },
     jti: "j1",
+    ...claims,
   })
     .setProtectedHeader({ alg: IDENTITY_ALG, kid })
     .setSubject("user_1")
@@ -588,5 +593,216 @@ describe("hasScope", () => {
     expect(hasScope(user, "mcp:read")).toBe(true);
     expect(hasScope(user, "mcp:write")).toBe(false);
     expect(hasScope({ ...user, scopes: ["*"] }, "mcp:write")).toBe(true);
+  });
+});
+
+describe("the request context under everyApp()", () => {
+  const env = {
+    [ISSUER_ENV]: issuer,
+    [AUDIENCE_ENV]: "every-todo",
+  } as Record<string, unknown>;
+  // Read after beforeAll made the keypair.
+  const options = () => ({ publicKeys: [publicPem] });
+  const withToken = (token: string, path = "/tasks") =>
+    new Request(`https://todo.example.com${path}`, {
+      headers: { [IDENTITY_HEADER]: token },
+    });
+
+  it("answers currentUser() anywhere below the handler, after awaits too", async () => {
+    const app = everyApp(async (_req, _env, _ctx, user) => {
+      expect(currentUser()).toBe(user);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      const deep = await (async () => currentUser())();
+      return Response.json({ id: deep?.id, same: deep === user });
+    }, options());
+    const res = await app.fetch(withToken(await mint()), env, ctx);
+    expect(await res.json()).toEqual({ id: "user_1", same: true });
+    // And nothing leaks out of the request.
+    expect(() => currentUser()).toThrowError(RequestContextError);
+  });
+
+  it("gives requireCurrentUser() the user, or the 401 on a public route", async () => {
+    const app = everyApp(async () => {
+      try {
+        return Response.json({ id: requireCurrentUser().id });
+      } catch (thrown) {
+        return thrown as Response;
+      }
+    }, options());
+    const res = await app.fetch(withToken(await mint()), env, ctx);
+    expect(await res.json()).toEqual({ id: "user_1" });
+    const marker = await mintPublicMarker();
+    const anonymous = await app.fetch(
+      new Request("https://todo.example.com/public", {
+        headers: { [PUBLIC_HEADER]: marker },
+      }),
+      env,
+      ctx,
+    );
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toMatchObject({ error: "unauthenticated" });
+    expect(() => requireCurrentUser()).toThrowError(RequestContextError);
+  });
+
+  it("lets getEveryAppUser() take the headers alone, answering from the context", async () => {
+    let verified = 0;
+    const app = everyApp(async (request, handlerEnv, _ctx, user) => {
+      // A framework that hands out headers alone (TanStack's getRequest()
+      // rebuilds the request): the same token, no second verification.
+      const again = await getEveryAppUser(request.headers, handlerEnv);
+      const rebuilt = await getEveryAppUser(
+        new Request("https://elsewhere.invalid/", {
+          headers: request.headers,
+        }),
+        handlerEnv,
+      );
+      return Response.json({
+        same: again === user && rebuilt === user,
+        id: again?.id,
+      });
+    }, options());
+    const token = await mint();
+    const res = await app.fetch(withToken(token), env, ctx);
+    expect(await res.json()).toEqual({ same: true, id: "user_1" });
+    // Headers outside any request still verify on their own.
+    const headers = new Headers({ [IDENTITY_HEADER]: token });
+    const user = await getEveryAppUser(headers, {
+      ...env,
+      EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
+    });
+    expect(user?.id).toBe("user_1");
+    verified += 1;
+    expect(verified).toBe(1);
+  });
+
+  it("drops Set-Cookie from the response and says so", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = everyApp(
+      async () =>
+        new Response("ok", {
+          status: 201,
+          headers: [
+            ["set-cookie", "session=abc; Path=/"],
+            ["set-cookie", "theme=dark"],
+            ["x-keep", "yes"],
+          ],
+        }),
+      options(),
+    );
+    const res = await app.fetch(withToken(await mint()), env, ctx);
+    expect(res.status).toBe(201);
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(res.headers.get("x-keep")).toBe("yes");
+    expect(await res.text()).toBe("ok");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Set-Cookie"));
+    warn.mockRestore();
+  });
+});
+
+describe("the organization pin", () => {
+  const envFor = (
+    pin: string | undefined,
+    extra: Record<string, unknown> = {},
+  ) =>
+    ({
+      [ISSUER_ENV]: issuer,
+      [AUDIENCE_ENV]: "every-todo",
+      ...(pin === undefined ? {} : { EVERY_APP_ORG_ID: pin }),
+      ...extra,
+    }) as Record<string, unknown>;
+  const app = () =>
+    everyApp(
+      async (_req, _env, _ctx, user) => Response.json({ org: user?.orgId }),
+      { publicKeys: [publicPem] },
+    );
+  const withToken = (token: string) =>
+    new Request("https://todo.example.com/tasks", {
+      headers: { [IDENTITY_HEADER]: token },
+    });
+
+  it("refuses an identity for another organization than the Worker's", async () => {
+    const res = await app().fetch(
+      withToken(await mint()),
+      envFor("org_2"),
+      ctx,
+    );
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({
+      error: "unauthenticated",
+      message: expect.stringMatching(
+        /organization "org_1".*"org_2".*EVERY_APP_ORG_ID/,
+      ),
+    });
+  });
+
+  it("opens for the pinned organization, and for any with no pin (a shared app)", async () => {
+    for (const pin of ["org_1", undefined]) {
+      const res = await app().fetch(withToken(await mint()), envFor(pin), ctx);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ org: "org_1" });
+    }
+  });
+
+  it("holds for getEveryAppUser() and requireEveryAppUser() outside the wrapper too", async () => {
+    const env = envFor("org_2", {
+      EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
+    });
+    const request = withToken(await mint());
+    await expect(getEveryAppUser(request, env)).rejects.toThrow(
+      /EVERY_APP_ORG_ID/,
+    );
+    await expect(requireEveryAppUser(request, env)).rejects.toBeInstanceOf(
+      Response,
+    );
+  });
+
+  it("is not enforced under the dev opt-in (mirror mode signs real organizations in)", async () => {
+    const devApp = everyApp(
+      async (_req, _env, _ctx, user) => Response.json({ org: user?.orgId }),
+      { publicKeys: [publicPem], allowDevIdentities: true, issuer: DEV_ISSUER },
+    );
+    const token = await mint("every-todo", DEV_ISSUER, IDENTITY_DEV_KEY_ID);
+    const res = await devApp.fetch(
+      withToken(token),
+      { [AUDIENCE_ENV]: "every-todo", EVERY_APP_ORG_ID: "dev-org" },
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ org: "org_1" });
+  });
+});
+
+describe("roles", () => {
+  const env = {
+    [ISSUER_ENV]: issuer,
+    [AUDIENCE_ENV]: "every-todo",
+  } as Record<string, unknown>;
+  it("reads owner and admin as managers, and anything else as a member", async () => {
+    const app = everyApp(
+      async (_req, _env, _ctx, user) =>
+        Response.json({
+          role: user?.orgRole,
+          admin: user ? isAdmin(user) : null,
+        }),
+      { publicKeys: [publicPem] },
+    );
+    for (const [claim, role, admin] of [
+      ["owner", "owner", true],
+      ["admin", "admin", true],
+      ["member", "member", false],
+      ["billing", "member", false],
+    ] as const) {
+      const token = await mint("every-todo", issuer, IDENTITY_KEY_ID, {
+        org_role: claim,
+      });
+      const res = await app.fetch(
+        new Request("https://todo.example.com/", {
+          headers: { [IDENTITY_HEADER]: token },
+        }),
+        env,
+        ctx,
+      );
+      expect(await res.json(), claim).toEqual({ role, admin });
+    }
   });
 });

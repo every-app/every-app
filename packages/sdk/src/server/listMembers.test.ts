@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
+import { it } from "../../test/inOrganization";
 import type { EveryAppUser } from "../internal/index";
 import { getEveryAppUser } from "./everyApp";
 import { GatewayRefusalError } from "./integrationFetch";

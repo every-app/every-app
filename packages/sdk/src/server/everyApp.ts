@@ -14,6 +14,16 @@
  * `cloudflare.config.ts` imports from the Worker in dev).
  * It also answers the gateway's internal tools contract
  * (`/__everyapp/tools/*`) for the app's `defineTools()` catalog.
+ *
+ * Around the handler and around each tool call it opens the request
+ * context (context.ts): `currentUser()` reads the user anywhere below, and
+ * every call back to the Gateway is attributed to the request without a
+ * `for`. A deployed Worker is pinned to its organization
+ * (`EVERY_APP_ORG_ID`), and an identity for any other is refused on both
+ * paths. The response leaves without `Set-Cookie`: the perimeter strips
+ * every `Cookie` before a request reaches the app, so a cookie the app's
+ * framework sets could never come back, and one named like the Gateway's
+ * session cookie would lock the person out of the app host.
  */
 import {
   APP_ID_ENV,
@@ -21,18 +31,23 @@ import {
   ConfigurationError,
   DEV_ENV,
   IdentityError,
+  IDENTITY_HEADER,
   ISSUER_ENV,
+  ORG_ID_ENV,
   PUBLIC_KEYS_ENV,
   getIdentityFromRequest,
+  isAdmin,
   type EveryAppUser,
   type IdentityResult,
+  type OrgRole,
   type RequestIdentityOptions,
 } from "../internal/index.js";
+import { currentUser, serveRequest } from "./context.js";
 import type { ToolSet } from "./tools.js";
 import { handleToolsRequest } from "./toolsEndpoint.js";
 
-export { ConfigurationError, IdentityError };
-export type { EveryAppUser, IdentityResult };
+export { ConfigurationError, IdentityError, isAdmin };
+export type { EveryAppUser, IdentityResult, OrgRole };
 
 /**
  * The runtime's `ExecutionContext`, which `everyApp()` passes to the handler
@@ -96,7 +111,7 @@ interface VerificationConfig {
   now?: number;
 }
 
-const requestIdentities = new WeakMap<Request, IdentityResult>();
+const requestIdentities = new WeakMap<Request | Headers, IdentityResult>();
 
 function envValue(env: unknown, key: string): string | undefined {
   if (!env || typeof env !== "object") return undefined;
@@ -161,6 +176,20 @@ function audienceFor(env: unknown, config: VerificationConfig): string {
   );
 }
 
+/**
+ * The organization a deployed Worker serves ({@link ORG_ID_ENV}), which an
+ * identity must name. Under the dev opt-in there is none to enforce: the
+ * stub gateway's one organization is the only one, and `everyapp dev
+ * --mode mirror` signs real organizations in.
+ */
+function pinnedOrganization(
+  env: unknown,
+  config: VerificationConfig,
+): string | undefined {
+  if (devIdentitiesAllowed(env, config)) return undefined;
+  return envValue(env, ORG_ID_ENV);
+}
+
 function unauthorized(message: string): Response {
   return Response.json({ error: "unauthenticated", message }, { status: 401 });
 }
@@ -176,6 +205,7 @@ function identityOptions(
 ): RequestIdentityOptions {
   return {
     audience,
+    organizationId: pinnedOrganization(env, config),
     issuer: config.issuer ?? envValue(env, ISSUER_ENV),
     publicKeys: config.publicKeys,
     env: env as Record<string, unknown> | undefined,
@@ -186,7 +216,7 @@ function identityOptions(
 }
 
 async function resolveIdentity(
-  request: Request,
+  request: Request | Headers,
   env: unknown,
   config: VerificationConfig,
 ): Promise<IdentityResult> {
@@ -196,21 +226,62 @@ async function resolveIdentity(
   );
 }
 
-function rememberIdentity(request: Request, identity: IdentityResult): void {
+function rememberIdentity(
+  request: Request | Headers,
+  identity: IdentityResult,
+): void {
   requestIdentities.set(request, identity);
 }
 
 /**
+ * The user the request context already verified, when `request` carries
+ * the same identity token: a framework that rebuilds the request (TanStack
+ * Start's `getRequest()`, a Hono context) still gets the one verification.
+ */
+function contextUserFor(request: Request | Headers): EveryAppUser | null {
+  const headers = "headers" in request ? request.headers : request;
+  const token = headers.get(IDENTITY_HEADER);
+  if (!token) return null;
+  const scoped = servedRequestToken();
+  return scoped && scoped.token === token ? scoped.user : null;
+}
+
+/**
+ * The served request's token and user, or null outside a request. Reads
+ * the context without throwing (currentUser() throws outside one).
+ */
+function servedRequestToken(): { token: string; user: EveryAppUser } | null {
+  let user: EveryAppUser | null;
+  try {
+    user = currentUser();
+  } catch {
+    return null;
+  }
+  if (!user) return null;
+  const served = servedRequests.get(user);
+  return served ? { token: served, user } : null;
+}
+
+// The identity token of each request everyApp() serves, by its user, so a
+// second read of the same token answers from the context.
+const servedRequests = new WeakMap<EveryAppUser, string>();
+
+/**
  * Return the verified Every App user for this request, or null for a declared
- * public request. Uses the request cache first, then verifies the identity
- * headers from the app id and public keys configured in env.
+ * public request. `request` is the inbound `Request` or just its `Headers`
+ * (a framework that hands out headers alone needs no made-up Request).
+ * Answers from the request context or the per-request cache first, then
+ * verifies the identity headers from the audience and public keys in env.
+ * Inside a handler `everyApp()` serves, `currentUser()` is the shorter way.
  */
 export async function getEveryAppUser(
-  request: Request,
+  request: Request | Headers,
   env: object,
 ): Promise<EveryAppUser | null> {
   const cached = requestIdentities.get(request);
   if (cached) return cached.user;
+  const fromContext = contextUserFor(request);
+  if (fromContext) return fromContext;
 
   const identity = await resolveIdentity(request, env, {
     keysEnvVar: PUBLIC_KEYS_ENV,
@@ -224,7 +295,7 @@ export async function getEveryAppUser(
  * everyApp() when the request is public or unauthenticated.
  */
 export async function requireEveryAppUser(
-  request: Request,
+  request: Request | Headers,
   env: object,
 ): Promise<EveryAppUser> {
   try {
@@ -241,6 +312,44 @@ export async function requireEveryAppUser(
     }
     throw error;
   }
+}
+
+/**
+ * The user of the request being served (`currentUser()`), or throw the
+ * same 401 JSON Response as `requireEveryAppUser()` on a public route.
+ * Outside a request (`withOrganization()` work, a handler not under
+ * `everyApp()`) it throws `RequestContextError`, as `currentUser()` does.
+ */
+export function requireCurrentUser(): EveryAppUser {
+  const user = currentUser();
+  if (!user) {
+    throw unauthorized("this request does not have an authenticated user");
+  }
+  return user;
+}
+
+/**
+ * `response` without `Set-Cookie`: the perimeter strips every `Cookie`
+ * before a request reaches the app, so no cookie the app sets ever comes
+ * back, and one named like the Gateway's session cookie locks the person
+ * out of the app host (the perimeter refuses a session cookie sent twice).
+ * A WebSocket handshake (101) passes as it is: it can't be rebuilt from
+ * its body, and the perimeter drops its cookies' `Domain`.
+ */
+function withoutCookies(response: Response): Response {
+  if (response.status === 101 || !response.headers.has("set-cookie")) {
+    return response;
+  }
+  console.warn(
+    "[everyapp] Dropped a Set-Cookie header: the Gateway never sends an app's cookies back to it.",
+  );
+  const headers = new Headers(response.headers);
+  headers.delete("set-cookie");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export function hasScope(user: EveryAppUser, scope: string): boolean {
@@ -333,7 +442,14 @@ export function everyApp<
         throw err;
       }
 
-      return handler(request, env, ctx, identity.user);
+      const { user, expiresAt } = identity;
+      if (user) {
+        servedRequests.set(user, request.headers.get(IDENTITY_HEADER) ?? "");
+      }
+      const response = await serveRequest({ request, user, expiresAt }, () =>
+        handler(request, env, ctx, user),
+      );
+      return withoutCookies(response);
     },
   };
 }

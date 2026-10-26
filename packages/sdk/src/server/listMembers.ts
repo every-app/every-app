@@ -2,11 +2,10 @@ import {
   ConfigurationError,
   serviceRoutePath,
   type ListMembersResult,
-  type OrganizationMemberRole,
 } from "../internal/index.js";
 import {
   applyAttribution,
-  checkAttribution,
+  attributionFor,
   isRequest,
   type GatewayCallFor,
 } from "./attribution.js";
@@ -45,9 +44,9 @@ export interface ListMembersOptions {
  */
 export async function listMembers({
   env,
-  for: target,
+  for: explicitTarget,
 }: ListMembersOptions): Promise<ListMembersResult> {
-  checkAttribution(env, target, "listMembers");
+  const target = attributionFor(env, explicitTarget, "listMembers");
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
@@ -106,12 +105,8 @@ async function listInDev(
         id: user.id,
         email: user.email,
         name: "",
-        role: memberRole(user.orgRole),
+        role: user.orgRole,
       },
     ],
   };
-}
-
-function memberRole(role: string): OrganizationMemberRole {
-  return role === "owner" || role === "admin" ? role : "member";
 }

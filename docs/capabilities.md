@@ -283,7 +283,6 @@ import {
 const dataforseo = integrationFetch({
   env,
   provider: "dataforseo",
-  for: request,
 });
 const response = await dataforseo(
   "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
@@ -300,12 +299,13 @@ const { ready } = await integrationStatus({ env, provider: "dataforseo" });
 ```
 
 - Approval is of the app: listing the capability is the grant, for every
-  call the app makes. Pass `for: request` and the gateway attributes the
-  call to the request's user; for background work (crons, Workflows,
-  queues) an organization's own app omits it (or passes
-  `{ background: true }`) and the call is the app's. A shared app's Worker
-  serves every organization, so its background work passes
-  `for: { background: true, organizationId }`, sent as `x-everyapp-org`;
+  call the app makes. A call made while `everyApp()` serves a request is
+  attributed to the request's user (the SDK's request context; `for:
+  request` says it explicitly); background work (crons, Workflows,
+  queues) runs under `withOrganization(organizationId, fn)`, and an
+  organization's own app may pass `for: { background: true }` to make the
+  call the app's. A shared app's Worker serves every organization, so its
+  background work names one, sent as `x-everyapp-org`;
   the gateway accepts it for an active organization with a live member and
   attributes the call to that organization. A shared Worker's call that
   names neither throws `AttributionError`.
@@ -489,13 +489,13 @@ if (!ready) return showNotSetUp("LinkedIn");
 const authorize = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=...`;
 
 // The callback: the gateway adds client_id and client_secret.
-const linkedin = integrationFetch({ env, provider: "linkedin", for: request });
+const linkedin = integrationFetch({ env, provider: "linkedin" });
 const tokens = await linkedin("https://www.linkedin.com/oauth/v2/accessToken", {
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
 });
-// A refresh from a cron or Workflow: for: { background: true, organizationId }.
+// A refresh from a cron or Workflow runs under withOrganization(organizationId, fn).
 ```
 
 Mastodon's status also carries `origin` (the instance). Twitch wants the
@@ -696,8 +696,7 @@ import { GatewayRefusalError, sendEmail } from "@every-app/sdk/server";
 
 try {
   const { messageId, status } = await sendEmail({
-    env,
-    for: request, // or { background: true, organizationId } from a cron or email()
+    env, // whose: the request being served, or withOrganization()'s organization
     message: {
       to: "customer@example.net",
       subject: "Your order shipped",
@@ -848,10 +847,7 @@ and reads it:
 ```ts
 import { listMembers } from "@every-app/sdk/server";
 
-const { members } = await listMembers({
-  env,
-  for: { background: true }, // or the request; a shared app names organizationId
-});
+const { members } = await listMembers({ env }); // the request's, or withOrganization()'s
 // [{ id, email, name, role: "owner" | "admin" | "member" }, ...]
 ```
 
@@ -897,8 +893,7 @@ cap was reached, an agent's tool call was blocked).
 import { emit } from "@every-app/sdk/server";
 
 await emit({
-  env,
-  for: request, // or { background: true, organizationId }
+  env, // whose: the request being served, or withOrganization()'s organization
   event: "invoice.paid", // delivered as app.<id>.invoice.paid
   data: { invoiceId: "inv_42", total: 1200 },
 });

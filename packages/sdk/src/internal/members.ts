@@ -5,8 +5,10 @@
  * fallback answers in the same shape. Types only.
  */
 
-/** A member's role in the organization. */
-export type OrganizationMemberRole = "owner" | "admin" | "member";
+import type { OrgRole } from "./protocol.js";
+
+/** A member's role in the organization: the identity token's {@link OrgRole}. */
+export type OrganizationMemberRole = OrgRole;
 
 /**
  * One member of the organization who can open the app: not deactivated,

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, vi } from "vitest";
+import { it } from "../../test/inOrganization";
 import { ConfigurationError } from "../internal/index";
 import { AttributionError } from "./attribution";
 import { GatewayRefusalError } from "./integrationFetch";
@@ -71,7 +72,11 @@ describe("sendEmail through the gateway", () => {
   it("refuses a shared app's mail that doesn't say whom it is for, before calling", async () => {
     const { env, bindingFetch } = gateway();
     await expect(
-      sendEmail({ env: { ...env, EVERYAPP_SHARED: "1" }, message: MESSAGE }),
+      sendEmail({
+        env: { ...env, EVERYAPP_SHARED: "1" },
+        for: { background: true },
+        message: MESSAGE,
+      }),
     ).rejects.toBeInstanceOf(AttributionError);
     expect(bindingFetch).not.toHaveBeenCalled();
   });

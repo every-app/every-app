@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEV_ISSUER,
+  DEV_ORG_ID,
   DEV_PRIVATE_KEY_PEM,
   DEV_PUBLIC_KEY_PEM,
   IDENTITY_DEV_KEY_ID,
@@ -10,6 +11,7 @@ import {
 import {
   DEV_ENV,
   DEV_ISSUER as WORKER_DEV_ISSUER,
+  DEV_ORG_ID as WORKER_DEV_ORG_ID,
   IDENTITY_HEADER,
   ISSUER_ENV,
   PUBLIC_KEYS_ENV,
@@ -34,6 +36,7 @@ function request(token: string): Request {
 describe("@every-app/sdk/dev", () => {
   it("names the same issuer the Worker side checks", () => {
     expect(DEV_ISSUER).toBe(WORKER_DEV_ISSUER);
+    expect(DEV_ORG_ID).toBe(WORKER_DEV_ORG_ID);
   });
 
   it("signs dev identities a dev Worker verifies, and nothing else does", async () => {

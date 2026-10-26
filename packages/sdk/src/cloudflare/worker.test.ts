@@ -1047,6 +1047,7 @@ describe("helper Workers", () => {
       EVERYAPP_APP_ID: { type: "text", value: "seo" },
       EVERYAPP_DEV: { type: "text", value: "1" },
       EVERYAPP_DEV_CAPABILITIES: { type: "text", value: "{}" },
+      EVERY_APP_ORG_ID: { type: "text", value: "dev-org" },
       DB: { type: "d1", name: "every-seo", id: localD1Id("every-seo", "DB") },
       SCRATCHPAD: {
         type: "durable-object",

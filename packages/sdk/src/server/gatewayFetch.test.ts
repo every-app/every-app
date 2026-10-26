@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, vi } from "vitest";
+import { it } from "../../test/inOrganization";
 import { DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { ConfigurationError } from "../internal/index";
 import { createGatewayFetch } from "./gatewayFetch";

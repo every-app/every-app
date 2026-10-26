@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, vi } from "vitest";
+import { TEST_ORGANIZATION, it } from "../../test/inOrganization";
+import { withOrganization } from "./context";
 import { ConfigurationError } from "../internal/index";
 import {
   gatewayRefusal,
@@ -344,9 +346,16 @@ describe("integrationStatus", () => {
         provider: "northwind",
       }),
     ).resolves.toEqual({ requested: false, configured: false, ready: false });
+    // Whose status: the test's organization, as a call would carry it.
     expect(bindingFetch).toHaveBeenCalledWith(
       "http://every-app-gateway.internal/api/integrations/northwind",
+      { headers: expect.any(Headers) },
     );
+    const [, init] = bindingFetch.mock.calls[0] as unknown as [
+      string,
+      { headers: Headers },
+    ];
+    expect(init.headers.get("x-everyapp-org")).toBe(TEST_ORGANIZATION);
     // Local dev knows the catalog only.
     await expect(
       integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "northwind" }),
@@ -492,6 +501,7 @@ describe("the email capability", () => {
     >();
     expect(bindingFetch).toHaveBeenCalledWith(
       "http://every-app-gateway.internal/api/integrations/email",
+      { headers: expect.any(Headers) },
     );
   });
 
@@ -868,11 +878,14 @@ describe("OAuth clients with scope sets", () => {
     body: string,
     url = provider === "microsoft-365" ? MS_TOKEN : GOOGLE_TOKEN,
   ) =>
-    integrationFetch({ env, provider })(url, {
-      method: "POST",
-      headers: FORM,
-      body,
-    });
+    // `it.each` runs outside the organization `it` from inOrganization gives.
+    withOrganization(TEST_ORGANIZATION, () =>
+      integrationFetch({ env, provider })(url, {
+        method: "POST",
+        headers: FORM,
+        body,
+      }),
+    );
 
   it("passes the gateway's status through, scope sets and scopes included", async () => {
     const answered = {

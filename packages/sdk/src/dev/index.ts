@@ -5,6 +5,7 @@
  */
 export {
   DEV_ISSUER,
+  DEV_ORG_ID,
   DEV_PRIVATE_KEY_PEM,
   DEV_PUBLIC_KEY_PEM,
 } from "./keypair.js";

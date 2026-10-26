@@ -18,7 +18,7 @@ import {
 } from "../internal/index.js";
 import {
   applyAttribution,
-  checkAttribution,
+  attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
 import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
@@ -62,10 +62,10 @@ export interface SendEmailOptions {
  */
 export async function sendEmail({
   env,
-  for: target,
+  for: explicitTarget,
   message,
 }: SendEmailOptions): Promise<SendEmailResult> {
-  checkAttribution(env, target, "sendEmail");
+  const target = attributionFor(env, explicitTarget, "sendEmail");
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding

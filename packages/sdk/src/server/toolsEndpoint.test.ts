@@ -12,6 +12,7 @@ import {
   type IdentityChannel,
   type ToolsListResponseV1,
 } from "../internal";
+import { RequestContextError, currentUser } from "./context";
 import { everyApp } from "./everyApp";
 import { ToolError, defineTools, type ToolContext } from "./tools";
 
@@ -537,5 +538,78 @@ describe("everyApp routing around the tools contract", () => {
       error: { code: "misconfigured" },
     });
     expect(consoleError).toHaveBeenCalled();
+  });
+});
+
+describe("the request context and the organization pin on tool calls", () => {
+  it("runs the tool in the caller's request context", async () => {
+    const seenInside: Array<string | undefined> = [];
+    const contextual = defineTools({
+      whoami: {
+        description: "Who is calling.",
+        risk: "read",
+        input: z.object({}).strict(),
+        handler: async (_input, context) => {
+          seenInside.push(currentUser()?.id);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          seenInside.push(currentUser()?.id);
+          return { same: currentUser() === context.user };
+        },
+      },
+    });
+    const target = appWith({
+      publicKeys: [publicKeyPem],
+      issuer: ISSUER,
+      tools: contextual,
+    });
+    const token = await identity({
+      toolCall: { id: "call_9", name: "whoami" },
+    });
+    const response = await fetchApp(
+      post(
+        TOOLS_CALL_PATH,
+        { v: 1, name: "whoami", arguments: {}, callId: "call_9" },
+        { [IDENTITY_HEADER]: token },
+      ),
+      target,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as any;
+    expect(JSON.parse(body.result.content[0].text)).toEqual({ same: true });
+    expect(seenInside).toEqual(["user_1", "user_1"]);
+    expect(() => currentUser()).toThrowError(RequestContextError);
+  });
+
+  it("refuses a call for another organization than the Worker's, before the tool runs", async () => {
+    const token = await identity({
+      toolCall: { id: "call_2", name: "list_todos" },
+    });
+    const refused = await app.fetch(
+      post(
+        TOOLS_CALL_PATH,
+        { v: 1, name: "list_todos", arguments: {}, callId: "call_2" },
+        { [IDENTITY_HEADER]: token },
+      ),
+      { EVERYAPP_AUDIENCE: WORKER, EVERY_APP_ORG_ID: "org_2" },
+      ctx,
+    );
+    expect(refused.status).toBe(401);
+    expect(await refused.json()).toMatchObject({
+      v: 1,
+      error: {
+        code: "unauthenticated",
+        message: expect.stringContaining("EVERY_APP_ORG_ID"),
+      },
+    });
+    const allowed = await app.fetch(
+      post(
+        TOOLS_CALL_PATH,
+        { v: 1, name: "list_todos", arguments: {}, callId: "call_2" },
+        { [IDENTITY_HEADER]: token },
+      ),
+      { EVERYAPP_AUDIENCE: WORKER, EVERY_APP_ORG_ID: "org_1" },
+      ctx,
+    );
+    expect(allowed.status).toBe(200);
   });
 });

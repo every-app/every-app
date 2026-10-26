@@ -21,7 +21,7 @@ export default {
 import OpenAI from "openai";
 import { ai } from "@every-app/sdk/server";
 
-const { baseURL, fetch, model } = ai({ env, for: request });
+const { baseURL, fetch, model } = ai({ env });
 const client = new OpenAI({ baseURL, fetch, apiKey: "gateway-managed" });
 const answer = await client.chat.completions.create({
   model, // "default": the Gateway puts the operator's model in
@@ -29,7 +29,7 @@ const answer = await client.chat.completions.create({
 });
 ```
 
-`ai({ env, for })` returns `{ baseURL, fetch, model, chatCompletionsUrl, embeddingsUrl }`: `baseURL` is `AI_DEFAULT_BASE_URL`, `http://every-app-gateway.internal/api/ai/default/v1`; `fetch` is `createGatewayFetch({ env, for })`; `model` is the string `default`. A request that names no `model`, or names `default`, gets the resolved model; a request that names another model sends it as it is (the operator's provider must serve it). `for` is the attribution every Gateway call carries ([attribution](/docs/agent/identity#attribution)). Any OpenAI-compatible client (`openai`, `@ai-sdk/openai-compatible`, a plain `fetch` to `chatCompletionsUrl`) works the same way.
+`ai({ env, for? })` returns `{ baseURL, fetch, model, chatCompletionsUrl, embeddingsUrl }`: `baseURL` is `AI_DEFAULT_BASE_URL`, `http://every-app-gateway.internal/api/ai/default/v1`; `fetch` is `createGatewayFetch({ env, for })`; `model` is the string `default`. A request that names no `model`, or names `default`, gets the resolved model; a request that names another model sends it as it is (the operator's provider must serve it). `for` is the attribution every Gateway call carries, taken from the request context when left out ([attribution](/docs/agent/identity#attribution)). Any OpenAI-compatible client (`openai`, `@ai-sdk/openai-compatible`, a plain `fetch` to `chatCompletionsUrl`) works the same way.
 
 **Local development.** With no Gateway binding and `EVERYAPP_DEV` set, `/api/ai/default/…` resolves on the developer's own `.dev.vars` by the same order below (the first provider whose settings are all set) and the SDK calls that provider directly with the model filled in. With none set: `ConfigurationError`, `Set OPENROUTER_API_KEY (or another model provider's key) in .dev.vars to call the default model in local development.`
 

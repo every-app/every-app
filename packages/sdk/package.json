@@ -41,13 +41,12 @@
     "test:watch": "vitest",
     "check:esm-relative-imports": "node ./scripts/check-esm-relative-imports.mjs"
   },
-  "peerDependencies": {
+  "dependencies": {
     "jose": "^6.2.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251014.0",
     "@types/node": "^22.18.13",
-    "jose": "^6.2.12",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.1.2",

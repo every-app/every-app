@@ -13,7 +13,7 @@ import {
 } from "../internal/index.js";
 import {
   applyAttribution,
-  checkAttribution,
+  attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
 
@@ -39,11 +39,13 @@ export interface GatewayFetchEnv {
 export interface CreateGatewayFetchOptions {
   env: GatewayFetchEnv;
   /**
-   * Whom the call is for: the inbound request (its user), or
-   * `{ background: true, organizationId }` for work no person started
-   * (crons, Workflows, queues). An organization's own app may omit it for
-   * background work, which is then the app's; a shared app's Worker must
-   * pass one or the other ({@link AttributionError}).
+   * Whom the call is for. Left out, the request `everyApp()` is serving
+   * (its user, while the identity is good) or the organization
+   * `withOrganization()` named; outside both, `RequestContextError`.
+   * Explicitly: the inbound request, or `{ background: true,
+   * organizationId }` for work no person started (crons, Workflows,
+   * queues). A shared app's Worker must end up with one or the other
+   * ({@link AttributionError}).
    */
   for?: GatewayCallFor;
 }
@@ -56,9 +58,11 @@ export interface CreateGatewayFetchOptions {
  */
 export function createGatewayFetch({
   env,
-  for: target,
+  for: explicitTarget,
 }: CreateGatewayFetchOptions): typeof fetch {
-  checkAttribution(env, target, "createGatewayFetch");
+  // Checked now, so a call nobody's fails where the fetch is made; and
+  // again per call, where an identity may since have neared its expiry.
+  attributionFor(env, explicitTarget, "createGatewayFetch");
   const binding = env.EVERY_APP_GATEWAY;
   const devProviders = env.EVERYAPP_DEV ? localProviders(env) : {};
 
@@ -79,6 +83,7 @@ export function createGatewayFetch({
   }
 
   return async (input, init) => {
+    const target = attributionFor(env, explicitTarget, "createGatewayFetch");
     const outbound = new Request(input, init);
     const headers = new Headers(outbound.headers);
     headers.delete("authorization");

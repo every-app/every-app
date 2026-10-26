@@ -81,7 +81,7 @@ becomes something else, not on the first feature.
 2. Scope every query by `user.id` unless sharing is the app's intent. Then the
    unit is the organization: the four apps key every row by the organization
    in the signed identity (`user.orgId`), every member sees the organization's
-   rows, and owners and admins (`user.orgRole`) manage. An app for the whole
+   rows, and owners and admins (`isAdmin(user)`) manage. An app for the whole
    organization also says so in the manifest: `access: "everyone"` (the
    default, `admins`, opens it to the deployer, owners and admins alone).
    Never an allowlist of users of your own: the Gateway decides who may open
@@ -96,7 +96,8 @@ becomes something else, not on the first feature.
    app's own. The Gateway signs people in, and its one `/mcp` is the connector
    for every app; an app's host answers `/mcp` only with the manifest opt-in
    `mcp: { by, why }`, which none of the four apps needs. Never set a cookie:
-   the Gateway strips every cookie before a request reaches the app.
+   the Gateway strips every cookie before a request reaches the app, and
+   `everyApp()` drops any `Set-Cookie` the app's framework adds.
 5. A key only this app uses goes under `secrets` (required by default;
    `optional: true` when one feature can wait; `anyOf` for one of a group),
    typed in `src/env.d.ts`, read from `env`. After the first deploy,
@@ -107,7 +108,7 @@ becomes something else, not on the first feature.
    for a script. Locally, `.dev.vars`. Never ask for, print or repeat a value
    in the chat; never put one in a file you commit or on a command line.
 6. AI through the Gateway: the provider under `providers` with a `why`, called
-   with `createGatewayFetch({ env, for: request })`; `ai.models` lists the
+   with `createGatewayFetch({ env })`; `ai.models` lists the
    models the app may ask for. The Gateway holds the key; a provider the
    manifest doesn't list is refused.
 7. A capability (`members`, `email`, `dataforseo`, `context`, an OAuth

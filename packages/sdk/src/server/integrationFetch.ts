@@ -46,7 +46,7 @@ import {
 } from "../internal/index.js";
 import {
   applyAttribution,
-  checkAttribution,
+  attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
 import {
@@ -72,11 +72,13 @@ export interface IntegrationFetchOptions {
    */
   provider: ApiKeyCapabilityId | OAuthClientCapabilityId | (string & {});
   /**
-   * Whom the call is for: the inbound request (its user), or
-   * `{ background: true, organizationId }` for work no person started
-   * (crons, Workflows, queues). An organization's own app may omit it for
-   * background work, which is then the app's; a shared app's Worker must
-   * pass one or the other ({@link AttributionError}).
+   * Whom the call is for. Left out, the request `everyApp()` is serving
+   * (its user, while the identity is good) or the organization
+   * `withOrganization()` named; outside both, `RequestContextError`.
+   * Explicitly: the inbound request, or `{ background: true,
+   * organizationId }` for work no person started (crons, Workflows,
+   * queues). A shared app's Worker must end up with one or the other
+   * ({@link AttributionError}).
    */
   for?: GatewayCallFor;
   /**
@@ -113,11 +115,14 @@ export interface IntegrationFetchOptions {
 export function integrationFetch({
   env,
   provider,
-  for: target,
+  for: explicitTarget,
   account,
 }: IntegrationFetchOptions): typeof fetch {
   const catalogEntry = fetchableCapability(provider);
-  checkAttribution(env, target, `integrationFetch("${provider}")`);
+  const what = `integrationFetch("${provider}")`;
+  // Checked now, so a call nobody's fails where the fetch is made; and
+  // again per call, where an identity may since have neared its expiry.
+  attributionFor(env, explicitTarget, what);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
@@ -159,6 +164,7 @@ export function integrationFetch({
   }
 
   return async (input, init) => {
+    const target = attributionFor(env, explicitTarget, what);
     const outbound = new Request(input, init);
     const upstream = new URL(outbound.url);
     const headers = new Headers(outbound.headers);
@@ -884,18 +890,24 @@ export async function integrationStatus<
 >({
   env,
   provider,
-  for: target,
+  for: explicitTarget,
 }: {
   env: object;
   provider: P;
   /**
-   * Whom the status is for: the inbound request (its person), so an OAuth
-   * provider's `connection` is that person's; absent, the status carries
-   * no connection. Background work names its organization, whose own
-   * connection is then reported.
+   * Whom the status is for: the request being served (its person), so an
+   * OAuth provider's `connection` is that person's; background work
+   * (`withOrganization()`) its organization, whose own connection is then
+   * reported. Explicitly the inbound request or `{ background: true,
+   * organizationId }`, as on every call.
    */
   for?: GatewayCallFor;
 }): Promise<IntegrationStatusOf<P>> {
+  const target = attributionFor(
+    env,
+    explicitTarget,
+    `integrationStatus("${String(provider)}")`,
+  );
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding

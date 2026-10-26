@@ -50,7 +50,7 @@ edits everyapp.config.ts for name, resources, public, providers,
 capabilities, secrets and email (manifest page), and the Gateway gives it
 nothing it doesn't declare there. AI: list the provider, providers:
 ["openai"] (or openrouter, workers-ai), and call it with the SDK's
-createGatewayFetch({ env, for: request }), a fetch for
+createGatewayFetch({ env }), a fetch for
 http://every-app-gateway.internal/api/ai/<provider>/... (an OpenAI client
 takes it as fetch, with http://every-app-gateway.internal/api/ai/openai/v1
 as baseURL; the other two base URLs and the code are on the identity

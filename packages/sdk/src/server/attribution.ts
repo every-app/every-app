@@ -1,8 +1,11 @@
 import { IDENTITY_HEADER, ORG_HEADER, SHARED_ENV } from "../internal/index.js";
+import { attributionFromContext } from "./context.js";
 
 /**
  * Whom a call through the gateway is for, which decides the organization
- * it counts against:
+ * it counts against. Left out, it comes from the request context: the
+ * request `everyApp()` is serving (its person, while the identity is good),
+ * or the organization `withOrganization()` named. Given explicitly:
  *
  *  - the inbound `Request`: its person, by the identity the gateway put on
  *    it (forwarded as is);
@@ -30,11 +33,23 @@ export class AttributionError extends Error {
 }
 
 /**
- * Check `target` before any call is made: a shared app's Worker must pass
- * the request or name the organization, and anything else passed must be
- * one of the two shapes.
+ * Whom the call is for, checked before any call is made: `target` as the
+ * app passed it, else the request context's answer
+ * ({@link attributionFromContext}; a `RequestContextError` outside every
+ * context). A shared app's Worker must end up with the request or an
+ * organization, and anything passed must be one of the two shapes.
  */
-export function checkAttribution(
+export function attributionFor(
+  env: object,
+  target: GatewayCallFor | undefined,
+  what: string,
+): GatewayCallFor | undefined {
+  const resolved = target === undefined ? attributionFromContext(what) : target;
+  checkAttribution(env, resolved, what);
+  return resolved;
+}
+
+function checkAttribution(
   env: object,
   target: GatewayCallFor | undefined,
   what: string,

@@ -326,9 +326,11 @@ does, once, in
     request, and the gateway strips it before a provider does.
   - A capability's status (`GET /api/integrations/<id>`) calls no provider
     and names no organization's data, so it needs no attribution.
-  - The SDK's `createGatewayFetch` and `integrationFetch` take `for: request`
-    (forward the identity) or `for: { background: true, organizationId }`
-    (send `x-everyapp-org`, no identity), and in a shared app's Worker
+  - The SDK's `createGatewayFetch` and `integrationFetch` attribute each
+    call from the request context (`for: request`, the identity forwarded,
+    while `everyApp()` serves a request; `for: { background: true,
+    organizationId }`, `x-everyapp-org` and no identity, under
+    `withOrganization()`; `RequestContextError` under neither), and in a shared app's Worker
     (`EVERYAPP_SHARED=1`) throw `AttributionError` for a call that names
     neither. The gateway enforces the rule either way.
 - Per-organization usage, in any mode: every provider call (AI proxy or

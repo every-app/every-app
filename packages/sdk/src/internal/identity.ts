@@ -23,6 +23,7 @@ import {
   IDENTITY_HEADER,
   IDENTITY_KEY_ID,
   ISSUER_ENV,
+  ORG_ID_ENV,
   PUBLIC_HEADER,
   PUBLIC_KEYS_ENV,
   PUBLIC_MARKER_SUB,
@@ -46,6 +47,7 @@ export {
   IDENTITY_HEADER,
   IDENTITY_KEY_ID,
   ISSUER_ENV,
+  ORG_ID_ENV,
   PUBLIC_HEADER,
   PUBLIC_KEYS_ENV,
   PUBLIC_MARKER_SUB,
@@ -154,14 +156,52 @@ export async function verifyIdentityJwt(
   token: string,
   options: VerifyOptions,
 ): Promise<EveryAppUser> {
+  return (await verifyIdentity(token, options)).user;
+}
+
+/** A verified identity, with when it stops being one. */
+export interface VerifiedIdentity {
+  user: EveryAppUser;
+  /** The token's `exp`, in epoch milliseconds. */
+  expiresAt: number;
+}
+
+/**
+ * {@link verifyIdentityJwt}, keeping the token's expiry: the SDK's request
+ * context stops forwarding an identity shortly before it, and goes on as
+ * the organization's background work.
+ */
+export async function verifyIdentity(
+  token: string,
+  options: VerifyOptions,
+): Promise<VerifiedIdentity> {
   const payload = await verifyPinnedJwt(token, options, "user");
   try {
-    return identityClaimsToEveryAppUser(payload);
+    const user = identityClaimsToEveryAppUser(payload);
+    // `exp` is a required claim (verifyPinnedJwt); jose checked it.
+    return { user, expiresAt: (payload.exp as number) * 1000 };
   } catch (error) {
     if (error instanceof ProtocolClaimsError) {
       throw new IdentityError(error.message);
     }
     throw error;
+  }
+}
+
+/**
+ * The organization pin: a deployed Worker serves one organization
+ * (`EVERY_APP_ORG_ID`), and an identity for any other is refused, whatever
+ * its audience says. Throws {@link IdentityError} on a mismatch; a Worker
+ * with no pin (a shared app's) accepts every organization.
+ */
+export function assertOrganizationPin(
+  user: EveryAppUser,
+  organizationId: string | undefined,
+): void {
+  if (organizationId && user.orgId !== organizationId) {
+    throw new IdentityError(
+      `identity is for organization "${user.orgId}", and this Worker serves organization "${organizationId}" (${ORG_ID_ENV})`,
+    );
   }
 }
 
@@ -278,10 +318,17 @@ export interface IdentityResult {
   user: EveryAppUser | null;
   /** True when the gateway marked this request as a public route. */
   isPublic: boolean;
+  /** When the identity expires (epoch ms); null on a public route. */
+  expiresAt: number | null;
 }
 
 export interface RequestIdentityOptions {
   audience: string;
+  /**
+   * The organization this Worker is pinned to ({@link ORG_ID_ENV}): an
+   * identity for another is refused. Undefined accepts every organization.
+   */
+  organizationId?: string;
   /** Provide keys directly, or let {@link getIdentityFromRequest} read env. */
   publicKeys?: string[];
   /** Env bag to read {@link PUBLIC_KEYS_ENV} / {@link DEV_ENV} from. */
@@ -336,23 +383,31 @@ export function resolveVerifyOptions(
  * fails closed.
  */
 export async function getIdentityFromRequest(
-  request: Request,
+  request: Request | Headers,
   options: RequestIdentityOptions,
 ): Promise<IdentityResult> {
   const verifyOptions = resolveVerifyOptions(options);
 
-  const publicMarker = request.headers.get(PUBLIC_HEADER);
+  const headers = isRequestLike(request) ? request.headers : request;
+  const publicMarker = headers.get(PUBLIC_HEADER);
   if (publicMarker) {
     await verifyPublicMarkerJwt(publicMarker, verifyOptions);
-    return { user: null, isPublic: true };
+    return { user: null, isPublic: true, expiresAt: null };
   }
 
-  const token = request.headers.get(IDENTITY_HEADER);
+  const token = headers.get(IDENTITY_HEADER);
   if (!token) {
     throw new IdentityError(
       "request reached the app without an identity token (not proxied through the gateway?)",
     );
   }
-  const user = await verifyIdentityJwt(token, verifyOptions);
-  return { user, isPublic: false };
+  const { user, expiresAt } = await verifyIdentity(token, verifyOptions);
+  assertOrganizationPin(user, options.organizationId);
+  return { user, isPublic: false, expiresAt };
+}
+
+// Duck-typed: a Request from another realm (a test runner, a polyfill) still
+// carries its headers the same way.
+function isRequestLike(value: Request | Headers): value is Request {
+  return "headers" in value && typeof value.headers?.get === "function";
 }
