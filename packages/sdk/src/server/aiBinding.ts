@@ -29,11 +29,7 @@ import {
   type AiProviderId,
 } from "../internal/index.js";
 import type { GatewayCallFor } from "./attribution.js";
-import {
-  BINDING_ORIGIN,
-  createGatewayFetch,
-  type GatewayFetchEnv,
-} from "./gatewayFetch.js";
+import { BINDING_ORIGIN, createGatewayFetch } from "./gatewayFetch.js";
 import { GatewayRefusalError, gatewayRefusal } from "./integrationFetch.js";
 
 export interface GatewayAiBindingOptions {
@@ -123,7 +119,7 @@ export function gatewayAiBinding(
       ? { model: sent, input: inputs["text"] }
       : chatBody(sent, inputs);
     const gatewayFetch = createGatewayFetch({
-      env: env as GatewayFetchEnv,
+      env,
       for: options.for,
     });
     const response = await gatewayFetch(url, {
