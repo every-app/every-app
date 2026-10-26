@@ -41,8 +41,9 @@
  *      them;
  *   4. bind the Worker on the gateway and publish the app's hostname as a
  *      Workers Custom Domain if the install row says it doesn't yet (a
- *      reconcile: the gateway this checkout builds, from the build cache
- *      when it can, which also upgrades a gateway older than the checkout),
+ *      reconcile: the live Gateway's own release, had again from where
+ *      the install row says it came, lib/gateway/liveRelease.ts; what
+ *      setup would deploy when it can't be, said so),
  *      then wait for the app to go live: the gateway activates it on the
  *      first request that reaches it (steps/waitForLive.ts).
  *
@@ -299,7 +300,8 @@ async function deploySteps(
   // 1. The gateway, through the Cloudflare login: its account, D1 and
   // install. With none anywhere, `deploy` offers to install one first.
   const offer = options.offerInstall;
-  const gateway = gatewayFor(options.reconcile, out, options.verbose);
+  // A Gateway installed on the way comes from where setup takes it (no install row yet).
+  const setupGateway = gatewayFor(options.reconcile, null, out, options.verbose);
   out.emit({ type: "step", step: "app.connect", status: "start", message: "Finding your Gateway..." });
   const { cf, accountId, accountName, databaseId, db: registry, install, gatewayUrl, deployer } =
     await connectToGateway({
@@ -322,7 +324,7 @@ async function deploySteps(
                 forceDns: options.forceDns,
                 verbose: options.verbose,
                 deps: {
-                  ...setupDeps({ gateway, interactive }),
+                  ...setupDeps({ gateway: setupGateway, interactive }),
                   ...(options.createCf ? { createCf: options.createCf } : {}),
                   ...offer.setup,
                 },
@@ -368,6 +370,8 @@ async function deploySteps(
         : {}),
     },
   });
+  // The Gateway a rebind deploys: the live one again, when it can be had.
+  const gateway = gatewayFor(options.reconcile, install, out, options.verbose);
   // Before anything is registered: never with a Gateway behind the live one.
   await refuseOlderCheckout(install, gateway.source);
   const identityKey = install.jwtPublicKey;

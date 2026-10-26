@@ -40,7 +40,7 @@ import {
   type ReleaseOrigin,
 } from "./release";
 
-interface GatewayReleaseSource {
+export interface GatewayReleaseSource {
   /**
    * What the Gateway would be, for the downgrade guard: from a checkout
    * without building anything; a release is fetched for it (and kept for

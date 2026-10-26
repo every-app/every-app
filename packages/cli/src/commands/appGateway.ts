@@ -8,10 +8,15 @@ import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { readInstall, type InstallRecord } from "@/lib/gateway/install";
-import { gatewayReleaseSource } from "@/lib/gateway/source";
+import { liveGatewaySource } from "@/lib/gateway/liveRelease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { register, type Deployer } from "@/lib/gateway/registry";
-import type { CandidateRelease, GatewayRelease } from "@/lib/gateway/release";
+import {
+  describeOrigin,
+  releaseName,
+  type CandidateRelease,
+  type GatewayRelease,
+} from "@/lib/gateway/release";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { version as cliVersion } from "../../package.json";
@@ -19,8 +24,8 @@ import { LiveWaitVerb, waitForLive, type LiveWaitSeams } from "./deploy/steps/wa
 
 /**
  * The rebind's seams (tests): how long it waits for the gateway's lease,
- * how it sleeps, and the release it deploys (default: lib/gateway/source.ts,
- * the checkout's build or the published release).
+ * how it sleeps, and the release it deploys (default: the live Gateway's
+ * own release, lib/gateway/liveRelease.ts).
  */
 export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
@@ -31,20 +36,35 @@ export interface ReconcileSeams {
 }
 
 /**
- * The Gateway an app command's rebind deploys, unless a test says: one
- * source for the downgrade guard and the rebind, so a release is fetched
- * once.
+ * The Gateway an app command's rebind deploys, unless a test says: the
+ * release that is live, had again from where the install row says it
+ * came (lib/gateway/liveRelease.ts), so a deploy never changes the
+ * Gateway's code on the way; one source for the downgrade guard and the
+ * rebind, so a release is fetched once.
  */
 export function gatewayFor(
   seams: ReconcileSeams | undefined,
+  install: InstallRecord | null,
   out: EventSink,
   verbose?: boolean,
 ): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
-  const gateway = gatewayReleaseSource({ out, verbose, cliVersion });
+  const gateway = liveGatewaySource({ install, out, verbose, cliVersion });
   return {
     openRelease: seams?.openRelease ?? gateway.open,
     source: seams?.source ?? gateway.describe,
   };
+}
+
+/**
+ * Whether what a rebind would deploy is the live release: the same bytes,
+ * a build of the same sources, or, told neither, the same version.
+ */
+function isLiveCandidate(next: CandidateRelease, install: InstallRecord): boolean {
+  if (next.sha256 !== undefined) {
+    return next.sha256 === install.releaseSha256 || (next.treeSha256 !== null && next.treeSha256 === install.sourceTreeSha256);
+  }
+  if (next.treeSha256 !== null) return next.treeSha256 === install.sourceTreeSha256;
+  return next.version === install.releaseVersion;
 }
 
 /** Register the app its manifest describes, one label below the Gateway's base. */
@@ -121,16 +141,22 @@ export async function bindIfNeeded({
     message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
     data: { appId },
   });
-  // The Gateway this run deploys upgrades the live one when its version is newer.
-  const to = (await seams.source?.())?.version;
-  const upgrade = to !== undefined && install !== null && to !== install.releaseVersion;
+  // The Gateway this run deploys is the live one, unless it can't be had
+  // again (lib/gateway/liveRelease.ts): then whatever it is, said before
+  // it goes, by version when that differs and by source when it doesn't.
+  const next = await seams.source?.();
+  const upgrade = next !== undefined && install !== null && !isLiveCandidate(next, install);
+  const to = next?.version;
   if (upgrade) {
+    const sameVersion = to === install.releaseVersion;
     out.emit({
       type: "step",
       step: "gateway.upgrade",
       status: "start",
-      message: `Upgrading the Gateway ${install.releaseVersion} → ${to}...`,
-      data: { from: install.releaseVersion, to },
+      message: sameVersion
+        ? `Redeploying the Gateway ${to} from ${describeOrigin(next.origin)} (${releaseName(next)}; not the live release)...`
+        : `Upgrading the Gateway ${install.releaseVersion} → ${to}...`,
+      data: { from: install.releaseVersion, to, origin: next.origin, sameVersion },
     });
   }
   try {

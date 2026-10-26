@@ -128,7 +128,7 @@ export async function removeApp({
   });
   const { cf, db: registry } = connection;
   // Before the registry changes: never with a Gateway behind the live one.
-  const newGateway = gatewayFor(reconcile, out);
+  const newGateway = gatewayFor(reconcile, connection.install, out);
   await refuseOlderCheckout(connection.install, newGateway.source);
   out.emit({
     type: "step",

@@ -2461,6 +2461,12 @@ Source: `packages/cli/src/commands/events/add.ts`
 
 Source: `packages/cli/src/commands/setup/deployGateway.ts`
 
+### GATEWAY_RELEASE_DIFFERS
+
+A rebind (`deploy` binding a new app or hostname, `delete`), step `gateway.release`: the live Gateway's release was fetched again from where the install row says it came (`data.origin`, a GitHub release by tag or a URL), but its `release.json` SHA-256 isn't the row's (`data.live` against `data.found`): the asset was replaced under its tag. It is deployed as an update, and the downgrade guard refuses it when it is older. Message `The Gateway release at <origin> isn't the one that is live any more (its SHA-256 changed)` then `Deploying it as an update; a Gateway older than the live one is refused.`
+
+Source: `packages/cli/src/lib/gateway/liveRelease.ts`
+
 ### GATEWAY_RELEASE_LATEST
 
 `setup` or `update` outside a checkout, step `gateway.release`: `https://github.com/every-app/every-app` has no release tagged `gateway-v<this everyapp's version>` yet, so the newest stable Gateway release is taken instead. Message `There is no Gateway release for everyapp <version> yet (<repo> has no <tag>)` then `Using the latest stable Gateway release instead. To take another: --release <url|file>.`; `data.cliVersion`, `data.tag`, `data.repo`.
