@@ -61,29 +61,17 @@ Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/doc
 
 Then install an app with `everyapp install https://github.com/every-app/open-seo`, or [build your own](https://everyapp.com/docs/create-an-app) with `everyapp create my-app`.
 
-## Contributing: run from a checkout
-
-The platform itself is this repository. Clone it to change the Gateway, the SDK or the CLI:
-
-```bash
-git clone https://github.com/every-app/every-app.git
-cd every-app
-pnpm install
-pnpm everyapp setup --domain apps.yourcompany.com
-```
-
-`pnpm everyapp` runs the CLI and builds the Gateway from your checkout. `pnpm everyapp create ../my-app` makes a new app linked to your checkout's SDK and CLI, so its `pnpm run deploy` uses your checkout too. An app made with the npm `everyapp` is pinned to the published packages instead.
-
 ## What's on the roadmap?
 
 Oh, nothing much. Just rebuilding every SaaS for agents.
 
 ## Community
 
-⭐ Star the repo to follow along.
+⭐ [Star the repo](https://github.com/every-app/every-app) to follow along.
 
 - Docs: [everyapp.com/docs](https://everyapp.com/docs) (for your agent: [everyapp.com/llms.txt](https://everyapp.com/llms.txt))
 - Join [Discord](https://discord.gg/c9uGs3cFXr) to chat
+- Local development and contributing: [CONTRIBUTING](.github/CONTRIBUTING.md)
 - Security holes: report them privately, not in a public issue ([how](docs/threat-model.md#reporting-a-problem)).
 
 ## License
