@@ -1820,3 +1820,13 @@ From "Hosted build":
 - [ ] **Carter's #377 closed** (Ben: "merge it if helpful, otherwise close; probably out of date"): it edits deleted apps and the removed hosted CLI. docs/runbooks/managed-domains.md on that branch is the salvage when the hosted tier resumes.
 - [ ] **Apps shipping skills** is the direction (Ben, Q20b aside): "maybe just normal top-level skills like OpenSEO, and agents clone them". Out of scope for launch.
 - [ ] **Dynamic MCPs via worker loaders (the Executor pattern)**: forward-looking, "too much for this weekend". Sketch lives with the MCP-apps reframe thread's design note.
+
+## RepoLens port (2026-10-26)
+
+Found while putting RepoLens on everyapp.team with its old Wrangler D1 history (every-app/private-repolens #3).
+
+- The setup gate also blocks `public` routes: with a required secret unset, RepoLens's badge route answers 503 `app_needs_setup`, so a badge embedded in a README breaks. Decide: public routes bypass the gate, or the docs say they do not.
+- A new app's first deploy rebinds the Gateway from the checkout it runs in, which silently upgrades the Gateway to that checkout. There is no "bind with the live release" option, so deploying an app during a held rollout needs a detached worktree at the live Gateway's commit. Add `--no-upgrade` (fail if the checkout is newer than the live Gateway) or bind from the live tree.
+- The published `everyapp` CLI (0.3.0-rc.3) cannot do a first deploy: the rebind fails with `CHECKOUT_MISSING`. App READMEs that pin npm still need a platform checkout for the first deploy.
+- `cf` has no `d1 export`/`import`; the thread used the D1 REST API with cf's stored token. Worth a `everyapp db export|import --app` so history moves without raw API calls.
+- No way to adopt an existing D1 into the ledger (a claimed row would be purged by `delete --purge`); export + import is the documented path.
