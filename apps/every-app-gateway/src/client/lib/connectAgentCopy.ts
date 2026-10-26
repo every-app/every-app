@@ -6,12 +6,7 @@
  * `mcp.json` with a `url`); check them there before changing one.
  */
 
-type ConnectClientId =
-  | "claude"
-  | "claude-code"
-  | "codex"
-  | "cursor"
-  | "other";
+type ConnectClientId = "claude" | "claude-code" | "codex" | "cursor" | "other";
 
 interface ConnectClient {
   id: ConnectClientId;

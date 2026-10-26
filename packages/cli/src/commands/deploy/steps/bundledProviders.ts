@@ -31,7 +31,7 @@ import { confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
 
 /** One spec as the step reports it. */
-export interface BundledProviderReport {
+interface BundledProviderReport {
   id: string;
   name: string;
   file: string;
