@@ -776,6 +776,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       event.status === "ok" && event.message ? { line: event.message } : null,
     "provider.add": (event) =>
       event.status === "start" ? { spin: event.message ?? "Registering..." } : null,
+    // `provider add`: what was added and the one thing to do at the provider, before its key or client is asked for.
+    "provider.setup": (event) =>
+      event.status === "ok" && event.message ? { line: event.message } : null,
     "provider.remove": (event) =>
       event.status === "start" ? { spin: event.message ?? "Removing..." } : null,
     // `provider on|off`, said before `mcp on|off` runs for it.

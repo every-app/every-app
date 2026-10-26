@@ -1068,15 +1068,15 @@ Source: `packages/cli/src/lib/gateway/remoteMcpApps.ts` (`resolveMcpApp`), `pack
 
 ### PROVIDER_BUILTIN
 
-`provider add` with a spec whose id is a built-in provider's (or `everyapp`): `<id> is built in` / `A registered provider can't take a built-in provider's id.`, `data.fix` naming `provider show <id>`. `provider remove <id>` of a built-in id: only a registered provider can be removed (`data.rerun` `pnpm everyapp provider list`). `provider show <id> --save` of a built-in provider: `everyapp dev reaches it without a file`, `data.fix` naming the settings to put in `.dev.vars`. Not retryable.
+`provider add` with a spec whose id is a built-in provider's (or `everyapp`): `<id> is built in` / `A registered provider can't take a built-in provider's id.`, `data.fix` naming `provider show <id>`. `provider remove <id>` of a built-in id: only a registered provider can be removed (`data.rerun` `pnpm everyapp provider list`). `provider show <id> --save` of a built-in provider: `everyapp dev reaches it without a file`, `data.fix` naming the settings to put in `.dev.vars`. `provider add <id>` of a Gateway service (`email`, `members`): `<id> is a Gateway service, not a provider with a key`, `data.fix` naming its own command. Not retryable.
 
 Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
 
 ### PROVIDER_CLIENT_INCOMPLETE
 
-`provider add --oauth` was given one half of the client (the id by `--client-id` or a piped line, or the secret) without the other: `<Provider>'s client needs <NAME> too` / `Nothing was set; the provider is registered.` The row was written; set the client with the command in `data.fix` (`pnpm everyapp secret set <ID>_CLIENT_ID <ID>_CLIENT_SECRET`), or pipe both as `NAME=value` lines.
+`provider add` was given part of a key or client (an OAuth client's id by `--client-id` or a piped line without its secret, or one of an API provider's several settings by `--from-env` or a piped line) and the Gateway doesn't have the rest: `<Provider>'s client needs <NAME> too` (or `<Provider>'s key needs …`) / `Nothing was set; the provider is registered.` (or `is built in`). The row, if any, was written; set the rest with the command in `data.fix` (`pnpm everyapp secret set <NAMES>`), or give every one. Enter on nothing at a prompt is not this error: nothing is set and the command exits 0 with the `secret set` as `next`.
 
-Source: `packages/cli/src/commands/provider/oauth.ts`
+Source: `packages/cli/src/commands/provider/credentials.ts`
 
 ### PROVIDER_CONNECTION_NOT_FOUND
 
@@ -1110,7 +1110,7 @@ Source: `packages/cli/src/lib/gateway/providers.ts`
 
 ### PROVIDER_NOT_FOUND
 
-`provider remove <id>` of an id with no row (`No provider <id> is registered on this Gateway`), or `provider show <id>` of an id the Gateway doesn't offer (or a Gateway service such as `email`, or a row the Gateway refuses, with why). `data.rerun`: `pnpm everyapp provider list`.
+`provider add <id>` of a bare id that isn't the catalog's, an OAuth preset's, a path or a URL (`<id> isn't a built-in provider`), `provider remove <id>` of an id with no row (`No provider <id> is registered on this Gateway`), or `provider show <id>` of an id the Gateway doesn't offer (or a Gateway service such as `email`, or a row the Gateway refuses, with why). `data.rerun`: `pnpm everyapp provider list`.
 
 Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/cli/src/commands/provider/index.ts`
 

@@ -54,12 +54,14 @@ the provider and the hosts its key goes to).
 An OAuth provider (GitHub, Notion, Linear, GitLab, Atlassian, HubSpot,
 Zoom, Dropbox, Spotify, X, or any custom one; the agent docs'
 `providers` page, "OAuth providers") has no file either: `pnpm everyapp
-provider presets` lists what can be added, `pnpm everyapp provider add
---oauth <preset>` adds it and prints the redirect URI the person registers
-at the provider's console (`https://<gateway>/connect/<id>/callback`) and
-the two settings to set, `pnpm everyapp secret set <ID>_CLIENT_ID
-<ID>_CLIENT_SECRET` (an owner or admin may paste them in Manage workspace →
-Providers instead). Only a person can make the OAuth app at the provider
+provider presets` lists what can be added, and `pnpm everyapp provider add
+<id>` adds it in one step: it prints the redirect URI the person registers
+at the provider's console (`https://<gateway>/connect/<id>/callback`), then
+asks for the client id and secret at hidden prompts and sets them. Hand
+that command to the person; unattended (`--json`) it sets nothing and its
+`next` is `pnpm everyapp secret set <ID>_CLIENT_ID <ID>_CLIENT_SECRET`, or
+pass the values with `--from-env` (an owner or admin may paste them in
+Manage workspace → Providers instead). Only a person can make the OAuth app at the provider
 and approve a consent; after the client is set, each member connects their
 own account under Connected accounts in the account menu. Google,
 Microsoft 365 and Slack below are the same: their files set the client,

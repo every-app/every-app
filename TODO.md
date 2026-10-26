@@ -376,6 +376,20 @@ Ben's ruling (2026-10-26): Cloudflare Access is the default, and once it is on i
 - [ ] **`--no-access` is `setup`'s only opt-out** (`access off` afterwards); the `deploy` that installs a Gateway takes the default and has no flag; `update` never offers Access and has no flag. The interactive question stays (Yes by default).
 - [ ] **Not done.** Managed OAuth isn't reconciled or offered; the hook doesn't attach a reusable policy that `access on` never made (no policy, policies kept as found); nothing runs on a schedule (a dashboard change between two CLI runs is caught by the next `status`, `update` or `access on`, not before); everyapp.team is not redeployed (Rollout 3 is Ben's).
 
+### provider add, one step (2026-10-26)
+
+Ben ran `provider add --oauth google-workspace` and found it wordy and two-step. Now `provider add <id>` adds the provider and asks for its key or client in the same run. Defaults taken, each to confirm or change:
+
+- [ ] **`provider add <id>` takes a built-in id without `--oauth`**: an API-key or AI provider (`openrouter`) writes no row and sets its key; an OAuth preset or built-in client goes the `--oauth` way. A bare id that isn't the catalog's is `PROVIDER_NOT_FOUND`; a Gateway service (`email`) is `PROVIDER_BUILTIN`. `--oauth` stays for OAuth spec files.
+- [ ] **Only unset settings are asked for.** A catalog provider whose settings the Gateway has gets no prompt ("Its key is set"; rotate with `secret set`). A setting another provider shares (`CLOUDFLARE_ACCOUNT_ID`) isn't asked again. A registered row is always asked, since a new or replaced row is unbound.
+- [ ] **Enter on any prompt sets nothing**, never half a client; exit 0 and `next` is the `secret set`.
+- [ ] **Piped `NAME=value` lines are read only from a pipe or a file.** A stdin left open some other way (a socket) is not waited on, so an agent never hangs on `provider add`.
+- [ ] **The display name drops a trailing aside** (`Google (Gmail, …)` → `Google`). Lane 5 owns the labels; see below.
+- [ ] **The docs link is `https://everyapp.com/docs/providers/<company>`** (`lib/providerDocs.ts`, using the docs generator's own `COMPANY_OF`). A registered spec gets no Docs line; its own `docs` URL is step 1.
+- [ ] **`next` carries no note** (the setup lines say what to do; `data` has `redirectUri`, `console`, `docs`). The scope sets and manifest entry are behind `--verbose`, and in `data` and `provider show`.
+- [ ] **For lane 5 (capabilities.ts)**: `google-workspace`'s label "Google (Gmail, Calendar, Search Console and Analytics)" should be the name, "Google Workspace", with the products in its description; `microsoft-365`'s likewise ("Microsoft 365"). Scope-set labels such as `identity`'s "Google account (who you are)" read badly inside parentheses.
+- [ ] **Not changed**: `signin add` already asks for its client at a hidden prompt (`--client-secret-from-env` for scripts); `mcp add` already offers to set the credential (`Set <NAME> now?`) or takes `--from-env`. Neither has the two-step problem.
+
 ### Platform shortcuts (2026-10-26)/1 sdk-context
 
 Lane 1 of the platform shortcuts swath (HELD: identity; Ben reviews). The SDK keeps the request in context and attributes every Gateway call from it, so the apps delete `gateway-attribution.ts`, their `EVERY_APP_ORG_ID` pin, `ROLES`/`toOrgRole`/`isAdmin` and `withoutCookies()`. Defaults chosen:

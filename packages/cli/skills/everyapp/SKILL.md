@@ -224,10 +224,13 @@ MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
 APIs:    pnpm everyapp provider add stripe.json --json   registers an API
          provider the catalog doesn't have on the Gateway: a JSON spec (hosts,
          auth, settings named after its id, STRIPE_…; never a value; fields
-         and rules on the providers page), from a file or an https URL. Then
-         pnpm everyapp secret set STRIPE_API_KEY (it names the provider and
-         the hosts the key goes to, and binds the key to them: a row replaced
-         with --replace needs the key set again). An app lists it under
+         and rules on the providers page), from a file or an https URL. At a
+         terminal it then asks for the key and sets it; with --json it sets
+         nothing and its next is pnpm everyapp secret set STRIPE_API_KEY (it
+         names the provider and the hosts the key goes to, and binds the key
+         to them: a row replaced with --replace needs the key set again), or
+         add --from-env. provider add <id> does the same for a built-in
+         provider (openrouter) or OAuth client (google-workspace). An app lists it under
          capabilities like a catalog provider and calls integrationFetch().
          provider list (the catalog and the rows), provider show <id> (the
          whole spec; --save writes .everyapp/providers/<id>.json for dev),

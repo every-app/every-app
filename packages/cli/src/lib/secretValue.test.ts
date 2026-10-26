@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { askSecret, askText } from "@/lib/output/prompt";
-import { assertOneValueEnough, readSecretValue } from "./secretValue";
+import { askSettingValue, assertOneValueEnough, readSecretValue } from "./secretValue";
 
 vi.mock("@/lib/output/prompt", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/output/prompt")>()),
@@ -90,7 +90,7 @@ describe("readSecretValue", () => {
     stdinIsTerminal(true);
     vi.mocked(askSecret).mockResolvedValue("  sk-2 ");
     await expect(readSecretValue("OPENAI_API_KEY", {})).resolves.toBe("sk-2");
-    expect(askSecret).toHaveBeenCalledWith("Value for OPENAI_API_KEY");
+    expect(askSecret).toHaveBeenCalledWith("Value for OPENAI_API_KEY", { optional: false });
     expect(askText).not.toHaveBeenCalled();
   });
 
@@ -246,5 +246,17 @@ describe("readSecretValue", () => {
     });
     pipedIn("sk-3\n");
     await expect(readSecretValue("OPENAI_API_KEY", {})).resolves.toBe("sk-3");
+  });
+});
+
+describe("askSettingValue", () => {
+  it("with optional, takes Enter on nothing at either prompt as an answer", async () => {
+    vi.mocked(askSecret).mockResolvedValue("");
+    await expect(askSettingValue("OPENROUTER_API_KEY", { question: "Key", optional: true })).resolves.toBe("");
+    expect(askSecret).toHaveBeenCalledWith("Key", { optional: true });
+    const asked = answerText("");
+    await expect(askSettingValue("EMAIL_PASSWORD_SIGN_IN", { optional: true })).resolves.toBe("");
+    expect(asked().validate?.("")).toBeNull();
+    expect(asked().validate?.("maybe")).toMatch(/^Not one of /);
   });
 });

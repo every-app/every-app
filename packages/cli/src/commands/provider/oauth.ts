@@ -11,7 +11,6 @@
  * that opens the D1 row lives in the Worker. It holds no token either, so
  * `disconnect` deletes the connection and says where to revoke the grant.
  */
-import { text as readAll } from "node:stream/consumers";
 import { stripVTControlCharacters } from "node:util";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import {
@@ -47,25 +46,17 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { formatTable } from "@/lib/output/table";
 import { listed } from "@/lib/output/text";
 import type { GatewayCommandFlags } from "../flags";
-import { parsePipedLines } from "../configure";
-import { applySecretValues } from "../secret";
+import { providerDocsUrl } from "@/lib/providerDocs";
+import { givenValues, setProviderSettings, shortName, type CredentialFlags } from "./credentials";
 import { readSpecSource, type ProviderOptions } from "./index";
 
 /** The flags `provider add --oauth` adds to `provider add`. */
-export interface OAuthAddFlags {
+export interface OAuthAddFlags extends CredentialFlags {
   replace?: boolean;
   oauth?: string;
-  "client-id"?: string;
-  "from-env"?: boolean;
 }
 
-interface OAuthAddOptions extends ProviderOptions {
-  flags: GatewayCommandFlags & OAuthAddFlags;
-  /** What was piped in, or null when nothing was (default: stdin when it isn't a terminal). */
-  readStdin?: () => Promise<string | null>;
-  /** The environment --from-env reads (default: process.env). */
-  env?: NodeJS.ProcessEnv;
-}
+type OAuthAddOptions = ProviderOptions & { flags: GatewayCommandFlags & OAuthAddFlags };
 
 /** Where a connection's redirect lands: the callback the operator registers at the provider's console. */
 function redirectUriFor(gatewayUrl: string, id: string): string {
@@ -250,64 +241,15 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
   );
 }
 
-/** What was piped in, or null at a terminal or when nothing was. */
-async function readPipedStdin(): Promise<string | null> {
-  if (process.stdin.isTTY) return null;
-  const piped = await readAll(process.stdin);
-  return piped.trim() ? piped : null;
-}
-
 /**
- * The client's values for this run: `--client-id` for the id (public),
- * piped `NAME=value` lines for either name, and with `--from-env` the
- * variables of the settings' names. A name that isn't the client's is
- * refused without being echoed. Empty when no value was given.
- */
-async function clientValues(
-  capability: OAuthClientCapability,
-  options: OAuthAddOptions,
-): Promise<Record<string, string>> {
-  const names = capabilitySettings(capability);
-  const values: Record<string, string> = {};
-  const piped = options.flags["from-env"] ? null : await (options.readStdin ?? readPipedStdin)();
-  if (piped !== null) {
-    for (const { name, value, line } of parsePipedLines(piped)) {
-      if (!names.includes(name)) {
-        const shown = /^[A-Z][A-Z0-9_]*$/.test(name) ? name : `line ${line} (not shown: it may be a value)`;
-        throw new EveryAppError(
-          "SECRET_NOT_DECLARED",
-          `${capability.label}'s client isn't ${shown}\nThe piped lines set ${listed([...names])}. Nothing was set.`,
-          { fix: `pipe ${names.join(" and ")} as NAME=value lines` },
-        );
-      }
-      if (!value.trim()) {
-        throw new EveryAppError("SECRET_EMPTY", `${name} is empty in the piped input\nNothing was set.`, {
-          fix: "give it a value, or leave the line out",
-        });
-      }
-      values[name] = value;
-    }
-  }
-  if (options.flags["from-env"]) {
-    const env = options.env ?? process.env;
-    for (const name of names) {
-      const value = env[name];
-      if (value && !(name in values)) values[name] = value;
-    }
-  }
-  const clientId = options.flags["client-id"]?.trim();
-  if (clientId) values[capability.secrets.clientId] = clientId;
-  return values;
-}
-
-/**
- * `provider add --oauth <preset | built-in | spec>`: a preset or a spec
- * becomes a registered row (as `provider add` writes one; `--replace`
- * applies); a built-in client (`google-workspace`) writes no row. Then the
- * redirect URI to register at the provider's console, and the client set
- * in the same run when its values were given (`--client-id`, piped
- * `NAME=value` lines, `--from-env`), through `secret set`, which binds the
- * row. Without them, the command to set it next.
+ * `provider add --oauth <preset | built-in | spec>` (and `provider add
+ * <id>` of one): a preset or a spec becomes a registered row (as
+ * `provider add` writes one; `--replace` applies); a built-in client
+ * (`google-workspace`) writes no row. Then the one thing to do at the
+ * provider's console (register the redirect URI) and the docs page, and
+ * the client set in the same run (credentials.ts): from `--client-id`,
+ * piped `NAME=value` lines or `--from-env`, else asked for at the
+ * terminal. Unattended or skipped, the `secret set` to run next.
  */
 export async function addOAuth(options: OAuthAddOptions, value: string): Promise<void> {
   const { out, flags } = options;
@@ -369,61 +311,80 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     message: `Register this redirect URI at ${capability.console}: ${redirectUri}`,
     data: { id, redirectUri, console: capability.console },
   });
-  const values = await clientValues(capability, options);
-  const given = Object.keys(values);
-  if (given.length > 0) {
-    const missing = settings.filter((name) => !(name in values));
-    if (missing.length > 0) {
-      throw new EveryAppError(
-        "PROVIDER_CLIENT_INCOMPLETE",
-        `${capability.label}'s client needs ${listed(missing)} too\nNothing was set; the provider ${rowSource === "row" ? "is registered" : "is built in"}.`,
-        {
-          fix: `pipe ${missing.join(" and ")} as NAME=value lines, export ${missing.length === 1 ? "it" : "them"} and add --from-env, or run ${CLI} secret set ${settings.join(" ")}`,
-        },
-      );
-    }
-    await applySecretValues({
-      flags: { ...flags },
-      out,
-      names: settings,
-      readValue: async (name) => values[name]!,
-      ...(options.createCf ? { createCf: options.createCf } : {}),
-    });
-  }
   const [gatewayNames, uploaded, connections] = await Promise.all([
     listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
   ]);
+  const before = clientSourceOf(capability, gatewayNames, uploaded, id);
+  // A row's client is set again after it is written: secret set binds it to the row's hosts.
+  const needed = before !== "none" ? [] : rowSource === "row" ? settings : settings.filter((name) => !gatewayNames.includes(name));
+  const name = shortName(capability.label);
+  const given = await givenValues(settings, `${name}'s client`, flags, options, capability.secrets.clientId);
+  const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
+  const docs = providerDocsUrl(id);
+  const header =
+    rowSource === "catalog"
+      ? `${name} (${id}) is on ${gatewayHost}.`
+      : `${replaced ? "Replaced" : "Registered"} ${name} (${id}) on ${gatewayHost}.`;
+  const register = `Register this redirect URI at ${capability.console}:\n   ${redirectUri}`;
+  const setup =
+    needed.length === 0
+      ? [header]
+      : Object.keys(given).length > 0
+        ? [header, register, `Docs: ${docs}`]
+        : [
+            header,
+            `1. ${register}`,
+            interactive ? "2. Paste the OAuth client it gives you." : "2. Set the client it gives you with the command below.",
+            `Docs: ${docs}`,
+          ];
+  out.emit({ type: "step", step: "provider.setup", status: "ok", message: setup.join("\n"), data: { id, docs } });
+  const outcome = await setProviderSettings({
+    flags,
+    out,
+    ...(options.createCf ? { createCf: options.createCf } : {}),
+    whose: `${name}'s client`,
+    standing: `the provider ${rowSource === "row" ? "is registered" : "is built in"}`,
+    settings,
+    needed,
+    given,
+    interactive,
+    ...(options.ask ? { ask: options.ask } : {}),
+    questionOf: (setting) =>
+      setting === capability.secrets.clientId ? "Client id" : setting === capability.secrets.clientSecret ? "Client secret" : setting,
+  });
+  const set = outcome === "set";
   const facts = oauthFacts(id, capability, {
     source: rowSource,
     gatewayUrl: gateway.gatewayUrl,
-    gatewayNames,
+    gatewayNames: set ? [...gatewayNames, ...settings] : gatewayNames,
     uploaded,
     connections,
   });
-  const client = facts["client"] as { source: ClientSource };
+  const client = (facts["client"] as { source: ClientSource }).source;
+  const connectAt = `${gateway.gatewayUrl}/connect/${id}`;
+  const result = set
+    ? [`Apps can now list ${id}. Live now, no deploy needed.`]
+    : client === "env"
+      ? [`Its client is set: people connect at ${connectAt}. Apps can list ${id}.`]
+      : client === "uploaded"
+        ? [`Its client was uploaded under Admin → Providers: people connect at ${connectAt}. Apps can list ${id}.`]
+        : [];
   const sets = scopeSetsOf(capability);
-  const lines = [
-    rowSource === "catalog"
-      ? `${capability.label} (${id}) is built in on ${gatewayHost}.`
-      : `${replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}.`,
-    `Redirect URI to register at ${capability.console}: ${redirectUri}`,
-    ...(sets.length > 0 ? [`Scope sets apps may list: ${sets.map((set) => `${set.name} (${set.label})`).join(", ")}.`] : []),
-    client.source === "none"
-      ? `Its client isn't set yet: ${CLI} secret set ${settings.join(" ")} (or paste it under Admin → Providers).`
-      : client.source === "env"
-        ? `Its client is set${given.length > 0 ? " and live now" : ""}: people connect at ${gateway.gatewayUrl}/connect/${id}.`
-        : `Its client was uploaded under Admin → Providers: people connect at ${gateway.gatewayUrl}/connect/${id}.`,
-    `Apps list it as capabilities: { ${JSON.stringify(id)}: { access: "read", scopes: [${sets
+  // The scope sets and the manifest entry are the docs page's and provider show's; --verbose prints them here too.
+  const extra = [
+    ...(sets.length > 0 ? [`Scope sets: ${sets.map((each) => `${each.name}: ${each.label}`).join("; ")}.`] : []),
+    `In an app's capabilities: { ${JSON.stringify(id)}: { access: "read", scopes: [${sets
       .slice(0, 2)
-      .map((set) => JSON.stringify(set.name))
-      .join(", ")}], why: "..." } }.`,
+      .map((each) => JSON.stringify(each.name))
+      .join(", ")}], why: "..." } }`,
   ];
+  const display = [...result, ...(flags.verbose ? extra.map((line) => chalk.dim(line)) : [])];
   out.emit({
     type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+    message: stripVTControlCharacters([...setup, ...result].join("\n")),
+    display: display.join("\n"),
     data: {
       id,
       name: capability.label,
@@ -431,17 +392,9 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
       source: rowSource,
       replaced,
       settings,
+      docs,
       ...facts,
-      ...(client.source === "none"
-        ? {
-            next: [
-              {
-                command: `${CLI} secret set ${settings.join(" ")}`,
-                note: `${capability.label}'s client id and secret from ${capability.console}; register ${redirectUri} there first`,
-              },
-            ],
-          }
-        : {}),
+      ...(client === "none" ? { next: [{ command: `${CLI} secret set ${(needed.length > 0 ? needed : settings).join(" ")}` }] } : {}),
     },
   });
 }

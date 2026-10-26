@@ -17,10 +17,13 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import {
+  CAPABILITIES,
   capabilitySettings,
   DEV_PROVIDERS_DIR,
   describeTokenEndpoints,
   devProviderFile,
+  OAUTH_PRESETS,
+  parseProviderSpec,
   providerIds,
   providerSpecOf,
   type Capability,
@@ -42,6 +45,7 @@ import {
   type UploadedClient,
 } from "@/lib/gateway/providers";
 import { listApps } from "@/lib/gateway/registry";
+import { providerDocsUrl } from "@/lib/providerDocs";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
@@ -61,12 +65,13 @@ import {
   type DisconnectFlags,
   type OAuthAddFlags,
 } from "./oauth";
+import { givenValues, setProviderSettings, shortName, type CredentialFlags, type CredentialSeams } from "./credentials";
 
 /** The most a spec may be, from a file or a URL. */
 export const MAX_SPEC_BYTES = 64 * 1024;
 
 /** What the handlers take from the command line, and the seams tests use. */
-export interface ProviderOptions {
+export interface ProviderOptions extends CredentialSeams {
   flags: GatewayCommandFlags;
   out: EventSink;
   /** Where a spec path is read from and an app's directory is looked for (default: the working directory). */
@@ -79,27 +84,58 @@ export interface ProviderOptions {
 }
 
 export async function add(flags: GatewayCommandFlags & OAuthAddFlags, spec?: string): Promise<void> {
-  await runCommand(flags, async (out) => {
-    if (flags.oauth) {
-      if (spec) {
-        throw new EveryAppError(
-          "PROVIDER_SPEC_INVALID",
-          `--oauth ${flags.oauth} names the provider; ${spec} was given too
+  await runCommand(flags, (out) => addAny({ flags, out }, spec));
+}
+
+/**
+ * `provider add`, by what it was given: `--oauth <value>` or a preset or
+ * built-in OAuth client's id (addOAuth); a built-in API-key or AI
+ * provider's id (addBuiltIn); a spec file or URL (addFromSpec).
+ */
+export async function addAny(
+  options: ProviderOptions & { flags: GatewayCommandFlags & OAuthAddFlags },
+  spec?: string,
+): Promise<void> {
+  const { flags } = options;
+  if (flags.oauth) {
+    if (spec) {
+      throw new EveryAppError(
+        "PROVIDER_SPEC_INVALID",
+        `--oauth ${flags.oauth} names the provider; ${spec} was given too
 Nothing was changed.`,
-          { fix: `give one: ${CLI} provider add --oauth ${flags.oauth}, or ${CLI} provider add ${spec}` },
-        );
-      }
-      await addOAuth({ flags, out }, flags.oauth);
-      return;
+        { fix: `give one: ${CLI} provider add --oauth ${flags.oauth}, or ${CLI} provider add ${spec}` },
+      );
     }
-    if (!spec) {
-      throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the spec to register\nA JSON file or an https URL for an API provider, or --oauth <preset> for an OAuth one.", {
-        rerun: `${CLI} provider presets`,
-        rerunNote: "names the OAuth presets",
-      });
-    }
-    await addFromSpec({ flags, out }, spec);
-  });
+    await addOAuth(options, flags.oauth);
+    return;
+  }
+  if (!spec) {
+    throw new EveryAppError("PROVIDER_SPEC_INVALID", "Give the provider to add\nA built-in provider's id (provider list), a JSON spec file or https URL, or --oauth <preset>.", {
+      rerun: `${CLI} provider list`,
+      rerunNote: "names the built-in providers",
+    });
+  }
+  const builtIn = builtInOf(spec);
+  if (builtIn?.mode === "oauth_client" || Object.hasOwn(OAUTH_PRESETS, spec)) {
+    await addOAuth(options, spec);
+    return;
+  }
+  if (builtIn) {
+    await addBuiltIn(options, spec, builtIn);
+    return;
+  }
+  if (!/[./\\:]/.test(spec)) {
+    throw new EveryAppError("PROVIDER_NOT_FOUND", `${spec} isn't a built-in provider\nA provider the catalog doesn't have is added from its spec: a JSON file or an https URL.`, {
+      rerun: `${CLI} provider list`,
+      rerunNote: "names the built-in providers",
+    });
+  }
+  await addFromSpec(options, spec);
+}
+
+/** The catalog's entry `id`, when it is one. */
+function builtInOf(id: string): Capability | null {
+  return Object.hasOwn(CAPABILITIES, id) ? (CAPABILITIES as Record<string, Capability>)[id]! : null;
 }
 
 export async function presets(flags: { json?: boolean; verbose?: boolean }): Promise<void> {
@@ -286,19 +322,151 @@ function sentAs(capability: RegistrableCapability): string {
   }
 }
 
+/** "1. Create a key at <docs>", then what to do with it: the steps a provider's key takes, numbered. */
+function keySteps(docs: string, interactive: boolean): string[] {
+  return [`1. Create a key at ${docs}`, interactive ? "2. Paste it below." : "2. Set it with the command below."];
+}
+
+/**
+ * The key part of `provider add`, after the provider is on the Gateway:
+ * the setup lines (`setup`, then the steps when a key is still needed),
+ * the key set in the same run (credentials.ts), and the done: what apps
+ * can do now, or the `secret set` to run next.
+ */
+async function finishKey(
+  options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags },
+  context: {
+    id: string;
+    capability: Capability;
+    /** The lines saying what was added, before the steps. */
+    setup: string[];
+    /** The settings still to set; empty when the key is set already. */
+    needed: string[];
+    /** The page to read, when there is one. */
+    docs: string | null;
+    /** "the provider is registered": completes "Nothing was set; …". */
+    standing: string;
+    data: Record<string, unknown>;
+  },
+): Promise<void> {
+  const { out, flags } = options;
+  const { id, capability, needed } = context;
+  const settings = [...capabilitySettings(capability)];
+  const name = shortName(capability.label);
+  const given = await givenValues(settings, `${name}'s key`, flags, options);
+  const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
+  const docsUrl = capability.mode === "api_key" || capability.mode === "ai" ? capability.docs : null;
+  const setup = [
+    ...context.setup,
+    ...(needed.length > 0 && Object.keys(given).length === 0 && docsUrl ? keySteps(docsUrl, interactive) : []),
+    ...(context.docs ? [`Docs: ${context.docs}`] : []),
+  ];
+  out.emit({ type: "step", step: "provider.setup", status: "ok", message: setup.join("\n"), data: { id, docs: context.docs } });
+  const outcome = await setProviderSettings({
+    flags,
+    out,
+    ...(options.createCf ? { createCf: options.createCf } : {}),
+    whose: `${name}'s key`,
+    standing: context.standing,
+    settings,
+    needed,
+    given,
+    interactive,
+    ...(options.ask ? { ask: options.ask } : {}),
+  });
+  const keySet = outcome === "set" || needed.length === 0;
+  // An AI provider goes under the manifest's providers; any other under capabilities.
+  const listIt = capability.mode === "ai" ? `list ${id} under providers` : `list ${id}`;
+  const result =
+    outcome === "set"
+      ? [`Apps can now ${listIt}. Live now, no deploy needed.`]
+      : needed.length === 0
+        ? [`Its key is set. Apps can ${listIt}; to replace the key: ${CLI} secret set ${settings.join(" ")}`]
+        : [];
+  const extra = [
+    capability.mode === "ai"
+      ? `In an app's manifest: providers: [${JSON.stringify(id)}]`
+      : `In an app's capabilities: { ${JSON.stringify(id)}: { access: "${capability.mode === "api_key" ? capability.access[0] : "read"}", why: "..." } }`,
+  ];
+  out.emit({
+    type: "done",
+    message: stripVTControlCharacters([...setup, ...result].join("\n")),
+    display: [...result, ...(flags.verbose ? extra.map((line) => chalk.dim(line)) : [])].join("\n"),
+    data: {
+      ...context.data,
+      settings,
+      ...(context.docs ? { docs: context.docs } : {}),
+      keySet,
+      ...(keySet ? {} : { next: [{ command: `${CLI} secret set ${needed.join(" ")}` }] }),
+    },
+  });
+}
+
+/**
+ * `provider add <id>` of a built-in API-key or AI provider (`openrouter`,
+ * `dataforseo`): no row, only its key, which is asked for in the same run
+ * when it isn't set (or given), after the page it comes from.
+ */
+export async function addBuiltIn(
+  options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags },
+  id: string,
+  capability: Capability,
+): Promise<void> {
+  if (capability.mode !== "api_key" && capability.mode !== "ai") {
+    throw new EveryAppError(
+      "PROVIDER_BUILTIN",
+      `${id} is a Gateway service, not a provider with a key\nIt is set up with its own command.`,
+      { fix: id === "email" ? `${CLI} email set` : `${CLI} provider show ${id}` },
+    );
+  }
+  const gateway = await connect(options);
+  const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
+  const gatewayNames = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+  const settings = [...capabilitySettings(capability)];
+  options.out.emit({
+    type: "step",
+    step: "provider.add",
+    status: "ok",
+    message: `${capability.label} (${id}) is built in: no row to write, its key alone is set`,
+    data: { id, builtIn: true },
+  });
+  await finishKey(options, {
+    id,
+    capability,
+    setup: [`${shortName(capability.label)} (${id}) is on ${gatewayHost}.`],
+    needed: settings.filter((name) => !gatewayNames.includes(name)),
+    docs: providerDocsUrl(id),
+    standing: "the provider is built in",
+    data: {
+      id,
+      name: capability.label,
+      kind: capability.mode,
+      ...hostsOf(capability),
+      source: "catalog",
+    },
+  });
+}
+
 /**
  * `provider add <spec>`: the spec read (a file, or an https URL fetched
- * here) and registered, then what to set next. In an app's directory the
- * spec is also written to `.everyapp/providers/<id>.json` for `everyapp
- * dev`.
+ * here) and registered, then its key, set in the same run (`finishKey`):
+ * a new or replaced row is unbound until its key is set, so it is always
+ * asked for. In an app's directory the spec is also written to
+ * `.everyapp/providers/<id>.json` for `everyapp dev`.
  */
 export async function addFromSpec(
-  options: ProviderOptions & { flags: { replace?: boolean } },
+  options: ProviderOptions & { flags: GatewayCommandFlags & CredentialFlags & { replace?: boolean } },
   source: string,
 ): Promise<void> {
   const { out, flags } = options;
   const cwd = options.cwd ?? process.cwd();
   const spec = await readSpecSource(source, { cwd, fetcher: options.fetch });
+  const parsed = parseProviderSpec(spec);
+  if (parsed.ok && parsed.capability.mode === "oauth_client") {
+    // An OAuth spec takes a client and a redirect URI: add --oauth's path.
+    await addOAuth({ ...options, flags: { ...flags, oauth: source } }, source);
+    return;
+  }
   const gateway = await connect(options);
   const named =
     spec && typeof spec === "object" && typeof (spec as { id?: unknown }).id === "string"
@@ -313,7 +481,6 @@ export async function addFromSpec(
     now: options.now?.(),
   });
   const { id, capability } = added;
-  const settings = [...capabilitySettings(capability)];
   const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
   out.emit({
     type: "step",
@@ -329,32 +496,25 @@ export async function addFromSpec(
     devFile = devProviderFile(id);
     await writeDevSpec(cwd, id, capability);
   }
-  const names = settings.join(" ");
-  const lines = [
-    `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}.`,
-    `Its key goes to ${keyHosts(capability)} only, ${sentAs(capability)}.`,
-    ...(added.replaced ? ["The key set before was for the old spec: set it again before the Gateway sends it."] : []),
-    ...(devFile ? [`Wrote ${devFile} for everyapp dev (your key goes in .dev.vars).`] : []),
-    `Apps list it as capabilities: { ${JSON.stringify(id)}: { access: "${capability.access[0]}", why: "..." } }.`,
-  ];
-  out.emit({
-    type: "done",
-    message: stripVTControlCharacters(lines.join("\n")),
-    display: [lines[0], ...lines.slice(1).map((line) => chalk.dim(line))].join("\n"),
+  await finishKey(options, {
+    id,
+    capability,
+    setup: [
+      `${added.replaced ? "Replaced" : "Registered"} ${capability.label} (${id}) on ${gatewayHost}.`,
+      `Its key goes to ${keyHosts(capability)} only, ${sentAs(capability)}.`,
+      ...(added.replaced ? ["The key set before was for the old spec: set it again before the Gateway sends it."] : []),
+      ...(devFile ? [`Wrote ${devFile} for everyapp dev (your key goes in .dev.vars).`] : []),
+    ],
+    needed: [...capabilitySettings(capability)],
+    docs: null,
+    standing: "the provider is registered",
     data: {
       id,
       name: capability.label,
       ...hostsOf(capability),
-      settings,
       source: "row",
       replaced: added.replaced,
       ...(devFile ? { devFile } : {}),
-      next: [
-        {
-          command: `${CLI} secret set ${names}`,
-          note: `${capability.label}'s ${capability.mode === "oauth_client" ? "client" : "key"}, from ${capability.mode === "oauth_client" ? capability.console : capability.docs}; the Gateway sends it only to ${keyHosts(capability)}`,
-        },
-      ],
     },
   });
 }

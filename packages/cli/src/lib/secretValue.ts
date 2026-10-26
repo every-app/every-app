@@ -366,12 +366,25 @@ export async function readSecretValue(
       { rerun: `${CLI} secret set ${name} --from-env ${name}` },
     );
   }
-  if (plain) {
-    const value = await askText(name, {
+  return askSettingValue(name, { question: plain ? name : `Value for ${name}` });
+}
+
+/**
+ * Ask the person at the terminal for `name`'s value, as `secret set` does:
+ * hidden for a credential, visible and checked for a plain Gateway
+ * setting (under a line saying what it takes). With `optional`, Enter on
+ * nothing answers "" (the caller sets nothing). Trimmed.
+ */
+export async function askSettingValue(
+  name: string,
+  { question = name, optional = false }: { question?: string; optional?: boolean } = {},
+): Promise<string> {
+  if (isPlainGatewaySetting(name)) {
+    const value = await askText(question, {
       context: plainContext(name),
-      validate: (typed) => plainValueProblem(name, typed),
+      validate: (typed) => (optional && !typed.trim() ? null : plainValueProblem(name, typed)),
     });
     return value.trim();
   }
-  return (await askSecret(`Value for ${name}`)).trim();
+  return (await askSecret(question, { optional })).trim();
 }

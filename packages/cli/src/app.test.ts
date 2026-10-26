@@ -195,7 +195,7 @@ describe("help", () => {
     // run (`mcp on|off`, through launch week), and its help doesn't list them.
     expect(groupHelp(["provider"])).toContain(`  $ ${CLI} provider add stripe.json`);
     expect(groupHelp(["provider"])).toContain(`${CLI} provider <command> [flags]`);
-    expect(groupHelp(["provider"])).toMatch(/\n {2}add {2,}Register an API provider/);
+    expect(groupHelp(["provider"])).toMatch(/\n {2}add {2,}Add a provider and set its key/);
     expect(groupHelp(["provider"])).not.toMatch(/\n {2}(on|off) /);
     expect(commandPaths()).toEqual(expect.arrayContaining(["provider on", "provider off", "mcp on"]));
     expect(groupHelp(["mcp"])).toContain(`  $ ${CLI} mcp on dataforseo`);

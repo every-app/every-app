@@ -30,6 +30,8 @@ import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
 import {
+
+  addAny,
   addFromSpec,
   listProviders,
   MAX_SPEC_BYTES,
@@ -127,7 +129,7 @@ function appDir(spec?: unknown): string {
 
 const add = (cwd: string, source = "northwind.json", options: { replace?: boolean; fetch?: typeof fetch } = {}) =>
   addFromSpec(
-    { flags: { ...flags, replace: options.replace }, out: out(), cwd, createCf, ...(options.fetch ? { fetch: options.fetch } : {}) },
+    { flags: { ...flags, replace: options.replace }, out: out(), cwd, createCf, readStdin: async () => null, ...(options.fetch ? { fetch: options.fetch } : {}) },
     source,
   );
 const list = () => listProviders({ flags, out: out(), createCf });
@@ -175,12 +177,8 @@ describe("provider add", () => {
         settings: ["NORTHWIND_API_KEY"],
         source: "row",
         replaced: false,
-        next: [
-          {
-            command: "pnpm everyapp secret set NORTHWIND_API_KEY",
-            note: "Northwind's key, from https://developer.northwind.io/keys; the Gateway sends it only to api.northwind.io",
-          },
-        ],
+        keySet: false,
+        next: [{ command: "pnpm everyapp secret set NORTHWIND_API_KEY" }],
       },
     });
     // Not in an app's directory: no file for everyapp dev.
@@ -767,7 +765,9 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed
       data: { id: "github-oauth", redirectUri: "https://example.com/connect/github-oauth/callback", console: githubConsole() },
     });
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Registered GitHub (github-oauth) on example.com.\nRedirect URI to register at"),
+      message: expect.stringContaining(
+        "Registered GitHub (github-oauth) on example.com.\n1. Register this redirect URI at https://github.com/settings/developers:\n   https://example.com/connect/github-oauth/callback\n2. Set the client it gives you with the command below.\nDocs: https://everyapp.com/docs/providers/github",
+      ),
       data: {
         id: "github-oauth",
         name: "GitHub",
@@ -779,12 +779,8 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed
         settings: ["GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET"],
         client: { source: "none" },
         connections: 0,
-        next: [
-          {
-            command: "pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET",
-            note: expect.stringContaining("register https://example.com/connect/github-oauth/callback"),
-          },
-        ],
+        docs: "https://everyapp.com/docs/providers/github",
+        next: [{ command: "pnpm everyapp secret set GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET" }],
       },
     });
     expect(done()!["data"]["scopeSets"].map((set: { name: string }) => set.name)).toContain("identity");
@@ -801,7 +797,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed
     expect(gatewayWorker().secrets).toMatchObject({ GITHUB_OAUTH_CLIENT_ID: "Iv1.abc", GITHUB_OAUTH_CLIENT_SECRET: "shh-secret" });
     expect((await rows())[0]).toMatchObject({ id: "github-oauth", bound_to: providerBindingKey(githubCapability()) });
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Its client is set and live now: people connect at https://example.com/connect/github-oauth."),
+      message: expect.stringContaining("Apps can now list github-oauth. Live now, no deploy needed."),
       data: { client: { source: "env" } },
     });
     expect(done()!["data"]["next"]).toBeUndefined();
@@ -842,7 +838,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed
     await addOAuthProvider("google-workspace");
     expect(await rows()).toEqual([]);
     expect(done()).toMatchObject({
-      message: expect.stringContaining("(google-workspace) is built in on example.com."),
+      message: expect.stringContaining("Google (google-workspace) is on example.com."),
       data: {
         id: "google-workspace",
         kind: "oauth",
@@ -1019,5 +1015,175 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'v1.sealed.access', 'v1.sealed
       data: { id: "github-oauth", removed: true, connections: 1, client: true },
     });
     expect(done()!["message"]).toContain("The client uploaded under Admin → Providers was deleted with it.");
+  });
+});
+
+
+describe("provider add, one step: the key or client asked for in the same run", () => {
+  /** Answers each prompt from `answers` by setting name (missing: Enter on nothing), and records the questions. */
+  function asker(answers: Record<string, string>) {
+    const asked: string[] = [];
+    return {
+      asked,
+      ask: async (name: string, question: string) => {
+        asked.push(question);
+        return answers[name] ?? "";
+      },
+    };
+  }
+  const run = (
+    spec: string,
+    options: {
+      interactive?: boolean;
+      ask?: (name: string, question: string) => Promise<string>;
+      env?: Record<string, string>;
+      fromEnv?: boolean;
+      verbose?: boolean;
+      stdin?: string;
+    } = {},
+  ) => (sink: EventSink) =>
+    addAny(
+      {
+        flags: { ...(options.fromEnv ? { "from-env": true } : {}), ...(options.verbose ? { verbose: true } : {}) },
+        out: sink,
+        createCf,
+        cwd: tempDir("everyapp-provider-one-step-"),
+        readStdin: async () => options.stdin ?? null,
+        env: options.env ?? {},
+        interactive: options.interactive ?? false,
+        ...(options.ask ? { ask: options.ask } : {}),
+      },
+      spec,
+    );
+
+  it("at a terminal, provider add google-workspace says the one thing to do, asks for the client and sets it", async () => {
+    const { asked, ask } = asker({
+      GOOGLE_WORKSPACE_CLIENT_ID: "1234.apps.googleusercontent.com",
+      GOOGLE_WORKSPACE_CLIENT_SECRET: "GOCSPX-shh",
+    });
+    const shown = await human(run("google-workspace", { interactive: true, ask }));
+    expect(shown).toBe(
+      [
+        "Google (google-workspace) is on example.com.",
+        "1. Register this redirect URI at https://console.cloud.google.com/apis/credentials:",
+        "   https://example.com/connect/google-workspace/callback",
+        "2. Paste the OAuth client it gives you.",
+        "Docs: https://everyapp.com/docs/providers/google",
+        "Set GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET on the Gateway ✓",
+        "Apps can now list google-workspace. Live now, no deploy needed.",
+        "",
+      ].join("\n"),
+    );
+    expect(asked).toEqual(["Client id", "Client secret"]);
+    expect(gatewayWorker().secrets).toMatchObject({
+      GOOGLE_WORKSPACE_CLIENT_ID: "1234.apps.googleusercontent.com",
+      GOOGLE_WORKSPACE_CLIENT_SECRET: "GOCSPX-shh",
+    });
+    expect(shown).not.toContain("GOCSPX-shh");
+
+    // Run again: the client is set, so nothing is asked.
+    const again = asker({});
+    const second = await human(run("google-workspace", { interactive: true, ask: again.ask }));
+    expect(again.asked).toEqual([]);
+    expect(second).toContain("Its client is set: people connect at https://example.com/connect/google-workspace. Apps can list google-workspace.");
+  });
+
+  it("Enter on nothing sets nothing and names the one command next, exiting cleanly", async () => {
+    // The id typed, the secret not: never half a client.
+    const { ask } = asker({ GOOGLE_WORKSPACE_CLIENT_ID: "1234.apps.googleusercontent.com" });
+    const shown = await human(run("google-workspace", { interactive: true, ask }));
+    expect(gatewayWorker().secrets["GOOGLE_WORKSPACE_CLIENT_ID"]).toBeUndefined();
+    expect(shown).toContain("\nNext:\n  pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET\n");
+    expect(shown).not.toContain("Apps can now");
+  });
+
+  it("unattended, says the steps and the command next; the scope sets and manifest entry only with --verbose", async () => {
+    expect(await human(run("google-workspace"))).toBe(
+      [
+        "Google (google-workspace) is on example.com.",
+        "1. Register this redirect URI at https://console.cloud.google.com/apis/credentials:",
+        "   https://example.com/connect/google-workspace/callback",
+        "2. Set the client it gives you with the command below.",
+        "Docs: https://everyapp.com/docs/providers/google",
+        "",
+        "Next:",
+        "  pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET",
+        "",
+      ].join("\n"),
+    );
+    const verbose = await human(run("google-workspace", { verbose: true }));
+    expect(verbose).toContain("Scope sets: identity: Google account (who you are); gmail.read: Gmail (read-only);");
+    expect(verbose).toContain('In an app\'s capabilities: { "google-workspace": { access: "read", scopes: ["identity", "gmail.read"], why: "..." } }');
+    expect(gatewayWorker().secrets["GOOGLE_WORKSPACE_CLIENT_ID"]).toBeUndefined();
+  });
+
+  it("provider add <id> of an API-key provider: where the key comes from, the key asked for and set", async () => {
+    const { asked, ask } = asker({ OPENROUTER_API_KEY: "sk-or-shh" });
+    expect(await human(run("openrouter", { interactive: true, ask }))).toBe(
+      [
+        "OpenRouter (openrouter) is on example.com.",
+        "1. Create a key at https://openrouter.ai/settings/keys",
+        "2. Paste it below.",
+        "Docs: https://everyapp.com/docs/providers/openrouter",
+        "Set OPENROUTER_API_KEY on the Gateway ✓",
+        "Apps can now list openrouter under providers. Live now, no deploy needed.",
+        "",
+      ].join("\n"),
+    );
+    expect(asked).toEqual(["OPENROUTER_API_KEY"]);
+    expect(gatewayWorker().secrets["OPENROUTER_API_KEY"]).toBe("sk-or-shh");
+
+    // Unattended: the key isn't asked for; --json data names the command next.
+    events = [];
+    await run("dataforseo")(out());
+    expect(done()).toMatchObject({
+      message:
+        "DataForSEO (dataforseo) is on example.com.\n1. Create a key at https://app.dataforseo.com/api-access\n2. Set it with the command below.\nDocs: https://everyapp.com/docs/providers/dataforseo",
+      data: {
+        id: "dataforseo",
+        name: "DataForSEO",
+        kind: "api_key",
+        source: "catalog",
+        hosts: expect.any(Array),
+        settings: ["DATAFORSEO_API_KEY"],
+        docs: "https://everyapp.com/docs/providers/dataforseo",
+        keySet: false,
+        next: [{ command: "pnpm everyapp secret set DATAFORSEO_API_KEY" }],
+      },
+    });
+    expect(steps("provider.setup")[0]).toMatchObject({ data: { id: "dataforseo", docs: "https://everyapp.com/docs/providers/dataforseo" } });
+  });
+
+  it("--from-env sets every setting from the variables of their names; part of them is refused, nothing set", async () => {
+    events = [];
+    await run("dataforseo", { fromEnv: true, env: { DATAFORSEO_API_KEY: "login:pass" } })(out());
+    expect(gatewayWorker().secrets["DATAFORSEO_API_KEY"]).toBe("login:pass");
+    expect(done()).toMatchObject({ data: { keySet: true } });
+    expect(done()!["data"]["next"]).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain("login:pass");
+
+    // A setting the Gateway has already (CLOUDFLARE_ACCOUNT_ID) isn't needed again.
+    expect(gatewayWorker().secrets["CLOUDFLARE_ACCOUNT_ID"]).toBeDefined();
+    await run("workers-ai", { fromEnv: true, env: { WORKERS_AI_API_TOKEN: "cf-token" } })(out());
+    expect(gatewayWorker().secrets["WORKERS_AI_API_TOKEN"]).toBe("cf-token");
+
+    await expect(run("ai-gateway", { fromEnv: true, env: { AI_GATEWAY_API_KEY: "gw-token" } })(out())).rejects.toMatchObject({
+      code: "PROVIDER_CLIENT_INCOMPLETE",
+      message: expect.stringMatching(/^Cloudflare AI Gateway's key needs AI_GATEWAY_ID too\nNothing was set; the provider is built in\.$/),
+    });
+    expect(gatewayWorker().secrets["AI_GATEWAY_API_KEY"]).toBeUndefined();
+  });
+
+  it("routes an OAuth preset's id and a spec file, and refuses an unknown id and a service", async () => {
+    await run("github-oauth")(out());
+    expect((await rows()).map((row) => row["id"])).toEqual(["github-oauth"]);
+    expect(done()).toMatchObject({ data: { id: "github-oauth", kind: "oauth" } });
+
+    await expect(run("nothing-here")(out())).rejects.toMatchObject({
+      code: "PROVIDER_NOT_FOUND",
+      message: expect.stringMatching(/^nothing-here isn't a built-in provider\n/),
+      rerun: "pnpm everyapp provider list",
+    });
+    await expect(run("email")(out())).rejects.toMatchObject({ code: "PROVIDER_BUILTIN" });
   });
 });

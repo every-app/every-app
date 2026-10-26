@@ -151,7 +151,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "signin add github --client-id Iv1.0123456789abcdef --client-secret-from-env GITHUB_SECRET --json",
     "signin remove github",
   ],
-  provider: ["provider list", "provider add stripe.json", "provider add --oauth github-oauth", "provider connections"],
+  provider: ["provider list", "provider add openrouter", "provider add google-workspace", "provider add stripe.json", "provider connections"],
   ai: ["ai show", "ai default openrouter", "ai default openrouter/anthropic/claude-sonnet-5.5", "ai gateway on"],
   mcp: [
     "mcp list",
