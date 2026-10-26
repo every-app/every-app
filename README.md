@@ -1,12 +1,16 @@
 # EveryApp
 
-> Make every app open source
+> Make every SaaS open source
 
-Replace bloated and expensive SaaS tools with AI-native, open source software.
+Lots of people are cloning desktop apps, but what about SaaS?
+
+EveryApp is focused on making the next generation of web apps, built for agents.
 
 > Get your agent's apps off localhost
 
-Your agent can build an internal tool in an afternoon, but hosting, database, sign-in, permissions, API keys and backups are still hard. EveryApp handles all of that: one command sets up a Gateway in your Cloudflare account, and your team signs in once to use every app.
+Your agent can build an internal tool in an afternoon, but hosting, database, sign-in, permissions, API keys and backups are still hard. 
+
+EveryApp handles all of that: one command sets up a Gateway in your Cloudflare account, and your team signs in once to use every app.
 
 [![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
 
