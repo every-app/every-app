@@ -42,6 +42,7 @@ BUILD AN APP
   deploy     Deploy the app in this directory
   release    Pack the app in this directory as a release others can install
   db         Migrate, query and restore an app's D1 database
+  skills     Keep the agent skills in an app up to date with the CLI
 
 RUN A GATEWAY
   login      Log in to Cloudflare
@@ -597,6 +598,38 @@ FLAGS
 
 ARGUMENTS
   [app]  The app (default: the one in this directory)
+```
+
+### `everyapp skills update`
+
+Replace this app's copies of the skills with the ones this CLI ships.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+
+```text
+USAGE
+  pnpm everyapp skills update [--json]
+  pnpm everyapp skills update --help
+
+Replace the app's copies of the skills with the ones this CLI ships
+
+Run in the app's directory (the one with everyapp.config.ts). Each skill the CLI ships
+(everyapp, build-every-app) is copied to .claude/skills/<name> and .agents/skills/<name>,
+as create does: a copy that differs is replaced whole, so files no longer shipped go too,
+and a missing skill is added. Other directories under those folders are left alone.
+AGENTS.md gets a line for any skill it doesn't mention. Prints what was added, updated
+or left unchanged; with --json, done carries each copy's files added, updated and removed.
+
+EXAMPLES
+  $ pnpm everyapp skills update
+  $ pnpm everyapp skills update --json
+
+FLAGS
+     [--json/--no-json]  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+  -h  --help             Print help information and exit
+      --                 All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp teardown`

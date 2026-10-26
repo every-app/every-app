@@ -115,6 +115,10 @@ Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--lo
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
          if the user said so). pnpm everyapp db restore --json undoes the last
          deploy's migrations (and every write since): only when the user asks.
+Skills:  pnpm everyapp skills update --json   (from the app directory: replaces
+         its .agents/skills and .claude/skills copies of everyapp and
+         build-every-app with the ones this CLI ships, adds a missing one, leaves
+         other skills alone; done.data.changes lists each copy's files)
 Postgres: any Postgres with a URL (Neon, Supabase, …) goes through Hyperdrive:
          resources.hyperdrive, database.provider "postgres", migrations.dialect
          "postgresql" (manifest page, #postgres). The deploy reads

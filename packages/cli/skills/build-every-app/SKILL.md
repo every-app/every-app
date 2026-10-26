@@ -48,7 +48,10 @@ there makes `apps/my-app`, untracked by git.)
 Read the app's `README.md`, `AGENTS.md` and every file under `src/` once; they
 are short. An app may carry skills of its own at its top level
 (`.agents/skills/<name>`, `.claude/skills/<name>`), as OpenSEO's repository
-does; read them before changing the app.
+does; read them before changing the app. The `everyapp` and `build-every-app`
+copies there come from the CLI: `pnpm everyapp skills update` replaces them
+with the ones the CLI ships, so keep the app's own skills under other
+names.
 
 Keep, the plumbing: `everyapp.config.ts` (the manifest), `cloudflare.config.ts`
 (builds the Worker from it), `src/entry.worker.ts` (`everyApp()` verifies the

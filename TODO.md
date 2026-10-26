@@ -1911,6 +1911,12 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 
 ## Platform shortcuts (2026-10-26)/9 create-release
 
+- **skills update** (`pnpm everyapp skills update`, `packages/cli/src/commands/skills`). Defaults taken for Ben:
+  - [ ] Only the skills the CLI ships (`everyapp`, `build-every-app`) are touched; any other directory under `.agents/skills` or `.claude/skills` is left alone, so a skill the CLI stops shipping stays in old apps until someone deletes it (no retired-names list yet).
+  - [ ] A copy that differs is replaced whole (local edits to a shipped skill are lost; the app's own skills go under other names, as the build-every-app skill now says). An identical copy is not rewritten. A `.claude/skills/<name>` symlink becomes a plain copy, as `create` makes.
+  - [ ] It also adds AGENTS.md lines for skills AGENTS.md doesn't mention (the same code as `create`).
+  - [ ] No `--check`/dry-run flag, and neither `status` nor `update` mentions it (they work on the Gateway, not the app). Add a `--check` that exits non-zero on drift if an app repo wants it in CI.
+  - [ ] The app repos (Mission Control's ~7k stale lines, OpenSEO, CRM, analytics, inbox, RepoLens) still need `skills update` run and committed: phase 2.
 - gateway zod 4: `apps/every-app-gateway` is on `zod ^4.2.0`, and `pnpm-workspace.yaml` overrides `zod: ^4.6.7`, so the lockfile carries one zod 4 (4.6.7; the 4.6.5 and knip's 4.1.12 copies are gone). Defaults taken for Ben:
   - [ ] **One zod 3 copy remains, on purpose:** `"@shadcn/registry>zod": ^3.25.76`. The shadcn component CLI (a gateway devDependency, run by hand, never bundled) asks for `zod ^3.24.1`; forcing it to 4 was untested. Drop the scoped line when shadcn moves to zod 4, or if nobody runs `shadcn add` from here.
   - [ ] **Code changes were small:** `z.nativeEnum` became `z.enum` (one use), and the MCP-app form's `optionalText` moved `.optional()` after its `.transform()` (zod 4 made the transformed key required in the inferred type). The other deprecated-but-working idioms (`z.string().email()`/`.uuid()`, `.merge()`, `z.ZodIssueCode.custom`, `.strict()`) stay, as in #547. Every `.default()` value is already a valid output, so zod 4's no-parse defaults change nothing. Server-function validation goes through Standard Schema, so the wire error is unchanged.
