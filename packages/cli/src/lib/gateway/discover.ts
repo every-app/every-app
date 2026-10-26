@@ -24,7 +24,7 @@
  * accounts asked).
  */
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
-import { isCfError } from "@/lib/cf/errors";
+import { isCfError, isNetworkDrop } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
@@ -175,7 +175,7 @@ async function probe(
       return { account, cf, databaseId, db, install: await readInstall(db) };
     } catch (error) {
       const reason = isCfError(error, "auth") ? "auth" : isCfError(error, "not_found") ? "not_found" : null;
-      if (!reason && !isNetworkFailure(error)) throw error;
+      if (!reason && !isNetworkDrop(error)) throw error;
       if (attempt === 1) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
         continue;
@@ -184,14 +184,6 @@ async function probe(
       return { ...account, reason };
     }
   }
-}
-
-/** cf couldn't reach Cloudflare (reset, timeout, DNS), as opposed to an answer. */
-function isNetworkFailure(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /fetch failed|ECONNRESET|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(error.message)
-  );
 }
 
 /**

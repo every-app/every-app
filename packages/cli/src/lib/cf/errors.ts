@@ -236,3 +236,23 @@ function joinWrapped(lines: string[]): string {
 function lastLines(...outputs: string[]): string {
   return outputTail(...outputs).join("\n") || "cf failed without an error message";
 }
+
+/**
+ * Whether a failure is the network's (a Wi-Fi drop, a laptop that slept, a
+ * reset connection), worth asking again, rather than an answer from
+ * Cloudflare. cf reports Node's `fetch failed` as an unknown error
+ * ("fetch failed Envelope Error").
+ */
+export function isNetworkDrop(error: unknown): boolean {
+  const message =
+    error instanceof CfError
+      ? error.kind === "unknown"
+        ? error.message
+        : ""
+      : error instanceof TypeError
+        ? error.message
+        : "";
+  return /fetch failed|Envelope Error|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|network/i.test(
+    message,
+  );
+}

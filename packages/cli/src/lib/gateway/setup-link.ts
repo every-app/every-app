@@ -9,7 +9,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { execa } from "execa";
 import type { D1Database } from "@/lib/cf/d1";
-import { CfError } from "@/lib/cf/errors";
+import { isNetworkDrop } from "@/lib/cf/errors";
 import { EveryAppError } from "@/lib/errors";
 import { thisCommand } from "@/lib/output/command";
 
@@ -151,26 +151,6 @@ const OWNER_WAIT_MS = 15 * 60 * 1000;
 const OWNER_POLL_MS = 5_000;
 /** How long reads may keep failing on the network before the wait gives up. */
 const NETWORK_GRACE_MS = 2 * 60 * 1000;
-
-/**
- * Whether a failed read of the link's row is the network's (a Wi-Fi drop,
- * a laptop that slept, a reset connection), which the wait rides out,
- * rather than an answer from Cloudflare. cf reports Node's
- * `fetch failed` as an unknown error ("fetch failed Envelope Error").
- */
-function isNetworkDrop(error: unknown): boolean {
-  const message =
-    error instanceof CfError
-      ? error.kind === "unknown"
-        ? error.message
-        : ""
-      : error instanceof TypeError
-        ? error.message
-        : "";
-  return /fetch failed|Envelope Error|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|network/i.test(
-    message,
-  );
-}
 
 /**
  * Read the link's row every five seconds, for up to fifteen minutes, until

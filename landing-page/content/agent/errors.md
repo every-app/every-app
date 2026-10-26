@@ -2693,6 +2693,16 @@ Source: `packages/cli/src/lib/teardown/inventory.ts`
 
 Source: `packages/cli/src/commands/dev/devAppGateway.ts`
 
+### UPLOAD_NETWORK_FAILED
+
+`cf deploy --prebuilt` failed on the network (Node's `fetch failed`, cf's `Envelope Error`, a reset or refused connection, a DNS lookup: `isNetworkDrop` in `packages/cli/src/lib/cf/errors.ts`) on every try of an upload: an app's Worker or helper (`deploy`, `install`; steps `app.upload`, `app.helper`) or the Gateway (`setup`, `update`, and the rebind of `deploy` and `delete`; step `gateway.deploy`). Each upload the network drops is tried again twice, after 2 s and 5 s, with a `progress` event on the step (`The network dropped while uploading <worker>; trying again`, `data.attempt`); uploading the same Build Output again is harmless. Message `The network dropped while uploading <worker | the Gateway> (3 tries)` then the cause's first line and `Whatever this command already did is kept, and running it again carries on from there.` `data.workerName`, `data.tries`, `data.cause`.
+
+A `delete` stopped here has already removed the app from the registry; the Gateway still binds it until the rebind goes through (`status`: the live Gateway's apps or hostnames are out of date). Running the same `delete` again reconciles it, as does `update`.
+
+**Fix:** `retryable: true`: `data.rerun` is this same command, `data.rerunNote` `once you're back online` (for the Gateway: `once you're back online; or pnpm everyapp update brings the Gateway in step`).
+
+Source: `packages/cli/src/lib/cf/deploy.ts` (`cfDeploy`, `uploadNetworkFailed`).
+
 ### UPLOAD_UNRECORDED
 
 `cfDeploy`, under the upload's step (`gateway.deploy`, `app.upload`, `app.helper`): cf failed after its upload went live (publishing a Custom Domain, the workers.dev subdomain) and the version that went live couldn't be recorded either: `The version cf uploaded of <worker> couldn't be recorded` then why; `data.workerName`, `data.error`. The run still ends with cf's failure. The next run finds a Worker version the install row or registry doesn't name: the Gateway's own, when it holds the row's hostname as a Custom Domain (resumed without asking: `gateway.resume`); otherwise a confirmation at a terminal (`rerun_interactive`).

@@ -570,6 +570,7 @@ function upload(
       cliCf: true,
       out: options.out,
       step: "gateway.deploy",
+      sleep: options.sleep,
       onUploaded: (versionId, finished) =>
         record(
           options,

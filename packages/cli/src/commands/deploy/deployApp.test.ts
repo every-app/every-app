@@ -19,6 +19,8 @@ import { restoreDatabase } from "@/commands/db/restore";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
+import { FakeCf } from "@/lib/cf/fakeCf";
+import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { rollbackFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
@@ -573,6 +575,56 @@ describe("deploy", () => {
     await expect(deploy({ ...TODO, description: "v2" })).resolves.toMatchObject({
       workerName: "every-acme-todo",
     });
+  });
+
+  it("tries a Gateway upload the network drops again, and names the rerun when it keeps dropping", async () => {
+    await deploy();
+    // cf's own words for a dropped connection, as it fails an upload.
+    const dropped = await new FakeCf()
+      .on(["deploy"], { exitCode: 1, stderr: "┌ Error\n│ fetch failed Envelope Error\n└\n" })
+      .run({ plane: "project", mode: "text", args: ["deploy"] })
+      .catch((error: unknown) => error);
+    let drops = 0;
+    const flaky: CfRunner = {
+      run: (call) => {
+        const args = typeof call.args === "function" ? null : call.args;
+        const gatewayUpload = call.cliCf && (args === null || args[0] === "deploy");
+        if (gatewayUpload && drops > 0) {
+          drops -= 1;
+          return Promise.reject(dropped);
+        }
+        return account.cf.run(call);
+      },
+      start: (call) => account.cf.start(call),
+    };
+    const removeWith = (cf: CfRunner) =>
+      removeApp({
+        appId: "todo",
+        out: out(),
+        interactive: false,
+        purge: true,
+        createCf: () => cf,
+        reconcile: rebind,
+      });
+
+    // Dropped every time (three tries): retryable, the same command again, or update.
+    drops = 3;
+    const failure = await removeWith(flaky).catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: "UPLOAD_NETWORK_FAILED",
+      retryable: true,
+      message: expect.stringContaining("The network dropped while uploading the Gateway (3 tries)\nfetch failed"),
+      rerunNote: expect.stringContaining("update brings the Gateway in step"),
+    });
+    expect(events.filter((event) => event["type"] === "progress" && event["step"] === "gateway.deploy")).toHaveLength(2);
+    expect(drops).toBe(0);
+
+    // Dropped twice, then through: the delete finishes, the Gateway in step.
+    drops = 2;
+    events = [];
+    await expect(removeWith(flaky)).resolves.toBeDefined();
+    expect(drops).toBe(0);
+    expect((await readInstall(registry()))?.liveAppWorkers).not.toContain("every-acme-todo");
   });
 
   it("records an upload cf finished when Ctrl+C stopped the deploy then", async () => {

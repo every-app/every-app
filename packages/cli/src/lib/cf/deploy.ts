@@ -18,17 +18,26 @@
  * over a Worker changed outside everyapp: at a terminal, it then runs again
  * attached to ask. Unattended runs can't answer: cf aborts, and this says
  * what to do.
+ *
+ * An upload the network drops (`fetch failed`, a reset connection, cf's
+ * "Envelope Error") is tried again, twice, after 2 s and 5 s; uploading
+ * the same Build Output again is harmless. Still dropped, it is
+ * UPLOAD_NETWORK_FAILED, retryable, naming the command to run again (for
+ * the Gateway, `update` brings it in step too).
  */
 import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt } from "@/lib/interrupt";
-import { thisCommand } from "@/lib/output/command";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
-import { CfError, isCfError } from "./errors";
+import { CfError, isCfError, isNetworkDrop } from "./errors";
 import type { CfRunner } from "./runner";
 import { getWorkerDeployment } from "./workers";
 
 const DEPLOY_TIMEOUT_MS = 900_000;
+/** The waits before each new try of an upload the network dropped. */
+const NETWORK_RETRY_DELAYS_MS = [2_000, 5_000];
 
 interface CfDeployOptions {
   cf: CfRunner;
@@ -68,6 +77,8 @@ interface CfDeployOptions {
    */
   out?: EventSink;
   step?: string;
+  /** How to wait before trying a dropped upload again (tests don't). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 interface CfDeployResult {
@@ -166,21 +177,33 @@ async function deployAndRecord(
         ...(options.dryRun ? ["--dry-run"] : []),
       ],
     });
+  const once = () =>
+    deploy(attached ? "interactive" : "text").catch((error: unknown) => {
+      // Piped, cf can't ask before replacing a Worker changed outside
+      // everyapp and aborts before uploading: a person is asked attached.
+      if (options.interactive && isCfError(error, "strict_conflict")) {
+        return deploy("interactive");
+      }
+      throw error;
+    });
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let output: string;
-  try {
-    const result = await deploy(attached ? "interactive" : "text").catch(
-      (error: unknown) => {
-        // Piped, cf can't ask before replacing a Worker changed outside
-        // everyapp and aborts before uploading: a person is asked attached.
-        if (options.interactive && isCfError(error, "strict_conflict")) {
-          return deploy("interactive");
-        }
-        throw error;
-      },
-    );
-    output = result.stdout;
-  } catch (error) {
-    throw explainDeployFailure(error, options);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      output = (await once()).stdout;
+      break;
+    } catch (error) {
+      if (!isNetworkDrop(error) || isInterrupted()) throw explainDeployFailure(error, options);
+      const delay = NETWORK_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) throw uploadNetworkFailed(error, options, attempt + 1);
+      options.out?.emit({
+        type: "progress",
+        step: options.step ?? "deploy",
+        message: `The network dropped while uploading ${options.workerName}; trying again`,
+        data: { workerName: options.workerName, attempt: attempt + 2 },
+      });
+      await sleep(delay);
+    }
   }
   onFinished();
   if (options.dryRun) return { versionId: null, output };
@@ -269,6 +292,24 @@ export function workersPlansUrl(accountId: string): string {
 
 /** "the Gateway" starts a sentence as "The Gateway"; an app id stays as it is. */
 const withCapitalThe = (text: string) => text.replace(/^the /, "The ");
+
+/** The network dropped every try of an upload: run the command again, nothing is lost. */
+function uploadNetworkFailed(error: unknown, { workerName }: CfDeployOptions, tries: number): EveryAppError {
+  const cause = errorMessage(error).split("\n")[0] ?? "";
+  const gateway = workerName === GATEWAY_WORKER_NAME;
+  return new EveryAppError(
+    "UPLOAD_NETWORK_FAILED",
+    `The network dropped while uploading ${gateway ? "the Gateway" : workerName} (${tries} tries)\n${cause}. Whatever this command already did is kept, and running it again carries on from there.`,
+    {
+      retryable: true,
+      rerun: thisCommand(),
+      rerunNote: gateway
+        ? `once you're back online; or ${CLI} update brings the Gateway in step`
+        : "once you're back online",
+      data: { workerName, tries, cause },
+    },
+  );
+}
 
 function explainDeployFailure(
   error: unknown,
