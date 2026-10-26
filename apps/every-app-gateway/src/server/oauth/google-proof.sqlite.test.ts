@@ -19,7 +19,15 @@
  * fake-oauth-provider.ts); the real token exchange needs Ben's client ids.
  */
 import { generateKeyPairSync } from "node:crypto";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
 const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
@@ -122,6 +130,10 @@ describe("the Google-first proof: OpenSEO through the Gateway's Google connectio
   let github: ReturnType<typeof fakeOAuthProvider>;
   let now: number;
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(async () => {
     db = await createTestDb();
     testDb.current = db;
@@ -132,6 +144,10 @@ describe("the Google-first proof: OpenSEO through the Gateway's Google connectio
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     now = Date.parse("2026-10-25T21:00:00Z");
+    // The held-token path reads the real clock (`accessTokenFor` defaults
+    // `now`), so pin Date to the test clock or every token minted here
+    // looks expired once the wall clock passes it.
+    vi.useFakeTimers({ toFake: ["Date"], now });
     acme = await seedOrganization(db, "acme");
     owner = await seedMember(db, {
       organizationId: acme,
