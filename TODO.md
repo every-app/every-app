@@ -711,12 +711,12 @@ The four app repositories publish `everyapp-release.tar.gz` on every push to the
 
 **Decided by default, confirm**
 
-- [x] ~~Vendored tarballs over npm packages until publishing resumes~~ Superseded on 2026-10-25: Ben published `everyapp@0.3.0-rc.1` and `@every-app/sdk@0.3.0-rc.1` under the dist-tag `next`, open-seo's #1067 pins the exact rc with no `vendor/`, and private-open-crm #11, private-open-analytics #14 and private-agentic-inbox-everyapp #11 do the same (verified from a clean `--frozen-lockfile` install and `everyapp release` on each; the rc exports every SDK subpath the ports import and its CLI is a superset of the tarballs). `pnpm pack-for-app <app> --npm <version>` is the re-pin; without `--npm` it vendors tarballs again, the fallback for a published version that predates something an app needs. Open: `latest` still points at 0.2.x, so `npx everyapp` installs the old CLI until Ben moves the tag (launch doc A5/B10).
+- [x] ~~Vendored tarballs over npm packages until publishing resumes~~ Superseded on 2026-10-25: Ben published `everyapp@0.3.0-rc.1` and `@every-app/sdk@0.3.0-rc.1` under the dist-tag `next`, open-seo's #1067 pins the exact rc with no `vendor/`, and private-open-crm #11, private-open-analytics #14 and private-agentic-inbox-everyapp #11 do the same (verified from a clean `--frozen-lockfile` install and `everyapp release` on each; the rc exports every SDK subpath the ports import and its CLI is a superset of the tarballs). `pnpm pack-for-app <app> --npm <version>` is the re-pin; since 2026-10-26 `--npm` is required and the vendor mode is gone (no tarball fallback: a new rc instead). Open: `latest` still points at 0.2.x, so `npx everyapp` installs the old CLI until Ben moves the tag (launch doc A5/B10).
 - [ ] The workflow releases on every push to the default branch, tagged `v<package.json version>` or `v<version>-<yyyymmdd>-<sha>` when that tag exists; builds on every pull request (artifact only); a pushed `v*` tag releases under its name; `workflow_dispatch` publishes a draft. No secrets. `NODE_OPTIONS=--max-old-space-size=4096` for the SSR builds.
 - [ ] The deploy makes every R2 bucket the built Workers bind (declared in the manifest or named by hand), never records or purges them (`delete --purge` leaves buckets), and a race with another creator counts as made. The three apps keep their hand-written `bindings.r2({ name: worker.name })` rather than declaring `resources.r2`: declaring it too would have the SDK add a second binding of the same name (`r2: R2 reuses a binding name the Worker already has`), and switching to the declared form is each app's own change.
 - [ ] The inbox's `package.json` got `version: 0.1.0` (the release carries it; none was set) and its `.gitignore` an exception for `vendor/*.tgz` (it ignored every `.tgz`).
 - [ ] The app READMEs and AGENTS now point agents at the skill inside the vendored CLI (`node_modules/everyapp/skills/everyapp/SKILL.md`) instead of a sibling checkout.
-- [ ] The starter still links the checkout (`workspace:*` rewritten to `link:` by `create`); `pnpm pack-for-app` works on a created app too, for the day it moves to its own repository, and the starter's own CI (its TODO item above) could use the same tarballs.
+- [ ] The starter still links the checkout (`workspace:*` rewritten to `link:` by `create`); `pnpm pack-for-app --npm <version>` works on a created app too, for the day it moves to its own repository.
 - [ ] An installed app's host answers 503 until its required settings are set (seen on OpenAnalytics after the live install: the setup gate), its public routes included (`/healthz` was 503 too).
 
 ### MCP apps (2026-10-24)
@@ -1996,6 +1996,10 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
   - [ ] Two new codes: `GITHUB_RUN_MISSING` (not in Actions, or no token) and `RELEASE_PUBLISH_FAILED` (retryable on 5xx/429).
   - [ ] `--publish` ships in the next rc. The four app repositories pinned to `0.3.0-rc.3` keep their 118-line workflow until their pin moves; then `pnpm pack-for-app <app> --npm <rc> --workflow` swaps it in.
   - [ ] `everyapp create` writing `.github/workflows/release.yml` into new apps is a separate after-flip PR (the starter is frozen).
+- **pack-for-app** (npm only). Defaults taken for Ben:
+  - [ ] The vendor mode is gone: `--npm <version>` is required, `--no-build` went with it. Nothing on main used it; Mission Control, its last user, moved to rc.3 (lane 10). An app that needs something unpublished waits for an rc.
+  - [ ] `--npm` still deletes `vendor/everyapp-*.tgz`, `vendor/every-app-sdk-*.tgz` and `vendor/README.md` (and an emptied `vendor/`), so apps migrate off them.
+  - [ ] The historical records (launch doc, the "App releases (2026-10-24)" summary) still describe the tarballs as they were; only live guidance changed.
 
 ## Platform shortcuts (2026-10-26)/lane 3 binding shims
 

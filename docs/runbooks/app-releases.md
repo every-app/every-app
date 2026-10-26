@@ -34,10 +34,11 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    (OpenCRM and OpenSEO do; `@every-app/*` covers the SDK), or a fresh
    publish waits out the window.
 
-   The fallback, when the published version predates something the app
-   needs (an SDK export, a CLI check), is the same two packages packed from
-   a checkout and committed as `file:` tarballs under the app's `vendor/`
-   (`pnpm pack-for-app`, below). Either way the CLI in the app runs `dev`,
+   There is no fallback to tarballs: when the published version predates
+   something the app needs (an SDK export, a CLI check), the answer is a
+   new rc, not packages packed from a checkout (vendoring was retired on
+   2026-10-26; a vendored Mission Control had shipped code that was never
+   committed). The CLI in the app runs `dev`,
    `db migrate` and `release` on its own (its bundle inlines the SDK, the
    perimeter and the toolbus; its other imports are its declared
    dependencies). Since the setup-from-release work (2026-10-26) it also
@@ -81,27 +82,19 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
 From an EveryApp checkout, with the app's repository cloned beside it:
 
 ```sh
-pnpm pack-for-app ../open-crm --npm 0.3.0-rc.1 --workflow
+pnpm pack-for-app ../open-crm --npm 0.3.0-rc.3 --workflow
 ```
 
 `scripts/pack-for-app.mjs` with `--npm <version>` points the app's
 `package.json` at that exact published version of both packages (each in
 the dependency section it already lives in), deletes any `vendor/` tarballs
-of ours, copies `scripts/pack-for-app/release.yml` into the app's
+an older version of the script left (and `vendor/README.md`), copies `scripts/pack-for-app/release.yml` into the app's
 `.github/workflows` as `release.yml` with `--workflow`, and runs
 `pnpm install` in the app so its lockfile records the pin. Commit
 `package.json`, `pnpm-lock.yaml` and the workflow (and `vendor/`'s removal).
 
-Without `--npm` the script vendors instead: it builds the SDK and the CLI,
-packs both into `<app>/vendor/` (replacing earlier tarballs), points
-`package.json` at them (`file:vendor/…`), writes `vendor/README.md` (which
-commit the tarballs come from, how to refresh them, how to use a live
-checkout instead), and runs `pnpm install`. `--no-build` skips the builds,
-`--no-install` the install. A refreshed tarball keeps its name; its integrity
-changes, so a `pnpm install --frozen-lockfile` against the old lockfile fails
-with `ERR_PNPM_TARBALL_INTEGRITY` rather than build with stale code, and the
-script's `pnpm install` is what updates the lockfile. Moving from tarballs
-to npm later is the same command with `--npm`.
+`--npm <version>` is required; `--no-install` skips the install. The
+script no longer vendors.
 
 The app's default branch is what the workflow releases from. A repository
 whose default branch isn't `main` (OpenMail's is `everyapp` until it is
@@ -138,8 +131,10 @@ installs on a fresh account as it is.
 ## The alternatives, for the record
 
 - **Vendored tarballs** were the launch-week default (2026-10-24, before
-  anything was published): zero steps for anyone, and still the fallback
-  above. 560 KB of binaries per repository, refreshed by hand.
+  anything was published): zero steps for anyone, but 560 KB of binaries
+  per repository, refreshed by hand, and built from whatever the checkout
+  held, committed or not. Retired on 2026-10-26: `pack-for-app` only pins
+  published versions now, and deletes the tarballs it finds.
 - **A git dependency on the platform repository**
   (`github:every-app/every-app#<sha>&path:/packages/sdk`): pnpm resolves it
   but ships only `package.json` and `README.md` (the package's `files` is
