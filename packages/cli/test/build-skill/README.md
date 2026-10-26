@@ -163,7 +163,7 @@ tree the harness had to regenerate, and a run that hit the round cap.
 ## The app checkouts
 
 `buildSkill.test.ts` checks every `open-crm/…`, `open-analytics/…`,
-`open-seo/…` and `agentic-inbox/…` path the skill cites against a checkout
+`open-seo/…` and `open-mail/…` path the skill cites against a checkout
 of that repository, looked for under `$EVERYAPP_APP_CHECKOUTS` (default
 `~/workspaces`) by the name it is cited under, and skips that app with the
 reason when the directory isn't there or has no `everyapp.config.ts`. The
@@ -171,7 +171,7 @@ test's title records the commit each checkout was at. A clone kept under
 another name or somewhere else is named per app, comma-separated:
 
 ```bash
-EVERYAPP_APP_CHECKOUTS=open-seo=/path/to/your/open-seo/clone,agentic-inbox=/path/to/another \
+EVERYAPP_APP_CHECKOUTS=open-seo=/path/to/your/open-seo/clone,open-mail=/path/to/another \
   pnpm -C packages/cli exec vitest run src/lib/app/buildSkill.test.ts
 ```
 

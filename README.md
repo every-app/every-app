@@ -42,7 +42,7 @@ We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open
 - [OpenSEO](https://github.com/every-app/open-seo): SEO research, rank tracking, site audits and AI visibility for your sites.
 - [OpenCRM](https://github.com/every-app/open-crm): Companies, contacts and deals, kept up to date by a research agent.
 - [OpenAnalytics](https://github.com/every-app/open-analytics): Web analytics for your sites. No cookies, no stored IP addresses.
-- [Agentic Inbox](https://github.com/every-app/agentic-inbox): A team inbox with an AI agent that reads, drafts and sends email on your domain.
+- [OpenMail](https://github.com/every-app/open-mail): A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
 Run one as it is, or fork it as the starting point for your own. Many more are coming.
 

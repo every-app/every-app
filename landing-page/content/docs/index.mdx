@@ -43,9 +43,9 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 - **[OpenSEO](/docs/apps/openseo)**: SEO research, rank tracking, site audits and AI visibility for your sites.
 - **[OpenCRM](/docs/apps/crm)**: Companies, contacts and deals, kept up to date by a research agent.
 - **[OpenAnalytics](/docs/apps/analytics)**: Web analytics for your sites. No cookies, no stored IP addresses.
-- **[Agentic Inbox](/docs/apps/agentic-inbox)**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
+- **[OpenMail](/docs/apps/openmail)**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
-`pnpm everyapp install https://github.com/every-app/<repo>` from your EveryApp folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and Agentic Inbox use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
+`pnpm everyapp install https://github.com/every-app/<repo>` from your EveryApp folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and OpenMail use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
 
 Every key an app can ask for, and where to get it, is in [Providers](/docs/providers): model providers, search and data APIs, email, people's Google, Microsoft and GitHub accounts, and sign-in. Each page has the steps and the command that sets the key. You can [add any other API](/docs/providers/custom) yourself.
 

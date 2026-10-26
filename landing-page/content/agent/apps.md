@@ -12,15 +12,15 @@ Five open source apps run behind a Gateway as the person's own: four the README,
 3. `pnpm everyapp status --json`: the app leaves **Needs setup** once its required settings are set. [`everyapp status`](/docs/agent/status)
 4. Update: the same `install` command again. The deploy saves a restore point before it migrates the app's database.
 
-A Gateway setting is held once for every app: `OPENROUTER_API_KEY` serves OpenSEO, OpenCRM and Agentic Inbox at once, `CONTEXT_API_KEY` serves OpenSEO and OpenCRM, `EMAIL_FROM` serves OpenAnalytics and Agentic Inbox. The setup skill has a file per key with where it comes from and a smoke check: `setup/openrouter.md`, `setup/dataforseo.md`, `setup/context.md`, `setup/email.md`, `setup/google.md`, `setup/microsoft-365.md`, `setup/slack.md`.
+A Gateway setting is held once for every app: `OPENROUTER_API_KEY` serves OpenSEO, OpenCRM and OpenMail at once, `CONTEXT_API_KEY` serves OpenSEO and OpenCRM, `EMAIL_FROM` serves OpenAnalytics and OpenMail. The setup skill has a file per key with where it comes from and a smoke check: `setup/openrouter.md`, `setup/dataforseo.md`, `setup/context.md`, `setup/email.md`, `setup/google.md`, `setup/microsoft-365.md`, `setup/slack.md`.
 
-| id              | Name          | Repository                                  | R2  | Who opens it after the install                                |
-| --------------- | ------------- | ------------------------------------------- | --- | ------------------------------------------------------------- |
-| `openseo`       | OpenSEO       | https://github.com/every-app/open-seo       | yes | every member (`access: "everyone"`)                           |
-| `crm`           | OpenCRM       | https://github.com/every-app/open-crm       | yes | every member                                                  |
-| `analytics`     | OpenAnalytics | https://github.com/every-app/open-analytics | no  | every member                                                  |
-| `agentic-inbox` | Agentic Inbox | https://github.com/every-app/agentic-inbox  | yes | every member; owners and admins manage mailboxes              |
-| `repolens`      | RepoLens      | private today, no public address yet        | no  | the deployer, owners and admins; grant others in Admin → Apps |
+| id          | Name          | Repository                                  | R2  | Who opens it after the install                                |
+| ----------- | ------------- | ------------------------------------------- | --- | ------------------------------------------------------------- |
+| `openseo`   | OpenSEO       | https://github.com/every-app/open-seo       | yes | every member (`access: "everyone"`)                           |
+| `crm`       | OpenCRM       | https://github.com/every-app/open-crm       | yes | every member                                                  |
+| `analytics` | OpenAnalytics | https://github.com/every-app/open-analytics | no  | every member                                                  |
+| `openmail`  | OpenMail      | https://github.com/every-app/open-mail      | yes | every member; owners and admins manage mailboxes              |
+| `repolens`  | RepoLens      | private today, no public address yet        | no  | the deployer, owners and admins; grant others in Admin → Apps |
 
 ## OpenSEO (`openseo`)
 
@@ -83,13 +83,13 @@ pnpm everyapp configure analytics
 
 Resources: D1 `DB`, KV `SITE_SETTINGS_KV`, Durable Object `INGEST_DO` (one per site). Migrations: `d1-sql`, `migrations/`. No R2. Public routes: `GET /script.js`, `POST /collect`, `GET /share/**`, `GET /:locale/share/**`, `GET /api/public/share/**`, `GET /api/public/resources/**`, `GET /assets/**`, `GET /images/**` and the icon files. The tracking snippet is `<script defer src="https://analytics.<gateway domain>/script.js?siteId=<id>"></script>`; the tracker posts `text/plain`, so there is no preflight and `OPTIONS` stays private.
 
-## Agentic Inbox (`agentic-inbox`)
+## OpenMail (`openmail`)
 
 A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
 ```bash
-pnpm everyapp install https://github.com/every-app/agentic-inbox
-pnpm everyapp configure agentic-inbox
+pnpm everyapp install https://github.com/every-app/open-mail
+pnpm everyapp configure openmail
 pnpm everyapp email set --sender '*@example.com' --inbound '*@example.com'
 ```
 

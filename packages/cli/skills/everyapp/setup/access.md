@@ -4,7 +4,7 @@ Read [README.md](README.md) first: the rules every setup follows.
 
 Cloudflare Access puts a second door in front of the Gateway and every app
 host (`<app>.<app base domain>`: OpenSEO, Open CRM, OpenAnalytics,
-agentic-inbox, any app made with `everyapp create`), at Cloudflare's edge:
+openmail, any app made with `everyapp create`), at Cloudflare's edge:
 nobody reaches them before Access has checked who they are, with their
 Cloudflare account (members of the operator's Cloudflare account), a
 one-time code emailed to them, or the team's identity provider. `pnpm

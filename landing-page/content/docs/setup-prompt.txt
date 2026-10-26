@@ -12,10 +12,10 @@ and setup.md there; the everyapp skill in the repo says the same).
    `pnpm everyapp create hello --json`, then from apps/hello
    `pnpm everyapp deploy --json`. Tell me its URL.
 4. Then install the four EveryApp apps unless I say which to skip. Ask me
-   once: "I'll install OpenSEO, OpenCRM, OpenAnalytics and Agentic Inbox.
+   once: "I'll install OpenSEO, OpenCRM, OpenAnalytics and OpenMail.
    Any you don't want?" For each one I keep, run
    `pnpm everyapp install https://github.com/every-app/<repo> --json` with
-   open-seo, open-crm, open-analytics or agentic-inbox as <repo>. If an
+   open-seo, open-crm, open-analytics or open-mail as <repo>. If an
    install answers NO_RELEASE, say which app and continue; do not try to
    build it from source. If it answers R2_NOT_ENABLED, ask me to enable
    R2 in the Cloudflare dashboard (once), wait, then run it again. An app

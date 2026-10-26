@@ -19,7 +19,7 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
    `packages/cli/skills/build-every-app/patterns.md`; on the web,
    https://everyapp.com/docs/agent/patterns): how the apps on EveryApp do
    each thing, and the file to copy from, in the starter or in one of four
-   open apps (OpenCRM, OpenAnalytics, OpenSEO, Agentic Inbox), at
+   open apps (OpenCRM, OpenAnalytics, OpenSEO, OpenMail), at
    `https://github.com/every-app/<name>`. Read the sections for the job
    before the first edit, every time: identity and tests for a table, tools
    for a tool, the manifest for a capability. Copy a working file over
@@ -197,13 +197,13 @@ connector. No stack traces, no file paths.
 | Identity in a server function          | `starter/src/middleware/ensureUser.ts`, `starter/src/serverFunctions/todos.ts`                                |
 | Identity in a tool handler             | `starter/src/tools.ts`; `open-crm/src/server/everyapp/crm-tool.ts`                                            |
 | Identity on a public route             | `open-analytics/src/lib/edge/collector/collect.ts`; `open-crm/src/server/features/tracking/trackingRoutes.ts` |
-| Organization-wide rows                 | `open-crm/src/middleware/ensure-user/everyApp.ts`; `agentic-inbox/workers/everyapp/identity.ts`               |
+| Organization-wide rows                 | `open-crm/src/middleware/ensure-user/everyApp.ts`; `open-mail/workers/everyapp/identity.ts`               |
 | A public route with its own token      | `open-analytics/src/lib/edge/auth/collect-token.ts`, `open-analytics/src/lib/edge/collector/collect.ts`       |
-| AI through the Gateway                 | `open-crm/src/server/lib/openrouter.ts`; `agentic-inbox/workers/everyapp/gateway.ts`                          |
-| Sending and receiving email            | `agentic-inbox/workers/everyapp/email.ts`; `agentic-inbox/workers/app.ts`                                     |
-| A Durable Object agent                 | `open-crm/src/server/features/agent/CrmAgent.ts`; `agentic-inbox/workers/agent/index.ts`                      |
+| AI through the Gateway                 | `open-crm/src/server/lib/openrouter.ts`; `open-mail/workers/everyapp/gateway.ts`                          |
+| Sending and receiving email            | `open-mail/workers/everyapp/email.ts`; `open-mail/workers/app.ts`                                     |
+| A Durable Object agent                 | `open-crm/src/server/features/agent/CrmAgent.ts`; `open-mail/workers/agent/index.ts`                      |
 | Tools per feature, with output schemas | `open-crm/src/server/everyapp/tools.ts`, `open-crm/src/server/everyapp/tools/companies.ts`                    |
-| Needs setup inside the app             | `open-crm/src/client/features/agent/AgentPaused.tsx`; `agentic-inbox/app/components/SendingOffBanner.tsx`     |
+| Needs setup inside the app             | `open-crm/src/client/features/agent/AgentPaused.tsx`; `open-mail/app/components/SendingOffBanner.tsx`     |
 
 All of them, with every manifest field, Workflows and a second Worker, cookies,
 the lean Worker bundle, tests, dev vs production, release and install:

@@ -3,7 +3,7 @@
  * zone-scoped with `-z <zone id>`): its settings, enabling it on a domain,
  * its routing rules and its catch-all. Request bodies go to cf in a file
  * (`--body @<file>`). cf prints the API's `result` unwrapped; the schemas
- * keep only what callers read. These calls run live: agentic-inbox's
+ * keep only what callers read. These calls run live: OpenMail's
  * inbound addresses on everyapp.team are routed through them.
  */
 import { z } from "zod";

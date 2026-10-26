@@ -8,7 +8,7 @@
 /** The GitHub owner the four repositories are published under. */
 export const FEATURED_APPS_OWNER = "https://github.com/every-app";
 
-type FeaturedAppId = "openseo" | "crm" | "analytics" | "agentic-inbox";
+type FeaturedAppId = "openseo" | "crm" | "analytics" | "openmail";
 
 export interface FeaturedApp {
   /** The manifest id: the app's hostname label and its icon file's name. */
@@ -50,10 +50,10 @@ export const FEATURED_APPS: readonly FeaturedApp[] = [
     needs: ["A secret of its own, at least 32 random characters"],
   },
   {
-    id: "agentic-inbox",
-    name: "Agentic Inbox",
+    id: "openmail",
+    name: "OpenMail",
     line: "A team inbox with an AI agent that reads, drafts and sends email on your domain.",
-    repo: `${FEATURED_APPS_OWNER}/agentic-inbox`,
+    repo: `${FEATURED_APPS_OWNER}/open-mail`,
     needs: ["An OpenRouter key", "A mail domain on Cloudflare"],
   },
 ];

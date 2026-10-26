@@ -8,7 +8,7 @@ Each app is open source and runs behind your Gateway, in your own Cloudflare acc
 - **[OpenSEO](/docs/apps/openseo)**: SEO research, rank tracking, site audits and AI visibility for your sites.
 - **[OpenCRM](/docs/apps/crm)**: Companies, contacts and deals, kept up to date by a research agent.
 - **[OpenAnalytics](/docs/apps/analytics)**: Web analytics for your sites. No cookies, no stored IP addresses.
-- **[Agentic Inbox](/docs/apps/agentic-inbox)**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
+- **[OpenMail](/docs/apps/openmail)**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
 - **[RepoLens](/docs/apps/repolens)**: Keeps the GitHub traffic, star, fork and download history GitHub forgets.
 
 ## How an install works
@@ -24,14 +24,14 @@ Run the install command again later to update. Your data stays.
 
 Keys that more than one app uses are set once, on the Gateway. Three of these apps use AI, and they share one model key: `OPENROUTER_API_KEY` is the one to set first. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
 
-| App                                       | Install                                                             | Needs                                                                            |
-| ----------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [OpenSEO](/docs/apps/openseo)             | `pnpm everyapp install https://github.com/every-app/open-seo`       | An OpenRouter key, a DataForSEO key, R2 enabled                                  |
-| [OpenCRM](/docs/apps/crm)                 | `pnpm everyapp install https://github.com/every-app/open-crm`       | A model key (OpenRouter first), a Context.dev key, R2 enabled                    |
-| [OpenAnalytics](/docs/apps/analytics)     | `pnpm everyapp install https://github.com/every-app/open-analytics` | A secret of its own, at least 32 random characters                               |
-| [Agentic Inbox](/docs/apps/agentic-inbox) | `pnpm everyapp install https://github.com/every-app/agentic-inbox`  | A model key, a mail domain on Cloudflare, the Gateway's email sender, R2 enabled |
-| [RepoLens](/docs/apps/repolens)           | See its page: the repository is private today                       | A read-only GitHub token                                                         |
+| App                                   | Install                                                             | Needs                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [OpenSEO](/docs/apps/openseo)         | `pnpm everyapp install https://github.com/every-app/open-seo`       | An OpenRouter key, a DataForSEO key, R2 enabled                                  |
+| [OpenCRM](/docs/apps/crm)             | `pnpm everyapp install https://github.com/every-app/open-crm`       | A model key (OpenRouter first), a Context.dev key, R2 enabled                    |
+| [OpenAnalytics](/docs/apps/analytics) | `pnpm everyapp install https://github.com/every-app/open-analytics` | A secret of its own, at least 32 random characters                               |
+| [OpenMail](/docs/apps/openmail)       | `pnpm everyapp install https://github.com/every-app/open-mail`      | A model key, a mail domain on Cloudflare, the Gateway's email sender, R2 enabled |
+| [RepoLens](/docs/apps/repolens)       | See its page: the repository is private today                       | A read-only GitHub token                                                         |
 
-**R2.** OpenSEO, OpenCRM and Agentic Inbox each keep files in an R2 bucket. Enable R2 once in your Cloudflare dashboard (R2 Object Storage, then Get started) before you install them, or the install stops with `R2_NOT_ENABLED`. OpenAnalytics and RepoLens don't need it.
+**R2.** OpenSEO, OpenCRM and OpenMail each keep files in an R2 bucket. Enable R2 once in your Cloudflare dashboard (R2 Object Storage, then Get started) before you install them, or the install stops with `R2_NOT_ENABLED`. OpenAnalytics and RepoLens don't need it.
 
 Every app here lets every member of your workspace open it once it is installed, except RepoLens, which opens for owners and admins until you grant the rest. [Invite people](/docs/people)

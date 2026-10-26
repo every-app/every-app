@@ -194,7 +194,7 @@ names it. An app that can run without mail marks it `optional: true`
 
 ## Inbound mail to an app
 
-An app that receives mail (agentic-inbox, say) exports an `email()` handler
+An app that receives mail (openmail, say) exports an `email()` handler
 beside its `fetch` and declares it in its manifest:
 
 ```ts

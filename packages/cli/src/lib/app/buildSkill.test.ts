@@ -53,7 +53,7 @@ const namedCheckouts = new Map(
 );
 
 /** The four apps the patterns cite, by the name they are cited under (their public repository names). */
-const APP_NAMES = ["open-crm", "open-analytics", "open-seo", "agentic-inbox"];
+const APP_NAMES = ["open-crm", "open-analytics", "open-seo", "open-mail"];
 
 /**
  * An app's checkout here: the path its `name=path` pair names, else

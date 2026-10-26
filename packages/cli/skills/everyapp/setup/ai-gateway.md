@@ -74,7 +74,7 @@ credits) is not used: the Gateway always sends the provider's key, and
 
 1. `pnpm everyapp ai show --json`: `done.data.aiGateway` is `{ on: true,
    id: "everyapp" }` and `done.data.via` is `ai-gateway`.
-2. Make one model call in an app (ask Agentic Inbox's agent something),
+2. Make one model call in an app (ask OpenMail's agent something),
    then open the dashboard: AI → AI Gateway → `everyapp` → Logs shows
    the request with the provider's name.
 3. Manage workspace → Usage still counts the call under its provider:

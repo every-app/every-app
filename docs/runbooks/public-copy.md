@@ -135,7 +135,7 @@ which is how a teammate's name was found in an agent docs page on 2026-10-24.
   private repository's history becomes its text plus "(removed from the tree;
   the maintainers' history has it at `<sha>`)"; the private repository's name
   becomes "the maintainers' private repository"; the scratch copies of the
-  ported apps become "the OpenSEO port", "the agentic-inbox port" and so on;
+  ported apps become "the OpenSEO port", "the OpenMail port" and so on;
   paths on the maintainer's machine become "a local checkout"; a teammate's
   first name becomes "a teammate".
 - E-mail addresses become "an e-mail address", except role addresses

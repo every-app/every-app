@@ -2,7 +2,7 @@
 
 Lets the Gateway send its own mail (invitations, password resets, sign-up
 verification) and every app's, through one provider for the whole Gateway:
-Cloudflare Email Sending (the default) or Resend. Apps that send: agentic-inbox
+Cloudflare Email Sending (the default) or Resend. Apps that send: openmail
 (replies from its own addresses; required), Open Analytics (reports and
 alerts; `optional: true`, so it opens without it) and any app whose
 `everyapp.config.ts` lists `capabilities: { email: { access: "write" } }`.
@@ -69,7 +69,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 ## Before you start
 
-- `pnpm everyapp secret list <app id> --json` (`agentic-inbox` or
+- `pnpm everyapp secret list <app id> --json` (`openmail` or
   `analytics`, the launch apps that list `email`; from anywhere once it is
   deployed, else `pnpm everyapp secret list --json` in its directory): this
   file applies when `data.app.setup.unmet`
@@ -211,13 +211,13 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    `pnpm everyapp secret list --json`, both names in `data.gateway.names`
    (`EMAIL_FROM` alone with the combined form; and `RESEND_API_KEY` for
    Resend). Or, at the person's terminal, `pnpm everyapp configure <app id>`
-   (`agentic-inbox` or `analytics`) asks for `EMAIL_FROM` and then
+   (`openmail` or `analytics`) asks for `EMAIL_FROM` and then
    `EMAIL_FROM_NAME` among the app's other settings, at visible prompts
    that say what each takes and check it (the address, then the name, as
    in the two pipes above; where `email` is required it wants both, so the
    combined form alone is for the pipe).
 
-   **An app that sends as its own addresses** (agentic-inbox)
+   **An app that sends as its own addresses** (openmail)
 
 9. **You:** after the app's first deploy, set up its domain with the same
    provider (steps 2 to 3, or 4 to 5; a domain done for `EMAIL_FROM` needs
@@ -254,7 +254,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 ## Verify
 
-1. `pnpm everyapp secret list agentic-inbox --json` (or the app that brought
+1. `pnpm everyapp secret list openmail --json` (or the app that brought
    you here, from anywhere): the `email` entry in `data.app.setup.settings` is
    `set: true` and out of `data.app.setup.unmet`, `data.app.setup.ready` true
    once nothing else is missing, `EMAIL_FROM` and `EMAIL_FROM_NAME` out of

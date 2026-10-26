@@ -25,13 +25,13 @@ describe("the featured apps", () => {
       "openseo",
       "crm",
       "analytics",
-      "agentic-inbox",
+      "openmail",
     ]);
     expect(FEATURED_APPS.map((app) => app.name)).toEqual([
       "OpenSEO",
       "OpenCRM",
       "OpenAnalytics",
-      "Agentic Inbox",
+      "OpenMail",
     ]);
   });
 

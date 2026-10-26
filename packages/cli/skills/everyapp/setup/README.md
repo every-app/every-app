@@ -14,14 +14,14 @@ click when they have to do something themselves.
 | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Cloudflare account, the Gateway and its owner | [gateway.md](gateway.md)               | set by `everyapp setup` (optional: `CF_DEPLOY_TOKEN`, `BROWSER_APP_INSTALLS`)    | everything                                                              |
 | Cloudflare Access in front of the Gateway     | [access.md](access.md)                 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_APPS_AUD` (set by `everyapp access on`; optional: `EMAIL_PASSWORD_SIGN_IN`, `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, `CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`) | sign-in, every app                                          |
-| Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, agentic-inbox, Open Analytics (optional), any app that sends |
+| Email sending (Cloudflare Email Sending or Resend) | [email.md](email.md)               | `EMAIL_FROM`, `EMAIL_FROM_NAME`; `RESEND_API_KEY`, `EMAIL_PROVIDER`, `EMAIL_REST_API_TOKEN` | invitations, password resets, openmail, Open Analytics (optional), any app that sends |
 | DataForSEO                                    | [dataforseo.md](dataforseo.md)         | `DATAFORSEO_API_KEY`                                                            | OpenSEO; the DataForSEO MCP app (`pnpm everyapp mcp on dataforseo`) |
 | Any remote MCP server, as an MCP app          | [remote-mcp.md](remote-mcp.md)         | `<ID>_MCP_TOKEN` (one per server; none for a public one)                        | the MCP app added with `pnpm everyapp mcp add <url>`                     |
 | Context.dev                                   | [context.md](context.md)               | `CONTEXT_API_KEY`                                                               | Open CRM; OpenSEO (optional: rendered audits)                           |
-| OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, agentic-inbox                                        |
+| OpenRouter                                    | [openrouter.md](openrouter.md)         | `OPENROUTER_API_KEY`                                                            | OpenSEO, Open CRM, openmail                                        |
 | OpenAI                                        | [openai.md](openai.md)                 | `OPENAI_API_KEY`, `AI_PROXY_EXTRA_ROUTES`                                       | apps listing the `openai` provider                                      |
-| Workers AI                                    | [workers-ai.md](workers-ai.md)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | agentic-inbox (optional)                                                |
-| The default model provider (any one key)      | [ai.md](ai.md)                         | one provider's key (OpenRouter first); the choice with `everyapp ai default`    | every app whose manifest says `ai: { chat: true }` (agentic-inbox, OpenCRM) |
+| Workers AI                                    | [workers-ai.md](workers-ai.md)         | `WORKERS_AI_API_TOKEN` (`CLOUDFLARE_ACCOUNT_ID` is set by `everyapp setup`)     | openmail (optional)                                                |
+| The default model provider (any one key)      | [ai.md](ai.md)                         | one provider's key (OpenRouter first); the choice with `everyapp ai default`    | every app whose manifest says `ai: { chat: true }` (openmail, OpenCRM) |
 | Cloudflare AI Gateway in front of the models  | [ai-gateway.md](ai-gateway.md)         | `AI_GATEWAY_ID` (set by `everyapp ai gateway on`; optional `AI_GATEWAY_API_KEY`) | every AI provider call, once it is on                                   |
 | Google (Gmail, Calendar, Search Console and Analytics) | [google.md](google.md)        | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`                  | Open CRM                                                                |
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
@@ -67,7 +67,7 @@ and the same client serves both the app-driven flow those files describe
 and the Gateway-owned one.
 
 Which integrations a person needs: the apps they deploy decide. The four
-EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
+EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, OpenMail) are
 installed from their GitHub releases by [gateway.md](gateway.md)'s last
 step, each unless the person skips it; the keys they then ask for are the
 files below. From any

@@ -17,7 +17,7 @@ function app(overrides: Partial<UserAccessApp>): UserAccessApp {
     id: "row-inbox",
     organizationId: "org-acme",
     appId: "inbox",
-    name: "Agentic Inbox",
+    name: "OpenMail",
     description: "A shared inbox.",
     hostname: "inbox.apps.example.com",
     tier: "service_binding",

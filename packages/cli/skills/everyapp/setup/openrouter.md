@@ -6,7 +6,7 @@ holds the key as `OPENROUTER_API_KEY` and proxies `/api/ai/openrouter/...`
 to `openrouter.ai` for every app that lists the `openrouter` provider, so no
 app holds it. OpenSEO uses it for SAM (the in-app SEO agent), prompt
 suggestions and website research. Open CRM uses it for its research agent
-and web research (Perplexity's Sonar models). agentic-inbox uses it when
+and web research (Perplexity's Sonar models). openmail uses it when
 its Worker was deployed with `AI_PROVIDER=openrouter` (its
 `cloudflare.config.ts` still defaults the variable to `workers-ai` until
 the inbox's PR #6 merges; the other provider is
@@ -58,7 +58,7 @@ try the apps.
 
 1. `pnpm everyapp secret list openseo --json`,
    `pnpm everyapp secret list crm --json` and
-   `pnpm everyapp secret list agentic-inbox --json`, from any directory, one
+   `pnpm everyapp secret list openmail --json`, from any directory, one
    per app the person has (`APP_NOT_FOUND`, "<app> isn't deployed to this
    Gateway yet", means that app isn't deployed: the key can still be set
    now, from any directory, and the app uses it on its first deploy). The
@@ -80,7 +80,7 @@ try the apps.
    .claude/skills/everyapp/setup/openrouter.md`, and `secret list --json`
    carries the path as the entry's `setup` (in the
    checkout: `packages/cli/skills/everyapp/setup/openrouter.md`).
-   agentic-inbox: its manifest requires `openrouter` and marks
+   openmail: its manifest requires `openrouter` and marks
    `workers-ai` `optional: true`, so `OPENROUTER_API_KEY` is in `unmet` and
    `WORKERS_AI_API_TOKEN` only in `settings` with `set: false`
    (`data.app.setup.groups` is `[]`): the inbox opens with this key and its
@@ -90,7 +90,7 @@ try the apps.
 2. `pnpm everyapp status --json`: in the `done` event, `data.installed` and
    `data.claimed` are true, `data.gatewayUrl` is `https://<gateway host>`,
    and `data.apps[]` has an entry with `"id": "openseo"`, `"id": "crm"` or
-   `"id": "agentic-inbox"` and `"bound": true`, carrying the same `setup`;
+   `"id": "openmail"` and `"bound": true`, carrying the same `setup`;
    while a required setting is missing `data.fixes` has `APP_NEEDS_SETUP`
    for the app (severity `warning`, headline "<app> needs setup", `run` the
    same command). Not installed or no owner: [gateway.md](gateway.md) first.
@@ -148,7 +148,7 @@ try the apps.
    they already have one.
 6. **Person:** README way one, the person types it. In a second terminal, in
    the `every-app` folder: `pnpm everyapp configure <app id>` (`openseo`,
-   `crm` or `agentic-inbox`: the app that needs it; the key is set once,
+   `crm` or `openmail`: the app that needs it; the key is set once,
    for every app), which asks for this key among the app's other unset
    settings, or `pnpm everyapp secret set OPENROUTER_API_KEY` for just this
    one. The prompt is hidden (`OPENROUTER_API_KEY`, under lines saying what
@@ -167,7 +167,7 @@ try the apps.
    deploy.
 7. **You:** verify (next section). The tab from step 5 can be closed once
    the key answers there (Verify 2 on the `--from-env` path, otherwise 3).
-8. **You, agentic-inbox only:** the provider is chosen when its Worker is
+8. **You, openmail only:** the provider is chosen when its Worker is
    built, from the `AI_PROVIDER` variable of the deploying shell; the
    default is still `workers-ai` (the inbox's PR #6 flips it to OpenRouter;
    open). Pass it on every deploy, in the app's directory:
@@ -177,11 +177,11 @@ try the apps.
 ## Verify
 
 1. `pnpm everyapp secret list <app id> --json` for each app (`openseo`,
-   `crm`, `agentic-inbox`), from anywhere: the `OPENROUTER_API_KEY` entry in
+   `crm`, `openmail`), from anywhere: the `OPENROUTER_API_KEY` entry in
    `data.app.setup.settings` has `"set": true` and has left
    `data.app.setup.unmet`; `data.app.setup.ready` is true once nothing else
    of the app's is missing (OpenSEO: its DataForSEO key; Open CRM: its
-   Context key; agentic-inbox: its email sender. `WORKERS_AI_API_TOKEN` and
+   Context key; openmail: its email sender. `WORKERS_AI_API_TOKEN` and
    OpenSEO's Context key are optional: in `settings` with `set: false`,
    never in `unmet`). In the older fields, `data.gateway.names`
    lists the key, its `data.gateway.needed` entry has `"set": true` and it
@@ -219,9 +219,9 @@ try the apps.
    `ai_provider_not_configured`, visible in the browser's network tab or the
    Gateway's logs (4). OpenSEO's own "OPENROUTER_API_KEY is not set" page
    shows only in local dev. Open CRM: open `https://crm.<app base domain>`;
-   its research agent runs on the key. agentic-inbox (deployed with
+   its research agent runs on the key. openmail (deployed with
    `AI_PROVIDER=openrouter`): open
-   `https://agentic-inbox.<app base domain>`, a mailbox, and send the agent
+   `https://openmail.<app base domain>`, a mailbox, and send the agent
    a message; it answers. Its refusal reads "AI isn't set up on this
    gateway yet, so I can't help with this inbox. An admin sets
    OPENROUTER_API_KEY with `pnpm everyapp secret set OPENROUTER_API_KEY`."
@@ -248,9 +248,9 @@ try the apps.
 | `SECRET_SEVERAL_NAMES`                                                           | `--from-env` or a pipe with more than one name                                                       | one name per call                                                                                                |
 | `SECRET_NOT_DECLARED` with `data.didYouMean`                                     | the name is misspelt (`OPEN_ROUTER_API_KEY`)                                                         | rerun with the name in `data.didYouMean` and the same value source (`--from-env VAR --json`, or the same pipe); `data.rerun` carries only the names, so run as is it stops with `SECRET_VALUE_REQUIRED` |
 | `provider_not_allowed` (403)                                                     | the app's `everyapp.config.ts` `providers` doesn't list `openrouter`                                 | add it and redeploy; nothing to set on the Gateway                                                               |
-| a browser opening the app is sent to `https://<gateway host>/?setup=<app id>`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"<app id>"}` | the Gateway's setup gate: a required setting of the app is still unset (this key, or another the manifest requires: agentic-inbox's email sender, OpenSEO's DataForSEO key, Open CRM's Context key) | `data.app.setup.command`, `pnpm everyapp configure <app id>` (step 6), then Verify 1 |
+| a browser opening the app is sent to `https://<gateway host>/?setup=<app id>`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"<app id>"}` | the Gateway's setup gate: a required setting of the app is still unset (this key, or another the manifest requires: openmail's email sender, OpenSEO's DataForSEO key, Open CRM's Context key) | `data.app.setup.command`, `pnpm everyapp configure <app id>` (step 6), then Verify 1 |
 | `ai_provider_not_configured` (503, `x-everyapp-error`)                           | the Gateway holds no `OPENROUTER_API_KEY` (behind the setup gate an app whose manifest requires `openrouter` doesn't open in this state; one that marks it `optional: true` sees this) | step 6, then Verify 1; check the name                                                                            |
-| `model_not_allowed` (403)                                                        | the app's manifest `ai.models` doesn't list the model it asked for (agentic-inbox's `AGENT_MODEL`)   | use a listed model, or add it to `ai.models` and redeploy; OpenSEO lists none, so any model passes               |
+| `model_not_allowed` (403)                                                        | the app's manifest `ai.models` doesn't list the model it asked for (openmail's `AGENT_MODEL`)   | use a listed model, or add it to `ai.models` and redeploy; OpenSEO lists none, so any model passes               |
 | `ai_route_not_allowed` (403)                                                     | the app called a path that isn't inference                                                           | only the four routes under Settings; nothing to set                                                              |
 | `ai_upstream_failed` (502)                                                       | the Gateway couldn't reach openrouter.ai                                                             | retry; read the `ai.proxy.upstream_failed` log line                                                              |
 | `integration_not_configured`                                                     | a different capability's setting is missing: DataForSEO, Context or email sending, not OpenRouter    | [dataforseo.md](dataforseo.md), [context.md](context.md), [email.md](email.md)                                   |
@@ -263,8 +263,8 @@ try the apps.
 | OpenRouter 404 "0 endpoints out of N requested are available matching your guardrail restrictions and data policy" (older: "No endpoints found matching your data policy") | the privacy settings (training, or a zero-data-retention toggle for the model's group) exclude every endpoint of that model | https://openrouter.ai/settings/privacy, or another model                               |
 | OpenRouter 429                                                                   | rate limited: a `:free` model's cap, or the upstream provider                                        | the apps' models are paid, so retry; OpenRouter routes to another provider when it can                           |
 | OpenRouter 502 / 503                                                             | the model is down, or no provider meets the routing requirements (`zdr`, provider order)             | retry later; OpenSEO's MiniMax fallback restricts routing to zero-data-retention endpoints (Together first, fallbacks on), so a 503 there means no ZDR provider is up |
-| OpenRouter 403 "This model is not available in your region"                      | OpenRouter refuses OpenAI, Anthropic and Google models from some countries (community reports, 2026; not in OpenRouter's docs) | OpenSEO switches SAM to `minimax/minimax-m3` by itself; agentic-inbox's agent defaults to Claude Haiku, so redeploy it with `AGENT_MODEL=moonshotai/kimi-k2.6 AI_PROVIDER=openrouter pnpm everyapp deploy --json` (or `meta-llama/llama-4-scout`, also in its `ai.models`) |
-| agentic-inbox: "AI isn't set up on this gateway (OPENROUTER_API_KEY) or in .dev.vars" | no Gateway binding and no local key: `everyapp dev`, whose ready block's `Dev vars` line names the keys `.dev.vars` is missing (the inbox's names both providers' settings; on OpenRouter only `OPENROUTER_API_KEY` is needed) | the person adds `OPENROUTER_API_KEY=...` to the app's `.dev.vars` (gitignored) in their own editor, with their own key, billed to them; never ask for the value and never write that file yourself |
+| OpenRouter 403 "This model is not available in your region"                      | OpenRouter refuses OpenAI, Anthropic and Google models from some countries (community reports, 2026; not in OpenRouter's docs) | OpenSEO switches SAM to `minimax/minimax-m3` by itself; openmail's agent defaults to Claude Haiku, so redeploy it with `AGENT_MODEL=moonshotai/kimi-k2.6 AI_PROVIDER=openrouter pnpm everyapp deploy --json` (or `meta-llama/llama-4-scout`, also in its `ai.models`) |
+| openmail: "AI isn't set up on this gateway (OPENROUTER_API_KEY) or in .dev.vars" | no Gateway binding and no local key: `everyapp dev`, whose ready block's `Dev vars` line names the keys `.dev.vars` is missing (the inbox's names both providers' settings; on OpenRouter only `OPENROUTER_API_KEY` is needed) | the person adds `OPENROUTER_API_KEY=...` to the app's `.dev.vars` (gitignored) in their own editor, with their own key, billed to them; never ask for the value and never write that file yourself |
 | OpenSEO SAM page: "OPENROUTER_API_KEY is not set for this deployment yet"        | the same, in local dev (its `Dev vars` line names the key too); behind the Gateway the page never says this | `.dev.vars` as above, by the person                                                                       |
 
 ## Rerun, rotate, remove
@@ -282,7 +282,7 @@ try the apps.
   Then the person deletes the key on OpenRouter: a key the Gateway no longer
   holds is still a key. Apps whose manifest requires `openrouter` then need
   setup again: the Gateway closes them until the key is back (OpenSEO, Open
-  CRM and agentic-inbox alike, and the inbox's `AI_PROVIDER=workers-ai` build
+  CRM and openmail alike, and the inbox's `AI_PROVIDER=workers-ai` build
   changes nothing: the manifest, not the build, says what is required;
   `status` says so, with this file's path). An app that marks the provider
   `optional: true` keeps opening and gets `ai_provider_not_configured` on
@@ -306,4 +306,4 @@ try the apps.
 - https://openrouter.ai/docs/guides/routing/model-variants/free.md (`:free` variants)
 - https://openrouter.ai/api/v1/models (public; the six model ids and prices above, fetched 2026-10-23)
 - Console pages checked on 2026-10-23: https://openrouter.ai/settings/keys (via `/workspace-redirect/keys`), https://openrouter.ai/settings/credits and https://openrouter.ai/settings/privacy all go to sign-in when signed out; the older `/docs/api-reference/...` and `/docs/features/...` URLs 308-redirect to the pages above
-- In code: `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts` (`provider_not_allowed`), `apps/every-app-gateway/src/server/capabilities/email.ts` (`integration_not_configured`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`), `packages/sdk/src/internal/gatewaySettings.ts` (each provider's key is `required`), `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; `needOf`: a plain provider id is required, `anyOf` makes a group; `setup/openrouter.md` from the provider registry, `packages/sdk/src/internal/aiProviders.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, the kept `data.gateway.needed` and `missing`, `APP_NOT_FOUND`), `packages/cli/src/commands/configure/index.ts` (`configure <app>`: the prompts, `NAME=value` lines on stdin, `--from-env`, `SECRET_VALUE_REQUIRED`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `packages/cli/src/commands/dev/ready.ts` (the `Dev vars` line); agentic-inbox's `everyapp.config.ts` (`openrouter` required, `workers-ai` `optional: true`), `cloudflare.config.ts` (`AI_PROVIDER` defaults to `workers-ai` until its PR #6) and `workers/everyapp/gateway.ts` (`AGENT_MODEL`); OpenSEO's `everyapp.config.ts` (`openrouter` required), `src/server/lib/openrouter.ts` (ZDR routing, blocked countries) and `src/serverFunctions/samAccess.ts` (the SAM gate); Open CRM's `everyapp.config.ts` (`openrouter` required)
+- In code: `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts` (`provider_not_allowed`), `apps/every-app-gateway/src/server/capabilities/email.ts` (`integration_not_configured`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`), `packages/sdk/src/internal/gatewaySettings.ts` (each provider's key is `required`), `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; `needOf`: a plain provider id is required, `anyOf` makes a group; `setup/openrouter.md` from the provider registry, `packages/sdk/src/internal/aiProviders.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, the kept `data.gateway.needed` and `missing`, `APP_NOT_FOUND`), `packages/cli/src/commands/configure/index.ts` (`configure <app>`: the prompts, `NAME=value` lines on stdin, `--from-env`, `SECRET_VALUE_REQUIRED`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `packages/cli/src/commands/dev/ready.ts` (the `Dev vars` line); openmail's `everyapp.config.ts` (`openrouter` required, `workers-ai` `optional: true`), `cloudflare.config.ts` (`AI_PROVIDER` defaults to `workers-ai` until its PR #6) and `workers/everyapp/gateway.ts` (`AGENT_MODEL`); OpenSEO's `everyapp.config.ts` (`openrouter` required), `src/server/lib/openrouter.ts` (ZDR routing, blocked countries) and `src/serverFunctions/samAccess.ts` (the SAM gate); Open CRM's `everyapp.config.ts` (`openrouter` required)

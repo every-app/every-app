@@ -1,7 +1,7 @@
 # App releases: a repository anyone can install from
 
 An app that lives in its own repository (OpenSEO, OpenCRM, OpenAnalytics,
-Agentic Inbox, or yours) is installed on a Gateway with
+OpenMail, or yours) is installed on a Gateway with
 `pnpm everyapp install https://github.com/<owner>/<repo>`, which downloads
 `everyapp-release.tar.gz` from the repository's latest GitHub release
 (`landing-page/content/agent/deploy.md`, "Release installs"). A repository
@@ -86,7 +86,7 @@ script's `pnpm install` is what updates the lockfile. Moving from tarballs
 to npm later is the same command with `--npm`.
 
 The app's default branch is what the workflow releases from. A repository
-whose default branch isn't `main` (Agentic Inbox's is `everyapp` until it is
+whose default branch isn't `main` (OpenMail's is `everyapp` until it is
 renamed) lists it under `on.push.branches` too; the job publishes only when
 the pushed branch is the repository's default.
 

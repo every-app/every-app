@@ -1,6 +1,6 @@
 # The default model provider
 
-An app that says `ai: { chat: true }` in its manifest (Agentic Inbox,
+An app that says `ai: { chat: true }` in its manifest (OpenMail,
 OpenCRM's research agent) takes whichever chat model the Gateway's
 operator made the default, through `/api/ai/default/…`; it never names a
 provider. One key, set once, makes every such app work. This file sets
@@ -98,7 +98,7 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
    `done.data.via` `ai-gateway` once the gateway is on, else `direct`.
 2. `pnpm everyapp status --json`: every app that said `ai.chat` has
    `setup.ready` true and no `ai-default` setting in `setup.unmet`.
-3. In the app: a chat answer arrives (Agentic Inbox: open a thread and
+3. In the app: a chat answer arrives (OpenMail: open a thread and
    ask the agent; OpenCRM: run research on a company). Manage workspace
    → Usage → By provider shows the provider and, under it, the model.
 

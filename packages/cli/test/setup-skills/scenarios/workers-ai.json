@@ -1,5 +1,5 @@
 {
-  "prompt": "Set up Workers AI for agentic-inbox on my gateway.",
+  "prompt": "Set up Workers AI for openmail on my gateway.",
   "maxRounds": 12,
   "state": {
     "gatewayNames": [
@@ -9,8 +9,8 @@
     ],
     "apps": [
       {
-        "id": "agentic-inbox",
-        "name": "Agentic Inbox",
+        "id": "openmail",
+        "name": "OpenMail",
         "manifest": {
           "providers": [
             "workers-ai",
@@ -74,8 +74,8 @@
     },
     {
       "name": "app-check",
-      "when": "Show agent panel|Ask your email agent|agentic-inbox\\.apps\\.example\\.com",
-      "reply": "Opened https://agentic-inbox.apps.example.com/, opened a mailbox, clicked Show agent panel, typed a question in the agent box and sent it. A reply streamed in; no refusal this time."
+      "when": "Show agent panel|Ask your email agent|openmail\\.apps\\.example\\.com",
+      "reply": "Opened https://openmail.apps.example.com/, opened a mailbox, clicked Show agent panel, typed a question in the agent box and sent it. A reply streamed in; no refusal this time."
     },
     {
       "use": "check-result"
@@ -98,7 +98,7 @@
     ],
     "commands": [
       "^status --json",
-      "^secret list agentic-inbox\\b"
+      "^secret list openmail\\b"
     ]
   }
 }

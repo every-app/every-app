@@ -139,7 +139,7 @@ export interface CompanyGuide {
 
 const OPENSEO = "[OpenSEO](/docs/apps/openseo)";
 const CRM = "[OpenCRM](/docs/apps/crm)";
-const INBOX = "[Agentic Inbox](/docs/apps/agentic-inbox)";
+const INBOX = "[OpenMail](/docs/apps/openmail)";
 const ANALYTICS = "[OpenAnalytics](/docs/apps/analytics)";
 const REPOLENS = "[RepoLens](/docs/apps/repolens)";
 
@@ -147,7 +147,7 @@ const REPOLENS = "[RepoLens](/docs/apps/repolens)";
 export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   openrouter: {
     blurb:
-      "One key for hundreds of models from every major lab. It's the key to set first: OpenSEO, OpenCRM and Agentic Inbox all run on it.",
+      "One key for hundreds of models from every major lab. It's the key to set first: OpenSEO, OpenCRM and OpenMail all run on it.",
     usedBy: [`${OPENSEO} for its SEO agent`, `${CRM} for its research agent and web research`, `${INBOX} for its email agent`],
     key: [
       "Sign in or sign up at [openrouter.ai](https://openrouter.ai/sign-in), with Google, GitHub or an email address.",
@@ -416,9 +416,9 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
           "pnpm everyapp secret set EMAIL_FROM_NAME",
           "```",
           "",
-          "For example `noreply@example.com` and your company's name. Or run `pnpm everyapp configure agentic-inbox`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.",
+          "For example `noreply@example.com` and your company's name. Or run `pnpm everyapp configure openmail`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.",
           "",
-          "An app that sends as addresses of its own, like Agentic Inbox, also needs them allowed: `pnpm everyapp email set --sender '*@example.com'`.",
+          "An app that sends as addresses of its own, like OpenMail, also needs them allowed: `pnpm everyapp email set --sender '*@example.com'`.",
         ].join("\n"),
       },
       {

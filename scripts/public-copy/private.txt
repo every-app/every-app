@@ -15,7 +15,8 @@
 /`?(?:\.\.\/)?private-every-app(?:\/[^\s`)\]]*)?`?/g	the maintainers' private repository	the private repository's name
 /`?bensenescu\/open-seo-everyapp(?:\/[^\s`)\]]*)?`?/g	a private scratch copy of OpenSEO	the OpenSEO scratch repository
 /`?(?:private-)?open-seo-everyapp(?:\/[^\s`)\]]*)?`?/g	the OpenSEO port	the OpenSEO port's checkout name
-/`?(?:private-)?agentic-inbox-everyapp(?:\/[^\s`)\]]*)?`?/g	the agentic-inbox port	the agentic-inbox port's checkout name
+/`?(?:private-)?agentic-inbox-everyapp(?:\/[^\s`)\]]*)?`?/g	the OpenMail port	the OpenMail port's old checkout name
+/`?private-open-mail(?:\/[^\s`)\]]*)?`?/g	the OpenMail port	the OpenMail port's checkout name
 /`?postiz-everyapp(?:\/[^\s`)\]]*)?`?/g	the Postiz port	the Postiz port's checkout name
 /`?private-open-crm(?:\/[^\s`)\]]*)?`?/g	the OpenCRM port	the OpenCRM port's checkout name
 /`?private-open-analytics(?:\/[^\s`)\]]*)?`?/g	the OpenAnalytics port	the OpenAnalytics port's checkout name
@@ -23,7 +24,7 @@
 /`?agents\.everyapp\.team`?/g	the maintainers' background-agent host	a live host of the maintainers' account outside the launch apps
 /`?every-bensenescu-[a-z0-9*-]+`?/g	an old Worker of the maintainers' account	a Worker of the maintainers' account
 /`?thecomeup\.cc`?/g	the old dogfood domain	the maintainers' old dogfood domain
-/hi\.openseo\.so/g	<domain>	the live agentic-inbox's mail domain
+/hi\.openseo\.so/g	<domain>	the live OpenMail's mail domain
 /\bCarter\b/g	a teammate	a teammate's name
 /`(?:66f98c9e|8f4956ad|a19108d7)…`/g	`<id>`	an Access application or policy id of the maintainers' gateway
 /\(every-every-workout-tracker[^)]*\)/g	(a list the maintainers keep)	the inventory of the maintainers' old Workers

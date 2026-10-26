@@ -6,7 +6,7 @@ description: "Mail from the Gateway and every app, through Cloudflare Email Send
 
 The Gateway sends its own mail (invitations, password resets) and every app's, through one provider for the whole Gateway: Cloudflare Email Sending (the default) or Resend. It's optional: without it, an invitation shows a link to share instead.
 
-**Used by:** [Agentic Inbox](/docs/apps/agentic-inbox) to send replies (required); [OpenAnalytics](/docs/apps/analytics) for reports and alerts (optional).
+**Used by:** [OpenMail](/docs/apps/openmail) to send replies (required); [OpenAnalytics](/docs/apps/analytics) for reports and alerts (optional).
 
 ## Cloudflare Email Sending
 
@@ -39,9 +39,9 @@ pnpm everyapp secret set EMAIL_FROM
 pnpm everyapp secret set EMAIL_FROM_NAME
 ```
 
-For example `noreply@example.com` and your company's name. Or run `pnpm everyapp configure agentic-inbox`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.
+For example `noreply@example.com` and your company's name. Or run `pnpm everyapp configure openmail`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.
 
-An app that sends as addresses of its own, like Agentic Inbox, also needs them allowed: `pnpm everyapp email set --sender '*@example.com'`.
+An app that sends as addresses of its own, like OpenMail, also needs them allowed: `pnpm everyapp email set --sender '*@example.com'`.
 
 ## Check it worked
 

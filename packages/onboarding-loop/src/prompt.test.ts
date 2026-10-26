@@ -41,9 +41,7 @@ describe("the setup prompt", () => {
     expect(prompt).toContain(
       "`pnpm everyapp install https://github.com/every-app/<repo> --json`",
     );
-    expect(prompt).toContain(
-      "open-seo, open-crm, open-analytics or agentic-inbox",
-    );
+    expect(prompt).toContain("open-seo, open-crm, open-analytics or open-mail");
     expect(prompt).toContain(
       "answers NO_RELEASE, say which app and continue; do not try to",
     );

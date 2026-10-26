@@ -17,7 +17,7 @@
  * "Needs setup" depends on the gateway's own .dev.vars: with
  * OPENROUTER_API_KEY and DATAFORSEO_API_KEY set to any value OpenSEO and
  * the DataForSEO provider app read as ready and Research Desk needs only
- * its own MAIN_SECRET; without them they need setup too. Agentic Inbox
+ * its own MAIN_SECRET; without them they need setup too. OpenMail
  * always needs setup (email and Slack are never configured locally).
  *
  * Run `pnpm db:migrate:local`, start the gateway, claim the owner from
@@ -374,7 +374,7 @@ async function main() {
     {
       id: appId("inbox"),
       slug: "inbox",
-      name: "Agentic Inbox",
+      name: "OpenMail",
       description: "A shared inbox that drafts replies for you.",
       hostname: "inbox.apps.example.com",
       status: "active",
@@ -1300,7 +1300,7 @@ async function seedEvents({ orgA, ownerId, ownerName }) {
   };
   const app = (key, name) => ({ id: key, rowId: appId(key), name });
   const crm = app("crm", "Open CRM");
-  const inbox = app("inbox", "Agentic Inbox");
+  const inbox = app("inbox", "OpenMail");
   const month = new Date(now).toISOString().slice(0, 7);
   const gateway = { kind: "gateway" };
   const events = [

@@ -37,9 +37,9 @@ const apps: Array<{ name: string; line: string; href: string }> = [
     href: "/docs/apps/analytics",
   },
   {
-    name: "Agentic Inbox",
+    name: "OpenMail",
     line: "A team inbox with an AI agent that reads, drafts and sends email on your domain.",
-    href: "/docs/apps/agentic-inbox",
+    href: "/docs/apps/openmail",
   },
 ];
 
