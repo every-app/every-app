@@ -699,6 +699,14 @@ Source: `packages/cli/src/lib/gateway/workspace.ts` (`requireDefaultCaps`).
 
 Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gateway/connect.ts`
 
+### GITHUB_RUN_MISSING
+
+`everyapp release --publish` (or `--dry-run`) outside a GitHub Actions run: `--publish runs in GitHub Actions: <GITHUB_REPOSITORY, GITHUB_SHA, GITHUB_EVENT_NAME> isn't|aren't set`, raised before anything is built; `data.missing` lists them, `data.fix` `run it from the app repository's Release workflow (scripts/pack-for-app/release.yml in the EveryApp repository), or attach the tarball to a GitHub release by hand`. And when a release is to be created with no token: `--publish needs a token to create the release: GITHUB_TOKEN isn't set`, `data.missing` `["GITHUB_TOKEN"]`, `data.fix` `pass GITHUB_TOKEN: ${{ github.token }} to the step, with permissions: contents: write on the job`.
+
+**Fix:** as `data.fix`; not retryable.
+
+Source: `packages/cli/src/commands/release/publish.ts`
+
 ### GROUP_NAME_INVALID
 
 `workspace group create <name>` and `workspace group set --name <name>`: the name, trimmed, is empty or longer than 60 characters, the Gateway's own rule. Checked before the write. Headline: `A group name is 1 to 60 characters (<n> given)`.
@@ -1224,6 +1232,14 @@ Source: `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/release/g
 **Fix:** as above; no rerun, not retryable.
 
 Source: `packages/cli/src/lib/app/release.ts`
+
+### RELEASE_PUBLISH_FAILED
+
+`everyapp release --publish`: GitHub's REST API refused a call. Message `GitHub refused to <look up the tag <tag>|create the release <tag>|upload everyapp-release.tar.gz to the release <tag>> (<status>): <GitHub's message>`; `data.status`. A failed upload deletes the release it created first. On 401, 403 or 404, `data.fix` `give the job permissions: contents: write and pass GITHUB_TOKEN: ${{ github.token }} to the step`. A 422 on create is a tag taken between the lookup and the create: run the workflow again.
+
+**Fix:** as above; retryable on 5xx and 429.
+
+Source: `packages/cli/src/commands/release/publish.ts`
 
 ### RELEASE_TOO_LARGE
 

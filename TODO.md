@@ -1970,6 +1970,19 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 - [ ] **Risk from annotations:** `readOnlyHint: true` is `read`, `destructiveHint: true` is `destructive`, anything else `write`. MCP's own default would make an unannotated tool destructive (hidden from AI clients). Apps override with `risk(tool)`.
 - [ ] **Non-text result blocks (images, resources) are dropped;** only text blocks and `structuredContent` reach the Gateway. A plain JSON Schema input is described but not validated beyond "an object". Tool names are not renamed: they must already be snake_case.
 
+## Platform shortcuts (2026-10-26)/9 create-release (release workflow, pack-for-app)
+
+- **release workflow** (`everyapp release --publish`; the app repositories' `release.yml` is now ~30 lines, one step). Defaults taken for Ben:
+  - [ ] The publish logic lives in the CLI, not a reusable workflow or composite action: this repository's Actions access level is `none`, and third-party developers could never call one from a private repository anyway. The repository setting was left alone.
+  - [ ] It talks to the GitHub REST API with `fetch` and `GITHUB_TOKEN` (or `GH_TOKEN`), not `gh`. The tag check is an API lookup, so the checkout no longer needs `fetch-depth: 0`.
+  - [ ] A failed asset upload deletes the release it just created, so a rerun starts clean.
+  - [ ] The default branch comes from the event payload; `main` when it can't be read (only for a hand-run `--dry-run`).
+  - [ ] `--dry-run` implies `--publish`; it still does the read-only tag lookup.
+  - [ ] Release notes say `everyapp install https://github.com/<repo>` (no `pnpm`, no "from your EveryApp checkout").
+  - [ ] Two new codes: `GITHUB_RUN_MISSING` (not in Actions, or no token) and `RELEASE_PUBLISH_FAILED` (retryable on 5xx/429).
+  - [ ] `--publish` ships in the next rc. The four app repositories pinned to `0.3.0-rc.3` keep their 118-line workflow until their pin moves; then `pnpm pack-for-app <app> --npm <rc> --workflow` swaps it in.
+  - [ ] `everyapp create` writing `.github/workflows/release.yml` into new apps is a separate after-flip PR (the starter is frozen).
+
 ## Platform shortcuts (2026-10-26)/lane 3 binding shims
 
 `gatewayAiBinding(env)` and `gatewayEmailBinding(env)` in `@every-app/sdk/server`. Defaults taken for Ben:

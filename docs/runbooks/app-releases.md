@@ -48,15 +48,33 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    or `node ../every-app/packages/cli/bin/everyapp.js deploy` from the
    app's directory) deploys the checkout's Gateway instead.
 
-2. **A Release workflow.** `release.yml` in the app's `.github/workflows` runs
-   `pnpm install --frozen-lockfile` and `pnpm exec everyapp release`, keeps
-   the tarball as a run artifact on every pull request, and on a push to the
-   default branch publishes a GitHub release with it: tagged
-   `v<package.json version>`, or `v<version>-<yyyymmdd>-<sha>` when that tag
-   is taken; a pushed `v*` tag releases under its own name; a manual run
-   (`workflow_dispatch`) publishes a draft. No secret and no Cloudflare
-   account: the release is tenant-neutral, and the Gateway that installs it
-   fills in the account. The job needs `contents: write` (the file sets it).
+2. **A Release workflow.** `release.yml` in the app's `.github/workflows`
+   (`scripts/pack-for-app/release.yml`, about 30 lines) runs
+   `pnpm install --frozen-lockfile`, then one step,
+   `pnpm exec everyapp release --publish` with `GITHUB_TOKEN`, and keeps the
+   tarball as a run artifact. The CLI decides the rest from GitHub's
+   variables (`packages/cli/src/commands/release/publish.ts`;
+   `landing-page/content/agent/deploy.md`, "release --publish"): a pull
+   request publishes nothing (the build is the check); a push to the default
+   branch publishes a GitHub release tagged `v<package.json version>`, or
+   `v<version>-<yyyymmdd>-<sha7>` when that tag is taken; a pushed `v*` tag
+   releases under its own name; a manual run (`workflow_dispatch`)
+   publishes a draft. The notes name the commit, the install command
+   (`everyapp install https://github.com/<owner>/<repo>`) and the tarball's
+   SHA-256. No secret and no Cloudflare account: the release is
+   tenant-neutral, and the Gateway that installs it fills in the account.
+   The job needs `contents: write` (the file sets it). `--publish` needs an
+   `everyapp` newer than `0.3.0-rc.3`; an app pinned to rc.3 keeps its old
+   118-line workflow until its pin moves. To see what a run would publish
+   without publishing, set the `GITHUB_*` variables by hand and run
+   `pnpm everyapp release --publish --dry-run`.
+
+   Why it isn't a reusable workflow or a composite action in this
+   repository: this repository's Actions access level is `none`
+   (`gh api repos/every-app/private-every-app/actions/permissions/access`),
+   so no other repository can call one from here, and a third-party
+   developer's never could. The logic lives in the CLI each app already
+   depends on, and the workflow file stays a short template.
 
 ## One command sets both up
 

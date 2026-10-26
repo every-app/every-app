@@ -25,9 +25,10 @@
  *      instead;
  *   5. with --workflow, installs scripts/pack-for-app/release.yml as the
  *      app's .github/workflows/release.yml (overwriting it): the GitHub
- *      Actions workflow that runs `everyapp release` and publishes
- *      everyapp-release.tar.gz on a GitHub release, the asset
- *      `pnpm everyapp install <repository url>` fetches;
+ *      Actions workflow whose one step, `everyapp release --publish`,
+ *      packs the app and publishes everyapp-release.tar.gz on a GitHub
+ *      release, the asset `everyapp install <repository url>` fetches
+ *      (the pinned everyapp must have --publish: newer than 0.3.0-rc.3);
  *   6. runs `pnpm install` in the app (unless --no-install), so its
  *      lockfile records the tarballs' integrity. A refreshed tarball under
  *      the same name changes that integrity: a `--frozen-lockfile` install

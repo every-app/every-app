@@ -518,12 +518,14 @@ Pack the app in this directory as a release others can install.
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--out` | `<file>` | no |  | Where to write the release (default: ./everyapp-release.tar.gz) |
+| `--publish` | switch | no |  | In GitHub Actions, publish the release on GitHub: a push to the default branch as v<version>, a v* tag as itself, a manual run as a draft; a pull request publishes nothing |
+| `--dry-run` | switch | no |  | With --publish, say which release it would publish, and publish nothing |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
 | `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
 
 ```text
 USAGE
-  pnpm everyapp release [--out file] [--json] [--verbose]
+  pnpm everyapp release [--out file] [--publish] [--dry-run] [--json] [--verbose]
   pnpm everyapp release --help
 
 Builds the app in this directory as a deploy would (tenant-neutral), checks its Build Output
@@ -531,10 +533,18 @@ against the app policy and its migrations against its schema, and packs the rele
 (default ./everyapp-release.tar.gz) without deploying it: no Gateway and no Cloudflare login,
 so it runs in CI. Attach the tarball to a GitHub release of the app's repository, and
 pnpm everyapp install <repository url> installs it on any Gateway.
-With --json, each step is an NDJSON event; done carries the tarball's path and SHA-256.
+With --publish (in the app repository's Release workflow) it then publishes the tarball on
+a GitHub release of the repository the run builds, from GITHUB_REPOSITORY, GITHUB_SHA,
+GITHUB_EVENT_NAME, GITHUB_REF_* and GITHUB_TOKEN: v<package.json version> on a push to the
+default branch (v<version>-<yyyymmdd>-<sha7> when that tag exists), the pushed tag on a v* tag,
+a draft on workflow_dispatch, nothing on a pull request. --dry-run plans it and publishes nothing.
+With --json, each step is an NDJSON event; done carries the tarball's path and SHA-256
+(and the release published).
 
 FLAGS
      [--out]                   Where to write the release (default: ./everyapp-release.tar.gz)
+     [--publish/--no-publish]  In GitHub Actions, publish the release on GitHub: a push to the default branch as v<version>, a v* tag as itself, a manual run as a draft; a pull request publishes nothing
+     [--dry-run/--no-dry-run]  With --publish, say which release it would publish, and publish nothing
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
      [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
   -h  --help                   Print help information and exit

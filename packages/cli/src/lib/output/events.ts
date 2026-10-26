@@ -634,6 +634,17 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         { fact: { label: "SHA-256", value: text(data["sha256"]) ?? "" } },
       ];
     },
+    // `release --publish`: the GitHub release, or why there is none.
+    "app.publish": (event) => {
+      if (event.status === "start") return { spin: event.message ?? "Publishing..." };
+      if (event.status === "skip" && event.message) return { line: chalk.dim(event.message) };
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      return [
+        { done: `Published ${text(data["tag"])}${data["draft"] === true ? " (draft)" : ""}` },
+        { fact: { label: "GitHub release", value: text(data["url"]) ?? "" } },
+      ];
+    },
     "app.workflows": (event) =>
       event.status === "ok"
         ? { done: `Deleted the Workflow ${text(event.data?.["binding"])}` }

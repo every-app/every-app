@@ -17,6 +17,17 @@ export const releaseCommand = buildCommand({
         placeholder: "file",
         optional: true,
       },
+      publish: {
+        kind: "boolean",
+        brief:
+          "In GitHub Actions, publish the release on GitHub: a push to the default branch as v<version>, a v* tag as itself, a manual run as a draft; a pull request publishes nothing",
+        optional: true,
+      },
+      "dry-run": {
+        kind: "boolean",
+        brief: "With --publish, say which release it would publish, and publish nothing",
+        optional: true,
+      },
       json: jsonFlag,
       verbose: verboseFlag,
     },
@@ -29,7 +40,13 @@ export const releaseCommand = buildCommand({
       "(default ./everyapp-release.tar.gz) without deploying it: no Gateway and no Cloudflare login,",
       "so it runs in CI. Attach the tarball to a GitHub release of the app's repository, and",
       `${CLI} install <repository url> installs it on any Gateway.`,
-      "With --json, each step is an NDJSON event; done carries the tarball's path and SHA-256.",
+      "With --publish (in the app repository's Release workflow) it then publishes the tarball on",
+      "a GitHub release of the repository the run builds, from GITHUB_REPOSITORY, GITHUB_SHA,",
+      "GITHUB_EVENT_NAME, GITHUB_REF_* and GITHUB_TOKEN: v<package.json version> on a push to the",
+      "default branch (v<version>-<yyyymmdd>-<sha7> when that tag exists), the pushed tag on a v* tag,",
+      "a draft on workflow_dispatch, nothing on a pull request. --dry-run plans it and publishes nothing.",
+      "With --json, each step is an NDJSON event; done carries the tarball's path and SHA-256",
+      "(and the release published).",
     ].join("\n"),
   },
 });
