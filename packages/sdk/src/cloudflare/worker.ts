@@ -446,6 +446,7 @@ export type EveryAppBinding =
   | ImagesBinding
   | VectorizeBinding
   | AiGatewayBinding
+  | JsonBinding<JsonValue>
   | SendEmailBinding
   | SecretsStoreSecretBinding
   | AnalyticsEngineDatasetBinding
@@ -755,9 +756,27 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
 
 // Object type aliases rather than interfaces: cf's `env` is a
 // Record<string, Binding>, which only implicitly-indexable types satisfy.
-type SharedEnv = {
+/** A JSON value, as cf's JSON bindings take one. */
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/** `M` without `readonly`, as cf's JSON bindings take their value. */
+type JsonValueOf<M> = M extends readonly (infer E)[]
+  ? JsonValueOf<E>[]
+  : M extends object
+    ? { -readonly [K in keyof M]: JsonValueOf<M[K]> }
+    : M;
+
+type SharedEnv<M> = {
   EVERYAPP_APP_ID: TextBinding;
+  EVERYAPP_MANIFEST: JsonBinding<JsonValueOf<M>>;
   CF_VERSION_METADATA: VersionMetadataBinding;
+  GATEWAY_URL: TextBinding | SecretBinding;
 };
 
 /**
@@ -779,7 +798,7 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
   M,
   TEntrypoint
 > &
-  SharedEnv &
+  SharedEnv<M> &
   DatabaseEnv<M> &
   DevEmailEnv<M> & {
     EVERYAPP_DEV: TextBinding;
@@ -797,14 +816,13 @@ export type EveryAppDeployEnv<M, TEntrypoint = string> = ResourceEnv<
   M,
   TEntrypoint
 > &
-  SharedEnv &
+  SharedEnv<M> &
   DatabaseEnv<M> &
   HyperdriveEnv<M> & {
     EVERYAPP_AUDIENCE: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
     EVERY_APP_GATEWAY: GatewayBinding;
-    GATEWAY_URL: SecretBinding;
     /**
      * The owning organization. The build always declares it; installing a
      * shared app, which serves every organization, drops it.
@@ -921,6 +939,21 @@ const RESERVED_SECRET_NAME =
   /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
 const GATEWAY_WORKER_NAME = "every-app-gateway";
 const GATEWAY_ENTRYPOINT = "AppGateway";
+
+/**
+ * Where `everyapp dev` serves its launcher, which it passes to the app's dev
+ * server in EVERYAPP_DEV_GATEWAY_URL; its default address otherwise. The
+ * deployed Worker gets the Gateway's URL from the deploy instead.
+ */
+const DEV_GATEWAY_URL_ENV = "EVERYAPP_DEV_GATEWAY_URL";
+const DEFAULT_DEV_GATEWAY_URL = "http://localhost:8787";
+
+function devGatewayUrl(): TextBinding {
+  return {
+    type: "text",
+    value: process.env[DEV_GATEWAY_URL_ENV] || DEFAULT_DEV_GATEWAY_URL,
+  };
+}
 
 /**
  * The manifest's `capabilities` as the SDK's local-dev twin of the gateway
@@ -1071,6 +1104,12 @@ export function everyAppWorker<
 
   const env: Record<string, EveryAppBinding> = {
     EVERYAPP_APP_ID: { type: "text", value: manifest.id },
+    // The manifest itself, for a page that shows what the app asked for:
+    // the Worker can't import everyapp.config.ts (see ./index.ts).
+    EVERYAPP_MANIFEST: {
+      type: "json",
+      value: manifest as unknown as JsonValue,
+    },
     CF_VERSION_METADATA: { type: "version-metadata" },
   };
   if (deploy) {
@@ -1096,6 +1135,7 @@ export function everyAppWorker<
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
+    env["GATEWAY_URL"] = devGatewayUrl();
     // The stub gateway's organization, as the deploy's secret would be, so
     // background work's withOrganization(env.EVERY_APP_ORG_ID, …) runs
     // here too. Not a pin: under the dev opt-in everyApp() enforces none,
@@ -1259,6 +1299,7 @@ export function everyAppAuxiliaryWorker<
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     env["EVERYAPP_DEV_CAPABILITIES"] = devCapabilities(manifest);
+    env["GATEWAY_URL"] = devGatewayUrl();
     env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);
   }

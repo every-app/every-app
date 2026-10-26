@@ -1355,6 +1355,33 @@ describe("deploy of an app without helper Workers", () => {
                 "type": "text",
                 "value": "["<public key>"]",
               },
+              "EVERYAPP_MANIFEST": {
+                "type": "json",
+                "value": {
+                  "id": "todo",
+                  "name": "Todos",
+                  "resources": {
+                    "d1": [
+                      "DB",
+                    ],
+                    "durableObjects": [
+                      {
+                        "className": "UserSyncDO",
+                        "name": "USER_SYNC",
+                      },
+                    ],
+                    "kv": [
+                      "KV",
+                    ],
+                    "workflows": [
+                      {
+                        "className": "RankCheckWorkflow",
+                        "name": "RANK_CHECK",
+                      },
+                    ],
+                  },
+                },
+              },
               "EVERY_APP_GATEWAY": {
                 "exportName": "AppGateway",
                 "props": {

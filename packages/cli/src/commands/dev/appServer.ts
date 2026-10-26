@@ -6,12 +6,17 @@ import { buildNodeOptions } from "@/lib/runtime";
 
 export type AppDevServer = LongRunningProcess;
 
+/** Read by `everyAppWorker()` in @every-app/sdk/cloudflare (a copy of its name). */
+const DEV_GATEWAY_URL_ENV = "EVERYAPP_DEV_GATEWAY_URL";
+
 interface StartAppDevServerOptions {
   cwd: string;
   manifest: EveryAppCliManifest;
   cf: CfRunner;
   /** Internal loopback port the gateway-lite proxies to. */
   port: number;
+  /** The launcher's URL, which the app reads as GATEWAY_URL (`gatewayUrl(env)`). */
+  gatewayUrl: string;
 }
 
 /**
@@ -22,13 +27,16 @@ interface StartAppDevServerOptions {
  * processes it starts, and its output is held until it is ready: its
  * startup banner names the internal port, which nobody should open.
  * Either runs with the build's NODE_OPTIONS (lib/runtime.ts
- * `buildNodeOptions`; the runner adds them to `cf dev` itself).
+ * `buildNodeOptions`; the runner adds them to `cf dev` itself). The
+ * launcher's URL travels in EVERYAPP_DEV_GATEWAY_URL, which
+ * `everyAppWorker()` hands the dev Worker as GATEWAY_URL.
  */
 export async function startAppDevServer({
   cwd,
   manifest,
   cf,
   port,
+  gatewayUrl,
 }: StartAppDevServerOptions): Promise<AppDevServer> {
   if (manifest.dev) {
     return spawnLongRunning({
@@ -38,6 +46,7 @@ export async function startAppDevServer({
       env: {
         ...process.env,
         PORT: String(port),
+        [DEV_GATEWAY_URL_ENV]: gatewayUrl,
         NODE_OPTIONS: buildNodeOptions(process.env["NODE_OPTIONS"]),
       },
       shell: true,
@@ -47,7 +56,11 @@ export async function startAppDevServer({
   return cf.start({
     args: ["dev"],
     cwd,
-    env: { PORT: String(port), ...devRegistryEnv(cwd) },
+    env: {
+      PORT: String(port),
+      [DEV_GATEWAY_URL_ENV]: gatewayUrl,
+      ...devRegistryEnv(cwd),
+    },
     holdOutput: true,
   });
 }

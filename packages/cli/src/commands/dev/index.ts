@@ -182,7 +182,16 @@ export async function runDev(
         : `Starting ${manifest.id}...`,
       data: { appPort },
     });
-    appServer = await startAppDevServer({ cwd, manifest, cf, port: appPort });
+    // The launcher (stub mode) or the forwarded Gateway (mirror mode): what
+    // the app's "back to Every App" links reach, through gatewayUrl(env).
+    const launcherUrl = `http://${mode === DevMode.Mirror ? mirrorBaseHost : "localhost"}:${port}`;
+    appServer = await startAppDevServer({
+      cwd,
+      manifest,
+      cf,
+      port: appPort,
+      gatewayUrl: launcherUrl,
+    });
     const server = http.createServer();
     try {
       await waitForAppServer(appServer, appPort, manifest).catch(

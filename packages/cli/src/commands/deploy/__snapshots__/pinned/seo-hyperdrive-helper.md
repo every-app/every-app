@@ -168,6 +168,44 @@
       "type": "text",
       "value": "seo"
     },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "seo",
+        "resources": {
+          "kv": [
+            "KV"
+          ],
+          "hyperdrive": [
+            {
+              "name": "HYPERDRIVE"
+            }
+          ]
+        },
+        "workers": [
+          {
+            "name": "audit",
+            "binding": "AUDIT_ENGINE",
+            "limits": {
+              "cpuMs": 300000
+            }
+          }
+        ],
+        "database": {
+          "provider": "postgres",
+          "region": "aws:us-east-1"
+        },
+        "limits": {
+          "cpuMs": 30000
+        },
+        "migrations": {
+          "engine": "drizzle",
+          "dialect": "postgresql",
+          "dir": "drizzle/pg",
+          "config": "drizzle/pg.config.ts"
+        }
+      }
+    },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"
     },
@@ -463,6 +501,44 @@
     "EVERYAPP_APP_ID": {
       "type": "text",
       "value": "seo"
+    },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "seo",
+        "resources": {
+          "kv": [
+            "KV"
+          ],
+          "hyperdrive": [
+            {
+              "name": "HYPERDRIVE"
+            }
+          ]
+        },
+        "workers": [
+          {
+            "name": "audit",
+            "binding": "AUDIT_ENGINE",
+            "limits": {
+              "cpuMs": 300000
+            }
+          }
+        ],
+        "database": {
+          "provider": "postgres",
+          "region": "aws:us-east-1"
+        },
+        "limits": {
+          "cpuMs": 30000
+        },
+        "migrations": {
+          "engine": "drizzle",
+          "dialect": "postgresql",
+          "dir": "drizzle/pg",
+          "config": "drizzle/pg.config.ts"
+        }
+      }
     },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"

@@ -45,7 +45,7 @@ class DevCf extends FakeCf {
       entrypoint: {},
       ctx: { mode: "development" },
       root: this.cwd,
-    }).env as Record<string, { type: string; value?: string }>;
+    }).env as unknown as Record<string, { type: string; value?: string }>;
     const env = Object.fromEntries(
       Object.entries(bindings).flatMap(([name, binding]) =>
         binding.type === "text" ? [[name, binding.value]] : [],

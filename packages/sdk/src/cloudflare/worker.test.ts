@@ -24,6 +24,7 @@ import {
   type BrowserBinding,
   type ImagesBinding,
   type D1Binding,
+  type JsonBinding,
   type DurableObjectBinding,
   type DurableObjectExport,
   type EveryAppDevEnv,
@@ -147,6 +148,34 @@ describe("everyAppWorker in development", () => {
     });
     expect(config.env).toMatchObject({
       EVERYAPP_DEV: { type: "text", value: "1" },
+    });
+  });
+
+  it("hands the Worker its manifest and the launcher everyapp dev serves", () => {
+    expect(worker().env.EVERYAPP_MANIFEST).toEqual({
+      type: "json",
+      value: manifest,
+    });
+    expectTypeOf(worker().env.EVERYAPP_MANIFEST).toEqualTypeOf<
+      // Without `readonly`: cf's JSON bindings take mutable values.
+      JsonBinding<{
+        id: "todo";
+        resources: {
+          d1: "DB"[];
+          kv: "KV"[];
+          durableObjects: { name: "USER_SYNC"; className: "UserSyncDO" }[];
+        };
+        public: never[];
+      }>
+    >();
+    expect(worker().env.GATEWAY_URL).toEqual({
+      type: "text",
+      value: "http://localhost:8787",
+    });
+    vi.stubEnv("EVERYAPP_DEV_GATEWAY_URL", "http://everyapp.localhost:9000");
+    expect(worker().env.GATEWAY_URL).toEqual({
+      type: "text",
+      value: "http://everyapp.localhost:9000",
     });
   });
 
@@ -280,6 +309,7 @@ describe("everyAppWorker in production", () => {
     expect(config.name).toBe(BUILT);
     expect(config.env).toEqual({
       EVERYAPP_APP_ID: { type: "text", value: "todo" },
+      EVERYAPP_MANIFEST: { type: "json", value: manifest },
       CF_VERSION_METADATA: { type: "version-metadata" },
       EVERYAPP_AUDIENCE: { type: "text", value: BUILT },
       EVERYAPP_IDENTITY_PUBLIC_KEYS: {
@@ -1047,6 +1077,7 @@ describe("helper Workers", () => {
       EVERYAPP_APP_ID: { type: "text", value: "seo" },
       EVERYAPP_DEV: { type: "text", value: "1" },
       EVERYAPP_DEV_CAPABILITIES: { type: "text", value: "{}" },
+      GATEWAY_URL: { type: "text", value: "http://localhost:8787" },
       EVERY_APP_ORG_ID: { type: "text", value: "dev-org" },
       DB: { type: "d1", name: "every-seo", id: localD1Id("every-seo", "DB") },
       SCRATCHPAD: {
@@ -1247,6 +1278,45 @@ describe("helper Workers", () => {
             "EVERYAPP_IDENTITY_PUBLIC_KEYS": {
               "type": "text",
               "value": "["-----BEGIN PUBLIC KEY-----\\nEVERYAPPHOSTEDDEPLOYSENTINEL\\n-----END PUBLIC KEY-----\\n"]",
+            },
+            "EVERYAPP_MANIFEST": {
+              "type": "json",
+              "value": {
+                "id": "seo",
+                "resources": {
+                  "d1": [
+                    "DB",
+                  ],
+                  "durableObjects": [
+                    {
+                      "className": "ChatAgent",
+                      "name": "CHAT",
+                    },
+                    {
+                      "className": "Scratchpad",
+                      "name": "SCRATCHPAD",
+                      "worker": "audit",
+                    },
+                  ],
+                  "workflows": [
+                    {
+                      "className": "SiteAuditWorkflow",
+                      "name": "SITE_AUDIT",
+                      "worker": "audit",
+                    },
+                    {
+                      "className": "RankCheckWorkflow",
+                      "name": "RANK_CHECK",
+                    },
+                  ],
+                },
+                "workers": [
+                  {
+                    "binding": "AUDIT_ENGINE",
+                    "name": "audit",
+                  },
+                ],
+              },
             },
             "EVERY_APP_GATEWAY": {
               "exportName": "AppGateway",
@@ -2050,8 +2120,11 @@ describe("AI Gateways (resources.aiGateway)", () => {
     for (const env of [app.env, digest.env] as Record<string, unknown>[]) {
       expect(env["AI_GATEWAY"]).toEqual(placeholder);
     }
-    // The settings are the deploy's: nothing of them reaches the Worker.
-    expect(JSON.stringify(app.env)).not.toContain("collectLogs");
+    // The settings are the deploy's: nothing of them reaches the Worker
+    // but the manifest itself.
+    expect(
+      JSON.stringify({ ...app.env, EVERYAPP_MANIFEST: undefined }),
+    ).not.toContain("collectLogs");
   });
 
   it("puts the account and every gateway in sentinelDeployTarget()", () => {
@@ -2106,7 +2179,7 @@ describe("AI Gateways (resources.aiGateway)", () => {
     ).toThrow("aiGateway: DB reuses a binding name the Worker already has.");
   });
 
-  it("leaves a manifest without gateways with no json binding", () => {
+  it("leaves a manifest without gateways with no json binding but the manifest", () => {
     const config = everyAppWorker({
       manifest,
       entrypoint,
@@ -2114,10 +2187,10 @@ describe("AI Gateways (resources.aiGateway)", () => {
       root,
     });
     expect(
-      Object.values(config.env as Record<string, { type: string }>).filter(
-        (binding) => binding.type === "json",
-      ),
-    ).toEqual([]);
+      Object.entries(config.env as Record<string, { type: string }>)
+        .filter(([, binding]) => binding.type === "json")
+        .map(([name]) => name),
+    ).toEqual(["EVERYAPP_MANIFEST"]);
     expect(sentinelDeployTarget(manifest).resources.aiGateway).toEqual({});
   });
 });

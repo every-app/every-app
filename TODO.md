@@ -1902,6 +1902,17 @@ Merged: private-agentic-inbox-everyapp #14, private-open-analytics #17, private-
 - [ ] **RepoLens: private repositories have no badge.** `/badge/<owner>/<name>.svg` answers 404 `NOT_FOUND`, the same as for an untracked repository, and the page hides **Copy badge**. A repository that turns private keeps a cached badge for up to an hour (`max-age=3600`), and loses it at the next capture.
 - [x] The `every-app/{open-crm,open-analytics,agentic-inbox}` links in `patterns.md`, README and the apps docs stay: Ben creates those public repositories before the flip (coordinator, 2026-10-26). The inbox's became `every-app/open-mail` the same night (OpenMail rename, above).
 
+## Platform shortcuts (2026-10-26)/lane 2 sdk-surface
+
+New in the SDK: `gatewayUrl()` and `EveryAppEnv` (`/server`), `defineEveryApp` and `EveryAppManifest` (the package root), `env.EVERYAPP_MANIFEST`, `@every-app/sdk/testing`, `@every-app/sdk/tanstack-start`. The starter, `patterns.md` and the build skill adopt them in the stacked after-flip PR (launch-path freeze). The apps drop their copies in phase 2, on the next rc. Defaults taken for Ben:
+
+- [ ] **`gatewayUrl(env, path?)`, not `gatewayUrl(env, request?)`.** `everyapp dev` now sets `GATEWAY_URL` to its launcher, so no request is needed to guess the dev host. The second argument is a path (`gatewayUrl(env, "/admin/users")` for inviting people). Without `everyapp dev` (a bare `cf dev`), it is `http://localhost:8787`.
+- [ ] **The manifest reaches the Worker as a JSON binding, `EVERYAPP_MANIFEST`, in dev and deployed.** `cf workers types` types it from the file. This replaces the starter's Vite `define`. The four apps' manifests are 1.0–2.3 KB as JSON, under Cloudflare's 5 KB per-variable limit. A manifest past it would fail the upload; nothing checks for that before.
+- [ ] **The SDK's `EveryAppManifest` is written by hand.** The zod schema stays in `@every-app/perimeter`. Moving it into the SDK would have collided with lanes 5 and 8. A type test (`packages/perimeter/src/manifest/sdkManifest.test.ts`) fails when a field is added to one and not the other. The perimeter's own `defineEveryApp` is deleted.
+- [ ] **`GATEWAY_ERROR_HEADER` is public in `/server`; `IDENTITY_HEADER` is public only in `/testing`.** Production code that reads the identity header goes through lane 1's `currentUser()` instead.
+- [ ] **`@tanstack/react-start` is an optional peer dependency of the SDK.** That is what makes TanStack Start compile `ensureUserMiddleware` like the app's own code, so its server half stays out of the browser bundle (checked on the starter's build).
+- [ ] **`callTool()` defaults to every MCP scope** (`mcp:read`, `mcp:write`, `mcp:destructive`), so any tool can be called. A test passes fewer scopes to check a refusal.
+
 ## Platform shortcuts (2026-10-26)/lane 3 fromMcpTools
 
 Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.ts`):

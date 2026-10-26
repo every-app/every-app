@@ -468,6 +468,7 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
         { type: "plain_text", name: "EVERYAPP_IDENTITY_ISSUER", text: GATEWAY },
         { type: "plain_text", name: "GATEWAY_URL", text: GATEWAY },
         { type: "plain_text", name: "EVERY_APP_ORG_ID", text: acme },
+        expect.objectContaining({ type: "json", name: "EVERYAPP_MANIFEST" }),
         {
           type: "service",
           name: "EVERY_APP_GATEWAY",
@@ -488,7 +489,7 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
         { type: "version_metadata", name: "CF_VERSION_METADATA" },
       ]),
     );
-    expect(uploaded.bindings).toHaveLength(10);
+    expect(uploaded.bindings).toHaveLength(11);
     expect(uploaded.tags).toEqual([`org-${acme}`, "app-todo", "kind-org"]);
     expect(uploaded.limits).toEqual({ cpu_ms: 5_000, subrequests: 200 });
     // Modules only: not the Vite manifest beside them.

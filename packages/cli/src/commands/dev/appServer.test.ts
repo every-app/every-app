@@ -10,13 +10,14 @@ afterEach(() => {
 });
 
 describe("startAppDevServer", () => {
-  it("runs cf dev on the internal port with this checkout's dev registry", async () => {
+  it("runs cf dev on the internal port with this checkout's dev registry and the launcher's URL", async () => {
     const cf = new FakeCf();
     const server = await startAppDevServer({
       cwd: "/work/todo",
       manifest: { id: "todo" },
       cf,
       port: 41234,
+      gatewayUrl: "http://localhost:8787",
     });
 
     expect(cf.started).toEqual([
@@ -26,6 +27,7 @@ describe("startAppDevServer", () => {
         holdOutput: true,
         env: {
           PORT: "41234",
+          EVERYAPP_DEV_GATEWAY_URL: "http://localhost:8787",
           CLOUDFLARE_REGISTRY_PATH: path.join(
             "/work/todo",
             ".everyapp",
@@ -57,14 +59,16 @@ describe("startAppDevServer", () => {
           cwd: dir,
           manifest: {
             id: "todo",
-            dev: `node -e "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ port: process.env.PORT, nodeOptions: process.env.NODE_OPTIONS }))" ${file}`,
+            dev: `node -e "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ port: process.env.PORT, gatewayUrl: process.env.EVERYAPP_DEV_GATEWAY_URL, nodeOptions: process.env.NODE_OPTIONS }))" ${file}`,
           },
           cf: new FakeCf(),
           port: 41235,
+          gatewayUrl: "http://localhost:8787",
         });
         await expect(server.exited).resolves.toMatchObject({ code: 0 });
         expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({
           port: "41235",
+          gatewayUrl: "http://localhost:8787",
           nodeOptions: "--max-old-space-size=4096 --dns-result-order=ipv4first",
         });
       } finally {

@@ -77,6 +77,42 @@
       "type": "text",
       "value": "agentic-inbox"
     },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "agentic-inbox",
+        "name": "Agentic Inbox",
+        "description": "An email client with an AI agent, for the organization's own domains.",
+        "resources": {
+          "durableObjects": [
+            {
+              "name": "MAILBOX",
+              "className": "MailboxDO"
+            },
+            {
+              "name": "EMAIL_AGENT",
+              "className": "EmailAgent"
+            }
+          ]
+        },
+        "providers": [
+          "workers-ai",
+          "openrouter"
+        ],
+        "ai": {
+          "models": [
+            "@cf/meta/llama-4-scout-17b-16e-instruct",
+            "@cf/meta/llama-3.1-8b-instruct-fast",
+            "@cf/moonshotai/kimi-k2.6",
+            "meta-llama/llama-4-scout",
+            "meta-llama/llama-3.1-8b-instruct",
+            "moonshotai/kimi-k2"
+          ]
+        },
+        "access": "everyone",
+        "public": []
+      }
+    },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"
     },
@@ -314,6 +350,42 @@
     "EVERYAPP_APP_ID": {
       "type": "text",
       "value": "agentic-inbox"
+    },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "agentic-inbox",
+        "name": "Agentic Inbox",
+        "description": "An email client with an AI agent, for the organization's own domains.",
+        "resources": {
+          "durableObjects": [
+            {
+              "name": "MAILBOX",
+              "className": "MailboxDO"
+            },
+            {
+              "name": "EMAIL_AGENT",
+              "className": "EmailAgent"
+            }
+          ]
+        },
+        "providers": [
+          "workers-ai",
+          "openrouter"
+        ],
+        "ai": {
+          "models": [
+            "@cf/meta/llama-4-scout-17b-16e-instruct",
+            "@cf/meta/llama-3.1-8b-instruct-fast",
+            "@cf/moonshotai/kimi-k2.6",
+            "meta-llama/llama-4-scout",
+            "meta-llama/llama-3.1-8b-instruct",
+            "moonshotai/kimi-k2"
+          ]
+        },
+        "access": "everyone",
+        "public": []
+      }
     },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"

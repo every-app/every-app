@@ -10,7 +10,8 @@
  *
  *   allowed, rewritten         the app's id, audience (its Worker name),
  *                              identity keys and issuer, organization and
- *                              gateway URL as plain text; the gateway's
+ *                              gateway URL as plain text; the manifest
+ *                              (EVERYAPP_MANIFEST) as JSON; the gateway's
  *                              AppGateway service binding with the
  *                              registry's props; the D1 databases the
  *                              deployer created for it; its own Durable
@@ -76,6 +77,8 @@ const PLATFORM_TEXT = [
   "EVERYAPP_IDENTITY_PUBLIC_KEYS",
   "EVERYAPP_IDENTITY_ISSUER",
 ] as const;
+/** The manifest as JSON, which everyAppWorker() declares and the deployer writes from the registry's. */
+const MANIFEST_BINDING = "EVERYAPP_MANIFEST";
 /** Declared as secrets by the build; plain text on a third-party Worker. */
 const PLATFORM_SECRETS = ["GATEWAY_URL", "EVERY_APP_ORG_ID"] as const;
 const GATEWAY_BINDING = "EVERY_APP_GATEWAY";
@@ -283,6 +286,11 @@ export function bundleProblems(
       }
       continue;
     }
+    if (name === MANIFEST_BINDING) {
+      if (type !== "json")
+        refuse(`is a ${type} binding; the platform sets it as JSON`);
+      continue;
+    }
     if ((PLATFORM_SECRETS as readonly string[]).includes(name)) {
       if (type !== "secret")
         refuse(`is a ${type} binding; the platform sets it`);
@@ -455,6 +463,8 @@ function userWorkerBindings(
     text("EVERYAPP_IDENTITY_ISSUER", target.gatewayUrl),
     text("GATEWAY_URL", target.gatewayUrl),
     text("EVERY_APP_ORG_ID", target.organizationId),
+    // The manifest the deploy validated, never the bundle's copy.
+    { type: "json", name: MANIFEST_BINDING, json: manifest },
     {
       type: "service",
       name: GATEWAY_BINDING,

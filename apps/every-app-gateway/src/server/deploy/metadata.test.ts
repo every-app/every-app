@@ -54,6 +54,42 @@ describe("bundleProblems", () => {
     expect(bundleProblems(WORKER, MANIFEST, LIMITS, false)).toEqual([]);
   });
 
+  it("takes the manifest's JSON binding, and writes it from the deploy's manifest, never the bundle's", () => {
+    const worker = {
+      ...WORKER,
+      env: {
+        ...WORKER.env,
+        EVERYAPP_MANIFEST: { type: "json", value: { id: "notes", forged: 1 } },
+      },
+    };
+    expect(bundleProblems(worker, MANIFEST, LIMITS, false)).toEqual([]);
+    const { bindings } = buildUserWorkerMetadata({
+      worker,
+      manifest: MANIFEST,
+      target: TARGET,
+    });
+    expect(bindings).toContainEqual({
+      type: "json",
+      name: "EVERYAPP_MANIFEST",
+      json: MANIFEST,
+    });
+    expect(JSON.stringify(bindings)).not.toContain("forged");
+    expect(
+      bundleProblems(
+        {
+          ...WORKER,
+          env: {
+            ...WORKER.env,
+            EVERYAPP_MANIFEST: { type: "text", value: "{}" },
+          },
+        },
+        MANIFEST,
+        LIMITS,
+        false,
+      ),
+    ).toEqual([expect.stringMatching(/^EVERYAPP_MANIFEST .*as JSON/)]);
+  });
+
   it("refuses an assets binding when the upload has no assets", () => {
     const withAssets = {
       ...WORKER,

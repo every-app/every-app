@@ -208,6 +208,63 @@
       "type": "text",
       "value": "postiz"
     },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "postiz",
+        "name": "Postiz",
+        "description": "Schedule and publish social media posts from one calendar.",
+        "resources": {
+          "d1": [
+            "DB"
+          ],
+          "workflows": [
+            {
+              "name": "PUBLISH_POST",
+              "className": "PublishPostWorkflow",
+              "worker": "api"
+            }
+          ]
+        },
+        "workers": [
+          {
+            "name": "api",
+            "binding": "API",
+            "limits": {
+              "cpuMs": 300000
+            }
+          }
+        ],
+        "database": {
+          "provider": "d1"
+        },
+        "migrations": {
+          "engine": "d1-sql",
+          "dir": "migrations",
+          "binding": "DB"
+        },
+        "providers": [
+          "openai"
+        ],
+        "ai": {
+          "models": [
+            "gpt-4.1",
+            "gpt-4o-2024-08-06",
+            "gpt-5.2",
+            "chatgpt-image-latest"
+          ]
+        },
+        "secrets": [
+          "JWT_SECRET",
+          "X_API_KEY",
+          "X_API_SECRET"
+        ],
+        "public": [],
+        "access": "everyone",
+        "install": "pnpm install --frozen-lockfile",
+        "dev": "pnpm exec vite build --mode development && pnpm exec vite preview --host 127.0.0.1 --port $PORT"
+      }
+    },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"
     },
@@ -601,6 +658,63 @@
     "EVERYAPP_APP_ID": {
       "type": "text",
       "value": "postiz"
+    },
+    "EVERYAPP_MANIFEST": {
+      "type": "json",
+      "value": {
+        "id": "postiz",
+        "name": "Postiz",
+        "description": "Schedule and publish social media posts from one calendar.",
+        "resources": {
+          "d1": [
+            "DB"
+          ],
+          "workflows": [
+            {
+              "name": "PUBLISH_POST",
+              "className": "PublishPostWorkflow",
+              "worker": "api"
+            }
+          ]
+        },
+        "workers": [
+          {
+            "name": "api",
+            "binding": "API",
+            "limits": {
+              "cpuMs": 300000
+            }
+          }
+        ],
+        "database": {
+          "provider": "d1"
+        },
+        "migrations": {
+          "engine": "d1-sql",
+          "dir": "migrations",
+          "binding": "DB"
+        },
+        "providers": [
+          "openai"
+        ],
+        "ai": {
+          "models": [
+            "gpt-4.1",
+            "gpt-4o-2024-08-06",
+            "gpt-5.2",
+            "chatgpt-image-latest"
+          ]
+        },
+        "secrets": [
+          "JWT_SECRET",
+          "X_API_KEY",
+          "X_API_SECRET"
+        ],
+        "public": [],
+        "access": "everyone",
+        "install": "pnpm install --frozen-lockfile",
+        "dev": "pnpm exec vite build --mode development && pnpm exec vite preview --host 127.0.0.1 --port $PORT"
+      }
     },
     "CF_VERSION_METADATA": {
       "type": "version-metadata"

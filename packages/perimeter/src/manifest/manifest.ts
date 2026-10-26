@@ -1684,11 +1684,6 @@ export function manifestTierProblems(
   return problems;
 }
 
-/** Typed identity helper for everyapp.config.ts authors. */
-export function defineEveryApp(manifest: EveryAppManifest): EveryAppManifest {
-  return manifest;
-}
-
 /**
  * The dev Worker name, and the name apps registered before org-scoped names
  * keep, e.g. "todo" -> "every-todo".

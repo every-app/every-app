@@ -5,6 +5,10 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
@@ -25,6 +29,14 @@
       "types": "./dist/dev/index.d.ts",
       "default": "./dist/dev/index.js"
     },
+    "./tanstack-start": {
+      "types": "./dist/tanstack-start/index.d.ts",
+      "default": "./dist/tanstack-start/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -44,8 +56,12 @@
   "dependencies": {
     "jose": "^6.2.5"
   },
+  "peerDependencies": {
+    "@tanstack/react-start": "^1.168.61"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251014.0",
+    "@tanstack/react-start": "1.168.61",
     "@types/node": "^22.18.13",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
@@ -53,5 +69,10 @@
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.2.6",
     "zod": "^4.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-start": {
+      "optional": true
+    }
   }
 }
