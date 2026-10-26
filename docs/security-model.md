@@ -989,9 +989,10 @@ binding once the account has one. Until then every dispatch app answers 503.
   `openrouter.ai`, `api.dataforseo.com`, `api.context.dev`,
   `gateway.ai.cloudflare.com`, `api.cloudflare.com` for Workers AI and the
   rest of Cloudflare's API, and their subdomains: `reserved_host`), the
-  token endpoints of the OAuth clients the gateway holds, however the path
-  is spelled, though not those networks' API hosts, which apps call with
-  their users' tokens (`reserved_endpoint`; Mastodon's on `MASTODON_URL`),
+  token endpoints of the catalog's OAuth clients and of every OAuth preset,
+  however the path is spelled and on any API version, though not those
+  providers' API hosts, which apps call with their users' tokens
+  (`reserved_endpoint`),
   and the gateway's own
   hosts (`GATEWAY_URL`'s host, `APP_BASE_DOMAIN` and every app host under
   it), every third-party app host (`THIRD_PARTY_DOMAIN` and every name

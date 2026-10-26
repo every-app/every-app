@@ -46,7 +46,6 @@ export const COMPANY_OF: Readonly<Record<string, string>> = {
   "google-workspace": "google",
   "microsoft-365": "microsoft",
   "turso-db": "turso",
-  "tiktok-business": "tiktok",
 };
 
 /** The category of a company whose tags don't say it plainly. */

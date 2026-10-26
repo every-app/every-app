@@ -9,7 +9,8 @@
  * hostname on that list, over HTTPS. Model and data providers are refused
  * even when listed: the gateway holds those keys and an app reaches them
  * through its AppGateway binding, metered, never directly. So are the token
- * endpoints of the OAuth clients the gateway holds (not their hosts, which
+ * endpoints of the OAuth clients the gateway holds or offers as presets
+ * (not their hosts, which
  * serve the APIs apps call with their users' tokens), the gateway's own
  * hosts, and every third-party app host (THIRD_PARTY_DOMAIN; the list is
  * server/gateway-hosts.ts, shared with the event bus's target rules),
@@ -25,8 +26,10 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   CAPABILITIES,
-  oauthClientOrigin,
+  oauthPreset,
+  oauthPresetIds,
   type Capability,
+  type OAuthTokenEndpoint,
 } from "@every-app/sdk/internal";
 import {
   logEvent,
@@ -54,8 +57,6 @@ interface OutboundEnv {
   GATEWAY_URL?: string;
   APP_BASE_DOMAIN?: string;
   THIRD_PARTY_DOMAIN?: string;
-  /** The Mastodon instance whose OAuth client the gateway holds. */
-  MASTODON_URL?: string;
   [OUTBOUND_PARAMETER]?: unknown;
 }
 
@@ -120,22 +121,38 @@ function loosePath(pathname: string): string | null {
  * however its path is spelled: a dispatched app gets tokens through its
  * AppGateway binding, with the gateway's client, never directly.
  */
-function isTokenEndpoint(url: URL, env: OutboundEnv): boolean {
+/**
+ * Every token endpoint the catalog's OAuth clients and the presets name:
+ * a preset counts whether or not this gateway added it, so a dispatched
+ * app can't reach one with a client of its own either way.
+ */
+const TOKEN_ENDPOINTS: readonly OAuthTokenEndpoint[] = [
+  ...Object.values<Capability>(CAPABILITIES).flatMap((capability) =>
+    capability.mode === "oauth_client" ? capability.token : [],
+  ),
+  ...oauthPresetIds().flatMap((id) => {
+    const preset = oauthPreset(id);
+    return preset?.mode === "oauth_client" ? preset.token : [];
+  }),
+];
+
+/**
+ * A path with a leading API version as any version (`/v25.0/oauth/...`
+ * and `/v19.0/oauth/...` alike): a provider serves its token endpoint on
+ * every version it still answers, and a preset names one.
+ */
+function anyVersion(path: string): string {
+  return path.replace(/^\/v\d+(?:\.\d+)?(?=\/)/, "/v*");
+}
+
+function isTokenEndpoint(url: URL): boolean {
   const host = normalizeHost(url.hostname);
   const path = loosePath(url.pathname);
-  return Object.values<Capability>(CAPABILITIES).some((capability) => {
-    if (capability.mode !== "oauth_client") return false;
-    const origin = oauthClientOrigin(capability, { ...env });
-    const settingHost = origin ? new URL(origin).hostname : null;
-    return capability.token.some((endpoint) => {
-      if (normalizeHost(endpoint.host ?? settingHost ?? "") !== host) {
-        return false;
-      }
-      if (path === null) return true;
-      return typeof endpoint.path === "string"
-        ? loosePath(endpoint.path) === path
-        : new RegExp(endpoint.path.source, "i").test(path);
-    });
+  return TOKEN_ENDPOINTS.some((endpoint) => {
+    if (normalizeHost(endpoint.host) !== host) return false;
+    if (path === null) return true;
+    const own = loosePath(endpoint.path);
+    return own !== null && anyVersion(own) === anyVersion(path);
   });
 }
 
@@ -154,7 +171,7 @@ function decide(
   ) {
     return { allowed: false, reason: "reserved_host" };
   }
-  if (isTokenEndpoint(url, env)) {
+  if (isTokenEndpoint(url)) {
     return { allowed: false, reason: "reserved_endpoint" };
   }
   return app.egress.some((allowed) => normalizeHost(allowed) === host)

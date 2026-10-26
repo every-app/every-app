@@ -469,7 +469,7 @@ Generated from `CAPABILITIES` by `pnpm -C packages/cli docs:update`; a test fail
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 74 providers: 47 API-key, 9 AI, 18 OAuth clients.
+The built-in catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -530,7 +530,7 @@ The built-in catalog has 74 providers: 47 API-key, 9 AI, 18 OAuth clients.
 | `groq` | Groq | `ai` | `GROQ_API_KEY` | `api.groq.com` | `Authorization: Bearer <GROQ_API_KEY>` | https://console.groq.com/keys; API reference https://console.groq.com/docs/api-reference | `GET https://api.groq.com/openai/v1/models`, expecting 200; free | 2026-10-25, docs |
 | `cohere` | Cohere | `ai` | `COHERE_API_KEY` | `api.cohere.com` | `Authorization: Bearer <COHERE_API_KEY>` | https://dashboard.cohere.com/api-keys; API reference https://docs.cohere.com/reference/about | `GET https://api.cohere.com/v1/models`, expecting 200; free | 2026-10-25, docs |
 
-OAuth clients (`oauth_client`: the Gateway completes their token endpoints only, and the spec parser takes none as a row): `linkedin`, `facebook`, `instagram`, `threads`, `youtube`, `tiktok`, `tiktok-business`, `reddit`, `pinterest`, `discord`, `slack`, `mastodon`, `kick`, `twitch`, `tumblr`, `dribbble`, `google-workspace`, `microsoft-365`. Their settings, consoles, redirect URIs, token endpoints and scope sets are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (`service`: no host, no spec): `email`, `members`.
+OAuth clients (`oauth_client`: the Gateway completes their token endpoints only, and the spec parser takes none as a row): `slack`, `google-workspace`, `microsoft-365`. Their settings, consoles, redirect URIs, token endpoints and scope sets are generated in [the capabilities document](/docs/agent/repo/capabilities#oauth-clients). Gateway services (`service`: no host, no spec): `email`, `members`.
 
 <!-- providers-catalog:end -->
 <!-- prettier-ignore-end -->
@@ -551,21 +551,7 @@ Each company the Gateway supports has a page in the user docs, under [/docs/prov
 | [dataforseo](/docs/providers/dataforseo) | `dataforseo` | `DATAFORSEO_API_KEY` | `secret set DATAFORSEO_API_KEY` | https://app.dataforseo.com/api-access |
 | [context](/docs/providers/context) | `context` | `CONTEXT_API_KEY` | `secret set CONTEXT_API_KEY` | https://context.dev/ |
 | [email](/docs/providers/email) | `email` |  |  |  |
-| [linkedin](/docs/providers/linkedin) | `linkedin` | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` |  | https://www.linkedin.com/developers/apps |
-| [facebook](/docs/providers/facebook) | `facebook` | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` |  | https://developers.facebook.com/apps |
-| [instagram](/docs/providers/instagram) | `instagram` | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` |  | https://developers.facebook.com/apps |
-| [threads](/docs/providers/threads) | `threads` | `THREADS_APP_ID`, `THREADS_APP_SECRET` |  | https://developers.facebook.com/apps |
-| [youtube](/docs/providers/youtube) | `youtube` | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` |  | https://console.cloud.google.com/apis/credentials |
-| [tiktok](/docs/providers/tiktok) | `tiktok`, `tiktok-business` | `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET` |  | https://developers.tiktok.com/apps |
-| [reddit](/docs/providers/reddit) | `reddit` | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` |  | https://www.reddit.com/prefs/apps |
-| [pinterest](/docs/providers/pinterest) | `pinterest` | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` |  | https://developers.pinterest.com/apps/ |
-| [discord](/docs/providers/discord) | `discord` | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` |  | https://discord.com/developers/applications |
 | [slack](/docs/providers/slack) | `slack` | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` |  | https://api.slack.com/apps |
-| [mastodon](/docs/providers/mastodon) | `mastodon` | `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET` |  | /settings/applications |
-| [kick](/docs/providers/kick) | `kick` | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` |  | https://kick.com/settings/developer |
-| [twitch](/docs/providers/twitch) | `twitch` | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` |  | https://dev.twitch.tv/console/apps |
-| [tumblr](/docs/providers/tumblr) | `tumblr` | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` |  | https://www.tumblr.com/oauth/apps |
-| [dribbble](/docs/providers/dribbble) | `dribbble` | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` |  | https://dribbble.com/account/applications |
 | [google](/docs/providers/google) | `google-workspace`, `google (sign-in)` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | `signin add google` | https://console.cloud.google.com/apis/credentials |
 | [microsoft](/docs/providers/microsoft) | `microsoft-365`, `microsoft (sign-in)` | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | `signin add microsoft` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade |
 | [stripe](/docs/providers/stripe) | `stripe` | `STRIPE_API_KEY` | `secret set STRIPE_API_KEY` | https://dashboard.stripe.com/apikeys |
@@ -622,6 +608,17 @@ Each company the Gateway supports has a page in the user docs, under [/docs/prov
 | [dropbox](/docs/providers/dropbox) | `dropbox (preset)` | `DROPBOX_OAUTH_CLIENT_ID`, `DROPBOX_OAUTH_CLIENT_SECRET` | `provider add --oauth dropbox` | https://www.dropbox.com/developers/apps |
 | [spotify](/docs/providers/spotify) | `spotify (preset)` | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | `provider add --oauth spotify` | https://developer.spotify.com/dashboard |
 | [x](/docs/providers/x) | `x-oauth (preset)` | `X_OAUTH_CLIENT_ID`, `X_OAUTH_CLIENT_SECRET` | `provider add --oauth x-oauth` | https://developer.x.com/en/portal/dashboard |
+| [linkedin](/docs/providers/linkedin) | `linkedin (preset)` | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | `provider add --oauth linkedin` | https://www.linkedin.com/developers/apps |
+| [facebook](/docs/providers/facebook) | `facebook (preset)` | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | `provider add --oauth facebook` | https://developers.facebook.com/apps |
+| [instagram](/docs/providers/instagram) | `instagram (preset)` | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | `provider add --oauth instagram` | https://developers.facebook.com/apps |
+| [threads](/docs/providers/threads) | `threads (preset)` | `THREADS_APP_ID`, `THREADS_APP_SECRET` | `provider add --oauth threads` | https://developers.facebook.com/apps |
+| [youtube](/docs/providers/youtube) | `youtube (preset)` | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | `provider add --oauth youtube` | https://console.cloud.google.com/apis/credentials |
+| [reddit](/docs/providers/reddit) | `reddit (preset)` | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | `provider add --oauth reddit` | https://www.reddit.com/prefs/apps |
+| [pinterest](/docs/providers/pinterest) | `pinterest (preset)` | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` | `provider add --oauth pinterest` | https://developers.pinterest.com/apps/ |
+| [discord](/docs/providers/discord) | `discord (preset)` | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | `provider add --oauth discord` | https://discord.com/developers/applications |
+| [kick](/docs/providers/kick) | `kick (preset)` | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` | `provider add --oauth kick` | https://kick.com/settings/developer |
+| [twitch](/docs/providers/twitch) | `twitch (preset)` | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | `provider add --oauth twitch` | https://dev.twitch.tv/console/apps |
+| [tumblr](/docs/providers/tumblr) | `tumblr (preset)` | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` | `provider add --oauth tumblr` | https://www.tumblr.com/oauth/apps |
 | [apple](/docs/providers/apple) | `apple (sign-in)` |  | `signin add apple` | https://developer.apple.com/account/resources/identifiers/list/serviceId |
 | [oidc](/docs/providers/oidc) | `oidc (sign-in)` |  | `signin add oidc` | your identity provider's admin console |
 

@@ -471,6 +471,13 @@ const CapabilityEntryBaseSchema = z.object({
    * instead.
    */
   scopes: z.array(z.string()).optional().catch(undefined),
+  /**
+   * For an OAuth client: the paths on the app's own host the provider
+   * sends people back to when the app runs the flow itself
+   * (`/integrations/google/callback`), the redirect URIs the operator
+   * registers on the client. The catalog names none: each app says its own.
+   */
+  redirectPaths: z.array(z.string()).optional().catch(undefined),
   /** What the app does with it; each capability says which levels it offers. */
   access: z.enum(["read", "write"]),
   ...SettingNeedFieldsSchema,
@@ -479,9 +486,37 @@ const CapabilityEntryBaseSchema = z.object({
 export const CapabilityRequestSchema = CapabilityEntryBaseSchema.passthrough();
 export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
 
+/** The most redirect paths one capability entry lists. */
+const MAX_REDIRECT_PATHS = 10;
+
+/**
+ * An OAuth client's `redirectPaths` as an author writes them: absolute
+ * paths on the app's host, no query or fragment, each once.
+ */
+const RedirectPathsSchema = z
+  .array(
+    z
+      .string()
+      .max(200, "a redirect path is at most 200 characters")
+      .regex(
+        /^\/(?!\/)[A-Za-z0-9._~\-/]*$/,
+        "a redirect path is an absolute path on the app's host (/integrations/google/callback), without a query or fragment",
+      ),
+  )
+  .min(1, "redirectPaths lists at least one path, or is left out")
+  .max(
+    MAX_REDIRECT_PATHS,
+    `redirectPaths lists at most ${MAX_REDIRECT_PATHS} paths`,
+  )
+  .refine(
+    (list) => new Set(list).size === list.length,
+    "a redirect path is listed twice",
+  );
+
 /**
  * What one capability's manifest entry takes: `access`, and its need
- * (`why`, `docs`, `optional`, `anyOf`). Strict:
+ * (`why`, `docs`, `optional`, `anyOf`), and for an OAuth client the
+ * app's own callbacks (`redirectPaths`). Strict:
  * anything else is unknown here; an installation's email senders aren't
  * the manifest's (`everyapp email set`), and the strict capabilities
  * schema names the command for a manifest that still lists them.
@@ -523,6 +558,15 @@ export function capabilityEntrySchema(
       (level) => offered.includes(level),
       `${capability.label} offers ${offered.join(" or ")} access`,
     );
+  // Only an OAuth client has a callback to register.
+  const redirectPaths =
+    capability.mode === "oauth_client"
+      ? RedirectPathsSchema.optional()
+      : z
+          .undefined({
+            error: `${capability.label} takes no redirectPaths; only an OAuth client has a callback`,
+          })
+          .optional();
   const policy =
     "scopePolicy" in capability ? capability.scopePolicy : undefined;
   if (!policy) {
@@ -534,7 +578,11 @@ export function capabilityEntrySchema(
         error: `${capability.label} takes no scopes; list it as { access: ..., why }`,
       })
       .optional();
-    return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
+    return CapabilityEntryBaseSchema.extend({
+      access,
+      scopes,
+      redirectPaths,
+    }).strict();
   }
   // Own keys only: `constructor` is not a set.
   const names = Object.keys(policy.sets) as [string, ...string[]];
@@ -563,7 +611,11 @@ export function capabilityEntrySchema(
       (list) => new Set(list).size === list.length,
       "a scope set is listed twice",
     );
-  return CapabilityEntryBaseSchema.extend({ access, scopes }).strict();
+  return CapabilityEntryBaseSchema.extend({
+    access,
+    scopes,
+    redirectPaths,
+  }).strict();
 }
 
 /** One authored capability entry, whichever capability it is for. */
@@ -603,6 +655,7 @@ const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
       "a scope set is listed twice",
     )
     .optional(),
+  redirectPaths: RedirectPathsSchema.optional(),
 }).strict();
 
 /** What the strict validator does with a capability id its lookup doesn't have. */

@@ -142,11 +142,6 @@ describe("readSecretValue", () => {
       "Not a whole number from 1 to 3650.",
       "Not a whole number from 1 to 3650.",
     ]);
-    expect(await problems("MASTODON_URL", ["mastodon.social", "https://m.example/path", "http://m.example"])).toEqual([
-      null,
-      '"https://m.example/path" isn\'t an https origin (no path).',
-      '"http://m.example" isn\'t an https origin (no path).',
-    ]);
     expect(await problems("EMAIL_PROVIDER", ["Resend", "sendgrid"])).toEqual([null, "Not cloudflare or resend."]);
     expect(await problems("BROWSER_APP_INSTALLS", ["off", "Off"])).toEqual([null, "Not on or off."]);
     expect(await problems("HOSTED_OPEN_SIGNUP", ["false", "no"])).toEqual([null, "Not true or false."]);

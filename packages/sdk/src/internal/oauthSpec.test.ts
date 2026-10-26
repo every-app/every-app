@@ -5,7 +5,13 @@
  * the design names is held to its rule.
  */
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, CAPABILITY_IDS, type OAuthFlow } from "./capabilities";
+import {
+  CAPABILITIES,
+  CAPABILITY_IDS,
+  capabilitySettings,
+  type OAuthFlow,
+} from "./capabilities";
+import { isSettableGatewaySetting } from "./gatewaySettings";
 import {
   OAUTH_PRESETS,
   isOAuthProvider,
@@ -299,6 +305,20 @@ describe("parseProviderSpec with auth.kind oauth2-user", () => {
   });
 });
 
+const SOCIAL = [
+  "linkedin",
+  "facebook",
+  "instagram",
+  "threads",
+  "youtube",
+  "reddit",
+  "pinterest",
+  "discord",
+  "kick",
+  "twitch",
+  "tumblr",
+];
+
 describe("the presets", () => {
   it("every preset parses, is an OAuth provider, and takes no catalog id", () => {
     expect(oauthPresetIds()).toEqual([
@@ -312,6 +332,7 @@ describe("the presets", () => {
       "dropbox",
       "spotify",
       "x-oauth",
+      ...SOCIAL,
     ]);
     for (const id of oauthPresetIds()) {
       const spec = OAUTH_PRESETS[id]!;
@@ -335,17 +356,33 @@ describe("the presets", () => {
     expect(oauthPreset("nope")).toBeNull();
   });
 
-  it("the catalog's Google, Microsoft, Slack and Discord clients carry a flow; the social networks don't", () => {
-    for (const id of [
-      "google-workspace",
-      "microsoft-365",
-      "slack",
-      "discord",
-    ]) {
-      expect(isOAuthProvider(CAPABILITIES[id as never]), id).toBe(true);
+  it("the social networks are presets tagged social, and the catalog reserves none of their names", () => {
+    const tagged = oauthPresetIds().filter((id) =>
+      ((OAUTH_PRESETS[id]!["tags"] as string[] | undefined) ?? []).includes(
+        "social",
+      ),
+    );
+    expect(tagged).toEqual(SOCIAL);
+    for (const id of SOCIAL) {
+      expect(CAPABILITY_IDS.includes(id as never), id).toBe(false);
+      const capability = oauthPreset(id)!;
+      expect(capability.tags, id).toEqual(["social"]);
+      for (const name of capabilitySettings(capability)) {
+        expect(isSettableGatewaySetting(name), name).toBe(false);
+      }
     }
-    for (const id of ["linkedin", "facebook", "mastodon", "reddit"]) {
-      expect(isOAuthProvider(CAPABILITIES[id as never]), id).toBe(false);
+    for (const name of [
+      "LINKEDIN_CLIENT_ID",
+      "DISCORD_CLIENT_ID",
+      "MASTODON_URL",
+    ]) {
+      expect(isSettableGatewaySetting(name), name).toBe(false);
+    }
+  });
+
+  it("the catalog's Google, Microsoft and Slack clients carry a flow", () => {
+    for (const id of ["google-workspace", "microsoft-365", "slack"]) {
+      expect(isOAuthProvider(CAPABILITIES[id as never]), id).toBe(true);
     }
     expect(CAPABILITIES["google-workspace"].flow?.authorizeParams).toEqual({
       access_type: "offline",

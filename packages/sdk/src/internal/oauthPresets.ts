@@ -5,13 +5,17 @@
  * preset becomes a `providers` row when added (`everyapp provider add
  * --oauth github`, the Admin dialog, `everyapp_provider_add` with
  * `preset`), so an operator may `provider show` and edit a copy; nothing
- * here is a hidden catalog entry. Google, Microsoft, Slack and Discord
- * are catalog clients with a `flow` and are offered in the same picker.
+ * here is a hidden catalog entry, and no gateway reserves a preset's
+ * setting names until it is added. Google, Microsoft and Slack are
+ * catalog clients with a `flow` and are offered in the same picker. The
+ * social networks' presets carry the tag `social`.
  *
  * Each preset parses with `parseProviderSpec` (oauthPresets.test.ts),
  * names a console where the client is made, the API hosts the token is
  * sent to, and scope sets an app declares under `scopes`. Scope strings
- * are the providers' own, verified against their docs on 2026-10-25.
+ * are the providers' own, verified against their docs on 2026-10-25;
+ * the social presets' come from the catalog entries Postiz used, and
+ * none of them has been tried against a live connect yet.
  */
 import {
   parseProviderSpec,
@@ -520,6 +524,537 @@ export const OAUTH_PRESETS: Readonly<Record<string, OAuthPresetSpec>> = {
     alwaysRequested: ["offline.access"],
     access: ["read", "write"],
     hint: "OAuth 2 with PKCE on X's v2 API; X's OAuth 1.0a (the v1.1 media upload) stays an app secret.",
+  },
+  // Social networks, tagged `social`: the clients Postiz connected its
+  // channels with, once catalog entries every gateway reserved names for.
+  linkedin: {
+    id: "linkedin",
+    name: "LinkedIn",
+    description:
+      "Posts on a member's profile and on the company pages they admin.",
+    docs: "https://www.linkedin.com/developers/apps",
+    api: "https://learn.microsoft.com/linkedin/",
+    hosts: ["api.linkedin.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
+      tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+      clientId: "LINKEDIN_CLIENT_ID",
+      clientSecret: "LINKEDIN_CLIENT_SECRET",
+      inject: "form",
+      // PKCE is for LinkedIn's native apps; a web client sends the secret.
+      pkce: false,
+      scopeDialect: "space",
+      identity: {
+        url: "https://api.linkedin.com/v2/userinfo",
+        label: "name",
+        id: "sub",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "LinkedIn account (who you are)",
+        access: "read",
+        scopes: ["openid", "profile"],
+      },
+      "posts.write": {
+        label: "Posts on your profile",
+        access: "write",
+        scopes: ["openid", "profile", "w_member_social"],
+      },
+      "pages.write": {
+        label: "Company pages you admin (read and post)",
+        access: "write",
+        scopes: [
+          "rw_organization_admin",
+          "w_organization_social",
+          "r_organization_social",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Add the Sign In with LinkedIn and Share on LinkedIn products to the app; company pages need the Community Management API. Refresh tokens come to approved partners only. Not yet tried against a live connect.",
+  },
+  facebook: {
+    id: "facebook",
+    name: "Facebook Pages",
+    description:
+      "Facebook pages, and the Instagram business accounts linked to them.",
+    docs: "https://developers.facebook.com/apps",
+    api: "https://developers.facebook.com/docs/graph-api",
+    hosts: ["graph.facebook.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.facebook.com/v25.0/dialog/oauth",
+      tokenUrl: "https://graph.facebook.com/v25.0/oauth/access_token",
+      clientId: "FACEBOOK_APP_ID",
+      clientSecret: "FACEBOOK_APP_SECRET",
+      inject: "form",
+      pkce: false,
+      scopeDialect: "comma",
+      identity: {
+        url: "https://graph.facebook.com/v25.0/me",
+        label: "name",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Facebook account (who you are)",
+        access: "read",
+        scopes: ["public_profile"],
+      },
+      "pages.read": {
+        label: "Pages you manage and their insights (read)",
+        access: "read",
+        scopes: ["pages_show_list", "pages_read_engagement", "read_insights"],
+      },
+      "pages.write": {
+        label: "Pages you manage (read, post and reply)",
+        access: "write",
+        scopes: [
+          "pages_show_list",
+          "business_management",
+          "pages_manage_posts",
+          "pages_manage_engagement",
+          "pages_read_engagement",
+        ],
+      },
+      "instagram.write": {
+        label: "Instagram business accounts linked to your pages",
+        access: "write",
+        scopes: [
+          "pages_show_list",
+          "instagram_basic",
+          "instagram_content_publish",
+          "instagram_manage_comments",
+          "instagram_manage_insights",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "A Business app with Facebook Login. Meta issues no refresh token: a person reconnects when the token expires. Not yet tried against a live connect.",
+  },
+  instagram: {
+    id: "instagram",
+    name: "Instagram",
+    description:
+      "An Instagram professional account on its own, without a Facebook page.",
+    docs: "https://developers.facebook.com/apps",
+    api: "https://developers.facebook.com/docs/instagram-platform",
+    hosts: ["graph.instagram.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.instagram.com/oauth/authorize",
+      tokenUrl: "https://api.instagram.com/oauth/access_token",
+      clientId: "INSTAGRAM_APP_ID",
+      clientSecret: "INSTAGRAM_APP_SECRET",
+      inject: "form",
+      pkce: false,
+      scopeDialect: "comma",
+      identity: {
+        url: "https://graph.instagram.com/me?fields=username",
+        label: "username",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Instagram account (who you are)",
+        access: "read",
+        scopes: ["instagram_business_basic"],
+      },
+      "insights.read": {
+        label: "Insights (read)",
+        access: "read",
+        scopes: [
+          "instagram_business_basic",
+          "instagram_business_manage_insights",
+        ],
+      },
+      "posts.write": {
+        label: "Posts and comments",
+        access: "write",
+        scopes: [
+          "instagram_business_basic",
+          "instagram_business_content_publish",
+          "instagram_business_manage_comments",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "The Instagram API with Instagram Login, on a Meta app. The token lasts an hour; the long-lived exchange isn't done by the Gateway. Not yet tried against a live connect.",
+  },
+  threads: {
+    id: "threads",
+    name: "Threads",
+    description: "Posts, replies and insights on a Threads profile.",
+    docs: "https://developers.facebook.com/apps",
+    api: "https://developers.facebook.com/docs/threads",
+    hosts: ["graph.threads.net"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://threads.net/oauth/authorize",
+      tokenUrl: "https://graph.threads.net/oauth/access_token",
+      clientId: "THREADS_APP_ID",
+      clientSecret: "THREADS_APP_SECRET",
+      inject: "form",
+      pkce: false,
+      scopeDialect: "comma",
+      identity: {
+        url: "https://graph.threads.net/v1.0/me?fields=id,username",
+        label: "username",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Threads profile (who you are)",
+        access: "read",
+        scopes: ["threads_basic"],
+      },
+      "insights.read": {
+        label: "Insights (read)",
+        access: "read",
+        scopes: ["threads_basic", "threads_manage_insights"],
+      },
+      "posts.write": {
+        label: "Posts and replies",
+        access: "write",
+        scopes: [
+          "threads_basic",
+          "threads_content_publish",
+          "threads_manage_replies",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "The Threads use case on a Meta app. The token lasts an hour; the long-lived exchange isn't done by the Gateway. Not yet tried against a live connect.",
+  },
+  youtube: {
+    id: "youtube",
+    name: "YouTube",
+    description:
+      "YouTube channels and their analytics, and Google Business Profiles.",
+    docs: "https://console.cloud.google.com/apis/credentials",
+    api: "https://developers.google.com/youtube/v3",
+    hosts: [
+      "www.googleapis.com",
+      "youtubeanalytics.googleapis.com",
+      "mybusinessaccountmanagement.googleapis.com",
+      "mybusinessbusinessinformation.googleapis.com",
+      "mybusiness.googleapis.com",
+      "businessprofileperformance.googleapis.com",
+      "openidconnect.googleapis.com",
+    ],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      clientId: "YOUTUBE_CLIENT_ID",
+      clientSecret: "YOUTUBE_CLIENT_SECRET",
+      inject: "form",
+      pkce: true,
+      scopeDialect: "google",
+      authorizeParams: { access_type: "offline", prompt: "consent" },
+      identity: {
+        url: "https://openidconnect.googleapis.com/v1/userinfo",
+        label: "email",
+        id: "sub",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Google account (who you are)",
+        access: "read",
+        scopes: [
+          "https://www.googleapis.com/auth/userinfo.profile",
+          "https://www.googleapis.com/auth/userinfo.email",
+        ],
+      },
+      "youtube.read": {
+        label: "YouTube channels and analytics (read)",
+        access: "read",
+        scopes: [
+          "https://www.googleapis.com/auth/youtube.readonly",
+          "https://www.googleapis.com/auth/yt-analytics.readonly",
+        ],
+      },
+      "youtube.write": {
+        label: "YouTube channels (upload and manage)",
+        access: "write",
+        scopes: [
+          "https://www.googleapis.com/auth/youtube",
+          "https://www.googleapis.com/auth/youtube.upload",
+          "https://www.googleapis.com/auth/youtube.force-ssl",
+        ],
+      },
+      "business.write": {
+        label: "Google Business Profiles (read and post)",
+        access: "write",
+        scopes: ["https://www.googleapis.com/auth/business.manage"],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Its own Google Cloud project, apart from google-workspace's: YouTube's scopes need their own verification. Not yet tried against a live connect.",
+  },
+  reddit: {
+    id: "reddit",
+    name: "Reddit",
+    description: "Reading subreddits and posting as the person.",
+    docs: "https://www.reddit.com/prefs/apps",
+    api: "https://www.reddit.com/dev/api",
+    hosts: ["oauth.reddit.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.reddit.com/api/v1/authorize",
+      tokenUrl: "https://www.reddit.com/api/v1/access_token",
+      clientId: "REDDIT_CLIENT_ID",
+      clientSecret: "REDDIT_CLIENT_SECRET",
+      inject: "basic",
+      pkce: false,
+      scopeDialect: "space",
+      // A refresh token only with a permanent grant.
+      authorizeParams: { duration: "permanent" },
+      identity: {
+        url: "https://oauth.reddit.com/api/v1/me",
+        label: "name",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Reddit account (who you are)",
+        access: "read",
+        scopes: ["identity"],
+      },
+      "posts.read": {
+        label: "Subreddits and posts (read)",
+        access: "read",
+        scopes: ["identity", "read"],
+      },
+      "posts.write": {
+        label: "Posts (read, submit and flair)",
+        access: "write",
+        scopes: ["identity", "read", "submit", "flair"],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "A web app on Reddit's apps page. Not yet tried against a live connect.",
+  },
+  pinterest: {
+    id: "pinterest",
+    name: "Pinterest",
+    description: "Boards and pins on a Pinterest account.",
+    docs: "https://developers.pinterest.com/apps/",
+    api: "https://developers.pinterest.com/docs/api/v5/",
+    hosts: ["api.pinterest.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.pinterest.com/oauth/",
+      tokenUrl: "https://api.pinterest.com/v5/oauth/token",
+      clientId: "PINTEREST_CLIENT_ID",
+      clientSecret: "PINTEREST_CLIENT_SECRET",
+      inject: "basic",
+      pkce: false,
+      scopeDialect: "comma",
+      identity: {
+        url: "https://api.pinterest.com/v5/user_account",
+        label: "username",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Pinterest account (who you are)",
+        access: "read",
+        scopes: ["user_accounts:read"],
+      },
+      "pins.read": {
+        label: "Boards and pins (read)",
+        access: "read",
+        scopes: ["user_accounts:read", "boards:read", "pins:read"],
+      },
+      "pins.write": {
+        label: "Boards and pins (read and write)",
+        access: "write",
+        scopes: [
+          "user_accounts:read",
+          "boards:read",
+          "boards:write",
+          "pins:read",
+          "pins:write",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Not yet tried against a live connect.",
+  },
+  discord: {
+    id: "discord",
+    name: "Discord",
+    description:
+      "The person's Discord account and servers, and installing a bot in a server.",
+    docs: "https://discord.com/developers/applications",
+    api: "https://discord.com/developers/docs/reference",
+    hosts: ["discord.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://discord.com/oauth2/authorize",
+      tokenUrl: "https://discord.com/api/oauth2/token",
+      revokeUrl: "https://discord.com/api/oauth2/token/revoke",
+      clientId: "DISCORD_CLIENT_ID",
+      clientSecret: "DISCORD_CLIENT_SECRET",
+      inject: "basic",
+      pkce: true,
+      scopeDialect: "space",
+      identity: {
+        url: "https://discord.com/api/users/@me",
+        label: "username",
+        id: "id",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Discord account (who you are)",
+        access: "read",
+        scopes: ["identify"],
+      },
+      "servers.read": {
+        label: "Servers you are in (read)",
+        access: "read",
+        scopes: ["identify", "guilds"],
+      },
+      "bot.write": {
+        label: "Add the bot to a server",
+        access: "write",
+        scopes: ["identify", "guilds", "bot"],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Posting as the bot uses the bot's own token, an app secret the Gateway doesn't hold. Not yet tried against a live connect.",
+  },
+  kick: {
+    id: "kick",
+    name: "Kick",
+    description: "A Kick channel and its chat.",
+    docs: "https://kick.com/settings/developer",
+    api: "https://docs.kick.com/",
+    hosts: ["api.kick.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://id.kick.com/oauth/authorize",
+      tokenUrl: "https://id.kick.com/oauth/token",
+      clientId: "KICK_CLIENT_ID",
+      clientSecret: "KICK_CLIENT_SECRET",
+      inject: "form",
+      pkce: true,
+      scopeDialect: "space",
+    },
+    scopeSets: {
+      identity: {
+        label: "Kick account (who you are)",
+        access: "read",
+        scopes: ["user:read"],
+      },
+      "channel.read": {
+        label: "Your channel (read)",
+        access: "read",
+        scopes: ["user:read", "channel:read"],
+      },
+      "chat.write": {
+        label: "Chat messages",
+        access: "write",
+        scopes: ["user:read", "chat:write"],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Not yet tried against a live connect.",
+  },
+  twitch: {
+    id: "twitch",
+    name: "Twitch",
+    description: "A Twitch channel's chat and announcements.",
+    docs: "https://dev.twitch.tv/console/apps",
+    api: "https://dev.twitch.tv/docs/api/",
+    hosts: ["api.twitch.tv"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://id.twitch.tv/oauth2/authorize",
+      tokenUrl: "https://id.twitch.tv/oauth2/token",
+      clientId: "TWITCH_CLIENT_ID",
+      clientSecret: "TWITCH_CLIENT_SECRET",
+      inject: "form",
+      pkce: false,
+      scopeDialect: "space",
+    },
+    scopeSets: {
+      "chat.read": {
+        label: "Chat (read)",
+        access: "read",
+        scopes: ["user:read:chat"],
+      },
+      "chat.write": {
+        label: "Chat messages and announcements",
+        access: "write",
+        scopes: [
+          "user:read:chat",
+          "user:write:chat",
+          "moderator:manage:announcements",
+        ],
+      },
+    },
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Helix also wants the public client id as a Client-Id header on every call. Not yet tried against a live connect.",
+  },
+  tumblr: {
+    id: "tumblr",
+    name: "Tumblr",
+    description: "Posting to the person's Tumblr blogs.",
+    docs: "https://www.tumblr.com/oauth/apps",
+    api: "https://www.tumblr.com/docs/en/api/v2",
+    hosts: ["api.tumblr.com"],
+    auth: {
+      kind: "oauth2-user",
+      authorizeUrl: "https://www.tumblr.com/oauth2/authorize",
+      tokenUrl: "https://api.tumblr.com/v2/oauth2/token",
+      clientId: "TUMBLR_CLIENT_ID",
+      clientSecret: "TUMBLR_CLIENT_SECRET",
+      inject: "form",
+      pkce: false,
+      scopeDialect: "space",
+      identity: {
+        url: "https://api.tumblr.com/v2/user/info",
+        label: "response.user.name",
+      },
+    },
+    scopeSets: {
+      identity: {
+        label: "Tumblr account (who you are)",
+        access: "read",
+        scopes: ["basic"],
+      },
+      "posts.write": {
+        label: "Posts on your blogs",
+        access: "write",
+        scopes: ["basic", "write"],
+      },
+    },
+    alwaysRequested: ["offline_access"],
+    access: ["read", "write"],
+    tags: ["social"],
+    hint: "Not yet tried against a live connect.",
   },
 };
 

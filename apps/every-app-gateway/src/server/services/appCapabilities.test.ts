@@ -27,8 +27,8 @@ describe("appCapabilities", () => {
             scopes: ["gmail.read", "calendar.read"],
             why: "Reads the inbox and calendar you connect",
           },
-          // Slack has scope sets since #425; LinkedIn is a client without any.
-          linkedin: { access: "write", why: "Posts digests" },
+          // A capability without scope sets, with a why.
+          context: { access: "read", why: "Reads the pages you track" },
           dataforseo: { access: "read" },
         }),
       ),
@@ -42,10 +42,10 @@ describe("appCapabilities", () => {
         scopesStatus: "ok",
       },
       {
-        id: "linkedin",
-        label: "LinkedIn",
-        access: "write",
-        why: "Posts digests",
+        id: "context",
+        label: "Context.dev",
+        access: "read",
+        why: "Reads the pages you track",
         scopeSets: [],
         scopesStatus: "none",
       },

@@ -18,7 +18,6 @@ import {
   injectClientCredentials,
   integrationProxyPath,
   oauthClientCredentials,
-  oauthClientOrigin,
   oauthReadMethods,
   oauthWriteMethods,
   providerSettingPrefix,
@@ -107,7 +106,7 @@ export interface IntegrationFetchOptions {
  * sees the key. A refusal the gateway makes itself comes back as a response
  * {@link gatewayRefusal} recognizes; anything else is the provider's answer.
  *
- * For an OAuth client (`linkedin`, `mastodon`, ...) it reaches the
+ * For an OAuth client (`google-workspace`, `slack`, ...) it reaches the
  * provider's token endpoints only, and the gateway puts its client on the
  * request: send the code (or refresh token) without `client_id` or
  * `client_secret`. Build the authorize URL with {@link authorizeUrl} from
@@ -215,11 +214,7 @@ export function integrationFetch({
         integration.flow !== undefined &&
         upstream.protocol === "https:" &&
         integration.api.includes(upstream.host) &&
-        !tokenEndpointFor(
-          integration,
-          upstream,
-          binding && integration.hostSetting ? undefined : values,
-        );
+        !tokenEndpointFor(integration, upstream);
       if (toApi) {
         if (binding) {
           if (account) headers.set(ACCOUNT_HEADER, account);
@@ -454,13 +449,7 @@ async function oauthClientCall({
   target?: GatewayCallFor;
   client?: OAuthClientCredentials;
 }): Promise<Response> {
-  // With the binding the gateway resolves the provider's origin (Mastodon's
-  // instance) and refuses any other, so any origin stands in for it here.
-  const settings =
-    binding && capability.hostSetting
-      ? { [capability.hostSetting]: upstream.origin }
-      : values;
-  const endpoint = tokenEndpointFor(capability, upstream, settings);
+  const endpoint = tokenEndpointFor(capability, upstream);
   const method = outbound.method.toUpperCase();
   if (!endpoint || !(endpoint.methods as readonly string[]).includes(method)) {
     throw new TypeError(
@@ -841,13 +830,8 @@ export type EmailIntegrationStatus = IntegrationStatus &
  * the app lists the capability and the gateway holds the client.
  */
 export interface OAuthClientIntegrationStatus extends IntegrationStatus {
-  /** The client's public id, for the authorize URL (and Twitch's `Client-Id`). */
+  /** The client's public id, for the authorize URL. */
   clientId?: string;
-  /**
-   * The provider's origin when the operator chose it (Mastodon's instance,
-   * `MASTODON_URL`): the authorize page, token endpoint and API are on it.
-   */
-  origin?: string;
   /**
    * For a client with scope sets (`google-workspace`, `microsoft-365`): the
    * set names the app's manifest entry declares, `[]` when the entry voids
@@ -1082,7 +1066,6 @@ function devOAuthClientStatus(
   const client = values["EVERYAPP_DEV"]
     ? oauthClientCredentials(capability, values)
     : null;
-  const origin = oauthClientOrigin(capability, values);
   const policy = capability.scopePolicy;
   // An entry with a Gateway-owned flow is listed for reading or writing;
   // the app-driven flow alone needs the write grant.
@@ -1134,7 +1117,6 @@ function devOAuthClientStatus(
     configured: Boolean(client),
     ready: Boolean(client) || Boolean(devToken),
     ...(client ? { clientId: client.clientId } : {}),
-    ...(client && origin ? { origin } : {}),
     ...((client || devToken) && grant && asked
       ? {
           scopeSets: grant.sets,

@@ -24,8 +24,6 @@ import { OrganizationRepository } from "@/server/repositories/OrganizationReposi
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 
-const TOKEN =
-  "http://every-app-gateway.internal/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken";
 const GOOGLE_TOKEN =
   "http://every-app-gateway.internal/api/integrations/google-workspace/oauth2.googleapis.com/token";
 const GOOGLE_STATUS =
@@ -37,7 +35,7 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
   let db: TestDb;
   let acme: string;
   const workers: Record<string, string> = {};
-  /** What the provider answers next: LinkedIn's shape unless a test says. */
+  /** What the provider answers next. */
   let answer: Record<string, unknown>;
   const upstream = vi.fn(async (request: Request) => {
     sent.push({ url: request.url, body: await request.text() });
@@ -57,10 +55,6 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
     acme = await seedOrganization(db, "acme");
     const owner = await seedMember(db, { organizationId: acme, role: "owner" });
     for (const [appSlug, capabilities] of [
-      [
-        "postiz",
-        { linkedin: { access: "write", why: "Connects LinkedIn channels." } },
-      ],
       ["notes", { dataforseo: { access: "read" } }],
       [
         "crm",
@@ -90,7 +84,7 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
 
   function call(appSlug: string, init: RequestInit & { url?: string } = {}) {
     return handleAppGatewayRequest({
-      request: new Request(init.url ?? TOKEN, {
+      request: new Request(init.url ?? GOOGLE_TOKEN, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: "grant_type=authorization_code&code=c&client_secret=app-secret",
@@ -103,8 +97,6 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
       },
       env: {
         GATEWAY_DEPLOYMENT_MODE: "self_hosted",
-        LINKEDIN_CLIENT_ID: "gw-linkedin-id",
-        LINKEDIN_CLIENT_SECRET: "gw-linkedin-secret",
         GOOGLE_WORKSPACE_CLIENT_ID: "gw-google-id",
         GOOGLE_WORKSPACE_CLIENT_SECRET: "gw-google-secret",
       },
@@ -118,30 +110,6 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
     return call(appSlug, { url: GOOGLE_STATUS, method: "GET", body: null });
   }
 
-  it("puts the gateway's client on the token call of an app whose manifest lists LinkedIn", async () => {
-    const response = await call("postiz");
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      access_token: "user-token",
-    });
-    expect(sent).toEqual([
-      {
-        url: "https://www.linkedin.com/oauth/v2/accessToken",
-        body: "grant_type=authorization_code&code=c&client_id=gw-linkedin-id&client_secret=gw-linkedin-secret",
-      },
-    ]);
-
-    const status = await call("postiz", {
-      url: "http://every-app-gateway.internal/api/integrations/linkedin",
-      method: "GET",
-      body: null,
-    });
-    await expect(status.json()).resolves.toMatchObject({
-      ready: true,
-      clientId: "gw-linkedin-id",
-    });
-  });
-
   it("refuses an app whose manifest doesn't, and tells it nothing", async () => {
     const response = await call("notes");
     expect(response.status).toBe(403);
@@ -150,14 +118,9 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
     );
     expect(upstream).not.toHaveBeenCalled();
 
-    const status = await call("notes", {
-      url: "http://every-app-gateway.internal/api/integrations/linkedin",
-      method: "GET",
-      body: null,
-    });
-    await expect(status.json()).resolves.toEqual({
-      capability: "linkedin",
-      flow: "app",
+    const status = await (await googleStatus("notes")).json();
+    expect(status).toMatchObject({
+      capability: "google-workspace",
       requested: false,
       configured: false,
       ready: false,
@@ -165,6 +128,7 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
       setup: null,
       command: null,
     });
+    expect(status).not.toHaveProperty("clientId");
   });
 
   it("holds each deployed app to the scope sets its own manifest lists", async () => {

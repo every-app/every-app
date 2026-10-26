@@ -165,16 +165,5 @@ describe("the held-token twin in local dev", () => {
         ready: true,
       },
     });
-    // A catalog client without a flow says so.
-    await expect(
-      integrationStatus({
-        env: {
-          EVERYAPP_DEV: "1",
-          LINKEDIN_CLIENT_ID: "id",
-          LINKEDIN_CLIENT_SECRET: "secret",
-        },
-        provider: "linkedin",
-      }),
-    ).resolves.toMatchObject({ flow: "app" });
   });
 });

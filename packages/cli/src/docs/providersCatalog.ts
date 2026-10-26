@@ -20,7 +20,6 @@ import {
   capabilitySettings,
   isSettableGatewaySetting,
   oauthClientSecretSetCommand,
-  tokenPathText,
   writeMethodsOf,
   type AiProviderCapability,
   type ApiKeyAuth,
@@ -231,11 +230,6 @@ export function catalogSettings(kind: "ai" | "api_key"): string {
   ]);
 }
 
-/** A URL on an OAuth client's instance when it has no fixed host (Mastodon's). */
-function onInstance(capability: OAuthClientCapability, url: string): string {
-  return url.startsWith("/") ? `<${capability.hostSetting}>${url}` : url;
-}
-
 function keySection(id: string, capability: ApiKeyCapability | AiProviderCapability): string[] {
   const guide = guideOf(capability);
   const settable = settableOf(capability);
@@ -281,9 +275,9 @@ function oauthSection(id: string, capability: OAuthClientCapability): string[] {
     `**${capability.label}** (${code("oauth_client")}): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.`,
     "",
     `- **Settings:** ${settingsOf(capability)}`,
-    `- **Where the client comes from:** ${capability.console.startsWith("/") ? code(onInstance(capability, capability.console)) : capability.console}`,
-    `- **Redirect URIs to register:** ${list(capability.redirectPaths.map((path) => `https://<app>.<APP_BASE_DOMAIN>${path}`))}`,
-    `- **How it is sent:** ${capability.token.map(({ host, path, methods, inject }) => `${methods.join("/")} ${code(`${host ?? `<${capability.hostSetting}>`}${tokenPathText(path)}`)} (the client in the ${inject === "basic" ? "Basic header" : inject === "form" ? "form body" : inject === "json" ? "JSON body" : "query"})`).join("; ")}`,
+    `- **Where the client comes from:** ${capability.console}`,
+    `- **Redirect URIs to register:** ${capability.flow ? `${code(`https://<gateway host>/connect/${id}/callback`)}, and ` : ""}each callback an app lists under ${code("redirectPaths")} in its manifest entry, as ${code("https://<app>.<APP_BASE_DOMAIN><path>")} (${code(`everyapp provider show ${id}`)} prints them)`,
+    `- **How it is sent:** ${capability.token.map(({ host, path, methods, inject }) => `${methods.join("/")} ${code(`${host}${path}`)} (the client in the ${inject === "basic" ? "Basic header" : "form body"})`).join("; ")}`,
     `- **Scope sets an app lists:** ${sets.length > 0 ? list(sets) : "none: the whole client is the grant"}`,
     `- **Set it:** ${code(oauthClientSecretSetCommand(capability))}`,
     `- **Guide:** ${guide ? `[${guide}](${guide})` : "none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients"}`,

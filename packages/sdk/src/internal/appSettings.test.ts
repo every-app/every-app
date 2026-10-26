@@ -91,7 +91,7 @@ describe("appSettings", () => {
         context: { access: "read", optional: true },
         email: { access: "write" },
         members: { access: "read" },
-        mastodon: { access: "write" },
+        slack: { access: "write" },
         "google-workspace": {
           access: "write",
           optional: true,
@@ -158,13 +158,12 @@ describe("appSettings", () => {
         { kind: "required" },
       ],
       ["capability", "members", "gateway", [], [], { kind: "required" }],
-      // The instance has a default: read when set.
       [
         "capability",
-        "mastodon",
+        "slack",
         "gateway",
-        ["MASTODON_CLIENT_ID", "MASTODON_CLIENT_SECRET"],
-        ["MASTODON_URL"],
+        ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
+        [],
         { kind: "required" },
       ],
       [
@@ -214,7 +213,7 @@ describe("appSettings", () => {
     );
     expect(byId["dataforseo"]!.why).toBe("Keyword data.");
     // An OAuth client's console; the manifest's docs win over it.
-    expect(byId["mastodon"]!.docs).toMatch(/^https:\/\//);
+    expect(byId["slack"]!.docs).toBe("https://api.slack.com/apps");
     expect(byId["google-workspace"]!.docs).toBe("https://example.com/google");
     expect(byId["email"]!.docs).toBeUndefined();
     expect(byId["ai-routes"]!.why).toContain("/v1/files");
@@ -226,7 +225,7 @@ describe("appSettings", () => {
     expect(byId["email"]!.setup).toBe("setup/email.md");
     expect(byId["google-workspace"]!.setup).toBe("setup/google.md");
     expect(byId["members"]!.setup).toBeUndefined();
-    expect(byId["mastodon"]!.setup).toBeUndefined();
+    expect(byId["slack"]!.setup).toBe("setup/slack.md");
     expect(byId["ai-routes"]!.setup).toBe("setup/openai.md");
     expect(byId["MAIN_SECRET"]!.setup).toBeUndefined();
   });
@@ -321,15 +320,12 @@ describe("evaluateAppSettings", () => {
   });
 
   it("counts a setting set only when every one of its names is", () => {
-    const mastodon = appSettings({
-      capabilities: { mastodon: { access: "write" } },
+    const slack = appSettings({
+      capabilities: { slack: { access: "write" } },
     });
-    const report = evaluateAppSettings(
-      mastodon,
-      setOn(["MASTODON_CLIENT_ID"], []),
-    );
+    const report = evaluateAppSettings(slack, setOn(["SLACK_CLIENT_ID"], []));
     expect(report.ready).toBe(false);
-    expect(report.unmet.map((setting) => setting.id)).toEqual(["mastodon"]);
+    expect(report.unmet.map((setting) => setting.id)).toEqual(["slack"]);
   });
 
   it("lets a capability's own readiness rule override its names", () => {

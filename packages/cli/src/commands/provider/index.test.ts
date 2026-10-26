@@ -336,7 +336,7 @@ describe("provider list", () => {
     const providers = done()!["data"]["providers"] as Array<Record<string, any>>;
     const ids = providers.map((provider) => provider["id"]);
     // The catalog first (no services), then the rows.
-    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "linkedin", "northwind"]));
+    expect(ids).toEqual(expect.arrayContaining(["openai", "openrouter", "dataforseo", "slack", "northwind"]));
     expect(ids).not.toContain("email");
     expect(providers.at(-1)).toEqual({
       id: "northwind",
@@ -360,10 +360,12 @@ describe("provider list", () => {
       source: "catalog",
       apps: ["shop"],
     });
-    expect(providers.find((provider) => provider["id"] === "mastodon")).toMatchObject({
+    expect(providers.find((provider) => provider["id"] === "slack")).toMatchObject({
       kind: "oauth client",
-      hostSetting: "MASTODON_URL",
+      hosts: ["slack.com"],
     });
+    // The social networks are presets: rows only once an operator adds one.
+    expect(ids).not.toContain("linkedin");
     expect(done()).toMatchObject({
       message: `${providers.length} providers: ${providers.length - 1} built in, 1 registered`,
       data: { mcp: "pnpm everyapp mcp list" },
@@ -374,7 +376,6 @@ describe("provider list", () => {
       /\nnorthwind +Northwind +api key +api\.northwind\.io +NORTHWIND_API_KEY not set, not bound +registered by dev@example\.com +shop\n/,
     );
     expect(shown).toMatch(/\nopenrouter +OpenRouter +ai +openrouter\.ai +OPENROUTER_API_KEY set +catalog +shop\n/);
-    expect(shown).toMatch(/\nmastodon +Mastodon +oauth client +<MASTODON_URL> /);
     // Through launch week, where the MCP apps went.
     expect(shown).toMatch(/\n\nMCP apps: pnpm everyapp mcp list\n/);
   });
@@ -451,13 +452,33 @@ describe("provider show", () => {
       setup: "setup/openrouter.md",
     });
     events = [];
-    await show("linkedin");
+    await show("slack");
     expect(done()!["data"]["provider"]).toMatchObject({
-      id: "linkedin",
+      id: "slack",
       kind: "oauth client",
-      settings: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
-      tokenEndpoints: ["POST https://www.linkedin.com/oauth/v2/accessToken"],
+      settings: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
+      tokenEndpoints: ["POST https://slack.com/api/oauth.v2.access"],
     });
+    expect(done()!["data"]["provider"]).not.toHaveProperty("redirectPaths");
+    expect(done()!["data"]["appRedirectUris"]).toEqual([]);
+  });
+
+  it("lists the callbacks the apps using an OAuth client declare, on each app's host", async () => {
+    await registerApp("crm", {
+      capabilities: {
+        slack: {
+          access: "write",
+          scopes: ["messages.write"],
+          redirectPaths: ["/integrations/slack/callback"],
+        },
+      },
+    });
+    await show("slack");
+    const uris = done()!["data"]["appRedirectUris"] as string[];
+    expect(uris).toHaveLength(1);
+    expect(uris[0]).toMatch(/^https:\/\/crm\.[^/]+\/integrations\/slack\/callback$/);
+    const shown = await human((sink) => showProvider({ flags: {}, out: sink, createCf }, "slack"));
+    expect(shown).toContain(`Apps that run the flow themselves list these callbacks; register them too: ${uris[0]}`);
   });
 
   it("refuses an id the Gateway doesn't offer, and a service", async () => {

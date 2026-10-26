@@ -22,7 +22,9 @@ Register this at the provider:
 https://<your gateway>/connect/x-oauth/callback
 ```
 
-`<your gateway>` is your Gateway's address, like `apps.example.com`. `pnpm everyapp provider show x-oauth` prints the exact URI.
+`<your gateway>` is your Gateway's address, like `apps.example.com`.
+
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show x-oauth` prints every one.
 
 ### Make the OAuth app
 

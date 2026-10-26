@@ -147,7 +147,7 @@ describe("the URL rule", () => {
     expect(hosts).toContain("api.dataforseo.com");
     expect(hosts).toContain("api.context.dev");
     expect(hosts).toContain("api.openai.com");
-    expect(hosts).toContain("www.linkedin.com");
+    expect(hosts).toContain("slack.com");
   });
 });
 

@@ -18,7 +18,6 @@ import {
   CAPABILITIES,
   EMAIL_PROVIDER_IDS,
   isPlainGatewaySetting,
-  oauthClientOrigin,
   parseEmailSender,
   settingValueProblem,
   settingValueTakes,
@@ -268,34 +267,14 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
 };
 
 /**
- * The rule for the instance setting of an OAuth client in the catalog
- * (its `hostSetting`, Mastodon's `MASTODON_URL`): an https origin, as
- * `oauthClientOrigin` reads it.
- */
-function oauthClientHostSetting(name: string): PlainSetting | undefined {
-  const client = Object.values(CAPABILITIES as Record<string, Capability>).find(
-    (capability): capability is OAuthClientCapability =>
-      capability.mode === "oauth_client" && capability.hostSetting === name,
-  );
-  if (!client) return undefined;
-  const example = client.defaultOrigin ? `, e.g. ${client.defaultOrigin}` : "";
-  return {
-    takes: `the ${client.label} instance's https origin${example}`,
-    check: (value) =>
-      oauthClientOrigin(client, { [name]: value }) ? null : `"${value}" isn't an https origin (no path).`,
-  };
-}
-
-/**
  * A plain setting's rule: an app's own plain setting's (`settings` in its
- * manifest, `rule`), else the table above, else an OAuth client's
- * instance, else a sign-in provider's (lib/signinValues.ts).
+ * manifest, `rule`), else the table above, else a sign-in provider's
+ * (lib/signinValues.ts).
  */
 function plainSetting(name: string, rule?: SettingValueRule): PlainSetting | undefined {
   if (rule) return { takes: settingValueTakes(rule), check: (value) => settingValueProblem(rule, value) };
   return (
     (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name] ??
-    oauthClientHostSetting(name) ??
     signInPlainSetting(name)
   );
 }

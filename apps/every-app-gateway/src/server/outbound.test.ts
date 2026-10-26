@@ -117,39 +117,39 @@ describe("handleOutboundRequest", () => {
     vi.restoreAllMocks();
   });
 
-  it("always denies the token endpoints of the OAuth clients the gateway holds, however spelled", async () => {
+  it("always denies the token endpoints of the OAuth clients the gateway holds or offers as presets, however spelled", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const social = {
+    const env = {
       ...ENV,
-      MASTODON_URL: "https://fosstodon.org",
       everyapp: {
         ...APP,
         egress: [
+          "slack.com",
+          "oauth2.googleapis.com",
           "www.linkedin.com",
           "graph.facebook.com",
-          "open.tiktokapis.com",
-          "slack.com",
-          "dribbble.com",
-          "fosstodon.org",
-          "mastodon.social",
+          "www.reddit.com",
+          "github.com",
         ],
       },
     };
     for (const url of [
+      // Catalog clients.
+      "https://slack.com/api/oauth.v2.access",
+      "https://oauth2.googleapis.com/token",
+      // Presets, refused whether or not this gateway added them.
       "https://www.linkedin.com/oauth/v2/accessToken",
       "https://WWW.LinkedIn.com./oauth/v2/accesstoken/",
       "https://www.linkedin.com/oauth//v2/%61ccessToken",
       "https://graph.facebook.com/v25.0/oauth/access_token?code=c",
+      // Any Graph version, not only the one the preset names.
       "https://graph.facebook.com/V19.0/OAuth/Access_Token",
-      "https://open.tiktokapis.com/v2/oauth/token",
-      "https://slack.com/api/oauth.v2.access",
-      "https://dribbble.com/oauth/token?code=c",
-      // The instance the gateway's Mastodon client is on.
-      "https://fosstodon.org/oauth/token",
+      "https://www.reddit.com/api/v1/access_token",
+      "https://github.com/login/oauth/access_token",
       // A path that won't decode, on a token host.
       "https://slack.com/api/%E0%A4%A",
     ]) {
-      const { response, send } = await outbound(url, social);
+      const { response, send } = await outbound(url, env);
       expect(response.status, url).toBe(403);
       expect(await response.json(), url).toMatchObject({
         reason: "reserved_endpoint",
@@ -160,12 +160,9 @@ describe("handleOutboundRequest", () => {
     for (const url of [
       "https://graph.facebook.com/v25.0/me/accounts",
       "https://slack.com/api/chat.postMessage",
-      "https://open.tiktokapis.com/v2/post/publish/video/init/",
       "https://www.linkedin.com/oauth/v2/authorization",
-      // Another instance than the gateway's client is on.
-      "https://mastodon.social/oauth/token",
     ]) {
-      const { response, send } = await outbound(url, social);
+      const { response, send } = await outbound(url, env);
       expect(response.status, url).toBe(200);
       expect(send).toHaveBeenCalledOnce();
     }

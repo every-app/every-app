@@ -59,25 +59,25 @@ describe("gateway settings `secret set` changes", () => {
     }
   });
 
-  it("include the 37 names of the 18 OAuth clients", () => {
+  it("include the 6 names of the 3 OAuth clients, and no preset's", () => {
     const names = Object.values(CAPABILITIES).flatMap((capability) =>
       capability.mode === "oauth_client" ? capabilitySettings(capability) : [],
     );
-    expect(names).toHaveLength(37);
-    expect(new Set(names).size).toBe(37);
+    expect(names).toHaveLength(6);
+    expect(new Set(names).size).toBe(6);
     for (const name of names) {
       expect(isSettableGatewaySetting(name), name).toBe(true);
     }
     expect(names).toEqual(
       expect.arrayContaining([
-        "LINKEDIN_CLIENT_ID",
-        "LINKEDIN_CLIENT_SECRET",
-        "FACEBOOK_APP_ID",
         "SLACK_CLIENT_ID",
-        "KICK_CLIENT_SECRET",
-        "MASTODON_URL",
+        "GOOGLE_WORKSPACE_CLIENT_SECRET",
+        "MICROSOFT_365_CLIENT_ID",
       ]),
     );
+    for (const name of ["LINKEDIN_CLIENT_ID", "FACEBOOK_APP_ID", "MASTODON_URL"]) {
+      expect(isSettableGatewaySetting(name), name).toBe(false);
+    }
   });
 
   it.each(["CF_DEPLOY_TOKEN", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"])(

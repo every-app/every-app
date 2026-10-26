@@ -69,7 +69,7 @@ function scopedClientIds(): string[] {
  * `codeChallenge`, PKCE as S256. The app keeps its `state` and verifier
  * for the callback.
  *
- * A client without scope sets (LinkedIn, Mastodon, ...) is refused: the
+ * A client without scope sets is refused: the
  * registry's checklist for one isn't what the gateway holds a token to,
  * so an app builds that URL itself from the status's `clientId`.
  *
@@ -110,13 +110,7 @@ export function authorizeUrl({
     );
   }
 
-  const base = status.origin ?? capability.defaultOrigin;
-  if (!/^https:/.test(capability.authorize.url) && !base) {
-    throw new TypeError(
-      `authorizeUrl(${JSON.stringify(provider)}) needs the instance ${capability.label} is on: the status carries it as origin once ${capability.hostSetting} is set.`,
-    );
-  }
-  const url = new URL(capability.authorize.url, base);
+  const url = new URL(capability.authorize.url);
   // The status speaks for the gateway: its scopes are the token's ceiling.
   const scopes = status.scopes;
   const slack = url.host === "slack.com";

@@ -80,9 +80,11 @@ describe("parseScopeSetOverlay", () => {
   });
 
   it("refuses a client without scope sets", () => {
+    // No catalog client lacks scope sets now: one made without them.
+    const { scopePolicy: _policy, ...plain } = CAPABILITIES.slack;
     const parsed = parseScopeSetOverlay(GMAIL_SEND, {
-      id: "linkedin",
-      capability: CAPABILITIES["linkedin"],
+      id: "plain",
+      capability: plain,
     });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;

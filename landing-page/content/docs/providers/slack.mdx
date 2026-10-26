@@ -24,14 +24,9 @@ Register this at the provider:
 https://<your gateway>/connect/slack/callback
 ```
 
-An app that runs the sign-in itself (rather than through the Gateway) also needs its own callback:
+`<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-```text
-https://<app>.<your app domain>/integrations/social/slack
-https://<app>.<your app domain>/integrations/slack/callback
-```
-
-`<your gateway>` is your Gateway's address, like `apps.example.com`. `pnpm everyapp provider show slack` prints the exact URI.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show slack` prints every one.
 
 ### Make the OAuth app
 

@@ -147,8 +147,8 @@ describe("usage counting at the AppGateway entrypoint (SQLite)", () => {
         JWT_PUBLIC_KEY: publicKeyPem,
         OPENAI_API_KEY: "gateway-provider-key",
         DATAFORSEO_API_KEY: "login@example.com:secret",
-        LINKEDIN_CLIENT_ID: "gw-linkedin-id",
-        LINKEDIN_CLIENT_SECRET: "gw-linkedin-secret",
+        GOOGLE_WORKSPACE_CLIENT_ID: "gw-google-id",
+        GOOGLE_WORKSPACE_CLIENT_SECRET: "gw-google-secret",
       },
       registry: new InMemoryAppRegistry([app]),
       organizations: OrganizationRepository,
@@ -304,12 +304,18 @@ describe("usage counting at the AppGateway entrypoint (SQLite)", () => {
     const app = chef({
       manifest: validateManifest({
         id: "chef",
-        capabilities: { linkedin: { access: "write", why: "Connects" } },
+        capabilities: {
+          "google-workspace": {
+            access: "write",
+            scopes: ["gmail.read"],
+            why: "Connects",
+          },
+        },
       }),
     });
     const tokenRequest = (identityJwt: string) =>
       new Request(
-        "http://every-app-gateway.internal/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken",
+        "http://every-app-gateway.internal/api/integrations/google-workspace/oauth2.googleapis.com/token",
         {
           method: "POST",
           headers: {
@@ -320,7 +326,11 @@ describe("usage counting at the AppGateway entrypoint (SQLite)", () => {
         },
       );
     const upstream = vi.fn(async () =>
-      Response.json({ access_token: "t", expires_in: 3600 }),
+      Response.json({
+        access_token: "t",
+        expires_in: 3600,
+        scope: "https://www.googleapis.com/auth/gmail.readonly",
+      }),
     );
 
     const answered = await call(
@@ -335,7 +345,7 @@ describe("usage counting at the AppGateway entrypoint (SQLite)", () => {
         appRowId: "app-row-chef",
         userId: member,
         kind: "capability",
-        target: "linkedin",
+        target: "google-workspace",
         calls: 1,
         failures: 0,
         costMicros: 0,

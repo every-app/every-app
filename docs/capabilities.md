@@ -1,7 +1,7 @@
 # Capabilities the gateway holds
 
 An app often needs a third-party API that isn't AI: DataForSEO for SEO data,
-Context.dev for rendering pages, a social network's OAuth client, a way to
+Context.dev for rendering pages, Slack's OAuth client, a way to
 send email, Google's and Microsoft's mail and calendar, later GitHub. The
 gateway holds the credential once, an app lists the capability in its
 manifest, and the app calls through the gateway. No app holds the key. Per
@@ -11,7 +11,7 @@ the addresses it sends as and receives at (`everyapp email set`, below).
 This is phase 0 of the integrations design (the integrations-hub research of
 October 2026, which the repository no longer carries):
 **API-key providers whose key the gateway holds**, **OAuth clients** the
-gateway holds for social networks and for Google's and Microsoft's mail and
+gateway holds for Slack and for Google's and Microsoft's mail and
 calendar, whose token endpoints it completes for
 apps ([below](#oauth-clients)), and **gateway services**, things the gateway
 does itself for apps (sending email, [below](#gateway-services-email);
@@ -65,7 +65,7 @@ AI proxy's inference routes may use it.
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`, and the providers a gateway registers ([Provider registry](#provider-registry)) | puts its key on calls to the provider's own hosts, with the methods its entry allows (read methods; write methods under a write grant, where the provider offers write) | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read` (a registered provider may offer `write`) |                                 |
 | `ai`           | `openai`, `openrouter`, `workers-ai` ([AI providers](#ai-providers)) | puts its key on inference calls to the provider's origin, with the AI proxy's rules (inference routes, `store: false`, the model allowlist) | `createGatewayFetch({ env, for })` on `/api/ai/<id>/...`; listed under `providers`, not `capabilities` | | none here: `GET /api/integrations/<id>` is 400 |
-| `oauth_client` | 16 social networks, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
+| `oauth_client` | Slack, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients)); the social networks are presets, rows once an operator adds one | completes the provider's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 | `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
@@ -126,7 +126,7 @@ Everything the gateway holds for apps, in one table:
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM` and `EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`), and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | openmail, OpenAnalytics, and the gateway's own mail |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
-| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | OpenCRM (`slack`); the other 15 were added for Postiz's port |
+| `slack`                     | `oauth_client`      | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | generated [below](#oauth-clients)                                                        | OpenCRM |
 | `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
 | a provider this gateway registered | `api_key` (a row) | its own, each starting with its id (`STRIPE_API_KEY` for `stripe`) | the names `everyapp provider add` prints; `secret set` names the hosts and binds the key to them ([Provider registry](#provider-registry)) | the apps that list it |
 
@@ -412,23 +412,30 @@ rules' invariants are the `providers.*` rows of the threat model's register
 
 ## OAuth clients
 
-Since 2026-10-25 an OAuth client can also run the Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`): the catalog's `google-workspace`, `microsoft-365`, `slack` and `discord` carry a `flow` block, and any OAuth provider added from a preset or a spec with `auth.kind: "oauth2-user"` (`everyapp provider add --oauth github-oauth`) is one. There the person connects at `https://<gateway>/connect/<id>` (PKCE, a one-use state), the Gateway holds the tokens sealed in D1 and refreshes them, and an app that lists the provider with `scopes` calls its API hosts through `integrationFetch()` with the token put on by the Gateway, held to the sets it declared. The client may be the Worker secrets below or one pasted in Manage workspace → Providers (sealed in `oauth_clients`; the Worker secret wins). The redirect URI for that flow is `https://<gateway>/connect/<id>/callback`. The app-driven flow below is unchanged and both run on the same client; the agent page is [providers](../landing-page/content/agent/providers.md).
+Since 2026-10-25 an OAuth client can also run the Gateway-owned flow (`docs/design/2026-10-oauth-providers.md`): the catalog's `google-workspace`, `microsoft-365` and `slack` carry a `flow` block, and any OAuth provider added from a preset or a spec with `auth.kind: "oauth2-user"` (`everyapp provider add --oauth github-oauth`) is one. There the person connects at `https://<gateway>/connect/<id>` (PKCE, a one-use state), the Gateway holds the tokens sealed in D1 and refreshes them, and an app that lists the provider with `scopes` calls its API hosts through `integrationFetch()` with the token put on by the Gateway, held to the sets it declared. The client may be the Worker secrets below or one pasted in Manage workspace → Providers (sealed in `oauth_clients`; the Worker secret wins). The redirect URI for that flow is `https://<gateway>/connect/<id>/callback`. The app-driven flow below is unchanged and both run on the same client; the agent page is [providers](../landing-page/content/agent/providers.md).
 
-A social network's OAuth client is a capability too (`oauth_client`): the
-operator registers one client per network on the network's developer
-console and gives it to the gateway, and every app that lists the network
-connects people's accounts with it. The gateway completes the network's
-**token endpoints only**, and only a user's own grants (`authorization_code`,
-`refresh_token` and the network's token exchanges; `client_credentials`, which
-would mint a token for the operator's own application, is refused), putting
-its client on the request; the app builds
-the authorize URL from the client's public id, keeps the access and refresh
-tokens it gets back, and calls the network's API with them itself. The
-client secret never reaches an app. OpenCRM uses `slack` (and the two
-clients below) at launch; the social networks were added for Postiz, which
-is ported but not part of the launch.
+An OAuth client is a capability too (`oauth_client`): the operator
+registers one client per provider on its developer console and gives it to
+the gateway, and every app that lists the provider connects people's
+accounts with it. The gateway completes the provider's **token endpoints
+only**, and only a user's own grants (`authorization_code` and
+`refresh_token`; `client_credentials`, which would mint a token for the
+operator's own application, is refused), putting its client on the request;
+the app builds the authorize URL from the client's public id, keeps the
+access and refresh tokens it gets back, and calls the provider's API with
+them itself. The client secret never reaches an app. OpenCRM uses `slack`
+(and the two clients below).
 
-Two clients serve mail and calendar rather than a social network:
+The social networks (LinkedIn, Facebook Pages, Instagram, Threads, YouTube,
+Reddit, Pinterest, Discord, Kick, Twitch, Tumblr) are not catalog clients:
+they are OAuth presets tagged `social` (`packages/sdk/src/internal/oauthPresets.ts`),
+which become rows only when an operator adds one (`everyapp provider add
+--oauth linkedin`), with the Gateway-owned flow. Until then no gateway
+reserves their setting names. TikTok, TikTok Business, Mastodon and Dribbble
+were dropped: their token endpoints need what a preset can't say (a renamed
+client id, a JSON body, the client in the query string, an instance host).
+
+Two clients serve mail and calendar:
 `google-workspace` (Gmail, Google Calendar, Search Console and Google
 Analytics, read-only) and `microsoft-365` (Outlook mail and calendar through
 Microsoft Graph, read-only). OpenCRM
@@ -440,57 +447,54 @@ other people's mailboxes can connect. Register the Microsoft client for
 accounts in any organization and personal accounts: the gateway completes
 the `common` token endpoint only.
 
-**For an operator.** For each network you want people to connect: register
-an app on its developer console, register the redirect URIs below (on the
-app's host, `https://<app>.<APP_BASE_DOMAIN>`), allow the scopes listed
-further down, then hand the client to the gateway:
+**For an operator.** For each client you want people to connect: register
+an app on its developer console, register the redirect URIs each app that
+lists it names (`redirectPaths` on its manifest entry, on the app's host
+`https://<app>.<APP_BASE_DOMAIN>`; `everyapp provider show <id>` lists
+them), allow the scopes listed further down, then hand the client to the
+gateway:
 
 ```bash
-pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET
+pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
 ```
 
-A network you skip is simply not offered: its status answers
-`configured: false`. Mastodon's client lives on one instance:
-`MASTODON_URL` names it (`https://mastodon.social` when unset), and the
-token endpoint, the authorize page and the API are on it. One client per
-network serves every organization on the gateway, so a network's limits
-(Meta's app review tiers, TikTok's user caps, Google's refresh tokens per
-user) are shared too. X is not here (OAuth 1.0a signs every API call with
-the user's token secret, which the gateway never holds): an app keeps
-`X_API_KEY`/`X_API_SECRET` as its own secrets.
+A client you skip is simply not offered: its status answers
+`configured: false`. One client serves every organization on the gateway,
+so a provider's limits (Google's refresh tokens per user, review tiers) are
+shared too.
 
-**For an app.** List each network for writing (obtaining and refreshing
-tokens with the operator's client writes). A client with scope sets
-(`slack`, `google-workspace`, `microsoft-365`; the table at the end of this section)
-requires `scopes`, one or more set names, each once: the validator refuses
-the entry without them, or with a name the client doesn't offer, naming the
-sets it does, and refuses `scopes` on a client without any.
+**For an app.** List each client for writing (obtaining and refreshing
+tokens with the operator's client writes), with `scopes`, one or more of
+its set names, each once: the validator refuses the entry without them, or
+with a name the client doesn't offer, naming the sets it does. An app that
+runs the flow itself lists the callback paths it completes on its own host
+under `redirectPaths`, so the operator knows what to register.
 
 ```ts
 capabilities: {
-  linkedin: { access: "write", why: "Connects LinkedIn profiles and pages." },
-  mastodon: { access: "write" },
   "google-workspace": {
     access: "write",
     scopes: ["gmail.read", "calendar.read"],
+    redirectPaths: ["/integrations/google/callback"],
     why: "Reads each member's own mailbox and calendar.",
   },
 },
 ```
 
-then build the authorize URL from the status, and exchange the code (or
-refresh a token) through the gateway without any client:
+then build the authorize URL with `authorizeUrl()` from the status, and
+exchange the code (or refresh a token) through the gateway without any
+client:
 
 ```ts
-import { integrationFetch, integrationStatus } from "@every-app/sdk/server";
+import { authorizeUrl, integrationFetch, integrationStatus } from "@every-app/sdk/server";
 
-const { ready, clientId } = await integrationStatus({ env, provider: "linkedin" });
-if (!ready) return showNotSetUp("LinkedIn");
-const authorize = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=...`;
+const status = await integrationStatus({ env, provider: "google-workspace" });
+if (!status.ready) return showNotSetUp("Google");
+const url = authorizeUrl({ provider: "google-workspace", status, redirectUri, state });
 
 // The callback: the gateway adds client_id and client_secret.
-const linkedin = integrationFetch({ env, provider: "linkedin" });
-const tokens = await linkedin("https://www.linkedin.com/oauth/v2/accessToken", {
+const google = integrationFetch({ env, provider: "google-workspace" });
+const tokens = await google("https://oauth2.googleapis.com/token", {
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
@@ -498,27 +502,24 @@ const tokens = await linkedin("https://www.linkedin.com/oauth/v2/accessToken", {
 // A refresh from a cron or Workflow runs under withOrganization(organizationId, fn).
 ```
 
-Mastodon's status also carries `origin` (the instance). Twitch wants the
-public id as `Client-Id` on its API calls too: it is the status's
-`clientId`. In local dev (`everyapp dev`, no binding) the fetch calls the
-token endpoint directly and puts the developer's own client from
-`.dev.vars`, under the same names, on it by the same rule.
+In local dev (`everyapp dev`, no binding) the fetch calls the token endpoint
+directly and puts the developer's own client from `.dev.vars`, under the
+same names, on it by the same rule.
 
 **What the gateway checks**, in order, each a refusal with its code in
 `x-everyapp-error`:
 
 | Code                            | Status  | When                                                                                          |
 | ------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
-| `integration_not_configured`    | 503     | `MASTODON_URL` is set but isn't an https origin                                               |
 | `integration_path_not_allowed`  | 403     | the call isn't one of the network's token endpoints (host, exact path, method): API calls go to the network directly |
 | `capability_not_requested`      | 403     | the deployed manifest doesn't list the network with `access: "write"`                         |
 | `integration_scopes_undeclared` | 403     | the network has scope sets and the entry's `scopes` isn't a non-empty list of names this gateway offers (missing, empty, a duplicate or an unknown name voids the whole grant); the message names the sets on offer |
 | `caller_*`                      | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)        |
 | `integration_agent_not_allowed` | 403     | an agent's identity (`chan: "mcp"`), with or without `mcp:write`: agents can't connect accounts or mint tokens |
-| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant, or isn't one this client's scope policy completes (`client_credentials` and token exchanges would mint a token for the operator's own application; on Google and Microsoft a request without `grant_type` too) |
+| `integration_grant_not_allowed` | 403     | the `grant_type` isn't a user's grant, or isn't one this client's scope policy completes (`client_credentials` would mint a token for the operator's own application; on Google and Microsoft a request without `grant_type` too) |
 | `integration_not_configured`    | 503     | the gateway doesn't hold the client; the message names the `secret set` command               |
 | `integration_body_too_large`    | 413     | the body passes 64 KiB, counted as it streams                                                 |
-| `integration_body_invalid`      | 400     | the body isn't form-encoded or JSON, or not the one the endpoint takes; with scope sets, also a `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` more than once in a form body: the gateway decides on the body, once |
+| `integration_body_invalid`      | 400     | the body isn't form-encoded; with scope sets, also a `grant_type`, `scope` or `user_scope` in the query string, or `grant_type` more than once in a form body: the gateway decides on the body, once |
 | `integration_scope_not_allowed` | 403     | with scope sets, the request's `scope` (Slack: `user_scope`) names a scope outside the app's sets |
 | `integration_upstream_failed`   | 502     | the network couldn't be reached, or (with scope sets) its 2xx answer broke off while the gateway read it; nothing was passed on |
 | `integration_response_invalid`  | 502     | with scope sets, a 2xx answer over 64 KiB or not a JSON object; nothing was passed on         |
@@ -527,9 +528,8 @@ token endpoint directly and puts the developer's own client from
 
 It then drops the app's `Authorization`, cookies and every `x-everyapp-*`
 header, removes any `client_id` or `client_secret` the app put in the query
-string or the body (in any case, under the endpoint's own names too), puts
-the gateway's client where the endpoint takes it (`form`: the form body;
-`basic`: HTTP Basic; `query`: the query string; `json`: the JSON body),
+string or the body (in any case), puts the gateway's client where the
+endpoint takes it (`form`: the form body; `basic`: HTTP Basic),
 re-serialises the body, refuses to follow redirects, drops the network's
 `set-cookie`, and streams the answer back. For a network with scope sets it
 also sets the request's `scope` as the network takes it (Microsoft: the
@@ -544,8 +544,8 @@ the client, codes and tokens, except the declared set names and the scope
 names in excess when it refuses one (`integration.proxy.scope_refused`).
 
 `GET /api/integrations/<network>` answers
-`{ capability, requested, configured, ready, clientId?, origin?, scopeSets?, scopes?, userScopes? }`;
-`clientId` (and Mastodon's `origin`) only for an app that lists the network,
+`{ capability, requested, configured, ready, clientId?, scopeSets?, scopes?, userScopes? }`;
+`clientId` only for an app that lists the network,
 once the gateway holds its client. For a network with scope sets,
 `scopeSets` (the names the app's entry lists) and `scopes` (the exact
 provider strings to put on the authorize URL, in registry order;
@@ -560,46 +560,16 @@ refuses them (`reserved_endpoint`), though not the networks' API hosts.
 
 <!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
 
-| Capability | Network | Gateway secrets | Developer console | Redirect URIs to register | Token endpoints the gateway completes (where the client goes) |
-| --- | --- | --- | --- | --- | --- |
-| `linkedin` | LinkedIn | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | https://www.linkedin.com/developers/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin-page` | POST `www.linkedin.com/oauth/v2/accessToken` (form) |
-| `facebook` | Facebook | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/facebook`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram` | GET/POST `graph.facebook.com/v<version>/oauth/access_token` (query) |
-| `instagram` | Instagram | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram-standalone` | POST `api.instagram.com/oauth/access_token` (form); GET `graph.instagram.com/access_token` (query) |
-| `threads` | Threads | `THREADS_APP_ID`, `THREADS_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/threads` | GET/POST `graph.threads.net/oauth/access_token` (query); GET `graph.threads.net/access_token` (query) |
-| `youtube` | YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/youtube`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/gmb` | POST `oauth2.googleapis.com/token` (form) |
-| `tiktok` | TikTok | `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET` | https://developers.tiktok.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok` | POST `open.tiktokapis.com/v2/oauth/token/` (form, id as `client_key`) |
-| `tiktok-business` | TikTok Business | `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET` | https://business-api.tiktok.com/portal/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok-business/` | POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/` (json); POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/refresh_token/` (json) |
-| `reddit` | Reddit | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | https://www.reddit.com/prefs/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/reddit` | POST `www.reddit.com/api/v1/access_token` (basic) |
-| `pinterest` | Pinterest | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` | https://developers.pinterest.com/apps/ | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/pinterest` | POST `api.pinterest.com/v5/oauth/token` (basic) |
-| `discord` | Discord | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | https://discord.com/developers/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/discord` | POST `discord.com/api/oauth2/token` (basic) |
-| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/slack`, `https://<app>.<APP_BASE_DOMAIN>/integrations/slack/callback` | POST `slack.com/api/oauth.v2.access` (form) |
-| `mastodon` | Mastodon | `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET`, `MASTODON_URL` | `<MASTODON_URL>/settings/applications` | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/mastodon` | POST `<MASTODON_URL>/oauth/token` (form) |
-| `kick` | Kick | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` | https://kick.com/settings/developer | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/kick` | POST `id.kick.com/oauth/token` (form) |
-| `twitch` | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | https://dev.twitch.tv/console/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/twitch` | POST `id.twitch.tv/oauth2/token` (form) |
-| `tumblr` | Tumblr | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` | https://www.tumblr.com/oauth/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tumblr` | POST `api.tumblr.com/v2/oauth2/token` (form) |
-| `dribbble` | Dribbble | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` | https://dribbble.com/account/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/dribbble` | POST `dribbble.com/oauth/token` (query) |
-| `google-workspace` | Google (Gmail, Calendar, Search Console and Analytics) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/google/callback` | POST `oauth2.googleapis.com/token` (form) |
-| `microsoft-365` | Microsoft 365 (Outlook mail and calendar) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `https://<app>.<APP_BASE_DOMAIN>/integrations/microsoft/callback` | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
+| Capability | Provider | Gateway secrets | Developer console | Token endpoints the gateway completes (where the client goes) |
+| --- | --- | --- | --- | --- |
+| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | POST `slack.com/api/oauth.v2.access` (form) |
+| `google-workspace` | Google (Gmail, Calendar, Search Console and Analytics) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | POST `oauth2.googleapis.com/token` (form) |
+| `microsoft-365` | Microsoft 365 (Outlook mail and calendar) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
 
-The commands, one per network you offer (each prompts for the values):
+The commands, one per client you offer (each prompts for the values):
 
 ```bash
-pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET
-pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET
-pnpm everyapp secret set INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET
-pnpm everyapp secret set THREADS_APP_ID THREADS_APP_SECRET
-pnpm everyapp secret set YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET
-pnpm everyapp secret set TIKTOK_CLIENT_ID TIKTOK_CLIENT_SECRET
-pnpm everyapp secret set TIKTOK_BUSINESS_CLIENT_ID TIKTOK_BUSINESS_CLIENT_SECRET
-pnpm everyapp secret set REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET
-pnpm everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET
-pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
 pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
-pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL
-pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET
-pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET
-pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET
-pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET
 pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET
 pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET
 ```
@@ -608,22 +578,7 @@ The authorize page each client sends people to, and the scopes the operator allo
 
 | Capability | Authorize URL | Scopes |
 | --- | --- | --- |
-| `linkedin` | `https://www.linkedin.com/oauth/v2/authorization` | `openid`, `profile`, `w_member_social`, `r_basicprofile`, `rw_organization_admin`, `w_organization_social`, `r_organization_social` |
-| `facebook` | `https://www.facebook.com/v25.0/dialog/oauth` | `pages_show_list`, `business_management`, `pages_manage_posts`, `pages_manage_engagement`, `pages_read_engagement`, `read_insights`, `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`, `instagram_manage_insights` |
-| `instagram` | `https://www.instagram.com/oauth/authorize` | `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments`, `instagram_business_manage_insights` |
-| `threads` | `https://threads.net/oauth/authorize` | `threads_basic`, `threads_content_publish`, `threads_manage_replies`, `threads_manage_insights` |
-| `youtube` | `https://accounts.google.com/o/oauth2/v2/auth` | `https://www.googleapis.com/auth/userinfo.profile`, `https://www.googleapis.com/auth/userinfo.email`, `https://www.googleapis.com/auth/youtube`, `https://www.googleapis.com/auth/youtube.force-ssl`, `https://www.googleapis.com/auth/youtube.readonly`, `https://www.googleapis.com/auth/youtube.upload`, `https://www.googleapis.com/auth/youtubepartner`, `https://www.googleapis.com/auth/yt-analytics.readonly`, `https://www.googleapis.com/auth/business.manage` |
-| `tiktok` | `https://www.tiktok.com/v2/auth/authorize/` | `video.list`, `user.info.basic`, `video.publish`, `video.upload`, `user.info.profile`, `user.info.stats` |
-| `tiktok-business` | `https://www.tiktok.com/v2/auth/authorize/` | `user.info.basic`, `user.info.username`, `user.info.stats`, `video.list`, `video.upload`, `video.publish` |
-| `reddit` | `https://www.reddit.com/api/v1/authorize` | `read`, `identity`, `submit`, `flair` |
-| `pinterest` | `https://www.pinterest.com/oauth/` | `boards:read`, `boards:write`, `pins:read`, `pins:write`, `user_accounts:read` |
-| `discord` | `https://discord.com/oauth2/authorize` | `bot`, `identify`, `guilds` |
 | `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `groups:read`, `users:read`, `users:read.email`, `chat:write`, `chat:write.public`, `chat:write.customize`, `channels:join`, `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `im:write`, `files:write`, `channels:write` |
-| `mastodon` | `<MASTODON_URL>/oauth/authorize` | `write:statuses`, `profile`, `write:media` |
-| `kick` | `https://id.kick.com/oauth/authorize` | `chat:write`, `user:read`, `channel:read` |
-| `twitch` | `https://id.twitch.tv/oauth2/authorize` | `user:write:chat`, `user:read:chat`, `moderator:manage:announcements` |
-| `tumblr` | `https://www.tumblr.com/oauth2/authorize` | `write`, `offline_access` |
-| `dribbble` | `https://dribbble.com/oauth/authorize` | `public`, `upload` |
 | `google-workspace` | `https://accounts.google.com/o/oauth2/v2/auth` | `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/webmasters.readonly`, `https://www.googleapis.com/auth/analytics.readonly` |
 | `microsoft-365` | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | `offline_access`, `User.Read`, `Mail.Read`, `Calendars.Read` |
 

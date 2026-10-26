@@ -129,22 +129,6 @@ describe("authorizeUrl", () => {
     expect(url.searchParams.has("user_scope")).toBe(false);
   });
 
-  // Mastodon and LinkedIn have no scope sets, so the helper refuses them.
-  it.each([
-    ["mastodon", { ...READY, origin: "https://fosstodon.org" }],
-    ["linkedin", READY],
-  ] as const)(
-    "refuses %s, a client without scope sets, naming the ones it builds for",
-    (provider, status) => {
-      const build = () =>
-        authorizeUrl({ provider, status, redirectUri: CALLBACK, state: "st" });
-      expect(build).toThrow(TypeError);
-      expect(build).toThrow(
-        `clients with scope sets (slack, google-workspace, microsoft-365); build ${CAPABILITIES[provider].label}'s authorize URL yourself from the status's clientId`,
-      );
-    },
-  );
-
   it.each([
     ["not ready", { ...GOOGLE, ready: false }, /needs a ready status/],
     ["without a clientId", { ...GOOGLE, clientId: undefined }, /clientId/],
@@ -207,7 +191,7 @@ describe("authorizeUrl", () => {
   it("refuses a provider that isn't an OAuth client", () => {
     expect(() =>
       authorizeUrl({
-        provider: "dataforseo" as "linkedin",
+        provider: "dataforseo" as "slack",
         status: READY,
         redirectUri: CALLBACK,
         state: "st",

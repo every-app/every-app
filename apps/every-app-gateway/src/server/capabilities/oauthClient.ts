@@ -15,7 +15,7 @@
  * holds tokens; API calls don't pass through it.
  *
  *   GET|POST /api/integrations/<id>/<token host><token path>   the provider's answer
- *   GET      /api/integrations/<id>                            { capability, requested, configured, ready, clientId?, origin?, scopeSets?, scopes?, userScopes? }
+ *   GET      /api/integrations/<id>                            { capability, requested, configured, ready, clientId?, scopeSets?, scopes?, userScopes? }
  */
 import {
   CATALOG,
@@ -28,7 +28,6 @@ import {
   injectClientCredentials,
   jsonObject,
   oauthClientCredentials,
-  oauthClientOrigin,
   parseIntegrationProxyPath,
   requestedGrantType,
   requestedScopes,
@@ -128,7 +127,6 @@ export function oauthClientStatus({
       : bound
         ? oauthClientCredentials(capability, env)
         : null;
-  const origin = client ? oauthClientOrigin(capability, env) : null;
   const policy = capability.scopePolicy;
   // A requested client the gateway doesn't hold: what to set. A missing
   // connection is the person's to make (`connectPath`), not a setting.
@@ -171,7 +169,6 @@ export function oauthClientStatus({
       configured: Boolean(client),
       ready: readiness(sets),
       ...(client ? { clientId: client.clientId } : {}),
-      ...(origin ? { origin } : {}),
       scopeSets: sets,
       scopes,
       ...(userScopes.length > 0 ? { userScopes } : {}),
@@ -184,7 +181,6 @@ export function oauthClientStatus({
     configured: Boolean(client),
     ready: readiness(null),
     ...(client ? { clientId: client.clientId } : {}),
-    ...(origin ? { origin } : {}),
     ...extra,
   });
 }
@@ -247,10 +243,6 @@ export async function handleOAuthClientCall({
 }): Promise<Response> {
   const notConfigured = () =>
     notConfiguredRefusal(clientSetup(capability, setupCommand ?? null));
-  // An instance setting that isn't an https origin: no call can go through.
-  if (capability.hostSetting && !oauthClientOrigin(capability, env)) {
-    return notConfigured();
-  }
 
   // 1. Token endpoints only, each with its methods.
   const url = new URL(request.url);

@@ -555,8 +555,7 @@ function hostsOf(capability: Capability): { hosts: string[]; hostSetting?: strin
       return { hosts: [new URL(capability.origin).host] };
     case "oauth_client":
       return {
-        hosts: [...new Set(capability.token.flatMap((endpoint) => (endpoint.host ? [endpoint.host] : [])))],
-        ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
+        hosts: [...new Set(capability.token.map((endpoint) => endpoint.host))],
       };
     case "service":
       return { hosts: [] };
@@ -576,6 +575,23 @@ function appsUsing(
       return Boolean(app.manifest.capabilities && Object.hasOwn(app.manifest.capabilities, id));
     })
     .map((app) => app.appSlug);
+}
+
+/**
+ * The redirect URIs the apps listing OAuth client `id` declare in their
+ * manifest entry (`redirectPaths`), on each app's host under the Gateway's
+ * (`https://<app>.<gateway host><path>`): the callbacks of apps that run
+ * the flow themselves, which the operator registers beside the Gateway's.
+ */
+function appCallbacks(apps: Awaited<ReturnType<typeof listApps>>, id: string, gatewayUrl: string): string[] {
+  const gatewayHost = new URL(gatewayUrl).host;
+  return apps.flatMap((app) => {
+    const entry = app.manifest?.capabilities?.[id] as { redirectPaths?: unknown } | undefined;
+    if (!entry || !Array.isArray(entry.redirectPaths)) return [];
+    return entry.redirectPaths
+      .filter((path): path is string => typeof path === "string")
+      .map((path) => `https://${app.appSlug}.${gatewayHost}${path}`);
+  });
 }
 
 /** One provider as `provider list --json` reports it. */
@@ -747,7 +763,6 @@ function specOf(id: string, capability: Capability, registry?: ProviderRegistry)
         settings,
         tokenEndpoints: describeTokenEndpoints(capability).split(", "),
         authorize: { url: capability.authorize.url, scopes: [...capability.authorize.scopes] },
-        redirectPaths: [...capability.redirectPaths],
         ...(capability.scopePolicy
           ? {
               scopeSets: Object.entries(capability.scopePolicy.sets).map(([name, set]) => ({
@@ -760,7 +775,6 @@ function specOf(id: string, capability: Capability, registry?: ProviderRegistry)
               })),
             }
           : {}),
-        ...(capability.hostSetting ? { hostSetting: capability.hostSetting } : {}),
         ...(capability.setup ? { setup: capability.setup } : {}),
       };
     case "service":
@@ -823,6 +837,7 @@ export async function showProvider(
     saved = devProviderFile(id);
   }
   const using = appsUsing(apps, id, capability);
+  const appRedirectUris = capability.mode === "oauth_client" ? appCallbacks(apps, id, gateway.gatewayUrl) : [];
   const bound = registry.bound(id);
   const oauth = isOAuthCapability(capability)
     ? oauthFacts(id, capability, {
@@ -856,6 +871,9 @@ export async function showProvider(
           `${String(oauth["connections"])} connected; people connect at ${gateway.gatewayUrl}/connect/${id}.`,
         ]
       : []),
+    ...(appRedirectUris.length > 0
+      ? [`Apps that run the flow themselves list these callbacks; register them too: ${appRedirectUris.join(", ")}`]
+      : []),
     using.length > 0 ? `Used by ${listed(using)}.` : "No app lists it yet.",
     ...(() => {
       const added = registry.scopeSets().filter((set) => set.providerId === id);
@@ -874,6 +892,7 @@ export async function showProvider(
       source: row ? "row" : "catalog",
       bound,
       ...(oauth ?? {}),
+      ...(capability.mode === "oauth_client" ? { appRedirectUris } : {}),
       addedBy: row?.addedBy ?? null,
       addedAt: row?.addedAt ?? null,
       apps: using,

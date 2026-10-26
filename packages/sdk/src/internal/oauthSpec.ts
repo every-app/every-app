@@ -797,7 +797,6 @@ export function parseOAuthUserSpec(
     authorize: { url: authorize.url, scopes: union },
     scopePolicy: policy,
     api: [...common.hosts],
-    redirectPaths: [],
     flow,
     ...(common.readMethods === undefined
       ? {}

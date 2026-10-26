@@ -49,8 +49,7 @@ export function isInstallOwnedGatewaySetting(name: string): boolean {
 
 /**
  * The settings the catalog's providers read (the AI providers' keys, the
- * API-key providers' keys, the OAuth clients and the Mastodon instance's
- * URL), in catalog order, the install's own left out: what `everyapp
+ * API-key providers' keys and hosts, the OAuth clients), in catalog order, the install's own left out: what `everyapp
  * secret set` accepts because a provider reads it. A gateway's registered
  * rows add theirs at run time (providerRegistry.settingNames()).
  */
@@ -175,22 +174,8 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const satisfies readonly SettableGatewaySetting[];
 
-/**
- * The settings naming the instance an OAuth client is registered on
- * (`hostSetting` in the catalog: Mastodon's `MASTODON_URL`), in catalog
- * order: an origin, a plain value.
- */
-export const OAUTH_CLIENT_HOST_SETTINGS: readonly string[] =
-  CAPABILITY_IDS.flatMap((id) => {
-    const capability: Capability = CAPABILITIES[id];
-    return capability.mode === "oauth_client" && capability.hostSetting
-      ? [capability.hostSetting]
-      : [];
-  });
-
 const PLAIN: ReadonlySet<string> = new Set([
   ...PLAIN_GATEWAY_SETTINGS,
-  ...OAUTH_CLIENT_HOST_SETTINGS,
   // The sign-in providers' ids, issuer, label and tenant; their client
   // secrets are credentials.
   ...PLAIN_SIGN_IN_SETTINGS,

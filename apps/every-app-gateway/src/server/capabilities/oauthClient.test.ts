@@ -37,54 +37,28 @@ beforeAll(() => {
 
 const PROPS: AppCallerProps = {
   organizationId: "org-1",
-  appId: "postiz",
-  workerName: "every-acme-postiz",
-};
-const POSTIZ = {
-  capabilities: {
-    linkedin: { access: "write", why: "Connects LinkedIn channels." },
-    reddit: { access: "write" },
-    facebook: { access: "write" },
-    instagram: { access: "write" },
-    tiktok: { access: "write" },
-    "tiktok-business": { access: "write" },
-    mastodon: { access: "write" },
-  },
+  appId: "crm",
+  workerName: "every-acme-crm",
 };
 /** The gateway's clients: what upstream must see, and no log ever. */
 const CLIENTS = {
-  LINKEDIN_CLIENT_ID: "gw-linkedin-id",
-  LINKEDIN_CLIENT_SECRET: "gw-linkedin-secret",
-  REDDIT_CLIENT_ID: "gw-reddit-id",
-  REDDIT_CLIENT_SECRET: "gw-reddit-secret",
-  FACEBOOK_APP_ID: "gw-facebook-id",
-  FACEBOOK_APP_SECRET: "gw-facebook-secret",
-  INSTAGRAM_APP_ID: "gw-instagram-id",
-  INSTAGRAM_APP_SECRET: "gw-instagram-secret",
-  TIKTOK_CLIENT_ID: "gw-tiktok-key",
-  TIKTOK_CLIENT_SECRET: "gw-tiktok-secret",
-  TIKTOK_BUSINESS_CLIENT_ID: "gw-tiktok-business-id",
-  TIKTOK_BUSINESS_CLIENT_SECRET: "gw-tiktok-business-secret",
-  MASTODON_CLIENT_ID: "gw-mastodon-id",
-  MASTODON_CLIENT_SECRET: "gw-mastodon-secret",
   GOOGLE_WORKSPACE_CLIENT_ID: "gw-google-id",
   GOOGLE_WORKSPACE_CLIENT_SECRET: "gw-google-secret",
   MICROSOFT_365_CLIENT_ID: "gw-microsoft-id",
   MICROSOFT_365_CLIENT_SECRET: "gw-microsoft-secret",
 };
-const LINKEDIN =
-  "/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken";
 const GOOGLE = "/api/integrations/google-workspace/oauth2.googleapis.com/token";
 const MICROSOFT =
   "/api/integrations/microsoft-365/login.microsoftonline.com/common/oauth2/v2.0/token";
 const FORM = "application/x-www-form-urlencoded";
-/** A token response: it reaches the app, never a log. */
+const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
+/** A token response within `gmail.read`: it reaches the app, never a log. */
 const TOKENS = {
   access_token: "user-access-token-123",
   refresh_token: "user-refresh-token-456",
   expires_in: 3600,
+  scope: GMAIL,
 };
-const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
 const CALENDAR = "https://www.googleapis.com/auth/calendar.readonly";
 const WEBMASTERS = "https://www.googleapis.com/auth/webmasters.readonly";
 /** Google's answer to an app with `gmail.read`: its `scope` is what the gateway checks. */
@@ -178,19 +152,19 @@ afterEach(() => {
 });
 
 function app(
-  manifest: Record<string, unknown> = POSTIZ,
+  manifest: Record<string, unknown> = GOOGLE_APP(["gmail.read"]),
   overrides: Partial<RegisteredApp> = {},
 ): RegisteredApp {
   return {
-    appId: "postiz",
-    hostname: "postiz.example.com",
-    workerName: "every-acme-postiz",
+    appId: "crm",
+    hostname: "crm.example.com",
+    workerName: "every-acme-crm",
     tier: "service_binding",
     scope: "org",
     organizationId: "org-1",
     status: "active",
     // Tolerant, as the registry reads a deployed row.
-    manifest: validateManifest({ id: "postiz", ...manifest }),
+    manifest: validateManifest({ id: "crm", ...manifest }),
     ...overrides,
   };
 }
@@ -252,7 +226,7 @@ function identity(channel: "web" | "mcp", scopes?: string[]): Promise<string> {
       orgId: "org-1",
       orgRole: "member",
     },
-    audience: "every-acme-postiz",
+    audience: "every-acme-crm",
     issuer: "https://home.example.com",
     channel,
     ...(scopes ? { scopes } : {}),
@@ -296,27 +270,27 @@ function allLogLines(): string {
 const APP_CLIENT = /app-(id|secret)|Basic YXBw/;
 
 describe("token endpoint calls", () => {
-  it("form: LinkedIn gets the gateway's client in the body, never the app's", async () => {
-    const response = await call(LINKEDIN, {
+  it("form: Google gets the gateway's client in the body, never the app's", async () => {
+    const response = await call(GOOGLE, {
       headers: {
         "content-type": FORM,
         authorization: "Basic YXBwOmFwcA==",
         cookie: "a=b",
         "x-everyapp-identity": await identity("web"),
       },
-      body: "grant_type=authorization_code&code=the-code&redirect_uri=https%3A%2F%2Fpostiz.example.com%2Fintegrations%2Fsocial%2Flinkedin&client_id=app-id&client_secret=app-secret",
+      body: "grant_type=authorization_code&code=the-code&redirect_uri=https%3A%2F%2Fcrm.example.com%2Fintegrations%2Fgoogle%2Fcallback&client_id=app-id&client_secret=app-secret",
     });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(TOKENS);
     const [sent] = seen;
-    expect(sent?.url).toBe("https://www.linkedin.com/oauth/v2/accessToken");
+    expect(sent?.url).toBe("https://oauth2.googleapis.com/token");
     expect(Object.fromEntries(new URLSearchParams(sent?.body))).toEqual({
       grant_type: "authorization_code",
       code: "the-code",
-      redirect_uri: "https://postiz.example.com/integrations/social/linkedin",
-      client_id: "gw-linkedin-id",
-      client_secret: "gw-linkedin-secret",
+      redirect_uri: "https://crm.example.com/integrations/google/callback",
+      client_id: "gw-google-id",
+      client_secret: "gw-google-secret",
     });
     expect(sent?.headers.get("authorization")).toBeNull();
     expect(sent?.headers.get("cookie")).toBeNull();
@@ -326,139 +300,49 @@ describe("token endpoint calls", () => {
     expect(sent?.redirect).toBe("manual");
   });
 
-  it("form: TikTok gets its client id as client_key", async () => {
-    await call("/api/integrations/tiktok/open.tiktokapis.com/v2/oauth/token/", {
-      headers: { "content-type": FORM },
-      body: "client_key=app-id&client_secret=app-secret&grant_type=refresh_token&refresh_token=r",
-    });
-    const params = new URLSearchParams(seen[0]?.body);
-    expect(params.getAll("client_key")).toEqual(["gw-tiktok-key"]);
-    expect(params.getAll("client_secret")).toEqual(["gw-tiktok-secret"]);
-    expect(params.has("client_id")).toBe(false);
-    expect(seen[0]?.body).not.toMatch(APP_CLIENT);
-  });
-
-  it("basic: Reddit gets HTTP Basic with the gateway's client, and no client in the body", async () => {
-    await call("/api/integrations/reddit/www.reddit.com/api/v1/access_token", {
-      headers: { "content-type": FORM, authorization: "Basic YXBwOmFwcA==" },
-      body: "grant_type=refresh_token&refresh_token=r&client_secret=app-secret",
-    });
-    const [sent] = seen;
-    expect(sent?.headers.get("authorization")).toBe(
-      `Basic ${btoa("gw-reddit-id:gw-reddit-secret")}`,
-    );
-    expect(sent?.body).toBe("grant_type=refresh_token&refresh_token=r");
-    expect(JSON.stringify([...sent!.headers, sent!.body])).not.toMatch(
-      APP_CLIENT,
-    );
-  });
-
-  it("query: Meta gets the client in the query string, on any Graph API version", async () => {
-    const response = await call(
-      "/api/integrations/facebook/graph.facebook.com/v25.0/oauth/access_token?client_id=app-id&client_secret=app-secret&redirect_uri=https%3A%2F%2Fpostiz.example.com%2Fcb&code=c",
-      { method: "GET" },
-    );
-    expect(response.status).toBe(200);
-    const sent = new URL(seen[0]!.url);
-    expect(sent.origin + sent.pathname).toBe(
-      "https://graph.facebook.com/v25.0/oauth/access_token",
-    );
-    expect(sent.searchParams.getAll("client_id")).toEqual(["gw-facebook-id"]);
-    expect(sent.searchParams.getAll("client_secret")).toEqual([
-      "gw-facebook-secret",
-    ]);
-    expect(sent.searchParams.get("code")).toBe("c");
-    expect(seen[0]?.url).not.toMatch(APP_CLIENT);
-
-    // The long-lived exchange, on another version.
-    await call(
-      "/api/integrations/facebook/graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&fb_exchange_token=t",
-      { method: "GET" },
-    );
-    expect(seen[1]?.url).toContain("client_secret=gw-facebook-secret");
-  });
-
-  it("json: TikTok Business gets the client in the JSON body", async () => {
-    await call(
-      "/api/integrations/tiktok-business/business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/",
-      {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          client_id: "app-id",
-          client_secret: "app-secret",
-          grant_type: "authorization_code",
-          auth_code: "c",
-        }),
-      },
-    );
-    expect(JSON.parse(seen[0]!.body)).toEqual({
-      grant_type: "authorization_code",
-      auth_code: "c",
-      client_id: "gw-tiktok-business-id",
-      client_secret: "gw-tiktok-business-secret",
-    });
-  });
-
-  it("form then query: Instagram's two endpoints each get their own rule", async () => {
-    await call(
-      "/api/integrations/instagram/api.instagram.com/oauth/access_token",
-      { headers: { "content-type": FORM }, body: "code=c" },
-    );
-    await call(
-      "/api/integrations/instagram/graph.instagram.com/access_token?grant_type=ig_exchange_token&access_token=short",
-      { method: "GET" },
-    );
-    expect(seen[0]?.body).toBe(
-      "code=c&client_id=gw-instagram-id&client_secret=gw-instagram-secret",
-    );
-    expect(seen[1]?.url).toBe(
-      "https://graph.instagram.com/access_token?grant_type=ig_exchange_token&access_token=short&client_id=gw-instagram-id&client_secret=gw-instagram-secret",
-    );
-  });
-
   it("drops the provider's cookies and passes the rest of its answer through", async () => {
-    const response = await call(LINKEDIN, {
+    const response = await call(GOOGLE, {
       headers: { "content-type": FORM },
-      body: "code=c",
+      body: EXCHANGE,
     });
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(response.headers.get("x-provider")).toBe("1");
   });
 
   it("logs the call and its grant type, never the client, the code or the tokens", async () => {
-    await call(LINKEDIN, {
+    await call(GOOGLE, {
       headers: {
         "content-type": FORM,
         "x-everyapp-identity": await identity("web"),
       },
       body: "grant_type=refresh_token&refresh_token=user-refresh-token-456",
     });
-    await call(
-      "/api/integrations/facebook/graph.facebook.com/v25.0/oauth/access_token?code=the-code",
-      { method: "GET" },
-    );
+    await call(GOOGLE, {
+      headers: { "content-type": FORM },
+      body: EXCHANGE,
+    });
 
     expect(proxyLogs()).toEqual([
-      {
+      expect.objectContaining({
         evt: "integration.proxy.call",
-        capability: "linkedin",
+        capability: "google-workspace",
         organizationId: "org-1",
-        appId: "postiz",
-        worker: "every-acme-postiz",
+        appId: "crm",
+        worker: "every-acme-crm",
         orgSource: "props",
-        host: "www.linkedin.com",
-        path: "/oauth/v2/accessToken",
+        host: "oauth2.googleapis.com",
+        path: "/token",
         method: "POST",
         grantType: "refresh_token",
         attribution: "user",
         userId: "user-1",
         status: 200,
-      },
+      }),
       expect.objectContaining({
-        capability: "facebook",
-        path: "/v25.0/oauth/access_token",
-        method: "GET",
-        grantType: null,
+        capability: "google-workspace",
+        path: "/token",
+        method: "POST",
+        grantType: "authorization_code",
         attribution: "app",
       }),
     ]);
@@ -480,14 +364,11 @@ describe("token endpoint calls", () => {
   it("answers 502 when the provider can't be reached, logging no URL", async () => {
     upstream.mockRejectedValueOnce(
       new TypeError(
-        "fetch failed: https://graph.facebook.com/v25.0/oauth/access_token?client_secret=gw-facebook-secret",
+        "fetch failed: https://oauth2.googleapis.com/token?client_secret=gw-google-secret",
       ),
     );
     await expectRefusal(
-      call(
-        "/api/integrations/facebook/graph.facebook.com/v25.0/oauth/access_token?code=c",
-        { method: "GET" },
-      ),
+      call(GOOGLE, { headers: { "content-type": FORM }, body: EXCHANGE }),
       502,
       "integration_upstream_failed",
     );
@@ -496,93 +377,27 @@ describe("token endpoint calls", () => {
     expect(JSON.stringify(errors)).toContain(
       "integration.proxy.upstream_failed",
     );
-    expect(JSON.stringify(errors)).not.toContain("gw-facebook-secret");
-  });
-});
-
-describe("Mastodon's instance", () => {
-  const TOKEN = (host: string) =>
-    `/api/integrations/mastodon/${host}/oauth/token`;
-
-  it("is mastodon.social when MASTODON_URL is unset", async () => {
-    const response = await call(TOKEN("mastodon.social"), {
-      headers: { "content-type": FORM },
-      body: "grant_type=authorization_code&code=c",
-    });
-    expect(response.status).toBe(200);
-    expect(seen[0]?.url).toBe("https://mastodon.social/oauth/token");
-    expect(seen[0]?.body).toContain("client_secret=gw-mastodon-secret");
-  });
-
-  it("is the instance MASTODON_URL names, and only that one", async () => {
-    const env = { MASTODON_URL: "https://fosstodon.org" };
-    expect(
-      (
-        await call(TOKEN("fosstodon.org"), {
-          env,
-          headers: { "content-type": FORM },
-          body: "code=c",
-        })
-      ).status,
-    ).toBe(200);
-    expect(seen[0]?.url).toBe("https://fosstodon.org/oauth/token");
-    await expectRefusal(
-      call(TOKEN("mastodon.social"), { env, body: "code=c" }),
-      403,
-      "integration_path_not_allowed",
-    );
-    expect(seen).toHaveLength(1);
-  });
-
-  it("isn't set up while MASTODON_URL isn't an https origin", async () => {
-    const body = await expectRefusal(
-      call(TOKEN("fosstodon.org"), {
-        env: { MASTODON_URL: "http://fosstodon.org" },
-        body: "code=c",
-      }),
-      503,
-      "integration_not_configured",
-    );
-    expect(body).toMatchObject({
-      settings: [
-        "MASTODON_CLIENT_ID",
-        "MASTODON_CLIENT_SECRET",
-        "MASTODON_URL",
-      ],
-      command: "pnpm everyapp configure postiz",
-    });
+    expect(JSON.stringify(errors)).not.toContain("gw-google-secret");
   });
 });
 
 describe("refusals", () => {
   it.each([
     [
-      "the provider's API on its own host",
-      "/api/integrations/linkedin/api.linkedin.com/v2/me",
-    ],
-    [
       "another path on the token host",
-      "/api/integrations/linkedin/www.linkedin.com/oauth/v2/authorization",
-    ],
-    [
-      "Meta's API on the token host",
-      "/api/integrations/facebook/graph.facebook.com/v25.0/me/accounts",
-    ],
-    [
-      "an unversioned Meta path",
-      "/api/integrations/facebook/graph.facebook.com/oauth/access_token",
+      "/api/integrations/google-workspace/oauth2.googleapis.com/revoke",
     ],
     [
       "a host none of its endpoints is on",
-      "/api/integrations/linkedin/evil.example/oauth/v2/accessToken",
+      "/api/integrations/google-workspace/evil.example/token",
     ],
     [
       "another client's endpoint",
-      "/api/integrations/linkedin/www.reddit.com/api/v1/access_token",
+      "/api/integrations/google-workspace/login.microsoftonline.com/common/oauth2/v2.0/token",
     ],
     [
       "a path that could leave the host",
-      "/api/integrations/linkedin/www.linkedin.com//evil.example/oauth/v2/accessToken",
+      "/api/integrations/google-workspace/oauth2.googleapis.com//evil.example/token",
     ],
   ])("refuses %s", async (_case, path) => {
     const body = await expectRefusal(
@@ -596,45 +411,35 @@ describe("refusals", () => {
 
   it("refuses a method the endpoint doesn't take", async () => {
     await expectRefusal(
-      call(LINKEDIN, { method: "GET" }),
+      call(GOOGLE, { method: "GET" }),
       403,
       "integration_path_not_allowed",
     );
     await expectRefusal(
-      call(LINKEDIN, { method: "PUT", body: "code=c" }),
+      call(GOOGLE, { method: "PUT", body: "code=c" }),
       403,
       "integration_path_not_allowed",
     );
     expect(upstream).not.toHaveBeenCalled();
   });
 
-  it("refuses an app that doesn't list the client, or lists it for reading", async () => {
+  it("refuses an app that doesn't list the client", async () => {
     const body = await expectRefusal(
-      call(LINKEDIN, {
-        manifest: { capabilities: { reddit: { access: "write" } } },
-        body: "code=c",
+      call(GOOGLE, {
+        manifest: { capabilities: { dataforseo: { access: "read" } } },
+        body: EXCHANGE,
+        headers: { "content-type": FORM },
       }),
       403,
       "capability_not_requested",
     );
-    expect(body["message"]).toContain(
-      'capabilities: { "linkedin": { access: "write" } }',
-    );
-    // The registry's tolerant read keeps a `read` entry; it grants nothing.
-    await expectRefusal(
-      call(LINKEDIN, {
-        manifest: { capabilities: { linkedin: { access: "read" } } },
-        body: "code=c",
-      }),
-      403,
-      "capability_not_requested",
-    );
+    expect(body["message"]).toContain('"google-workspace"');
     expect(upstream).not.toHaveBeenCalled();
   });
 
   it("refuses the client-credentials grant, which would mint a token for the gateway's own client", async () => {
     const body = await expectRefusal(
-      call(LINKEDIN, {
+      call(GOOGLE, {
         body: "grant_type=client_credentials",
         headers: { "content-type": FORM },
       }),
@@ -642,18 +447,9 @@ describe("refusals", () => {
       "integration_grant_not_allowed",
     );
     expect(body["message"]).toMatch(/user's grants only/);
-    // In the query string, as Meta's endpoints take it; and any grant the
-    // gateway doesn't know.
+    // Any grant the gateway doesn't know.
     await expectRefusal(
-      call(
-        "/api/integrations/facebook/graph.facebook.com/v25.0/oauth/access_token?grant_type=client_credentials",
-        { method: "GET" },
-      ),
-      403,
-      "integration_grant_not_allowed",
-    );
-    await expectRefusal(
-      call(LINKEDIN, {
+      call(GOOGLE, {
         body: "grant_type=password&username=u&password=p",
         headers: { "content-type": FORM },
       }),
@@ -666,7 +462,7 @@ describe("refusals", () => {
   it("refuses an agent: agents can't connect accounts or mint tokens", async () => {
     for (const scopes of [undefined, ["mcp:write"]]) {
       await expectRefusal(
-        call(LINKEDIN, {
+        call(GOOGLE, {
           headers: {
             "content-type": FORM,
             "x-everyapp-identity": await identity("mcp", scopes),
@@ -682,17 +478,20 @@ describe("refusals", () => {
 
   it("answers 503 naming the command when the gateway has no client", async () => {
     for (const env of [
-      { LINKEDIN_CLIENT_ID: undefined },
-      { LINKEDIN_CLIENT_SECRET: " " },
+      { GOOGLE_WORKSPACE_CLIENT_ID: undefined },
+      { GOOGLE_WORKSPACE_CLIENT_SECRET: " " },
     ]) {
       const body = await expectRefusal(
-        call(LINKEDIN, { env, body: "code=c" }),
+        call(GOOGLE, { env, body: "code=c" }),
         503,
         "integration_not_configured",
       );
       expect(body).toMatchObject({
-        settings: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
-        command: "pnpm everyapp configure postiz",
+        settings: [
+          "GOOGLE_WORKSPACE_CLIENT_ID",
+          "GOOGLE_WORKSPACE_CLIENT_SECRET",
+        ],
+        command: "pnpm everyapp configure crm",
       });
     }
     expect(upstream).not.toHaveBeenCalled();
@@ -701,7 +500,7 @@ describe("refusals", () => {
   it("refuses a body over 64 KiB, declared or streamed", async () => {
     const big = `code=${"x".repeat(64 * 1024)}`;
     await expectRefusal(
-      call(LINKEDIN, { headers: { "content-type": FORM }, body: big }),
+      call(GOOGLE, { headers: { "content-type": FORM }, body: big }),
       413,
       "integration_body_too_large",
     );
@@ -714,7 +513,7 @@ describe("refusals", () => {
       },
     });
     await expectRefusal(
-      call(LINKEDIN, { headers: { "content-type": FORM }, body: stream }),
+      call(GOOGLE, { headers: { "content-type": FORM }, body: stream }),
       413,
       "integration_body_too_large",
     );
@@ -723,7 +522,7 @@ describe("refusals", () => {
 
   it("refuses a body it can't put the client in", async () => {
     const body = await expectRefusal(
-      call(LINKEDIN, {
+      call(GOOGLE, {
         headers: { "content-type": "multipart/form-data; boundary=x" },
         body: '--x\r\nContent-Disposition: form-data; name="client_secret"\r\n\r\napp-secret\r\n--x--',
       }),
@@ -797,8 +596,8 @@ describe("scope sets: Google and Microsoft", () => {
         evt: "integration.proxy.call",
         capability: "google-workspace",
         organizationId: "org-1",
-        appId: "postiz",
-        worker: "every-acme-postiz",
+        appId: "crm",
+        worker: "every-acme-crm",
         orgSource: "props",
         host: "oauth2.googleapis.com",
         path: "/token",
@@ -921,8 +720,8 @@ describe("scope sets: Google and Microsoft", () => {
         evt: "integration.proxy.scope_refused",
         capability: "google-workspace",
         organizationId: "org-1",
-        appId: "postiz",
-        worker: "every-acme-postiz",
+        appId: "crm",
+        worker: "every-acme-crm",
         orgSource: "props",
         host: "oauth2.googleapis.com",
         path: "/token",
@@ -1062,21 +861,6 @@ describe("scope sets: Google and Microsoft", () => {
     );
     expect(refused["message"]).toMatch(/user's grants only/);
     expect(upstream).not.toHaveBeenCalled();
-  });
-
-  it("still completes LinkedIn's exchanges, which have no policy", async () => {
-    for (const body of [
-      "code=c",
-      "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=t",
-    ]) {
-      const response = await call(LINKEDIN, {
-        headers: { "content-type": FORM },
-        body,
-      });
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toEqual(TOKENS);
-    }
-    expect(proxyLogs()[0]).not.toHaveProperty("scopeSets");
   });
 
   it.each([
@@ -1291,40 +1075,42 @@ describe("GET /api/integrations/<client>", () => {
   }
 
   it("gives the public client id to an app that lists the client, once the gateway holds it", async () => {
-    await expect(status("linkedin")).resolves.toEqual({
-      capability: "linkedin",
-      flow: "app",
+    await expect(status("google-workspace")).resolves.toMatchObject({
+      capability: "google-workspace",
       requested: true,
       configured: true,
       ready: true,
-      clientId: "gw-linkedin-id",
+      clientId: "gw-google-id",
       settings: [],
       setup: null,
       command: null,
     });
-    await expect(
-      status("linkedin", { env: { LINKEDIN_CLIENT_SECRET: undefined } }),
-    ).resolves.toEqual({
-      capability: "linkedin",
-      flow: "app",
+    const unset = await status("google-workspace", {
+      env: { GOOGLE_WORKSPACE_CLIENT_SECRET: undefined },
+    });
+    expect(unset).toMatchObject({
+      capability: "google-workspace",
       requested: true,
       configured: false,
       ready: false,
-      settings: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
-      setup:
-        "LinkedIn isn't set up on this Gateway: it needs LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET. An admin runs: pnpm everyapp configure postiz",
-      command: "pnpm everyapp configure postiz",
+      settings: [
+        "GOOGLE_WORKSPACE_CLIENT_ID",
+        "GOOGLE_WORKSPACE_CLIENT_SECRET",
+      ],
+      setup: expect.stringContaining(
+        "it needs GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET. An admin runs: pnpm everyapp configure crm",
+      ),
+      command: "pnpm everyapp configure crm",
     });
+    expect(unset).not.toHaveProperty("clientId");
   });
 
   it("tells an app that doesn't list the client nothing, its id included", async () => {
-    await expect(
-      status("linkedin", {
-        manifest: { capabilities: { reddit: { access: "write" } } },
-      }),
-    ).resolves.toEqual({
-      capability: "linkedin",
-      flow: "app",
+    const unlisted = await status("google-workspace", {
+      manifest: { capabilities: { dataforseo: { access: "read" } } },
+    });
+    expect(unlisted).toMatchObject({
+      capability: "google-workspace",
       requested: false,
       configured: false,
       ready: false,
@@ -1332,23 +1118,8 @@ describe("GET /api/integrations/<client>", () => {
       setup: null,
       command: null,
     });
-  });
-
-  it("gives Mastodon's instance with its id", async () => {
-    await expect(
-      status("mastodon", { env: { MASTODON_URL: "fosstodon.org" } }),
-    ).resolves.toEqual({
-      capability: "mastodon",
-      flow: "app",
-      requested: true,
-      configured: true,
-      ready: true,
-      clientId: "gw-mastodon-id",
-      origin: "https://fosstodon.org",
-      settings: [],
-      setup: null,
-      command: null,
-    });
+    expect(unlisted).not.toHaveProperty("clientId");
+    expect(unlisted).not.toHaveProperty("scopes");
   });
 
   it("gives a client with a policy's sets and the exact scopes to ask for, in registry order", async () => {
@@ -1408,9 +1179,9 @@ describe("GET /api/integrations/<client>", () => {
         "GOOGLE_WORKSPACE_CLIENT_SECRET",
       ],
       setup: expect.stringContaining(
-        "An admin runs: pnpm everyapp configure postiz (or an owner or admin adds a client under Manage workspace → Providers)",
+        "An admin runs: pnpm everyapp configure crm (or an owner or admin adds a client under Manage workspace → Providers)",
       ),
-      command: "pnpm everyapp configure postiz",
+      command: "pnpm everyapp configure crm",
     });
   });
 
@@ -1439,7 +1210,7 @@ describe("GET /api/integrations/<client>", () => {
     ).resolves.toMatchObject({ configured: false, ready: false });
     await expect(
       status("google-workspace", {
-        manifest: { capabilities: { reddit: { access: "write" } } },
+        manifest: { capabilities: { dataforseo: { access: "read" } } },
       }),
     ).resolves.toEqual({
       capability: "google-workspace",

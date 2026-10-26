@@ -6,7 +6,6 @@
  */
 import {
   base64Utf8,
-  oauthClientOrigin,
   type CapabilitySettings,
   type OAuthClientCapability,
   type OAuthTokenEndpoint,
@@ -24,8 +23,7 @@ export interface OAuthClientCredentials {
 
 /**
  * The client `settings` hold for `capability`, or null until every setting
- * it needs is set: the id, the secret (unless it is a public client), and a
- * `hostSetting` that is an https origin when it is set at all.
+ * it needs is set: the id, and the secret unless it is a public client.
  */
 export function oauthClientCredentials(
   capability: OAuthClientCapability,
@@ -37,9 +35,6 @@ export function oauthClientCredentials(
     ? settingValue(settings[secretName])
     : undefined;
   if (!clientId || (secretName && !clientSecret)) return null;
-  if (capability.hostSetting && !oauthClientOrigin(capability, settings)) {
-    return null;
-  }
   return { clientId, ...(clientSecret ? { clientSecret } : {}) };
 }
 
@@ -59,51 +54,40 @@ export type InjectedTokenRequest =
   | { ok: false; problem: string };
 
 const FORM = "application/x-www-form-urlencoded";
-const JSON_TYPE = "application/json";
+
+const isCredential = (name: string) =>
+  ["client_id", "client_secret"].includes(name.toLowerCase());
 
 /**
- * `request` with `client` put where `rule` says (the form body, HTTP Basic,
- * the query string or the JSON body), and every client credential the app
- * sent removed wherever it was: the `Authorization` header, and
- * `client_id`/`client_secret` (or the rule's names for them, in any case) in
- * the query string and the body. Bodies are re-serialised from their parsed
- * values, so a crafted body can't carry a second secret past the parser.
- * Token requests are form-encoded or JSON; anything else is refused.
+ * `request` with `client` put where `rule` says (the form body or HTTP
+ * Basic), and every client credential the app sent removed wherever it
+ * was: the `Authorization` header, and `client_id`/`client_secret` (in any
+ * case) in the query string and the body. The body is re-serialised from
+ * its parsed values, so a crafted body can't carry a second secret past
+ * the parser. Token requests are form-encoded; anything else is refused.
  */
 export function injectClientCredentials(
   request: TokenRequest,
   rule: OAuthTokenEndpoint,
   client: OAuthClientCredentials,
 ): InjectedTokenRequest {
-  const idName = rule.params?.clientId ?? "client_id";
-  const secretName = rule.params?.clientSecret ?? "client_secret";
-  const credentialNames = new Set(
-    ["client_id", "client_secret", idName, secretName].map((name) =>
-      name.toLowerCase(),
-    ),
-  );
-  const isCredential = (name: string) =>
-    credentialNames.has(name.toLowerCase());
   const fields: [string, string][] = [
-    [idName, client.clientId],
+    ["client_id", client.clientId],
     ...(client.clientSecret
-      ? [[secretName, client.clientSecret] as [string, string]]
+      ? [["client_secret", client.clientSecret] as [string, string]]
       : []),
   ];
 
   // The query keeps the app's other fields as they were sent.
   const url = new URL(request.url);
-  const query = url.search
+  url.search = url.search
     .slice(1)
     .split("&")
     .filter((pair) => {
       const [name] = new URLSearchParams(pair).keys();
       return pair !== "" && !(name !== undefined && isCredential(name));
-    });
-  if (rule.inject === "query") {
-    query.push(new URLSearchParams(fields).toString());
-  }
-  url.search = query.join("&");
+    })
+    .join("&");
 
   const headers = new Headers(request.headers);
   headers.delete("authorization");
@@ -115,21 +99,14 @@ export function injectClientCredentials(
     );
   }
 
-  const type = mediaType(headers.get("content-type"));
   let body = request.body;
   if (body === null || body === "") {
-    // Nothing the app sent; the form and JSON rules make the body.
+    // Nothing the app sent; the form rule makes the body.
     if (rule.inject === "form") {
       headers.set("content-type", FORM);
       body = new URLSearchParams(fields).toString();
-    } else if (rule.inject === "json") {
-      headers.set("content-type", JSON_TYPE);
-      body = JSON.stringify(Object.fromEntries(fields));
     }
-  } else if (type === FORM) {
-    if (rule.inject === "json") {
-      return { ok: false, problem: "This token endpoint takes a JSON body." };
-    }
+  } else if (mediaType(headers.get("content-type")) === FORM) {
     const params = new URLSearchParams(body);
     for (const name of new Set([...params.keys()].filter(isCredential))) {
       params.delete(name);
@@ -138,28 +115,10 @@ export function injectClientCredentials(
       for (const [name, value] of fields) params.set(name, value);
     }
     body = params.toString();
-  } else if (type === JSON_TYPE) {
-    if (rule.inject === "form") {
-      return {
-        ok: false,
-        problem: `This token endpoint takes a form-encoded body (${FORM}).`,
-      };
-    }
-    const parsed = jsonObject(body);
-    if (!parsed) {
-      return { ok: false, problem: "The body is not a JSON object." };
-    }
-    for (const name of Object.keys(parsed)) {
-      if (isCredential(name)) delete parsed[name];
-    }
-    if (rule.inject === "json") {
-      for (const [name, value] of fields) parsed[name] = value;
-    }
-    body = JSON.stringify(parsed);
   } else {
     return {
       ok: false,
-      problem: `A token request's body is form-encoded (${FORM}) or JSON (${JSON_TYPE}).`,
+      problem: `A token request's body is form-encoded (${FORM}).`,
     };
   }
   return { ok: true, url, headers, body };
@@ -170,9 +129,6 @@ const GRANT_TYPES = new Set([
   "authorization_code",
   "refresh_token",
   "client_credentials",
-  "fb_exchange_token",
-  "ig_exchange_token",
-  "th_exchange_token",
   "urn:ietf:params:oauth:grant-type:token-exchange",
 ]);
 
@@ -180,21 +136,18 @@ const GRANT_TYPES = new Set([
  * The grants the gateway completes: each ends in a user's own tokens. The
  * client-credentials grant, and anything else a network serves on the same
  * endpoint, would mint a token for the gateway's own application instead,
- * which on Meta, Discord, Twitch or Kick manages the application's
- * settings, its webhooks and every tenant's tokens.
+ * which on many providers manages the application's settings, its
+ * webhooks and every tenant's tokens.
  */
 export const USER_BOUND_GRANT_TYPES: ReadonlySet<string> = new Set([
   "authorization_code",
   "refresh_token",
-  "fb_exchange_token",
-  "ig_exchange_token",
-  "th_exchange_token",
   "urn:ietf:params:oauth:grant-type:token-exchange",
 ]);
 
 /**
  * A token request's `grant_type` as the app sent it, from its body or query
- * string, or null when it names none (Meta's code exchange). Never the
+ * string, or null when it names none (Slack's code exchange). Never the
  * request's other fields.
  */
 export function requestedGrantType(request: TokenRequest): string | null {
@@ -202,8 +155,6 @@ export function requestedGrantType(request: TokenRequest): string | null {
   const type = mediaType(request.headers.get("content-type"));
   if (request.body && type === FORM) {
     value = new URLSearchParams(request.body).get("grant_type");
-  } else if (request.body && type === JSON_TYPE) {
-    value = jsonObject(request.body)?.["grant_type"] ?? null;
   }
   value ??= request.url.searchParams.get("grant_type");
   return typeof value === "string" && value ? value : null;
@@ -222,15 +173,4 @@ export function tokenGrantType(request: TokenRequest): string | null {
 /** A Content-Type's media type, lowercased and without parameters. */
 function mediaType(contentType: string | null): string {
   return (contentType ?? "").split(";")[0]!.trim().toLowerCase();
-}
-
-function jsonObject(text: string): Record<string, unknown> | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
 }

@@ -61,8 +61,9 @@ const SERP =
   "http://every-app-gateway.internal/api/integrations/dataforseo/api.dataforseo.com/v3/serp/google/organic/live/advanced";
 const MEMBERS =
   "http://every-app-gateway.internal/api/integrations/members/list";
-const LINKEDIN_TOKENS =
-  "http://every-app-gateway.internal/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken";
+const GOOGLE_TOKENS =
+  "http://every-app-gateway.internal/api/integrations/google-workspace/oauth2.googleapis.com/token";
+const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
 
 let privateKeyPem: string;
 let publicKeyPem: string;
@@ -143,7 +144,11 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
       capabilities: {
         dataforseo: { access: "read", why: "Research" },
         members: { access: "read", why: "Assign" },
-        linkedin: { access: "write", why: "Connect a channel" },
+        "google-workspace": {
+          access: "write",
+          scopes: ["gmail.read"],
+          why: "Read your inbox",
+        },
       },
     }),
   });
@@ -200,8 +205,8 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
         JWT_PUBLIC_KEY: publicKeyPem,
         OPENAI_API_KEY: "gateway-provider-key",
         DATAFORSEO_API_KEY: "login@example.com:secret",
-        LINKEDIN_CLIENT_ID: "gw-linkedin-id",
-        LINKEDIN_CLIENT_SECRET: "gw-linkedin-secret",
+        GOOGLE_WORKSPACE_CLIENT_ID: "gw-google-id",
+        GOOGLE_WORKSPACE_CLIENT_SECRET: "gw-google-secret",
       },
       registry: new InMemoryAppRegistry([app]),
       organizations: OrganizationRepository,
@@ -490,10 +495,14 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
     const app = chef();
     await setCap(acme, app.rowId!, 1);
     upstream.mockImplementation(async () =>
-      Response.json({ access_token: "user-token", expires_in: 3600 }),
+      Response.json({
+        access_token: "user-token",
+        expires_in: 3600,
+        scope: GMAIL,
+      }),
     );
     const tokenRequest = async () =>
-      new Request(LINKEDIN_TOKENS, {
+      new Request(GOOGLE_TOKENS, {
         method: "POST",
         headers: {
           "content-type": "application/x-www-form-urlencoded",
@@ -517,7 +526,7 @@ describe("monthly caps at the AppGateway entrypoint (SQLite)", () => {
     expect(await db.select().from(usageDaily)).toEqual([
       expect.objectContaining({
         kind: "capability",
-        target: "linkedin",
+        target: "google-workspace",
         calls: 1,
       }),
     ]);

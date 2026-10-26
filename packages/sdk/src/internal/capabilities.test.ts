@@ -9,7 +9,6 @@ import {
   integrationProxyPath,
   isAccountWidePath,
   isCapabilityId,
-  oauthClientOrigin,
   oauthClientSecretSetCommand,
   parseIntegrationProxyPath,
   serviceRoutePath,
@@ -416,10 +415,14 @@ describe("the capability registry", () => {
     >().toExtend<ApiKeyCapabilityId>();
     expectTypeOf<"openai" | "anthropic" | "gemini">().toExtend<AiProviderId>();
     // @ts-expect-error an OAuth client is not an API-key capability
-    expectTypeOf<"linkedin">().toExtend<ApiKeyCapabilityId>();
-    expectTypeOf<"linkedin">().toExtend<OAuthClientCapabilityId>();
+    expectTypeOf<"slack">().toExtend<ApiKeyCapabilityId>();
+    expectTypeOf<OAuthClientCapabilityId>().toEqualTypeOf<
+      "slack" | "google-workspace" | "microsoft-365"
+    >();
+    expectTypeOf<"SLACK_CLIENT_SECRET">().toExtend<CapabilitySecret>();
+    // The social networks are presets now: no gateway reserves their names.
+    // @ts-expect-error not a catalog setting
     expectTypeOf<"LINKEDIN_CLIENT_SECRET">().toExtend<CapabilitySecret>();
-    expectTypeOf<"MASTODON_URL">().toExtend<CapabilitySecret>();
     expectTypeOf<"EMAIL_FROM">().toExtend<CapabilitySecret>();
     expectTypeOf<"CLOUDFLARE_ACCOUNT_ID">().toExtend<CapabilitySecret>();
     expectTypeOf<"DATAFORSEO_API_KEY">().toExtend<CapabilitySecret>();
@@ -489,41 +492,15 @@ describe("the OAuth clients", () => {
     "/beta/me/sendMail",
   ];
 
-  it("are the 16 social networks' clients and the 2 mail and calendar clients, with 37 gateway settings", () => {
-    expect(ids).toEqual([
-      "linkedin",
-      "facebook",
-      "instagram",
-      "threads",
-      "youtube",
-      "tiktok",
-      "tiktok-business",
-      "reddit",
-      "pinterest",
-      "discord",
-      "slack",
-      "mastodon",
-      "kick",
-      "twitch",
-      "tumblr",
-      "dribbble",
-      "google-workspace",
-      "microsoft-365",
-    ]);
+  it("are Slack's and the 2 mail and calendar clients, with 6 gateway settings", () => {
+    expect(ids).toEqual(["slack", "google-workspace", "microsoft-365"]);
     const settings = ids.flatMap((id) => capabilitySettings(client(id)));
-    expect(settings).toHaveLength(37);
-    expect(new Set(settings).size).toBe(37);
-    expect(capabilitySettings(client("mastodon"))).toEqual([
-      "MASTODON_CLIENT_ID",
-      "MASTODON_CLIENT_SECRET",
-      "MASTODON_URL",
-    ]);
-    // Postiz's idiosyncratic names, normalised.
+    expect(settings).toHaveLength(6);
+    expect(new Set(settings).size).toBe(6);
     expect(client("slack").secrets).toEqual({
       clientId: "SLACK_CLIENT_ID",
       clientSecret: "SLACK_CLIENT_SECRET",
     });
-    expect(client("kick").secrets.clientSecret).toBe("KICK_CLIENT_SECRET");
   });
 
   it.each(ids)(
@@ -533,41 +510,23 @@ describe("the OAuth clients", () => {
       expect(capability.access).toEqual(["write"]);
       expect(capability.token.length).toBeGreaterThan(0);
       for (const endpoint of capability.token) {
-        if (endpoint.host === undefined) {
-          expect(capability.hostSetting).toBeTruthy();
-        } else {
-          // A bare lowercase host: no scheme, port, path or credentials.
-          expect(new URL(`https://${endpoint.host}`).host).toBe(endpoint.host);
-          expect(endpoint.host).toMatch(/^[a-z0-9.-]+$/);
-        }
-        if (typeof endpoint.path === "string") {
-          expect(new URL(`https://x${endpoint.path}`).pathname).toBe(
-            endpoint.path,
-          );
-        } else {
-          // Anchored at both ends, and stateless.
-          expect(endpoint.path.source).toMatch(/^\^\\\/.*\$$/);
-          expect(endpoint.path.flags).toBe("");
-        }
+        // A bare lowercase host: no scheme, port, path or credentials.
+        expect(new URL(`https://${endpoint.host}`).host).toBe(endpoint.host);
+        expect(endpoint.host).toMatch(/^[a-z0-9.-]+$/);
+        expect(new URL(`https://x${endpoint.path}`).pathname).toBe(
+          endpoint.path,
+        );
         expect(endpoint.methods.length).toBeGreaterThan(0);
-        if (endpoint.inject === "form" || endpoint.inject === "json") {
+        if (endpoint.inject === "form") {
           // The client goes in a body: never on a GET.
           expect(endpoint.methods).toEqual(["POST"]);
         }
       }
-      // The operator's checklist: https URLs, or paths on the instance.
-      const onInstance = (url: string) =>
-        capability.hostSetting ? url.startsWith("/") : false;
+      // The operator's checklist: https URLs.
       for (const url of [capability.authorize.url, capability.console]) {
-        expect(onInstance(url) || new URL(url).protocol === "https:", url).toBe(
-          true,
-        );
+        expect(new URL(url).protocol, url).toBe("https:");
       }
       expect(capability.authorize.scopes.length).toBeGreaterThan(0);
-      expect(capability.redirectPaths.length).toBeGreaterThan(0);
-      for (const path of capability.redirectPaths) {
-        expect(path).toMatch(/^\/integrations(?:\/[a-z-]+)+\/?$/);
-      }
     },
   );
 
@@ -742,7 +701,6 @@ describe("the OAuth clients", () => {
       | "mail.read"
       | "calendar.read"
     >();
-    expectTypeOf<OAuthScopeSetName<"linkedin">>().toEqualTypeOf<never>();
   });
 
   it("slack: the sets cover Postiz's and Open CRM's requests and nothing else, each unlocking its methods by name", () => {
@@ -1009,58 +967,28 @@ describe("the OAuth clients", () => {
   });
 
   it("names the command that gives the gateway each client", () => {
-    expect(oauthClientSecretSetCommand(client("linkedin"))).toBe(
-      "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET",
+    expect(oauthClientSecretSetCommand(client("slack"))).toBe(
+      "pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET",
     );
-    expect(oauthClientSecretSetCommand(client("mastodon"))).toBe(
-      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL",
-    );
-    expect(describeTokenEndpoints(client("facebook"))).toBe(
-      "GET/POST https://graph.facebook.com/v<version>/oauth/access_token",
-    );
-    expect(describeTokenEndpoints(client("mastodon"))).toBe(
-      "POST https://<MASTODON_URL>/oauth/token",
+    expect(describeTokenEndpoints(client("google-workspace"))).toBe(
+      "POST https://oauth2.googleapis.com/token",
     );
   });
 });
 
 describe("OAuth client paths", () => {
   /** What the gateway makes of an app's call to `url` through `provider`. */
-  const parse = (
-    provider: OAuthClientCapabilityId,
-    url: string,
-    settings?: Record<string, string>,
-  ) => {
+  const parse = (provider: OAuthClientCapabilityId, url: string) => {
     const path = new URL(
       integrationProxyPath(provider, new URL(url)),
       "http://gateway.internal",
     );
-    return parseIntegrationProxyPath(path.pathname, path.search, settings);
+    return parseIntegrationProxyPath(path.pathname, path.search);
   };
 
   it.each<[OAuthClientCapabilityId, string]>([
-    ["linkedin", "https://www.linkedin.com/oauth/v2/accessToken"],
-    ["facebook", "https://graph.facebook.com/v25.0/oauth/access_token?code=x"],
-    ["facebook", "https://graph.facebook.com/v19.0/oauth/access_token"],
-    ["instagram", "https://api.instagram.com/oauth/access_token"],
-    ["instagram", "https://graph.instagram.com/access_token?grant_type=x"],
-    ["threads", "https://graph.threads.net/oauth/access_token"],
-    ["threads", "https://graph.threads.net/access_token"],
-    ["youtube", "https://oauth2.googleapis.com/token"],
-    ["tiktok", "https://open.tiktokapis.com/v2/oauth/token/"],
-    [
-      "tiktok-business",
-      "https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/refresh_token/",
-    ],
-    ["reddit", "https://www.reddit.com/api/v1/access_token"],
-    ["pinterest", "https://api.pinterest.com/v5/oauth/token"],
-    ["discord", "https://discord.com/api/oauth2/token"],
     ["slack", "https://slack.com/api/oauth.v2.access"],
-    ["mastodon", "https://mastodon.social/oauth/token"],
-    ["kick", "https://id.kick.com/oauth/token"],
-    ["twitch", "https://id.twitch.tv/oauth2/token"],
-    ["tumblr", "https://api.tumblr.com/v2/oauth2/token"],
-    ["dribbble", "https://dribbble.com/oauth/token?code=x"],
+    ["google-workspace", "https://oauth2.googleapis.com/token?code=x"],
     ["google-workspace", "https://oauth2.googleapis.com/token"],
     [
       "microsoft-365",
@@ -1077,79 +1005,30 @@ describe("OAuth client paths", () => {
 
   it.each<[OAuthClientCapabilityId, string]>([
     // The API, on the token host or its own: the app calls it directly.
-    ["linkedin", "https://api.linkedin.com/v2/me"],
-    ["linkedin", "https://www.linkedin.com/oauth/v2/authorization"],
-    ["facebook", "https://graph.facebook.com/v25.0/me/accounts"],
+    ["google-workspace", "https://gmail.googleapis.com/gmail/v1/users/me"],
+    ["google-workspace", "https://accounts.google.com/o/oauth2/v2/auth"],
     ["slack", "https://slack.com/api/chat.postMessage"],
-    ["discord", "https://discord.com/api/channels/1/messages"],
-    // Near misses: unversioned, a trailing slash, another case, an encoding.
-    ["facebook", "https://graph.facebook.com/oauth/access_token"],
-    ["facebook", "https://graph.facebook.com/v25/oauth/access_token"],
-    ["linkedin", "https://www.linkedin.com/oauth/v2/accessToken/"],
-    ["linkedin", "https://www.linkedin.com/oauth/v2/accesstoken"],
-    ["linkedin", "https://www.linkedin.com/oauth/v2/%61ccessToken"],
-    ["tiktok", "https://open.tiktokapis.com/v2/oauth/token"],
+    ["microsoft-365", "https://graph.microsoft.com/v1.0/me"],
+    // Near misses: a trailing slash, another case, an encoding.
+    ["google-workspace", "https://oauth2.googleapis.com/token/"],
+    ["google-workspace", "https://oauth2.googleapis.com/Token"],
+    ["google-workspace", "https://oauth2.googleapis.com/%74oken"],
+    ["slack", "https://slack.com/api/oauth.v2.Access"],
     // Another client's endpoint.
-    ["reddit", "https://www.linkedin.com/oauth/v2/accessToken"],
-    // Another instance than the operator's.
-    ["mastodon", "https://evil.example/oauth/token"],
+    ["slack", "https://oauth2.googleapis.com/token"],
   ])("%s refuses %s", (provider, url) => {
     expect(parse(provider, url)).toBeNull();
   });
 
-  it("finds Mastodon's token endpoint on the instance MASTODON_URL names", () => {
-    const fosstodon = parse("mastodon", "https://fosstodon.org/oauth/token", {
-      MASTODON_URL: "https://fosstodon.org/",
-    });
-    expect(fosstodon).toMatchObject({ kind: "oauth_client", id: "mastodon" });
-    // The default instance is no longer the operator's.
-    expect(
-      parse("mastodon", "https://mastodon.social/oauth/token", {
-        MASTODON_URL: "fosstodon.org",
-      }),
-    ).toBeNull();
-  });
-
-  it("reads MASTODON_URL as an https origin, mastodon.social when unset", () => {
-    const mastodon: OAuthClientCapability = CAPABILITIES.mastodon;
-    const origin = (value?: string) =>
-      oauthClientOrigin(mastodon, { MASTODON_URL: value });
-    expect(origin()).toBe("https://mastodon.social");
-    expect(origin("  ")).toBe("https://mastodon.social");
-    expect(origin("https://fosstodon.org")).toBe("https://fosstodon.org");
-    expect(origin("https://Fosstodon.org/")).toBe("https://fosstodon.org");
-    expect(origin("fosstodon.org")).toBe("https://fosstodon.org");
-    expect(origin("https://social.example:8443")).toBe(
-      "https://social.example:8443",
-    );
-    for (const bad of [
-      "http://fosstodon.org",
-      "https://fosstodon.org/mastodon",
-      "https://fosstodon.org/?x=1",
-      "https://user:pass@fosstodon.org",
-      "ftp://fosstodon.org",
-      "https://",
-    ]) {
-      expect(origin(bad), bad).toBeNull();
-    }
-    // A client with a fixed host has no origin to resolve.
-    expect(oauthClientOrigin(CAPABILITIES.linkedin, {})).toBeNull();
-  });
-
   it("matches an endpoint by host and path, never by scheme or method", () => {
-    const linkedin: OAuthClientCapability = CAPABILITIES.linkedin;
+    const google: OAuthClientCapability = CAPABILITIES["google-workspace"];
     expect(
-      tokenEndpointFor(
-        linkedin,
-        new URL("http://www.linkedin.com/oauth/v2/accessToken"),
-        {},
-      ),
+      tokenEndpointFor(google, new URL("http://oauth2.googleapis.com/token")),
     ).toBeNull();
     expect(
       tokenEndpointFor(
-        linkedin,
-        new URL("https://www.linkedin.com/oauth/v2/accessToken?x=1"),
-        {},
+        google,
+        new URL("https://oauth2.googleapis.com/token?x=1"),
       ),
     ).toMatchObject({ inject: "form", methods: ["POST"] });
   });

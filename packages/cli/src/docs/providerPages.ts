@@ -288,9 +288,7 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
   const gatewayFlow = client.flow !== undefined;
   const settings = [client.secrets.clientId, ...(client.secrets.clientSecret ? [client.secrets.clientSecret] : [])];
   const sets = Object.entries(client.scopePolicy?.sets ?? {});
-  const console = client.console.startsWith("/")
-    ? `${code(client.console)} on your ${client.hostSetting ? `instance (the host in ${code(client.hostSetting)})` : "instance"}`
-    : link(client.console);
+  const console = link(client.console);
   const out: string[] = [`## ${heading}`, ""];
   out.push(
     gatewayFlow
@@ -307,16 +305,12 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
   );
 
   out.push("### Redirect URI", "");
-  const appUris = client.redirectPaths.map((path) => `https://<app>.<your app domain>${path}`);
+  const appCallbacks = `An app that runs the sign-in itself lists its own callbacks under \`redirectPaths\` in its manifest entry; register those too, as \`https://<app>.<your gateway><path>\`. \`pnpm everyapp provider show ${id}\` prints every one.`;
   if (gatewayFlow) {
     out.push("Register this at the provider:", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
-    if (appUris.length > 0) {
-      out.push("An app that runs the sign-in itself (rather than through the Gateway) also needs its own callback:", "", "```text", ...appUris, "```", "");
-    }
-    out.push(`\`<your gateway>\` is your Gateway's address, like \`apps.example.com\`. \`pnpm everyapp provider show ${id}\` prints the exact URI.`, "");
+    out.push(`\`<your gateway>\` is your Gateway's address, like \`apps.example.com\`.`, "", appCallbacks, "");
   } else {
-    out.push("Register each app's own callback at the provider:", "", "```text", ...appUris, "```", "");
-    out.push("`<app>.<your app domain>` is the app's address, like `crm.apps.example.com`.", "");
+    out.push(appCallbacks, "");
   }
 
   out.push("### Make the OAuth app", "");

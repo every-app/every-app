@@ -219,9 +219,6 @@ function listed(
       return {
         ...base,
         auth: { kind: oauth ? "oauth2-user" : "oauth_client" },
-        ...(capability.hostSetting
-          ? { hostSetting: capability.hostSetting }
-          : {}),
         docs: capability.console,
         hosts: [...capability.api],
         ...(oauth

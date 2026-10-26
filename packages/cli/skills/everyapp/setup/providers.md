@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 74 providers: 47 API-key, 9 AI, 18 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -76,22 +76,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`mistral`](#mistral) | Mistral AI | AI | `MISTRAL_API_KEY` |  |
 | [`groq`](#groq) | Groq | AI | `GROQ_API_KEY` |  |
 | [`cohere`](#cohere) | Cohere | AI | `COHERE_API_KEY` |  |
-| [`linkedin`](#linkedin) | LinkedIn | OAuth client | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` |  |
-| [`facebook`](#facebook) | Facebook | OAuth client | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` |  |
-| [`instagram`](#instagram) | Instagram | OAuth client | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` |  |
-| [`threads`](#threads) | Threads | OAuth client | `THREADS_APP_ID`, `THREADS_APP_SECRET` |  |
-| [`youtube`](#youtube) | YouTube | OAuth client | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | [google.md](google.md) |
-| [`tiktok`](#tiktok) | TikTok | OAuth client | `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET` |  |
-| [`tiktok-business`](#tiktok-business) | TikTok Business | OAuth client | `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET` |  |
-| [`reddit`](#reddit) | Reddit | OAuth client | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` |  |
-| [`pinterest`](#pinterest) | Pinterest | OAuth client | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` |  |
-| [`discord`](#discord) | Discord | OAuth client | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` |  |
 | [`slack`](#slack) | Slack | OAuth client | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | [slack.md](slack.md) |
-| [`mastodon`](#mastodon) | Mastodon | OAuth client | `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET`, `MASTODON_URL` |  |
-| [`kick`](#kick) | Kick | OAuth client | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` |  |
-| [`twitch`](#twitch) | Twitch | OAuth client | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` |  |
-| [`tumblr`](#tumblr) | Tumblr | OAuth client | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` |  |
-| [`dribbble`](#dribbble) | Dribbble | OAuth client | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` |  |
 | [`google-workspace`](#google-workspace) | Google (Gmail, Calendar, Search Console and Analytics) | OAuth client | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | [google.md](google.md) |
 | [`microsoft-365`](#microsoft-365) | Microsoft 365 (Outlook mail and calendar) | OAuth client | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | [microsoft-365.md](microsoft-365.md) |
 
@@ -1054,197 +1039,17 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 ## OAuth clients
 
-### linkedin
-
-**LinkedIn** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`
-- **Where the client comes from:** https://www.linkedin.com/developers/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin-page`
-- **How it is sent:** POST `www.linkedin.com/oauth/v2/accessToken` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### facebook
-
-**Facebook** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`
-- **Where the client comes from:** https://developers.facebook.com/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/facebook`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram`
-- **How it is sent:** GET/POST `graph.facebook.com/v<version>/oauth/access_token` (the client in the query)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### instagram
-
-**Instagram** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`
-- **Where the client comes from:** https://developers.facebook.com/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram-standalone`
-- **How it is sent:** POST `api.instagram.com/oauth/access_token` (the client in the form body); GET `graph.instagram.com/access_token` (the client in the query)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### threads
-
-**Threads** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `THREADS_APP_ID`, `THREADS_APP_SECRET`
-- **Where the client comes from:** https://developers.facebook.com/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/threads`
-- **How it is sent:** GET/POST `graph.threads.net/oauth/access_token` (the client in the query); GET `graph.threads.net/access_token` (the client in the query)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set THREADS_APP_ID THREADS_APP_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### youtube
-
-**YouTube** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`
-- **Where the client comes from:** https://console.cloud.google.com/apis/credentials
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/youtube`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/gmb`
-- **How it is sent:** POST `oauth2.googleapis.com/token` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET`
-- **Guide:** [google.md](google.md)
-
-### tiktok
-
-**TikTok** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET`
-- **Where the client comes from:** https://developers.tiktok.com/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok`
-- **How it is sent:** POST `open.tiktokapis.com/v2/oauth/token/` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set TIKTOK_CLIENT_ID TIKTOK_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### tiktok-business
-
-**TikTok Business** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET`
-- **Where the client comes from:** https://business-api.tiktok.com/portal/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok-business/`
-- **How it is sent:** POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/` (the client in the JSON body); POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/refresh_token/` (the client in the JSON body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set TIKTOK_BUSINESS_CLIENT_ID TIKTOK_BUSINESS_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### reddit
-
-**Reddit** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`
-- **Where the client comes from:** https://www.reddit.com/prefs/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/reddit`
-- **How it is sent:** POST `www.reddit.com/api/v1/access_token` (the client in the Basic header)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### pinterest
-
-**Pinterest** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET`
-- **Where the client comes from:** https://developers.pinterest.com/apps/
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/pinterest`
-- **How it is sent:** POST `api.pinterest.com/v5/oauth/token` (the client in the Basic header)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### discord
-
-**Discord** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`
-- **Where the client comes from:** https://discord.com/developers/applications
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/discord`
-- **How it is sent:** POST `discord.com/api/oauth2/token` (the client in the Basic header)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
 ### slack
 
 **Slack** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
 
 - **Settings:** `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`
 - **Where the client comes from:** https://api.slack.com/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/slack`, `https://<app>.<APP_BASE_DOMAIN>/integrations/slack/callback`
+- **Redirect URIs to register:** `https://<gateway host>/connect/slack/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show slack` prints them)
 - **How it is sent:** POST `slack.com/api/oauth.v2.access` (the client in the form body)
 - **Scope sets an app lists:** `channels.read`, `users.read`, `users.email`, `messages.write`, `channels.join`, `channels.manage`, `files.write`, `user-channels.manage`
 - **Set it:** `pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET`
 - **Guide:** [slack.md](slack.md)
-
-### mastodon
-
-**Mastodon** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET`, `MASTODON_URL`
-- **Where the client comes from:** `<MASTODON_URL>/settings/applications`
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/mastodon`
-- **How it is sent:** POST `<MASTODON_URL>/oauth/token` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### kick
-
-**Kick** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET`
-- **Where the client comes from:** https://kick.com/settings/developer
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/kick`
-- **How it is sent:** POST `id.kick.com/oauth/token` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### twitch
-
-**Twitch** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`
-- **Where the client comes from:** https://dev.twitch.tv/console/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/twitch`
-- **How it is sent:** POST `id.twitch.tv/oauth2/token` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### tumblr
-
-**Tumblr** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET`
-- **Where the client comes from:** https://www.tumblr.com/oauth/apps
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tumblr`
-- **How it is sent:** POST `api.tumblr.com/v2/oauth2/token` (the client in the form body)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
-
-### dribbble
-
-**Dribbble** (`oauth_client`): the Gateway holds the client and completes the token endpoints only; the app builds the authorize URL from the public client id and keeps people's tokens.
-
-- **Settings:** `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET`
-- **Where the client comes from:** https://dribbble.com/account/applications
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/social/dribbble`
-- **How it is sent:** POST `dribbble.com/oauth/token` (the client in the query)
-- **Scope sets an app lists:** none: the whole client is the grant
-- **Set it:** `pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET`
-- **Guide:** none beyond this section; the scopes to allow are in https://everyapp.com/docs/agent/repo/capabilities#oauth-clients
 
 ### google-workspace
 
@@ -1252,7 +1057,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 - **Settings:** `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`
 - **Where the client comes from:** https://console.cloud.google.com/apis/credentials
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/google/callback`
+- **Redirect URIs to register:** `https://<gateway host>/connect/google-workspace/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show google-workspace` prints them)
 - **How it is sent:** POST `oauth2.googleapis.com/token` (the client in the form body)
 - **Scope sets an app lists:** `identity`, `gmail.read`, `calendar.read`, `search-console.read`, `analytics.read`
 - **Set it:** `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
@@ -1264,7 +1069,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 
 - **Settings:** `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`
 - **Where the client comes from:** https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
-- **Redirect URIs to register:** `https://<app>.<APP_BASE_DOMAIN>/integrations/microsoft/callback`
+- **Redirect URIs to register:** `https://<gateway host>/connect/microsoft-365/callback`, and each callback an app lists under `redirectPaths` in its manifest entry, as `https://<app>.<APP_BASE_DOMAIN><path>` (`everyapp provider show microsoft-365` prints them)
 - **How it is sent:** POST `login.microsoftonline.com/common/oauth2/v2.0/token` (the client in the form body)
 - **Scope sets an app lists:** `identity`, `mail.read`, `calendar.read`
 - **Set it:** `pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET`

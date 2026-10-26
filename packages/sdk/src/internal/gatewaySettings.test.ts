@@ -7,7 +7,6 @@ import {
   HOSTED_ONLY_GATEWAY_SETTINGS,
   isHostedOnlyGatewaySetting,
   isPlainGatewaySetting,
-  OAUTH_CLIENT_HOST_SETTINGS,
   PLAIN_GATEWAY_SETTINGS,
   INSTALL_OWNED_GATEWAY_SETTINGS,
   isInstallOwnedGatewaySetting,
@@ -112,10 +111,12 @@ describe("gatewaySettingOwner", () => {
       kind: "capability",
       id: "dataforseo",
     });
-    expect(gatewaySettingOwner("LINKEDIN_CLIENT_SECRET")).toEqual({
+    expect(gatewaySettingOwner("SLACK_CLIENT_SECRET")).toEqual({
       kind: "capability",
-      id: "linkedin",
+      id: "slack",
     });
+    // A preset's names are no one's until a row holds them.
+    expect(gatewaySettingOwner("LINKEDIN_CLIENT_SECRET")).toBeNull();
     expect(gatewaySettingOwner("RESEND_API_KEY")).toEqual({
       kind: "capability",
       id: "email",
@@ -139,18 +140,13 @@ describe("plain and hosted-only settings", () => {
     for (const name of [
       ...PLAIN_GATEWAY_SETTINGS,
       ...HOSTED_ONLY_GATEWAY_SETTINGS,
-      ...OAUTH_CLIENT_HOST_SETTINGS,
     ]) {
       expect(isSettableGatewaySetting(name), name).toBe(true);
-    }
-    // An OAuth client's instance (the catalog's `hostSetting`) is an origin.
-    for (const name of OAUTH_CLIENT_HOST_SETTINGS) {
-      expect(isPlainGatewaySetting(name), name).toBe(true);
     }
     expect(isPlainGatewaySetting("EMAIL_FROM")).toBe(true);
     expect(isPlainGatewaySetting("MCP_OAUTH_ENABLED")).toBe(true);
     expect(isPlainGatewaySetting("OPENAI_API_KEY")).toBe(false);
-    expect(isPlainGatewaySetting("LINKEDIN_CLIENT_SECRET")).toBe(false);
+    expect(isPlainGatewaySetting("SLACK_CLIENT_SECRET")).toBe(false);
     expect(isPlainGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
     // The event bus's switch is set with `everyapp secret set` and shown as typed.
     expect(isSettableGatewaySetting(EVENTS_ALLOW_PRIVATE_TARGETS_SETTING)).toBe(

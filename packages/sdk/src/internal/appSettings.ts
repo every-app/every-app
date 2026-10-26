@@ -449,27 +449,22 @@ function capabilityNames(capability: Capability): {
         names: settable(capability.settings),
         alsoReads: settable(capability.optionalSettings),
       };
-    case "oauth_client": {
-      const names = [
-        capability.secrets.clientId,
-        ...(capability.secrets.clientSecret
-          ? [capability.secrets.clientSecret]
-          : []),
-      ];
-      const host = capability.hostSetting ? [capability.hostSetting] : [];
-      // An instance setting with a default is read when set; without one
-      // the provider has no origin until it is set.
-      return capability.defaultOrigin
-        ? { names, alsoReads: host }
-        : { names: [...names, ...host], alsoReads: [] };
-    }
+    case "oauth_client":
+      return {
+        names: [
+          capability.secrets.clientId,
+          ...(capability.secrets.clientSecret
+            ? [capability.secrets.clientSecret]
+            : []),
+        ],
+        alsoReads: [],
+      };
   }
 }
 
 /**
  * Where a capability's key or client comes from, when the registry knows:
- * an API-key provider's access page, or an OAuth client's console (a path
- * on the default instance for a provider with no fixed host).
+ * an API-key provider's access page, or an OAuth client's console.
  */
 function capabilityDocs(capability: Capability): string | undefined {
   switch (capability.mode) {
@@ -477,10 +472,7 @@ function capabilityDocs(capability: Capability): string | undefined {
     case "ai":
       return capability.docs;
     case "oauth_client":
-      if (capability.console.startsWith("https://")) return capability.console;
-      return capability.defaultOrigin
-        ? `${capability.defaultOrigin}${capability.console}`
-        : undefined;
+      return capability.console;
     case "service":
       return undefined;
   }

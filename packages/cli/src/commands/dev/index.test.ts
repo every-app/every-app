@@ -314,17 +314,17 @@ describe("everyapp dev", () => {
       );
       expect(devVarsHint(mailer, cwd)).toEqual([]);
 
-      // Mastodon's client, on the default instance.
-      const poster = { id: "postiz", capabilities: { mastodon: { access: "write" } } } as const;
+      // Slack's client.
+      const poster = { id: "crm", capabilities: { slack: { access: "write", scopes: ["messages.write"] } } } as const;
       await fs.writeFile(
         path.join(cwd, ".dev.vars"),
-        "MASTODON_CLIENT_ID=id\nMASTODON_CLIENT_SECRET=secret\n",
+        "SLACK_CLIENT_ID=id\nSLACK_CLIENT_SECRET=secret\n",
       );
       expect(devVarsHint(poster, cwd)).toEqual([]);
-      // Its secret alone is named, never the instance.
-      await fs.writeFile(path.join(cwd, ".dev.vars"), "MASTODON_CLIENT_ID=id\n");
+      // Its secret alone is named.
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "SLACK_CLIENT_ID=id\n");
       expect(lines(devVarsHint(poster, cwd))).toEqual([
-        "Dev vars  .dev.vars is missing MASTODON_CLIENT_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+        "Dev vars  .dev.vars is missing SLACK_CLIENT_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
       ]);
     });
 

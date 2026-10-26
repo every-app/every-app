@@ -164,7 +164,7 @@ describe("bundleProblems", () => {
       "it lists the Google (Gmail, Calendar, Search Console and Analytics) scope set gmail.read twice",
       "it lists a Google (Gmail, Calendar, Search Console and Analytics) scope set this gateway doesn't offer (constructor)",
     ]);
-    // Clients without a policy, and capabilities this gateway doesn't know,
+    // Capabilities this gateway doesn't know (a registered provider's sets)
     // are the token endpoint's and the strict validator's to judge.
     expect(
       bundleProblems(
@@ -172,7 +172,6 @@ describe("bundleProblems", () => {
         {
           ...MANIFEST,
           capabilities: {
-            linkedin: { access: "write" },
             "new-provider": { access: "read", scopes: ["x"] },
           },
         },

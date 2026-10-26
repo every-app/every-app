@@ -11,7 +11,6 @@ import {
   CAPABILITIES,
   capabilitySettings,
   oauthClientSecretSetCommand,
-  tokenPathText,
   type ApiKeyAuth,
   type ApiKeyCapability,
   type OAuthClientCapability,
@@ -102,23 +101,8 @@ const clients = Object.entries(CAPABILITIES).flatMap(([id, capability]) =>
     : [],
 );
 
-/** A URL on the client's instance when it has no fixed host (Mastodon's). */
-function onInstance(capability: OAuthClientCapability, url: string): string {
-  return url.startsWith("/") ? `<${capability.hostSetting}>${url}` : url;
-}
-
-/** A console URL: a link, or code when it names the instance setting. */
-function consoleCell(capability: OAuthClientCapability): string {
-  const url = onInstance(capability, capability.console);
-  return url.startsWith("<") ? `\`${url}\`` : url;
-}
-
-function endpoint(
-  capability: OAuthClientCapability,
-  { host, path, methods, inject, params }: OAuthTokenEndpoint,
-): string {
-  const renamed = params?.clientId ? `, id as \`${params.clientId}\`` : "";
-  return `${methods.join("/")} \`${host ?? `<${capability.hostSetting}>`}${tokenPathText(path)}\` (${inject}${renamed})`;
+function endpoint({ host, path, methods, inject }: OAuthTokenEndpoint): string {
+  return `${methods.join("/")} \`${host}${path}\` (${inject})`;
 }
 
 function generated(): string {
@@ -129,11 +113,8 @@ function generated(): string {
       capabilitySettings(capability)
         .map((name) => `\`${name}\``)
         .join(", "),
-      consoleCell(capability),
-      capability.redirectPaths
-        .map((path) => `\`https://<app>.<APP_BASE_DOMAIN>${path}\``)
-        .join(", "),
-      capability.token.map((rule) => endpoint(capability, rule)).join("; "),
+      capability.console,
+      capability.token.map(endpoint).join("; "),
     ].join(" | "),
   );
   const commands = clients.map(([, capability]) =>
@@ -142,7 +123,7 @@ function generated(): string {
   const scopes = clients.map(([id, capability]) =>
     [
       `\`${id}\``,
-      `\`${onInstance(capability, capability.authorize.url)}\``,
+      `\`${capability.authorize.url}\``,
       capability.authorize.scopes.map((scope) => `\`${scope}\``).join(", "),
     ].join(" | "),
   );
@@ -163,11 +144,11 @@ function generated(): string {
   return [
     BEGIN,
     "",
-    "| Capability | Network | Gateway secrets | Developer console | Redirect URIs to register | Token endpoints the gateway completes (where the client goes) |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Capability | Provider | Gateway secrets | Developer console | Token endpoints the gateway completes (where the client goes) |",
+    "| --- | --- | --- | --- | --- |",
     ...rows.map((row) => `| ${row} |`),
     "",
-    "The commands, one per network you offer (each prompts for the values):",
+    "The commands, one per client you offer (each prompts for the values):",
     "",
     "```bash",
     ...commands,

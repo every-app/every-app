@@ -773,7 +773,7 @@ describe("secret list", () => {
     );
     expect(lines).toContain(`${relevant.length - unset.length} more can be set; see docs/capabilities.md`);
     expect(lines).toContain("Sign-in providers (Google, Microsoft, GitHub, Apple, Cloudflare, SSO): pnpm everyapp signin list");
-    expect(lines).not.toContainEqual(expect.stringMatching(/^(LINKEDIN_CLIENT_ID|HOSTED_OPEN_SIGNUP|THIRD_PARTY_DOMAIN) /));
+    expect(lines).not.toContainEqual(expect.stringMatching(/^(SLACK_CLIENT_ID|HOSTED_OPEN_SIGNUP|THIRD_PARTY_DOMAIN) /));
     // Then each app's settings, in manifest order, the Gateway's first.
     const table = lines.indexOf(lines.find((line) => /^APP +SETTING +WHERE +STATUS$/.test(line))!);
     expect(lines.slice(table)).toEqual([

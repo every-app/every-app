@@ -165,15 +165,15 @@ describe("the STATUS vocabulary", () => {
   it("renders one row per setting with something to set, the names joined with +, with or without the APP column", () => {
     const { report } = appSetupFrom({
       manifest: {
-        capabilities: { mastodon: { access: "write" }, members: { access: "read" } },
+        capabilities: { slack: { access: "write", scopes: ["messages.write"] }, members: { access: "read" } },
         secrets: ["MAIN_SECRET"],
       },
       appId: "social",
-      gatewayNames: ["MASTODON_CLIENT_ID"],
+      gatewayNames: ["SLACK_CLIENT_ID"],
       secretNames: ["MAIN_SECRET"],
     });
     const rows = settingsRows("social", report.settings);
-    const client = "MASTODON_CLIENT_ID+MASTODON_CLIENT_SECRET";
+    const client = "SLACK_CLIENT_ID+SLACK_CLIENT_SECRET";
     const pad = (cell: string) => cell.padEnd(client.length);
     expect(plain(renderSettingsTable(rows))).toEqual([
       `APP     ${pad("SETTING")}  WHERE    STATUS`,
@@ -248,8 +248,7 @@ describe("describeUnmet", () => {
     const { setup } = appSetupFrom({
       manifest: {
         providers: ["openrouter"],
-        // Two Google clients share one guide.
-        capabilities: { "google-workspace": { access: "write" }, youtube: { access: "write" } },
+        capabilities: { "google-workspace": { access: "write" } },
         secrets: ["MAIN_SECRET", { name: "SIGNING_KEY", setup: "setup/signing-key.md" }],
       },
       appId: "analytics",
@@ -264,20 +263,17 @@ describe("describeUnmet", () => {
       "Google (Gmail, Calendar, Search Console and Analytics): GOOGLE_WORKSPACE_CLIENT_ID and GOOGLE_WORKSPACE_CLIENT_SECRET",
       "Get it at https://console.cloud.google.com/apis/credentials",
       "Guide: .claude/skills/everyapp/setup/google.md",
-      "YouTube: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET",
-      "Get it at https://console.cloud.google.com/apis/credentials",
       "MAIN_SECRET",
       "SIGNING_KEY",
       "Guide: .claude/skills/everyapp/setup/signing-key.md",
     ]);
   });
 
-  it("points at provider show for a provider without a guide: a registered one, or a client the skill has no file for", () => {
+  it("points at provider show for a provider without a guide (a registered one), and at the skill for a built-in one", () => {
     const { setup } = appSetupFrom({
       manifest: {
         capabilities: {
           northwind: { access: "read", why: "Shows the last charges." },
-          linkedin: { access: "write" },
           dataforseo: { access: "read" },
         },
       },
@@ -291,9 +287,6 @@ describe("describeUnmet", () => {
       "A restricted key from the Northwind dashboard. Read access to Charges is enough.",
       "Get it at https://developer.northwind.io/keys",
       "Guide: pnpm everyapp provider show northwind",
-      "LinkedIn: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET",
-      "Get it at https://www.linkedin.com/developers/apps",
-      "Guide: pnpm everyapp provider show linkedin",
       "DataForSEO: DATAFORSEO_API_KEY",
       expect.stringMatching(/^The API login and password/),
       "Get it at https://app.dataforseo.com/api-access",

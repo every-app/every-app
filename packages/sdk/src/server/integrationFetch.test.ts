@@ -635,25 +635,19 @@ describe("the email capability", () => {
 });
 
 describe("OAuth clients", () => {
-  const LINKEDIN_TOKEN = "https://www.linkedin.com/oauth/v2/accessToken";
+  const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
   const DEV_CLIENTS = {
     EVERYAPP_DEV: "1",
-    LINKEDIN_CLIENT_ID: "dev-linkedin-id",
-    LINKEDIN_CLIENT_SECRET: "dev-linkedin-secret",
-    REDDIT_CLIENT_ID: "dev-reddit-id",
-    REDDIT_CLIENT_SECRET: "dev-reddit-secret",
-    FACEBOOK_APP_ID: "dev-facebook-id",
-    FACEBOOK_APP_SECRET: "dev-facebook-secret",
-    TIKTOK_BUSINESS_CLIENT_ID: "dev-tiktok-id",
-    TIKTOK_BUSINESS_CLIENT_SECRET: "dev-tiktok-secret",
-    MASTODON_CLIENT_ID: "dev-mastodon-id",
-    MASTODON_CLIENT_SECRET: "dev-mastodon-secret",
-    MASTODON_URL: "https://fosstodon.org",
+    GOOGLE_WORKSPACE_CLIENT_ID: "dev-google-id",
+    GOOGLE_WORKSPACE_CLIENT_SECRET: "dev-google-secret",
+    EVERYAPP_DEV_CAPABILITIES: JSON.stringify({
+      "google-workspace": { access: "write", scopes: ["identity"] },
+    }),
   };
 
   function directFetch() {
     const sent = vi.fn<(request: Request) => Promise<Response>>(async () =>
-      Response.json({ access_token: "user-token" }),
+      Response.json({ access_token: "user-token", scope: "openid email" }),
     );
     vi.stubGlobal("fetch", sent);
     return sent;
@@ -661,15 +655,15 @@ describe("OAuth clients", () => {
 
   it("sends a token call over the binding with no client, for the gateway to add", async () => {
     const { env, bindingFetch } = bindingEnv();
-    const linkedin = integrationFetch({
+    const google = integrationFetch({
       env,
-      provider: "linkedin",
-      for: new Request("https://postiz.example.com/x", {
+      provider: "google-workspace",
+      for: new Request("https://crm.example.com/x", {
         headers: { "x-everyapp-identity": "signed-user-identity" },
       }),
     });
 
-    await linkedin(LINKEDIN_TOKEN, {
+    await google(GOOGLE_TOKEN, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -683,7 +677,7 @@ describe("OAuth clients", () => {
 
     const forwarded = bindingFetch.mock.calls[0]?.[0];
     expect(forwarded?.url).toBe(
-      "http://every-app-gateway.internal/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken",
+      "http://every-app-gateway.internal/api/integrations/google-workspace/oauth2.googleapis.com/token",
     );
     expect(forwarded?.method).toBe("POST");
     expect(forwarded?.headers.get("authorization")).toBeNull();
@@ -697,30 +691,22 @@ describe("OAuth clients", () => {
 
   it("refuses anything but the provider's token endpoints, before the gateway sees it", async () => {
     const { env, bindingFetch } = bindingEnv();
-    const linkedin = integrationFetch({ env, provider: "linkedin" });
-    await expect(linkedin("https://api.linkedin.com/v2/me")).rejects.toThrow(
-      /only reaches LinkedIn's token endpoints \(POST https:\/\/www\.linkedin\.com\/oauth\/v2\/accessToken\)/,
+    const google = integrationFetch({ env, provider: "google-workspace" });
+    // Not a token endpoint, and not one of its API hosts either.
+    await expect(
+      google("https://accounts.google.com/o/oauth2/v2/auth"),
+    ).rejects.toThrow(
+      /token endpoints \(POST https:\/\/oauth2\.googleapis\.com\/token\)/,
     );
     // The token endpoint, with a method it doesn't take.
-    await expect(linkedin(LINKEDIN_TOKEN)).rejects.toThrow(TypeError);
+    await expect(google(GOOGLE_TOKEN)).rejects.toThrow(TypeError);
     expect(bindingFetch).not.toHaveBeenCalled();
-  });
-
-  it("leaves the instance of a provider with none fixed to the gateway", async () => {
-    const { env, bindingFetch } = bindingEnv();
-    await integrationFetch({ env, provider: "mastodon" })(
-      "https://fosstodon.org/oauth/token",
-      { method: "POST", body: "" },
-    );
-    expect(bindingFetch.mock.calls[0]?.[0].url).toBe(
-      "http://every-app-gateway.internal/api/integrations/mastodon/fosstodon.org/oauth/token",
-    );
   });
 
   it("in local dev, puts the developer's client on by the gateway's rule: form", async () => {
     const sent = directFetch();
-    await integrationFetch({ env: DEV_CLIENTS, provider: "linkedin" })(
-      LINKEDIN_TOKEN,
+    await integrationFetch({ env: DEV_CLIENTS, provider: "google-workspace" })(
+      GOOGLE_TOKEN,
       {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -728,87 +714,28 @@ describe("OAuth clients", () => {
       },
     );
     const request = sent.mock.calls[0]![0];
-    expect(request.url).toBe(LINKEDIN_TOKEN);
+    expect(request.url).toBe(GOOGLE_TOKEN);
     expect(request.redirect).toBe("manual");
     expect(await request.text()).toBe(
-      "grant_type=refresh_token&refresh_token=r&client_id=dev-linkedin-id&client_secret=dev-linkedin-secret",
+      "grant_type=refresh_token&refresh_token=r&client_id=dev-google-id&client_secret=dev-google-secret",
     );
-  });
-
-  it("in local dev: basic, query and json", async () => {
-    const sent = directFetch();
-    await integrationFetch({ env: DEV_CLIENTS, provider: "reddit" })(
-      "https://www.reddit.com/api/v1/access_token",
-      {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: "grant_type=authorization_code&code=c",
-      },
-    );
-    await integrationFetch({ env: DEV_CLIENTS, provider: "facebook" })(
-      "https://graph.facebook.com/v25.0/oauth/access_token?code=c",
-    );
-    await integrationFetch({ env: DEV_CLIENTS, provider: "tiktok-business" })(
-      "https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          grant_type: "authorization_code",
-          auth_code: "c",
-        }),
-      },
-    );
-    const [reddit, facebook, tiktok] = sent.mock.calls.map(([r]) => r);
-    expect(reddit?.headers.get("authorization")).toBe(
-      `Basic ${btoa("dev-reddit-id:dev-reddit-secret")}`,
-    );
-    expect(await reddit?.text()).toBe("grant_type=authorization_code&code=c");
-    expect(facebook?.method).toBe("GET");
-    expect(facebook?.url).toBe(
-      "https://graph.facebook.com/v25.0/oauth/access_token?code=c&client_id=dev-facebook-id&client_secret=dev-facebook-secret",
-    );
-    expect(JSON.parse(await tiktok!.text())).toEqual({
-      grant_type: "authorization_code",
-      auth_code: "c",
-      client_id: "dev-tiktok-id",
-      client_secret: "dev-tiktok-secret",
-    });
-  });
-
-  it("in local dev, reaches the instance MASTODON_URL names and no other", async () => {
-    const sent = directFetch();
-    const mastodon = integrationFetch({
-      env: DEV_CLIENTS,
-      provider: "mastodon",
-    });
-    await mastodon("https://fosstodon.org/oauth/token", {
-      method: "POST",
-      body: "",
-    });
-    expect(sent.mock.calls[0]?.[0].url).toBe(
-      "https://fosstodon.org/oauth/token",
-    );
-    await expect(
-      mastodon("https://mastodon.social/oauth/token", { method: "POST" }),
-    ).rejects.toThrow(TypeError);
   });
 
   it("in local dev, refuses a body it can't put the client in, and one too large", async () => {
     directFetch();
-    const linkedin = integrationFetch({
+    const google = integrationFetch({
       env: DEV_CLIENTS,
-      provider: "linkedin",
+      provider: "google-workspace",
     });
     await expect(
-      linkedin(LINKEDIN_TOKEN, {
+      google(GOOGLE_TOKEN, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
       }),
     ).rejects.toThrow(/form-encoded/);
     await expect(
-      linkedin(LINKEDIN_TOKEN, {
+      google(GOOGLE_TOKEN, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: `code=${"x".repeat(64 * 1024)}`,
@@ -816,53 +743,44 @@ describe("OAuth clients", () => {
     ).rejects.toThrow(/at most 64 KiB/);
   });
 
-  it("in local dev, needs both of the client's settings", () => {
-    expect(() =>
+  it("in local dev, needs both of the client's settings", async () => {
+    directFetch();
+    await expect(
       integrationFetch({
-        env: { EVERYAPP_DEV: "1", LINKEDIN_CLIENT_ID: "id" },
-        provider: "linkedin",
-      }),
-    ).toThrowError(
-      /set LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET in \.dev\.vars/,
+        env: { ...DEV_CLIENTS, GOOGLE_WORKSPACE_CLIENT_SECRET: "" },
+        provider: "google-workspace",
+      })(GOOGLE_TOKEN, { method: "POST", body: "grant_type=refresh_token" }),
+    ).rejects.toThrowError(
+      /\.dev\.vars .*set GOOGLE_WORKSPACE_CLIENT_ID, GOOGLE_WORKSPACE_CLIENT_SECRET/,
     );
   });
 
-  it("reads the client id (and instance) from the gateway's status", async () => {
+  it("reads the client id from the gateway's status", async () => {
     const bindingFetch = vi.fn(async () =>
       Response.json({
-        capability: "linkedin",
+        capability: "slack",
         requested: true,
         configured: true,
         ready: true,
-        clientId: "gateway-linkedin-id",
+        clientId: "gateway-slack-id",
       }),
     );
     const status = await integrationStatus({
       env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-      provider: "linkedin",
+      provider: "slack",
     });
-    expect(status.clientId).toBe("gateway-linkedin-id");
+    expect(status.clientId).toBe("gateway-slack-id");
     expectTypeOf(status.clientId).toEqualTypeOf<string | undefined>();
-    expectTypeOf(status.origin).toEqualTypeOf<string | undefined>();
   });
 
   it("in local dev, gives the developer's client id once both settings are set", async () => {
     await expect(
-      integrationStatus({ env: DEV_CLIENTS, provider: "linkedin" }),
+      integrationStatus({ env: DEV_CLIENTS, provider: "google-workspace" }),
     ).resolves.toMatchObject({
       requested: true,
       configured: true,
       ready: true,
-      clientId: "dev-linkedin-id",
-    });
-    await expect(
-      integrationStatus({ env: DEV_CLIENTS, provider: "mastodon" }),
-    ).resolves.toMatchObject({
-      requested: true,
-      configured: true,
-      ready: true,
-      clientId: "dev-mastodon-id",
-      origin: "https://fosstodon.org",
+      clientId: "dev-google-id",
     });
     await expect(
       integrationStatus({
@@ -886,7 +804,6 @@ describe("OAuth clients with scope sets", () => {
   const CAPABILITIES_VAR = JSON.stringify({
     "google-workspace": { access: "write", scopes: ["identity", "gmail.read"] },
     "microsoft-365": { access: "write", scopes: ["identity", "mail.read"] },
-    linkedin: { access: "write" },
   });
   const DEV = {
     EVERYAPP_DEV: "1",
@@ -894,8 +811,6 @@ describe("OAuth clients with scope sets", () => {
     GOOGLE_WORKSPACE_CLIENT_SECRET: "dev-google-secret",
     MICROSOFT_365_CLIENT_ID: "dev-ms-id",
     MICROSOFT_365_CLIENT_SECRET: "dev-ms-secret",
-    LINKEDIN_CLIENT_ID: "dev-linkedin-id",
-    LINKEDIN_CLIENT_SECRET: "dev-linkedin-secret",
     EVERYAPP_DEV_CAPABILITIES: CAPABILITIES_VAR,
   };
   const FORM = { "content-type": "application/x-www-form-urlencoded" };
@@ -913,7 +828,7 @@ describe("OAuth clients with scope sets", () => {
 
   const exchange = (
     env: Record<string, string>,
-    provider: "google-workspace" | "microsoft-365" | "linkedin",
+    provider: "google-workspace" | "microsoft-365",
     body: string,
     url = provider === "microsoft-365" ? MS_TOKEN : GOOGLE_TOKEN,
   ) =>
@@ -978,15 +893,6 @@ describe("OAuth clients with scope sets", () => {
       clientId: "dev-ms-id",
       scopeSets: ["identity", "mail.read"],
       scopes: ["User.Read", "Mail.Read", "offline_access"],
-    });
-    // A client without scope sets answers as before.
-    await expect(
-      integrationStatus({ env: DEV, provider: "linkedin" }),
-    ).resolves.toMatchObject({
-      requested: true,
-      configured: true,
-      ready: true,
-      clientId: "dev-linkedin-id",
     });
   });
 
@@ -1075,16 +981,12 @@ describe("OAuth clients with scope sets", () => {
         provider: "google-workspace",
       }),
     ).resolves.toMatchObject({ ...voided, configured: false });
-    // LinkedIn has no sets to void.
-    await expect(
-      integrationStatus({ env: noManifest, provider: "linkedin" }),
-    ).resolves.toMatchObject({ ready: true, clientId: "dev-linkedin-id" });
   });
 
   it("in local dev, tells an app that doesn't list the client nothing, its id included, as on the gateway", async () => {
     for (const capabilities of [
       "{}",
-      JSON.stringify({ linkedin: { access: "write" } }),
+      JSON.stringify({ slack: { access: "write", scopes: ["channels.read"] } }),
     ]) {
       await expect(
         integrationStatus({
@@ -1167,7 +1069,7 @@ describe("OAuth clients with scope sets", () => {
     [
       "a client the manifest doesn't list",
       DEV,
-      JSON.stringify({ linkedin: { access: "write" } }),
+      JSON.stringify({ slack: { access: "write", scopes: ["channels.read"] } }),
       "grant_type=authorization_code&code=c",
       GOOGLE_TOKEN,
       [
@@ -1359,21 +1261,6 @@ describe("OAuth clients with scope sets", () => {
     await expect(noToken.json()).resolves.toEqual({
       ok: false,
       error: "invalid_code",
-    });
-  });
-
-  it("in local dev, leaves a client without scope sets as it was: any grant, any answer", async () => {
-    const sent = providerAnswers({ access_token: "linkedin-token" });
-    const response = await exchange(
-      DEV,
-      "linkedin",
-      "grant_type=client_credentials",
-      "https://www.linkedin.com/oauth/v2/accessToken?grant_type=client_credentials",
-    );
-    expect(sent).toHaveBeenCalledOnce();
-    expect(response.headers.get("x-everyapp-error")).toBeNull();
-    await expect(response.json()).resolves.toEqual({
-      access_token: "linkedin-token",
     });
   });
 });

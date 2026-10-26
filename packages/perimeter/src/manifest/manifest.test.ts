@@ -518,7 +518,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { nope: { access: "read" } },
-      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin, facebook, .*, microsoft-365, stripe, .*, newsapi\)/,
+      /capabilities\.nope: unknown capability \(the gateway offers: dataforseo, context, email, members, slack, google-workspace, microsoft-365, stripe, .*, newsapi\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -567,19 +567,53 @@ describe("capabilities manifest field", () => {
       /capabilities\.dataforseo: Unrecognized key: "senders"/,
     ],
     [
-      "an OAuth client for reading",
-      { linkedin: { access: "read" } },
-      /capabilities\.linkedin\.access: LinkedIn offers write access/,
+      "redirect paths on a capability that isn't an OAuth client",
+      { dataforseo: { access: "read", redirectPaths: ["/callback"] } },
+      /capabilities\.dataforseo\.redirectPaths: DataForSEO takes no redirectPaths; only an OAuth client has a callback/,
     ],
     [
-      "scope sets on an OAuth client without a scope policy",
-      { mastodon: { access: "write", scopes: ["write:statuses"] } },
-      /capabilities\.mastodon\.scopes: Mastodon takes no scopes; list it as \{ access: \.\.\., why \}/,
+      "a redirect path that isn't an absolute path on the app's host",
+      {
+        slack: {
+          access: "write",
+          scopes: ["messages.write"],
+          redirectPaths: ["https://evil.example/cb"],
+        },
+      },
+      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path on the app's host/,
     ],
     [
-      "scope sets on a second client without a scope policy",
-      { linkedin: { access: "write", scopes: ["identity"] } },
-      /capabilities\.linkedin\.scopes: LinkedIn takes no scopes/,
+      "a protocol-relative redirect path",
+      {
+        slack: {
+          access: "write",
+          scopes: ["messages.write"],
+          redirectPaths: ["//evil.example/cb"],
+        },
+      },
+      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path/,
+    ],
+    [
+      "a redirect path with a query",
+      {
+        slack: {
+          access: "write",
+          scopes: ["messages.write"],
+          redirectPaths: ["/cb?next=/"],
+        },
+      },
+      /capabilities\.slack\.redirectPaths\.0: a redirect path is an absolute path/,
+    ],
+    [
+      "a redirect path listed twice",
+      {
+        slack: {
+          access: "write",
+          scopes: ["messages.write"],
+          redirectPaths: ["/cb", "/cb"],
+        },
+      },
+      /capabilities\.slack\.redirectPaths: a redirect path is listed twice/,
     ],
     [
       "scope sets on an API-key provider",
@@ -679,14 +713,22 @@ describe("capabilities manifest field", () => {
     ).toEqual(capabilities);
   });
 
-  it("accepts the OAuth clients for writing, with why", () => {
+  it("accepts an OAuth client with the app's own callbacks", () => {
     const capabilities = {
-      linkedin: { access: "write", why: "Connects LinkedIn channels." },
-      "tiktok-business": { access: "write" },
-      mastodon: { access: "write", why: "Connects Mastodon accounts." },
+      slack: {
+        access: "write",
+        scopes: ["messages.write"],
+        why: "Posts to the team's channels.",
+        redirectPaths: ["/integrations/slack/callback"],
+      },
+      "google-workspace": {
+        access: "read",
+        scopes: ["identity", "gmail.read"],
+        redirectPaths: ["/integrations/google/callback"],
+      },
     };
     expect(
-      validateManifestStrict({ id: "postiz", capabilities }).capabilities,
+      validateManifestStrict({ id: "crm", capabilities }).capabilities,
     ).toEqual(capabilities);
   });
 
@@ -805,8 +847,8 @@ describe("secrets manifest field", () => {
     ],
     [
       "an OAuth client's secret, whatever its case, naming the capability",
-      ["linkedin_client_secret"],
-      /secrets\.0: linkedin_client_secret is a Gateway setting, which `everyapp secret set LINKEDIN_CLIENT_SECRET` sets on the Gateway for every app; list `linkedin` under capabilities instead/,
+      ["slack_client_secret"],
+      /secrets\.0: slack_client_secret is a Gateway setting, which `everyapp secret set SLACK_CLIENT_SECRET` sets on the Gateway for every app; list `slack` under capabilities instead/,
     ],
     [
       "a Gateway switch no capability owns",
