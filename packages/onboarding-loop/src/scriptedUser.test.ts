@@ -7,6 +7,8 @@ import {
   EXPECTED_HANDOFFS,
   FIXTURE_ACTIONS,
   isDomainQuestion,
+  isEarlyAdopterQuestion,
+  EARLY_ADOPTER_REPLY,
   parseBlocked,
   parseDone,
   subdomainFor,
@@ -28,6 +30,77 @@ const user = (
   });
 
 describe("the reply table", () => {
+  const notice =
+    "EveryApp is in early development so expect some rough edges. Here's a link with more details about giving feedback: https://everyapp.com/docs/early-adopters\nDo you still want to get set up or would you rather wait a few weeks?";
+  it("answers the early-adopter notice (#762) as an expected hand-off, not a nudge", () => {
+    const u = user();
+    const action = u.onInput({
+      kind: "turn_end",
+      text: notice,
+      hadResultEvent: true,
+    });
+    expect(action).toEqual({
+      type: "reply",
+      trigger: "early_adopter_question",
+      text: EARLY_ADOPTER_REPLY,
+      expected: true,
+    });
+    expect(u.state.interventions).toHaveLength(0);
+    expect(u.state.nudges).toBe(0);
+    // Then the domain question, answered as before.
+    expect(
+      u.onInput({
+        kind: "turn_end",
+        text: "Which domain should I use?",
+        hadResultEvent: true,
+      }),
+    ).toMatchObject({ trigger: "domain_question", expected: true });
+    expect(u.state.exercised).toEqual([
+      "early_adopter_question",
+      "domain_question",
+    ]);
+  });
+  it("answers the notice and the domain in one reply when both are asked at once", () => {
+    const u = user();
+    const action = u.onInput({
+      kind: "turn_end",
+      text: `${notice}\nIf you want to go ahead, which domain should I use?`,
+      hadResultEvent: true,
+    });
+    expect(action).toEqual({
+      type: "reply",
+      trigger: "domain_question",
+      text: `${EARLY_ADOPTER_REPLY} ${domainReply(zone)}`,
+      expected: true,
+    });
+    expect(u.state.exercised).toEqual([
+      "early_adopter_question",
+      "domain_question",
+    ]);
+  });
+  it("answers the notice when the agent wraps it in BLOCKED:", () => {
+    const u = user();
+    expect(
+      u.onInput({
+        kind: "turn_end",
+        text: `BLOCKED: waiting for your answer. ${notice}`,
+        hadResultEvent: true,
+      }),
+    ).toMatchObject({ trigger: "early_adopter_question" });
+  });
+  it("tells the question from narration about it", () => {
+    expect(isEarlyAdopterQuestion(notice)).toBe(true);
+    expect(
+      isEarlyAdopterQuestion(
+        '"Do you still want to get set up or would you rather wait a few weeks?"',
+      ),
+    ).toBe(true);
+    expect(
+      isEarlyAdopterQuestion(
+        "First I will ask you whether you'd rather wait a few weeks.",
+      ),
+    ).toBe(false);
+  });
   it("answers the domain question with the zone, never apps.<zone>", () => {
     const u = user();
     // Mid-turn text is narration; the question counts when the turn ends on it.
@@ -344,8 +417,9 @@ describe("detectors", () => {
     );
     expect(parseBlocked("fine")).toBeNull();
   });
-  it("lists the five expected hand-offs", () => {
+  it("lists the six expected hand-offs", () => {
     expect(EXPECTED_HANDOFFS).toEqual([
+      "early_adopter_question",
       "domain_question",
       "claim_owner",
       "register_workers_subdomain",

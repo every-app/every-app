@@ -15,6 +15,7 @@ import type {
 } from "./types";
 
 export const EXPECTED_HANDOFFS: readonly ExpectedHandoff[] = [
+  "early_adopter_question",
   "domain_question",
   "claim_owner",
   "register_workers_subdomain",
@@ -47,6 +48,8 @@ export const CAPS = {
 /** Never "use apps.<zone>": that invites apps.apps.<zone>. The argv must end up with --domain apps.<zone>. */
 export const domainReply = (zone: string) => `My domain is ${zone}`;
 const CONTINUE_REPLY = "Done, continue";
+/** The answer to the early-adopter notice: go ahead now, not in a few weeks. */
+export const EARLY_ADOPTER_REPLY = "Yes, continue: set it up now.";
 export const CREATE_APP_REPLY =
   "Now create an app called hello and deploy it: `pnpm everyapp create hello --json`, then from its folder `pnpm everyapp deploy --json`; tell me its URL.";
 const teamReply = (team: string) => `Use --team ${team}`;
@@ -80,6 +83,28 @@ export function isDomainQuestion(text: string): boolean {
         DOMAIN_WORD.test(sentence) &&
         !NARRATION.test(sentence) &&
         QUESTION_FORM.test(sentence),
+    );
+}
+
+/** The notice the prompt has the agent read out before step 1 (#762). */
+const EARLY_ADOPTER =
+  /\b(rather wait|wait a few weeks|still want to (get )?set (it |this )?up)\b/i;
+
+/**
+ * Does this text put the prompt's early-adopter question to the person?
+ * The question is fixed wording the agent quotes, so a match on its phrases
+ * is enough; narration about it ("I'll ask whether you'd rather wait")
+ * doesn't count.
+ */
+export function isEarlyAdopterQuestion(text: string): boolean {
+  return text
+    .split(/(?<=[.?!])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .some(
+      (sentence) =>
+        EARLY_ADOPTER.test(sentence) &&
+        !NARRATION.test(sentence) &&
+        /\?\s*["”]?\s*$/.test(sentence),
     );
 }
 
@@ -322,7 +347,14 @@ export function createScriptedUser(options: ScriptedUserOptions): ScriptedUser {
           // "BLOCKED: Waiting for your domain. Which domain should I use?" (Codex on gpt-6.1-sol,
           // run 16) is the domain question wearing the prompt's BLOCKED prefix; a person would
           // answer it. Only a BLOCKED with no recognised question stops the run.
-          if (blocked && !(isDomainQuestion(input.text) && !state.setupDone)) {
+          if (
+            blocked &&
+            !(
+              (isDomainQuestion(input.text) ||
+                isEarlyAdopterQuestion(input.text)) &&
+              !state.setupDone
+            )
+          ) {
             state.blocked = blocked;
             return { type: "stop", reason: "blocked" };
           }
@@ -334,6 +366,21 @@ export function createScriptedUser(options: ScriptedUserOptions): ScriptedUser {
           const waiting = waitForSetup();
           if (waiting) return waiting;
           if (!input.hadResultEvent) return nudge("harness_exit");
+          if (
+            isEarlyAdopterQuestion(input.text) &&
+            !state.setupDone &&
+            !state.exercised.includes("early_adopter_question")
+          ) {
+            // An agent that asks both at once gets both answers in one reply.
+            if (isDomainQuestion(input.text)) {
+              state.exercised.push("early_adopter_question");
+              return expectedReply(
+                "domain_question",
+                `${EARLY_ADOPTER_REPLY} ${domainReply(options.zone)}`,
+              );
+            }
+            return expectedReply("early_adopter_question", EARLY_ADOPTER_REPLY);
+          }
           if (isDomainQuestion(input.text) && !state.setupDone) {
             return expectedReply("domain_question", domainReply(options.zone));
           }

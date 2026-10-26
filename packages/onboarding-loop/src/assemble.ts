@@ -240,6 +240,7 @@ export function assemble(input: AssembleInput): {
   ];
 
   const expected: ExpectedHandoff[] = [
+    "early_adopter_question",
     "domain_question",
     "claim_owner",
     "create_app",
@@ -264,6 +265,10 @@ export function assemble(input: AssembleInput): {
     traces.some((trace) => trace.argv[0] === name);
   if (!exercised.includes("create_app") && ranCommand("create"))
     skippedBecause["create_app"] = "not a question: the harness ran create";
+  // The control script follows the steps and never asks; a prompt before #762 has no notice.
+  if (!exercised.includes("early_adopter_question") && ranCommand("setup"))
+    skippedBecause["early_adopter_question"] =
+      "not asked: the harness ran setup";
   if (!exercised.includes("domain_question") && ranCommand("setup"))
     skippedBecause["domain_question"] = "not asked: the harness ran setup";
   for (const handoff of EXPECTED_HANDOFFS) {

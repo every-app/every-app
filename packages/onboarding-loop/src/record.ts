@@ -266,6 +266,7 @@ const runRecordSchema = z.object({
   handoffs: z.object({
     expected: z.array(
       z.enum([
+        "early_adopter_question",
         "domain_question",
         "claim_owner",
         "register_workers_subdomain",
@@ -275,6 +276,7 @@ const runRecordSchema = z.object({
     ),
     exercised: z.array(
       z.enum([
+        "early_adopter_question",
         "domain_question",
         "claim_owner",
         "register_workers_subdomain",
@@ -288,6 +290,7 @@ const runRecordSchema = z.object({
     z.object({
       at: z.string(),
       trigger: z.enum([
+        "early_adopter_question",
         "domain_question",
         "claim_owner",
         "register_workers_subdomain",

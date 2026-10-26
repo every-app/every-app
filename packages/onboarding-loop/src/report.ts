@@ -20,6 +20,7 @@ import type {
 export const REPORT_DIR = "docs/onboarding-loop";
 
 const HANDOFFS: ExpectedHandoff[] = [
+  "early_adopter_question",
   "domain_question",
   "claim_owner",
   "register_workers_subdomain",

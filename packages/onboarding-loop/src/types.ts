@@ -366,6 +366,8 @@ export type EventLogLine =
 
 /** The hand-offs the prompt itself creates; answering one is expected, not an intervention. */
 export type ExpectedHandoff =
+  /** The prompt's early-adopter notice (#762): "Do you still want to get set up or would you rather wait a few weeks?" */
+  | "early_adopter_question"
   | "domain_question"
   | "claim_owner"
   | "register_workers_subdomain"
