@@ -90,6 +90,7 @@ function listed(
     providers,
     password: { on: true, offPending: false },
     access: { on: false, label: null },
+    outerRing: false,
     operator: "self_hosted",
     ...overrides,
   };
@@ -236,6 +237,80 @@ describe("Manage workspace → Sign-in", () => {
     expect(dialog()!.textContent).toContain("Sign in with Google");
     expect(dialog()!.textContent).toContain(
       "To change a setting (a new client secret)",
+    );
+  });
+
+  it("without Access in front, has no banner and lists every provider as before", async () => {
+    await render();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+    expect(body()).not.toContain("Show sign-in providers");
+    expect(
+      [...container.querySelectorAll("li")].some((row) =>
+        row.textContent?.startsWith("Cloudflare Access"),
+      ),
+    ).toBe(false);
+    expect(body()).toContain(
+      "Set EMAIL_PASSWORD_SIGN_IN=false from a terminal to turn passwords off",
+    );
+  });
+
+  it("with Access in front, says Access signs people in and folds the providers that are off", async () => {
+    await render(listed({ outerRing: true }));
+    const banner = container.querySelector('[data-slot="alert"]')!;
+    expect(banner.textContent).toContain(
+      "Cloudflare Access signs people in to this workspace.",
+    );
+    expect(banner.textContent).toContain(
+      "You don't need anything here while Access is on",
+    );
+    const access = [...container.querySelectorAll("li")].find((row) =>
+      row.textContent?.startsWith("Cloudflare Access"),
+    )!;
+    expect(access.textContent).toContain("pnpm everyapp access on");
+    expect(access.textContent).toContain("On");
+    const password = [...container.querySelectorAll("li")].find((row) =>
+      row.textContent?.startsWith("Password"),
+    )!;
+    expect(password.textContent).toContain("On");
+    expect(password.textContent).toContain(
+      "Only for whoever Access already let in",
+    );
+    // On (Google) and Needs setup (GitHub) stay out; the four that are off fold.
+    expect(rowOf("Google").textContent).toContain("On");
+    expect(rowOf("GitHub").textContent).toContain("Needs setup");
+    for (const label of ["Microsoft", "Apple", "Cloudflare", "SSO"]) {
+      expect(() => rowOf(label), label).toThrow();
+    }
+    const show = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Show sign-in providers",
+    )!;
+    expect(show.closest("li")!.textContent).toContain(
+      "Microsoft, Apple, Cloudflare, SSO",
+    );
+    await press(show);
+    expect(body()).not.toContain("Show sign-in providers");
+    for (const label of ["Microsoft", "Apple", "Cloudflare", "SSO"]) {
+      expect(rowOf(label).textContent, label).toContain("Set up");
+    }
+    // Expanded, they behave as before: Set up opens the dialog.
+    await press(rowOf("Apple").querySelector("button")!);
+    expect(dialog()!.textContent).toContain("Set up sign-in with Apple");
+  });
+
+  it("with Access in front and passwords off or waiting, says what Access does", async () => {
+    await render(
+      listed({ outerRing: true, password: { on: false, offPending: false } }),
+    );
+    expect(body()).toContain(
+      "EMAIL_PASSWORD_SIGN_IN=false: Access signs everyone in.",
+    );
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(
+      listed({ outerRing: true, password: { on: true, offPending: true } }),
+    );
+    expect(body()).toContain(
+      "passwords stay on until an owner has opened the workspace through Access once",
     );
   });
 

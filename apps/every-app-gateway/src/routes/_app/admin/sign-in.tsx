@@ -1,13 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { Info } from "lucide-react";
 import { SignInProviderSetupDialog } from "@/client/components/admin/SignInProviderSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { SectionHeader } from "@/client/components/PageHeader";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/client/components/ui/alert";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Skeleton } from "@/client/components/ui/skeleton";
 import {
+  OUTER_RING_BANNER,
+  OUTER_RING_DETAIL,
   SIGN_IN_LEAD,
   passwordSignInView,
   signInStatusView,
@@ -29,9 +37,15 @@ const SIGN_IN_PROVIDERS_KEY = ["admin", "signInProviders"] as const;
  * and the command that sets them. Read-only by design: the settings are
  * Worker secrets the Gateway can't write to itself, so a stolen admin
  * session can't add a way in (threat model B10).
+ *
+ * With Cloudflare Access in front (the outer ring), Access signs people in
+ * and the providers only matter without it: a banner says so, and the
+ * providers that are off fold behind one row. One that is on or needs
+ * setup stays out, so nothing configured hides.
  */
 function SignInPage() {
   const [open, setOpen] = useState<ListedSignInProvider | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const query = useQuery({
     queryKey: SIGN_IN_PROVIDERS_KEY,
     queryFn: () => listSignInProviders(),
@@ -41,10 +55,26 @@ function SignInPage() {
   const shown = open
     ? (listing?.providers.find((provider) => provider.id === open.id) ?? open)
     : null;
+  const outerRing = listing?.outerRing ?? false;
+  const folded =
+    outerRing && !showAll
+      ? (listing?.providers.filter((provider) => provider.status === "off") ??
+        [])
+      : [];
+  const listed =
+    listing?.providers.filter((provider) => !folded.includes(provider)) ?? [];
 
   return (
     <div className="space-y-6">
       <SectionHeader title="Sign-in" hint={SIGN_IN_LEAD} />
+
+      {outerRing ? (
+        <Alert variant="info" role="note">
+          <Info />
+          <AlertTitle>{OUTER_RING_BANNER.title}</AlertTitle>
+          <AlertDescription>{OUTER_RING_BANNER.description}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {query.isError ? (
         <ErrorState
@@ -63,7 +93,19 @@ function SignInPage() {
           className="divide-y divide-border rounded-lg border border-border"
           aria-label="Ways to sign in"
         >
-          <PasswordRow password={listing.password} />
+          {outerRing ? (
+            <Row
+              name="Cloudflare Access"
+              detail={
+                <>
+                  {OUTER_RING_DETAIL}{" "}
+                  <span className="font-mono">pnpm everyapp access on</span>
+                </>
+              }
+              status={<span>On</span>}
+            />
+          ) : null}
+          <PasswordRow password={listing.password} outerRing={outerRing} />
           {listing.access.on && listing.access.label ? (
             <Row
               name={`Cloudflare Access (${listing.access.label})`}
@@ -76,13 +118,19 @@ function SignInPage() {
               status={<span>On</span>}
             />
           ) : null}
-          {listing.providers.map((provider) => (
+          {listed.map((provider) => (
             <ProviderRow
               key={provider.id}
               provider={provider}
               onOpen={() => setOpen(provider)}
             />
           ))}
+          {folded.length > 0 ? (
+            <FoldedProvidersRow
+              providers={folded}
+              onShow={() => setShowAll(true)}
+            />
+          ) : null}
         </ul>
       )}
 
@@ -126,12 +174,48 @@ function Row({
   );
 }
 
+/**
+ * Behind the outer ring, the providers that are off, folded into one
+ * dashed row that names them; showing them lists each as without Access.
+ */
+function FoldedProvidersRow({
+  providers,
+  onShow,
+}: {
+  providers: ListedSignInProvider[];
+  onShow: () => void;
+}) {
+  return (
+    <li className="p-2">
+      <div className="flex flex-col gap-2 rounded-md border border-dashed border-foreground/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-medium">Sign-in providers</p>
+          <p className="text-xs text-muted-foreground">
+            {providers.map((provider) => provider.label).join(", ")}: off, for
+            running without Access.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={onShow}
+        >
+          Show sign-in providers
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 function PasswordRow({
   password,
+  outerRing,
 }: {
   password: Parameters<typeof passwordSignInView>[0];
+  outerRing: boolean;
 }) {
-  const view = passwordSignInView(password);
+  const view = passwordSignInView(password, { outerRing });
   return (
     <Row
       name="Password"

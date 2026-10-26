@@ -95,6 +95,12 @@ export interface SignInProvidersListing {
   /** Cloudflare Access's own sign-in ("Continue with <label>"), set with `everyapp access`. */
   access: { on: boolean; label: string | null };
   /**
+   * Whether Cloudflare Access sits in front of the gateway's hostnames (the
+   * outer ring, `everyapp access on`): it signs people in, and the providers
+   * matter only without it. Whether, never its team or AUD tags.
+   */
+  outerRing: boolean;
+  /**
    * Who runs `everyapp signin add`: on a self-hosted gateway whoever holds
    * its Cloudflare login; on the hosted one the platform's operator.
    */
@@ -169,6 +175,7 @@ export async function listSignInProviders(): Promise<SignInProvidersListing> {
       on: Boolean(access.oidc),
       label: access.oidc?.label ?? null,
     },
+    outerRing: Boolean(access.outerRing),
     operator: platformPolicy(env).hosted ? "hosted" : "self_hosted",
   };
 }

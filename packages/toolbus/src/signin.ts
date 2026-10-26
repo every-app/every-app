@@ -27,7 +27,7 @@ export const SIGNIN_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "signin_list",
     title: "List the sign-in providers",
     description:
-      "List the ways people can sign in to this Gateway beside their password (Manage workspace → Sign-in): every sign-in provider (google, microsoft, github, apple, cloudflare, oidc) with its status (on; off; incomplete, which means needs setup: some settings are set and the provider stays off until the rest are), the settings it reads with whether each is set (never a value), the redirect URL to register at the provider, and the command that sets it up from a terminal (`pnpm everyapp signin add <id>`); also whether password sign-in is on and whether Cloudflare Access sign-in is on. Nothing here changes a setting: they are Worker secrets, set from the terminal. Owners and admins.",
+      "List the ways people can sign in to this Gateway beside their password (Manage workspace → Sign-in): every sign-in provider (google, microsoft, github, apple, cloudflare, oidc) with its status (on; off; incomplete, which means needs setup: some settings are set and the provider stays off until the rest are), the settings it reads with whether each is set (never a value), the redirect URL to register at the provider, and the command that sets it up from a terminal (`pnpm everyapp signin add <id>`); also whether password sign-in is on, whether Cloudflare Access sign-in is on, and whether Access is in front of the Gateway (`outerRing`; then Access signs people in and the providers matter only without it). Nothing here changes a setting: they are Worker secrets, set from the terminal. Owners and admins.",
     inputSchema: {
       type: "object",
       properties: {},

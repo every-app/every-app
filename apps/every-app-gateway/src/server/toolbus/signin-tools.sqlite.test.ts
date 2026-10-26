@@ -322,6 +322,7 @@ describe("the sign-in provider tools on /mcp", () => {
     expect(answer.data).toMatchObject({
       password: { on: true, offPending: false },
       access: { on: false, label: null },
+      outerRing: false,
       operator: "self_hosted",
       next: expect.stringContaining("pnpm everyapp signin add <id>"),
     });
