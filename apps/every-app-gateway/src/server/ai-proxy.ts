@@ -50,6 +50,12 @@ const STRIPPED_PROXY_HEADERS = [
   "x-api-key",
   "openai-organization",
   "openai-project",
+  // Anthropic's workspace selector: with a key spanning workspaces an app
+  // would choose the workspace billed and watched.
+  "anthropic-workspace-id",
+  // Hugging Face's billing selector: the token's user may belong to several
+  // billable organizations. (Headers.delete matches names case-insensitively.)
+  "x-hf-bill-to",
 ];
 // Every gateway trust header, and AI Gateway's (cf-aig-*), which would let
 // an app pick a gateway's cache, logging or metadata.

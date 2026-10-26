@@ -5,6 +5,9 @@ const STRIPPED_HEADERS = [
   // The gateway's key decides the account, never the app.
   "authorization",
   "x-api-key",
+  // Account and billing selectors (Headers.delete is case-insensitive).
+  "anthropic-workspace-id",
+  "x-hf-bill-to",
   "cookie",
   IDENTITY_HEADER,
   PUBLIC_HEADER,

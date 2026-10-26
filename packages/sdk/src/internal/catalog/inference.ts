@@ -14,7 +14,7 @@ import type {
 } from "../capabilities.js";
 
 export const INFERENCE = {
-  // Bearer is the documented header today; x-api-key is the legacy fallback. A workspace-scoped key keeps anthropic-workspace-id harmless.
+  // Bearer is the documented header today; x-api-key is the legacy fallback. The Gateway strips anthropic-workspace-id (and x-api-key), so the key alone decides the workspace.
   anthropic: {
     mode: "ai",
     label: "Anthropic",
@@ -43,7 +43,7 @@ export const INFERENCE = {
     secrets: [
       {
         name: "ANTHROPIC_API_KEY",
-        hint: "A key scoped to one workspace, so no call needs an anthropic-workspace-id header.",
+        hint: "A key scoped to one workspace; the Gateway strips any anthropic-workspace-id header an app sends, so the key alone decides the workspace.",
       },
     ],
     smoke: {
@@ -444,7 +444,7 @@ export const INFERENCE = {
     },
     tags: ["ai", "images", "video", "audio"],
   },
-  // The router forwards X-HF-Bill-To as sent, so an app can bill any organization the token's user belongs to (TODO.md).
+  // The Gateway strips X-HF-Bill-To, so calls bill the token's own account, never another organization the token's user belongs to.
   huggingface: {
     mode: "api_key",
     label: "Hugging Face Inference",

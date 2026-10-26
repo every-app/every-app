@@ -972,7 +972,7 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 **Anthropic** (`ai`): Claude models through the Messages API.
 
 - **Settings:** `ANTHROPIC_API_KEY`
-- **What the key is:** An API key from the Claude Console's API keys page; the Gateway sends it as a bearer token. Apps send the anthropic-version header themselves. A key scoped to one workspace, so no call needs an anthropic-workspace-id header.
+- **What the key is:** An API key from the Claude Console's API keys page; the Gateway sends it as a bearer token. Apps send the anthropic-version header themselves. A key scoped to one workspace; the Gateway strips any anthropic-workspace-id header an app sends, so the key alone decides the workspace.
 - **Where the key comes from:** https://platform.claude.com/settings/keys
 - **API reference:** https://platform.claude.com/docs/en/api/overview
 - **How it is sent:** `Authorization: Bearer <ANTHROPIC_API_KEY>`, to `api.anthropic.com` only, over https

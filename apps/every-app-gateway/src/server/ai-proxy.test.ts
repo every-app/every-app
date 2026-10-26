@@ -84,6 +84,9 @@ describe("handleAuthenticatedAiProxyRequest", () => {
           "x-api-key": "app-held-key",
           "openai-organization": "org-app-chosen",
           "openai-project": "proj_app_chosen",
+          "Anthropic-Workspace-Id": "wrkspc_app_chosen",
+          "X-HF-Bill-To": "someone-elses-org",
+          "anthropic-version": "2023-06-01",
           "cf-aig-cache-key": "another-apps-cache",
           "cf-aig-metadata": '{"org":"someone-else"}',
           "x-everyapp-org": "org-forged",
@@ -119,6 +122,12 @@ describe("handleAuthenticatedAiProxyRequest", () => {
     expect(forwardedRequest.headers.get("x-api-key")).toBeNull();
     expect(forwardedRequest.headers.get("openai-organization")).toBeNull();
     expect(forwardedRequest.headers.get("openai-project")).toBeNull();
+    expect(forwardedRequest.headers.get("anthropic-workspace-id")).toBeNull();
+    expect(forwardedRequest.headers.get("x-hf-bill-to")).toBeNull();
+    // Benign provider headers pass.
+    expect(forwardedRequest.headers.get("anthropic-version")).toBe(
+      "2023-06-01",
+    );
     const forwardedNames = [...forwardedRequest.headers.keys()];
     expect(
       forwardedNames.filter(

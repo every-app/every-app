@@ -139,6 +139,8 @@ describe("AppGateway capabilities", () => {
       headers: {
         authorization: "Basic app-supplied",
         "x-api-key": "app-supplied",
+        "X-HF-Bill-To": "someone-elses-org",
+        "Anthropic-Workspace-Id": "wrkspc_app_chosen",
         cookie: "session=1",
         "x-everyapp-identity": "not-a-valid-token",
         // Its own organization (another is refused): stripped all the same.
@@ -162,6 +164,8 @@ describe("AppGateway capabilities", () => {
     );
     for (const stripped of [
       "x-api-key",
+      "x-hf-bill-to",
+      "anthropic-workspace-id",
       "cookie",
       "x-everyapp-identity",
       "x-everyapp-org",
