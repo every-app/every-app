@@ -75,6 +75,35 @@ sandbox, the street address), and the threat model's earlier, less-fixed states
 with dates. None of it is exploitable. Whether that candour is the point is Ben's
 call; his ruling says it is.
 
+## Tonight (2026-10-26)
+
+Re-scanned at `main` f0cc2660 (#805, the rc.6 publish commit; only CI-only
+changes may follow): 782 commits, gitleaks 66 and trufflehog 20 unverified (the
+same findings as above, nothing new), 0 verified. `every-app/every-app` `main`
+(1e71f113) is still an ancestor: the push is a fast-forward of 533 commits. The
+app repos are unchanged since their scan (`private-open-crm` a1c76d34,
+`private-open-analytics` d4baf103, `private-open-mail` `everyapp` 6ed2e87c).
+
+The public repo also has **48 GitHub releases** (`gateway-v0.0.1` …
+`gateway-v0.1.13`, `gateway-latest`), and v0.1.13 is marked Latest. Deleting
+only the tags would leave those releases up as drafts. `gh release delete --cleanup-tag`
+removes each release with its tag. Ben runs every step:
+
+0. Cloudflare dashboard: enforce two-factor on the account behind everyapp.team.
+1. The app repos: the commands in [2026-10-app-repos-public-history.md](2026-10-app-repos-public-history.md#push-commands-ben-runs-these).
+2. The platform: Option A below, from a clean clone.
+3. The rc.6 Gateway release, after step 2's push:
+
+```sh
+git tag gateway-v0.3.0-rc.6 f0cc266056ff8edd5a867bc3d704ed212beaf2d0
+git push git@github.com:every-app/every-app.git gateway-v0.3.0-rc.6
+gh run watch -R every-app/every-app $(gh run list -R every-app/every-app --workflow gateway-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+curl -sIL -o /dev/null -w '%{http_code}\n' https://github.com/every-app/every-app/releases/download/gateway-v0.3.0-rc.6/every-app-gateway-release.tar.gz   # 200
+```
+
+rc.6 is a prerelease, so `/releases/latest` answers 404 until a stable tag
+exists; the CLI asks for its own version's tag first.
+
 ## Option A: publish full history (recommended)
 
 The roll list is empty, so A. From a clean clone of origin `main`:
@@ -85,7 +114,8 @@ gitleaks git --redact . && trufflehog git file://. --only-verified --fail   # re
 PUB=git@github.com:every-app/every-app.git
 git fetch $PUB main && git merge-base --is-ancestor FETCH_HEAD main && echo fast-forward
 git push $PUB main:main                     # fast-forward; --force only if the check above fails
-git ls-remote --tags $PUB | awk '{print $2}' | grep -v '\^{}' | xargs git push $PUB --delete
+gh release list -R every-app/every-app --limit 100 --json tagName --jq '.[].tagName' | xargs -n1 gh release delete -R every-app/every-app --cleanup-tag -y   # 48 old releases and their tags
+git ls-remote --tags $PUB | awk '{print $2}' | grep -v '\^{}' | sed 's#refs/tags/##' | xargs git push $PUB --delete   # any tag left without a release
 for b in 2510_change_repo_name 2510_update_landing_page 2510_update_tanstack_db codex/v2-public-full-sync codex/v2-public-starter-sync; do git push $PUB --delete "$b"; done
 gh repo edit every-app/every-app --visibility public --accept-visibility-change-consequences
 gh api -X PUT repos/every-app/every-app/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors   # only accepted once public
