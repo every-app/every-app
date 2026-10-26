@@ -49,7 +49,7 @@ type CredentialBoundSession = AuthenticatedSession & {
 };
 
 /** A live membership: the role, and the organization's name for `org_name`. */
-export interface LiveMembership {
+interface LiveMembership {
   role: string;
   orgName: string;
 }

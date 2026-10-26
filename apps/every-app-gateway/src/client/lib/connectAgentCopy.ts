@@ -6,14 +6,14 @@
  * `mcp.json` with a `url`); check them there before changing one.
  */
 
-export type ConnectClientId =
+type ConnectClientId =
   | "claude"
   | "claude-code"
   | "codex"
   | "cursor"
   | "other";
 
-export interface ConnectClient {
+interface ConnectClient {
   id: ConnectClientId;
   /** The tab's label. */
   label: string;
