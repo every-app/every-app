@@ -627,6 +627,18 @@ describe("deploy", () => {
     expect((await readInstall(registry()))?.liveAppWorkers).not.toContain("every-acme-todo");
   });
 
+  it("nudges the Gateway's activation queue once the app is bound, so Access never leaves it waiting for a cron", async () => {
+    await deploy();
+    expect(account.pushedMessages).toEqual([
+      { queue: "every-app-gateway-activate", body: { body: { activate: true }, content_type: "json" } },
+    ]);
+
+    // A Gateway from before the queue: nothing pushed, the deploy as before.
+    for (const [id, queue] of account.queues) if (queue.name === "every-app-gateway-activate") account.queues.delete(id);
+    await expect(deploy({ ...TODO, description: "v2" })).resolves.toMatchObject({ workerName: "every-acme-todo" });
+    expect(account.pushedMessages).toHaveLength(1);
+  });
+
   it("records an upload cf finished when Ctrl+C stopped the deploy then", async () => {
     await deploy();
     let interrupted: Promise<void> | undefined;
@@ -1349,6 +1361,8 @@ describe("deploy of an app without helper Workers", () => {
           "workers deployments list --worker every-app-gateway --per-page 10",
           "deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile)",
           "workers deployments list --worker every-app-gateway --per-page 10",
+          "queues list",
+          "queues messages push queue-00000003 --body @/fake-cf-files/body.json",
           "zero-trust access applications list --per-page 100 --page 1",
         ],
         "owned": [

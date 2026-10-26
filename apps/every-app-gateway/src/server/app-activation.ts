@@ -22,12 +22,16 @@
  *
  * Behind Cloudflare Access the deploy's own probe never reaches the
  * gateway, so nobody makes that first request until a person opens the
- * app. Two more triggers make the same probe and the same transition: the
- * launcher and Admin → Apps read their lists through
- * {@link activateBindingApps}, and the per-minute cron sweeps every
- * `binding` row of the install through {@link activateDeployingApps}, so
- * an uploaded app is live within a minute whether or not anyone visits,
- * and the CLI's live wait (which reads D1) finishes under Access too.
+ * app. Three more triggers make the same probe and the same transition:
+ * the launcher and Admin → Apps read their lists through
+ * {@link activateBindingApps}; the CLI, once it has bound an app, pushes a
+ * message to the Gateway's activation queue (`every-app-gateway-activate`,
+ * server.ts `queue`), which sweeps every `binding` row through
+ * {@link activateDeployingApps} within seconds (trigger `deploy`); and the
+ * per-minute cron sweeps the same way, as the fallback. A cron is no
+ * prompt trigger on a fresh Gateway: Cloudflare takes up to 15 minutes to
+ * start a new Cron Trigger (seen live: a first deploy behind Access waited
+ * eight). The CLI's live wait (which reads D1) finishes under Access too.
  * "Deploying" then means the gateway can't reach the Worker yet, not that
  * nobody has visited. One `app.live` event records the transition, with
  * which trigger made it.
@@ -205,7 +209,8 @@ export async function activateBindingApps(
 const SCHEDULED_ACTIVATIONS_MAX = 50;
 
 /**
- * The cron's sweep (server.ts `scheduled`, every minute): every `binding`
+ * The activation sweep, run by the CLI's nudge (server.ts `queue`, trigger
+ * `deploy`) and by the cron (server.ts `scheduled`, every minute): every `binding`
  * row of the install, probed and made active like a visit would. This is
  * what finishes a deploy behind Cloudflare Access, where neither the
  * CLI's probe nor an uptime monitor reaches the gateway: the CLI's live
@@ -217,6 +222,7 @@ const SCHEDULED_ACTIVATIONS_MAX = 50;
 export async function activateDeployingApps(
   env: { GATEWAY_DEPLOYMENT_MODE?: string },
   openRegistry: () => Pick<AppRegistry, "findByOrgApp">,
+  trigger: Extract<AppLiveTrigger, "scheduled" | "deploy"> = "scheduled",
 ): Promise<number> {
   if (!platformPolicy(env).bindingActivation) return 0;
   let binding: ListedAppRow[];
@@ -226,7 +232,7 @@ export async function activateDeployingApps(
     logEvent(
       "app.activate_failed",
       {
-        trigger: "scheduled",
+        trigger,
         message: error instanceof Error ? error.message : String(error),
       },
       "warn",
@@ -235,16 +241,39 @@ export async function activateDeployingApps(
   }
   if (binding.length === 0) return 0;
   const activated = await activateBindingApps(env, openRegistry, binding, {
-    trigger: "scheduled",
+    trigger,
     max: SCHEDULED_ACTIVATIONS_MAX,
   });
   if (activated.size > 0) {
     logEvent("app.activate_sweep", {
+      trigger,
       binding: binding.length,
       activated: activated.size,
     });
   }
   return activated.size;
+}
+
+/** How long the activation queue waits before sweeping again while an app is still binding. */
+const NUDGE_RETRY_SECONDS = 5;
+
+/**
+ * A batch of the activation queue (server.ts `queue`): the CLI's nudges
+ * once it has bound an app. One sweep for the whole batch, trigger
+ * `deploy`; while any app is still `binding` (an isolate on the previous
+ * version, a Worker not reachable yet), the batch is retried in 5 s, up to
+ * the queue's retries, and the cron stays the fallback. A message's body
+ * is never read.
+ */
+export async function sweepOnNudge(
+  batch: Pick<MessageBatch, "ackAll" | "retryAll">,
+  env: { GATEWAY_DEPLOYMENT_MODE?: string },
+  openRegistry: () => Pick<AppRegistry, "findByOrgApp">,
+): Promise<void> {
+  await activateDeployingApps(env, openRegistry, "deploy");
+  const left = await AppRepository.findBinding(1).catch(() => []);
+  if (left.length > 0) batch.retryAll({ delaySeconds: NUDGE_RETRY_SECONDS });
+  else batch.ackAll();
 }
 
 // Per isolate: the version of each app this isolate last checked the

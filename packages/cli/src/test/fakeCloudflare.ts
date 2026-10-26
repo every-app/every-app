@@ -1357,6 +1357,9 @@ export class FakeCloudflare {
    * `cf queues list|create|get|delete` and `cf queues consumers
    * list|delete`, in the shapes cf 1.0.0-beta.14 printed on loop-1.
    */
+  /** Messages `cf queues messages push` sent, by queue name, with the body file's JSON. */
+  readonly pushedMessages: Array<{ queue: string; body: unknown }> = [];
+
   private queuesCommand(call: RecordedCfCall): FakeCfResponse {
     const listed = (id: string, queue: FakeQueue) => ({
       queue_id: id,
@@ -1408,6 +1411,12 @@ export class FakeCloudflare {
       return cfError(`unknown command queues consumers ${action}`);
     }
     const action = call.args[1];
+    if (action === "messages" && call.args[2] === "push") {
+      const pushedTo = this.queues.get(call.args[3]!);
+      if (!pushedTo) return notFound(call.args[3]!);
+      this.pushedMessages.push({ queue: pushedTo.name, body: JSON.parse(call.files["body.json"] ?? "null") });
+      return { stdout: "{}" };
+    }
     if (action === "list") {
       return { stdout: JSON.stringify([...this.queues].map(([id, queue]) => listed(id, queue))) };
     }

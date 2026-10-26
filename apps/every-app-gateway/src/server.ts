@@ -75,6 +75,7 @@ import {
   activateApp,
   activateDeployingApps,
   followAppVersion,
+  sweepOnNudge,
 } from "./server/app-activation";
 import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
@@ -549,5 +550,21 @@ export default {
     if (controller.cron === EVENTS_SWEEP_CRON) return;
     const { runMcpMaintenance } = await import("./server/mcp-auth/maintenance");
     await runMcpMaintenance(runtimeEnv);
+  },
+
+  // The activation queue (`every-app-gateway-activate`): the CLI pushes a
+  // message once it has bound an app, and this sweeps every `binding` row
+  // now rather than at the next cron (a fresh Gateway's crons take minutes
+  // to start). While an app is still binding (an isolate on the previous
+  // version, a Worker not reachable yet), the batch is retried in 5 s, up
+  // to the queue's retries; the cron stays the fallback. A message's body
+  // is never read: it is only a nudge, and pushing one takes the account's
+  // own Cloudflare credentials.
+  async queue(batch: MessageBatch, runtimeEnv: Cloudflare.Env) {
+    await sweepOnNudge(
+      batch,
+      runtimeEnv,
+      () => new DrizzleAppRegistry(runtimeEnv.DB),
+    );
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

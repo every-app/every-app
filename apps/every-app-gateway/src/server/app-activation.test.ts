@@ -23,6 +23,7 @@ import {
   activateBindingApps,
   activateDeployingApps,
   probeApp,
+  sweepOnNudge,
 } from "./app-activation";
 
 const TODO: RegisteredApp = {
@@ -389,6 +390,33 @@ describe("activateDeployingApps (the cron's sweep)", () => {
     open.mockClear();
     await expect(activateDeployingApps(env, open)).resolves.toBe(0);
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("sweeps on the CLI's nudge (trigger deploy), acks once nothing is binding, and retries in 5 s while something is", async () => {
+    const batch = () => ({ ackAll: vi.fn(), retryAll: vi.fn() });
+    const { env } = boundEnv("self_hosted");
+
+    // The app goes live: one app.live with trigger deploy, the batch acked.
+    mocks.findBinding
+      .mockResolvedValueOnce([row(TODO)])
+      .mockResolvedValueOnce([]);
+    const done = batch();
+    await sweepOnNudge(done, env, () => registry(TODO));
+    expect(mocks.emit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "app.live",
+        data: expect.objectContaining({ trigger: "deploy" }),
+      }),
+    );
+    expect(done.ackAll).toHaveBeenCalledOnce();
+    expect(done.retryAll).not.toHaveBeenCalled();
+
+    // Its binding isn't on this gateway version yet: tried again in 5 s.
+    mocks.findBinding.mockResolvedValue([row(NOTES)]);
+    const later = batch();
+    await sweepOnNudge(later, env, () => registry(NOTES));
+    expect(later.retryAll).toHaveBeenCalledExactlyOnceWith({ delaySeconds: 5 });
+    expect(later.ackAll).not.toHaveBeenCalled();
   });
 
   it("never throws: a read that fails is logged, and a gateway that can't activate reads nothing", async () => {

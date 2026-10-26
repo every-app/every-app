@@ -137,6 +137,7 @@ import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { gatewayRegistry } from "@/lib/gateway/providers";
+import { nudgeActivation } from "@/lib/gateway/resources";
 import { recordSetupStateQuietly } from "@/lib/gateway/setupState";
 import {
   findRegisteredApp,
@@ -910,6 +911,9 @@ async function deploySteps(
   const url = `https://${hostname}`;
   // A hostname the gateway doesn't publish never answers.
   const wait = !outsideBase && (options.waitForLive ?? true);
+  // Behind Cloudflare Access the live wait's probe never reaches the
+  // Gateway: the activation queue makes it sweep now, not at its next cron.
+  if (wait) await nudgeActivation(cf);
   const live = await awaitLive({
     wait,
     db: registry,
