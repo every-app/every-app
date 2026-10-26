@@ -2025,15 +2025,23 @@ Source: `apps/every-app-gateway/src/server/deploy/release.ts`, `apps/every-app-g
 
 ### APP_INSTALL_FORBIDDEN
 
-Status 403, browser install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.` On a self-hosted Gateway also when the chosen organization isn't the install organization (the oldest with an owner), the only one whose owners and admins may spend the account-wide `CF_DEPLOY_TOKEN`, or when no organization has an owner yet: `On a self-hosted Gateway only the install organization's owners and admins install apps.` `GET /api/admin/apps/install` answers it when the signed-in person owns or administers no organization the install accepts (by the person, not the session's active workspace); the install and the job poll check the workspace they name, and a refusal of another organization is logged as `app_install.refused` (warn).
+Status 403, browser install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.` On a self-hosted Gateway any organization but the install organization is refused too (the oldest with an owner), the only one whose owners and admins may spend the account-wide `CF_DEPLOY_TOKEN`, or when no organization has an owner yet: `On a self-hosted Gateway only the install organization's owners and admins install apps.` `GET /api/admin/apps/install` answers it when the signed-in person owns or administers no organization the install accepts (by the person, not the session's active workspace); the install and the job poll check the workspace they name, and a refusal of another organization is logged as `app_install.refused` (warn).
 
-**Fix:** ask an owner or admin; on a self-hosted Gateway, one of the install organization, or deploy with `pnpm everyapp install <url>` from the terminal.
+**Fix:** ask an owner (an owner or admin on a hosted Gateway); on a self-hosted Gateway, an owner of the install organization, or deploy with `pnpm everyapp install <url>` from the terminal.
+
+Source: `apps/every-app-gateway/src/server/deploy/install.ts`
+
+### APP_INSTALL_REAUTH_REQUIRED
+
+Status 403, browser install on a self-hosted Gateway: the session was signed in more than 10 minutes ago (`FRESH_SESSION_MS`), so it may not spend the account-wide deploy token: `Sign in again to install apps: an install needs a session signed in within the last 10 minutes.` A warn line `app_install.refused` with `reason: "stale_session"` names the organization and the user. Polling a job (`GET /api/admin/deploys/<id>`) has no such rule.
+
+**Fix:** sign out and in again, then install.
 
 Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
 ### APP_INSTALL_NOT_AVAILABLE
 
-Status 404, browser install: neither the hosted launch gate (`THIRD_PARTY_DEPLOYS` exactly `on`) nor self-hosted installs (`GATEWAY_DEPLOYMENT_MODE` `self_hosted`, `BROWSER_APP_INSTALLS` not `off`, `CF_DEPLOY_TOKEN` set, a 32-hex `CLOUDFLARE_ACCOUNT_ID`, `APP_BASE_DOMAIN` set) are on: `Browser installation is not enabled on this Gateway. Its owner can configure the browser deployer, or deploy with the everyapp CLI.`
+Status 404, browser install: neither the hosted launch gate (`THIRD_PARTY_DEPLOYS` exactly `on`) nor self-hosted installs (`GATEWAY_DEPLOYMENT_MODE` `self_hosted`, `BROWSER_APP_INSTALLS` exactly `on`, `CF_DEPLOY_TOKEN` set, a 32-hex `CLOUDFLARE_ACCOUNT_ID`, `APP_BASE_DOMAIN` set) are on: `Browser installation is not enabled on this Gateway. Its owner can configure the browser deployer, or deploy with the everyapp CLI.`
 
 **Fix:** configure the browser deployer (`setup` offers it), or deploy with the CLI.
 

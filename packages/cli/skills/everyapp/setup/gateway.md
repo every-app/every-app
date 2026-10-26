@@ -23,7 +23,7 @@ and set with `secret set` (Step 9).
 | `GATEWAY_DEPLOYMENT_MODE` | set by setup | `self_hosted` or `hosted`; set at the first upload, never changes |
 | `BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | set by setup | the Gateway's session and identity keys (rotation: docs/runbooks/key-rotation.md) |
 | `CF_DEPLOY_TOKEN` | optional | a Cloudflare API token (Workers Scripts Edit, D1 Edit, Zone DNS Read) for installing apps from the browser |
-| `BROWSER_APP_INSTALLS` | optional | exactly `off` turns browser installs off; unset or `on` keeps them on |
+| `BROWSER_APP_INSTALLS` | optional | exactly `on` turns browser installs on (setup writes it with the token when the person opts in); unset, `off` or anything else keeps them off. Owners and admins of the install organization, from a session under 10 minutes old |
 
 ## Costs and plans
 

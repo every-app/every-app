@@ -251,7 +251,7 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
     check: oneOf(["true", "false"]),
   },
   BROWSER_APP_INSTALLS: {
-    takes: "on or off, in lowercase; off turns browser app installs off",
+    takes: "on or off, in lowercase; on turns browser app installs on (they are off until then), off turns them off",
     check: oneOf(["on", "off"], { exact: true }),
   },
   EVENTS_ALLOW_PRIVATE_TARGETS: {

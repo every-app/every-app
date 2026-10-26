@@ -12,25 +12,26 @@ The workspace appears above the source. One eligible workspace is shown read-onl
 
 ## Configure a self-hosted Gateway
 
-Browser installation is on by default. Interactive `pnpm everyapp setup` offers **Configure browser app installs?** (Yes/No, default No), explaining: "Install apps on this Gateway through your browser, without running deployment commands." Enter accepts No and continues setup without changing credentials. Yes opens a hidden Cloudflare API token prompt. The instructions link to [Cloudflare API tokens](https://dash.cloudflare.com/profile/api-tokens), explain how to create a custom token, and list the required permissions and resource scopes. The token is stored as `CF_DEPLOY_TOKEN` on the Gateway. Existing tokens and hosted Gateways are left alone; unattended setup does not prompt, and neither does `--yes`, which answers No. Run setup again later to configure it if skipped.
+Browser installation is off until the operator turns it on: the deploy token is account-wide, so spending it from a browser is a choice, never a side effect of having stored the token. On a self-hosted Gateway only the install organization's owners and admins install, and only from a session signed in within the last 10 minutes (an older one gets `APP_INSTALL_REAUTH_REQUIRED`: sign in again, then install; polling a running job has no such rule). Interactive `pnpm everyapp setup` offers **Configure browser app installs?** (Yes/No, default No), explaining: "Install apps on this Gateway through your browser, without running deployment commands. Owners and admins, from a session signed in within the last 10 minutes; off until you say yes here." Enter accepts No and continues setup without changing credentials. Yes opens a hidden Cloudflare API token prompt and, with the token, writes `BROWSER_APP_INSTALLS=on`. The instructions link to [Cloudflare API tokens](https://dash.cloudflare.com/profile/api-tokens), explain how to create a custom token, and list the required permissions and resource scopes. The token is stored as `CF_DEPLOY_TOKEN` on the Gateway. Existing tokens and hosted Gateways are left alone; unattended setup does not prompt, and neither does `--yes`, which answers No. Run setup again later to configure it if skipped.
 
-For unattended configuration, use the matching CLI with the token already in your local environment:
+For unattended configuration, use the matching CLI with the token already in your local environment, then turn installs on:
 
 ```sh
 pnpm everyapp secret set CF_DEPLOY_TOKEN --from-env CF_DEPLOY_TOKEN --json
+BROWSER_APP_INSTALLS=on pnpm everyapp secret set BROWSER_APP_INSTALLS --from-env BROWSER_APP_INSTALLS --json
 ```
 
 Setup already set `CLOUDFLARE_ACCOUNT_ID`. It is one of the Gateway's own keys, so `secret set` refuses it (`SECRET_NOT_SETTABLE`).
 
 `CF_DEPLOY_TOKEN` needs Workers Scripts Edit and D1 Edit for the Gateway's account, plus DNS Read for its domain's zone. Keep it on the Gateway; neither the installing site nor the browser receives it. The Gateway must already have its normal `GATEWAY_URL`, `APP_BASE_DOMAIN`, identity keys, and Custom Domain in that account.
 
-To opt out, set `BROWSER_APP_INSTALLS` to exactly `off`:
+To turn installs off again, set `BROWSER_APP_INSTALLS` to exactly `off` (or unset it):
 
 ```sh
 BROWSER_APP_INSTALLS=off pnpm everyapp secret set BROWSER_APP_INSTALLS --from-env BROWSER_APP_INSTALLS --json
 ```
 
-Leaving this setting unset enables browser installs; setting it to `on` also enables them. The opt-out prevents new installs without affecting already installed apps. Missing deployer credentials still make installation unavailable.
+Only exactly `on` enables browser installs; unset, `off` or anything else keeps them off. Turning them off prevents new installs without affecting already installed apps. Missing deployer credentials still make installation unavailable.
 
 The installer uploads ordinary private account Workers, disables workers.dev and preview URLs, and adds each app's service binding and Custom Domain to the Gateway. Existing Gateway bindings, including secrets, are inherited. Browser and CLI deploys share deployment leases, Worker ownership claims, and the CLI's record of the Gateway's live version, bound apps, and published hostnames. The app's serving deployment version ID is recorded in the resource ledger immediately after upload, so the CLI can manage it even if a later install step fails. Other Workers and existing DNS records are never taken over. This first self-hosted browser flow installs new apps and retries unfinished installs; updates to active or disabled apps remain CLI operations (`pnpm everyapp install <GitHub URL | tarball URL | file>` installs or updates the same release from a terminal). Workers changed outside this installer require CLI reconciliation.
 

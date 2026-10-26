@@ -447,15 +447,18 @@ export async function installGateway({
   const asking = deps.interactive && !flags.yes && mode === "self_hosted";
   const accessWanted = offerAccess && owner !== null && mode === "self_hosted" && !flags["no-access"];
   const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, GATEWAY_WORKER_NAME) : [];
-  // Browser installs need a deploy token: asked for once, at a terminal.
+  // Browser installs need a deploy token and the operator's opt-in
+  // (BROWSER_APP_INSTALLS=on: the Gateway keeps them off otherwise, since
+  // the token is account-wide): asked for once, at a terminal, and written
+  // together.
   if (asking && !secretNames.includes("CF_DEPLOY_TOKEN")) {
     const token = await deps.prompts.browserDeploymentToken();
     if (token !== null) {
       await applySecretValues({
         flags: { json: flags.json, "account-id": account.id, gateway: gatewayUrl },
         out,
-        names: ["CF_DEPLOY_TOKEN"],
-        readValue: async () => token,
+        names: ["CF_DEPLOY_TOKEN", "BROWSER_APP_INSTALLS"],
+        readValue: async (name) => (name === "CF_DEPLOY_TOKEN" ? token : "on"),
         createCf: () => cf,
       });
     }
@@ -1185,6 +1188,8 @@ const terminalPrompts: SetupPrompts = {
   browserDeploymentToken: async () => {
     const configure = await confirmAtTerminal("Configure browser app installs?", [
       "Install apps on this Gateway through your browser, without running deployment commands.",
+      "Owners and admins, from a session signed in within the last 10 minutes; off until you say yes here",
+      `(or set BROWSER_APP_INSTALLS=on; turn off any time: ${CLI} secret set BROWSER_APP_INSTALLS).`,
     ]);
     if (!configure) return null;
     return (await askSecret("Cloudflare API token", {

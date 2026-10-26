@@ -139,6 +139,8 @@ const releases = new Map<string, Uint8Array>();
 const githubRequests: string[] = [];
 /** A session's active organization, when a test moves it off the default. */
 const activeWorkspace = new Map<string, string>();
+/** How long ago each user's session was signed in (ms); 0 unless a test says. */
+const sessionAge = new Map<string, number>();
 
 beforeAll(() => {
   keys = generateKeyPairSync("rsa", {
@@ -357,6 +359,7 @@ beforeEach(async () => {
   releases.clear();
   githubRequests.length = 0;
   activeWorkspace.clear();
+  sessionAge.clear();
   clearHostnameCacheForTests();
   clearOrgContextCacheForTests();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -442,7 +445,15 @@ beforeEach(async () => {
       (memberships.some((membership) => membership.organizationId === acme)
         ? acme
         : (memberships[0]?.organizationId ?? acme));
-    return { user, session: { activeOrganizationId, userId } };
+    return {
+      user,
+      session: {
+        activeOrganizationId,
+        userId,
+        // Signed in just now unless a test aged it.
+        createdAt: new Date(Date.now() - (sessionAge.get(userId) ?? 0)),
+      },
+    };
   };
   await db
     .insert(organizations)
@@ -583,12 +594,12 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
       { GATEWAY_DEPLOYMENT_MODE: "self_hosted", THIRD_PARTY_DEPLOYS: "on" },
     ]) {
       Object.assign(hoisted.env, gate);
-      const response = await install();
+      const response = await install(REPO, "user-alice");
       expect(response.status, JSON.stringify(gate)).toBe(404);
       expect(await response.json()).toMatchObject({
         error: "APP_INSTALL_NOT_AVAILABLE",
       });
-      expect(await (await availability()).json()).toEqual({
+      expect(await (await availability("user-alice")).json()).toEqual({
         available: false,
       });
     }
@@ -743,36 +754,51 @@ describe("self-hosted browser installs (the gate and the install organization)",
 
   beforeEach(async () => {
     selfHosted();
+    // The operator opted in (what setup writes beside the token).
+    hoisted.env["BROWSER_APP_INSTALLS"] = "on";
     // A second organization, made after Acme: Dave owns it, Carol
     // administers both. Acme, the oldest with an owner, is the install
-    // organization.
+    // organization; Alice owns it.
     await addOrganization(beta, "Beta");
     await addMember("dave", "owner", beta);
     await addMember("carol", "admin", beta);
   });
 
-  it("is on once CF_DEPLOY_TOKEN, a 32-hex CLOUDFLARE_ACCOUNT_ID and APP_BASE_DOMAIN are set, and off with BROWSER_APP_INSTALLS=off, no token or a malformed account id", async () => {
-    expect(await (await availability()).json()).toEqual({ available: true });
-
-    hoisted.env["BROWSER_APP_INSTALLS"] = "off";
-    expect(await (await availability()).json()).toEqual({ available: false });
-    const off = await install();
-    expect(off.status).toBe(404);
-    expect(await off.json()).toMatchObject({
-      error: "APP_INSTALL_NOT_AVAILABLE",
+  it("is off until BROWSER_APP_INSTALLS is exactly on beside CF_DEPLOY_TOKEN, a 32-hex CLOUDFLARE_ACCOUNT_ID and APP_BASE_DOMAIN (`install.self-hosted-default-off`)", async () => {
+    expect(await (await availability("user-alice")).json()).toEqual({
+      available: true,
     });
+
+    // Unset: off, token or no token. The default is the operator's choice
+    // to make, never a side effect of having stored the token.
+    for (const value of [undefined, "off", "ON", "true", "yes"]) {
+      if (value === undefined) delete hoisted.env["BROWSER_APP_INSTALLS"];
+      else hoisted.env["BROWSER_APP_INSTALLS"] = value;
+      expect(await (await availability("user-alice")).json()).toEqual({
+        available: false,
+      });
+      const off = await install(REPO, "user-alice");
+      expect(off.status).toBe(404);
+      expect(await off.json()).toMatchObject({
+        error: "APP_INSTALL_NOT_AVAILABLE",
+      });
+    }
 
     hoisted.env["BROWSER_APP_INSTALLS"] = "on";
     delete hoisted.env["CF_DEPLOY_TOKEN"];
-    expect(await (await availability()).json()).toEqual({ available: false });
-    expect((await install()).status).toBe(404);
+    expect(await (await availability("user-alice")).json()).toEqual({
+      available: false,
+    });
+    expect((await install(REPO, "user-alice")).status).toBe(404);
 
     // The account id must be the 32-hex Cloudflare one: the gate, not the
     // deployer, says no to anything else.
     hoisted.env["CF_DEPLOY_TOKEN"] = TOKEN;
     hoisted.env["CLOUDFLARE_ACCOUNT_ID"] = "not-hex";
-    expect(await (await availability()).json()).toEqual({ available: false });
-    const malformed = await install();
+    expect(await (await availability("user-alice")).json()).toEqual({
+      available: false,
+    });
+    const malformed = await install(REPO, "user-alice");
     expect(malformed.status).toBe(404);
     expect(await malformed.json()).toMatchObject({
       error: "APP_INSTALL_NOT_AVAILABLE",
@@ -782,7 +808,7 @@ describe("self-hosted browser installs (the gate and the install organization)",
     await expectNothingRegistered();
   });
 
-  it("spends the account-wide token only for the install organization's owners and admins", async () => {
+  it("spends the account-wide token only for the install organization's owners and admins, from a fresh session (`install.self-hosted-fresh-session`)", async () => {
     // Dave owns Beta, not the install organization: refused before any
     // download, and the page offers him no workspace.
     const dave = await availability("user-dave");
@@ -811,46 +837,76 @@ describe("self-hosted browser installs (the gate and the install organization)",
       },
     ]);
 
-    // Carol administers both: the chosen workspace is what counts, and
-    // the page offers her Acme alone.
+    // Carol administers Acme, the install organization: an admin installs
+    // as an owner does (Ben's ruling of 2026-10-26: owners and admins
+    // control the Gateway). The page offers her Acme, and with a session
+    // signed in just now the release is fetched (a repository without one
+    // stops there, before anything is written).
     expect(await context("user-carol")).toMatchObject({
       available: true,
       workspaces: [{ id: acme, name: "Acme" }],
       defaultOrganizationId: acme,
     });
-    const chosenBeta = await install(REPO, "user-carol", beta);
-    expect(chosenBeta.status).toBe(403);
-    expect(await chosenBeta.json()).toMatchObject({
-      error: "APP_INSTALL_FORBIDDEN",
-    });
-    expect(githubRequests).toEqual([]);
-    expect(refusedLines()[1]).toMatchObject({
-      org: beta,
-      installOrg: acme,
-      user: "user-carol",
-      role: "admin",
-    });
-
-    // For Acme she passes the gate and the rule: the release is fetched
-    // (a repository without one stops there, before anything is written).
-    const acmeInstall = await install(
+    const asAdmin = await install(
       "https://github.com/acme/no-release",
       "user-carol",
       acme,
     );
-    expect(acmeInstall.status).toBe(404);
-    expect(await acmeInstall.json()).toMatchObject({ error: "NO_RELEASE" });
+    expect(asAdmin.status).toBe(404);
+    expect(await asAdmin.json()).toMatchObject({ error: "NO_RELEASE" });
+    expect(refusedLines()).toHaveLength(1);
     expect(githubRequests).toEqual([
       "https://github.com/acme/no-release/releases/latest/download/everyapp-release.tar.gz",
     ]);
+
+    // Alice owns Acme: the same, from a fresh session.
+    expect(await context("user-alice")).toMatchObject({
+      available: true,
+      workspaces: [{ id: acme, name: "Acme" }],
+      defaultOrganizationId: acme,
+    });
+    const aliceInstall = await install(
+      "https://github.com/acme/no-release",
+      "user-alice",
+      acme,
+    );
+    expect(aliceInstall.status).toBe(404);
+    expect(await aliceInstall.json()).toMatchObject({ error: "NO_RELEASE" });
+    expect(githubRequests).toHaveLength(2);
     await expectNothingRegistered();
 
-    // The poll checks the same rule: Dave reads no job, Carol none under
-    // Beta; under Acme a job that doesn't exist is the plain 404.
+    // Her session from an hour ago (a stolen cookie, an idle tab) is asked
+    // to sign in again, and nothing is fetched; a poll of a job is not.
+    sessionAge.set("user-alice", 60 * 60 * 1000);
+    const stale = await install(
+      "https://github.com/acme/no-release",
+      "user-alice",
+      acme,
+    );
+    expect(stale.status).toBe(403);
+    expect(await stale.json()).toMatchObject({
+      error: "APP_INSTALL_REAUTH_REQUIRED",
+    });
+    expect(githubRequests).toHaveLength(2);
+    expect(refusedLines().at(-1)).toMatchObject({
+      org: acme,
+      user: "user-alice",
+      role: "owner",
+      reason: "stale_session",
+    });
+    expect((await poll("no-such-job", "user-alice", acme)).status).toBe(404);
+    // Just inside the window still installs.
+    sessionAge.set("user-alice", 9 * 60 * 1000);
+    expect(
+      (await install("https://github.com/acme/no-release", "user-alice", acme))
+        .status,
+    ).toBe(404);
+    expect(githubRequests).toHaveLength(3);
+
+    // The poll checks the organization rule too: Dave reads no job; under
+    // Acme a job that doesn't exist is the plain 404 for Alice and Carol.
     expect((await poll("no-such-job", "user-dave")).status).toBe(403);
-    expect((await poll("no-such-job", "user-carol", beta)).status).toBe(403);
     expect((await poll("no-such-job", "user-carol", acme)).status).toBe(404);
-    expect(refusedLines()).toHaveLength(4);
     expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(
       TOKEN,
     );
@@ -872,20 +928,24 @@ describe("self-hosted browser installs (the gate and the install organization)",
     await expectNothingRegistered();
   });
 
-  it("shows Install app to an admin of the install organization whose session is active elsewhere", async () => {
-    // Carol's sidebar is in Beta. Availability and the context go by the
-    // person: she still sees Install app, is offered Acme alone, and an
-    // install she sends for Acme passes the gate and the rule.
-    activeWorkspace.set("user-carol", beta);
-    expect(await (await availability()).json()).toEqual({ available: true });
-    expect(await context()).toEqual({
+  it("shows Install app to an owner of the install organization whose session is active elsewhere", async () => {
+    // Alice's sidebar is in Beta (she is a member there). Availability and
+    // the context go by the person: she still sees Install app, is offered
+    // Acme alone, and an install she sends for Acme passes the gate and
+    // the rule.
+    await addMember("alice", "member", beta);
+    activeWorkspace.set("user-alice", beta);
+    expect(await (await availability("user-alice")).json()).toEqual({
+      available: true,
+    });
+    expect(await context("user-alice")).toEqual({
       available: true,
       workspaces: [{ id: acme, name: "Acme" }],
       defaultOrganizationId: acme,
     });
     const acmeInstall = await install(
       "https://github.com/acme/no-release",
-      "user-carol",
+      "user-alice",
       acme,
     );
     expect(acmeInstall.status).toBe(404);
@@ -894,13 +954,13 @@ describe("self-hosted browser installs (the gate and the install organization)",
       "https://github.com/acme/no-release/releases/latest/download/everyapp-release.tar.gz",
     ]);
     // An install that names no workspace acts in the session's: Beta, refused.
-    const unchosen = await install("https://github.com/acme/no-release");
+    const unchosen = await install(
+      "https://github.com/acme/no-release",
+      "user-alice",
+    );
     expect(unchosen.status).toBe(403);
     expect(await unchosen.json()).toMatchObject({
       error: "APP_INSTALL_FORBIDDEN",
     });
-    expect(refusedLines()).toMatchObject([{ org: beta, user: "user-carol" }]);
-    expect(githubRequests).toHaveLength(1);
-    await expectNothingRegistered();
   });
 });

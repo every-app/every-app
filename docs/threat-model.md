@@ -1595,7 +1595,8 @@ means it is on main (every boundary fix from this pass merged on
 **Self-hosted, before Monday if possible**
 
 1. **The browser install lets any organization owner or admin deploy into
-   the operator's account** (B7, high; `install.self-hosted-default-on`,
+   the operator's account** (B7, high; narrowed in #722, merged;
+   `install.self-hosted-default-on`,
    `gateway.nothing-public-registers-or-deploys-on-self-host`). Once
    `everyapp setup` has stored a `CF_DEPLOY_TOKEN`, `POST
    /api/admin/apps/install` registers and uploads a public release for any
@@ -1605,9 +1606,15 @@ means it is on main (every boundary fix from this pass merged on
    manifest then grants it the operator's provider keys, sender and members
    list, which the operator never read. Behind Access the
    page is behind Access; the token's reach is the problem either way.
-   Decision for Ben (TODO "Threat model and security scanning"): restrict
-   it to the install organization's owners, default it off, or move the
-   token into a thin deployer Worker. It also has no self-hosted test.
+   #722 (Ben's "browser-install authority" decision, merged 2026-10-26;
+   the 2026-10-25 scan's finding 1) builds the strongest default short of a
+   deployer Worker: `BROWSER_APP_INSTALLS` off unless exactly `on` (setup
+   writes it with the token when the person opts in) and a session signed
+   in within 10 minutes (`install.self-hosted-fresh-session`), with
+   self-hosted tests for each; the install organization's owners and
+   admins alike (Ben, 2026-10-26: admins install when it is on). Moving the token into a thin deployer Worker stays the follow-up
+   (TODO "Threat model and security scanning"): with installs on, an
+   owner or admin still spends an account-wide token.
 2. **The OAuth-client proxy signed any grant** (B4, high; fixed in #387,
    merged). Facebook's client-credentials grant returns the app access
    token, which is `<app id>|<app secret>`: the operator's secret handed

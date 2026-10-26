@@ -18,10 +18,16 @@ export const BROWSER_INSTALL_LIMITS = {
   durableObjectClasses: 2,
 };
 
+/**
+ * Off unless the operator set BROWSER_APP_INSTALLS to exactly `on`
+ * (`everyapp setup` writes it with the deploy token when the person opts
+ * in): the token is account-wide, so spending it from a browser is a
+ * choice, never a side effect of having stored the token.
+ */
 export function selfHostedInstallEnabled(env: BrowserInstallEnv): boolean {
   return (
     platformPolicy(env).mode === "self_hosted" &&
-    env.BROWSER_APP_INSTALLS !== "off" &&
+    env.BROWSER_APP_INSTALLS === "on" &&
     Boolean(
       env.CF_DEPLOY_TOKEN?.trim() &&
         /^[a-f0-9]{32}$/.test(env.CLOUDFLARE_ACCOUNT_ID ?? "") &&

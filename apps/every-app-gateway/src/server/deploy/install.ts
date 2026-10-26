@@ -11,15 +11,20 @@
  *   GET  /api/admin/deploys/{id}        a deploy job, as the page polls it
  *
  * Hosted deploys retain their launch gate. Self-hosted browser installs are
- * on by default with configured credentials; BROWSER_APP_INSTALLS=off opts out.
- * On a self-hosted Gateway the token is the account's, so only the install
- * organization's owners and admins may spend it: any other organization is
- * refused before anything is downloaded (one warn line names who asked for
- * which organization), and the context offers it nothing. Availability and
- * the context go by the person, not the session's active workspace: an
- * admin of the install organization whose sidebar is in another one still
- * sees Install app and is offered the install organization. The install
- * and the poll check the workspace they name.
+ * off until the operator sets BROWSER_APP_INSTALLS=on beside the deploy
+ * credentials (setup does both when the person opts in). On a self-hosted
+ * Gateway the token is the account's, so only the install organization's
+ * owners and admins may spend it, and only from a session signed in within
+ * the last FRESH_SESSION_MS: an older one is asked to sign in again
+ * (APP_INSTALL_REAUTH_REQUIRED), so a stolen or idle session can't deploy.
+ * Any other organization is refused before anything is downloaded (one
+ * warn line names who asked for which organization), and the context
+ * offers it nothing. Availability and the context go by the person, not the
+ * session's active workspace: an admin of the install organization whose
+ * sidebar is in another one still sees Install app and is offered the
+ * install organization. The install and the poll check the workspace they
+ * name; the freshness rule is the install's alone (a poll follows a job the
+ * fresh session started).
  * Session-authenticated, so these are control-plane routes
  * (src/routes/api/admin/), behind its CSRF guard.
  */
@@ -61,6 +66,10 @@ interface InstallCaller {
 const ADMINS_ONLY = "Only the organization's owners and admins install apps.";
 const INSTALL_ORGANIZATION_ONLY =
   "On a self-hosted Gateway only the install organization's owners and admins install apps.";
+/** How recently the session must have been signed in to spend the deploy token. */
+const FRESH_SESSION_MS = 10 * 60 * 1000;
+const REAUTH_REQUIRED =
+  "Sign in again to install apps: an install needs a session signed in within the last 10 minutes.";
 
 async function authenticateSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -74,6 +83,7 @@ async function authenticateSession(request: Request) {
 async function authenticateAdmin(
   session: Awaited<ReturnType<typeof authenticateSession>>,
   organizationId?: unknown,
+  options: { fresh?: boolean } = {},
 ): Promise<InstallCaller> {
   if (
     organizationId !== undefined &&
@@ -100,6 +110,7 @@ async function authenticateAdmin(
   if (role !== "owner" && role !== "admin") {
     throw new DeployError("APP_INSTALL_FORBIDDEN", 403, ADMINS_ONLY);
   }
+  const selfHosted = platformPolicy(env).mode === "self_hosted";
   if (!(await mayInstallForOrganization(org.orgId))) {
     // An admin elsewhere reaching for the account-wide token: the one
     // refusal here the operator should see. Ids only, never the token.
@@ -126,11 +137,33 @@ async function authenticateAdmin(
       "The organization is suspended.",
     );
   }
+  if (selfHosted && options.fresh && !isFreshSession(session.session)) {
+    logEvent(
+      "app_install.refused",
+      { org: org.orgId, user: session.user.id, role, reason: "stale_session" },
+      "warn",
+    );
+    throw new DeployError("APP_INSTALL_REAUTH_REQUIRED", 403, REAUTH_REQUIRED);
+  }
   return {
     userId: session.user.id,
     email: session.user.email,
     organizationId: org.orgId,
   };
+}
+
+/**
+ * A session signed in within FRESH_SESSION_MS. Better Auth stamps
+ * `createdAt` when the session is made (a re-login makes a new one); a
+ * session without one is not fresh.
+ */
+function isFreshSession(session: {
+  createdAt?: Date | string | number | null;
+}): boolean {
+  const createdAt = session.createdAt;
+  if (createdAt === undefined || createdAt === null) return false;
+  const time = new Date(createdAt).getTime();
+  return Number.isFinite(time) && Date.now() - time <= FRESH_SESSION_MS;
 }
 
 /**
@@ -185,6 +218,7 @@ async function installableWorkspaces(
     await OrganizationRepository.findAdminSummariesForUser(userId);
   if (platformPolicy(env).mode !== "self_hosted") return administered;
   const installOrganization = await installOrganizationId();
+  if (!installOrganization) return [];
   return administered.filter(
     (workspace) => workspace.id === installOrganization,
   );
@@ -245,7 +279,9 @@ export function serveInstall(request: Request): Promise<Response> {
         "Send JSON with one repoUrl or releaseUrl.",
       );
     }
-    const caller = await authenticateAdmin(session, body?.organizationId);
+    const caller = await authenticateAdmin(session, body?.organizationId, {
+      fresh: true,
+    });
     assertAvailable();
     // Nothing is downloaded for a gateway that couldn't deploy it.
     deployerSettings();

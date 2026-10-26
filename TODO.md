@@ -470,7 +470,7 @@ An OpenAI Codex Security scan of this repository at main `3848d329` (the day bef
 
 **Needs Ben**
 
-- [ ] **Browser installs on self-host** (finding 1, gap 1): the PR is HELD, see below once it is open; the decision is the one in "Threat model and security scanning" ("browser-install authority").
+- [x] **Browser installs on self-host** (finding 1, gap 1): Ben ruled 2026-10-26: merge #722 with owners and admins. `BROWSER_APP_INSTALLS` off unless exactly `on` (`everyapp setup` writes it beside `CF_DEPLOY_TOKEN` when the person opts in) and a session signed in within 10 minutes for the install itself (`APP_INSTALL_REAUTH_REQUIRED`). Everyapp.team has no `CF_DEPLOY_TOKEN`, so nothing live changed. The thin deployer Worker stays the follow-up.
 
 **Decided by default, confirm**
 
@@ -488,6 +488,7 @@ An OpenAI Codex Security scan of this repository at main `3848d329` (the day bef
 - [x] Findings 5 and 6 (#709): `issuer-revocation.ts`; the register row `issuer.revocation-ends-what-they-issued`; gap 12 marked fixed.
 - [ ] **Consent preselects read only** (finding 12; `oauth.scopes-are-the-users-choice`). The scan asked for least privilege by default, so the Access choice on the consent page now starts at "Read only" and read & write is a deliberate click (`ConsentForm.tsx`, one `defaultChecked`; the decision parser's default is `read` too). The agents in the launch demos need read & write: a person connecting Claude Code or Codex must pick it on the page. Flip the default back if the extra click is wrong for launch.
 - [ ] **The challenge names `mcp:read mcp:write`** (finding 12). The MCP SDK's client requests the scopes the 401 challenge names (then the protected-resource metadata's `scopes_supported`), and a grant is now capped by the request, so with the old `scope="mcp:read"` every Claude Code connection would have become read-only with no way to write. `requiredScopes` on the resource server is advertised, not enforced (the validator takes either scope); the resource metadata lists both. A client that deliberately asks for `mcp:read` alone is read-only whatever the person chooses, and the page says so.
+- [x] Finding 1 (#722): default-off browser installs and the fresh-session rule; register row `install.self-hosted-fresh-session`, `install.self-hosted-default-on` restated (the id predates the default); gap 1 marked narrowed.
 - [x] Finding 11 (#718): no trust on first use for remote MCP credentials; an unpinned value is sent nowhere and its rows need setup until `secret set` pins it; gap 33 marked fixed; the agent docs, design note and register row say so. Default taken: no separate `mcp pin` verb (re-running `secret set` pins; a pin-only verb would let a stolen agent token move a credential, the same reason `signin` has no MCP twin).
 - [x] Finding 7 (#717): `CLOUDFLARE_ACCESS_IDP_IDS` read onto both Access sign-ins, enforced in `verifyAccessJwt` with `email_verified` strictness; `everyapp access show` lists provider ids and the pin hint; register row `access.idp-allowlist`; gap 19 marked fixed; runbook section.
 - [x] Finding 8 (#716): the token dialog's access level, one-app and 30-day defaults; register row `pat.ui-least-privilege-defaults`; gap 21 marked fixed; user page, skill and agent page updated.
