@@ -289,28 +289,47 @@ export function ConsentForm({
 
               <FieldSet>
                 <FieldLegend variant="label">Access</FieldLegend>
-                <div className="grid gap-2.5">
-                  <Choice
-                    type="radio"
-                    name={CONSENT_FIELDS.access}
-                    value="write"
-                    defaultChecked
-                  >
-                    Read &amp; write
-                  </Choice>
-                  <Choice
-                    type="radio"
-                    name={CONSENT_FIELDS.access}
-                    value="read"
-                  >
-                    Read only
-                  </Choice>
-                </div>
-                {/* Write tools create or change; destructive ones (delete,
-                    irreversible change) are never offered to an AI app. */}
-                <FieldDescription>
-                  Read &amp; write can add and change things, never delete them.
-                </FieldDescription>
+                {context.writeRequested ? (
+                  <>
+                    <div className="grid gap-2.5">
+                      <Choice
+                        type="radio"
+                        name={CONSENT_FIELDS.access}
+                        value="read"
+                        defaultChecked
+                      >
+                        Read only
+                      </Choice>
+                      <Choice
+                        type="radio"
+                        name={CONSENT_FIELDS.access}
+                        value="write"
+                      >
+                        Read &amp; write
+                      </Choice>
+                    </div>
+                    {/* Write tools create or change; destructive ones (delete,
+                        irreversible change) are never offered to an AI app. */}
+                    <FieldDescription>
+                      Read &amp; write can add and change things, never delete
+                      them.
+                    </FieldDescription>
+                  </>
+                ) : (
+                  <>
+                    {/* The client set its own ceiling (it asked for mcp:read
+                        alone); nothing on this page raises it. */}
+                    <input
+                      type="hidden"
+                      name={CONSENT_FIELDS.access}
+                      value="read"
+                    />
+                    <FieldDescription>
+                      Read only: this app asked to read, not to add or change
+                      anything.
+                    </FieldDescription>
+                  </>
+                )}
               </FieldSet>
             </>
           )}

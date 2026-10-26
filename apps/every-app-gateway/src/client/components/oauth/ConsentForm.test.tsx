@@ -24,6 +24,7 @@ const CONTEXT: Context = {
     redirectHost: "localhost",
   },
   email: "owner@example.com",
+  writeRequested: true,
   organizations: [
     {
       id: "org-acme",
@@ -151,8 +152,22 @@ describe("what the consent form posts", () => {
       organization_id: "org-acme",
       app_mode: "all",
       app_ids: [],
-      access: "write",
+      access: "read",
     });
+  });
+
+  it("offers no read & write when the client asked for mcp:read alone", () => {
+    render({ ...CONTEXT, writeRequested: false });
+    expect(
+      container.querySelector('input[name="access"][value="write"]'),
+    ).toBeNull();
+    expect(input("access", "read").type).toBe("hidden");
+    expect(container.textContent).toContain(
+      "this app asked to read, not to add or change anything",
+    );
+    armAllow();
+    press(button("Allow"));
+    expect(parseDecisionForm(sent[0]!)).toMatchObject({ access: "read" });
   });
 
   it("carries the organization, chosen apps and access the user picked", () => {
@@ -171,7 +186,7 @@ describe("what the consent form posts", () => {
     expect(hint("app-todo")).toBeNull();
     expect(hint("app-notes")).toBeNull();
     act(() => input("app_ids", "app-notes").click());
-    act(() => input("access", "read").click());
+    act(() => input("access", "write").click());
     press(button("Allow"));
     expect(sent).toHaveLength(1);
     expect(parseDecisionForm(sent[0]!)).toMatchObject({
@@ -179,7 +194,7 @@ describe("what the consent form posts", () => {
       organization_id: "org-acme",
       app_mode: "selected",
       app_ids: ["app-notes"],
-      access: "read",
+      access: "write",
     });
   });
 

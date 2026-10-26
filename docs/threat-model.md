@@ -1754,8 +1754,13 @@ means it is on main (every boundary fix from this pass merged on
 28. **`ai.models` checks only the JSON `model` field; OpenRouter's `models`
     fallback list is forwarded unchecked** (B4, low).
 29. **Consent grants `mcp:write` to a client that asked for `mcp:read`**
-    (B5, low): the form preselects read & write and the grant follows the
-    person's choice, not the client's request.
+    (B5, low; fixed in #712, `oauth.scopes-are-the-users-choice`). A
+    grant is now requested ∩ supported ∩ approved, the connection row
+    records the capped access, the page offers read & write only to a
+    client that asked for `mcp:write` (or named no scope) and preselects
+    read only; the challenge and the resource metadata name both scopes so
+    a client that follows them can be offered both. The 2026-10-25 scan's
+    finding 12.
 30. **Proxy-forwarding headers reach apps as the client sent them** (B1,
     low): `X-Forwarded-For` and friends; `cf-connecting-ip` is the
     authoritative address.

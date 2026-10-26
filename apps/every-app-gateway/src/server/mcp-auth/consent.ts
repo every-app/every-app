@@ -68,6 +68,11 @@ export type ConsentContext =
       email: string;
       organizations: ConsentOrganization[];
       defaultOrganizationId: string | null;
+      /**
+       * Whether the client asked for `mcp:write` (or named no scope, which
+       * leaves the choice to the server): only then is read & write offered.
+       */
+      writeRequested: boolean;
     }
   | { ok: false; message: string };
 
@@ -244,10 +249,12 @@ export async function buildConsentContext(
 
   const oauth = auth.authorizationServer.getOAuthApi(env);
   let details;
+  let requestedScopes: string[];
   try {
     const request = await oauth.parseAuthRequest(
       new Request(`${auth.issuer}/oauth/authorize?${params}`),
     );
+    requestedScopes = request.scope;
     details = await oauth.describeConsent(request);
   } catch (error) {
     const message = describeAuthorizationFailure(error);
@@ -276,13 +283,38 @@ export async function buildConsentContext(
     email: user.email,
     organizations,
     defaultOrganizationId,
+    writeRequested: writeRequested(requestedScopes),
   };
 }
 
 /**
- * The scopes a connection is granted: `mcp:read`, `mcp:write` for read &
- * write, and `offline_access` when the client asked for it. What the client
- * requested beyond that grants nothing: access is the user's choice.
+ * Whether a client's requested scopes allow read & write: it named
+ * `mcp:write`, or named no scope at all (the server then chooses, and the
+ * consent page offers both). A client that asked for `mcp:read` alone has
+ * set its own ceiling, and no choice on the page raises it.
+ */
+function writeRequested(requested: string[]): boolean {
+  return requested.length === 0 || requested.includes(MCP_WRITE_SCOPE);
+}
+
+/**
+ * The access a connection gets: the person's choice, capped by what the
+ * client asked for (`writeRequested`).
+ */
+export function grantedAccess(
+  access: ConsentDecision["access"],
+  requested: string[],
+): ConsentDecision["access"] {
+  return access === "write" && writeRequested(requested) ? "write" : "read";
+}
+
+/**
+ * The scopes a connection is granted: requested ∩ supported ∩ approved.
+ * `mcp:read` always (every connection reads; a client asking for
+ * `mcp:write` alone reads too); `mcp:write` only when the client asked for
+ * it (or named no scope) and the person chose read & write;
+ * `offline_access` only when the client asked for it. Whatever else the
+ * client requested grants nothing.
  */
 export function grantedScopes(
   access: ConsentDecision["access"],
@@ -290,7 +322,7 @@ export function grantedScopes(
 ): string[] {
   return [
     MCP_READ_SCOPE,
-    ...(access === "write" ? [MCP_WRITE_SCOPE] : []),
+    ...(grantedAccess(access, requested) === "write" ? [MCP_WRITE_SCOPE] : []),
     ...(requested.includes(OFFLINE_ACCESS_SCOPE) ? [OFFLINE_ACCESS_SCOPE] : []),
   ];
 }

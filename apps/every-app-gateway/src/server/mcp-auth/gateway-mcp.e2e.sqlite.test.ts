@@ -413,7 +413,7 @@ function authorizeQuery(
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: "mcp:read offline_access",
+    scope: "mcp:read mcp:write offline_access",
     state: "state-1",
     code_challenge: challenge,
     code_challenge_method: "S256",
@@ -429,10 +429,11 @@ async function openConsent(
   browser: Browser,
   clientId: string,
   redirectUri: string,
+  extra: Record<string, string> = {},
 ) {
   const { verifier, challenge } = pkce();
   const authorize = await browser.get(
-    `/oauth/authorize?${authorizeQuery(clientId, redirectUri, challenge)}`,
+    `/oauth/authorize?${authorizeQuery(clientId, redirectUri, challenge, extra)}`,
   );
   expect(authorize.status).toBe(302);
   const location = new URL(authorize.headers.get("location")!, GATEWAY);
@@ -474,12 +475,15 @@ async function connect(options: {
   redirectUri: string;
   userId?: string;
   choices?: Record<string, string | string[]>;
+  /** Extra authorization parameters (a `scope` replaces the default). */
+  authorize?: Record<string, string>;
 }): Promise<{ tokens: Tokens; context: Consent; callback: URL }> {
   const browser = new Browser(options.userId ?? ownerId);
   const { context, verifier } = await openConsent(
     browser,
     options.clientId,
     options.redirectUri,
+    options.authorize,
   );
   const decision = await browser.postForm(
     "/oauth/consent/decision",
@@ -811,7 +815,7 @@ describe("discovery", () => {
     expect(await response.json()).toEqual({
       resource: RESOURCE,
       authorization_servers: [GATEWAY],
-      scopes_supported: ["mcp:read"],
+      scopes_supported: ["mcp:read", "mcp:write"],
       bearer_methods_supported: ["header"],
       resource_name: "Every App",
     });
@@ -825,7 +829,7 @@ describe("discovery", () => {
     const response = await mcp(null, "tools/list");
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe(
-      `Bearer realm="OAuth", resource_metadata="${GATEWAY}/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`,
+      `Bearer realm="OAuth", resource_metadata="${GATEWAY}/.well-known/oauth-protected-resource/mcp", scope="mcp:read mcp:write"`,
     );
     const invalid = await mcp("user:grant:secret", "tools/list");
     expect(invalid.status).toBe(401);
@@ -1162,6 +1166,67 @@ describe("a DCR client (Codex-style)", () => {
       );
     }
     expect(seen).toEqual([]);
+  });
+
+  it("grants what the client asked for ∩ what the person chose, never more (`oauth.scopes-are-the-users-choice`)", async () => {
+    const client = await registerClient();
+    // mcp:read alone requested, read & write chosen: read only, and the
+    // connection says so.
+    const readOnly = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      authorize: { scope: "mcp:read offline_access" },
+      choices: { access: "write" },
+    });
+    expect(readOnly.context.writeRequested).toBe(false);
+    expect(readOnly.tokens.scope.split(" ").sort()).toEqual([
+      "mcp:read",
+      "offline_access",
+    ]);
+    expect(await toolNames(readOnly.tokens.access_token)).not.toContain(
+      "todo_create_todo",
+    );
+    const [first] = await db.select().from(mcpConnections);
+    expect(first).toMatchObject({ access: "read" });
+
+    // Both requested, read & write chosen: both.
+    const both = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      choices: { access: "write" },
+    });
+    expect(both.context.writeRequested).toBe(true);
+    expect(both.tokens.scope.split(" ").sort()).toEqual([
+      "mcp:read",
+      "mcp:write",
+      "offline_access",
+    ]);
+
+    // No scope named: the server's choice, so the page offers both.
+    const unnamed = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      authorize: { scope: "" },
+      choices: { access: "write" },
+    });
+    expect(unnamed.context.writeRequested).toBe(true);
+    expect(unnamed.tokens.scope.split(" ").sort()).toEqual([
+      "mcp:read",
+      "mcp:write",
+    ]);
+    // offline_access stays request-bound (the scope above lacks it).
+
+    // Anything else requested grants nothing.
+    const extra = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      authorize: { scope: "mcp:write admin:everything" },
+      choices: { access: "write" },
+    });
+    expect(extra.tokens.scope.split(" ").sort()).toEqual([
+      "mcp:read",
+      "mcp:write",
+    ]);
   });
 
   it("supersedes the earlier connection when the same client connects again", async () => {

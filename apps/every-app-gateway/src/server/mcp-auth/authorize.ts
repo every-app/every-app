@@ -37,6 +37,7 @@ import {
   clientDisplayName,
   consentChoices,
   describeAuthorizationFailure,
+  grantedAccess,
   grantedScopes,
 } from "./consent";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
@@ -277,6 +278,9 @@ export async function handleConsentDecision(
     throw error;
   }
 
+  // The person's choice, capped by what the client asked for: a client that
+  // requested mcp:read alone gets a read-only connection whatever was chosen.
+  const access = grantedAccess(decision.access, approved.request.scope);
   const connectionId = await connectionIdFor(decision.handle);
   const createdAt = new Date();
   const created = await McpConnectionRepository.create({
@@ -290,7 +294,7 @@ export async function handleConsentDecision(
     redirectHost: details.redirectHost,
     appScope: decision.app_mode,
     appRowIds: decision.app_mode === "selected" ? selectedApps : [],
-    access: decision.access,
+    access,
     createdAt,
   });
   if (!created) {
@@ -306,7 +310,7 @@ export async function handleConsentDecision(
     organizationId,
     clientName: clientDisplayName(details.clientName),
     clientDomain: details.clientDomain ?? null,
-    access: decision.access,
+    access,
     appScope: decision.app_mode,
   });
 
@@ -322,7 +326,7 @@ export async function handleConsentDecision(
     ({ redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: user.id,
-      scope: grantedScopes(decision.access, approved.request.scope),
+      scope: grantedScopes(access, approved.request.scope),
       props,
       metadata: {
         connectionId,

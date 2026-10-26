@@ -25,7 +25,8 @@ const decisionSchema = z.object({
   organization_id: z.string().max(256).optional(),
   app_mode: z.enum(["all", "selected"]).default("all"),
   app_ids: z.array(z.string().min(1).max(256)).max(500).default([]),
-  access: z.enum(["write", "read"]).default("write"),
+  // Least privilege when the form says nothing.
+  access: z.enum(["write", "read"]).default("read"),
 });
 
 export type ConsentDecision = z.infer<typeof decisionSchema>;

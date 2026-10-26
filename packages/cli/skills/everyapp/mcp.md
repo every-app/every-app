@@ -321,7 +321,7 @@ Admin (a connection made with **Only these apps** needs a reconnect to add one).
 expired or revoked token, a bearer that isn't `epat_` on an app host, the token
 of a revoked connection); its body depends on the surface. On
 `https://<gateway>/mcp` with OAuth on: an empty body and
-`WWW-Authenticate: Bearer realm="OAuth", resource_metadata="…/.well-known/oauth-protected-resource/mcp", scope="mcp:read"`
+`WWW-Authenticate: Bearer realm="OAuth", resource_metadata="…/.well-known/oauth-protected-resource/mcp", scope="mcp:read mcp:write"`
 (`error="invalid_token"` added when a token was sent); a revoked connection's
 token gets `{"error":"invalid_token","error_description":"This connection was revoked or lost its access. Connect again."}`.
 On `https://<app-host>/mcp` (where the manifest sets `mcp`), and on the Gateway with OAuth off:

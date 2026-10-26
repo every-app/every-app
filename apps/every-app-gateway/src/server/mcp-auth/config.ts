@@ -179,7 +179,12 @@ function build(
       authorization_servers: [issuer],
       resource_name: "Every App",
     },
-    requiredScopes: [MCP_READ_SCOPE],
+    // Advertised in the 401 challenge and the protected-resource metadata,
+    // not enforced (the validator below takes a token with either): clients
+    // request what is named here, and a grant is requested ∩ approved
+    // (grantedScopes), so both must be named for the consent page to be able
+    // to offer read & write at all.
+    requiredScopes: [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
     validateToken: (requestEnv) =>
       mcpBearerValidator(authorizationServer, requestEnv),
     handler: {

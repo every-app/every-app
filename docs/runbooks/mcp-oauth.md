@@ -159,7 +159,7 @@ grants too.
 ```sh
 G=https://<gateway>
 curl -si -X POST $G/mcp | grep -i www-authenticate
-#  Bearer realm="OAuth", resource_metadata="$G/.well-known/oauth-protected-resource/mcp", scope="mcp:read"
+#  Bearer realm="OAuth", resource_metadata="$G/.well-known/oauth-protected-resource/mcp", scope="mcp:read mcp:write"
 curl -s $G/.well-known/oauth-protected-resource/mcp | jq '{resource, authorization_servers}'
 #  resource is exactly "$G/mcp"; authorization_servers is ["$G"]
 curl -s $G/.well-known/oauth-authorization-server \
