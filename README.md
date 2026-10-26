@@ -12,7 +12,7 @@ The Gateway takes the friction out of getting personal web apps and agents off l
 
 Set it up once, then self-host open source apps and personal software, all behind one secure sign-in.
 
-[![Watch the EveryApp launch video](https://img.youtube.com/vi/krDediTp0MI/maxresdefault.jpg)](https://youtu.be/krDediTp0MI)
+[![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
 
 ## Who are you?
 

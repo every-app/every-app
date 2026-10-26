@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check, Copy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Copy, Pause, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import setupPrompt from "../../content/docs/setup-prompt.txt?raw";
 import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
@@ -197,6 +197,85 @@ function CopySetupPrompt() {
   );
 }
 
+/**
+ * The two demo loops share one restrained frame: a soft dark surface with a
+ * hairline outline, the media clipped to the inner corners, 16:9 reserved so
+ * nothing shifts while the video loads. The MP4 is tagged sRGB so the dark
+ * surfaces match the page; the poster is the first frame of the loop.
+ * Reduced motion shows the poster and does not autoplay; the pause/play
+ * control works either way.
+ */
+function DemoAnimation({
+  name,
+  alt,
+  className = "",
+}: {
+  name: "apps-demo" | "gateway-demo";
+  alt: string;
+  className?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reduced.matches) return;
+    // Autoplay is requested after hydration so a reduced-motion reader never
+    // sees the loop start; the poster stays until the video is ready.
+    video.play().catch(() => {});
+  }, []);
+
+  const toggle = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  };
+
+  return (
+    <figure
+      className={`w-full rounded-[12px] border border-white/[0.12] bg-stone-950/70 p-1.5 shadow-[0_24px_64px_-24px_rgba(0,0,0,0.8)] md:rounded-2xl md:p-2 ${className}`}
+    >
+      <div className="relative aspect-video w-full overflow-hidden rounded-[6px] bg-[#252522] md:rounded-[8px]">
+        <video
+          ref={videoRef}
+          className="block h-full w-full"
+          width={2304}
+          height={1296}
+          poster={`/media/${name}-poster.webp`}
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          aria-label={alt}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        >
+          <source src={`/media/${name}.mp4`} type="video/mp4" />
+          <source src={`/media/${name}.webm`} type="video/webm" />
+        </video>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={playing ? "Pause animation" : "Play animation"}
+          className="absolute right-2 bottom-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.15] bg-black/55 text-stone-200 backdrop-blur transition-colors hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none md:right-3 md:bottom-3"
+        >
+          {playing ? (
+            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </figure>
+  );
+}
+
 function Home() {
   return (
     <div className="relative min-h-screen bg-[#0a0f0d] text-stone-100">
@@ -230,8 +309,8 @@ function Home() {
       </header>
 
       <main>
-        {/* One screen tall, so the apps and features start below the fold. */}
-        <div className="flex min-h-svh items-center px-6 py-28">
+        {/* Leave room for the large app preview to enter the first screen. */}
+        <div className="flex min-h-[75svh] items-center px-6 pt-28 pb-12">
           <div className="mx-auto w-full max-w-6xl">
             <h1 className="landing-reveal mb-6 max-w-4xl text-balance text-[clamp(2.75rem,7vw,5.25rem)] font-semibold leading-[1.08] tracking-[-0.015em] text-white">
               Make every app open source
@@ -309,6 +388,15 @@ function Home() {
           </div>
         </div>
 
+        <div id="app-demo" className="px-6 pb-16">
+          <div className="mx-auto w-full max-w-6xl">
+            <DemoAnimation
+              name="apps-demo"
+              alt="Tour of the EveryApp app launcher, opening OpenSEO keyword research."
+            />
+          </div>
+        </div>
+
         <section
           id="apps"
           aria-labelledby="apps-title"
@@ -355,27 +443,33 @@ function Home() {
           aria-labelledby="why-title"
           className="border-t border-stone-900 px-6 py-16"
         >
-          <div className="mx-auto w-full max-w-6xl">
-            <h2
-              id="why-title"
-              className="mb-10 text-2xl font-semibold tracking-tight text-white"
-            >
-              Why use EveryApp?
-            </h2>
-            <div className="grid gap-10 md:grid-cols-3">
-              {features.map((feature) => (
-                <div key={feature.title}>
-                  <h3 className="mb-4 text-lg font-medium text-white">
-                    {feature.title}
-                  </h3>
-                  <ul className="space-y-3 text-base text-stone-400">
-                    {feature.points.map((point) => (
-                      <li key={point}>{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+          <div className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+            <div className="min-w-0">
+              <h2
+                id="why-title"
+                className="mb-10 text-2xl font-semibold tracking-tight text-white"
+              >
+                Why use EveryApp?
+              </h2>
+              <div className="grid gap-8">
+                {features.map((feature) => (
+                  <div key={feature.title}>
+                    <h3 className="mb-4 text-lg font-medium text-white">
+                      {feature.title}
+                    </h3>
+                    <ul className="space-y-3 text-base text-stone-400">
+                      {feature.points.map((point) => (
+                        <li key={point}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             </div>
+            <DemoAnimation
+              name="gateway-demo"
+              alt="Your team and agent connect through one secure Gateway to private apps and connected MCP tools."
+            />
           </div>
         </section>
       </main>
@@ -384,7 +478,7 @@ function Home() {
         <div className="mx-auto w-full max-w-6xl">
           <div className="max-w-2xl">
             <p className="mb-3 text-sm text-stone-400">
-              Hear about releases and breaking changes:
+              Get updates about EveryApp
             </p>
             <WaitlistForm />
 
