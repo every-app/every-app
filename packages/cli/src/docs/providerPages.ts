@@ -363,13 +363,15 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
     );
   }
 
-  const [firstSet] = sets.map(([name]) => name).filter((name) => name !== "identity");
+  // The example asks for the first set beyond `identity`, with the access that set needs.
+  const [example] = sets.filter(([name]) => name !== "identity").concat(sets);
+  const key = /^[a-z][a-z0-9]*$/.test(id) ? id : JSON.stringify(id);
   out.push(
     "### Use it in an app",
     "",
     "```ts",
     "capabilities: {",
-    `  ${JSON.stringify(id)}: { access: "read",${sets.length > 0 ? ` scopes: [${JSON.stringify(firstSet ?? sets[0]![0])}],` : ""} why: "What the app does with it." },`,
+    `  ${key}: { access: "${example?.[1].access ?? "read"}",${example ? ` scopes: [${JSON.stringify(example[0])}],` : ""} why: "What the app does with it." },`,
     "},",
     "```",
     "",
