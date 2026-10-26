@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/sync-agent-docs.js && vite dev",
     "sync:agent-docs": "node scripts/sync-agent-docs.js",
-    "build": "node scripts/sync-agent-docs.js && wrangler types && vite build && node scripts/generate-sitemap.js",
+    "build": "node scripts/sync-agent-docs.js && wrangler types && NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/generate-sitemap.js",
     "sitemap": "node scripts/generate-sitemap.js",
     "preflight": "node scripts/preflight.js",
     "types:check": "wrangler types && tsc --noEmit",
