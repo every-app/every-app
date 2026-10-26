@@ -17,11 +17,11 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.migrations","status":"start","message":"Migrating the database..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.migrations","status":"ok","message":"Applied 0000_init.sql.","data":{"applied":["0000_init.sql"],"fresh":true}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-todo..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-todo-version-8.","data":{"versionId":"every-acme-todo-version-8"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-todo-version-9.","data":{"versionId":"every-acme-todo-version-9"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-todo on the gateway and publishing its hostname...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 1 app","data":{"appWorkers":["every-acme-todo"],"domains":["example.com","todo.example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-10","data":{"versionId":"every-app-gateway-version-10"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-todo (gateway version every-app-gateway-version-10).","data":{"versionId":"every-app-gateway-version-10","newHosts":["todo.example.com"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-11","data":{"versionId":"every-app-gateway-version-11"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-todo (gateway version every-app-gateway-version-11).","data":{"versionId":"every-app-gateway-version-11","newHosts":["todo.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"todo is live at https://todo.example.com.","data":{"hostname":"todo.example.com","url":"https://todo.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"start","message":"Finding your Gateway..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"ok","data":{"gatewayUrl":"https://example.com"}}
@@ -37,13 +37,13 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.migrations","status":"start","message":"Migrating the database..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.migrations","status":"ok","message":"The app's database is up to date.","data":{"applied":[],"fresh":false}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-todo..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-todo-version-13.","data":{"versionId":"every-acme-todo-version-13"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-todo-version-14.","data":{"versionId":"every-acme-todo-version-14"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"todo is live at https://todo.example.com.","data":{"hostname":"todo.example.com","url":"https://todo.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"start","message":"Removing todo from the Gateway...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 0 apps","data":{"appWorkers":[],"domains":["example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-15","data":{"versionId":"every-app-gateway-version-15"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-16","data":{"versionId":"every-app-gateway-version-16"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"todo is deleted on the gateway; todo.example.com stops serving it.","data":{"appId":"todo","hostname":"todo.example.com","workerName":"every-acme-todo","alreadyDeleted":false}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed todo.example.com's certificate.","data":{"hostname":"todo.example.com","certificatePacks":["pack-12"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed todo.example.com's certificate.","data":{"hostname":"todo.example.com","certificatePacks":["pack-13"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting todo's Worker and data...","data":{"appId":"todo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-todo\", D1 database \"every-acme-todo\", KV namespace \"every-acme-todo\".","data":{"appId":"todo","removed":["Worker \"every-acme-todo\"","D1 database \"every-acme-todo\"","KV namespace \"every-acme-todo\""],"kinds":["Worker","D1 database","KV namespace"]}}
 
@@ -137,11 +137,11 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-todo",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     },
     "USER_SYNC": {
       "type": "durable-object",
@@ -376,11 +376,11 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-todo",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     },
     "USER_SYNC": {
       "type": "durable-object",
@@ -563,9 +563,9 @@ project text cf build cwd=<app>
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations list 00000006-0000-4000-8000-000000000000 --dir <app>/drizzle
+account json cf d1 migrations list 00000007-0000-4000-8000-000000000000 --dir <app>/drizzle
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations apply 00000006-0000-4000-8000-000000000000 --dir <app>/drizzle
+account json cf d1 migrations apply 00000007-0000-4000-8000-000000000000 --dir <app>/drizzle
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10
 project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
@@ -601,6 +601,8 @@ account json cf workers deployments list --worker every-app-gateway --per-page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
@@ -633,7 +635,7 @@ project text cf build cwd=<app>
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations list 00000006-0000-4000-8000-000000000000 --dir <app>/drizzle
+account json cf d1 migrations list 00000007-0000-4000-8000-000000000000 --dir <app>/drizzle
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-todo --per-page 10
 project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
@@ -648,6 +650,8 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -684,27 +688,27 @@ account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf ssl certificate-packs list -z zone-1 --per-page 50 --page 1
-account json cf ssl certificate-packs delete pack-12 -z zone-1 --force
+account json cf ssl certificate-packs delete pack-13 -z zone-1 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workflows list --search every-acme-todo --per-page 100 --page 1
 account json cf workers deployments list --worker every-acme-todo --per-page 10
 account json cf workers delete every-acme-todo --force
-account json cf d1 delete 00000006-0000-4000-8000-000000000000 --force
-account json cf kv namespaces delete 00000000000000000000000000000007 --force
+account json cf d1 delete 00000007-0000-4000-8000-000000000000 --force
+account json cf kv namespaces delete 00000000000000000000000000000008 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy
 
-d1 "DB" every-acme-todo 00000006-0000-4000-8000-000000000000 null
-kv "KV" every-acme-todo 00000000000000000000000000000007 null
-worker "" every-acme-todo every-acme-todo every-acme-todo-version-8
+d1 "DB" every-acme-todo 00000007-0000-4000-8000-000000000000 null
+kv "KV" every-acme-todo 00000000000000000000000000000008 null
+worker "" every-acme-todo every-acme-todo every-acme-todo-version-9
 
 ## ledger after the redeploy
 
-d1 "DB" every-acme-todo 00000006-0000-4000-8000-000000000000 null
-kv "KV" every-acme-todo 00000000000000000000000000000007 null
-worker "" every-acme-todo every-acme-todo every-acme-todo-version-13
+d1 "DB" every-acme-todo 00000007-0000-4000-8000-000000000000 null
+kv "KV" every-acme-todo 00000000000000000000000000000008 null
+worker "" every-acme-todo every-acme-todo every-acme-todo-version-14
 
 ## ledger after the purge
 

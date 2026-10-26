@@ -13,12 +13,12 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"progress","step":"app.build","message":"Created R2 bucket \"every-acme-agentic-inbox\".","data":{"bucket":"every-acme-agentic-inbox"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.build","status":"ok","message":"Built the app and checked its Worker.","data":{"release":false,"workflows":[]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-agentic-inbox..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-agentic-inbox-version-6.","data":{"versionId":"every-acme-agentic-inbox-version-6"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-agentic-inbox-version-7.","data":{"versionId":"every-acme-agentic-inbox-version-7"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"warning","code":"APP_NEEDS_SETUP","step":"app.secrets","message":"agentic-inbox won't open until WORKERS_AI_API_TOKEN and OPENROUTER_API_KEY are set","data":{"setup":{"ready":false,"settings":[{"kind":"provider","id":"workers-ai","label":"Workers AI","holder":"gateway","names":["WORKERS_AI_API_TOKEN"],"need":{"kind":"required"},"docs":"https://dash.cloudflare.com/profile/api-tokens","setup":"setup/workers-ai.md","hint":"A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.","set":false,"blocking":true},{"kind":"provider","id":"openrouter","label":"OpenRouter","holder":"gateway","names":["OPENROUTER_API_KEY"],"need":{"kind":"required"},"docs":"https://openrouter.ai/settings/keys","setup":"setup/openrouter.md","hint":"An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true}],"unmet":[{"kind":"provider","id":"workers-ai","label":"Workers AI","holder":"gateway","names":["WORKERS_AI_API_TOKEN"],"need":{"kind":"required"},"docs":"https://dash.cloudflare.com/profile/api-tokens","setup":"setup/workers-ai.md","hint":"A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.","set":false,"blocking":true},{"kind":"provider","id":"openrouter","label":"OpenRouter","holder":"gateway","names":["OPENROUTER_API_KEY"],"need":{"kind":"required"},"docs":"https://openrouter.ai/settings/keys","setup":"setup/openrouter.md","hint":"An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true}],"groups":[],"command":{"command":"pnpm everyapp configure agentic-inbox"}}}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-agentic-inbox on the gateway and publishing its hostname...","data":{"appId":"agentic-inbox"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 1 app","data":{"appWorkers":["every-acme-agentic-inbox"],"domains":["example.com","agentic-inbox.example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-8","data":{"versionId":"every-app-gateway-version-8"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-agentic-inbox (gateway version every-app-gateway-version-8).","data":{"versionId":"every-app-gateway-version-8","newHosts":["agentic-inbox.example.com"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-9","data":{"versionId":"every-app-gateway-version-9"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-agentic-inbox (gateway version every-app-gateway-version-9).","data":{"versionId":"every-app-gateway-version-9","newHosts":["agentic-inbox.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"agentic-inbox is live at https://agentic-inbox.example.com.","data":{"hostname":"agentic-inbox.example.com","url":"https://agentic-inbox.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"start","message":"Finding your Gateway..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"ok","data":{"gatewayUrl":"https://example.com"}}
@@ -31,14 +31,14 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.build","status":"start","message":"Building..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.build","status":"ok","message":"Built the app and checked its Worker.","data":{"release":false,"workflows":[]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-agentic-inbox..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-agentic-inbox-version-11.","data":{"versionId":"every-acme-agentic-inbox-version-11"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-agentic-inbox-version-12.","data":{"versionId":"every-acme-agentic-inbox-version-12"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"warning","code":"APP_NEEDS_SETUP","step":"app.secrets","message":"agentic-inbox won't open until WORKERS_AI_API_TOKEN and OPENROUTER_API_KEY are set","data":{"setup":{"ready":false,"settings":[{"kind":"provider","id":"workers-ai","label":"Workers AI","holder":"gateway","names":["WORKERS_AI_API_TOKEN"],"need":{"kind":"required"},"docs":"https://dash.cloudflare.com/profile/api-tokens","setup":"setup/workers-ai.md","hint":"A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.","set":false,"blocking":true},{"kind":"provider","id":"openrouter","label":"OpenRouter","holder":"gateway","names":["OPENROUTER_API_KEY"],"need":{"kind":"required"},"docs":"https://openrouter.ai/settings/keys","setup":"setup/openrouter.md","hint":"An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true}],"unmet":[{"kind":"provider","id":"workers-ai","label":"Workers AI","holder":"gateway","names":["WORKERS_AI_API_TOKEN"],"need":{"kind":"required"},"docs":"https://dash.cloudflare.com/profile/api-tokens","setup":"setup/workers-ai.md","hint":"A Cloudflare API token with Workers AI Read (the Workers AI page's prefilled token); the account is the Gateway's own.","set":false,"blocking":true},{"kind":"provider","id":"openrouter","label":"OpenRouter","holder":"gateway","names":["OPENROUTER_API_KEY"],"need":{"kind":"required"},"docs":"https://openrouter.ai/settings/keys","setup":"setup/openrouter.md","hint":"An API key from OpenRouter's keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true}],"groups":[],"command":{"command":"pnpm everyapp configure agentic-inbox"}}}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"agentic-inbox is live at https://agentic-inbox.example.com.","data":{"hostname":"agentic-inbox.example.com","url":"https://agentic-inbox.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"start","message":"Removing agentic-inbox from the Gateway...","data":{"appId":"agentic-inbox"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 0 apps","data":{"appWorkers":[],"domains":["example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-13","data":{"versionId":"every-app-gateway-version-13"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-14","data":{"versionId":"every-app-gateway-version-14"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"agentic-inbox is deleted on the gateway; agentic-inbox.example.com stops serving it.","data":{"appId":"agentic-inbox","hostname":"agentic-inbox.example.com","workerName":"every-acme-agentic-inbox","alreadyDeleted":false}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed agentic-inbox.example.com's certificate.","data":{"hostname":"agentic-inbox.example.com","certificatePacks":["pack-10"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed agentic-inbox.example.com's certificate.","data":{"hostname":"agentic-inbox.example.com","certificatePacks":["pack-11"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting agentic-inbox's Worker and data...","data":{"appId":"agentic-inbox"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-agentic-inbox\".","data":{"appId":"agentic-inbox","removed":["Worker \"every-acme-agentic-inbox\""],"kinds":["Worker"]}}
 
@@ -659,6 +659,8 @@ account json cf workers deployments list --worker every-app-gateway --per-page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
@@ -705,6 +707,8 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -741,7 +745,7 @@ account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf ssl certificate-packs list -z zone-1 --per-page 50 --page 1
-account json cf ssl certificate-packs delete pack-10 -z zone-1 --force
+account json cf ssl certificate-packs delete pack-11 -z zone-1 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workflows list --search every-acme-agentic-inbox --per-page 100 --page 1
 account json cf workers deployments list --worker every-acme-agentic-inbox --per-page 10
@@ -751,11 +755,11 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 
 ## ledger after the first deploy
 
-worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-6
+worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-7
 
 ## ledger after the redeploy
 
-worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-11
+worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-12
 
 ## ledger after the purge
 

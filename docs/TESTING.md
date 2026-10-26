@@ -65,9 +65,10 @@ SDK's built `dist/`.
 
 `.github/workflows/integration.yml` is the slow one, run in this private
 repository only: nightly, on every push to main (a newer push cancels the
-run still going) and on demand for any branch with
-`gh workflow run integration.yml --ref <branch>`. Run it on a branch that
-touches the CLI's Gateway or deploy pipeline, the gateway's auth or its SQL.
+run still going), on every pull request that touches `packages/cli`,
+`apps/every-app-gateway`, `packages/sdk`, the lockfile or the workflow
+itself (about five minutes), and on demand for any other branch with
+`gh workflow run integration.yml --ref <branch>`.
 Its jobs (the last three are steps of one build job, which installs and
 builds once):
 

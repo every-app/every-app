@@ -23,8 +23,12 @@ const WORKER_CONFIG = {
   assets: { runWorkerFirst: true },
   workersDev: false,
   previewUrls: false,
-  // The hourly MCP housekeeping: the release's own, kept by every deploy.
-  triggers: [{ type: "scheduled", schedule: "17 * * * *" }],
+  // The hourly MCP housekeeping and the activation queue's consumer: the
+  // release's own, kept by every deploy.
+  triggers: [
+    { type: "scheduled", schedule: "17 * * * *" },
+    { type: "queue", name: "every-app-gateway-activate" },
+  ],
   env: {
     ASSETS: { type: "assets" },
     DB: { type: "d1", name: "every-app-gateway" },

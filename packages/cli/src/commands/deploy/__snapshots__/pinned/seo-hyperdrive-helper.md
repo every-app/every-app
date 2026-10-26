@@ -20,11 +20,11 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"start","message":"Uploading every-acme-seo--audit...","data":{"name":"audit","workerName":"every-acme-seo--audit"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"ok","message":"Uploaded every-acme-seo--audit.","data":{"name":"audit","workerName":"every-acme-seo--audit"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-seo..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-seo-version-10.","data":{"versionId":"every-acme-seo-version-10"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-seo-version-11.","data":{"versionId":"every-acme-seo-version-11"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-seo on the gateway and publishing its hostname...","data":{"appId":"seo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 1 app","data":{"appWorkers":["every-acme-seo"],"domains":["example.com","seo.example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-12","data":{"versionId":"every-app-gateway-version-12"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-seo (gateway version every-app-gateway-version-12).","data":{"versionId":"every-app-gateway-version-12","newHosts":["seo.example.com"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-13","data":{"versionId":"every-app-gateway-version-13"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-seo (gateway version every-app-gateway-version-13).","data":{"versionId":"every-app-gateway-version-13","newHosts":["seo.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"seo is live at https://seo.example.com.","data":{"hostname":"seo.example.com","url":"https://seo.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"start","message":"Finding your Gateway..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"ok","data":{"gatewayUrl":"https://example.com"}}
@@ -42,13 +42,13 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"start","message":"Uploading every-acme-seo--audit...","data":{"name":"audit","workerName":"every-acme-seo--audit"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"ok","message":"Uploaded every-acme-seo--audit.","data":{"name":"audit","workerName":"every-acme-seo--audit"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-seo..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-seo-version-17.","data":{"versionId":"every-acme-seo-version-17"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-seo-version-18.","data":{"versionId":"every-acme-seo-version-18"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"seo is live at https://seo.example.com.","data":{"hostname":"seo.example.com","url":"https://seo.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"start","message":"Removing seo from the Gateway...","data":{"appId":"seo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 0 apps","data":{"appWorkers":[],"domains":["example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-19","data":{"versionId":"every-app-gateway-version-19"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-20","data":{"versionId":"every-app-gateway-version-20"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"seo is deleted on the gateway; seo.example.com stops serving it.","data":{"appId":"seo","hostname":"seo.example.com","workerName":"every-acme-seo","alreadyDeleted":false}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed seo.example.com's certificate.","data":{"hostname":"seo.example.com","certificatePacks":["pack-14"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed seo.example.com's certificate.","data":{"hostname":"seo.example.com","certificatePacks":["pack-15"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting seo's Worker and data...","data":{"appId":"seo"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-seo\", Worker \"every-acme-seo--audit\", Hyperdrive config \"every-acme-seo--hyperdrive\", KV namespace \"every-acme-seo\".","data":{"appId":"seo","removed":["Worker \"every-acme-seo\"","Worker \"every-acme-seo--audit\"","Hyperdrive config \"every-acme-seo--hyperdrive\"","KV namespace \"every-acme-seo\""],"kinds":["2 Workers","KV namespace","Hyperdrive config"]}}
 
@@ -95,7 +95,7 @@
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000006"
+      "id": "00000000000000000000000000000007"
     },
     "EVERY_APP_GATEWAY": {
       "type": "worker",
@@ -119,7 +119,7 @@
     },
     "HYPERDRIVE": {
       "type": "hyperdrive",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     }
   },
   "exports": {},
@@ -239,7 +239,7 @@
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000006"
+      "id": "00000000000000000000000000000007"
     },
     "DATABASE_PROVIDER": {
       "type": "text",
@@ -247,7 +247,7 @@
     },
     "HYPERDRIVE": {
       "type": "hyperdrive",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     },
     "AUDIT_ENGINE": {
       "type": "worker",
@@ -429,7 +429,7 @@
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000006"
+      "id": "00000000000000000000000000000007"
     },
     "EVERY_APP_GATEWAY": {
       "type": "worker",
@@ -453,7 +453,7 @@
     },
     "HYPERDRIVE": {
       "type": "hyperdrive",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     }
   },
   "exports": {},
@@ -573,7 +573,7 @@
     },
     "KV": {
       "type": "kv",
-      "id": "00000000000000000000000000000006"
+      "id": "00000000000000000000000000000007"
     },
     "DATABASE_PROVIDER": {
       "type": "text",
@@ -581,7 +581,7 @@
     },
     "HYPERDRIVE": {
       "type": "hyperdrive",
-      "id": "00000000000000000000000000000007"
+      "id": "00000000000000000000000000000008"
     },
     "AUDIT_ENGINE": {
       "type": "worker",
@@ -802,6 +802,8 @@ account json cf workers deployments list --worker every-app-gateway --per-page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
@@ -855,6 +857,8 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -891,31 +895,31 @@ account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf ssl certificate-packs list -z zone-1 --per-page 50 --page 1
-account json cf ssl certificate-packs delete pack-14 -z zone-1 --force
+account json cf ssl certificate-packs delete pack-15 -z zone-1 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workflows list --search every-acme-seo --per-page 100 --page 1
 account json cf workers deployments list --worker every-acme-seo --per-page 10
 account json cf workers delete every-acme-seo --force
 account json cf workers deployments list --worker every-acme-seo--audit --per-page 10
 account json cf workers delete every-acme-seo--audit --force
-account json cf hyperdrive delete 00000000000000000000000000000007 --force
-account json cf kv namespaces delete 00000000000000000000000000000006 --force
+account json cf hyperdrive delete 00000000000000000000000000000008 --force
+account json cf kv namespaces delete 00000000000000000000000000000007 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy
 
-hyperdrive "HYPERDRIVE" every-acme-seo--hyperdrive 00000000000000000000000000000007 null
-kv "KV" every-acme-seo 00000000000000000000000000000006 null
-worker "" every-acme-seo every-acme-seo every-acme-seo-version-10
-worker "audit" every-acme-seo--audit every-acme-seo--audit every-acme-seo--audit-version-8
+hyperdrive "HYPERDRIVE" every-acme-seo--hyperdrive 00000000000000000000000000000008 null
+kv "KV" every-acme-seo 00000000000000000000000000000007 null
+worker "" every-acme-seo every-acme-seo every-acme-seo-version-11
+worker "audit" every-acme-seo--audit every-acme-seo--audit every-acme-seo--audit-version-9
 
 ## ledger after the redeploy
 
-hyperdrive "HYPERDRIVE" every-acme-seo--hyperdrive 00000000000000000000000000000007 null
-kv "KV" every-acme-seo 00000000000000000000000000000006 null
-worker "" every-acme-seo every-acme-seo every-acme-seo-version-17
-worker "audit" every-acme-seo--audit every-acme-seo--audit every-acme-seo--audit-version-15
+hyperdrive "HYPERDRIVE" every-acme-seo--hyperdrive 00000000000000000000000000000008 null
+kv "KV" every-acme-seo 00000000000000000000000000000007 null
+worker "" every-acme-seo every-acme-seo every-acme-seo-version-18
+worker "audit" every-acme-seo--audit every-acme-seo--audit every-acme-seo--audit-version-16
 
 ## ledger after the purge
 

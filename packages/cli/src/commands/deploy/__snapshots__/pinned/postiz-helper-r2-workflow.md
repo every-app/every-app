@@ -18,12 +18,12 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"start","message":"Uploading every-acme-postiz--api...","data":{"name":"api","workerName":"every-acme-postiz--api"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"ok","message":"Uploaded every-acme-postiz--api.","data":{"name":"api","workerName":"every-acme-postiz--api"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-postiz..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-postiz-version-9.","data":{"versionId":"every-acme-postiz-version-9"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-postiz-version-10.","data":{"versionId":"every-acme-postiz-version-10"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"warning","code":"APP_NEEDS_SETUP","step":"app.secrets","message":"postiz won't open until OPENAI_API_KEY, JWT_SECRET, X_API_KEY and X_API_SECRET are set","data":{"setup":{"ready":false,"settings":[{"kind":"provider","id":"openai","label":"OpenAI","holder":"gateway","names":["OPENAI_API_KEY"],"need":{"kind":"required"},"docs":"https://platform.openai.com/api-keys","setup":"setup/openai.md","hint":"A secret key from the API keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true},{"kind":"secret","id":"JWT_SECRET","label":"JWT_SECRET","holder":"app","names":["JWT_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_KEY","label":"X_API_KEY","holder":"app","names":["X_API_KEY"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_SECRET","label":"X_API_SECRET","holder":"app","names":["X_API_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true}],"unmet":[{"kind":"provider","id":"openai","label":"OpenAI","holder":"gateway","names":["OPENAI_API_KEY"],"need":{"kind":"required"},"docs":"https://platform.openai.com/api-keys","setup":"setup/openai.md","hint":"A secret key from the API keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true},{"kind":"secret","id":"JWT_SECRET","label":"JWT_SECRET","holder":"app","names":["JWT_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_KEY","label":"X_API_KEY","holder":"app","names":["X_API_KEY"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_SECRET","label":"X_API_SECRET","holder":"app","names":["X_API_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true}],"groups":[],"command":{"command":"pnpm everyapp configure postiz"}}}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"start","message":"Binding APP__every-acme-postiz on the gateway and publishing its hostname...","data":{"appId":"postiz"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 1 app","data":{"appWorkers":["every-acme-postiz"],"domains":["example.com","postiz.example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-11","data":{"versionId":"every-app-gateway-version-11"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-postiz (gateway version every-app-gateway-version-11).","data":{"versionId":"every-app-gateway-version-11","newHosts":["postiz.example.com"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-12","data":{"versionId":"every-app-gateway-version-12"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.bind","status":"ok","message":"The gateway binds APP__every-acme-postiz (gateway version every-app-gateway-version-12).","data":{"versionId":"every-app-gateway-version-12","newHosts":["postiz.example.com"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"postiz is live at https://postiz.example.com.","data":{"hostname":"postiz.example.com","url":"https://postiz.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"start","message":"Finding your Gateway..."}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.connect","status":"ok","data":{"gatewayUrl":"https://example.com"}}
@@ -40,14 +40,14 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"start","message":"Uploading every-acme-postiz--api...","data":{"name":"api","workerName":"every-acme-postiz--api"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.helper","status":"ok","message":"Uploaded every-acme-postiz--api.","data":{"name":"api","workerName":"every-acme-postiz--api"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"start","message":"Uploading every-acme-postiz..."}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-postiz-version-16.","data":{"versionId":"every-acme-postiz-version-16"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.upload","status":"ok","message":"Uploaded version every-acme-postiz-version-17.","data":{"versionId":"every-acme-postiz-version-17"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"warning","code":"APP_NEEDS_SETUP","step":"app.secrets","message":"postiz won't open until OPENAI_API_KEY, JWT_SECRET, X_API_KEY and X_API_SECRET are set","data":{"setup":{"ready":false,"settings":[{"kind":"provider","id":"openai","label":"OpenAI","holder":"gateway","names":["OPENAI_API_KEY"],"need":{"kind":"required"},"docs":"https://platform.openai.com/api-keys","setup":"setup/openai.md","hint":"A secret key from the API keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true},{"kind":"secret","id":"JWT_SECRET","label":"JWT_SECRET","holder":"app","names":["JWT_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_KEY","label":"X_API_KEY","holder":"app","names":["X_API_KEY"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_SECRET","label":"X_API_SECRET","holder":"app","names":["X_API_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true}],"unmet":[{"kind":"provider","id":"openai","label":"OpenAI","holder":"gateway","names":["OPENAI_API_KEY"],"need":{"kind":"required"},"docs":"https://platform.openai.com/api-keys","setup":"setup/openai.md","hint":"A secret key from the API keys page; the Gateway puts it on every call as a bearer token.","set":false,"blocking":true},{"kind":"secret","id":"JWT_SECRET","label":"JWT_SECRET","holder":"app","names":["JWT_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_KEY","label":"X_API_KEY","holder":"app","names":["X_API_KEY"],"need":{"kind":"required"},"set":false,"blocking":true},{"kind":"secret","id":"X_API_SECRET","label":"X_API_SECRET","holder":"app","names":["X_API_SECRET"],"need":{"kind":"required"},"set":false,"blocking":true}],"groups":[],"command":{"command":"pnpm everyapp configure postiz"}}}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.live","status":"ok","message":"postiz is live at https://postiz.example.com.","data":{"hostname":"postiz.example.com","url":"https://postiz.example.com"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"start","message":"Removing postiz from the Gateway...","data":{"appId":"postiz"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"start","message":"Uploading Gateway 0.2.0 with 0 apps","data":{"appWorkers":[],"domains":["example.com"]}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-18","data":{"versionId":"every-app-gateway-version-18"}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"gateway.deploy","status":"ok","message":"Uploaded version every-app-gateway-version-19","data":{"versionId":"every-app-gateway-version-19"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"postiz is deleted on the gateway; postiz.example.com stops serving it.","data":{"appId":"postiz","hostname":"postiz.example.com","workerName":"every-acme-postiz","alreadyDeleted":false}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed postiz.example.com's certificate.","data":{"hostname":"postiz.example.com","certificatePacks":["pack-13"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed postiz.example.com's certificate.","data":{"hostname":"postiz.example.com","certificatePacks":["pack-14"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting postiz's Worker and data...","data":{"appId":"postiz"}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Workflow \"every-acme-postiz--publish-post\", Worker \"every-acme-postiz\", Worker \"every-acme-postiz--api\", D1 database \"every-acme-postiz\".","data":{"appId":"postiz","removed":["Workflow \"every-acme-postiz--publish-post\"","Worker \"every-acme-postiz\"","Worker \"every-acme-postiz--api\"","D1 database \"every-acme-postiz\""],"kinds":["2 Workers","Workflow","D1 database"]}}
 
@@ -99,7 +99,7 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-postiz",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "EVERY_APP_GATEWAY": {
       "type": "worker",
@@ -299,7 +299,7 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-postiz",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "DATABASE_PROVIDER": {
       "type": "text",
@@ -550,7 +550,7 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-postiz",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "EVERY_APP_GATEWAY": {
       "type": "worker",
@@ -750,7 +750,7 @@
     "DB": {
       "type": "d1",
       "name": "every-acme-postiz",
-      "id": "00000006-0000-4000-8000-000000000000"
+      "id": "00000007-0000-4000-8000-000000000000"
     },
     "DATABASE_PROVIDER": {
       "type": "text",
@@ -994,9 +994,9 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf workers deployments list --worker every-acme-postiz --per-page 10
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations list 00000006-0000-4000-8000-000000000000 --dir <app>/migrations
+account json cf d1 migrations list 00000007-0000-4000-8000-000000000000 --dir <app>/migrations
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations apply 00000006-0000-4000-8000-000000000000 --dir <app>/migrations
+account json cf d1 migrations apply 00000007-0000-4000-8000-000000000000 --dir <app>/migrations
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 postiz api --worker every-acme-postiz--api --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
@@ -1039,6 +1039,8 @@ account json cf workers deployments list --worker every-app-gateway --per-page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
@@ -1074,7 +1076,7 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf workers deployments list --worker every-acme-postiz --per-page 10
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
-account json cf d1 migrations list 00000006-0000-4000-8000-000000000000 --dir <app>/migrations
+account json cf d1 migrations list 00000007-0000-4000-8000-000000000000 --dir <app>/migrations
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 project text cf deploy --prebuilt --no-provision --mode production --message everyapp 0.3.0 postiz api --worker every-acme-postiz--api --secrets-file /fake-cf-files/secrets.json files=secrets.json cwd=<app>
@@ -1095,6 +1097,8 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf queues list
+account json cf queues messages push queue-00000003 --body @/fake-cf-files/body.json files=body.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -1131,7 +1135,7 @@ account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf ssl certificate-packs list -z zone-1 --per-page 50 --page 1
-account json cf ssl certificate-packs delete pack-13 -z zone-1 --force
+account json cf ssl certificate-packs delete pack-14 -z zone-1 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workflows list --search every-acme-postiz --per-page 100 --page 1
 account json cf workflows delete every-acme-postiz--publish-post --force
@@ -1139,21 +1143,21 @@ account json cf workers deployments list --worker every-acme-postiz --per-page 1
 account json cf workers delete every-acme-postiz --force
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 account json cf workers delete every-acme-postiz--api --force
-account json cf d1 delete 00000006-0000-4000-8000-000000000000 --force
+account json cf d1 delete 00000007-0000-4000-8000-000000000000 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy
 
-d1 "DB" every-acme-postiz 00000006-0000-4000-8000-000000000000 null
-worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-9
-worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-7
+d1 "DB" every-acme-postiz 00000007-0000-4000-8000-000000000000 null
+worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-10
+worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-8
 
 ## ledger after the redeploy
 
-d1 "DB" every-acme-postiz 00000006-0000-4000-8000-000000000000 null
-worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-16
-worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-14
+d1 "DB" every-acme-postiz 00000007-0000-4000-8000-000000000000 null
+worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-17
+worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-15
 
 ## ledger after the purge
 

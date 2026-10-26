@@ -4,12 +4,26 @@ name: Integration
 # workspace build, the cf dry run and the built CLI). Private repository only
 # (each job's `if`; the public copy can't name it): every-app/every-app
 # mirrors main and doesn't run them. They run nightly, on main (a newer push
-# cancels a run still going, so a burst of merges ends in one full run) and
-# on demand for any branch:
+# cancels a run still going, so a burst of merges ends in one full run), on
+# demand for any branch:
 #
 #   gh workflow run integration.yml --ref <branch>
+#
+# and on a pull request that touches what they test: the CLI, the gateway,
+# the SDK, the lockfile or this file (#842 and #844 each turned main red
+# while their own checks were green; neither touched anything else). A
+# docs or README pull request never runs them. About five minutes of wall
+# clock, twelve runner minutes, per run; a newer push to the same pull
+# request cancels the run still going.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/cli/**'
+      - 'apps/every-app-gateway/**'
+      - 'packages/sdk/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/integration.yml'
   schedule:
     - cron: '17 7 * * *'
   push:

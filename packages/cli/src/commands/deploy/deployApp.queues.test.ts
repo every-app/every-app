@@ -102,6 +102,8 @@ beforeEach(async () => {
     "export default defineConfig((ctx) => ({ worker: everyAppWorker({ manifest, entrypoint, ctx }) }));\n",
   );
   events = [];
+  // What the Gateway's install did (its activation queue among it) isn't the app's.
+  account.cf.calls.length = 0;
 });
 
 afterEach(async () => {
@@ -145,6 +147,10 @@ const queueCalls = (...action: string[]) =>
   account.cf.calls.filter(
     (call) => call.args[0] === "queues" && action.every((arg, index) => call.args[index + 1] === arg),
   );
+
+/** The account's queues but the Gateway's own activation queue (setup made it; the app never touches it). */
+const appQueues = () =>
+  [...account.queues.values()].filter((queue) => queue.name !== "every-app-gateway-activate").length;
 
 const uploads = (worker: string) => account.deploys.filter((upload) => upload.workerName === worker);
 
@@ -215,7 +221,7 @@ describe("deploy of an app with Queues", () => {
     expect([JOBS, CRAWLS, FAILED].map((name) => account.queue(name)!.id)).toEqual(ids);
     expect(consumersOf(JOBS)).toHaveLength(1);
     expect(consumersOf(CRAWLS)).toHaveLength(1);
-    expect(account.queues.size).toBe(3);
+    expect(appQueues()).toBe(3);
   });
 
   it("refuses a queue of its name that no deploy recorded, before anything is uploaded", async () => {
@@ -247,7 +253,7 @@ describe("deploy of an app with Queues", () => {
         resources: { queues: [{ name: "JOBS", consumer: { worker: "ghost" } }] },
       }),
     ).rejects.toThrow('Queue JOBS is consumed by Worker "ghost", which workers doesn\'t declare.');
-    expect(account.queues.size).toBe(0);
+    expect(appQueues()).toBe(0);
     expect(account.deploys.filter((upload) => upload.workerName.startsWith(CRAWL_WORKER))).toEqual([]);
   });
 
@@ -303,7 +309,7 @@ describe("deploy of an app with Queues", () => {
     await deploy(CRAWL);
     const result = await purge("crawl");
 
-    expect(account.queues.size).toBe(0);
+    expect(appQueues()).toBe(0);
     expect(result.purged?.removed).toEqual(
       expect.arrayContaining([`Queue "${JOBS}"`, `Queue "${CRAWLS}"`, `Queue "${FAILED}"`]),
     );

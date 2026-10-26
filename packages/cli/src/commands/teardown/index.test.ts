@@ -646,15 +646,20 @@ describe("teardown", () => {
     account.queues.get(customerEvents)!.consumers.set("consumer-on-theirs", { script: TODO_WORKER, settings: {} });
     const theirs = account.createQueue("customer-queue");
     account.queues.get(theirs)!.consumers.set("consumer-theirs", { script: "other-worker", settings: {} });
+    // The Gateway's own activation queue (setup made it) is ours too.
+    const activation = [...account.queues].find(([, queue]) => queue.name === "every-app-gateway-activate")![0];
 
     await run({ dryRun: true });
     expect(done()!["data"]["plan"]).toMatchObject({
-      queues: [{ name: `${TODO_WORKER}--jobs`, id: jobs }],
+      queues: [
+        { name: `${TODO_WORKER}--jobs`, id: jobs },
+        { name: "every-app-gateway-activate", id: activation },
+      ],
       queueConsumers: [
         { queueId: customerEvents, queueName: "customer-events", consumerId: "consumer-on-theirs", script: TODO_WORKER },
         { queueId: jobs, queueName: `${TODO_WORKER}--jobs`, consumerId: "consumer-ours", script: TODO_WORKER },
       ],
-      counts: expect.objectContaining({ queues: 1, queueConsumers: 2 }),
+      counts: expect.objectContaining({ queues: 2, queueConsumers: 2 }),
     });
 
     await run({ confirm: ACCOUNT_ID });
