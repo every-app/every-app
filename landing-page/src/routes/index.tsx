@@ -240,8 +240,8 @@ function Home() {
               className="landing-reveal mb-10 max-w-2xl text-balance text-[clamp(1.125rem,2vw,1.5rem)] leading-snug text-stone-300"
               style={{ animationDelay: "50ms" }}
             >
-              The open source platform for every app you and your agent need to
-              grow your business.
+              One platform for every tool you and your agent need to grow your
+              business.
             </p>
             <div className="landing-reveal" style={{ animationDelay: "100ms" }}>
               <CopySetupPrompt />
