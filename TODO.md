@@ -2070,3 +2070,16 @@ Per-install plain settings (`settings` in the manifest). Defaults taken; confirm
 Defaults taken for Ben in the gateway-runtime lane (identity token claims, the setup gate, the scope rule on app routes, WebSocket lifetime). HELD PRs: Ben merges.
 
 - [ ] **`org_name` is optional in the identity token** (PR 1). `EveryAppUser.orgName` is `string | undefined`: the claim is minted when the authenticator read the name (every production path does) and dropped when malformed, so an app shows `user.orgName ?? "your organization"`. Required would have made every test token and every third-party minter carry a name for a display-only field. The dev gateway's seeded organization is called `Dev organization`. A rename reaches apps within the 30 s membership cache, like a role change.
+
+## Platform shortcuts (2026-10-26)/lane 8 public assets
+
+Manifest `publicAssets`: static files of the asset bundle, forwarded with no identity and no marker. HELD for Ben (public routes). Defaults taken:
+
+- [ ] **A member gets no identity on a `publicAssets` path.** The Gateway reads no session there, so a page under such a glob renders signed out. The docs say to keep pages and APIs out of these globs. The alternative (auth-optional, like `public`) would hand a member's identity to Worker code on an "assets" path.
+- [ ] **A `public` route wins over a `publicAssets` pattern** on the same path (auth-optional, marker for anonymous visitors).
+- [ ] **No `Authorization` is forwarded on an asset path**, not even an app's own bearer, and an `epat_` token there is dropped unchecked rather than failing closed (the response is open to anyone anyway).
+- [ ] **The setup gate treats a public asset like a public route:** since lane 7 (main), public routes and public assets stay up while the app needs setup.
+- [ ] **At most 25 patterns**, the size of an app's Access destination (shared with `public` routes and `/mcp`).
+- [ ] **Patterns may use `:name`, `*` and `**` like `public`**, so `/*.png` and `/:id/og.png` are allowed. Only the catch-alls and patterns covering `/mcp` (such as `/:page`) are refused; a broad pattern like `/**/*.png` is allowed.
+- [ ] Follow-up: `deploy` warns when a `publicAssets` pattern matches no file in the built asset directory. Not built here.
+- [ ] Follow-up (phase 2): open-analytics moves its eight icon/asset `public` routes to `publicAssets` and drops the re-encoding in `server.ts`.

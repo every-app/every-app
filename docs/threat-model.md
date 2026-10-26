@@ -307,7 +307,7 @@ meant for MCP being used on app pages. The control plane being served on an
 app origin. A switched-off, half-deployed, deleted or hand-edited registry
 row being routed.
 
-**Invariants.** The full register has 34; these are the ones to try first.
+**Invariants.** The full register has 35; these are the ones to try first.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -344,6 +344,13 @@ what can't be public) is on the agent docs' manifest page,
 <https://everyapp.com/docs/agent/manifest>; the invariants are
 `perimeter.public-default-private`, `perimeter.authorization-forwarding`
 and `perimeter.public-auth-optional`.
+
+**Public assets.** A path matching a `publicAssets` glob (GET and HEAD) is
+forwarded with no identity, no public marker and no credential at all, a
+member's request included: the asset server answers a file in the
+Worker's asset bundle, and anything else reaches the Worker with neither
+header, where `everyApp()` answers 401. A `public` route on the same path
+wins. The invariant is `perimeter.public-assets-static-only`.
 
 **Not this boundary's job.** What the app does with a verified identity
 (scoping its queries), what a public route does with the `Authorization`

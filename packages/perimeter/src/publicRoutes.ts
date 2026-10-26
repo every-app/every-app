@@ -283,3 +283,41 @@ export function matchPublicRoute(
   }
   return { public: false, reason: "no matching public route" };
 }
+
+/** The methods a public asset answers: the Workers asset server's own. */
+export const PUBLIC_ASSET_METHODS = ["GET", "HEAD"] as const;
+
+/** True for `/mcp` and anything under it, which is never a public asset. */
+export function isMcpPath(canonical: string): boolean {
+  return canonical === "/mcp" || canonical.startsWith("/mcp/");
+}
+
+/**
+ * Decide whether a request is for a public static file (`publicAssets`):
+ * a GET or HEAD whose canonical path matches one of the globs, matched with
+ * the same canonicalization, glob syntax and internal-namespace denial as
+ * {@link matchPublicRoute}. `/mcp` and anything under it never match (the
+ * manifest refuses such a glob at author time; this also covers a stored
+ * row). The gateway forwards a match with no identity and no public marker,
+ * so only the asset server can answer it with content: the app's Worker,
+ * behind `everyApp()`, refuses a request carrying neither.
+ */
+export function matchPublicAsset(
+  globs: readonly string[] | undefined,
+  method: string,
+  rawPathname: string,
+): PublicMatch {
+  if (!globs || globs.length === 0) {
+    return { public: false, reason: "no public assets declared" };
+  }
+  const match = matchPublicRoute(
+    globs.map((path) => ({ path, methods: [...PUBLIC_ASSET_METHODS] })),
+    method,
+    rawPathname,
+  );
+  if (!match.public) return match;
+  if (isMcpPath(normalizePath(rawPathname).canonical)) {
+    return { public: false, reason: "/mcp is never a public asset" };
+  }
+  return match;
+}

@@ -61,8 +61,10 @@ export {
   isInternalPath,
   isReservedToolsPath,
   isReservedWellKnownPath,
+  matchPublicAsset,
   matchPublicRoute,
   normalizePath,
+  PUBLIC_ASSET_METHODS,
   type NormalizedPath,
   type PublicMatch,
 } from "./publicRoutes";

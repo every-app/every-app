@@ -35,7 +35,11 @@ import {
   type CapabilityLookup,
   type SettingNeedFields,
 } from "@every-app/sdk/internal";
-import { matchPublicRoute } from "../publicRoutes";
+import {
+  isMcpPath,
+  matchPublicRoute,
+  PUBLIC_ASSET_METHODS,
+} from "../publicRoutes";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
 export const PublicRouteSchema = z.object({
@@ -49,6 +53,12 @@ export const PublicRouteSchema = z.object({
   methods: z.array(z.string()).optional(),
 });
 export type PublicRoute = z.infer<typeof PublicRouteSchema>;
+
+/**
+ * The most `publicAssets` patterns a manifest may list: each one is an
+ * override on the app's Cloudflare Access destination, which holds 25.
+ */
+export const MAX_PUBLIC_ASSETS = 25;
 
 // NOTE: the gateway validates manifests sent by DEPLOYED CLIs, which may be
 // newer than this code. The base schemas here validate every field the perimeter
@@ -893,6 +903,21 @@ export const ManifestSchema = z
     limits: WorkerLimitsSchema.optional(),
     /** Routes reachable without an authenticated session. Default: none. */
     public: z.array(PublicRouteSchema).optional(),
+    /**
+     * Static files of the Worker's asset bundle anyone may fetch (favicons,
+     * a web manifest, built `/assets/**`): path globs with `public[].path`'s
+     * syntax and safety rules, GET and HEAD only. The gateway forwards a
+     * match with no identity and no public marker, so the asset server
+     * answers it and the Worker, behind `everyApp()`, refuses it. Default:
+     * none.
+     */
+    publicAssets: z
+      .array(z.string())
+      .max(
+        MAX_PUBLIC_ASSETS,
+        `publicAssets: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/icons/**"`,
+      )
+      .optional(),
     /** Provider APIs this app may call through the gateway. Default: none. */
     providers: ProvidersSchema.optional(),
     /**
@@ -1458,7 +1483,31 @@ export function validateManifest(input: unknown): Manifest {
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);
   }
+  for (const path of manifest.publicAssets ?? []) {
+    assertPublicPathIsSafe(path, PUBLIC_ASSET_LABEL);
+  }
   return manifest;
+}
+
+/** How a `publicAssets` pattern is named in a refusal. */
+const PUBLIC_ASSET_LABEL = "publicAssets: pattern";
+
+/**
+ * Refuse a `publicAssets` pattern that is `/mcp`, under it, or covers it
+ * (`/:page`): the host's `/mcp` is never a static file.
+ */
+function assertPublicAssetsSkipMcp(manifest: EveryAppManifest): void {
+  for (const path of manifest.publicAssets ?? []) {
+    const covers = PUBLIC_ASSET_METHODS.some(
+      (method) =>
+        matchPublicRoute([{ path, methods: [method] }], method, "/mcp").public,
+    );
+    if (isMcpPath(path) || covers) {
+      throw new ManifestError(
+        `Invalid everyapp.config: publicAssets: ${path} can't be a public asset${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp is never a static file`,
+      );
+    }
+  }
 }
 
 /**
@@ -1526,6 +1575,10 @@ export function validateManifestStrict(
       );
     }
   }
+  for (const path of manifest.publicAssets ?? []) {
+    assertPublicPathIsSafe(path, PUBLIC_ASSET_LABEL);
+  }
+  assertPublicAssetsSkipMcp(manifest);
   assertHelperWorkersAreDeclared(manifest);
   assertQueuesAreConsistent(manifest);
   assertDatabaseIsConsistent(manifest);
@@ -2026,38 +2079,39 @@ function suffixedName(workerName: string, binding: string): string {
  * of request-time normalization. These are author mistakes, so they fail the
  * deploy rather than silently narrowing.
  */
-export function assertPublicPathIsSafe(path: string): void {
+export function assertPublicPathIsSafe(
+  path: string,
+  what = "Public route",
+): void {
   if (!path.startsWith("/")) {
     throw new ManifestError(
-      `Public route path must be absolute (start with "/"): ${JSON.stringify(path)}`,
+      `${what} path must be absolute (start with "/"): ${JSON.stringify(path)}`,
     );
   }
   // A root catch-all defeats default-private. Hard error, never a warning.
   if (path === "/*" || path === "/**" || path === "*" || path === "/") {
     throw new ManifestError(
-      `Public route "${path}" exposes the entire app. A catch-all public route is not allowed.`,
+      `${what} "${path}" exposes the entire app. A catch-all public route is not allowed.`,
     );
   }
   if (path.includes("%")) {
     throw new ManifestError(
-      `Public route "${path}" must not contain percent-encoding; declare the decoded path.`,
+      `${what} "${path}" must not contain percent-encoding; declare the decoded path.`,
     );
   }
   if (path.includes("\\")) {
-    throw new ManifestError(
-      `Public route "${path}" must not contain backslashes.`,
-    );
+    throw new ManifestError(`${what} "${path}" must not contain backslashes.`);
   }
   const segments = path.split("/");
   if (segments.some((s) => s === "." || s === "..")) {
     throw new ManifestError(
-      `Public route "${path}" must not contain "." or ".." segments.`,
+      `${what} "${path}" must not contain "." or ".." segments.`,
     );
   }
   for (const segment of segments) {
     if (segment.startsWith(":") && !/^:[A-Za-z_][A-Za-z0-9_]*$/.test(segment)) {
       throw new ManifestError(
-        `Public route "${path}" has an invalid named segment "${segment}".`,
+        `${what} "${path}" has an invalid named segment "${segment}".`,
       );
     }
   }
@@ -2069,7 +2123,7 @@ export function assertPublicPathIsSafe(path: string): void {
     firstSegment === EVERYAPP_INTERNAL_PREFIX
   ) {
     throw new ManifestError(
-      `Public route "${path}" targets the reserved ${EVERYAPP_INTERNAL_PREFIX} namespace, which can never be public.`,
+      `${what} "${path}" targets the reserved ${EVERYAPP_INTERNAL_PREFIX} namespace, which can never be public.`,
     );
   }
 }

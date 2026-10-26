@@ -1049,8 +1049,13 @@ function mcpIn(value: unknown): McpSummary | null {
 
 function publicValue(routes: readonly PublicRouteSummary[]): string {
   const { shown, more } = listPublicRoutes(routes);
+  // Where the rest are listed: the manifest fields this app uses.
+  const fields = [
+    ...(routes.some((route) => !route.asset) ? ["public"] : []),
+    ...(routes.some((route) => route.asset) ? ["publicAssets"] : []),
+  ].join(", ");
   return `Open to the internet without sign-in: ${shown}${
-    more > 0 ? chalk.dim(` … and ${more} more (everyapp.config.ts public)`) : ""
+    more > 0 ? chalk.dim(` … and ${more} more (everyapp.config.ts ${fields})`) : ""
   }`;
 }
 

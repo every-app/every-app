@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listPublicRoutes, publicRoutesOf, storedPublicRoutes } from "./publicRoutes";
+import { listPublicRoutes, publicRoutesOf, storedPublicRoutes, type PublicRouteSummary } from "./publicRoutes";
 
 describe("an app's public routes", () => {
   it("reads a manifest's routes in its order, with GET alone for a route that names no method", () => {
@@ -47,5 +47,20 @@ describe("an app's public routes", () => {
       more: 3,
     });
     expect(listPublicRoutes([])).toEqual({ shown: "", more: 0 });
+  });
+
+  it("adds the publicAssets patterns after the routes, as GET/HEAD assets", () => {
+    const manifest = { public: [{ path: "/collect", methods: ["POST"] }], publicAssets: ["/favicon.ico", "/assets/**"] };
+    const expected: PublicRouteSummary[] = [
+      { path: "/collect", methods: ["POST"] },
+      { path: "/favicon.ico", methods: ["GET", "HEAD"], asset: true },
+      { path: "/assets/**", methods: ["GET", "HEAD"], asset: true },
+    ];
+    expect(publicRoutesOf(manifest)).toEqual(expected);
+    expect(storedPublicRoutes(JSON.stringify({ id: "a", ...manifest, publicAssets: [...manifest.publicAssets, 7] }))).toEqual(
+      expected,
+    );
+    expect(storedPublicRoutes(JSON.stringify({ id: "a", publicAssets: "/favicon.ico" }))).toEqual([]);
+    expect(listPublicRoutes(expected).shown).toBe("POST /collect, asset /favicon.ico, asset /assets/**");
   });
 });

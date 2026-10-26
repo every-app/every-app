@@ -1,7 +1,9 @@
 /**
  * An app's public surface, as the Gateway serves it: what everyapp.config.ts
  * declares under `public` is open to anyone on the internet with only the
- * signed public marker, and a manifest that sets `mcp: { by, why }` has
+ * signed public marker, a `publicAssets` pattern opens the static files of
+ * the Worker's asset bundle it matches (GET and HEAD, no marker, so never
+ * the Worker's code), and a manifest that sets `mcp: { by, why }` has
  * its host answer `/mcp` to MCP clients with a token of their own;
  * `deploy` and `access on` let those paths through Cloudflare Access too
  * (lib/access/plan.ts). `deploy` says so at the end of its run and
@@ -12,21 +14,32 @@
  */
 import type { PublicRoute } from "@every-app/perimeter/manifest";
 
+/** The methods a public asset answers (perimeter's PUBLIC_ASSET_METHODS). */
+const ASSET_METHODS = ["GET", "HEAD"];
+
 /** A public route as `deploy --json` and `status --json` carry it. */
 export interface PublicRouteSummary {
   path: string;
-  /** Upper-cased; `["GET"]` for a route that names none. */
+  /** Upper-cased; `["GET"]` for a route that names none, `["GET", "HEAD"]` for an asset. */
   methods: string[];
+  /** Set on a `publicAssets` pattern: static files only, never the Worker. */
+  asset?: true;
 }
 
 /** How many routes the end of a deploy lists before saying how many more. */
 const SHOWN_PUBLIC_ROUTES = 6;
 
-/** The routes a manifest declares under `public`, in its order. */
+/** The routes a manifest declares under `public`, in its order, then its `publicAssets`. */
 export function publicRoutesOf(
-  manifest: { public?: readonly PublicRoute[] | undefined } | null | undefined,
+  manifest:
+    | { public?: readonly PublicRoute[] | undefined; publicAssets?: readonly string[] | undefined }
+    | null
+    | undefined,
 ): PublicRouteSummary[] {
-  return (manifest?.public ?? []).map((route) => summary(route.path, route.methods));
+  return [
+    ...(manifest?.public ?? []).map((route) => summary(route.path, route.methods)),
+    ...(manifest?.publicAssets ?? []).map(assetSummary),
+  ];
 }
 
 /**
@@ -39,20 +52,25 @@ export function storedPublicRoutes(stored: unknown): PublicRouteSummary[] {
   try {
     const manifest: unknown = JSON.parse(stored);
     const routes = (manifest as { public?: unknown } | null)?.public;
-    if (!Array.isArray(routes)) return [];
-    return routes.flatMap((route: unknown) => {
-      const path = (route as { path?: unknown } | null)?.path;
-      if (typeof path !== "string") return [];
-      const methods = (route as { methods?: unknown }).methods;
-      return [
-        summary(
-          path,
-          Array.isArray(methods)
-            ? methods.filter((method): method is string => typeof method === "string")
-            : undefined,
-        ),
-      ];
-    });
+    const assets = (manifest as { publicAssets?: unknown } | null)?.publicAssets;
+    return [
+      ...(Array.isArray(routes) ? routes : []).flatMap((route: unknown) => {
+        const path = (route as { path?: unknown } | null)?.path;
+        if (typeof path !== "string") return [];
+        const methods = (route as { methods?: unknown }).methods;
+        return [
+          summary(
+            path,
+            Array.isArray(methods)
+              ? methods.filter((method): method is string => typeof method === "string")
+              : undefined,
+          ),
+        ];
+      }),
+      ...(Array.isArray(assets) ? assets : [])
+        .filter((path: unknown): path is string => typeof path === "string")
+        .map(assetSummary),
+    ];
   } catch {
     return [];
   }
@@ -96,7 +114,8 @@ export const describeMcp = (mcp: McpSummary): string => `MCP /mcp (${mcp.by})`;
 
 /**
  * The routes as a person reads them: `GET /hooks/*, POST /collect`, a
- * route's methods joined with `/` (`GET/HEAD /uploads/**`), the first
+ * route's methods joined with `/` (`GET/HEAD /uploads/**`), an asset
+ * pattern as `asset /favicon.ico`, the first
  * `limit` of them; `more` is how many the list leaves out.
  */
 export function listPublicRoutes(
@@ -106,7 +125,7 @@ export function listPublicRoutes(
   return {
     shown: routes
       .slice(0, limit)
-      .map((route) => `${route.methods.join("/")} ${route.path}`)
+      .map((route) => `${route.asset ? "asset" : route.methods.join("/")} ${route.path}`)
       .join(", "),
     more: Math.max(0, routes.length - limit),
   };
@@ -114,4 +133,8 @@ export function listPublicRoutes(
 
 function summary(path: string, methods: readonly string[] | undefined): PublicRouteSummary {
   return { path, methods: (methods ?? ["GET"]).map((method) => method.toUpperCase()) };
+}
+
+function assetSummary(path: string): PublicRouteSummary {
+  return { path, methods: [...ASSET_METHODS], asset: true };
 }

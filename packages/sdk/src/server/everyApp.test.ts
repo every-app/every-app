@@ -166,6 +166,26 @@ describe("everyApp", () => {
     expect(res.status).toBe(401);
   });
 
+  it("401s a publicAssets request that reaches the Worker, without running the handler", async () => {
+    // The gateway forwards a `publicAssets` match with no identity and no
+    // public marker. A file in the asset bundle is answered before the
+    // Worker runs; any other path lands here and must not run app code.
+    const handler = vi.fn(async () => new Response("app code"));
+    const app = everyApp(handler, { publicKeys: [publicPem] });
+    for (const method of ["GET", "HEAD"]) {
+      const res = await app.fetch(
+        new Request("https://todo.example.com/assets/not-a-file.js", {
+          method,
+          headers: { accept: "*/*", "user-agent": "curl/8" },
+        }),
+        env,
+        ctx,
+      );
+      expect(res.status).toBe(401);
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it("returns 401 on an audience mismatch", async () => {
     const app = everyApp(
       async () => new Response("ok"),

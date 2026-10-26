@@ -12,7 +12,8 @@
  * `mcp: { by: "gateway" }` (left out, the host serves no MCP and `/mcp` is
  * a private route like any other; `by: "app"` proxies it to the app's own
  * server), strip inbound trust headers, inject a fresh identity JWT
- * (private requests) or the public marker (public routes), proxy via the
+ * (private requests) or the public marker (public routes), or neither
+ * (public static files, `publicAssets`), proxy via the
  * `getAppFetcher` seam, and stamp security headers.
  *
  * It is dependency-injected end to end so it can be unit-tested in isolation and
@@ -36,6 +37,7 @@ import {
 import {
   isReservedToolsPath,
   isReservedWellKnownPath,
+  matchPublicAsset,
   matchPublicRoute,
 } from "./publicRoutes";
 import {
@@ -49,6 +51,7 @@ import {
   hasBearerCredential,
   hasEveryAppBearer,
   prepareOutboundHeaders,
+  stripInboundHeaders,
   withSecurityHeaders,
   IDENTITY_HEADER,
   PUBLIC_HEADER,
@@ -251,6 +254,9 @@ async function getPublicMarker(
   return marker;
 }
 
+/** How a proxied request was let through: see {@link handleGatewayRequest}. */
+type ProxyMode = "public" | "user" | "asset";
+
 /**
  * The proxy line: `ms` is the app's time (the fetch over the binding),
  * `gatewayMs` the perimeter's own before it (resolving the app, the
@@ -263,7 +269,7 @@ function logProxy(options: {
   status: number;
   receivedAtMs: number;
   startedAtMs: number;
-  mode: "public" | "user";
+  mode: ProxyMode;
 }): void {
   logEvent("proxy", {
     app: options.app.appId,
@@ -356,13 +362,19 @@ export async function handleGatewayRequest(
     request.method,
     url.pathname,
   );
+  // A public static file (`publicAssets`): a declared public route on the
+  // same path keeps the public route's treatment, so it is only looked up
+  // when no route matched.
+  const assetMatch = publicMatch.public
+    ? { public: false }
+    : matchPublicAsset(app.manifest.publicAssets, request.method, url.pathname);
   // An app whose required settings aren't set doesn't open on a private
   // path, and nothing below reads a credential for it. Its declared public
-  // routes stay up: nobody signs in to them, so the dialog the gate sends
-  // people to would help no one, and a webhook or badge that 503s while an
-  // operator finds a key is a broken integration. The app answers for what
-  // isn't configured there.
-  if (deps.needsSetup && !publicMatch.public) {
+  // routes and public assets stay up: nobody signs in to them, so the
+  // dialog the gate sends people to would help no one, and a webhook or
+  // badge that 503s while an operator finds a key is a broken
+  // integration. The app answers for what isn't configured there.
+  if (deps.needsSetup && !publicMatch.public && !assetMatch.public) {
     const refused = await deps.needsSetup({ app, request });
     if (refused) return refused;
   }
@@ -390,6 +402,22 @@ export async function handleGatewayRequest(
     if (!decision.allowed) {
       return json(403, { error: "server_fn_denied", reason: decision.reason });
     }
+  }
+
+  // A public asset reads no credential and forwards none: no identity (a
+  // signed-in member's included), no public marker, no cookie and no
+  // Authorization. The asset server answers a file in the bundle before
+  // the Worker runs; anything else reaches the Worker carrying neither
+  // header, and `everyApp()` answers 401. So a pattern can open static
+  // files and never the app's code.
+  if (assetMatch.public) {
+    return proxyToApp(
+      request,
+      deps,
+      app,
+      stripInboundHeaders(request.headers),
+      { receivedAtMs, mode: "asset" },
+    );
   }
 
   // Cookie tossing (cookies.ts): refused before anything reads a session.
@@ -575,6 +603,25 @@ export async function handleGatewayRequest(
     return json(403, { error: "forbidden", reason: "no_app_access" });
   }
 
+  return proxyToApp(request, deps, app, outboundHeaders, {
+    receivedAtMs,
+    mode,
+  });
+}
+
+/**
+ * Send the request on to the app's Worker with `outboundHeaders` (already
+ * stripped of inbound trust headers, with the identity or marker set, or
+ * neither for a public asset), and stamp the response.
+ */
+async function proxyToApp(
+  request: Request,
+  deps: GatewayDeps,
+  app: RegisteredApp,
+  outboundHeaders: Headers,
+  { receivedAtMs, mode }: { receivedAtMs: number; mode: ProxyMode },
+): Promise<Response> {
+  const url = new URL(request.url);
   const outbound = new Request(request.url, {
     method: request.method,
     headers: outboundHeaders,

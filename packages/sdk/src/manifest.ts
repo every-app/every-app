@@ -176,6 +176,11 @@ export interface EveryAppManifest {
   readonly limits?: EveryAppWorkerLimits;
   /** Routes open without a signed-in member. Default: none. */
   readonly public?: readonly EveryAppPublicRoute[];
+  /**
+   * Static files of the asset bundle anyone may fetch (favicons, icons, an
+   * OG image): path patterns, GET and HEAD, never Worker code.
+   */
+  readonly publicAssets?: readonly string[];
   /** AI providers the Gateway calls for the app, by id or with their need. */
   readonly providers?: readonly (
     | string
