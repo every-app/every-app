@@ -220,7 +220,7 @@ describe("everyapp status", () => {
     const empty = await shown();
     expect(empty).toContain("\nNo apps yet.\n");
     // Unclaimed: `access on` waits for the owner (it refuses with nobody to let in).
-    expect(empty).toContain("\nNext:\n  pnpm everyapp create my-app  start your first app\n");
+    expect(empty).toContain("\nNext:\n  pnpm everyapp create ../my-app  start your first app\n");
     expect(empty).not.toContain("pnpm everyapp access on");
 
     await deployed("todo");
@@ -1058,7 +1058,7 @@ describe("everyapp status", () => {
     expect(fresh["data"]["next"]).toEqual([
       {
         code: "CREATE_APP",
-        command: "pnpm everyapp create my-app",
+        command: "pnpm everyapp create ../my-app",
         note: "start your first app",
         why: "No apps yet.",
       },
@@ -1069,7 +1069,7 @@ describe("everyapp status", () => {
         "  Run: pnpm everyapp setup",
         "",
         "Next:",
-        "  pnpm everyapp create my-app  start your first app",
+        "  pnpm everyapp create ../my-app  start your first app",
         "",
       ].join("\n"),
     );

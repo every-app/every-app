@@ -131,7 +131,7 @@ export function reportGatewayResult(
 function nextAfterInstall(mode: DeploymentMode, accessOn: boolean): Array<{ command: string; note: string }> {
   if (mode === "hosted") {
     return [
-      { command: `${CLI} create my-app`, note: "start your first app" },
+      { command: `${CLI} create ../my-app`, note: "start your first app" },
       { command: `${CLI} secret set OPENAI_API_KEY`, note: "turn on AI for apps" },
       {
         command: `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
@@ -140,7 +140,7 @@ function nextAfterInstall(mode: DeploymentMode, accessOn: boolean): Array<{ comm
     ];
   }
   return [
-    { command: `${CLI} create my-app`, note: "start your first app" },
+    { command: `${CLI} create ../my-app`, note: "start your first app" },
     ...(accessOn
       ? []
       : [

@@ -370,7 +370,7 @@ function setup(state) {
     ...(outcome === "installed" || ownerCreated
       ? {
           next: [
-            { command: `${CLI} create my-app`, note: "start your first app" },
+            { command: `${CLI} create ../my-app`, note: "start your first app" },
             { command: `${CLI} access on`, note: "put Cloudflare Access in front of your Gateway (recommended)" },
             { command: `${CLI} secret set OPENAI_API_KEY`, note: "AI for apps (or OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN)" },
             { command: `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`, note: "email invites and password resets; needs Cloudflare Email Sending" },

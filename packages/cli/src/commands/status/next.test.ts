@@ -229,7 +229,7 @@ describe("nextStepsFor", () => {
       expect(nextStepsFor(done({ apps: [] }))).toEqual([
         {
           code: NextCode.CreateApp,
-          command: "pnpm everyapp create my-app",
+          command: "pnpm everyapp create ../my-app",
           note: "start your first app",
           why: "No apps yet.",
         },
@@ -296,7 +296,7 @@ describe("nextStepsFor", () => {
   });
 
   it("never repeats a fix's command", () => {
-    const facts = done({ apps: [], problems: [fix(ProblemCode.GatewayNotUploaded, "pnpm everyapp create my-app")] });
+    const facts = done({ apps: [], problems: [fix(ProblemCode.GatewayNotUploaded, "pnpm everyapp create ../my-app")] });
     expect(codes(facts)).toEqual([]);
   });
 });

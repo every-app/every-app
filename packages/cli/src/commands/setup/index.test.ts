@@ -51,7 +51,7 @@ describe("what setup ends with", () => {
           },
         ],
         next: [
-          { command: `${CLI} create my-app`, note: "start your first app" },
+          { command: `${CLI} create ../my-app`, note: "start your first app" },
           {
             command: `${CLI} access on`,
             note: "put Cloudflare Access in front of your Gateway (recommended)",
@@ -74,7 +74,7 @@ describe("what setup ends with", () => {
     expect(data["accessOn"]).toBe(true);
     expect(data["facts"]).toContainEqual({ label: "Access", value: "on", note: "everyone signs in through Cloudflare Access first" });
     expect(commands(data["next"])).toEqual([
-      `${CLI} create my-app`,
+      `${CLI} create ../my-app`,
       `${CLI} secret set OPENAI_API_KEY`,
       `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
     ]);
@@ -87,7 +87,7 @@ describe("what setup ends with", () => {
   it("says the same once a Gateway that was there gets its owner", () => {
     const { data } = reported({ ...INSTALLED, gateway: "upgraded" });
     expect(commands(data["next"])).toEqual([
-      `${CLI} create my-app`,
+      `${CLI} create ../my-app`,
       `${CLI} access on`,
       `${CLI} secret set OPENAI_API_KEY`,
       `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
@@ -98,7 +98,7 @@ describe("what setup ends with", () => {
     const { data } = reported({ ...INSTALLED, mode: "hosted" });
     expect(data["mode"]).toBe("hosted");
     expect(data["next"]).toEqual([
-      { command: `${CLI} create my-app`, note: "start your first app" },
+      { command: `${CLI} create ../my-app`, note: "start your first app" },
       { command: `${CLI} secret set OPENAI_API_KEY`, note: "turn on AI for apps" },
       {
         command: `${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,

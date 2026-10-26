@@ -19,39 +19,39 @@ A Gateway with the four apps on it, everything set:
 Gateway     https://apps.yourcompany.com · self-hosted
 Cloudflare  Your Name's Account
 Owner       you@yourcompany.com · Your Company
-Access      on · everyone signs in through Cloudflare Access first
-Release     0.2.0 · matches this checkout
+Access      on · in step with this Gateway · everyone signs in through Cloudflare Access first
+Release     0.3.0 · matches this checkout
 TLS         ready on 5 hostnames
 
-APP            STATUS  URL                                         DEPLOYED BY          PUBLIC
-openmail  ✓ live  https://openmail.apps.yourcompany.com  you@yourcompany.com
-analytics      ✓ live  https://analytics.apps.yourcompany.com      you@yourcompany.com  16 routes
-crm            ✓ live  https://crm.apps.yourcompany.com            you@yourcompany.com  4 routes
-openseo        ✓ live  https://openseo.apps.yourcompany.com        you@yourcompany.com
+APP        STATUS  URL                                     DEPLOYED BY          PUBLIC
+openmail   ✓ live  https://openmail.apps.yourcompany.com   you@yourcompany.com
+analytics  ✓ live  https://analytics.apps.yourcompany.com  you@yourcompany.com  16 routes
+crm        ✓ live  https://crm.apps.yourcompany.com        you@yourcompany.com  4 routes
+openseo    ✓ live  https://openseo.apps.yourcompany.com    you@yourcompany.com
 
-EMAIL          SENDS AS                    RECEIVES
+EMAIL     SENDS AS                    RECEIVES
 openmail  inbox@mail.yourcompany.com  nothing
 
-APP            SETTING                                                    WHERE      STATUS
-openmail  OPENROUTER_API_KEY                                         Gateway    ✓ set
-openmail  WORKERS_AI_API_TOKEN                                       Gateway    not set (optional)
-openmail  EMAIL_FROM+EMAIL_FROM_NAME                                 Gateway    ✓ set
-analytics      EMAIL_FROM+EMAIL_FROM_NAME                                 Gateway    ✓ set
-analytics      MAIN_SECRET                                                analytics  ✓ set
-crm            OPENROUTER_API_KEY                                         Gateway    ✓ set
-crm            CONTEXT_API_KEY                                            Gateway    ✓ set
-crm            GOOGLE_WORKSPACE_CLIENT_ID+GOOGLE_WORKSPACE_CLIENT_SECRET  Gateway    not set (optional)
-crm            MICROSOFT_365_CLIENT_ID+MICROSOFT_365_CLIENT_SECRET        Gateway    not set (optional)
-crm            SLACK_CLIENT_ID+SLACK_CLIENT_SECRET                        Gateway    not set (optional)
-crm            TOKEN_ENCRYPTION_KEY                                       crm        ✓ set
-crm            GITHUB_TOKEN                                               crm        not set (optional)
-crm            OPENROUTER_MODEL                                           crm        not set (optional)
-crm            ERASURE_SECRET                                             crm        not set (optional)
-openseo        OPENROUTER_API_KEY                                         Gateway    ✓ set
-openseo        DATAFORSEO_API_KEY                                         Gateway    ✓ set
-openseo        CONTEXT_API_KEY                                            Gateway    ✓ set
-openseo        CRAWLER_ACCESS_SECRET                                      openseo    not set (optional)
-openseo        OPENROUTER_MODEL                                           openseo    not set (optional)
+APP        SETTING                                                    WHERE      STATUS
+openmail   OPENROUTER_API_KEY                                         Gateway    ✓ set
+openmail   WORKERS_AI_API_TOKEN                                       Gateway    not set (optional)
+openmail   EMAIL_FROM+EMAIL_FROM_NAME                                 Gateway    ✓ set
+analytics  EMAIL_FROM+EMAIL_FROM_NAME                                 Gateway    ✓ set
+analytics  MAIN_SECRET                                                analytics  ✓ set
+crm        OPENROUTER_API_KEY                                         Gateway    ✓ set
+crm        CONTEXT_API_KEY                                            Gateway    ✓ set
+crm        GOOGLE_WORKSPACE_CLIENT_ID+GOOGLE_WORKSPACE_CLIENT_SECRET  Gateway    not set (optional)
+crm        MICROSOFT_365_CLIENT_ID+MICROSOFT_365_CLIENT_SECRET        Gateway    not set (optional)
+crm        SLACK_CLIENT_ID+SLACK_CLIENT_SECRET                        Gateway    not set (optional)
+crm        TOKEN_ENCRYPTION_KEY                                       crm        ✓ set
+crm        GITHUB_TOKEN                                               crm        not set (optional)
+crm        OPENROUTER_MODEL                                           crm        not set (optional)
+crm        ERASURE_SECRET                                             crm        not set (optional)
+openseo    OPENROUTER_API_KEY                                         Gateway    ✓ set
+openseo    DATAFORSEO_API_KEY                                         Gateway    ✓ set
+openseo    CONTEXT_API_KEY                                            Gateway    ✓ set
+openseo    CRAWLER_ACCESS_SECRET                                      openseo    not set (optional)
+openseo    OPENROUTER_MODEL                                           openseo    not set (optional)
 ```
 
 ### The first lines
@@ -90,7 +90,7 @@ Gateway     https://apps.yourcompany.com · self-hosted
 Cloudflare  Your Name's Account
 Owner       none yet
 Access      off
-Release     0.2.0 · matches this checkout
+Release     0.3.0 · matches this checkout
 TLS         waiting for my-app.apps.yourcompany.com · usually a few minutes
 
 APP     STATUS                     URL                                  DEPLOYED BY          PUBLIC

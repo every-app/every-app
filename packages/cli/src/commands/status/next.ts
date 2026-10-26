@@ -228,7 +228,7 @@ function createApp(facts: NextFacts): NextStep | null {
   if (!facts.uploaded || facts.apps.length > 0) return null;
   return {
     code: NextCode.CreateApp,
-    command: `${CLI} create my-app`,
+    command: `${CLI} create ../my-app`,
     note: "start your first app",
     why: "No apps yet.",
   };

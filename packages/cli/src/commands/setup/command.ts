@@ -92,7 +92,7 @@ export const setupCommand = buildCommand({
       "The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own",
       "questions; never cf's). With --json each step is an NDJSON event; a run that stops on",
       "something only a person can do exits 2 with action_required.",
-      `Then: ${CLI} create my-app, cd into it, ${CLI} dev, ${CLI} deploy.`,
+      `Then: ${CLI} create ../my-app, cd into it, ${CLI} dev, ${CLI} deploy.`,
       "More: https://everyapp.com/docs/gateway",
     ].join("\n"),
   },

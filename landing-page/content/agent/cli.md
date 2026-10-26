@@ -820,7 +820,7 @@ long timeout, or run it in the background and watch its output.
 The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own
 questions; never cf's). With --json each step is an NDJSON event; a run that stops on
 something only a person can do exits 2 with action_required.
-Then: pnpm everyapp create my-app, cd into it, pnpm everyapp dev, pnpm everyapp deploy.
+Then: pnpm everyapp create ../my-app, cd into it, pnpm everyapp dev, pnpm everyapp deploy.
 More: https://everyapp.com/docs/gateway
 
 FLAGS

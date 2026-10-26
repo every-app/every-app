@@ -129,7 +129,7 @@ export function renderStatus({
           ]),
           // Most apps open nothing: no blanks trail their rows.
         ).map((line) => line.trimEnd())
-      // What to do about it is the Next block's (`create my-app`, next.ts).
+      // What to do about it is the Next block's (`create ../my-app`, next.ts).
       : [chalk.dim("No apps yet.")]),
     ...(mailing.length > 0 ? ["", ...emailTable(mailing, emailProblems)] : []),
     ...(settings.length > 0 ? ["", ...renderSettingsTable(settings)] : []),

@@ -62,7 +62,7 @@ Add `--purge` to delete its data too. This can't be undone, so it asks you to ty
 There's no command for this yet. To take EveryApp out of your Cloudflare account, or to start again at a different address:
 
 1. Remove each app while the Gateway is still there: `pnpm everyapp delete my-app --purge` (above).
-2. If you turned Cloudflare Access on, run `pnpm everyapp access off`. [Check it, or turn it off](/docs/access#check-it-or-turn-it-off)
+2. If you turned Cloudflare Access on, run `pnpm everyapp access off`. It deletes the two Access applications and keeps your Zero Trust team, its sign-in methods and the policy **Every App gateway members**, since other applications may use them. To remove the policy, delete it in the dashboard under **Zero Trust**, then **Access controls**, then **Policies**. The team itself stays; deleting it isn't needed, and its `<name>.cloudflareaccess.com` sign-in page does nothing without applications. [Check it, or turn it off](/docs/access#check-it-or-turn-it-off)
 3. In the Cloudflare dashboard, delete three things: under **Compute & AI**, then **Workers & Pages**, the Worker `every-app-gateway` (its address goes with it; if a DNS record is left at that name, delete it under your domain, then **DNS**); under **Storage & Databases**, the D1 database `every-app-gateway` and the KV namespace `every-app-gateway-OAUTH_KV`.
 4. To stop the $5 a month, open [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) and change to the Free plan. Your domain renews on its own, at Cloudflare's price.
 
