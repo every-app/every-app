@@ -22,7 +22,7 @@ Made for a solo founder or a team of three or four who build their own tools wit
 - **Updates keep your data.** Before a deploy changes an app's database, it saves a restore point.
 - **Safe to run again.** If setup or a deploy stops halfway, run it again. It picks up where it left off.
 
-We strongly recommend Cloudflare Access before you invite anyone. `pnpm everyapp access on` adds a second sign-in at Cloudflare's edge, in front of the Gateway and your apps. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
+We strongly recommend Cloudflare Access before you invite anyone. `everyapp access on` adds a second sign-in at Cloudflare's edge, in front of the Gateway and your apps. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
 
 The [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md) says what the Gateway promises, to whom, where each promise is enforced, and what's still open.
 
@@ -31,7 +31,7 @@ The [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-
 EveryApp is alpha: open source, very powerful, moving fast, and trying not to break things. That means:
 
 - A deploy keeps your data and saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
-- Updating your Gateway is `git pull`, `pnpm install`, then `pnpm everyapp update`. Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
+- Updating your Gateway is `npm install -g everyapp@latest`, then `everyapp update`. Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
 - When something must change, the release notes say so.
 
 We don't promise backwards compatibility yet. Expect rough edges. [For early adopters](/docs/early-adopters) says how to get help and tell us what could be smoother.
@@ -45,7 +45,7 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 - **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
 - **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
 
-`pnpm everyapp install https://github.com/every-app/<repo>` from your EveryApp folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and OpenMail use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
+`everyapp install https://github.com/every-app/<repo>` installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and OpenMail use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
 
 Every key an app can ask for, and where to get it, is in [Providers](/docs/providers): model providers, search and data APIs, email, people's Google, Microsoft and GitHub accounts, and sign-in. Each page has the steps and the command that sets the key. You can [add any other API](/docs/providers/custom) yourself.
 

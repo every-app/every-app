@@ -11,15 +11,15 @@ Your Gateway can tell other tools when something happens: someone joins, an app 
 2. Select **Add subscription**, choose **Webhook**, and paste the address that should receive the events.
 3. Tick the events you want, or **Everything**, and select **Add subscription**.
 
-Or, in your `every-app` folder:
+Or, in a terminal:
 
 ```bash
-pnpm everyapp events add https://hooks.example.com/everyapp --events 'cap.*,member.*'
+everyapp events add https://hooks.example.com/everyapp --events 'cap.*,member.*'
 ```
 
 The address has to start with `https://` and be reachable from the internet. The Gateway makes a signing secret for it and shows it once. Copy it if your receiver will [check the signature](#check-the-signature); a Slack workflow doesn't need it.
 
-`cap.*` means every cap event, `member.*` every member event. Leave `--events` out to send everything. Run `pnpm everyapp events test <id>` (or **Send test** in the row's menu) to send a test event.
+`cap.*` means every cap event, `member.*` every member event. Leave `--events` out to send everything. Run `everyapp events test <id>` (or **Send test** in the row's menu) to send a test event.
 
 ## Post to Slack, no app needed
 
@@ -43,12 +43,12 @@ Add the relay's address as the webhook.
 
 ## Email alerts
 
-When you set a monthly cap on an app, or a default cap for every app, in **Usage** (or with `pnpm everyapp workspace app cap`), owners and admins start getting an email when an app reaches 80% of its cap and when it reaches the cap. It shows as **Cap alerts** under **Events**; switch it off there if you don't want it.
+When you set a monthly cap on an app, or a default cap for every app, in **Usage** (or with `everyapp workspace app cap`), owners and admins start getting an email when an app reaches 80% of its cap and when it reaches the cap. It shows as **Cap alerts** under **Events**; switch it off there if you don't want it.
 
 To email owners and admins about other events, select **Add subscription**, choose **Email**, and pick the events. Or:
 
 ```bash
-pnpm everyapp events add --email admins --events 'member.*'
+everyapp events add --email admins --events 'member.*'
 ```
 
 `admins` mails owners and admins; `owners` mails owners only. Each of them gets one email per event; if some can't be reached, the Gateway tries again for the rest. Email alerts need your Gateway to [send email](/docs/people#send-email).
@@ -235,8 +235,8 @@ A delivery that fails is tried again after 1 minute, 5 minutes, 30 minutes, 2 ho
 Open **Events** and the subscription's **Deliveries** to see every try and what the receiver answered. Fix the receiver, then select **Redeliver** on a failed or dead delivery: it starts the seven tries over. Or:
 
 ```bash
-pnpm everyapp events deliveries --dead
-pnpm everyapp events redeliver <delivery id>
+everyapp events deliveries --dead
+everyapp events redeliver <delivery id>
 ```
 
 Deliveries are kept for 30 days.

@@ -3,10 +3,12 @@ name: everyapp
 description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (EveryApp). Use before running any everyapp command, to deploy an app, set a secret, query its database, check the Gateway, or answer any "how do I" question about EveryApp.
 ---
 
-everyapp: self-hosted platform for private web apps on Cloudflare. While
-publishing is paused the command is `pnpm everyapp` (never `npx everyapp`),
-run from the EveryApp checkout or from an app's directory (its package.json
-links the CLI).
+everyapp: self-hosted platform for private web apps on Cloudflare. The
+command is `everyapp` (installed with `npm install -g everyapp`; `npx
+everyapp@latest` works too), from an app's directory (its package.json
+pins the CLI: `pnpm everyapp` there) or anywhere for Gateway commands. In
+a checkout of the EveryApp repository it is `pnpm everyapp`, which builds
+the Gateway from the tree instead of downloading the published release.
 
 Docs: two worlds. The user docs (https://everyapp.com/docs) are short and
 for the person. The agent docs are yours: https://everyapp.com/llms.txt
@@ -74,49 +76,49 @@ command, unless it names another); exit 1 = show the error; if data.authorize
 is set, ask before using data.rerun. waiting: true = keep reading (5 min
 for the device login, up to 15 for the owner link).
 
-State:   pnpm everyapp status --json   (data.fixes says what to run when something is off;
+State:   everyapp status --json   (data.fixes says what to run when something is off;
          data.next says what to do next: at most four { code, command | url, note, why }
          from the Gateway's state, never repeating a fix; tell the person
          each why and offer the command or page; data.apps[].setup says what each
          app needs set: ready, settings, unmet (each with why and docs), and
-         command, pnpm everyapp configure <app>)
-Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
+         command, everyapp configure <app>)
+Gateway: everyapp setup --domain <host> --json   (install, upgrade, repair;
          a fresh install runs 5-20 min: build, certificate, then up to 15 min
          waiting for the owner link, so give it a long timeout or background
          it and keep reading; run data.rerun as given (a needsTerminal rerun
          goes to the person))
-New app: pnpm everyapp create ../<id> --json   (from the every-app folder: the
+New app: everyapp create <id> --json   (in your projects folder; from a checkout: ../<id>, the
          app is its own repository beside it, on the published SDK and CLI
          from npm; a bare <id> makes apps/<id> inside the checkout instead) then cd into it and
          edit src/; the manifest is everyapp.config.ts
-Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
+Run:     everyapp dev   (long-running, human-facing: start it in the
          background and read the printed URL; no --json; --port when 8787 is
          taken; stop it with Ctrl-C/SIGINT to the everyapp process, never a
          pattern kill of vite or workerd; a pnpm install or deploy meanwhile
          rebuilds the SDK and breaks dev for a few seconds)
-Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
+Ship:    everyapp deploy --json   (from the app directory; safe to repeat;
          never changes the Gateway's code; GATEWAY_RELEASE_UNAVAILABLE says
          to run update first).
          No Gateway yet: action_required install_gateway; ask the user, run
          its data.rerun (setup), then deploy again. done.data.publicRoutes
          lists the routes the manifest opens to the internet without
          sign-in; tell the person which.
-Release: someone else's app, without a clone: pnpm everyapp install
+Release: someone else's app, without a clone: everyapp install
          https://github.com/<owner>/<repo> --json (its latest release's
          everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
          the repository publishes none; clone it, pnpm install in it, then
-         this checkout's pnpm everyapp deploy from its directory. Never
+         everyapp deploy from its directory. Never
          build a repository from its URL yourself.
-         To publish one: pnpm everyapp release, then attach the
+         To publish one: everyapp release, then attach the
          tarball to a GitHub release of the app's repository, or give
          the repository the Release workflow that does it on every push
          (one step, everyapp release --publish; pnpm pack-for-app <app>
          --workflow from this checkout; docs/runbooks/app-releases.md).
-Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
+Data:    everyapp db migrate (local)   everyapp db query "<sql>" [--local] --json
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
-         if the user said so). pnpm everyapp db restore --json undoes the last
+         if the user said so). everyapp db restore --json undoes the last
          deploy's migrations (and every write since): only when the user asks.
-Skills:  pnpm everyapp skills update --json   (from the app directory: replaces
+Skills:  everyapp skills update --json   (from the app directory: replaces
          its .agents/skills and .claude/skills copies of everyapp and
          build-every-app with the ones this CLI ships, adds a missing one, leaves
          other skills alone; done.data.changes lists each copy's files)
@@ -129,7 +131,7 @@ Postgres: any Postgres with a URL (Neon, Supabase, …) goes through Hyperdrive:
          stops HYPERDRIVE_ORIGIN_MISSING (data.variables, data.file) and status
          names it under the app. deploy runs drizzle-kit migrate before the
          upload. Turso is libSQL: app secrets, not Hyperdrive.
-Secrets: pnpm everyapp configure <app> --json   sets up an app: every setting its
+Secrets: everyapp configure <app> --json   sets up an app: every setting its
          manifest declares, each where it is held (an AI key or a capability's
          client on the Gateway, once for every app; the app's own secrets on
          its Worker, after its first deploy); live at once, no deploy. At a
@@ -140,7 +142,7 @@ Secrets: pnpm everyapp configure <app> --json   sets up an app: every setting it
          per line, from a command's output) or --from-env (each unset
          setting from the variable of its own name; stdin isn't read then).
          A value never goes on the command line (VALUE_ON_COMMAND_LINE). One
-         name at a time: pnpm everyapp secret set NAME [--app <id>] --json
+         name at a time: everyapp secret set NAME [--app <id>] --json
          (the value from a hidden prompt, stdin, or --from-env VAR). The name
          decides where it goes. A Gateway setting (OPENAI_API_KEY, EMAIL_FROM,
          GOOGLE_WORKSPACE_CLIENT_ID, …) is set on the Gateway from any
@@ -153,7 +155,7 @@ Secrets: pnpm everyapp configure <app> --json   sets up an app: every setting it
          and every app's settings).
 Needs setup: read data.apps[].setup; for each unmet setting show its why and docs
          and read its setup guide (.claude/skills/everyapp/<setup>); then run
-         setup.command, pnpm everyapp configure <app>, without a value passing
+         setup.command, everyapp configure <app>, without a value passing
          through the chat: tell the person to run it in their own terminal (it
          asks for each setting with a hidden prompt and says where to get it)
          and say when done; or drive it yourself, --json always: NAME=value
@@ -164,7 +166,7 @@ Needs setup: read data.apps[].setup; for each unmet setting show its why and doc
          warns APP_NEEDS_SETUP and puts the command under next); an any-of
          group (setup.groups) needs one member set, not all: configure asks
          which.
-Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --json
+Email:   everyapp email set --sender "*@<domain>" --inbound <address> --json
          In the app's directory, after its first deploy; nothing is deployed. --sender
          replaces the From addresses the Gateway lets the app name (everyapp.config.ts
          lists capabilities.email); --inbound replaces the addresses routed to its
@@ -172,7 +174,7 @@ Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --jso
          makes the Email Routing rules now. EMAIL_ROUTING_DISABLED needs the user's
          yes: rerun with --enable-email-routing only if they said so. email unset
          senders|inbound clears; email show prints both.
-Access:  pnpm everyapp access on --json   (Cloudflare Access in front of the Gateway
+Access:  everyapp access on --json   (Cloudflare Access in front of the Gateway
          and its apps: finds or creates the Zero Trust team (--team NAME when the
          account has none: permanent, ask the user), keeps both sign-in methods
          (Sign in with Cloudflare for the account's members, the one-time PIN for
@@ -197,14 +199,14 @@ Set up:  what the Gateway holds for apps, end to end (the provider's side, the
          provider registered on the Gateway has no file: pnpm everyapp
          provider show <id> prints its spec. A key or client secret
          never goes through the chat: README.md says the three ways it gets in.
-Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
+Remove:  everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.
-MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
+MCP apps: everyapp mcp on dataforseo --json   offers a data provider's
          tools (dataforseo_<tool>) to members' AI clients through the Gateway's
          /mcp with the Gateway's key (DATAFORSEO_API_KEY, setup/dataforseo.md);
          no page, nothing to deploy (the launcher lists it under "MCP apps").
-         pnpm everyapp mcp add <url> --auth bearer --json   does the same for
+         everyapp mcp add <url> --auth bearer --json   does the same for
          any remote MCP server (Streamable HTTP): <id>_<tool>, its credential
          a Gateway setting <ID>_MCP_TOKEN set with secret set and pinned to
          the URL's origin (setup/remote-mcp.md). add looks at the server once
@@ -222,12 +224,12 @@ MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
          default): past it a provider tool answers a tool error naming the
          cap, and an app's brokered call gets 429 app_monthly_cap_exceeded
          until the next UTC month.
-APIs:    pnpm everyapp provider add stripe.json --json   registers an API
+APIs:    everyapp provider add stripe.json --json   registers an API
          provider the catalog doesn't have on the Gateway: a JSON spec (hosts,
          auth, settings named after its id, STRIPE_…; never a value; fields
          and rules on the providers page), from a file or an https URL. At a
          terminal it then asks for the key and sets it; with --json it sets
-         nothing and its next is pnpm everyapp secret set STRIPE_API_KEY (it
+         nothing and its next is everyapp secret set STRIPE_API_KEY (it
          names the provider and the hosts the key goes to, and binds the key
          to them: a row replaced with --replace needs the key set again), or
          add --from-env. provider add <id> does the same for a built-in
@@ -236,17 +238,17 @@ APIs:    pnpm everyapp provider add stripe.json --json   registers an API
          provider list (the catalog and the rows), provider show <id> (the
          whole spec; --save writes .everyapp/providers/<id>.json for dev),
          provider remove <id> (PROVIDER_IN_USE while an app lists it).
-Workspace: pnpm everyapp workspace rename "Acme Corp" --json   renames the workspace
+Workspace: everyapp workspace rename "Acme Corp" --json   renames the workspace
          (the Gateway's organization: the name in the switcher and in invitations;
          1 to 64 characters, no line breaks). Nothing is deployed; members see it
          on their next page. Owners and admins can do the same under Manage
          workspace → Rename. WORKSPACE_NOT_CLAIMED: the Gateway has no owner yet.
-Roles:   pnpm everyapp workspace role <email> owner|admin|member --json   sets a
+Roles:   everyapp workspace role <email> owner|admin|member --json   sets a
          member's role in the workspace under the Cloudflare login (the Users
          page does the same). Owners are peers and the workspace always keeps
          one: the last owner's role is refused (LAST_OWNER); someone still
          invited isn't a member yet (MEMBER_NOT_FOUND).
-Manage:  pnpm everyapp workspace --help   the rest of Manage workspace from the
+Manage:  everyapp workspace --help   the rest of Manage workspace from the
          terminal, under the Cloudflare login: show, users, invite (prints the
          link; nothing is mailed), invite-link, uninvite, deactivate, reactivate,
          remove (--yes), reset-link, groups, group create|set|delete|members|apps,
@@ -256,7 +258,7 @@ Manage:  pnpm everyapp workspace --help   the rest of Manage workspace from the
          ORG_AMBIGUOUS; scripts pass the slug or id). deactivate and remove keep
          the last owner who can act (LAST_OWNER); a ban is account-wide, so
          deactivate checks every organization the person owns.
-Events:  pnpm everyapp events add <url> --events 'cap.*,member.*' --json   sends
+Events:  everyapp events add <url> --events 'cap.*,member.*' --json   sends
          those Gateway events to a webhook (Slack workflow, Zapier, n8n), signed;
          the generated secret is data.secret, shown once: hand it to the person,
          never invent or echo one. --email admins mails owners and admins instead.
@@ -267,7 +269,7 @@ Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.
          How to write, connect and debug them: mcp.md beside this file.
-Wipe:    pnpm everyapp teardown --account-id <id> --dry-run --json   deletes
+Wipe:    everyapp teardown --account-id <id> --dry-run --json   deletes
          EVERYTHING EveryApp made in one Cloudflare account (the Gateway too):
          only on a dedicated test account the user names, never one they use.
          Always --dry-run --json first and show the user data.plan. It needs

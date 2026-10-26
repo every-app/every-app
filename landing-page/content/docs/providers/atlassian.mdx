@@ -12,7 +12,7 @@ Each person connects their own Atlassian account once, in the Gateway, and every
 
 - **Make the OAuth app here:** [developer.atlassian.com](https://developer.atlassian.com/console/myapps/)
 - **Settings:** `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth atlassian`
+- **Added with:** `everyapp provider add --oauth atlassian`
 
 ### Redirect URI
 
@@ -24,7 +24,7 @@ https://<your gateway>/connect/atlassian/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show atlassian` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show atlassian` prints every one.
 
 ### Make the OAuth app
 
@@ -42,8 +42,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth atlassian
-pnpm everyapp secret set ATLASSIAN_CLIENT_ID ATLASSIAN_CLIENT_SECRET
+everyapp provider add --oauth atlassian
+everyapp secret set ATLASSIAN_CLIENT_ID ATLASSIAN_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -69,9 +69,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show atlassian` shows the client as set, and the redirect URI.
+- `everyapp provider show atlassian` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Atlassian**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

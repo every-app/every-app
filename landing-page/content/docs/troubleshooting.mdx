@@ -6,7 +6,7 @@ description: What the most common messages mean and how to fix them.
 Two things fix most problems:
 
 - **Run the same command again.** Setup and deploys pick up where they stopped.
-- **Run `pnpm everyapp status`.** It shows what's wrong and what to run. [Check your setup with everyapp status](/docs/status) explains every line.
+- **Run `everyapp status`.** It shows what's wrong and what to run. [Check your setup with everyapp status](/docs/status) explains every line.
 
 ## Subscribe this account to Workers Paid
 
@@ -34,15 +34,15 @@ If the record is `AAAA 100::` and you saw "Choose a workers.dev subdomain" on th
 
 ## The Gateway build fails with `connect ECONNREFUSED 127.0.0.1`
 
-On Linux, setup stopped at **Building the Gateway** with `GATEWAY_BUILD_FAILED` and a line like `connect ECONNREFUSED 127.0.0.1:43739`. Your copy of EveryApp is older than 2026-10-24: run `git pull` in your every-app folder, then run the command again. If you can't update yet, run it as `NODE_OPTIONS=--dns-result-order=ipv4first pnpm everyapp setup …`. On Linux, `localhost` can mean the IPv6 address first, and the build's preview server and its own client then disagree about where to meet; newer versions of everyapp set this option themselves. Deploying an app can hit the same error, with the same fix.
+On Linux, setup stopped at **Building the Gateway** with `GATEWAY_BUILD_FAILED` and a line like `connect ECONNREFUSED 127.0.0.1:43739`. Your copy of EveryApp is older than 2026-10-24: run `git pull` in your every-app folder, then run the command again. If you can't update yet, run it as `NODE_OPTIONS=--dns-result-order=ipv4first everyapp setup …`. On Linux, `localhost` can mean the IPv6 address first, and the build's preview server and its own client then disagree about where to meet; newer versions of everyapp set this option themselves. Deploying an app can hit the same error, with the same fix.
 
 ## Open the setup link above to create the owner account
 
-Nobody opened the owner link within 15 minutes, so setup stopped waiting. The link still works for about 24 hours: open it to create your owner account. If you've lost it, run `pnpm everyapp setup` again for a new link. That replaces the old one.
+Nobody opened the owner link within 15 minutes, so setup stopped waiting. The link still works for about 24 hours: open it to create your owner account. If you've lost it, run `everyapp setup` again for a new link. That replaces the old one.
 
 ## Use the newer setup link, or get a new one
 
-The owner link stopped working before anyone used it: setup ran again, maybe on another machine, and made a newer link, or the link expired. Use the newer link if you have it, or run `pnpm everyapp setup` again for a new one.
+The owner link stopped working before anyone used it: setup ran again, maybe on another machine, and made a newer link, or the link expired. Use the newer link if you have it, or run `everyapp setup` again for a new one.
 
 ## A new address doesn't load yet
 
@@ -51,7 +51,7 @@ Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
 ## An app in your Gateway says Needs deploy, Needs setup, Deploying or Disabled
 
 - **Needs deploy:** the app isn't online yet. Run `pnpm run deploy` in its folder.
-- **Needs setup:** a key the app requires isn't set, so it won't open. Run `pnpm everyapp configure my-app`: it asks for what is missing. `pnpm everyapp secret list my-app` says which.
+- **Needs setup:** a key the app requires isn't set, so it won't open. Run `everyapp configure my-app`: it asks for what is missing. `everyapp secret list my-app` says which.
 - **Deploying:** the app is still being connected. Refresh in a minute.
 - **Disabled:** the app has been turned off.
 
@@ -59,13 +59,13 @@ Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
 
 Your app stores something new but has no migration for it. In the app's folder, run `pnpm run db:generate`, then deploy again.
 
-## This checkout's Gateway is older than the live one
+## The Gateway from … is older than the live one
 
-Someone updated your Gateway from a newer copy of EveryApp. In your `every-app` folder, run `git pull` and `pnpm install`, then try again.
+Someone updated your Gateway with a newer everyapp. Run `npm install -g everyapp@latest`, then try again. (From a clone of `every-app`: `git pull` and `pnpm install`.)
 
 ## Your every-app folder has a newer Gateway than the one online
 
-Not a problem. Run `pnpm everyapp update` when you want it. Deploying an app never updates the Gateway.
+Not a problem. Run `everyapp update` when you want it. Deploying an app never updates the Gateway.
 
 ## everyapp needs Node.js 22.18.0 or newer
 
@@ -81,11 +81,11 @@ If it still fails, run `pnpm --version`. EveryApp is built with pnpm 10.34.5, an
 
 ## Command "everyapp" not found
 
-You're outside your `every-app` folder, or haven't run `pnpm install` in it yet. Run `cd every-app`, then `pnpm install`, and try again.
+everyapp isn't installed. Run `npm install -g everyapp`, open a new terminal window, and try again. (In a clone of `every-app`, run `pnpm install` there and use `everyapp`.)
 
 ## No everyapp.config.ts in this directory
 
-This command runs inside an app's folder. Run `cd apps/my-app` and try again.
+This command runs inside an app's folder. Run `cd my-app` and try again.
 
 ## ELIFECYCLE Command failed with exit code 2 or 130
 
@@ -94,11 +94,11 @@ This command runs inside an app's folder. Run `cd apps/my-app` and try again.
 - **exit code 2:** everyapp stopped for you to do something. The lines above say what, and the command to run again.
 - **exit code 130:** you pressed Ctrl+C, and the app stopped.
 
-`pnpm everyapp dev` and `pnpm everyapp deploy` run the same commands without the line.
+`everyapp dev` and `everyapp deploy` run the same commands without the line.
 
-## Strange errors after using npx
+## Commands that don't exist, or a different version
 
-`npx everyapp` downloads an old version that doesn't work: publishing to npm is paused, and the copy on npm is from before this Gateway. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the EveryApp repository**. Always run `pnpm everyapp` from your `every-app` folder.
+Your everyapp is older than these docs. Run `npm install -g everyapp@latest` and try again; `everyapp --version` shows what you have.
 
 ## Still stuck
 

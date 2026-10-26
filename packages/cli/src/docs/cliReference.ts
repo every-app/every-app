@@ -180,7 +180,7 @@ export function cliReference(): string {
     "",
     "<!-- Generated from packages/cli/src/app.ts and the command definitions by packages/cli/src/docs/cliReference.ts; the test in packages/cli/src/docs/agentDocs.test.ts fails when this page is stale. Regenerate with `pnpm -C packages/cli docs:update`. -->",
     "",
-    "The command is `everyapp`, run as `pnpm everyapp` from the EveryApp checkout (publishing to npm is paused; never `npx everyapp`). Every command takes `--help`; an agent adds `--json` and reads the event stream described on [/docs/agent/json](/docs/agent/json). What each error code means is on [/docs/agent/errors](/docs/agent/errors).",
+    "The command is `everyapp`: `npm install -g everyapp`, then `everyapp …` (in a checkout of the EveryApp repository, `pnpm everyapp …`, which builds the Gateway from the tree). Every command takes `--help`; an agent adds `--json` and reads the event stream described on [/docs/agent/json](/docs/agent/json). What each error code means is on [/docs/agent/errors](/docs/agent/errors).",
     "",
     "## Exit codes",
     "",

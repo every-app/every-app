@@ -3,13 +3,13 @@ title: Check your setup with everyapp status
 description: One command shows your Gateway, your apps and what is left to do, with the command to run for each thing. Every line of the report explained.
 ---
 
-Run it from your `every-app` folder whenever you want to know where things stand: after setup, after a deploy, after you install one of the four apps, or when something doesn't open.
+Run it whenever you want to know where things stand: after setup, after a deploy, after you install one of the four apps, or when something doesn't open.
 
 ```bash
-pnpm everyapp status
+everyapp status
 ```
 
-It reads your Cloudflare account and the Gateway's database, changes nothing, and takes a few seconds. Under the report, each thing left to do gets a block with the exact command that does it. Run that command, then run `pnpm everyapp status` again, until the last line says **nothing to fix**. A coding agent can do the same loop with `pnpm everyapp status --json`; [its page](/docs/agent/status) says how.
+It reads your Cloudflare account and the Gateway's database, changes nothing, and takes a few seconds. Under the report, each thing left to do gets a block with the exact command that does it. Run that command, then run `everyapp status` again, until the last line says **nothing to fix**. A coding agent can do the same loop with `everyapp status --json`; [its page](/docs/agent/status) says how.
 
 ## What it shows
 
@@ -59,8 +59,8 @@ openseo    OPENROUTER_MODEL                                           openseo   
 - **Gateway**: your Gateway's address, and how it's deployed. `self-hosted` means it runs in your own Cloudflare account.
 - **Cloudflare**: the account you're logged in to. If you have several, add `--account-id <id>`.
 - **Owner**: the owner account and its organization. **none yet** means nobody opened the owner link, so nobody can sign in yet; apps still deploy.
-- **Access**: whether [Cloudflare Access](/docs/access) is in front, and whether it still matches your Gateway. **on · in step with this Gateway** is the normal line; **on · drift: …** names what Cloudflare has that your Gateway doesn't want any more (a path let through, a sign-in method, a missing application), and the problem under the report says to run `pnpm everyapp access on`, which puts it right. **off** shows the command that turns it on; we strongly recommend it before you invite anyone.
-- **Release**: the Gateway version online, and how it compares to your `every-app` folder: **matches this checkout**; **this checkout has newer Gateway changes** (you pulled an update you haven't deployed; take it with `pnpm everyapp update`, or leave it); **this checkout is behind** (someone deployed from a newer copy; `git pull` before you deploy); **changed outside everyapp** (the Gateway Worker was edited in the Cloudflare dashboard or API; `pnpm everyapp setup` puts the right version back, asking first); **never uploaded** (setup stopped early; run it again).
+- **Access**: whether [Cloudflare Access](/docs/access) is in front, and whether it still matches your Gateway. **on · in step with this Gateway** is the normal line; **on · drift: …** names what Cloudflare has that your Gateway doesn't want any more (a path let through, a sign-in method, a missing application), and the problem under the report says to run `everyapp access on`, which puts it right. **off** shows the command that turns it on; we strongly recommend it before you invite anyone.
+- **Release**: the Gateway version online and where it came from (the published release, or a checkout's build). From a clone of `every-app` it also compares the two: **matches this checkout**; **this checkout has newer Gateway changes** (you pulled an update you haven't deployed; take it with `everyapp update`, or leave it); **this checkout is behind** (someone deployed from a newer copy; `git pull` before you deploy); **changed outside everyapp** (the Gateway Worker was edited in the Cloudflare dashboard or API; `everyapp setup` puts the right version back, asking first); **never uploaded** (setup stopped early; run it again).
 - **TLS**: the certificates for your Gateway and app addresses. **waiting for &lt;address&gt;** settles by itself within minutes; **couldn't check** means Cloudflare didn't answer, run it again.
 - **Deploys**: a line per deploy running right now (who, from where, started how long ago). Not shown when none is running.
 
@@ -68,7 +68,7 @@ openseo    OPENROUTER_MODEL                                           openseo   
 
 One row per app on your Gateway.
 
-- **STATUS**: **✓ live** opens for the people you've given access to. **○ live on first visit** and **○ waiting for certificate** settle by themselves: open the address, or wait a few minutes. **! needs setup** means a key the app requires isn't set, so it doesn't open yet; the SETTING table and a block below say which. **! never deployed**: the app was registered but no deploy finished; deploy it again from its folder, or `pnpm everyapp delete <app>`. **! not bound**: the app is uploaded but the live Gateway doesn't serve it; `pnpm everyapp setup` fixes that. **✗ Worker missing** and **✗ can't be bound** mean the app's Worker was deleted or renamed outside everyapp: deploy it again, or delete it. **switched off**: an admin disabled it on the Gateway. **· deploying** is added while a deploy runs.
+- **STATUS**: **✓ live** opens for the people you've given access to. **○ live on first visit** and **○ waiting for certificate** settle by themselves: open the address, or wait a few minutes. **! needs setup** means a key the app requires isn't set, so it doesn't open yet; the SETTING table and a block below say which. **! never deployed**: the app was registered but no deploy finished; deploy it again from its folder, or `everyapp delete <app>`. **! not bound**: the app is uploaded but the live Gateway doesn't serve it; `everyapp setup` fixes that. **✗ Worker missing** and **✗ can't be bound** mean the app's Worker was deleted or renamed outside everyapp: deploy it again, or delete it. **switched off**: an admin disabled it on the Gateway. **· deploying** is added while a deploy runs.
 - **URL**: where the app lives.
 - **DEPLOYED BY**: who ran the last deploy (an email, or **API token**).
 - **PUBLIC**: how many of the app's routes are open to the internet without a sign-in (a tracking script, a webhook). Blank when none; the deploy prints the list.
@@ -105,7 +105,7 @@ crm  GITHUB_TOKEN          crm      not set (optional)
 
 ! No owner yet, so nobody can sign in
   Apps still deploy. Setup prints a one-time link that creates the owner account.
-  Run: pnpm everyapp setup
+  Run: everyapp setup
 ! crm needs setup
   OpenRouter: The research agent's model and its web research (Perplexity's Sonar models), through the gateway's AI proxy.
   Get it at https://openrouter.ai/settings/keys
@@ -113,16 +113,16 @@ crm  GITHUB_TOKEN          crm      not set (optional)
   Context.dev: Company brand data, LinkedIn profiles and website extraction for the research agent.
   Get it at https://context.dev/
   Guide: .claude/skills/everyapp/setup/context.md
-  Run: pnpm everyapp configure crm
+  Run: everyapp configure crm
 ```
 
-Two blocks, two things to do: open the setup link that `pnpm everyapp setup` prints, and set the two keys the block names. The block tells you what each key is for, where to get it, and which setup guide in the everyapp skill walks your coding agent through it. The certificate row needs nothing from you.
+Two blocks, two things to do: open the setup link that `everyapp setup` prints, and set the two keys the block names. The block tells you what each key is for, where to get it, and which setup guide in the everyapp skill walks your coding agent through it. The certificate row needs nothing from you.
 
 Once the owner link is opened, a **Next** block follows the blocks: what is worth doing now, nothing broken. Each line is a command or a page, then what it does:
 
 ```text
 Next:
-  pnpm everyapp access on                   put Cloudflare Access in front (recommended)
+  everyapp access on                   put Cloudflare Access in front (recommended)
   https://apps.yourcompany.com/admin/users  invite people
 ```
 
@@ -134,29 +134,29 @@ Each block is one of these. The command under **Run** is the whole fix.
 
 ### Finish the Gateway
 
-- **Setup stopped before it recorded the Gateway's install**, **The Gateway's install stopped before its first upload**: run `pnpm everyapp setup`. It picks up where it stopped, and asks for the address again if it never recorded one.
-- **No owner yet, so nobody can sign in**: run `pnpm everyapp setup`. It prints a fresh one-time link; open it to create the owner account. Apps deploy fine in the meantime.
-- **The Gateway Worker was changed outside everyapp**: the Worker serves a version from the dashboard or the API. `pnpm everyapp setup` puts back the version it installed, asking first.
-- **The live Gateway doesn't serve &lt;app&gt;**, **The live Gateway's apps or hostnames are out of date**: an app or an address was added or removed and the live Gateway hasn't caught up. `pnpm everyapp setup`.
+- **Setup stopped before it recorded the Gateway's install**, **The Gateway's install stopped before its first upload**: run `everyapp setup`. It picks up where it stopped, and asks for the address again if it never recorded one.
+- **No owner yet, so nobody can sign in**: run `everyapp setup`. It prints a fresh one-time link; open it to create the owner account. Apps deploy fine in the meantime.
+- **The Gateway Worker was changed outside everyapp**: the Worker serves a version from the dashboard or the API. `everyapp setup` puts back the version it installed, asking first.
+- **The live Gateway doesn't serve &lt;app&gt;**, **The live Gateway's apps or hostnames are out of date**: an app or an address was added or removed and the live Gateway hasn't caught up. `everyapp setup`.
 
 ### Your folder and the Gateway
 
-- **This checkout is behind the live Gateway**: someone deployed from a newer copy of EveryApp, and deploys from this folder are refused until it catches up. `git pull`, then `pnpm install`.
-- **Your every-app folder has a newer Gateway than the one online** (a dim **i**): good to know, nothing is broken. `pnpm everyapp update` updates it; deploying an app never does. [Update your Gateway](/docs/update#update-your-gateway)
+- **This checkout is behind the live Gateway** (from a clone only): someone deployed from a newer copy of EveryApp, and deploys from this folder are refused until it catches up. `git pull`, then `pnpm install`.
+- **Your every-app folder has a newer Gateway than the one online** (a dim **i**): good to know, nothing is broken. `everyapp update` updates it; deploying an app never does. [Update your Gateway](/docs/update#update-your-gateway)
 
 ### Finish an app
 
-- **&lt;app&gt; needs setup**: a key it requires isn't set. The block names each key, what it's for, where to get it, and the setup guide for it; **Run** is `pnpm everyapp configure <app>`: it asks for each key, with where to get it beside it, and ends with "&lt;app&gt; is ready" or what is still missing. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
-- **&lt;app&gt; was registered, but none of its deploys finished**: `pnpm everyapp deploy` from the app's folder, or `pnpm everyapp delete <app>` if you don't want it.
+- **&lt;app&gt; needs setup**: a key it requires isn't set. The block names each key, what it's for, where to get it, and the setup guide for it; **Run** is `everyapp configure <app>`: it asks for each key, with where to get it beside it, and ends with "&lt;app&gt; is ready" or what is still missing. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
+- **&lt;app&gt; was registered, but none of its deploys finished**: `everyapp deploy` from the app's folder, or `everyapp delete <app>` if you don't want it.
 - **&lt;app&gt;'s Worker no longer exists**: its Worker was deleted in Cloudflare. Deploy it again from its folder, or delete it from the Gateway.
-- **The Gateway can't bind &lt;app&gt;**: its Worker isn't named the way the Gateway expects (it was renamed, or made by hand). `pnpm everyapp delete <app>`, then deploy it again.
+- **The Gateway can't bind &lt;app&gt;**: its Worker isn't named the way the Gateway expects (it was renamed, or made by hand). `everyapp delete <app>`, then deploy it again.
 - **&lt;app&gt; goes live on its first visit to &lt;address&gt;**: nothing to do. Open it.
 
 ### Email
 
-- **&lt;app&gt; doesn't get mail at &lt;address&gt; yet**: the address is stored but no deploy has made its rule. `pnpm everyapp deploy` from the app's folder.
+- **&lt;app&gt; doesn't get mail at &lt;address&gt; yet**: the address is stored but no deploy has made its rule. `everyapp deploy` from the app's folder.
 - **&lt;app&gt; doesn't get mail at &lt;address&gt;**: the rule is gone, switched off, or Email Routing is off for that domain. Deploy again; if it comes back, check the domain's **Email Routing** page in Cloudflare.
-- **&lt;app&gt; has an inbound address, but its config doesn't turn inbound mail on**: turn it on in the app's `everyapp.config.ts` (`email: { inbound: true }`) and deploy, or drop the address with `pnpm everyapp email unset inbound`.
+- **&lt;app&gt; has an inbound address, but its config doesn't turn inbound mail on**: turn it on in the app's `everyapp.config.ts` (`email: { inbound: true }`) and deploy, or drop the address with `everyapp email unset inbound`.
 
 ### Settling by itself
 
@@ -169,4 +169,4 @@ Each block is one of these. The command under **Run** is the whole fix.
 
 ## No Gateway yet
 
-If you haven't set one up, `pnpm everyapp status` says **No Gateway in &lt;account&gt;'s Cloudflare account** and prints the setup command. [Set up your Gateway](/docs/gateway)
+If you haven't set one up, `everyapp status` says **No Gateway in &lt;account&gt;'s Cloudflare account** and prints the setup command. [Set up your Gateway](/docs/gateway)

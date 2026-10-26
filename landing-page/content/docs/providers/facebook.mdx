@@ -12,7 +12,7 @@ Each person connects their own Facebook Pages account once, in the Gateway, and 
 
 - **Make the OAuth app here:** [developers.facebook.com](https://developers.facebook.com/apps)
 - **Settings:** `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth facebook`
+- **Added with:** `everyapp provider add --oauth facebook`
 
 ### Redirect URI
 
@@ -24,7 +24,7 @@ https://<your gateway>/connect/facebook/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show facebook` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show facebook` prints every one.
 
 ### Make the OAuth app
 
@@ -42,8 +42,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth facebook
-pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET
+everyapp provider add --oauth facebook
+everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -69,9 +69,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show facebook` shows the client as set, and the redirect URI.
+- `everyapp provider show facebook` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Facebook Pages**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

@@ -7,7 +7,7 @@ description: Where your apps run, how they stay private, and who can change them
 
 Everything runs in your Cloudflare account. The Gateway and each app are separate programs on Cloudflare (Workers), each with its own database.
 
-To sign you in to Cloudflare and upload each app, everyapp uses `cf`, Cloudflare's own command line tool. It brings its own copy and runs it for you; there's nothing to install or set up, and the login it keeps stays on your computer. If you've used Wrangler: `cf` is Cloudflare's newer tool, and everyapp runs it instead. The one file of yours everyapp reads for a secret is `.everyapp/secrets.env` in an app's folder, and only for an app with its own Postgres database: the address and password it needs to run the app's migrations and to connect Cloudflare's Hyperdrive to it. Nothing in it goes into the app's Worker; an app's keys are set with `pnpm everyapp secret set`.
+To sign you in to Cloudflare and upload each app, everyapp uses `cf`, Cloudflare's own command line tool. It brings its own copy and runs it for you; there's nothing to install or set up, and the login it keeps stays on your computer. If you've used Wrangler: `cf` is Cloudflare's newer tool, and everyapp runs it instead. The one file of yours everyapp reads for a secret is `.everyapp/secrets.env` in an app's folder, and only for an app with its own Postgres database: the address and password it needs to run the app's migrations and to connect Cloudflare's Hyperdrive to it. Nothing in it goes into the app's Worker; an app's keys are set with `everyapp secret set`.
 
 ## How apps stay private
 
@@ -35,7 +35,7 @@ To let someone else deploy, add them to your Cloudflare account. To stop them, r
 
 ## How safe is it
 
-EveryApp is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`pnpm everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
+EveryApp is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
 
 ## Limits today
 

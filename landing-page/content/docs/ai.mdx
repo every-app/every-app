@@ -13,13 +13,13 @@ OpenRouter is first because it is one key for many models, and every answer come
 
 ## Set one key
 
-In your `every-app` folder:
+In a terminal:
 
 ```bash
-pnpm everyapp secret set OPENROUTER_API_KEY
+everyapp secret set OPENROUTER_API_KEY
 ```
 
-Or run `pnpm everyapp configure <app>` for an app that shows **Needs setup**: it asks for the one key that app needs. The value isn't shown as you type.
+Or run `everyapp configure <app>` for an app that shows **Needs setup**: it asks for the one key that app needs. The value isn't shown as you type.
 
 Where to get each key, step by step: [OpenRouter](/docs/providers/openrouter), [Workers AI](/docs/providers/workers-ai), [OpenAI](/docs/providers/openai), [Anthropic](/docs/providers/anthropic), [Groq](/docs/providers/groq), [Mistral](/docs/providers/mistral), [Gemini](/docs/providers/gemini). To send model calls through Cloudflare's logs and caching, see [AI Gateway](/docs/providers/ai-gateway).
 
@@ -28,14 +28,14 @@ Where to get each key, step by step: [OpenRouter](/docs/providers/openrouter), [
 To use a different provider, or a specific model:
 
 ```bash
-pnpm everyapp ai default openrouter/anthropic/claude-sonnet-5.5
-pnpm everyapp ai default groq
+everyapp ai default openrouter/anthropic/claude-sonnet-5.5
+everyapp ai default groq
 ```
 
 The provider is the part before the first slash, the model is what follows. To go back to the list above:
 
 ```bash
-pnpm everyapp ai default off
+everyapp ai default off
 ```
 
 You can also choose in **Manage workspace**, then **Usage**, then **AI default**.
@@ -43,7 +43,7 @@ You can also choose in **Manage workspace**, then **Usage**, then **AI default**
 ## See what is in use
 
 ```bash
-pnpm everyapp ai show
+everyapp ai show
 ```
 
 It prints the provider and model the default resolves to now, and why. **Usage** shows the calls each provider and each model has served.
@@ -53,10 +53,10 @@ It prints the provider and model the default resolves to now, and why. **Usage**
 Cloudflare AI Gateway is Cloudflare's proxy for model calls, with logs, caching and limits. It is not a model provider: it has no models of its own, so it still needs a provider's key behind it. That is why it is never "the default" by itself.
 
 ```bash
-pnpm everyapp ai gateway on
+everyapp ai gateway on
 ```
 
-This puts it in front of every model call your Gateway makes. Your provider keys stay yours and no app changes. `pnpm everyapp ai gateway off` takes it out again. The pair that works best is OpenRouter through AI Gateway: one key, plus Cloudflare's logs and limits.
+This puts it in front of every model call your Gateway makes. Your provider keys stay yours and no app changes. `everyapp ai gateway off` takes it out again. The pair that works best is OpenRouter through AI Gateway: one key, plus Cloudflare's logs and limits.
 
 ## An app that needs one provider
 

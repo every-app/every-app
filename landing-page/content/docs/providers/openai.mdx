@@ -24,15 +24,15 @@ OpenAI's models: responses, chat, embeddings, audio, images.
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set OPENAI_API_KEY
+everyapp secret set OPENAI_API_KEY
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 To make it the model provider apps get when they ask for the default:
 
 ```bash
-pnpm everyapp ai default openai
+everyapp ai default openai
 ```
 
 ### Use it in an app
@@ -47,8 +47,8 @@ The app calls `/api/ai/openai/…` with `createGatewayFetch()`. More in [AI](/do
 
 ### Check it worked
 
-- `pnpm everyapp ai list` shows `openai` with its key set, and `pnpm everyapp ai show` says which provider apps get by default.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp ai list` shows `openai` with its key set, and `everyapp ai show` says which provider apps get by default.
+- `everyapp status` shows apps that were waiting for it as ready.
 
 ## More help
 

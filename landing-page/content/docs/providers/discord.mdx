@@ -12,7 +12,7 @@ Each person connects their own Discord account once, in the Gateway, and every a
 
 - **Make the OAuth app here:** [discord.com](https://discord.com/developers/applications)
 - **Settings:** `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth discord`
+- **Added with:** `everyapp provider add --oauth discord`
 
 ### Redirect URI
 
@@ -24,7 +24,7 @@ https://<your gateway>/connect/discord/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show discord` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show discord` prints every one.
 
 ### Make the OAuth app
 
@@ -42,8 +42,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth discord
-pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
+everyapp provider add --oauth discord
+everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -68,9 +68,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show discord` shows the client as set, and the redirect URI.
+- `everyapp provider show discord` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Discord**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

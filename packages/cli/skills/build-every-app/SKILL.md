@@ -37,9 +37,9 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
 
 ## The shape of an app
 
-`pnpm everyapp create ../my-app`, from the every-app folder, copies the starter
-(`starter/` in the checkout; in the app it made, a `starter/` path is that path
-in the app) to `my-app` beside the checkout (the path's last part is the app's
+`everyapp create my-app` copies the starter (packed in the everyapp package;
+`starter/` in a checkout of the EveryApp repository, where it is `pnpm everyapp
+create ../my-app`; in the app it made, a `starter/` path is that path in the app) to `my-app` beside the checkout (the path's last part is the app's
 id), a git repository of its own: a TanStack Start app on a Worker with a D1
 database, a todo list whose first screen shows who you are and what the app was
 allowed. It takes `@every-app/sdk` and `everyapp` from npm (`pnpm update
@@ -172,8 +172,7 @@ the person has a Postgres (Neon, Supabase, any URL) or asks for one: then
 Hyperdrive ("Postgres through Hyperdrive" in `patterns.md`), and the person
 puts its URL in `.everyapp/secrets.env` themselves.
 
-The loop: `pnpm everyapp create ../my-app` from the every-app folder (or work
-in the app you are in); the schema and the queries, the server functions, the
+The loop: `everyapp create my-app` (or work in the app you are in); the schema and the queries, the server functions, the
 page, the tools, the test; `pnpm dev` in the background, open the printed URL
 as the test user; iterate; `pnpm run deploy` when they say so (it prints the
 app's address and who can open it: tell them). Manage the workspace (people,

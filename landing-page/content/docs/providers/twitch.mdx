@@ -12,7 +12,7 @@ Each person connects their own Twitch account once, in the Gateway, and every ap
 
 - **Make the OAuth app here:** [dev.twitch.tv](https://dev.twitch.tv/console/apps)
 - **Settings:** `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth twitch`
+- **Added with:** `everyapp provider add --oauth twitch`
 
 ### Redirect URI
 
@@ -24,7 +24,7 @@ https://<your gateway>/connect/twitch/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show twitch` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show twitch` prints every one.
 
 ### Make the OAuth app
 
@@ -42,8 +42,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth twitch
-pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET
+everyapp provider add --oauth twitch
+everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -67,9 +67,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show twitch` shows the client as set, and the redirect URI.
+- `everyapp provider show twitch` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Twitch**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

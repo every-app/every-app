@@ -23,10 +23,10 @@ Twilio SendGrid email: send transactional and marketing mail through the v3 Mail
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set SENDGRID_API_KEY
+everyapp secret set SENDGRID_API_KEY
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
@@ -42,8 +42,8 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show sendgrid` shows the key as set and which apps use it.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp provider show sendgrid` shows the key as set and which apps use it.
+- `everyapp status` shows apps that were waiting for it as ready.
 - To test the key itself, `GET https://api.sendgrid.com/v3/scopes` with it should answer 200; the call is free.
 
 ### Cost and limits

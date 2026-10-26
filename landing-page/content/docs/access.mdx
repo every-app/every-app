@@ -3,14 +3,14 @@ title: Sign in through Cloudflare Access
 description: Put Cloudflare Access in front of your Gateway, so people sign in with their Cloudflare account or a code emailed to them (or your company login) before they reach it.
 ---
 
-On by default: setup puts it in front of your Gateway once your owner account exists, and `pnpm everyapp access off` takes it off. Your Gateway already has its own sign-in, and while EveryApp is alpha we strongly recommend a second one in front of it. Cloudflare Access is that second door, at Cloudflare's edge, from a company that does nothing else: nobody reaches the Gateway or its apps until Access has checked who they are, with their Cloudflare account, a one-time code emailed to them, or your company's identity provider. A bug in the Gateway's sign-in pages then needs someone Access already let in, and a stolen session cookie gets nothing on its own. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
+On by default: setup puts it in front of your Gateway once your owner account exists, and `everyapp access off` takes it off. Your Gateway already has its own sign-in, and while EveryApp is alpha we strongly recommend a second one in front of it. Cloudflare Access is that second door, at Cloudflare's edge, from a company that does nothing else: nobody reaches the Gateway or its apps until Access has checked who they are, with their Cloudflare account, a one-time code emailed to them, or your company's identity provider. A bug in the Gateway's sign-in pages then needs someone Access already let in, and a stolen session cookie gets nothing on its own. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
 
 ## Turn it on
 
-`pnpm everyapp setup` asks **Put Cloudflare Access in front of your Gateway?** once your owner account exists, and Enter says Yes; in a script, or run by an agent, it goes on without asking when it can (your account has a Zero Trust team and your Cloudflare login is an owner or admin), and otherwise says why. If you said No then, passed `--no-access`, or setup couldn't, run this in your `every-app` folder:
+`everyapp setup` asks **Put Cloudflare Access in front of your Gateway?** once your owner account exists, and Enter says Yes; in a script, or run by an agent, it goes on without asking when it can (your account has a Zero Trust team and your Cloudflare login is an owner or admin), and otherwise says why. If you said No then, passed `--no-access`, or setup couldn't, run this in your `every-app` folder:
 
 ```bash
-pnpm everyapp access on
+everyapp access on
 ```
 
 If your Cloudflare account has no Zero Trust team yet, the terminal asks for a team name. People will sign in at `<name>.cloudflareaccess.com`, and the name can't be changed later, so pick something like your company's name. Nothing else is needed: the command creates the team itself, with no plan to pick or payment details to enter.
@@ -41,35 +41,35 @@ Create your owner account and invite people with the email addresses Access will
 Once everyone has done that, you can turn passwords off:
 
 ```bash
-pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN
+everyapp secret set EMAIL_PASSWORD_SIGN_IN
 ```
 
 Enter `false`: Gateway settings like this one are set with the same command as secrets, and the prompt says what each takes. Nothing changes until an owner has signed in through Access, so it can't lock you out.
 
 ## When you invite someone
 
-Run `pnpm everyapp access on` again after inviting someone, so Access lets them in too. Nobody is ever removed from Access this way: to take someone off, [deactivate them](/docs/people#remove-someone) in the Gateway, which signs them out everywhere at once.
+Run `everyapp access on` again after inviting someone, so Access lets them in too. Nobody is ever removed from Access this way: to take someone off, [deactivate them](/docs/people#remove-someone) in the Gateway, which signs them out everywhere at once.
 
 To let everyone with an email at your company through Access, run it with your domain:
 
 ```bash
-pnpm everyapp access on --email-domain acme.com
+everyapp access on --email-domain acme.com
 ```
 
-They still need an invitation to get an account, unless you also let people at that domain join on their first sign-in: `pnpm everyapp secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, and enter the domain.
+They still need an invitation to get an account, unless you also let people at that domain join on their first sign-in: `everyapp secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, and enter the domain.
 
 ## Check it, or turn it off
 
 ```bash
-pnpm everyapp access show
-pnpm everyapp access off
+everyapp access show
+everyapp access off
 ```
 
-`show` lists the team, its sign-in methods, who is let in and whether everything is in step; `pnpm everyapp status` says the same in one line (**Access on · in step with this Gateway**, or what drifted). `off` asks first, then takes Access off: passwords sign people in again at once. The team and its settings stay in your Cloudflare account.
+`show` lists the team, its sign-in methods, who is let in and whether everything is in step; `everyapp status` says the same in one line (**Access on · in step with this Gateway**, or what drifted). `off` asks first, then takes Access off: passwords sign people in again at once. The team and its settings stay in your Cloudflare account.
 
 ## Good to know
 
-- Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them. The Gateway's `/health` stays reachable too, for an uptime monitor. Updating the Gateway (`pnpm everyapp update`) keeps Access in step with the new version by itself; if that ever fails it says so and names `pnpm everyapp access on`.
+- Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them. The Gateway's `/health` stays reachable too, for an uptime monitor. Updating the Gateway (`everyapp update`) keeps Access in step with the new version by itself; if that ever fails it says so and names `everyapp access on`.
 - Sign in with Cloudflare is restricted to the members of your Cloudflare account; `access on` and `show` warn if that restriction is ever turned off in the Zero Trust dashboard (and leave the provider off until it is back on). Any other sign-in method on your Zero Trust team, your company login say, is yours to allow on the two EveryApp applications in the dashboard: `access on` adds only these two, and never removes one.
 - Your Gateway's own sign-in page can also offer Continue with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, with Access on or off. [Sign in with Google and others](/docs/sign-in)
-- An Access sign-in lasts 30 days by default. For a daily code, run `pnpm everyapp access on --session 24h`.
+- An Access sign-in lasts 30 days by default. For a daily code, run `everyapp access on --session 24h`.

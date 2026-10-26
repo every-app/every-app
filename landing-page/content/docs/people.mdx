@@ -5,7 +5,7 @@ description: Invite people to your Gateway and choose which apps each of them ca
 
 Your Gateway is invite-only: nobody can sign up unless you invite them. Everything below is under **Manage workspace** at the bottom of the Gateway's sidebar.
 
-The workspace starts out named after you. Owners and admins can rename it: select **Rename** at the top of **Manage workspace**, or run `pnpm everyapp workspace rename "Acme Corp"`.
+The workspace starts out named after you. Owners and admins can rename it: select **Rename** at the top of **Manage workspace**, or run `everyapp workspace rename "Acme Corp"`.
 
 ## Invite someone
 
@@ -19,7 +19,7 @@ If your Gateway can't send email, it shows an **Invite link** instead. Copy it a
 
 If your Gateway offers Continue with Google (or Microsoft, GitHub, Apple, your SSO), the person you invited can use it with the invited address instead of the link. [Sign in with Google and others](/docs/sign-in)
 
-Behind [Cloudflare Access](/docs/access), run `pnpm everyapp access on` again after inviting someone. Access keeps its own list of who may pass, and only your Cloudflare login can change it, so the Gateway can't add them for you. To stop doing this for people at your company, let your whole domain through once: `pnpm everyapp access on --email-domain yourcompany.com`. [When you invite someone](/docs/access#when-you-invite-someone)
+Behind [Cloudflare Access](/docs/access), run `everyapp access on` again after inviting someone. Access keeps its own list of who may pass, and only your Cloudflare login can change it, so the Gateway can't add them for you. To stop doing this for people at your company, let your whole domain through once: `everyapp access on --email-domain yourcompany.com`. [When you invite someone](/docs/access#when-you-invite-someone)
 
 ## Choose who can open an app
 
@@ -41,17 +41,17 @@ Open the **⋯** menu next to them in **Users** and select **Deactivate user**. 
 
 ## Owners
 
-Whoever claimed the Gateway is its first owner, and a workspace can have several: an owner opens the **⋯** menu next to a member or admin and selects **Make owner**. Owners are equals, so any owner can change another owner's role, deactivate or delete them, but never themselves, and never the last owner: the workspace always keeps one. From a terminal, `pnpm everyapp workspace role <email> owner` does the same.
+Whoever claimed the Gateway is its first owner, and a workspace can have several: an owner opens the **⋯** menu next to a member or admin and selects **Make owner**. Owners are equals, so any owner can change another owner's role, deactivate or delete them, but never themselves, and never the last owner: the workspace always keeps one. From a terminal, `everyapp workspace role <email> owner` does the same.
 
 ## Send email
 
 Optional. With email set up, invites and password resets go out by email. Apps that send mail, like reports or notifications, use the same sender, so setting it up once serves them too.
 
 1. In the Cloudflare dashboard, go to **Compute & AI**, then **Email Service**, then **Email Sending**. Select **Onboard Domain**, choose your domain, then **Add records and onboard**.
-2. In your `every-app` folder, run:
+2. In a terminal, run:
 
    ```bash
-   pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
+   everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
    ```
 
    When asked, enter the address to send from, like `noreply@yourcompany.com`, and the name people see, like `Your Company`. The values aren't shown as you type.

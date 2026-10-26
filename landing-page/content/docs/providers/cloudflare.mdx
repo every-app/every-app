@@ -26,10 +26,10 @@ Cloudflare's API for an app that manages zones, DNS, Workers or storage. Your Ga
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set CLOUDFLARE_PROVIDER_API_TOKEN
+everyapp secret set CLOUDFLARE_PROVIDER_API_TOKEN
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
@@ -45,8 +45,8 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show cloudflare` shows the key as set and which apps use it.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp provider show cloudflare` shows the key as set and which apps use it.
+- `everyapp status` shows apps that were waiting for it as ready.
 - To test the key itself, `GET https://api.cloudflare.com/client/v4/user/tokens/verify` with it should answer 200; the call is free.
 
 ### Cost and limits
@@ -71,14 +71,14 @@ capabilities: {
 ### Turn it on
 
 ```bash
-pnpm everyapp signin add cloudflare
+everyapp signin add cloudflare
 ```
 
 It asks for each value, the secret at a hidden prompt, and the button is on the sign-in page as soon as it's done.
 
 ### Check it worked
 
-`pnpm everyapp signin show cloudflare` shows each setting as set and the redirect URL. Then sign out and select the button.
+`everyapp signin show cloudflare` shows each setting as set and the redirect URL. Then sign out and select the button.
 
 ## More help
 

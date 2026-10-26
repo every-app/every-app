@@ -9,7 +9,7 @@ A provider is a service your apps use: a model provider, a search API, people's 
 **Supported** means three things:
 
 - **Your Gateway holds the key.** You set it once, from your EveryApp folder, and every app that needs it uses it.
-- **Apps declare what they need** in `everyapp.config.ts`, and `pnpm everyapp configure <app>` asks for exactly that.
+- **Apps declare what they need** in `everyapp.config.ts`, and `everyapp configure <app>` asks for exactly that.
 - **Keys never reach app code.** The Gateway adds the key to each call, and only to that provider's own addresses.
 
 Not listed? You can [add any provider yourself](/docs/providers/custom), or ask us for a page.

@@ -9,7 +9,7 @@ EveryApp runs in your own Cloudflare account, and Cloudflare bills you directly.
 
 Setup adds one program on Cloudflare (a Worker named `every-app-gateway`), one database (D1, `every-app-gateway`) and one small key-value store (KV, `every-app-gateway-OAUTH_KV`), and gives the Worker your Gateway's address, `apps.yourcompany.com`: one DNS record and an HTTPS certificate on your domain. Each app you deploy adds its own Worker, with a name that starts with `every-`, with the databases it declares (the starter: one D1 database) and its own address below the Gateway's, `todo.apps.yourcompany.com`, the same way.
 
-Nothing else changes unless you ask for it: `pnpm everyapp access on` adds a Zero Trust team, two Access applications and one policy ([Cloudflare Access](/docs/access)); sending or receiving email adds the records those need ([Send email](/docs/people#send-email)). Your other Workers, DNS records, domains and websites are never touched. If Cloudflare asks you to pick a workers.dev name during setup, that is Cloudflare's own one-time step for the account; your apps never use it ([Troubleshooting](/docs/troubleshooting)).
+Nothing else changes unless you ask for it: `everyapp access on` adds a Zero Trust team, two Access applications and one policy ([Cloudflare Access](/docs/access)); sending or receiving email adds the records those need ([Send email](/docs/people#send-email)). Your other Workers, DNS records, domains and websites are never touched. If Cloudflare asks you to pick a workers.dev name during setup, that is Cloudflare's own one-time step for the account; your apps never use it ([Troubleshooting](/docs/troubleshooting)).
 
 <Steps>
 <Step>

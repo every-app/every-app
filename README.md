@@ -6,7 +6,7 @@ Replace bloated and expensive SaaS tools with AI-native, open source software.
 
 > The backend for your agents
 
-The Gateway takes the friction out of getting personal web apps and agents off localhost. You can manage everything through your agent. 
+The Gateway takes the friction out of getting personal web apps and agents off localhost. You can manage everything through your agent.
 
 Set it up once, then self-host open source apps and personal software, all behind one secure sign-in.
 
@@ -47,9 +47,23 @@ Run one as it is, or fork it as the starting point for your own. Many more are c
 
 ## Get started
 
-EveryApp is in early development, so expect some rough edges. [For early adopters](https://everyapp.com/docs/early-adopters) says how to get help and tell us what could be smoother. Questions? Ask in [Discord](https://discord.gg/c9uGs3cFXr).
+> [!NOTE]
+> EveryApp is in early development, so expect some rough edges. [For early adopters](https://everyapp.com/docs/early-adopters) says how to get help and tell us what could be smoother. Questions? Ask in [Discord](https://discord.gg/c9uGs3cFXr).
 
 You need a Cloudflare account on Workers Paid ($5/month) and a domain on Cloudflare. Setup takes about 15 minutes.
+
+```bash
+npm install -g everyapp
+everyapp setup --domain apps.yourcompany.com
+```
+
+Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/docs/gateway#or-let-your-coding-agent-do-it) and let it set everything up.
+
+Then install an app with `everyapp install https://github.com/every-app/open-seo`, or [build your own](https://everyapp.com/docs/create-an-app) with `everyapp create my-app`.
+
+## Contributing: run from a checkout
+
+The platform itself is this repository. Clone it to change the Gateway, the SDK or the CLI:
 
 ```bash
 git clone https://github.com/every-app/every-app.git
@@ -58,11 +72,7 @@ pnpm install
 pnpm everyapp setup --domain apps.yourcompany.com
 ```
 
-Or [paste one prompt into Claude Code, Codex or Cursor](https://everyapp.com/docs/gateway#or-let-your-coding-agent-do-it) and let it set everything up.
-
-Then install an app with `pnpm everyapp install https://github.com/every-app/open-seo`, or [build your own](https://everyapp.com/docs/create-an-app) with `pnpm everyapp create ../my-app`.
-
-Always `pnpm everyapp` from the checkout, never `npx everyapp`: publishing to npm is paused.
+`pnpm everyapp` inside the checkout runs the CLI from the tree and builds the Gateway from it (instead of downloading the published release), and `pnpm everyapp create ../my-app` links a new app to the checkout. Everything else is the same. `.github/RELEASE.md` says how releases are cut.
 
 ## What's on the roadmap?
 

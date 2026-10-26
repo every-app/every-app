@@ -27,10 +27,10 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set SEGMENT_WRITE_KEY
+everyapp secret set SEGMENT_WRITE_KEY
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
@@ -46,8 +46,8 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show segment` shows the key as set and which apps use it.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp provider show segment` shows the key as set and which apps use it.
+- `everyapp status` shows apps that were waiting for it as ready.
 
 ### Cost and limits
 

@@ -21,11 +21,11 @@ description: Keep the GitHub traffic history GitHub drops after 14 days.
 ## Install on EveryApp
 
 ```bash
-pnpm everyapp install <its repository URL>
-pnpm everyapp configure repolens
+everyapp install <its repository URL>
+everyapp configure repolens
 ```
 
-Needs a read-only GitHub token. No R2, no other key. The repository is private today, so there is no address to install from yet; until then, someone with access clones it next to your EveryApp folder, runs `pnpm install` in it, and from its folder runs `node ../every-app/packages/cli/bin/everyapp.js deploy`.
+Needs a read-only GitHub token. No R2, no other key. The repository is private today, so there is no address to install from yet; until then, someone with access clones it, runs `pnpm install` in it, and from its folder runs `pnpm run deploy`.
 
 ### Settings
 

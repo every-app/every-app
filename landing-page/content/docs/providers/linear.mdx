@@ -25,10 +25,10 @@ Issue tracking over GraphQL: issues, projects, cycles, comments and teams.
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set LINEAR_API_KEY
+everyapp secret set LINEAR_API_KEY
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
@@ -44,8 +44,8 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show linear` shows the key as set and which apps use it.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp provider show linear` shows the key as set and which apps use it.
+- `everyapp status` shows apps that were waiting for it as ready.
 
 ### Cost and limits
 
@@ -57,7 +57,7 @@ Each person connects their own Linear account once, in the Gateway, and every ap
 
 - **Make the OAuth app here:** [linear.app](https://linear.app/settings/api/applications)
 - **Settings:** `LINEAR_OAUTH_CLIENT_ID`, `LINEAR_OAUTH_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth linear-oauth`
+- **Added with:** `everyapp provider add --oauth linear-oauth`
 
 ### Redirect URI
 
@@ -69,7 +69,7 @@ https://<your gateway>/connect/linear-oauth/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show linear-oauth` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show linear-oauth` prints every one.
 
 ### Make the OAuth app
 
@@ -82,8 +82,8 @@ An app that runs the sign-in itself lists its own callbacks under `redirectPaths
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth linear-oauth
-pnpm everyapp secret set LINEAR_OAUTH_CLIENT_ID LINEAR_OAUTH_CLIENT_SECRET
+everyapp provider add --oauth linear-oauth
+everyapp secret set LINEAR_OAUTH_CLIENT_ID LINEAR_OAUTH_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -106,9 +106,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show linear-oauth` shows the client as set, and the redirect URI.
+- `everyapp provider show linear-oauth` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Linear**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

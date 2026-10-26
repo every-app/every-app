@@ -15,11 +15,11 @@ Apps that use AI or a data provider like DataForSEO make those calls through you
 
 ## Cap an app
 
-In the **Monthly cap** column, select **Set cap** and enter a number of calls, or in your `every-app` folder run `pnpm everyapp workspace app cap <app> 1000` (`off` removes it). The cap is per calendar month (UTC) and takes effect within 30 seconds.
+In the **Monthly cap** column, select **Set cap** and enter a number of calls, or in a terminal run `everyapp workspace app cap <app> 1000` (`off` removes it). The cap is per calendar month (UTC) and takes effect within 30 seconds.
 
 ## Cap in dollars
 
-The same dialog takes **dollars per month** instead of calls, or beside them: `pnpm everyapp workspace app cap <app> --usd 20`. A dollar cap counts only what a provider reports a price for: OpenRouter and DataForSEO. Calls to OpenAI, Workers AI and the rest don't move it; they count toward the call cap alone. Pair the two if an app uses both kinds.
+The same dialog takes **dollars per month** instead of calls, or beside them: `everyapp workspace app cap <app> --usd 20`. A dollar cap counts only what a provider reports a price for: OpenRouter and DataForSEO. Calls to OpenAI, Workers AI and the rest don't move it; they count toward the call cap alone. Pair the two if an app uses both kinds.
 
 ## When an app reaches a cap
 
@@ -29,7 +29,7 @@ A cap is a soft stop. The Gateway counts a call, and its price, once the provide
 
 ## A default for every app
 
-**Default monthly cap**, above the table, caps every app that has no cap of its own, including apps you add later, in calls, dollars or both (`pnpm everyapp workspace cap default 1000 --usd 20`). An app's own cap replaces the default of that kind for that app. To leave one app uncapped while the default stands, select **Edit** in its row and choose **No cap**. **Raise** on an app the default paused gives that app a cap of its own; the default itself changes in its own row.
+**Default monthly cap**, above the table, caps every app that has no cap of its own, including apps you add later, in calls, dollars or both (`everyapp workspace cap default 1000 --usd 20`). An app's own cap replaces the default of that kind for that app. To leave one app uncapped while the default stands, select **Edit** in its row and choose **No cap**. **Raise** on an app the default paused gives that app a cap of its own; the default itself changes in its own row.
 
 ## Cap alerts
 
@@ -39,4 +39,4 @@ Owners and admins are emailed at 80% and at the cap once the Gateway can send ma
 
 **Manage workspace → Activity → Audit** is the workspace's audit log: who did what, newest first. Someone joined or was invited, an app was installed or updated, a cap was set or reached, an AI app was connected or a token revoked, Access turned on, an MCP app or provider added, and what your apps report about themselves. Each row says when, who (a member, an AI app, the command line, an app, or the Gateway itself), what happened in plain words, and what it was about. Filter by who, by kind of event and by time; it never holds a secret, a tool's arguments or an event's payload.
 
-Owners and admins see it; it is kept for 90 days. The same from a terminal is `pnpm everyapp workspace audit`, and from your AI app the `everyapp_workspace_audit` tool. The default view, **Agent activity**, lists every tool call an AI app made. [Events](/docs/events)
+Owners and admins see it; it is kept for 90 days. The same from a terminal is `everyapp workspace audit`, and from your AI app the `everyapp_workspace_audit` tool. The default view, **Agent activity**, lists every tool call an AI app made. [Events](/docs/events)

@@ -1,5 +1,5 @@
 Set up EveryApp for me. Docs: https://everyapp.com/llms.txt (read index.md
-and setup.md there; the everyapp skill in the repo says the same).
+and setup.md there; the everyapp skill in the package says the same).
 
 Before you start, tell me exactly this and wait for my answer:
 "EveryApp is in early development so expect some rough edges. Here's a
@@ -8,20 +8,21 @@ https://everyapp.com/docs/early-adopters
 Do you still want to get set up or would you rather wait a few weeks?"
 If I'd rather wait, stop there.
 
-1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
-   and run every command from that folder. Always `pnpm everyapp`, never npx.
+1. Check `node --version` is 22.18 or newer and `pnpm --version` answers
+   (install them if not), then `npm install -g everyapp@latest`. Every
+   command below is `everyapp`; no clone, no checkout.
 2. Ask me which domain to use, then run
-   `pnpm everyapp setup --domain apps.<my domain> --json`.
-   Setup can run 20 minutes (it builds, deploys, waits for a certificate, then
-   waits for me at the owner link): give it a long timeout or run it in the
-   background and read its output.
+   `everyapp setup --domain apps.<my domain> --json`.
+   Setup can run 20 minutes (it downloads the Gateway release, deploys it,
+   waits for a certificate, then waits for me at the owner link): give it a
+   long timeout or run it in the background and read its output.
 3. When it is done, create and deploy one app:
-   `pnpm everyapp create hello --json`, then from apps/hello
-   `pnpm everyapp deploy --json`. Tell me its URL.
+   `everyapp create hello --json`, then from hello
+   `everyapp deploy --json`. Tell me its URL.
 4. Then install the four EveryApp apps unless I say which to skip. Ask me
    once: "I'll install OpenSEO, OpenCRM, OpenAnalytics and OpenMail.
    Any you don't want?" For each one I keep, run
-   `pnpm everyapp install https://github.com/every-app/<repo> --json` with
+   `everyapp install https://github.com/every-app/<repo> --json` with
    open-seo, open-crm, open-analytics or open-mail as <repo>. If an
    install answers NO_RELEASE, say which app and continue; do not try to
    build it from source. If it answers R2_NOT_ENABLED, ask me to enable

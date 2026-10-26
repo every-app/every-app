@@ -7,9 +7,8 @@ EveryApp is in early development, so expect some rough edges. Thank you for tryi
 
 ## What's rough today
 
-- Setup takes about 15 minutes and sometimes more: it builds, deploys, then waits for a certificate.
-- Publishing to npm is paused, so you work from a clone of the repository: always `pnpm everyapp`, never `npx everyapp`.
-- Some apps show **Needs setup** until you add their keys. `pnpm everyapp configure <app>` sets them.
+- Setup takes about 15 minutes and sometimes more: it downloads the Gateway, deploys it, then waits for a certificate.
+- Some apps show **Needs setup** until you add their keys. `everyapp configure <app>` sets them.
 - The docs can lag behind the code by a day or two.
 
 ## Get help
@@ -31,7 +30,7 @@ From your `every-app` folder:
 ```bash
 git pull
 pnpm install
-pnpm everyapp update
+everyapp update
 ```
 
 Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)

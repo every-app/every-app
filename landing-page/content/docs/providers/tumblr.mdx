@@ -12,7 +12,7 @@ Each person connects their own Tumblr account once, in the Gateway, and every ap
 
 - **Make the OAuth app here:** [tumblr.com](https://www.tumblr.com/oauth/apps)
 - **Settings:** `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth tumblr`
+- **Added with:** `everyapp provider add --oauth tumblr`
 
 ### Redirect URI
 
@@ -24,7 +24,7 @@ https://<your gateway>/connect/tumblr/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show tumblr` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show tumblr` prints every one.
 
 ### Make the OAuth app
 
@@ -42,8 +42,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth tumblr
-pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET
+everyapp provider add --oauth tumblr
+everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -67,9 +67,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show tumblr` shows the client as set, and the redirect URI.
+- `everyapp provider show tumblr` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Tumblr**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

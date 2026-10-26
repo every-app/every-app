@@ -3,7 +3,7 @@ title: Cloudflare resources your app can use
 description: Databases, files, queues, search by meaning, AI, a headless browser, images, analytics, email and secrets. Declare them in your app's everyapp.config.ts and the deploy makes them in your Cloudflare account.
 ---
 
-An app on EveryApp runs in your own Cloudflare account, so it can use what Cloudflare offers: a database, a place for files, a queue of jobs, search by meaning, AI models, a headless browser, image resizing, analytics, sending email and a store for secrets. Your app says what it needs in its `everyapp.config.ts`, under `resources`, and `pnpm everyapp deploy` makes each one, named after the app, and connects it to the app. Nothing is created in your account that an app you deployed didn't declare.
+An app on EveryApp runs in your own Cloudflare account, so it can use what Cloudflare offers: a database, a place for files, a queue of jobs, search by meaning, AI models, a headless browser, image resizing, analytics, sending email and a store for secrets. Your app says what it needs in its `everyapp.config.ts`, under `resources`, and `everyapp deploy` makes each one, named after the app, and connects it to the app. Nothing is created in your account that an app you deployed didn't declare.
 
 Your coding agent knows every field: the full reference is [everyapp.config.ts](/docs/agent/manifest) and the patterns to copy from are in [Example patterns](/docs/agent/patterns). This page is what each one is, what it costs, and the one-time steps that are yours.
 
@@ -26,7 +26,7 @@ Your coding agent knows every field: the full reference is [everyapp.config.ts](
 | Email sending      | `sendEmail`                   | Send mail with Cloudflare's own binding, from an address on a domain you route | Free (Email Routing on the domain)                                |
 | Secrets Store      | `secretsStore`                | A key the app reads from Cloudflare's store rather than from its own settings  | Free; make a store once in your dashboard                         |
 
-The deploy creates the database, key-value store, files bucket, Hyperdrive config, queues, index, AI Gateway and store secret for each app and records them as that app's. `pnpm everyapp delete <app> --purge` deletes what it recorded, and `everyapp status` lists what each app has. The ones with nothing to create (AI, browser, images, analytics, email) are turned on by declaring them.
+The deploy creates the database, key-value store, files bucket, Hyperdrive config, queues, index, AI Gateway and store secret for each app and records them as that app's. `everyapp delete <app> --purge` deletes what it recorded, and `everyapp status` lists what each app has. The ones with nothing to create (AI, browser, images, analytics, email) are turned on by declaring them.
 
 ## One-time steps that are yours
 

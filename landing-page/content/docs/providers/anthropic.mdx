@@ -24,15 +24,15 @@ Claude models through the Messages API.
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set ANTHROPIC_API_KEY
+everyapp secret set ANTHROPIC_API_KEY
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 To make it the model provider apps get when they ask for the default:
 
 ```bash
-pnpm everyapp ai default anthropic
+everyapp ai default anthropic
 ```
 
 ### Use it in an app
@@ -47,8 +47,8 @@ The app calls `/api/ai/anthropic/…` with `createGatewayFetch()`. More in [AI](
 
 ### Check it worked
 
-- `pnpm everyapp ai list` shows `anthropic` with its key set, and `pnpm everyapp ai show` says which provider apps get by default.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp ai list` shows `anthropic` with its key set, and `everyapp ai show` says which provider apps get by default.
+- `everyapp status` shows apps that were waiting for it as ready.
 - To test the key itself, `GET https://api.anthropic.com/v1/models` with it should answer 200; the call is free.
 
 ### Cost and limits

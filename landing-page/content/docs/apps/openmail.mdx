@@ -19,8 +19,8 @@ description: An inbox where an AI agent drafts your replies and you hit send.
 ## Install on EveryApp
 
 ```bash
-pnpm everyapp install https://github.com/every-app/open-mail
-pnpm everyapp configure openmail
+everyapp install https://github.com/every-app/open-mail
+everyapp configure openmail
 ```
 
 Needs a model key (OpenRouter first), a mail domain on Cloudflare with Email Sending, and R2 enabled. Code: [github.com/every-app/open-mail](https://github.com/every-app/open-mail)
@@ -30,7 +30,7 @@ Needs a model key (OpenRouter first), a mail domain on Cloudflare with Email Sen
 The second command asks for the keys below. Then tell the Gateway which addresses the inbox sends as and receives for, with your own domain in place of `example.com`; it offers to turn on Email Routing for the domain:
 
 ```bash
-pnpm everyapp email set --sender '*@example.com' --inbound '*@example.com'
+everyapp email set --sender '*@example.com' --inbound '*@example.com'
 ```
 
 Then open `https://openmail.<your gateway domain>` as an owner or admin and create a mailbox. Run the install command again later to update.

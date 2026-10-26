@@ -27,7 +27,7 @@ When you already use [Resend](https://resend.com) or want its dashboard.
 4. Set it, then the sender, below:
 
 ```bash
-pnpm everyapp secret set RESEND_API_KEY
+everyapp secret set RESEND_API_KEY
 ```
 
 ## Set the sender
@@ -35,17 +35,17 @@ pnpm everyapp secret set RESEND_API_KEY
 Either provider needs the address mail comes from and the name people see. Neither is a secret.
 
 ```bash
-pnpm everyapp secret set EMAIL_FROM
-pnpm everyapp secret set EMAIL_FROM_NAME
+everyapp secret set EMAIL_FROM
+everyapp secret set EMAIL_FROM_NAME
 ```
 
-For example `noreply@example.com` and your company's name. Or run `pnpm everyapp configure openmail`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.
+For example `noreply@example.com` and your company's name. Or run `everyapp configure openmail`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.
 
-An app that sends as addresses of its own, like OpenMail, also needs them allowed: `pnpm everyapp email set --sender '*@example.com'`.
+An app that sends as addresses of its own, like OpenMail, also needs them allowed: `everyapp email set --sender '*@example.com'`.
 
 ## Check it worked
 
-`pnpm everyapp email show` prints the provider and the sender. Then invite someone from **Manage workspace → People**: the invitation should arrive by email.
+`everyapp email show` prints the provider and the sender. Then invite someone from **Manage workspace → People**: the invitation should arrive by email.
 
 Apps ask for it in `everyapp.config.ts` with `capabilities: { email: { access: "write", why: "…" } }` and send with `sendEmail()`. More in [Email](/docs/agent/email).
 

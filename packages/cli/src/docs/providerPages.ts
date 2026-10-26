@@ -230,16 +230,16 @@ function keySection(company: Company, [id, capability]: KeyEntry, heading: strin
       "",
       "From your EveryApp folder:",
       "",
-      bash(`pnpm everyapp secret set ${settable.join(" ")}`),
+      bash(`everyapp secret set ${settable.join(" ")}`),
       "",
-      "It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.",
+      "It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.",
       "",
     );
     if (isAi && capability.chat) {
       out.push(
         `To make it the model provider apps get when they ask for the default:`,
         "",
-        bash(`pnpm everyapp ai default ${id}`),
+        bash(`everyapp ai default ${id}`),
         "",
       );
     }
@@ -263,11 +263,11 @@ function keySection(company: Company, [id, capability]: KeyEntry, heading: strin
 
   out.push("### Check it worked", "");
   const checks = isProxy
-    ? ["`pnpm everyapp secret list` lists `AI_GATEWAY_ID`, and the AI Gateway's dashboard shows the calls your apps make."]
+    ? ["`everyapp secret list` lists `AI_GATEWAY_ID`, and the AI Gateway's dashboard shows the calls your apps make."]
     : isAi
-    ? [`\`pnpm everyapp ai list\` shows ${code(id)} with its key set, and \`pnpm everyapp ai show\` says which provider apps get by default.`]
-    : [`\`pnpm everyapp provider show ${id}\` shows the key as set and which apps use it.`];
-  if (!isProxy) checks.push("`pnpm everyapp status` shows apps that were waiting for it as ready.");
+    ? [`\`everyapp ai list\` shows ${code(id)} with its key set, and \`everyapp ai show\` says which provider apps get by default.`]
+    : [`\`everyapp provider show ${id}\` shows the key as set and which apps use it.`];
+  if (!isProxy) checks.push("`everyapp status` shows apps that were waiting for it as ready.");
   if (capability.smoke) {
     const host = capability.smoke.host ?? (capability.mode === "api_key" ? capability.hosts[0] : new URL(capability.origin).host);
     if (host) {
@@ -300,12 +300,12 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
   out.push(
     `- **Make the OAuth app here:** ${console}`,
     `- **Settings:** ${settings.map(code).join(", ")}`,
-    ...(preset ? [`- **Added with:** ${code(`pnpm everyapp provider add --oauth ${id}`)}`] : ["- **Built in:** nothing to add, only the client to set"]),
+    ...(preset ? [`- **Added with:** ${code(`everyapp provider add --oauth ${id}`)}`] : ["- **Built in:** nothing to add, only the client to set"]),
     "",
   );
 
   out.push("### Redirect URI", "");
-  const appCallbacks = `An app that runs the sign-in itself lists its own callbacks under \`redirectPaths\` in its manifest entry; register those too, as \`https://<app>.<your gateway><path>\`. \`pnpm everyapp provider show ${id}\` prints every one.`;
+  const appCallbacks = `An app that runs the sign-in itself lists its own callbacks under \`redirectPaths\` in its manifest entry; register those too, as \`https://<app>.<your gateway><path>\`. \`everyapp provider show ${id}\` prints every one.`;
   if (gatewayFlow) {
     out.push("Register this at the provider:", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
     out.push(`\`<your gateway>\` is your Gateway's address, like \`apps.example.com\`.`, "", appCallbacks, "");
@@ -332,9 +332,9 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
   }
   out.push("### Set it on your Gateway", "", "From your EveryApp folder:", "");
   if (preset) {
-    out.push(bash(`pnpm everyapp provider add --oauth ${id}`, `pnpm everyapp secret set ${settings.join(" ")}`), "");
+    out.push(bash(`everyapp provider add --oauth ${id}`, `everyapp secret set ${settings.join(" ")}`), "");
   } else {
-    out.push(bash(`pnpm everyapp secret set ${settings.join(" ")}`), "");
+    out.push(bash(`everyapp secret set ${settings.join(" ")}`), "");
   }
   out.push(
     "Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.",
@@ -374,11 +374,11 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
   out.push("### Check it worked", "");
   out.push(
     [
-      `- \`pnpm everyapp provider show ${id}\` shows the client as set, and the redirect URI.`,
+      `- \`everyapp provider show ${id}\` shows the client as set, and the redirect URI.`,
       ...(gatewayFlow
         ? [
             `- Open the account menu → **Connected accounts** → **Connect ${prose(shortLabel(client.label))}**. You land back in the Gateway, connected.`,
-            "- `pnpm everyapp provider connections` lists who has connected.",
+            "- `everyapp provider connections` lists who has connected.",
           ]
         : []),
     ].join("\n"),
@@ -414,13 +414,13 @@ function signInSection(provider: SignInProvider, heading: string): string[] {
   out.push(
     "### Turn it on",
     "",
-    bash(`pnpm everyapp signin add ${provider.id}`),
+    bash(`everyapp signin add ${provider.id}`),
     "",
     "It asks for each value, the secret at a hidden prompt, and the button is on the sign-in page as soon as it's done.",
     "",
     "### Check it worked",
     "",
-    `\`pnpm everyapp signin show ${provider.id}\` shows each setting as set and the redirect URL. Then sign out and select the button.`,
+    `\`everyapp signin show ${provider.id}\` shows each setting as set and the redirect URL. Then sign out and select the button.`,
     "",
   );
   return out;
@@ -525,7 +525,7 @@ function providersIndexPage(companies: readonly Company[]): string {
     "**Supported** means three things:",
     "",
     "- **Your Gateway holds the key.** You set it once, from your EveryApp folder, and every app that needs it uses it.",
-    "- **Apps declare what they need** in `everyapp.config.ts`, and `pnpm everyapp configure <app>` asks for exactly that.",
+    "- **Apps declare what they need** in `everyapp.config.ts`, and `everyapp configure <app>` asks for exactly that.",
     "- **Keys never reach app code.** The Gateway adds the key to each call, and only to that provider's own addresses.",
     "",
     "Not listed? You can [add any provider yourself](/docs/providers/custom), or ask us for a page.",
@@ -601,7 +601,7 @@ export function providerPagesTable(): string {
     "<!-- prettier-ignore-start -->",
     "<!-- provider-pages:begin (generated by packages/cli/src/docs/providerPages.ts; pnpm -C packages/cli docs:update) -->",
     "",
-    "| Page | Ids | Settings | Command (`pnpm everyapp …`) | Where the key or client comes from |",
+    "| Page | Ids | Settings | Command (`everyapp …`) | Where the key or client comes from |",
     "| --- | --- | --- | --- | --- |",
     ...rows,
     "",

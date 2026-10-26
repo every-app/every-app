@@ -112,8 +112,9 @@ offered to apps.
 
 ## The rules every setup follows
 
-**Where you are.** Every command runs from the `every-app` checkout, as
-`pnpm everyapp …` (never `npx`), with `--json`: one event per line, `done`
+**Where you are.** Every command is `everyapp …` (`npm install -g
+everyapp`; in a checkout of the EveryApp repository, `pnpm everyapp …`
+there), with `--json`: one event per line, `done`
 means success, exit 2 means an `action_required` for the person (show its
 `message`, `data.url` and `data.code`; rerun `data.rerun` when they are
 done), exit 1 an error (show it; its `data.fix` or `data.rerun` says what

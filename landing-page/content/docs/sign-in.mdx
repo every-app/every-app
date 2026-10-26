@@ -29,21 +29,21 @@ People who join through a provider have no password. If your Gateway sends email
 Whoever runs the Gateway does this once per provider, with the Cloudflare login. Create an OAuth app at the provider (Google Cloud, Microsoft Entra, GitHub, Apple Developer, your Cloudflare account or your identity provider), with the redirect address **Manage workspace → Sign-in** shows. Then, in your `every-app` folder:
 
 ```bash
-pnpm everyapp signin add google
+everyapp signin add google
 ```
 
 It asks for the client ID and the client secret, and the button is on the sign-in page as soon as it's done. Each provider's page has the steps for its console: [Google](/docs/providers/google#sign-in-with-google), [Microsoft](/docs/providers/microsoft#sign-in-with-microsoft), [GitHub](/docs/providers/github#sign-in-with-github), [Apple](/docs/providers/apple#sign-in-with-apple), [Cloudflare](/docs/providers/cloudflare#sign-in-with-cloudflare), [your SSO](/docs/providers/oidc#sign-in-with-your-sso). Your coding agent can do every step for you; the details are in [the agent docs](/docs/agent/signin).
 
 ## Sign in with Cloudflare, two ways
 
-Two different things share the name. [Cloudflare Access](/docs/access) (`pnpm everyapp access on`) puts a login _in front of_ the whole Gateway, and its **Sign in with Cloudflare** lets the members of your Cloudflare account through before anything reaches the Gateway. The `cloudflare` sign-in provider is a button _on_ the Gateway's own sign-in page, through a Cloudflare OAuth client you create in your account: keep the client private, so only your Cloudflare account's members can use it. You can have both on. With Access on, people are usually signed in before they ever see the button.
+Two different things share the name. [Cloudflare Access](/docs/access) (`everyapp access on`) puts a login _in front of_ the whole Gateway, and its **Sign in with Cloudflare** lets the members of your Cloudflare account through before anything reaches the Gateway. The `cloudflare` sign-in provider is a button _on_ the Gateway's own sign-in page, through a Cloudflare OAuth client you create in your account: keep the client private, so only your Cloudflare account's members can use it. You can have both on. With Access on, people are usually signed in before they ever see the button.
 
 ## Turn passwords off
 
 Once you've connected a provider to your own account, you can turn passwords off:
 
 ```bash
-pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN
+everyapp secret set EMAIL_PASSWORD_SIGN_IN
 ```
 
 Enter `false`. Nothing changes until an owner has connected a provider, so it can't lock you out. Anyone who hasn't connected one yet can't sign in after that, so have everyone connect first.

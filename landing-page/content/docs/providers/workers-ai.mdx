@@ -26,15 +26,15 @@ Cloudflare's own models, run in the same Cloudflare account as your Gateway. The
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set WORKERS_AI_API_TOKEN
+everyapp secret set WORKERS_AI_API_TOKEN
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 To make it the model provider apps get when they ask for the default:
 
 ```bash
-pnpm everyapp ai default workers-ai
+everyapp ai default workers-ai
 ```
 
 ### Use it in an app
@@ -49,8 +49,8 @@ The app calls `/api/ai/workers-ai/…` with `createGatewayFetch()`. More in [AI]
 
 ### Check it worked
 
-- `pnpm everyapp ai list` shows `workers-ai` with its key set, and `pnpm everyapp ai show` says which provider apps get by default.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp ai list` shows `workers-ai` with its key set, and `everyapp ai show` says which provider apps get by default.
+- `everyapp status` shows apps that were waiting for it as ready.
 
 ## More help
 

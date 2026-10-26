@@ -29,10 +29,10 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp secret set NOTION_API_TOKEN
+everyapp secret set NOTION_API_TOKEN
 ```
 
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `pnpm everyapp configure <app>` asks for it along with everything else the app needs.
+It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
@@ -48,8 +48,8 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show notion` shows the key as set and which apps use it.
-- `pnpm everyapp status` shows apps that were waiting for it as ready.
+- `everyapp provider show notion` shows the key as set and which apps use it.
+- `everyapp status` shows apps that were waiting for it as ready.
 - To test the key itself, `GET https://api.notion.com/v1/users/me` with it should answer 200; the call is free.
 
 ### Cost and limits
@@ -62,7 +62,7 @@ Each person connects their own Notion account once, in the Gateway, and every ap
 
 - **Make the OAuth app here:** [notion.so](https://www.notion.so/my-integrations)
 - **Settings:** `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`
-- **Added with:** `pnpm everyapp provider add --oauth notion-oauth`
+- **Added with:** `everyapp provider add --oauth notion-oauth`
 
 ### Redirect URI
 
@@ -74,7 +74,7 @@ https://<your gateway>/connect/notion-oauth/callback
 
 `<your gateway>` is your Gateway's address, like `apps.example.com`.
 
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `pnpm everyapp provider show notion-oauth` prints every one.
+An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show notion-oauth` prints every one.
 
 ### Make the OAuth app
 
@@ -92,8 +92,8 @@ Steps for this provider are brief. [Open an issue](https://github.com/every-app/
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add --oauth notion-oauth
-pnpm everyapp secret set NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
+everyapp provider add --oauth notion-oauth
+everyapp secret set NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
 ```
 
 Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
@@ -117,9 +117,9 @@ capabilities: {
 
 ### Check it worked
 
-- `pnpm everyapp provider show notion-oauth` shows the client as set, and the redirect URI.
+- `everyapp provider show notion-oauth` shows the client as set, and the redirect URI.
 - Open the account menu → **Connected accounts** → **Connect Notion**. You land back in the Gateway, connected.
-- `pnpm everyapp provider connections` lists who has connected.
+- `everyapp provider connections` lists who has connected.
 
 ## More help
 

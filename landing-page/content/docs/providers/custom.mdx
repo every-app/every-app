@@ -67,7 +67,7 @@ Every field and rule is in [the spec reference](/docs/agent/providers#the-spec),
 From your EveryApp folder:
 
 ```bash
-pnpm everyapp provider add todoist.json
+everyapp provider add todoist.json
 ```
 
 It checks the file, prints the hosts the key may go to, and tells you the next command. The spec can also be an `https://` URL.
@@ -78,7 +78,7 @@ It checks the file, prints the hosts the key may go to, and tells you the next c
 ### Set the key
 
 ```bash
-pnpm everyapp secret set TODOIST_API_TOKEN
+everyapp secret set TODOIST_API_TOKEN
 ```
 
 Paste the key at the hidden prompt. It's live at once, with no deploy.
@@ -101,25 +101,25 @@ The app calls the provider's own URLs (`https://api.todoist.com/rest/v2/tasks`) 
 </Step>
 </Steps>
 
-To check it, `pnpm everyapp provider show todoist` prints the spec, whether the key is set and which apps use it. `pnpm everyapp provider list` shows every provider, built in and added. To take it off again, `pnpm everyapp provider remove todoist` (it refuses while an app still uses it).
+To check it, `everyapp provider show todoist` prints the spec, whether the key is set and which apps use it. `everyapp provider list` shows every provider, built in and added. To take it off again, `everyapp provider remove todoist` (it refuses while an app still uses it).
 
 ## Add an OAuth provider
 
 For a service where each person connects their own account, the Gateway runs the OAuth flow and holds people's tokens. Common ones are ready to add as presets, like GitHub, Notion, Linear, Atlassian, HubSpot, Zoom, Dropbox, Spotify and X. `provider presets` lists them all:
 
 ```bash
-pnpm everyapp provider presets
-pnpm everyapp provider add --oauth notion-oauth
+everyapp provider presets
+everyapp provider add --oauth notion-oauth
 ```
 
-For any other, write a spec whose `auth.kind` is `"oauth2-user"`, with the provider's authorize and token URLs and the scope sets apps may ask for, and add it with `pnpm everyapp provider add --oauth your-spec.json`. Owners and admins can do the same in **Manage workspace → Providers → Add OAuth provider → Custom**. The format, with GitHub as the example, is in [the OAuth spec](/docs/agent/providers#the-spec-authkind-oauth2-user). How people connect is in [Connect GitHub (or any OAuth provider)](/docs/connect-oauth).
+For any other, write a spec whose `auth.kind` is `"oauth2-user"`, with the provider's authorize and token URLs and the scope sets apps may ask for, and add it with `everyapp provider add --oauth your-spec.json`. Owners and admins can do the same in **Manage workspace → Providers → Add OAuth provider → Custom**. The format, with GitHub as the example, is in [the OAuth spec](/docs/agent/providers#the-spec-authkind-oauth2-user). How people connect is in [Connect GitHub (or any OAuth provider)](/docs/connect-oauth).
 
 ## Remote MCP servers
 
 A service that publishes an MCP server doesn't need a spec. Add the server by its URL, and the AI clients connected to your Gateway get its tools:
 
 ```bash
-pnpm everyapp mcp add https://mcp.example.com/mcp
+everyapp mcp add https://mcp.example.com/mcp
 ```
 
 [MCP apps](/docs/agent/mcp#mcp-apps)

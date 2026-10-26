@@ -21,7 +21,7 @@ New apps come with two skills, `everyapp` (drives the CLI; it already points her
 2. Fetch the page you need as Markdown by adding `.md` to its URL, for example `https://everyapp.com/docs/agent/manifest.md`. Everything in one file is `https://everyapp.com/llms-full.txt`; prefer single pages.
 3. In an EveryApp checkout the same pages are files: `landing-page/content/agent/*.md`, the user docs `landing-page/content/docs/*.mdx`, and the repository documents under `docs/` that the `repo/` pages mirror.
 4. Answer from the page, with the exact command, flag or manifest field, and name the page. When a command fails, look up its code on [errors](/docs/agent/errors) (the anchor is the code) before trying anything else.
-5. The command line tool is `everyapp`, run as `pnpm everyapp` from the checkout (never `npx everyapp`; publishing to npm is paused). Add `--json` when you drive it, and read [the protocol](/docs/agent/json). `everyapp dev` is the exception: long-running and human-facing, no `--json`.
+5. The command line tool is `everyapp`: `npm install -g everyapp`, then `everyapp …` (in a checkout of the EveryApp repository, `pnpm everyapp …`). Add `--json` when you drive it, and read [the protocol](/docs/agent/json). `everyapp dev` is the exception: long-running and human-facing, no `--json`.
 
 ## Two sets of docs, one rule
 
