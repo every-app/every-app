@@ -77,10 +77,10 @@ call; his ruling says it is.
 
 ## Tonight (2026-10-26)
 
-Re-scanned at `main` f0cc2660 (#805, the rc.6 publish commit; only CI-only
-changes may follow): 782 commits, gitleaks 66 and trufflehog 20 unverified (the
+Re-scanned at `main` f0cc2660 (#805), then the seven commits after it through
+607ef43b (no leaks): 789 commits, gitleaks 66 and trufflehog 20 unverified (the
 same findings as above, nothing new), 0 verified. `every-app/every-app` `main`
-(1e71f113) is still an ancestor: the push is a fast-forward of 533 commits. The
+(1e71f113) is still an ancestor: the push is a fast-forward (540 commits at 607ef43b). The
 app repos are unchanged since their scan (`private-open-crm` a1c76d34,
 `private-open-analytics` d4baf103, `private-open-mail` `everyapp` 6ed2e87c).
 
@@ -92,10 +92,12 @@ removes each release with its tag. Ben runs every step:
 0. Cloudflare dashboard: enforce two-factor on the account behind everyapp.team.
 1. The app repos: the commands in [2026-10-app-repos-public-history.md](2026-10-app-repos-public-history.md#push-commands-ben-runs-these).
 2. The platform: Option A below, from a clean clone.
-3. The rc.6 Gateway release, after step 2's push:
+3. The rc.6 Gateway release, after step 2's push, tagged at the commit step 2
+   pushed (`main`'s head then). rc.6 on npm is published from the same head, so
+   the Gateway release, the npm packages and the public repo are one commit:
 
 ```sh
-git tag gateway-v0.3.0-rc.6 f0cc266056ff8edd5a867bc3d704ed212beaf2d0
+git tag gateway-v0.3.0-rc.6 main   # in step 2's clone; check `git rev-parse main` = the pushed head
 git push git@github.com:every-app/every-app.git gateway-v0.3.0-rc.6
 gh run watch -R every-app/every-app $(gh run list -R every-app/every-app --workflow gateway-release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 curl -sIL -o /dev/null -w '%{http_code}\n' https://github.com/every-app/every-app/releases/download/gateway-v0.3.0-rc.6/every-app-gateway-release.tar.gz   # 200
