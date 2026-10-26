@@ -100,33 +100,53 @@ function appsListing(apps: AppState[], capability: string): string[] {
     .map((app) => app.id);
 }
 
+/** The AI provider whose key is `name` (`OPENROUTER_API_KEY` → `openrouter`). */
+function aiProviderOfKey(name: string): string | null {
+  const found = Object.entries(DEV_AI_PROVIDERS).find(([, spec]) => spec.keyEnv === name);
+  return found ? found[0] : null;
+}
+
 /**
- * Apps that use AI, and no AI key on the Gateway: the key the apps name.
- * An app whose provider is required already has its fix (APP_NEEDS_SETUP
- * lists the key unmet), so this is for the ones that run without it, and
- * never names a key a fix names.
+ * Apps that use AI, and no AI key on the Gateway: `provider add <id>`
+ * (which asks for the key) for each provider the apps want, first-named
+ * first. An app on the Gateway's default model (`ai.chat`) wants the
+ * default's first choice (OpenRouter, unless the operator picked another)
+ * and nothing for its optional pins, which the default doesn't need. A
+ * pinned provider the app runs without is named only when no fix names
+ * its key already (APP_NEEDS_SETUP lists a required one unmet).
  */
-function aiKey(facts: NextFacts): NextStep | null {
+function aiKeys(facts: NextFacts): NextStep[] {
   const { apps, gatewayNames } = facts;
-  if (!gatewayNames || AI_KEYS.some((key) => gatewayNames.includes(key))) return null;
-  const names: string[] = [];
-  const using: string[] = [];
-  for (const app of apps) {
-    const keys = (app.setup?.settings ?? [])
-      .filter((setting) => setting.kind === "provider" && setting.set === false)
-      .flatMap((setting) => setting.names.filter((name) => AI_KEYS.includes(name)))
-      .filter((name) => !fixNames(apps, name));
-    if (keys.length === 0) continue;
-    using.push(app.id);
-    for (const name of keys) if (!names.includes(name)) names.push(name);
-  }
-  if (names.length === 0) return null;
-  return {
-    code: NextCode.AiKey,
-    command: `${CLI} secret set ${names.join(" ")}`,
-    note: `AI for ${listed(using)}`,
-    why: `${listed(using)} ${using.length === 1 ? "uses" : "use"} AI once ${listed(names)} ${names.length === 1 ? "is" : "are"} set; no AI key is set on the Gateway.`,
+  if (!gatewayNames || AI_KEYS.some((key) => gatewayNames.includes(key))) return [];
+  const wanted = new Map<string, { key: string; apps: string[] }>();
+  const want = (provider: string, key: string, app: string) => {
+    const entry = wanted.get(provider) ?? { key, apps: [] };
+    if (!entry.apps.includes(app)) entry.apps.push(app);
+    wanted.set(provider, entry);
   };
+  for (const app of apps) {
+    const settings = app.setup?.settings ?? [];
+    const chat = settings.find((setting) => setting.kind === "ai-default");
+    if (chat) {
+      const key = chat.set === false ? chat.names.find((name) => AI_KEYS.includes(name)) : undefined;
+      const provider = key ? aiProviderOfKey(key) : null;
+      if (key && provider) want(provider, key, app.id);
+      continue;
+    }
+    for (const setting of settings) {
+      if (setting.kind !== "provider" || setting.set !== false) continue;
+      for (const key of setting.names) {
+        const provider = AI_KEYS.includes(key) && !fixNames(apps, key) ? aiProviderOfKey(key) : null;
+        if (provider) want(provider, key, app.id);
+      }
+    }
+  }
+  return [...wanted].map(([provider, { key, apps: using }]) => ({
+    code: NextCode.AiKey,
+    command: `${CLI} provider add ${provider}`,
+    note: `AI for ${listed(using)}`,
+    why: `${listed(using)} ${using.length === 1 ? "uses" : "use"} AI once ${key} is set; no AI key is set on the Gateway.`,
+  }));
 }
 
 /**
@@ -268,7 +288,7 @@ function emailUnset(facts: NextFacts): NextStep | null {
  */
 export function nextStepsFor(facts: NextFacts): NextStep[] {
   const steps = [
-    aiKey(facts),
+    ...aiKeys(facts),
     ...providerOffers(facts),
     ...providerKeys(facts),
     accessOff(facts),

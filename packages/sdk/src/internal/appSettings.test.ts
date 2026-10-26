@@ -251,6 +251,37 @@ describe("appSettings", () => {
   });
 });
 
+describe("the default model and its pins", () => {
+  it("lists an optional pin that needs only the default's key once, as the default", () => {
+    const settings = appSettings({
+      ai: { chat: true },
+      providers: [
+        { id: "openrouter", optional: true },
+        { id: "workers-ai", optional: true },
+      ],
+    });
+    expect(settings.map((setting) => [setting.kind, setting.id])).toEqual([
+      ["ai-default", "ai-default"],
+      ["provider", "workers-ai"],
+    ]);
+    expect(settings[0]).toMatchObject({
+      names: ["OPENROUTER_API_KEY"],
+      need: { kind: "required" },
+    });
+  });
+
+  it("keeps a required pin, which needs its own key whatever serves the default", () => {
+    const settings = appSettings({
+      ai: { chat: true },
+      providers: [{ id: "openrouter" }],
+    });
+    expect(settings.map((setting) => setting.kind)).toEqual([
+      "ai-default",
+      "provider",
+    ]);
+  });
+});
+
 describe("evaluateAppSettings", () => {
   const inbox = appSettings({
     providers: [

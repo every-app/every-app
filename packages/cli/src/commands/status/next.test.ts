@@ -85,14 +85,35 @@ describe("nextStepsFor", () => {
       expect(nextStepsFor(facts)).toEqual([
         {
           code: NextCode.AiKey,
-          command: "pnpm everyapp secret set OPENROUTER_API_KEY",
+          command: "pnpm everyapp provider add openrouter",
           note: "AI for crm",
           why: "crm uses AI once OPENROUTER_API_KEY is set; no AI key is set on the Gateway.",
         },
       ]);
     });
 
-    it("names every key the apps use, once each", () => {
+    it("names the default's first choice for an app on the default model, never its optional pins (launch gate, rc.7)", () => {
+      const openmail = app("openmail", {
+        manifest: {
+          ai: { chat: { why: "Drafts replies." } },
+          providers: [
+            { id: "openrouter", optional: true },
+            { id: "workers-ai", optional: true },
+          ],
+        },
+      });
+      const steps = nextStepsFor(done({ gatewayNames: ["EMAIL_FROM"], apps: [openmail] }));
+      expect(steps.filter((step) => step.code === NextCode.AiKey)).toEqual([
+        {
+          code: NextCode.AiKey,
+          command: "pnpm everyapp provider add openrouter",
+          note: "AI for openmail",
+          why: "openmail uses AI once OPENROUTER_API_KEY is set; no AI key is set on the Gateway.",
+        },
+      ]);
+    });
+
+    it("names every provider the apps use, one step each", () => {
       const facts = done({
         gatewayNames: [],
         apps: [
@@ -101,11 +122,20 @@ describe("nextStepsFor", () => {
           app("notes", { manifest: optionalAi }),
         ],
       });
-      expect(nextStepsFor(facts)[0]).toMatchObject({
-        command: "pnpm everyapp secret set OPENROUTER_API_KEY OPENAI_API_KEY",
-        note: "AI for crm, chef and notes",
-        why: "crm, chef and notes use AI once OPENROUTER_API_KEY and OPENAI_API_KEY are set; no AI key is set on the Gateway.",
-      });
+      expect(nextStepsFor(facts).slice(0, 2)).toEqual([
+        {
+          code: NextCode.AiKey,
+          command: "pnpm everyapp provider add openrouter",
+          note: "AI for crm and notes",
+          why: "crm and notes use AI once OPENROUTER_API_KEY is set; no AI key is set on the Gateway.",
+        },
+        {
+          code: NextCode.AiKey,
+          command: "pnpm everyapp provider add openai",
+          note: "AI for chef",
+          why: "chef uses AI once OPENAI_API_KEY is set; no AI key is set on the Gateway.",
+        },
+      ]);
     });
 
     it("is off once any AI key is set, when no app uses AI, or when a fix names the key", () => {

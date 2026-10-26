@@ -567,10 +567,25 @@ export function appSettings(
       ),
     );
   }
+  // The default's settings: an optional pin that needs only those is the
+  // same row (one key, set once), so it isn't listed twice. A required
+  // pin stays: it needs that provider's key even while another provider
+  // serves the default.
+  const defaultNames = settings.find(
+    (setting) => setting.kind === "ai-default",
+  )?.names;
   for (const entry of providerEntries(manifest)) {
     const capability = lookup.get(entry.id);
     if (capability?.mode !== "ai") continue;
     const names = providerNames(capability);
+    if (
+      defaultNames &&
+      needOf(entry).kind === "optional" &&
+      names.length > 0 &&
+      names.every((name) => defaultNames.includes(name))
+    ) {
+      continue;
+    }
     settings.push(
       withNeed(
         {

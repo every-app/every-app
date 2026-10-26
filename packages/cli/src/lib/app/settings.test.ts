@@ -188,6 +188,37 @@ describe("the STATUS vocabulary", () => {
   });
 });
 
+describe("the Gateway's default model and its pins (launch gate, rc.7)", () => {
+  // OpenMail and OpenCRM: `ai.chat` plus optional provider pins.
+  const openmail = {
+    ai: { chat: { why: "Drafts replies." } },
+    providers: [
+      { id: "openrouter", optional: true },
+      { id: "workers-ai", optional: true },
+    ],
+  };
+
+  it("lists the default's key once, required, not again as an optional pin", () => {
+    const { report } = appSetupFrom({ manifest: openmail, appId: "openmail", gatewayNames: [], secretNames: [] });
+    const rows = plain(renderSettingsTable(settingsRows("openmail", report.settings)));
+    expect(rows.filter((row) => row.includes("OPENROUTER_API_KEY"))).toEqual([
+      expect.stringMatching(/OPENROUTER_API_KEY\s+Gateway\s+! not set$/),
+    ]);
+    // The other pin is another key: still its own optional row.
+    expect(rows.some((row) => row.includes("WORKERS_AI_API_TOKEN") && row.endsWith("not set (optional)"))).toBe(true);
+  });
+
+  it("keeps a required pin beside the default: it needs that provider's key", () => {
+    const { report } = appSetupFrom({
+      manifest: { ai: { chat: true }, providers: [{ id: "openrouter", why: "Web research." }] },
+      appId: "crm",
+      gatewayNames: [],
+      secretNames: [],
+    });
+    expect(report.settings.map((setting) => setting.kind)).toEqual(["ai-default", "provider"]);
+  });
+});
+
 describe("helperRows", () => {
   it("gives a helper Worker the app's own rows against what it holds, in the same words", () => {
     const manifest = {

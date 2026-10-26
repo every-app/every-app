@@ -1096,7 +1096,7 @@ describe("everyapp status", () => {
     expect(done["data"]["next"]).toEqual([
       expect.objectContaining({
         code: "AI_KEY",
-        command: "pnpm everyapp secret set OPENROUTER_API_KEY",
+        command: "pnpm everyapp provider add openrouter",
         note: "AI for crm",
         why: "crm uses AI once OPENROUTER_API_KEY is set; no AI key is set on the Gateway.",
       }),
@@ -1123,10 +1123,10 @@ describe("everyapp status", () => {
     expect(await shown()).toContain(
       [
         "Next:",
-        "  pnpm everyapp secret set OPENROUTER_API_KEY  AI for crm",
-        "  pnpm everyapp mcp on dataforseo              offer DataForSEO's tools to AI clients (each call spends DataForSEO credit)",
-        "  pnpm everyapp access on                      put Cloudflare Access in front (recommended)",
-        "  https://example.com/admin/users              invite people",
+        "  pnpm everyapp provider add openrouter  AI for crm",
+        "  pnpm everyapp mcp on dataforseo        offer DataForSEO's tools to AI clients (each call spends DataForSEO credit)",
+        "  pnpm everyapp access on                put Cloudflare Access in front (recommended)",
+        "  https://example.com/admin/users        invite people",
       ].join("\n"),
     );
 
