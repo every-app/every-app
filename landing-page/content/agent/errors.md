@@ -2662,7 +2662,7 @@ Source: `packages/cli/src/commands/mcp/index.ts`
 
 ### RESOURCES_KEPT
 
-`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept (its Worker, the D1 databases and KV namespaces the registry names, the queues and Vectorize indexes the last deployed manifest declares, Workflows another Worker runs), and any recorded queue a Worker outside the app still binds (`<Queue "name"> (a Worker that isn't <app>'s binds it)`); `data.kept`, `data.fix` (delete them in the dashboard if they are the app's; a Vectorize index under AI → Vectorize).
+`delete --purge`, step `app.purge`: resources with the app's names that no deploy recorded creating were kept (its Worker, the D1 databases and KV namespaces the registry names, the queues and Vectorize indexes the last deployed manifest declares, the R2 buckets it binds by name (its manifest's, and one named after its Worker), Workflows another Worker runs), any recorded queue a Worker outside the app still binds, and any recorded R2 bucket R2 refused to delete (`<R2 bucket "name"> (R2 refused to delete it: it may still hold objects)`: empty it first, under Storage & Databases → R2 Object Storage) (`<Queue "name"> (a Worker that isn't <app>'s binds it)`); `data.kept`, `data.fix` (delete them in the dashboard if they are the app's; a Vectorize index under AI → Vectorize).
 
 Source: `packages/cli/src/commands/delete/index.ts`
 

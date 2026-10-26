@@ -47,10 +47,11 @@ type ResourceKind =
   | "vectorize"
   | "ai-gateway"
   | "secrets-store-secret"
+  | "r2"
   | "email-route";
 
-/** Each kind of app resource as a person reads it (R2 buckets are named, never recorded). */
-export const RESOURCE_LABELS: Readonly<Record<ResourceKind | "r2", string>> = {
+/** Each kind of app resource as a person reads it. */
+export const RESOURCE_LABELS: Readonly<Record<ResourceKind, string>> = {
   worker: "Worker",
   d1: "D1 database",
   kv: "KV namespace",

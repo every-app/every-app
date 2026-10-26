@@ -7,9 +7,10 @@
  * neither, and the upload fails with `[10085] R2 bucket '<name>' not found`
  * (seen on a fresh account on 2026-10-24). So after the Build Output is
  * installed, and before anything is uploaded, the deploy makes each bucket
- * that isn't there. Buckets are named, never recorded as the app's
- * (lib/app/ownership.ts): one that exists is bound as it is, so a redeploy
- * keeps its objects, and `delete --purge` leaves it.
+ * that isn't there, and records each it makes as the app's
+ * (lib/app/ownership.ts, kind `r2`), so `delete --purge` deletes it. One
+ * that exists already is bound as it is (a redeploy keeps its objects) and
+ * never recorded: a bucket's name proves nothing.
  */
 import { isCfError } from "@/lib/cf/errors";
 import { createR2Bucket, findR2Bucket } from "@/lib/cf/r2";

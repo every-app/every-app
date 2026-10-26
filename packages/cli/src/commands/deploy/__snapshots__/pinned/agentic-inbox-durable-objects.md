@@ -40,7 +40,7 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"agentic-inbox is deleted on the gateway; agentic-inbox.example.com stops serving it.","data":{"appId":"agentic-inbox","hostname":"agentic-inbox.example.com","workerName":"every-acme-agentic-inbox","alreadyDeleted":false}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed agentic-inbox.example.com's certificate.","data":{"hostname":"agentic-inbox.example.com","certificatePacks":["pack-11"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting agentic-inbox's Worker and data...","data":{"appId":"agentic-inbox"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-agentic-inbox\".","data":{"appId":"agentic-inbox","removed":["Worker \"every-acme-agentic-inbox\""],"kinds":["Worker"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Worker \"every-acme-agentic-inbox\", R2 bucket \"every-acme-agentic-inbox\".","data":{"appId":"agentic-inbox","removed":["Worker \"every-acme-agentic-inbox\"","R2 bucket \"every-acme-agentic-inbox\""],"kinds":["Worker","R2 bucket"]}}
 
 ## uploads
 
@@ -620,6 +620,7 @@ project text cf build cwd=<app>
 account json cf r2 buckets list --name-contains every-acme-agentic-inbox --per-page 100
 account json cf r2 buckets create --name every-acme-agentic-inbox
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-agentic-inbox --per-page 10
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -750,15 +751,18 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf workflows list --search every-acme-agentic-inbox --per-page 100 --page 1
 account json cf workers deployments list --worker every-acme-agentic-inbox --per-page 10
 account json cf workers delete every-acme-agentic-inbox --force
+account json cf r2 buckets delete every-acme-agentic-inbox --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy
 
+r2 "every-acme-agentic-inbox" every-acme-agentic-inbox every-acme-agentic-inbox null
 worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-7
 
 ## ledger after the redeploy
 
+r2 "every-acme-agentic-inbox" every-acme-agentic-inbox every-acme-agentic-inbox null
 worker "" every-acme-agentic-inbox every-acme-agentic-inbox every-acme-agentic-inbox-version-12
 
 ## ledger after the purge

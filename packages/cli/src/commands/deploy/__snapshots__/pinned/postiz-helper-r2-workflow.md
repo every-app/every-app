@@ -49,7 +49,7 @@
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.delete","status":"ok","message":"postiz is deleted on the gateway; postiz.example.com stops serving it.","data":{"appId":"postiz","hostname":"postiz.example.com","workerName":"every-acme-postiz","alreadyDeleted":false}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.certificate","status":"ok","message":"Removed postiz.example.com's certificate.","data":{"hostname":"postiz.example.com","certificatePacks":["pack-14"]}}
 {"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"start","message":"Deleting postiz's Worker and data...","data":{"appId":"postiz"}}
-{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Workflow \"every-acme-postiz--publish-post\", Worker \"every-acme-postiz\", Worker \"every-acme-postiz--api\", D1 database \"every-acme-postiz\".","data":{"appId":"postiz","removed":["Workflow \"every-acme-postiz--publish-post\"","Worker \"every-acme-postiz\"","Worker \"every-acme-postiz--api\"","D1 database \"every-acme-postiz\""],"kinds":["2 Workers","Workflow","D1 database"]}}
+{"v":1,"ts":"1970-01-01T00:00:00.000Z","type":"step","step":"app.purge","status":"ok","message":"Deleted Workflow \"every-acme-postiz--publish-post\", Worker \"every-acme-postiz\", Worker \"every-acme-postiz--api\", D1 database \"every-acme-postiz\", R2 bucket \"every-acme-postiz\".","data":{"appId":"postiz","removed":["Workflow \"every-acme-postiz--publish-post\"","Worker \"every-acme-postiz\"","Worker \"every-acme-postiz--api\"","D1 database \"every-acme-postiz\"","R2 bucket \"every-acme-postiz\""],"kinds":["2 Workers","Workflow","D1 database","R2 bucket"]}}
 
 ## uploads
 
@@ -989,6 +989,7 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 project text cf build cwd=<app>
 account json cf r2 buckets list --name-contains every-acme-postiz --per-page 100
 account json cf r2 buckets create --name every-acme-postiz
+account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workflows get every-acme-postiz--publish-post
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf workers deployments list --worker every-acme-postiz --per-page 10
@@ -1144,18 +1145,21 @@ account json cf workers delete every-acme-postiz --force
 account json cf workers deployments list --worker every-acme-postiz--api --per-page 10
 account json cf workers delete every-acme-postiz--api --force
 account json cf d1 delete 00000007-0000-4000-8000-000000000000 --force
+account json cf r2 buckets delete every-acme-postiz --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy
 
 d1 "DB" every-acme-postiz 00000007-0000-4000-8000-000000000000 null
+r2 "every-acme-postiz" every-acme-postiz every-acme-postiz null
 worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-10
 worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-8
 
 ## ledger after the redeploy
 
 d1 "DB" every-acme-postiz 00000007-0000-4000-8000-000000000000 null
+r2 "every-acme-postiz" every-acme-postiz every-acme-postiz null
 worker "" every-acme-postiz every-acme-postiz every-acme-postiz-version-17
 worker "api" every-acme-postiz--api every-acme-postiz--api every-acme-postiz--api-version-15
 

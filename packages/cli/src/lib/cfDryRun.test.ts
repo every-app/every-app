@@ -9,7 +9,7 @@
  *
  * Skipped unless EVERYAPP_CF_DRY_RUN=1, after the SDK and the gateway
  * release are built (`pnpm -C apps/every-app-gateway build:release`), as
- * the cf-dry-run CI job does.
+ * the integration workflow's "Build every package" job does.
  */
 import fs from "node:fs";
 import path from "node:path";

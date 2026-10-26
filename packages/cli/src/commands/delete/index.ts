@@ -20,6 +20,7 @@ import {
 } from "@/lib/cf/resources";
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import { deleteQueue, deleteQueueConsumer, listQueues } from "@/lib/cf/queues";
+import { deleteR2Bucket, listR2Buckets } from "@/lib/cf/r2";
 import { deleteStoreSecret } from "@/lib/cf/secretsStore";
 import { deleteVectorizeIndex, getVectorizeIndex } from "@/lib/cf/vectorize";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -252,6 +253,7 @@ const KINDS = [
   "KV namespace",
   "Hyperdrive config",
   "Queue",
+  "R2 bucket",
   "Vectorize index",
   "AI Gateway",
   "Secrets Store secret",
@@ -275,6 +277,7 @@ const PLACES = {
   kv: "Storage & Databases → KV",
   workflow: "Compute (Workers) → Workflows",
   queue: "Compute (Workers) → Queues",
+  r2: "Storage & Databases → R2 Object Storage",
   vectorize: "AI → Vectorize",
 } as const;
 
@@ -308,6 +311,7 @@ async function purgeApp(
   const owned = recorded.filter((resource) => resource.kind !== "email-route");
   const workflowsKept: Kept[] = [];
   const queuesKept: Kept[] = [];
+  const bucketsKept: Kept[] = [];
   // The app's Worker and its helper Workers (`<worker>--<name>`), as recorded.
   const ownWorkers = new Set(
     owned.flatMap((resource) =>
@@ -367,6 +371,19 @@ async function purgeApp(
         await deleteHyperdrive(cf, resource.resourceId);
       } else if (resource.kind === "queue") {
         await deleteQueue(cf, resource.resourceId);
+      } else if (resource.kind === "r2") {
+        // R2 refuses a bucket that still holds objects: kept, and said.
+        try {
+          await deleteR2Bucket(cf, resource.resourceId);
+        } catch (error) {
+          if (isCfError(error, "not_found")) throw error;
+          bucketsKept.push({
+            described: `${describeResource(resource)} (R2 refused to delete it: it may still hold objects)`,
+            shown: `the R2 bucket ${resource.name}, which R2 refused to delete (empty it first)`,
+            place: PLACES.r2,
+          });
+          continue;
+        }
       } else if (resource.kind === "vectorize") {
         await deleteVectorizeIndex(cf, resource.resourceId);
       } else if (resource.kind === "ai-gateway") {
@@ -397,7 +414,12 @@ async function purgeApp(
   }
   await forgetOwnedResources(registry, deleted.workerName);
 
-  const kept = [...(await unrecordedResources(cf, deleted, owned)), ...workflowsKept, ...queuesKept];
+  const kept = [
+    ...(await unrecordedResources(cf, deleted, owned)),
+    ...workflowsKept,
+    ...queuesKept,
+    ...bucketsKept,
+  ];
   const kinds = KINDS.flatMap((kind) => {
     const n = counts.get(kind) ?? 0;
     return n === 0 ? [] : [n === 1 ? kind : plural(n, kind)];
@@ -444,7 +466,7 @@ async function unrecordedResources(
     owned.filter((r) => r.resourceId).map((r) => `${r.kind}:${r.name}`),
   );
   const kept: Kept[] = [];
-  const keep = (kind: "worker" | "d1" | "kv" | "queue" | "vectorize", name: string) =>
+  const keep = (kind: "worker" | "d1" | "kv" | "queue" | "r2" | "vectorize", name: string) =>
     kept.push({
       described: describeResource({ kind, name }),
       shown: `the ${RESOURCE_LABELS[kind]} ${name}`,
@@ -469,6 +491,15 @@ async function unrecordedResources(
   if (queueNames.length > 0) {
     const existing = new Set((await listQueues(cf)).map((queue) => queue.queue_name));
     for (const name of queueNames) if (existing.has(name)) keep("queue", name);
+  }
+  // The buckets it binds by name (the manifest's, and one named after its
+  // Worker by hand), made before deploys recorded buckets or not made by it.
+  const bucketNames = [...new Set([...Object.values(deleted.resources.r2), deleted.workerName])].filter(
+    (name) => !recorded.has(`r2:${name}`),
+  );
+  if (bucketNames.length > 0) {
+    const existing = new Set(await listR2Buckets(cf, deleted.workerName).catch(() => [] as string[]));
+    for (const name of bucketNames) if (existing.has(name)) keep("r2", name);
   }
   // The indexes the last deployed manifest declares, by their names.
   for (const binding of storedVectorizeBindings(deleted.manifest)) {

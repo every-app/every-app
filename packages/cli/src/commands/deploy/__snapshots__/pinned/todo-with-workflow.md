@@ -731,6 +731,7 @@ account json cf workers delete every-acme-todo --force
 account json cf d1 delete 00000007-0000-4000-8000-000000000000 --force
 account json cf kv namespaces delete 00000000000000000000000000000008 --force
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
+account json cf r2 buckets list --name-contains every-acme-todo --per-page 100
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 
 ## ledger after the first deploy

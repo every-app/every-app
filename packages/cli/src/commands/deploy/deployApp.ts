@@ -101,6 +101,7 @@ import { mcpOf, publicRoutesOf, type McpSummary, type PublicRouteSummary } from 
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import {
   readOwnedResources,
+  recordOwnedResource,
   recordUploadedVersion,
   RESOURCE_LABELS,
 } from "@/lib/app/ownership";
@@ -611,7 +612,9 @@ async function deploySteps(
       cwd: root,
       inputs: target,
     });
-    await ensureR2Buckets({ cf, names: r2Buckets, appId: manifest.id, out });
+    for (const bucket of await ensureR2Buckets({ cf, names: r2Buckets, appId: manifest.id, out })) {
+      await recordOwnedResource(registry, workerName, { kind: "r2", binding: bucket, name: bucket, resourceId: bucket });
+    }
     for (const worker of [
       { workerName, names: workflows },
       ...helpers.map((helper) => ({

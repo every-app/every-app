@@ -2106,6 +2106,47 @@ describe("delete", () => {
     ]);
   });
 
+  it("records the R2 buckets a deploy makes and purges them; one with objects, or one it didn't make, is kept and said", async () => {
+    const withBucket = (id: string): EveryAppCliManifest => ({ id, resources: { r2: ["R2"] } });
+
+    // Made by its deploy, empty: deleted with the app.
+    await deployOther(withBucket("files"));
+    expect(account.buckets.has("every-acme-files")).toBe(true);
+    await expect(readOwnedResources(registry(), "every-acme-files")).resolves.toContainEqual(
+      expect.objectContaining({ kind: "r2", name: "every-acme-files" }),
+    );
+    const files = await remove("files", true);
+    expect(account.buckets.has("every-acme-files")).toBe(false);
+    expect(deletionSummary("files", files).data).toMatchObject({
+      purged: true,
+      removed: expect.arrayContaining([expect.stringContaining("every-acme-files")]),
+    });
+
+    // Made by its deploy, but holding objects: R2 refuses, so it's kept and said.
+    await deployOther(withBucket("photos"));
+    account.buckets.set("every-acme-photos", { objects: 3 });
+    events = [];
+    const photos = await remove("photos", true);
+    expect(account.buckets.has("every-acme-photos")).toBe(true);
+    expect(deletionSummary("photos", photos).data).toMatchObject({
+      purged: false,
+      kept: [expect.stringContaining("every-acme-photos")],
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "RESOURCES_KEPT", message: expect.stringContaining("empty it first") }),
+    );
+
+    // There before its first deploy (not the app's to delete): bound, never recorded, kept and said.
+    account.buckets.set("every-acme-notes", { objects: 0 });
+    await deployOther(withBucket("notes"));
+    await expect(readOwnedResources(registry(), "every-acme-notes")).resolves.not.toContainEqual(
+      expect.objectContaining({ kind: "r2" }),
+    );
+    const notes = await remove("notes", true);
+    expect(account.buckets.has("every-acme-notes")).toBe(true);
+    expect(deletionSummary("notes", notes).data).toMatchObject({ kept: [expect.stringContaining("every-acme-notes")] });
+  });
+
   it("purges the Worker, database and namespace on request", async () => {
     const result = await remove("todo", true);
 
