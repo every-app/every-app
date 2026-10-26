@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -6,6 +6,7 @@ import { KeyRound, Link2, Plus, Trash2, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
+import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { SectionHeader } from "@/client/components/PageHeader";
@@ -15,13 +16,24 @@ import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
 import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
+import { Input } from "@/client/components/ui/input";
+import { Skeleton } from "@/client/components/ui/skeleton";
 import { getRuleErrorMessage } from "@/client/errors";
 import {
   clientSourceLabel,
   connectPathFor,
   scopeSetsText,
 } from "@/client/lib/oauthProviders";
+import { getAiDefault } from "@/serverFunctions/ai";
 import {
   disconnectConnection,
   listAllConnections,
@@ -40,6 +52,7 @@ export const Route = createFileRoute("/_app/admin/providers")({
 
 const PROVIDERS_KEY = ["admin", "providers"] as const;
 const CONNECTIONS_KEY = ["admin", "providerConnections"] as const;
+const AI_DEFAULT_KEY = ["admin", "ai-default"] as const;
 
 type Provider = Awaited<ReturnType<typeof listProviders>>["providers"][number];
 type OAuthProvider = NonNullable<Provider["oauth"]>;
@@ -57,15 +70,252 @@ const KIND_LABEL: Record<Provider["kind"], string> = {
 /** The same path the callback returns to after "Connect for the organization". */
 const ADMIN_RETURN_PATH = "/admin/providers";
 
-function providerColumns({
-  onReplaceClient,
-  onForgetClient,
-  onRemove,
+/** The user docs' provider pages: where to get a key. */
+const PROVIDER_DOCS_URL = "https://everyapp.com/docs/providers";
+
+/** A provider's page: one per company, as packages/cli/src/docs/providerGuides.ts (COMPANY_OF) names them. */
+const DOCS_PAGE_OF: Readonly<Record<string, string>> = {
+  "google-workspace": "google",
+  "microsoft-365": "microsoft",
+  "turso-db": "turso",
+  "tiktok-business": "tiktok",
+};
+
+function providerDocsUrl(id: string): string {
+  return `${PROVIDER_DOCS_URL}/${DOCS_PAGE_OF[id] ?? id.replace(/-oauth$/, "")}`;
+}
+
+/** What a provider still lacks, in the words its Set up action answers. */
+function needLabel(provider: Provider): string {
+  return provider.kind === "oauth" ? "Needs a client" : "Needs a key";
+}
+
+function ProviderStatus({ provider }: { provider: Provider }) {
+  return provider.configured ? (
+    <Badge variant="success">Ready</Badge>
+  ) : (
+    <span className="text-xs text-muted-foreground">Not set</span>
+  );
+}
+
+/**
+ * How the page groups the list: what is set up (or registered here),
+ * what an installed app needs and lacks, and the rest of the catalog
+ * behind Show all. Gateway services (email, members) are internals and
+ * never list.
+ */
+function partitionProviders(providers: readonly Provider[]): {
+  setUp: Provider[];
+  needed: Provider[];
+  rest: Provider[];
+  listed: Provider[];
+} {
+  const listed = providers.filter((provider) => provider.kind !== "service");
+  const setUp: Provider[] = [];
+  const needed: Provider[] = [];
+  const rest: Provider[] = [];
+  for (const provider of listed) {
+    if (provider.configured || provider.source === "row") setUp.push(provider);
+    else if (provider.apps.some((app) => app.needs)) needed.push(provider);
+    else rest.push(provider);
+  }
+  return { setUp, needed, rest, listed };
+}
+
+/** "AI models, APIs, OAuth sign-ins": the kinds among `providers`, in that order. */
+function kindsLine(providers: readonly Provider[]): string {
+  const words: [Provider["kind"], string][] = [
+    ["ai", "AI models"],
+    ["api_key", "APIs"],
+    ["oauth", "OAuth sign-ins"],
+  ];
+  return words
+    .filter(([kind]) => providers.some((provider) => provider.kind === kind))
+    .map(([, word]) => word)
+    .join(", ");
+}
+
+/** The muted line under a provider's name: its kind, then what is known about its use. */
+function providerDetail(
+  provider: Provider,
+  options: { aiDefault: string | null; needing?: boolean },
+): string {
+  const parts = [KIND_LABEL[provider.kind]];
+  if (provider.source === "row") parts.push("registered here");
+  if (provider.id === options.aiDefault) parts.push("AI default");
+  const connections = provider.oauth?.connections ?? 0;
+  if (connections > 0) {
+    parts.push(`${connections} connection${connections === 1 ? "" : "s"}`);
+  }
+  const apps = provider.apps
+    .filter((app) => !options.needing || app.needs)
+    .map((app) => app.name);
+  if (apps.length > 0) {
+    parts.push(
+      `${options.needing ? "needed by" : "used by"} ${apps.join(", ")}`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+function ProviderRow({
+  provider,
+  detail,
+  status,
+  action,
 }: {
+  provider: Provider;
+  detail: string;
+  status: ReactNode;
+  action: ReactNode;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="min-w-0 space-y-0.5">
+        <p className="truncate text-sm font-medium">{provider.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{detail}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 text-sm">
+        {status}
+        {action}
+      </div>
+    </li>
+  );
+}
+
+function ProviderGroup({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-medium">
+        {title} <span className="text-muted-foreground">· {count}</span>
+      </h3>
+      <ul
+        className="divide-y divide-border rounded-lg border border-border"
+        aria-label={title}
+      >
+        {children}
+      </ul>
+    </div>
+  );
+}
+
+/** How a key is set: from the terminal, by name; the value never passes through the browser. */
+function SetKeyDialog({
+  provider,
+  onClose,
+}: {
+  provider: Provider;
+  onClose: () => void;
+}) {
+  const needing = provider.apps
+    .filter((app) => app.needs)
+    .map((app) => app.name);
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Set up {provider.name}</DialogTitle>
+          <DialogDescription>
+            {needing.length > 0 ? `${needing.join(", ")} needs it. ` : null}
+            Keys are set from the terminal, so the value never passes through
+            the browser.
+          </DialogDescription>
+        </DialogHeader>
+        <CodeBlock
+          code={`pnpm everyapp secret set ${provider.settings.join(" ")}`}
+          successMessage="Command copied"
+        />
+        <p className="text-xs text-muted-foreground">
+          Where to get the key:{" "}
+          <a
+            className="underline underline-offset-4 hover:text-foreground"
+            href={providerDocsUrl(provider.id)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            the {provider.name} page
+          </a>
+          .
+        </p>
+        <DialogFooter showCloseButton />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ProviderActionHandlers {
   onReplaceClient: (provider: OAuthProvider) => void;
   onForgetClient: (provider: OAuthProvider) => void;
   onRemove: (provider: Provider) => void;
-}): ColumnDef<Provider>[] {
+}
+
+/** A provider's menu: its client for an OAuth one, Remove for a registered row; none for a built-in key. */
+function ProviderActions({
+  provider,
+  onReplaceClient,
+  onForgetClient,
+  onRemove,
+}: { provider: Provider } & ProviderActionHandlers) {
+  const entry = provider.oauth;
+  if (!entry && provider.source === "catalog") return null;
+  return (
+    <RowActionsMenu label={`Actions for ${provider.name}`}>
+      {entry ? (
+        <DropdownMenuItem onClick={() => onReplaceClient(entry)}>
+          <KeyRound />
+          {entry.client.source ? "Replace client" : "Set client"}
+        </DropdownMenuItem>
+      ) : null}
+      {entry?.client.source === "d1" ? (
+        <DropdownMenuItem onClick={() => onForgetClient(entry)}>
+          <Unplug />
+          Forget pasted client
+        </DropdownMenuItem>
+      ) : null}
+      {entry?.client.source ? (
+        <DropdownMenuItem
+          render={
+            <a
+              href={connectPathFor(entry.id, {
+                account: "organization",
+                returnTo: ADMIN_RETURN_PATH,
+              })}
+            />
+          }
+        >
+          <Link2 />
+          Connect for the organization
+        </DropdownMenuItem>
+      ) : null}
+      {provider.source === "row" ? (
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => onRemove(provider)}
+        >
+          <Trash2 />
+          Remove provider
+        </DropdownMenuItem>
+      ) : null}
+    </RowActionsMenu>
+  );
+}
+
+function providerColumns(
+  actions: ProviderActionHandlers,
+): ColumnDef<Provider>[] {
   return [
     {
       accessorKey: "name",
@@ -88,6 +338,15 @@ function providerColumns({
       meta: { label: "Kind" },
       cell: ({ row: { original: provider } }) => (
         <Badge variant="secondary">{KIND_LABEL[provider.kind]}</Badge>
+      ),
+    },
+    {
+      id: "status",
+      accessorFn: (provider) => (provider.configured ? 0 : 1),
+      header: ({ column }) => <SortableHeader column={column} label="Status" />,
+      meta: { label: "Status" },
+      cell: ({ row: { original: provider } }) => (
+        <ProviderStatus provider={provider} />
       ),
     },
     {
@@ -140,50 +399,9 @@ function providerColumns({
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { headerClassName: "w-10" },
-      cell: ({ row: { original: provider } }) => {
-        const entry = provider.oauth;
-        if (!entry && provider.source === "catalog") return null;
-        return (
-          <RowActionsMenu label={`Actions for ${provider.name}`}>
-            {entry ? (
-              <DropdownMenuItem onClick={() => onReplaceClient(entry)}>
-                <KeyRound />
-                {entry.client.source ? "Replace client" : "Set client"}
-              </DropdownMenuItem>
-            ) : null}
-            {entry?.client.source === "d1" ? (
-              <DropdownMenuItem onClick={() => onForgetClient(entry)}>
-                <Unplug />
-                Forget pasted client
-              </DropdownMenuItem>
-            ) : null}
-            {entry?.client.source ? (
-              <DropdownMenuItem
-                render={
-                  <a
-                    href={connectPathFor(entry.id, {
-                      account: "organization",
-                      returnTo: ADMIN_RETURN_PATH,
-                    })}
-                  />
-                }
-              >
-                <Link2 />
-                Connect for the organization
-              </DropdownMenuItem>
-            ) : null}
-            {provider.source === "row" ? (
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => onRemove(provider)}
-              >
-                <Trash2 />
-                Remove provider
-              </DropdownMenuItem>
-            ) : null}
-          </RowActionsMenu>
-        );
-      },
+      cell: ({ row: { original: provider } }) => (
+        <ProviderActions provider={provider} {...actions} />
+      ),
     },
   ];
 }
@@ -298,6 +516,9 @@ function ProvidersPage() {
   const [forgetting, setForgetting] = useState<OAuthProvider | null>(null);
   const [removing, setRemoving] = useState<Provider | null>(null);
   const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
+  const [settingKey, setSettingKey] = useState<Provider | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState("");
 
   const providersQuery = useQuery({
     queryKey: PROVIDERS_KEY,
@@ -307,6 +528,14 @@ function ProvidersPage() {
     queryKey: CONNECTIONS_KEY,
     queryFn: () => listAllConnections(),
   });
+  // Only to mark the default model provider; the page reads fine without it.
+  const aiDefaultQuery = useQuery({
+    queryKey: AI_DEFAULT_KEY,
+    queryFn: () => getAiDefault(),
+  });
+  const aiDefault = aiDefaultQuery.data?.resolution.configured
+    ? aiDefaultQuery.data.resolution.provider
+    : null;
 
   const refresh = async () => {
     await Promise.all([
@@ -359,17 +588,31 @@ function ProvidersPage() {
       toast.error(getRuleErrorMessage(error, "Failed to disconnect")),
   });
 
-  const providerCols = useMemo(
-    () =>
-      providerColumns({
-        onReplaceClient: setReplacing,
-        onForgetClient: setForgetting,
-        onRemove: setRemoving,
-      }),
+  const actions: ProviderActionHandlers = useMemo(
+    () => ({
+      onReplaceClient: setReplacing,
+      onForgetClient: setForgetting,
+      onRemove: setRemoving,
+    }),
     [],
   );
+  const providerCols = useMemo(() => providerColumns(actions), [actions]);
+  const groups = useMemo(
+    () => partitionProviders(providersQuery.data?.providers ?? []),
+    [providersQuery.data],
+  );
+  const matching = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return needle
+      ? groups.listed.filter(
+          (provider) =>
+            provider.name.toLowerCase().includes(needle) ||
+            provider.id.includes(needle),
+        )
+      : groups.listed;
+  }, [groups.listed, search]);
   const providersTable = useDataTable({
-    data: providersQuery.data?.providers ?? [],
+    data: matching,
     columns: providerCols,
     getRowId: (provider) => provider.id,
     withSorting: true,
@@ -408,7 +651,7 @@ function ProvidersPage() {
       <section className="space-y-4">
         <SectionHeader
           title="Providers"
-          hint="The APIs apps reach through the Gateway: keys and OAuth clients it holds, never shown back. An OAuth provider lets each person connect their own account."
+          hint="Keys and OAuth clients the Gateway holds for your apps. Never shown back."
           action={
             <Button onClick={() => setAdding(true)}>
               <Plus />
@@ -416,24 +659,128 @@ function ProvidersPage() {
             </Button>
           }
         />
-        <DataTable
-          table={providersTable}
-          isLoading={providersQuery.isLoading}
-          error={
-            providersQuery.isError ? (
-              <ErrorState
-                message="Couldn't load the providers."
-                onRetry={() => void providersQuery.refetch()}
-                isRetrying={providersQuery.isFetching}
-              />
-            ) : undefined
-          }
-          empty={{
-            title: "No providers",
-            description:
-              "Add an OAuth provider to let people connect an account.",
-          }}
-        />
+        {providersQuery.isError ? (
+          <ErrorState
+            message="Couldn't load the providers."
+            onRetry={() => void providersQuery.refetch()}
+            isRetrying={providersQuery.isFetching}
+          />
+        ) : !providersQuery.data ? (
+          <div className="space-y-2" aria-busy>
+            {Array.from({ length: 3 }, (_, index) => (
+              <Skeleton key={index} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : (
+          <>
+            {groups.setUp.length > 0 ? (
+              <ProviderGroup title="Set up" count={groups.setUp.length}>
+                {groups.setUp.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    detail={providerDetail(provider, { aiDefault })}
+                    status={
+                      provider.configured ? (
+                        <Badge variant="success">Ready</Badge>
+                      ) : (
+                        <Badge variant="warning">{needLabel(provider)}</Badge>
+                      )
+                    }
+                    action={
+                      <ProviderActions provider={provider} {...actions} />
+                    }
+                  />
+                ))}
+              </ProviderGroup>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nothing is set up yet. Set a key from the terminal, or add an
+                OAuth provider.
+              </p>
+            )}
+
+            {groups.needed.length > 0 ? (
+              <ProviderGroup
+                title="Needed by an app"
+                count={groups.needed.length}
+              >
+                {groups.needed.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    detail={providerDetail(provider, {
+                      aiDefault,
+                      needing: true,
+                    })}
+                    status={
+                      <Badge variant="warning">{needLabel(provider)}</Badge>
+                    }
+                    action={
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          provider.oauth
+                            ? setReplacing(provider.oauth)
+                            : setSettingKey(provider)
+                        }
+                      >
+                        Set up
+                      </Button>
+                    }
+                  />
+                ))}
+              </ProviderGroup>
+            ) : null}
+
+            {showAll ? (
+              <div
+                className="space-y-3"
+                role="region"
+                aria-label="All providers"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search providers"
+                    aria-label="Search providers"
+                    className="max-w-xs"
+                  />
+                  <Button variant="ghost" onClick={() => setShowAll(false)}>
+                    Hide
+                  </Button>
+                </div>
+                <DataTable
+                  table={providersTable}
+                  isLoading={false}
+                  empty={{
+                    title: "No providers match",
+                    description: "Try another name or id.",
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  {groups.rest.length} more built in
+                  {groups.rest.length > 0
+                    ? `: ${kindsLine(groups.rest)}`
+                    : null}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowAll(true)}
+                >
+                  Show all providers
+                </Button>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       <section className="space-y-4">
@@ -468,6 +815,13 @@ function ProvidersPage() {
             await addMutation.mutateAsync({ data: input });
           }}
           onClose={() => setAdding(false)}
+        />
+      ) : null}
+
+      {settingKey ? (
+        <SetKeyDialog
+          provider={settingKey}
+          onClose={() => setSettingKey(null)}
         />
       ) : null}
 

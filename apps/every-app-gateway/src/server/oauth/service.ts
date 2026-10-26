@@ -9,7 +9,9 @@
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
+import { parseSecretNames } from "@every-app/perimeter/registry";
 import {
+  aiRequiredSettings,
   CAPABILITY_IDS,
   capabilitySettings,
   checkProviderRow,
@@ -23,6 +25,8 @@ import {
   type ProviderRegistry,
   type ProviderRow,
 } from "@every-app/sdk/internal";
+import { gatewaySettingIsSet } from "@/server/ai-default";
+import { appSettingsReport } from "@/server/app-setup";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventActor } from "@/server/events/catalogue";
 import { userActor, userSubject } from "@/server/events/subjects";
@@ -81,6 +85,16 @@ export interface ProviderSummary {
   source: "catalog" | "row";
   kind: ProviderKind;
   hosts: string[];
+  /**
+   * Whether its credential is set: an AI or API-key provider's every
+   * Gateway setting it needs (a registered row's only while bound), an
+   * OAuth provider's live client from either source. Never a value.
+   */
+  configured: boolean;
+  /** The Gateway settings it needs, by name: what `everyapp secret set` takes. */
+  settings: string[];
+  /** The organization's apps that list it, and whether it keeps each one closed. */
+  apps: { name: string; needs: boolean }[];
   /** For an OAuth provider, its full summary. */
   oauth?: OAuthProviderSummary;
 }
@@ -278,12 +292,75 @@ export async function listOAuthProviders(
   return out;
 }
 
+/** The Gateway settings an entry needs: the AI default's rule for a model provider. */
+function neededSettings(capability: Capability): string[] {
+  switch (capability.mode) {
+    case "ai":
+      return aiRequiredSettings(capability);
+    case "service":
+      return [...capability.settings];
+    default:
+      return [...capabilitySettings(capability)];
+  }
+}
+
+/**
+ * Whether an AI, API-key or service entry's settings are all set, as the
+ * proxies read them; a registered row's count only while its key is bound
+ * to the hosts it has now.
+ */
+function settingsConfigured(
+  id: string,
+  settings: readonly string[],
+  registry: ProviderRegistry,
+): boolean {
+  if (!registry.bound(id)) return false;
+  const unbound = registry.unboundSettings();
+  return settings.every(
+    (name) => !unbound.has(name) && gatewaySettingIsSet(name),
+  );
+}
+
+/**
+ * Which of the organization's apps list each provider or capability, by
+ * the setup evaluation the app lists run (cached per row and version), and
+ * whether that setting keeps the app closed. One app's evaluation failing
+ * leaves it out, as the lists do.
+ */
+async function appsByProvider(
+  org: OrgContext,
+): Promise<Map<string, ProviderSummary["apps"]>> {
+  const out = new Map<string, ProviderSummary["apps"]>();
+  for (const app of await AppRepository.findAll(org.orgId)) {
+    const report = await appSettingsReport({
+      rowId: app.id,
+      versionId: app.versionId,
+      secretNames: parseSecretNames(app.secretNames),
+      appId: app.appSlug,
+      tier: app.tier,
+      manifest: app.manifest,
+      canFix: true,
+    }).catch(() => null);
+    for (const setting of report?.settings ?? []) {
+      if (setting.kind !== "provider" && setting.kind !== "capability") {
+        continue;
+      }
+      out.set(setting.id, [
+        ...(out.get(setting.id) ?? []),
+        { name: app.name, needs: setting.blocking },
+      ]);
+    }
+  }
+  return out;
+}
+
 /** Every registry entry, for the Admin list. */
 export async function listProviders(
   org: OrgContext,
 ): Promise<ProviderSummary[]> {
   const registry = await gatewayProviders();
   const counts = await ProviderConnectionRepository.countByProvider(org.orgId);
+  const apps = await appsByProvider(org);
   const out: ProviderSummary[] = [];
   for (const [id, capability] of registry.entries()) {
     const summary: ProviderSummary = {
@@ -292,9 +369,15 @@ export async function listProviders(
       source: registry.sourceOf(id) === "row" ? "row" : "catalog",
       kind: kindOf(capability),
       hosts: hostsOf(capability),
+      configured: false,
+      settings: neededSettings(capability),
+      apps: apps.get(id) ?? [],
     };
     if (capability.mode === "oauth_client") {
       summary.oauth = await oauthSummary(org, id, capability, registry, counts);
+      summary.configured = summary.oauth.client.source !== null;
+    } else {
+      summary.configured = settingsConfigured(id, summary.settings, registry);
     }
     out.push(summary);
   }

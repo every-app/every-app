@@ -184,6 +184,31 @@ describe("provider server functions", () => {
     );
   });
 
+  it("lists the organization's providers with whether each is set up, as the service reports it (readable on a hosted gateway too)", async () => {
+    const listed = [
+      {
+        id: "dataforseo",
+        name: "DataForSEO",
+        source: "catalog",
+        kind: "api_key",
+        hosts: ["api.dataforseo.com"],
+        configured: false,
+        settings: ["DATAFORSEO_API_KEY"],
+        apps: [{ name: "notes", needs: true }],
+      },
+    ];
+    mocks.service.listProviders.mockResolvedValueOnce(listed);
+    mocks.registersProviders.mockReturnValue(false);
+    try {
+      await expect(
+        serverFns["listProviders"]!.serverHandler({ context }),
+      ).resolves.toEqual({ providers: listed });
+    } finally {
+      mocks.registersProviders.mockReturnValue(true);
+    }
+    expect(mocks.service.listProviders).toHaveBeenCalledWith(context.org);
+  });
+
   it("refuses every write on a hosted gateway, where providers would be every tenant's", async () => {
     mocks.registersProviders.mockReturnValue(false);
     mocks.service.addOAuthProvider.mockClear();

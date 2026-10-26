@@ -62,6 +62,7 @@ import {
   clearAppCallerCacheForTests,
   handleAppGatewayRequest,
 } from "@/server/app-gateway-entrypoint";
+import { resetAppSetupCacheForTests } from "@/server/app-setup";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import {
   gatewayProviders,
@@ -86,6 +87,7 @@ import {
   disconnect,
   listConnections,
   listOAuthProviders,
+  listProviders,
   setOAuthClient,
 } from "./service";
 
@@ -340,6 +342,63 @@ describe("the Gateway-owned OAuth flow (SQLite)", () => {
     await expect(
       addOAuthProvider(org("member", member), null, { preset: "github-oauth" }),
     ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  });
+
+  it("lists whether each provider's credential is set and which apps it keeps closed, never a value", async () => {
+    const byId = async () => {
+      resetAppSetupCacheForTests();
+      const listed = await listProviders(org("owner", owner));
+      return new Map(listed.map((each) => [each.id, each]));
+    };
+    let providers = await byId();
+    expect(providers.get("dataforseo")).toMatchObject({
+      kind: "api_key",
+      configured: false,
+      apps: [{ name: "notes", needs: true }],
+    });
+    expect(providers.get("google-workspace")).toMatchObject({
+      configured: false,
+      apps: [{ name: "seo", needs: true }],
+    });
+    expect(providers.get("openrouter")).toMatchObject({
+      kind: "ai",
+      configured: false,
+      apps: [],
+    });
+
+    const settings = fakeEnv as Record<string, string>;
+    settings["DATAFORSEO_API_KEY"] = "login:dfs-secret-value";
+    settings["OPENROUTER_API_KEY"] = "or-secret-value";
+    try {
+      providers = await byId();
+      expect(providers.get("dataforseo")).toMatchObject({
+        configured: true,
+        apps: [{ name: "notes", needs: false }],
+      });
+      expect(providers.get("openrouter")?.configured).toBe(true);
+
+      // An OAuth provider counts once a client is live from either source.
+      await addGitHub();
+      providers = await byId();
+      expect(providers.get("github-oauth")).toMatchObject({
+        kind: "oauth",
+        source: "row",
+        configured: true,
+      });
+      expect(
+        providers
+          .get("github-oauth")
+          ?.apps.map((app) => app.name)
+          .sort(),
+      ).toEqual(["ci", "crm"]);
+      const text = JSON.stringify([...providers.values()]);
+      expect(text).not.toContain("dfs-secret-value");
+      expect(text).not.toContain("or-secret-value");
+      expect(text).not.toContain("gh-client-secret");
+    } finally {
+      delete settings["DATAFORSEO_API_KEY"];
+      delete settings["OPENROUTER_API_KEY"];
+    }
   });
 
   it("connects a person: PKCE S256, a one-use state, the sets the apps declare, the tokens sealed, the return to the app", async () => {
