@@ -9,10 +9,10 @@
  * A constant, not the CLI's own package.json version: the repository's
  * package.json files name the next release (0.3.0) while its rcs are
  * published under the dist-tag `next`. Set it to the version about to be
- * published, before publishing (.github/RELEASE.md). `^0.3.0-rc.5` admits
+ * published, before publishing (.github/RELEASE.md). `^0.3.0-rc.6` admits
  * the later rcs and 0.3.0, never 0.4.0.
  */
-export const PUBLISHED_VERSION = "0.3.0-rc.5";
+export const PUBLISHED_VERSION = "0.3.0-rc.6";
 
 /** The packages published at `PUBLISHED_VERSION`. */
 export const PUBLISHED_PACKAGES = ["@every-app/sdk", "everyapp"] as const;

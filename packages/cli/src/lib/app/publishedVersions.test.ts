@@ -11,7 +11,7 @@ describe("PUBLISHED_VERSION", () => {
     for (const name of PUBLISHED_PACKAGES) {
       const pkg = JSON.parse(fs.readFileSync(path.join(checkoutRoot(), DIRS[name], "package.json"), "utf8"));
       expect(pkg.name).toBe(name);
-      // 0.3.0-rc.5 is a release on the way to 0.3.0; 0.3.0 itself is too.
+      // 0.3.0-rc.6 is a release on the way to 0.3.0; 0.3.0 itself is too.
       expect(PUBLISHED_VERSION.replace(/-.*$/, ""), `${name}: the checkout is on ${pkg.version}`).toBe(
         pkg.version.replace(/-.*$/, ""),
       );
