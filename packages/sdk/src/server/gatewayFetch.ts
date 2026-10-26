@@ -24,7 +24,8 @@ export interface GatewayServiceBinding {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
-export interface GatewayFetchEnv {
+/** The env names createGatewayFetch reads. */
+interface GatewayFetchEnv {
   EVERY_APP_GATEWAY?: GatewayServiceBinding;
   EVERYAPP_DEV?: string | boolean;
   /** `1` on a shared app's Workers (`everyAppWorker()` sets it). */
@@ -37,7 +38,12 @@ export interface GatewayFetchEnv {
 }
 
 export interface CreateGatewayFetchOptions {
-  env: GatewayFetchEnv;
+  /**
+   * The Worker env, as it is: the EVERY_APP_GATEWAY binding when deployed,
+   * or in local dev EVERYAPP_DEV and the provider's settings in
+   * `.dev.vars` (`OPENROUTER_API_KEY`, …). No cast needed.
+   */
+  env: object;
   /**
    * Whom the call is for. Left out, the request `everyApp()` is serving
    * (its user, while the identity is good) or the organization
@@ -48,6 +54,13 @@ export interface CreateGatewayFetchOptions {
    * ({@link AttributionError}).
    */
   for?: GatewayCallFor;
+  /**
+   * `true`: answer null instead of throwing `ConfigurationError` when AI
+   * is unavailable (no binding, and in local dev no provider key), so a
+   * feature that can do without a model checks for null. A binding that
+   * isn't one, and an attribution mistake, still throw.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -56,10 +69,18 @@ export interface CreateGatewayFetchOptions {
  * developer's own provider key from `.dev.vars` is a direct-provider
  * fallback when no binding exists.
  */
+export function createGatewayFetch(
+  options: CreateGatewayFetchOptions & { optional: true },
+): typeof fetch | null;
+export function createGatewayFetch(
+  options: CreateGatewayFetchOptions,
+): typeof fetch;
 export function createGatewayFetch({
-  env,
+  env: workerEnv,
   for: explicitTarget,
-}: CreateGatewayFetchOptions): typeof fetch {
+  optional = false,
+}: CreateGatewayFetchOptions): typeof fetch | null {
+  const env = workerEnv as GatewayFetchEnv;
   // Checked now, so a call nobody's fails where the fetch is made; and
   // again per call, where an identity may since have neared its expiry.
   attributionFor(env, explicitTarget, "createGatewayFetch");
@@ -72,6 +93,7 @@ export function createGatewayFetch({
     );
   }
   if (!binding && Object.keys(devProviders).length === 0) {
+    if (optional) return null;
     throw new ConfigurationError(
       `AI gateway unavailable: deploy with the EVERY_APP_GATEWAY binding, or set the provider's key (${listOf(
         Object.values(DEV_AI_PROVIDERS).map((spec) =>

@@ -19,7 +19,12 @@
  * fallback). An app that needs one provider in particular keeps listing it
  * under `providers` and calling `/api/ai/<provider>/…`.
  */
-import { AI_DEFAULT_MODEL, AI_DEFAULT_PROVIDER } from "../internal/index.js";
+import {
+  AI_DEFAULT_MODEL,
+  AI_DEFAULT_PROVIDER,
+  CATALOG,
+  ConfigurationError,
+} from "../internal/index.js";
 import {
   BINDING_ORIGIN,
   createGatewayFetch,
@@ -48,12 +53,55 @@ export const AI_DEFAULT_BASE_URL = `${BINDING_ORIGIN}/api/ai/${AI_DEFAULT_PROVID
  * `createGatewayFetch` does (no binding and no dev key) and
  * `AttributionError` where a shared app's call says nobody's.
  */
-export function ai(options: CreateGatewayFetchOptions): AiClient {
+export function ai(
+  options: CreateGatewayFetchOptions & { optional: true },
+): AiClient | null;
+export function ai(options: CreateGatewayFetchOptions): AiClient;
+export function ai(options: CreateGatewayFetchOptions): AiClient | null {
+  const fetch = createGatewayFetch(options);
+  if (!fetch) return null;
   return {
     baseURL: AI_DEFAULT_BASE_URL,
-    fetch: createGatewayFetch(options),
+    fetch,
     model: AI_DEFAULT_MODEL,
     chatCompletionsUrl: `${AI_DEFAULT_BASE_URL}/chat/completions`,
     embeddingsUrl: `${AI_DEFAULT_BASE_URL}/embeddings`,
   };
+}
+
+const CHAT_COMPLETIONS = "/chat/completions";
+
+/**
+ * A provider's root behind the Gateway, `http://every-app-gateway.internal/api/ai/<provider>`:
+ * join the provider's own paths onto it (`/api/v1/chat/completions` for
+ * OpenRouter) and send them with `createGatewayFetch()`. For an OpenAI
+ * client's `baseURL`, use {@link aiBaseUrl}.
+ */
+export function providerBaseUrl(provider: string): string {
+  return `${BINDING_ORIGIN}/api/ai/${encodeURIComponent(provider)}`;
+}
+
+/**
+ * The OpenAI-compatible base URL of `provider` behind the Gateway, for an
+ * OpenAI client's `baseURL` (with `fetch: createGatewayFetch(...)`):
+ * `default` (the default) is {@link AI_DEFAULT_BASE_URL},
+ * `…/api/ai/default/v1`; a catalog provider's is its root and the prefix
+ * of its chat route (`…/api/ai/openrouter/api/v1`, `…/api/ai/workers-ai/v1`,
+ * `…/api/ai/openai/v1`). Throws `ConfigurationError` for a provider with
+ * no OpenAI-compatible chat route (Cohere): call {@link providerBaseUrl}
+ * with its own paths instead.
+ */
+export function aiBaseUrl(provider: string = AI_DEFAULT_PROVIDER): string {
+  if (provider === AI_DEFAULT_PROVIDER) return AI_DEFAULT_BASE_URL;
+  const capability = CATALOG.get(provider);
+  const chat =
+    capability?.mode === "ai" && "chat" in capability
+      ? capability.chat
+      : undefined;
+  if (!chat?.path.endsWith(CHAT_COMPLETIONS)) {
+    throw new ConfigurationError(
+      `${provider} has no OpenAI-compatible chat route in the catalog: join its own paths onto providerBaseUrl("${provider}") instead.`,
+    );
+  }
+  return `${providerBaseUrl(provider)}${chat.path.slice(0, -CHAT_COMPLETIONS.length)}`;
 }

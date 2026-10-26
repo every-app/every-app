@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ORG_HEADER } from "../internal/index";
 import { AttributionError, type GatewayCallFor } from "./attribution";
 import { RequestContextError, serveRequest, withOrganization } from "./context";
-import { createGatewayFetch, type GatewayFetchEnv } from "./gatewayFetch";
+import { createGatewayFetch } from "./gatewayFetch";
 import { integrationFetch } from "./integrationFetch";
 
 function binding() {
@@ -21,7 +21,7 @@ const helpers = {
   integrationFetch: (env: object, target?: GatewayCallFor) =>
     integrationFetch({ env, provider: "dataforseo", for: target }),
   createGatewayFetch: (env: object, target?: GatewayCallFor) =>
-    createGatewayFetch({ env: env as GatewayFetchEnv, for: target }),
+    createGatewayFetch({ env, for: target }),
 };
 const urls = {
   integrationFetch: "https://api.dataforseo.com/v3/appendix/status",

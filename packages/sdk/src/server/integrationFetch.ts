@@ -88,6 +88,14 @@ export interface IntegrationFetchOptions {
    * the default for background work). Sent as `x-everyapp-account`.
    */
   account?: ConnectionAccount;
+  /**
+   * `true`: answer null instead of throwing `ConfigurationError` when the
+   * provider is unavailable (no binding, and in local dev not its
+   * settings in `.dev.vars`), so a feature that can do without it checks
+   * for null. A wrong provider id, a binding that isn't one, and an
+   * attribution mistake still throw.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -112,12 +120,19 @@ export interface IntegrationFetchOptions {
  * provider show <id> --save` writes it), put on the call as the gateway's
  * spec says.
  */
+export function integrationFetch(
+  options: IntegrationFetchOptions & { optional: true },
+): typeof fetch | null;
+export function integrationFetch(
+  options: IntegrationFetchOptions,
+): typeof fetch;
 export function integrationFetch({
   env,
   provider,
   for: explicitTarget,
   account,
-}: IntegrationFetchOptions): typeof fetch {
+  optional = false,
+}: IntegrationFetchOptions): typeof fetch | null {
   const catalogEntry = fetchableCapability(provider);
   const what = `integrationFetch("${provider}")`;
   // Checked now, so a call nobody's fails where the fetch is made; and
@@ -152,6 +167,7 @@ export function integrationFetch({
   const decidesLater =
     integration?.mode === "oauth_client" && integration.flow !== undefined;
   if (!binding && !local && !devToken && integration && !decidesLater) {
+    if (optional) return null;
     const names = [
       ...capabilitySettings(integration),
       ...(integration.mode === "oauth_client" && integration.flow

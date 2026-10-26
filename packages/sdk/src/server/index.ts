@@ -35,9 +35,14 @@ export {
 export {
   createGatewayFetch,
   type CreateGatewayFetchOptions,
-  type GatewayFetchEnv,
 } from "./gatewayFetch.js";
-export { ai, AI_DEFAULT_BASE_URL, type AiClient } from "./ai.js";
+export {
+  ai,
+  aiBaseUrl,
+  providerBaseUrl,
+  AI_DEFAULT_BASE_URL,
+  type AiClient,
+} from "./ai.js";
 export {
   GatewayRefusalError,
   gatewayRefusal,

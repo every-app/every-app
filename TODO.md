@@ -1920,3 +1920,11 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 - gateway zod 4: `apps/every-app-gateway` is on `zod ^4.2.0`, and `pnpm-workspace.yaml` overrides `zod: ^4.6.7`, so the lockfile carries one zod 4 (4.6.7; the 4.6.5 and knip's 4.1.12 copies are gone). Defaults taken for Ben:
   - [ ] **One zod 3 copy remains, on purpose:** `"@shadcn/registry>zod": ^3.25.76`. The shadcn component CLI (a gateway devDependency, run by hand, never bundled) asks for `zod ^3.24.1`; forcing it to 4 was untested. Drop the scoped line when shadcn moves to zod 4, or if nobody runs `shadcn add` from here.
   - [ ] **Code changes were small:** `z.nativeEnum` became `z.enum` (one use), and the MCP-app form's `optionalText` moved `.optional()` after its `.transform()` (zod 4 made the transformed key required in the inferred type). The other deprecated-but-working idioms (`z.string().email()`/`.uuid()`, `.merge()`, `z.ZodIssueCode.custom`, `.strict()`) stay, as in #547. Every `.default()` value is already a valid output, so zod 4's no-parse defaults change nothing. Server-function validation goes through Standard Schema, so the wire error is unchanged.
+
+## Platform shortcuts (2026-10-26)/lane 3 optional and base URLs
+
+Defaults taken for `{ optional: true }`, `aiBaseUrl()` and `providerBaseUrl()` (`packages/sdk/src/server/ai.ts`, `gatewayFetch.ts`, `integrationFetch.ts`):
+
+- [ ] **`optional: true` only covers "unavailable"** (no binding, and in dev no settings in `.dev.vars`). A binding that isn't one, a wrong provider id and an attribution mistake still throw: those are bugs, not setup.
+- [ ] **`aiBaseUrl(provider)` comes from the catalog's chat route**, minus `/chat/completions`. A provider without an OpenAI-compatible chat route (Cohere), or one registered only on a Gateway, throws, and the error points at `providerBaseUrl(id)`.
+- [ ] **`GatewayFetchEnv` is no longer exported.** `env` is typed `object` on every factory, so apps drop their `env as GatewayFetchEnv` casts in the phase-2 slim-downs.
