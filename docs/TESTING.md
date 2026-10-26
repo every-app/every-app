@@ -51,11 +51,11 @@ Run a single layer:
 ### In CI
 
 Two workflows. `.github/workflows/pr-checks.yml` (every pull request, and
-pushes to main) is the fast one, three jobs of a minute or two that build
+pushes to main) is the fast one, four jobs of a minute or two that build
 nothing but the SDK: Type Check (`pnpm types:check`, the gateway's
 `auth:check`, the SDK's `check:esm-relative-imports`), Lint
 (`pnpm audit --audit-level critical`, the public-copy dry run,
-`pnpm format:check`, `pnpm knip`) and Unit Tests (`pnpm test`, each
+`pnpm format:check`, `pnpm knip`) and Unit Tests in two halves, the gateway and the rest (`pnpm test`, each
 package's `unit` vitest project).
 
 `.github/workflows/integration.yml` is the slow one: nightly, on every push

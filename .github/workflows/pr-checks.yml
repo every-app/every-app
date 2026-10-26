@@ -18,8 +18,8 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-# Fast checks only, three jobs of about a minute or two: types, lint and the
-# unit tests. Nothing here builds the workspace beyond the SDK (the
+# Fast checks only, four jobs of about a minute or two: types, lint and the
+# unit tests in two halves. Nothing here builds the workspace beyond the SDK (the
 # typechecks and tests read the other packages from source). The slow
 # suites (the CLI's fake-account integration tests, the gateway's SQLite
 # tests), the full build, the cf dry run and the built CLI run in
@@ -89,9 +89,19 @@ jobs:
       - name: Run knip check
         run: pnpm knip
   test:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Two halves of about equal CPU, each with a runner's four cores to
+    # itself: together on one runner they took nearly four minutes.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: gateway
+            run: pnpm -C apps/every-app-gateway test
+          - part: packages
+            run: pnpm -r --no-bail --filter '!every-app-gateway' run test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,4 +120,4 @@ jobs:
       # Each package's `test` is its unit project; `test:integration` runs
       # in integration.yml.
       - name: Run unit tests
-        run: pnpm test
+        run: ${{ matrix.run }}
