@@ -11,7 +11,7 @@ Before a pull request that touches a trust boundary: the perimeter
 (`packages/perimeter`), identity (the SDK's verifier, the Gateway's sessions
 and sign-in), public routes, tools and `/mcp`, OAuth, Cloudflare Access,
 secrets, deploys, or a query that scopes by user or organization. Not for
-prose: `docs/`, `adr/`, `prompts/`, `landing-page/content/`, `*.md` and
+prose: `docs/`, `prompts/`, `landing-page/content/`, `*.md` and
 `pnpm-lock.yaml` are not reviewed, and a branch that changes only those is
 refused as nothing to review.
 

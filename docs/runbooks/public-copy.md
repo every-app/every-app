@@ -126,8 +126,8 @@ report lists each file it touched.
 
 ## What is rewritten
 
-The scrub rules apply to the planning documents only: `TODO.md`, `docs/**/*.md`
-and `adr/**/*.md`. Code and the public docs under `landing-page/content` must
+The scrub rules apply to the planning documents only: `TODO.md` and
+`docs/**/*.md` (the ADRs included). Code and the public docs under `landing-page/content` must
 already be clean; the deny check (below) fails the build when they aren't,
 which is how a teammate's name was found in an agent docs page on 2026-10-24.
 

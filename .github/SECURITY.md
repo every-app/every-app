@@ -5,7 +5,7 @@ EveryApp is alpha and open source. If you find a hole, we'd rather know.
 - Report it privately, not in a public issue: open a vulnerability report on
   the repository (**Security → Report a vulnerability**), so it isn't public
   before a fix is out.
-- Say which promise breaks. [docs/threat-model.md](docs/threat-model.md) lists
+- Say which promise breaks. [docs/threat-model.md](../docs/threat-model.md) lists
   every promise the Gateway makes, to whom, where it is enforced and tested,
   and what is still open; its invariants have stable ids
   (`perimeter.csrf-private-fail-closed`). Name the one that breaks, the shape

@@ -98,7 +98,7 @@ and the exit code does not change for gaps. A fuller scan needs one of:
   `packages/perimeter` with `packages/sdk`, `packages/cli`, `packages/toolbus`,
   and `landing-page`. Each gets its own fingerprints (the target id changes), so
   compare them against their own earlier run, not the repo-wide scan.
-- **A knowledge base**: pass `docs/threat-model.md` and `SECURITY.md`, which
+- **A knowledge base**: pass `docs/threat-model.md` and `.github/SECURITY.md`, which
   the scan already read, plus the invariants table so it spends its budget on
   what the model does not cover.
 

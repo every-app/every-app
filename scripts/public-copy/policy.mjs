@@ -5,7 +5,7 @@
  * it to a person. Three kinds of rule:
  *
  * - exclude: files of the source tree that never travel.
- * - scrub: rewrites applied to the planning documents (TODO.md, docs/, adr/),
+ * - scrub: rewrites applied to the planning documents (TODO.md, docs/),
  *   not to code. The names that must not travel (private repositories, people,
  *   local paths) are in private.txt beside this file, which the copy leaves
  *   out; that file is absent in the public repository, where this policy
@@ -57,7 +57,7 @@ export const policy = {
   ],
 
   /** The files the scrub rules rewrite: the planning documents, not the code. */
-  scrubFiles: /^(TODO\.md|docs\/.*\.md|adr\/.*\.md)$/,
+  scrubFiles: /^(TODO\.md|docs\/.*\.md)$/,
 
   scrub: [
     {

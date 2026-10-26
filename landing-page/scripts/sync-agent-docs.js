@@ -136,14 +136,14 @@ const DOCUMENTS = [
       "Operator runbook (hosted tier, post-launch): the hosted Gateway (app.everyapp.com): install, shared first-party apps, the gated third-party deploy API and its deploy keys, launch checks.",
   },
   {
-    from: "adr/ADR-0001-hosted-vs-self-hosted-topology.md",
+    from: "docs/adr/ADR-0001-hosted-vs-self-hosted-topology.md",
     note: "Historical (2026-03-02). Section 6's single-tenant hosted Workers were overruled on 2026-10-16: first-party apps share one Worker per app, third-party apps get one Worker per organization on Workers for Platforms (/docs/agent/repo/security-model and /docs/agent/repo/hosted-vision).",
     to: "adr/0001-hosted-vs-self-hosted-topology",
     description:
       "Architecture decision: one codebase for the hosted and the self-hosted Gateway, and how the two differ.",
   },
   {
-    from: "adr/ADR-0003-self-host-authority.md",
+    from: "docs/adr/ADR-0003-self-host-authority.md",
     to: "adr/0003-self-host-authority",
     metaTitle: "ADR-0003: Self-host operator authority",
     description:
@@ -269,7 +269,7 @@ writeFileSync(
     {
       title: "From the repository",
       description:
-        "Reference documents mirrored from the repository's docs/ and adr/ directories.",
+        "Reference documents mirrored from the repository's docs/ directory.",
       pages: [
         ...pages("").filter((p) => !p.includes("/")),
         "---Runbooks---",

@@ -70,4 +70,4 @@ EveryApp is open source, very powerful, alpha, and moving fast; the team tries n
 
 ## Keeping these pages true
 
-The CLI reference is generated from the commands, [Build an app](/docs/agent/build) and [Example patterns](/docs/agent/patterns) from the build skill, and a test in `packages/cli/src/docs` fails when a page misses a command, flag, error code, manifest field, Gateway setting, header, SDK export, built-in tool or Admin tab the code defines. The `repo/` pages are mirrored from `docs/` and `adr/` at build time. Edit the rest in `landing-page/content/agent/`.
+The CLI reference is generated from the commands, [Build an app](/docs/agent/build) and [Example patterns](/docs/agent/patterns) from the build skill, and a test in `packages/cli/src/docs` fails when a page misses a command, flag, error code, manifest field, Gateway setting, header, SDK export, built-in tool or Admin tab the code defines. The `repo/` pages are mirrored from `docs/` at build time. Edit the rest in `landing-page/content/agent/`.

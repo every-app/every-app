@@ -47,10 +47,10 @@ const DOCUMENTS = [
   "README.md",
   "AGENTS.md",
   "CLAUDE.md",
-  "SECURITY.md",
+  ".github/SECURITY.md",
   ...filesIn("docs", /\.md$/).filter((path) => !DATED.has(path)),
   ...filesIn("docs/runbooks", /\.md$/),
-  ...filesIn("adr", /\.md$/),
+  ...filesIn("docs/adr", /\.md$/),
   ...filesIn("landing-page/content/docs", /\.mdx$/),
   "landing-page/content/docs/setup-prompt.txt",
   ...filesIn("landing-page/content/agent", /\.md$/).filter((path) => !path.endsWith("/cli.md")),
@@ -82,12 +82,11 @@ describe("the security-review skill", () => {
 });
 
 /** The repository's top-level directories a cited path may start with, and its top-level files. */
-const TOP_DIRS = new Set(["apps", "packages", "docs", "landing-page", "starter", "adr", "scripts", ".github"]);
+const TOP_DIRS = new Set(["apps", "packages", "docs", "landing-page", "starter", "scripts", ".github"]);
 const TOP_FILES = new Set([
   "README.md",
   "AGENTS.md",
   "CLAUDE.md",
-  "SECURITY.md",
   "LICENSE",
   "TODO.md",
   "package.json",

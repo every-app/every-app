@@ -1,4 +1,4 @@
-# The names that must not travel: scrubbed from TODO.md, docs/ and adr/ in the copy, and
+# The names that must not travel: scrubbed from TODO.md and docs/ in the copy, and
 # refused anywhere in it afterwards. One rule per line: /regex/flags, a TAB, the
 # replacement ($1 for a group), a TAB, why. Every rule runs global and case-insensitive.
 # Order matters: links first, then paths that may contain a name, then bare names.

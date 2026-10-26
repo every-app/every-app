@@ -38,7 +38,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROMPT_DIR = path.join(HERE, "security-review");
 const CLAUDE_CODE = "https://docs.claude.com/en/docs/claude-code";
 /** Prose and the lockfile: nothing there runs, and the false-positive rules exclude it anyway. */
-const NOT_REVIEWED = ["docs", "adr", "prompts", "landing-page/content", "*.md", "pnpm-lock.yaml"];
+const NOT_REVIEWED = ["docs", "prompts", "landing-page/content", "*.md", "pnpm-lock.yaml"];
 /** Two copies of the skill, for the two places agents look; they must stay the same. */
 const SKILL_COPIES = [".claude/skills/security-review/SKILL.md", ".agents/skills/security-review/SKILL.md"];
 /**
