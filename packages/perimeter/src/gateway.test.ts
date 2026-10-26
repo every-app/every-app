@@ -1253,6 +1253,110 @@ describe("handleGatewayRequest", () => {
     ]);
   });
 
+  it("relays a 101 through the lifetime cap where the runtime has WebSocketPair, on first- and third-party hosts", async () => {
+    vi.useFakeTimers();
+    type Listener = (event: { code?: number; reason?: string }) => void;
+    class FakeSocket {
+      accepted = false;
+      closedWith: { code?: number; reason?: string } | null = null;
+      listeners: Listener[] = [];
+      accept() {
+        this.accepted = true;
+      }
+      send() {}
+      close(code?: number, reason?: string) {
+        this.closedWith = { code, reason };
+      }
+      addEventListener(type: string, listener: Listener) {
+        if (type === "close") this.listeners.push(listener);
+      }
+    }
+    const pairs: FakeSocket[][] = [];
+    class FakeWebSocketPair {
+      0 = new FakeSocket();
+      1 = new FakeSocket();
+      constructor() {
+        pairs.push([this[0], this[1]]);
+      }
+    }
+    class WorkersResponse extends Response {
+      constructor(
+        body?: BodyInit | null,
+        init?: ResponseInit & { webSocket?: unknown },
+      ) {
+        const { status, webSocket, ...rest } = init ?? {};
+        super(body, status === 101 ? rest : init);
+        if (status === 101) {
+          Object.defineProperty(this, "status", { value: 101 });
+          Object.defineProperty(this, "webSocket", { value: webSocket });
+        }
+      }
+    }
+    vi.stubGlobal("Response", WorkersResponse);
+    vi.stubGlobal("WebSocketPair", FakeWebSocketPair);
+    try {
+      const handshake = (appSocket: FakeSocket) => {
+        const headers = new Headers({
+          "sec-websocket-protocol": "chat",
+          "access-control-allow-credentials": "true",
+        });
+        headers.append("set-cookie", "prefs=dark; Domain=example.com; Path=/");
+        return new Response(null, {
+          status: 101,
+          headers,
+          webSocket: appSocket,
+        } as unknown as ResponseInit);
+      };
+      const through = (
+        appSocket: FakeSocket,
+        thirdParty?: GatewayDeps["thirdParty"],
+      ) =>
+        handleGatewayRequest(
+          req("/ws", { headers: { upgrade: "websocket" } }),
+          deps({
+            fetcherFor: () => ({ fetch: async () => handshake(appSocket) }),
+            thirdParty,
+          }),
+        );
+
+      // First party: the client gets the pair's end, the app's socket stays
+      // with the gateway, and the handshake's cookie loses its Domain.
+      const app = new FakeSocket();
+      const res = (await through(app)) as Response & { webSocket?: unknown };
+      expect(res.status).toBe(101);
+      expect(pairs).toHaveLength(1);
+      expect(res.webSocket).toBe(pairs[0]![0]);
+      expect(app.accepted).toBe(true);
+      expect(res.headers.get("sec-websocket-protocol")).toBe("chat");
+      expect(res.headers.getSetCookie()).toEqual(["prefs=dark; Path=/"]);
+      // First-party hosts keep credentialed CORS (third-party ones lose it).
+      expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+      // Still a handshake: no page security headers.
+      expect(res.headers.get("x-content-type-options")).toBeNull();
+
+      // Third party: the same relay over the stripped handshake.
+      const app2 = new FakeSocket();
+      const third = (await through(app2, {
+        startSession: async () => new Response(null, { status: 302 }),
+      })) as Response & { webSocket?: unknown };
+      expect(third.webSocket).toBe(pairs[1]![0]);
+      expect(third.headers.get("access-control-allow-credentials")).toBeNull();
+      expect(third.headers.getSetCookie()).toEqual(["prefs=dark; Path=/"]);
+
+      // Fifteen minutes later both sockets close normally, with the reason.
+      vi.advanceTimersByTime(15 * 60 * 1000);
+      for (const socket of [app, app2, pairs[0]![1]!, pairs[1]![1]!]) {
+        expect(socket.closedWith).toEqual({
+          code: 1000,
+          reason:
+            "Reconnecting: sessions renew their sign-in every 15 minutes.",
+        });
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("strips credentialed CORS and reserved cookies from a 101 on third-party hosts only, keeping its WebSocket", async () => {
     // Node's Response constructor rejects status 101 and has no webSocket;
     // the Workers runtime's takes both, as this stand-in does.

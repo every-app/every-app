@@ -14,7 +14,8 @@
  * server), strip inbound trust headers, inject a fresh identity JWT
  * (private requests) or the public marker (public routes), or neither
  * (public static files, `publicAssets`), proxy via the
- * `getAppFetcher` seam, and stamp security headers.
+ * `getAppFetcher` seam, stamp security headers, and relay a WebSocket
+ * through a lifetime cap (webSocketLifetime.ts).
  *
  * It is dependency-injected end to end so it can be unit-tested in isolation and
  * run for real (D1 registry, Better Auth, service bindings) without changes.
@@ -69,6 +70,7 @@ import {
 } from "./getAppFetcher";
 import { stripThirdPartyAppHeaders } from "./hostSession";
 import { cacheFingerprintedAsset } from "./assetCache";
+import { relayWebSocket } from "./webSocketLifetime";
 
 /** What {@link GatewayDeps.interceptMcp} receives. */
 export interface McpInterceptInput {
@@ -696,10 +698,13 @@ async function proxyToApp(
     mode,
   });
 
-  // Never rewrap a WebSocket 101 (its body/webSocket cannot be reconstructed),
-  // except to strip what a third-party app may not say on its handshake.
+  // A WebSocket 101 is rebuilt around the gateway's own end of a relay,
+  // which closes the socket when its lifetime is up (webSocketLifetime.ts);
+  // a third-party app's handshake first loses what it may not say.
   if (response.status === 101) {
-    return deps.thirdParty ? stripThirdPartyAppHeaders(response) : response;
+    return relayWebSocket(
+      deps.thirdParty ? stripThirdPartyAppHeaders(response) : response,
+    );
   }
   const proxied = withSecurityHeaders(
     cacheFingerprintedAsset(

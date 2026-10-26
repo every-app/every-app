@@ -359,16 +359,19 @@ and anything on the gateway's own host (B2).
 
 **Gaps.**
 
-- *First-party WebSocket handshakes pass through untouched* (medium, small
-  fix). A 101 on a first-party host keeps its `Set-Cookie` `Domain=` and
-  `Access-Control-Allow-Credentials`, and gets no security headers, because
-  a 101 can't be rewrapped (`packages/perimeter/src/gateway.ts:550-552`;
-  the third-party path rebuilds the handshake and strips them). An app that
-  sets a parent-domain cookie on its handshake can plant a second session
-  cookie for the whole gateway, which the duplicate-cookie rule then turns
-  into a lockout of every member.
-  `perimeter.first-party-101-cookie-domain` is **not enforced**. TODO:
-  "Strip session-named `Set-Cookie` headers from app responses" (Build).
+- *First-party WebSocket handshakes passed through untouched* (medium;
+  closed 2026-10-26, platform shortcuts L7). Every 101 is now rebuilt
+  around the gateway's relay (`relayWebSocket`,
+  `packages/perimeter/src/webSocketLifetime.ts`): the handshake's
+  `Set-Cookie` loses `Domain=` on first-party hosts too, so an app can no
+  longer plant a parent-domain session cookie through a handshake
+  (`perimeter.first-party-101-cookie-domain` is enforced and pinned). A
+  first-party 101 still keeps `Access-Control-Allow-Credentials` and gets
+  no page security headers (a handshake carries no page). The relay also
+  caps every proxied WebSocket at 15 minutes
+  (`perimeter.websocket-max-lifetime`), which bounds how long a removed
+  member keeps an open socket; closing it at the moment of removal needs
+  a registry of open relays (TODO "Platform shortcuts (2026-10-26)/L7").
 - *An app can set a cookie named like the session cookie on its own host*
   (low, known; same TODO line). The browser then sends two copies and the
   member is locked out of that app until they clear cookies.
@@ -1510,6 +1513,7 @@ register under the boundary named.
 | Third-party host session (`__Host-everyapp_s`) | 24 hours | Every request re-reads the gateway session row, the ban, the membership (live) and app access; organization status 30 s | Anything that ends the gateway session | A sign-out on the app host (none exists; TODO) |
 | Handoff code | 60 seconds, single use, bound to the browser's nonce | At the exchange | Use, expiry | Presenting it in the wrong browser (refused but not consumed; B8) |
 | Identity JWT (`x-everyapp-identity`) | 120 seconds, minted per request | By the SDK at the app, by the AppGateway when forwarded | Expiry only | Revocation: a removed or suspended person's in-flight identity works at the app for up to 120 s |
+| Proxied WebSocket (authorized at its handshake) | 15 minutes from the handshake (`WEBSOCKET_MAX_LIFETIME_MS`), relayed by the gateway | Nothing after the handshake | Either side closing; the gateway's close (1000) at the lifetime; an isolate going away | Removal, role change, suspension before the lifetime: the socket stays open until it ends, up to 15 minutes (the registry that would close it is a TODO) |
 | Public marker / system token | 120 s (reused 60 s) / 60 s, catalog only | By the SDK | Expiry | |
 | Personal access token (`epat_…`) | 90 days by default, 30 for a deploy key, 1 day to 1 year | Live on every request: owner's membership, ban, organization status, scopes | The holder's revoke, member removal (that organization's tokens), deactivation (all), app deletion (tokens bound to it) | An admin acting on another member's token (none can; B5) |
 | OAuth access / refresh token (connected AI apps) | 1 hour / 30 days idle and absolute | Every `/mcp` request and every refresh re-reads the connection row, role, ban, organization status, app access | The holder (Connected AI apps), member removal, deactivation, re-consent (replaces), the hourly cron after 31 idle days | A replayed refresh token (no reuse detection; B5); a held app-host `subscriptions/listen` stream for up to 10 minutes (B5; the gateway's own ends at the token's expiry and rechecks the connection every poll) |
@@ -1698,9 +1702,9 @@ means it is on main (every boundary fix from this pass merged on
    `/v1/files/x/..%2F..%2Fbatches` reached OpenAI, which decodes `%2F`
    before routing, so the shared key listed the account's batches.
 9. **An app response's `Set-Cookie` could keep `Domain=` past the
-   perimeter**: on a first-party WebSocket 101 handshake (B1, medium,
-   known; `perimeter.first-party-101-cookie-domain` is not enforced; TODO
-   "Strip session-named Set-Cookie headers") and, if the attribute matcher
+   perimeter**: on a first-party WebSocket 101 handshake (B1, medium;
+   fixed 2026-10-26 by the WebSocket relay, platform shortcuts L7:
+   `perimeter.first-party-101-cookie-domain` is now enforced) and, if the attribute matcher
    is strict about whitespace and case, on any response: `Domain =example.com` slipped
    past the matcher (B1; fixed in #406, merged). A parent-domain session cookie locks
    every member out until they clear cookies.

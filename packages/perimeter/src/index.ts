@@ -94,3 +94,9 @@ export {
   IMMUTABLE_ASSET_CACHE_CONTROL,
   isFingerprintedAssetPath,
 } from "./assetCache";
+export {
+  relayWebSocket,
+  WEBSOCKET_LIFETIME_CLOSE,
+  WEBSOCKET_MAX_LIFETIME_MS,
+  type RelaySocket,
+} from "./webSocketLifetime";
