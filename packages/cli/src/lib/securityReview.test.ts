@@ -143,7 +143,7 @@ describe("pnpm security-review", { timeout: 30_000 }, () => {
     expect(prompt).toContain("Files modified:\n- old.ts (deleted)\n- src.ts\n");
     expect(prompt).toContain("DIFF CONTENT:");
     expect(prompt).toContain("+export const a = 2;");
-    expect(prompt).toContain("EVERY APP'S BOUNDARIES");
+    expect(prompt).toContain("EVERYAPP'S BOUNDARIES");
   });
 
   it("exits 1 on a medium finding and prints the table; a low one alone does not fail", () => {

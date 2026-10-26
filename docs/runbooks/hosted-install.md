@@ -61,7 +61,7 @@ refuses every sign-up (`EMAIL_NOT_CONFIGURED`, logged as
 `auth.sign_up_refused`): new accounts couldn't verify their email.
 
 - `EMAIL_FROM`, e.g. `noreply@everyapp.com` (the domain onboarded for
-  Cloudflare Email Sending first), and `EMAIL_FROM_NAME`, e.g. `Every App`.
+  Cloudflare Email Sending first), and `EMAIL_FROM_NAME`, e.g. `EveryApp`.
 - `EMAIL_REST_API_TOKEN`, unless the Worker sends through its `EMAIL`
   binding.
 
@@ -99,14 +99,14 @@ per isolate.
 the `claim_owner` event). Create the owner account with it, under your own
 name. The claim makes the install organization, which on the hosted Gateway
 is the platform organization: it owns the first-party apps, and the claim
-names it **Every App** (slug `every-app`) whatever the owner is called (a
+names it **EveryApp** (slug `every-app`) whatever the owner is called (a
 self-hosted Gateway names it after the owner). Then confirm:
 
 ```sh
 pnpm everyapp status
 ```
 
-shows `· hosted` after the Gateway's URL and `Owner  <email> · Every App`.
+shows `· hosted` after the Gateway's URL and `Owner  <email> · EveryApp`.
 
 The owner's email counts as verified (the setup link is ours), so they sign
 in straight away. Open sign-up starts only after the claim.
@@ -156,7 +156,7 @@ pnpm everyapp register openseo --worker every-everyapp-openseo --manifest ../ope
 `register` (removed) checks the Worker exists, validates the manifest as `deploy`
 does, registers the app under the Worker name the Gateway gives it
 (`every-<platform org key>-<appId>`, `every-everyapp-<appId>` for the
-"Every App" organization; any other `--worker` stops with
+"EveryApp" organization; any other `--worker` stops with
 `WORKER_NAME_MISMATCH`, which names it), records the Worker's live version,
 redeploys the Gateway to bind it and publish its hostname, and waits for it
 to go live. It never uploads or changes the Worker, and `delete --purge`

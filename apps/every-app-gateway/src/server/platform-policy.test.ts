@@ -37,7 +37,7 @@ describe("platformPolicy", () => {
       requireEmailVerification: true,
       accessSignIn: false,
       setupClaim: true,
-      platformOrganizationName: "Every App",
+      platformOrganizationName: "EveryApp",
       sharedApps: true,
       // The launch gate: off until third-party deploys may go live.
       thirdPartyDeploys: false,

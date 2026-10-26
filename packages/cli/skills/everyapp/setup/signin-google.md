@@ -75,7 +75,7 @@ app's name and logo: unverified).
 2. **Person:** the consent screen, once per project. Open
    https://console.cloud.google.com/auth/overview (pick or create the
    project in the top bar) → **Get started**: App name (what people see,
-   for example `Every App`), User support email → Next; Audience
+   for example `EveryApp`), User support email → Next; Audience
    *Internal* (one Workspace organization) or *External* → Next; Contact
    Information → Next; agree to the User Data Policy → **Create**.
    *External* only: https://console.cloud.google.com/auth/audience →
@@ -84,7 +84,7 @@ app's name and logo: unverified).
    production" (or the app is *Internal*).
 3. **Person:** the client. https://console.cloud.google.com/auth/clients →
    **Create client** → Application type **Web application** → Name (for
-   example `Every App sign-in`) → **Authorized redirect URIs** → **Add
+   example `EveryApp sign-in`) → **Authorized redirect URIs** → **Add
    URI** → the exact URL from step 1 → **Create**. No JavaScript origins.
    A dialog shows the Client ID and the Client secret; keep it open (the
    secret is shown only now; afterwards only its last four characters).

@@ -93,7 +93,7 @@ if (targets.length !== 1) usage("one app directory, please");
 const app = path.resolve(targets[0]);
 const appPackageJson = path.join(app, "package.json");
 if (!fs.existsSync(appPackageJson)) usage(`${app} has no package.json`);
-if (!fs.existsSync(path.join(app, "everyapp.config.ts"))) usage(`${app} has no everyapp.config.ts: not an Every App app`);
+if (!fs.existsSync(path.join(app, "everyapp.config.ts"))) usage(`${app} has no everyapp.config.ts: not an EveryApp app`);
 
 const vendor = path.join(app, "vendor");
 const packed = [];
@@ -138,25 +138,25 @@ const dirty = git(["status", "--porcelain", "--", "packages/cli", "packages/sdk"
 const appName = path.basename(app);
 if (!npmVersion) fs.writeFileSync(
   path.join(vendor, "README.md"),
-  `# Vendored Every App packages
+  `# Vendored EveryApp packages
 
-${packed.map((pkg) => `- \`${pkg.file}\`: ${pkg.name === "everyapp" ? "the Every App CLI" : "the Every App SDK"} ${pkg.version}`).join("\n")}
+${packed.map((pkg) => `- \`${pkg.file}\`: ${pkg.name === "everyapp" ? "the EveryApp CLI" : "the EveryApp SDK"} ${pkg.version}`).join("\n")}
 
-Both were packed with \`pnpm pack\` from the Every App repository
+Both were packed with \`pnpm pack\` from the EveryApp repository
 (https://github.com/every-app/every-app) at commit ${commit} (${committed})${dirty ? ", with uncommitted changes in its packages" : ""}.
 \`package.json\` points at them (\`file:vendor/...\`), so a clone of this
-repository installs and builds on its own, with no Every App checkout beside
+repository installs and builds on its own, with no EveryApp checkout beside
 it. The Release workflow (\`.github/workflows/release.yml\`) builds from them too.
 They are the fallback for a published \`everyapp\` / \`@every-app/sdk\` that
 predates something this app needs; \`pnpm pack-for-app ../${appName} --npm <version>\`
 moves back to the published packages.
 The CLI vendored here runs \`pnpm dev\`, \`pnpm everyapp db migrate\` and
-\`pnpm everyapp release\`; deploying to a Gateway is done from an Every App
+\`pnpm everyapp release\`; deploying to a Gateway is done from an EveryApp
 checkout (\`pnpm everyapp install <this repository's URL>\` there, or
 \`pnpm everyapp deploy\` here with that checkout's CLI), because a deploy also
 updates the Gateway from its source.
 
-To refresh them, from an Every App checkout:
+To refresh them, from an EveryApp checkout:
 
 \`\`\`sh
 pnpm pack-for-app ../${appName}
@@ -164,7 +164,7 @@ pnpm pack-for-app ../${appName}
 
 It rebuilds the SDK and the CLI, packs both here, rewrites \`package.json\` and
 runs \`pnpm install\`; commit \`vendor/\`, \`package.json\` and \`pnpm-lock.yaml\`.
-To work against a live Every App checkout instead, point the two specifiers
+To work against a live EveryApp checkout instead, point the two specifiers
 at it (\`link:../every-app/packages/cli\`, \`link:../every-app/packages/sdk\`)
 and don't commit that.
 `,

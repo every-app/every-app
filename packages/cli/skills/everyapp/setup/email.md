@@ -278,7 +278,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
    is `false`).
 3. The provider alone, Cloudflare, with the person's yes (one counted
    email, unless `to` is a verified destination address):
-   `cf email-sending send --body '{"from":"noreply@<your domain>","to":"<address>","subject":"Every App test","text":"It works."}'`
+   `cf email-sending send --body '{"from":"noreply@<your domain>","to":"<address>","subject":"EveryApp test","text":"It works."}'`
    sends without the Gateway. It arriving means the provider is done and a
    failed invite is the Gateway's side (its settings; the logs below). A
    refusal is the REST API's numeric code (`10203` sending disabled,

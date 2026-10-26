@@ -137,14 +137,14 @@ secret exists.
    (Microsoft Graph's app id; the delegated ids of `User.Read`, `Mail.Read`, `offline_access`, each verified in
    Graph's permissions reference; `Calendars.Read`, when an app needs it, is `465a38f9-76ea-45b9-9f34-9e8b0d4b0b42=Scope`,
    admin consent not required, personal accounts supported). Ignore its hint to run `permission grant`: people consent at connect time.
-5. **Person:** **Certificates & secrets → Client secrets → New client secret**. **Description:** `Every App
+5. **Person:** **Certificates & secrets → Client secrets → New client secret**. **Description:** `EveryApp
    Gateway`; **Expires:** 24 months is the maximum (Microsoft recommends less; put the date in the calendar).
    Click **Add**. The row's **Value** column is the secret, shown only while they stay on the page. Then, in a
    second terminal in the `every-app` folder: `pnpm everyapp secret set MICROSOFT_365_CLIENT_SECRET` (the hidden
    prompt; paste; nothing is echoed). README's first way: the person types it. Wait until they see `Set MICROSOFT_365_CLIENT_SECRET on the Gateway`
    and `Live now on <gateway host>. No deploy needed.`
    *Alternative, with `az`, README's second way (a command produced it; never run the `az` part on its own):*
-   `az ad app credential reset --id <client id> --years 2 --display-name "Every App Gateway" --append --query password -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_SECRET --json`
+   `az ad app credential reset --id <client id> --years 2 --display-name "EveryApp Gateway" --append --query password -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_SECRET --json`
    `--append` keeps existing secrets (without it the command deletes them all first). Look for `"type": "done"`.
 6. **You:** Set the client id (not a secret): `echo "<client id>" | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`,
    or from `az`: `az ad app list --display-name "Open CRM" --query "[0].appId" -o tsv | pnpm everyapp secret set MICROSOFT_365_CLIENT_ID --json`.

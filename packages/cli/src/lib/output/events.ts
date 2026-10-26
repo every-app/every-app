@@ -450,7 +450,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (data["gateway"] === true) return null;
       const email = text(data["email"]);
       return {
-        line: `Setting up Every App in ${text(data["name"]) ?? text(data["id"])}${email ? chalk.dim(` (${email})`) : ""}`,
+        line: `Setting up EveryApp in ${text(data["name"]) ?? text(data["id"])}${email ? chalk.dim(` (${email})`) : ""}`,
       };
     },
     "setup.gateway": (event) => {

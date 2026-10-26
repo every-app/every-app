@@ -1,5 +1,5 @@
 ===== root
-Deploy and run Every App apps on your own Cloudflare account.
+Deploy and run EveryApp apps on your own Cloudflare account.
 
 USAGE
   everyapp <command> [flags]

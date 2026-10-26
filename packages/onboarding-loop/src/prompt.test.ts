@@ -51,7 +51,7 @@ describe("the setup prompt", () => {
   it("starts with the one entry point and the clone step", () => {
     expect(
       prompt.startsWith(
-        "Set up Every App for me. Docs: https://everyapp.com/llms.txt",
+        "Set up EveryApp for me. Docs: https://everyapp.com/llms.txt",
       ),
     ).toBe(true);
     expect(prompt).toContain(

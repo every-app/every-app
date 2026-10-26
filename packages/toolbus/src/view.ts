@@ -138,8 +138,8 @@ export function gatewayInstructionsHead(
       : "then everyapp_call_read with a tool's name and arguments (this connection is read only)";
   const header =
     listing === "compact"
-      ? `Tools for ${organization} on Every App. This connection lists its ${reachableToolCount(principal, apps)} tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, ${run}. Call everyapp_list_apps to see what each app is for.`
-      : `Tools for ${organization} on Every App. Each tool is named \`<app>_<tool>\`; call everyapp_list_apps to see what each app is for. everyapp_search_tools finds a tool by words.`;
+      ? `Tools for ${organization} on EveryApp. This connection lists its ${reachableToolCount(principal, apps)} tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, ${run}. Call everyapp_list_apps to see what each app is for.`
+      : `Tools for ${organization} on EveryApp. Each tool is named \`<app>_<tool>\`; call everyapp_list_apps to see what each app is for. everyapp_search_tools finds a tool by words.`;
   return [
     header,
     sorted.length
@@ -238,8 +238,8 @@ export function gatewaySurfaceView(
     serverInfo: {
       name: "every-app",
       title: principal.organizationName
-        ? `${principal.organizationName} · Every App`
-        : "Every App",
+        ? `${principal.organizationName} · EveryApp`
+        : "EveryApp",
     },
     instructions: gatewayInstructions(
       principal,

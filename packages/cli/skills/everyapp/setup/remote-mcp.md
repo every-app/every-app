@@ -34,7 +34,7 @@ supported yet"). If an OAuth server also takes an API key, add it with
 
 ## Costs and plans
 
-Every App charges nothing for an MCP app. The server's provider charges what
+EveryApp charges nothing for an MCP app. The server's provider charges what
 it charges for its calls (its own plan and limits apply; read them on its
 site). Every forwarded call is counted in the organization's usage as
 `mcp:<id>`, and an owner or admin can cap an app's calls per month in Admin →

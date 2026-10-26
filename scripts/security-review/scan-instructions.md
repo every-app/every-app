@@ -1,4 +1,4 @@
-**Every App trust boundaries** (docs/threat-model.md is the model; it names each boundary's invariants and the code that holds them):
+**EveryApp trust boundaries** (docs/threat-model.md is the model; it names each boundary's invariants and the code that holds them):
 
 - An app route, server function or tool that trusts an inbound `x-everyapp-*`, `cf-access-*`, `Cookie` or `Authorization` header before the perimeter (`packages/perimeter/src/gateway.ts`, `headers.ts`) stripped it, or code that forwards one of them to an app
 - Identity read without the SDK's pinned verification (`packages/sdk/src/internal/identity.ts`): an audience other than the Worker's name, the dev key or dev issuer accepted outside `EVERYAPP_DEV`, an MCP call identity minted with `*` scopes or reused across calls

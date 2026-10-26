@@ -25,7 +25,7 @@ So even if an app has a bug, only people you've given access to can reach it.
 
 Each app has its own database, so one app can't read or change another's data. Deploys save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change)
 
-Nothing is sent to us. The CLI and the Gateway have no telemetry and never check in with Every App. They talk to Cloudflare, to GitHub when you install a published app, and to the services you connect: the AI provider you add a key for, your email sender, the integrations you turn on. Your members' email addresses, your keys and your apps' data stay in your account; we can't see them. This website counts page views with analytics we host ourselves: [Privacy](/privacy).
+Nothing is sent to us. The CLI and the Gateway have no telemetry and never check in with EveryApp. They talk to Cloudflare, to GitHub when you install a published app, and to the services you connect: the AI provider you add a key for, your email sender, the integrations you turn on. Your members' email addresses, your keys and your apps' data stay in your account; we can't see them. This website counts page views with analytics we host ourselves: [Privacy](/privacy).
 
 ## Who can change things
 
@@ -35,7 +35,7 @@ To let someone else deploy, add them to your Cloudflare account. To stop them, r
 
 ## How safe is it
 
-Every App is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`pnpm everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
+EveryApp is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`pnpm everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
 
 ## Limits today
 

@@ -77,7 +77,7 @@ export function patternsPage(): string {
   return [
     frontmatter(
       "Example patterns",
-      "How the apps on Every App do each thing and the file to copy from, in the starter or one of the four open apps: identity, public routes, every manifest field, email, AI, agents and Workflows, tools, needs setup, cookies and the bundle, tests, dev vs production, release and install.",
+      "How the apps on EveryApp do each thing and the file to copy from, in the starter or one of the four open apps: identity, public routes, every manifest field, email, AI, agents and Workflows, tools, needs setup, cookies and the bundle, tests, dev vs production, release and install.",
     ),
     "",
     generatedNote(BUILD_SKILL.patterns),

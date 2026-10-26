@@ -37,7 +37,7 @@ export const createCommand = buildCommand({
     brief: "Create a new app from the starter template",
     fullDescription: [
       "A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:",
-      "outside your Every App checkout it is its own git repository, linked to the checkout;",
+      "outside your EveryApp checkout it is its own git repository, linked to the checkout;",
       "inside it only apps/<name> is allowed. A bare name goes in apps/<name> when run from",
       "the checkout, in ./<name> anywhere else. Dependencies are installed and the local",
       "database is ready, so `pnpm dev` works straight away. Then: cd into it and",

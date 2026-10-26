@@ -80,8 +80,8 @@ export default defineConfig(({ isPreview }) => ({
         enabled: false,
       },
       manifest: {
-        name: "Every App",
-        short_name: "Every App",
+        name: "EveryApp",
+        short_name: "EveryApp",
         description: "Embedded apps platform",
         theme_color: "#ffffff",
         background_color: "#ffffff",

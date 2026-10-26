@@ -15,7 +15,7 @@ vi.mock("cloudflare:workers", () => ({
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     EMAIL: { send },
     EMAIL_FROM: "noreply@gateway.example.com",
-    EMAIL_FROM_NAME: "Every App",
+    EMAIL_FROM_NAME: "EveryApp",
   },
 }));
 vi.mock("@/db", async () => {

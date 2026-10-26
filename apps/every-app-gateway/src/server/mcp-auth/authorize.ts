@@ -112,7 +112,7 @@ export async function handleAuthorize(
     return errorPage(
       400,
       CANT_CONNECT,
-      "This app didn't use PKCE (S256), which Every App requires.",
+      "This app didn't use PKCE (S256), which EveryApp requires.",
     );
   }
   if (onPlatformDomain(authRequest.redirectUri, mcpAuth.issuer, env)) {

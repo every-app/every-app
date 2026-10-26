@@ -401,7 +401,7 @@ describe("the event bus (SQLite)", () => {
         lastStatusCode: 200,
         event: expect.objectContaining({
           type: "ping",
-          summary: "Test event from Every App",
+          summary: "Test event from EveryApp",
         }),
       });
       expect(await deliveriesOf(other.subscription.id)).toHaveLength(0);
@@ -1557,7 +1557,7 @@ describe("the event bus (SQLite)", () => {
       expect(samples["provider.connection_expired"]!.dedupeKey).toBe(
         "provider.connection_expired:conn_1",
       );
-      expect(line("ping")).toBe("Test event from Every App");
+      expect(line("ping")).toBe("Test event from EveryApp");
       expect(line("member.invitation_cancelled")).toBe(
         "Ada cancelled the invitation for jo@acme.example",
       );

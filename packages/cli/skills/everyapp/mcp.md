@@ -295,7 +295,7 @@ deactivating a person ends all of theirs; tokens are revoked on Admin, Tokens.
 
 Other servers worth having beside the Gateway's (Cloudflare's API server for
 the owner, read before write; nothing else): [setup/gateway.md](setup/gateway.md),
-"Optional: MCP servers worth having beside Every App". Offer one in a line;
+"Optional: MCP servers worth having beside EveryApp". Offer one in a line;
 never add it unasked.
 
 ## Troubleshooting

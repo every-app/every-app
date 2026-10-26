@@ -69,9 +69,9 @@ Set these sender values on the gateway Worker (`pnpm everyapp secret set
 EMAIL_FROM EMAIL_FROM_NAME`; a Gateway setting's name says where it goes):
 
 - `EMAIL_FROM`: the sender address, for example `noreply@example.com`
-- `EMAIL_FROM_NAME`: the display name, for example `Every App`
+- `EMAIL_FROM_NAME`: the display name, for example `EveryApp`
 
-The previous combined format, `Every App <noreply@example.com>`, is also
+The previous combined format, `EveryApp <noreply@example.com>`, is also
 accepted in `EMAIL_FROM`; the gateway then sends without `EMAIL_FROM_NAME`,
 though the setup dialog and `secret list`, which read names rather than
 values, keep asking for it.

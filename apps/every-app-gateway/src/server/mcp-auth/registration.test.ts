@@ -145,7 +145,7 @@ describe("normalizeClientRegistrationRequest", () => {
     expect(fits).toBeInstanceOf(Request);
   });
 
-  it("keeps only the metadata Every App uses", async () => {
+  it("keeps only the metadata EveryApp uses", async () => {
     await expect(
       forwarded(
         registration({

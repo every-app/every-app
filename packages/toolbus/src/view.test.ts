@@ -12,7 +12,7 @@ import {
 } from "./view";
 
 const FULL_HEADER =
-  "Tools for Acme on Every App. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for. everyapp_search_tools finds a tool by words.";
+  "Tools for Acme on EveryApp. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for. everyapp_search_tools finds a tool by words.";
 
 /** `count` read tools, `schemaBytes` of description inside each schema. */
 function manyTools(count: number, schemaBytes = 0): ToolBusTool[] {
@@ -42,7 +42,7 @@ describe("gatewaySurfaceView", () => {
     expect(view).toMatchObject({
       surface: "gateway",
       listing: "full",
-      serverInfo: { name: "every-app", title: "Acme · Every App" },
+      serverInfo: { name: "every-app", title: "Acme · EveryApp" },
       requestId: "ray_1",
     });
     expect(view.allowedOrigins).toBeUndefined();
@@ -174,7 +174,7 @@ describe("gatewaySurfaceView", () => {
   it("keeps the header, app list and not-available lines inside Claude Code's read for the launch apps", () => {
     // The launch set, each with the most guidance the catalog keeps (2048),
     // and the organization's real name.
-    const principal = { ...PRINCIPAL, organizationName: "Every App Team" };
+    const principal = { ...PRINCIPAL, organizationName: "EveryApp Team" };
     const launch = [
       { appId: "agentic-inbox", name: "agentic-inbox" },
       { appId: "analytics", name: "OpenAnalytics" },
@@ -375,7 +375,7 @@ describe("gatewaySurfaceView", () => {
       // Two visible tools per app (the destructive one is hidden).
       expect(view.instructions).toBe(
         [
-          "Tools for Acme on Every App. This connection lists its 4 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read or everyapp_call_write with a tool's name and arguments. Call everyapp_list_apps to see what each app is for.",
+          "Tools for Acme on EveryApp. This connection lists its 4 tools compactly: call everyapp_search_tools (words, an app id, or both) to find tools and their input schemas, then everyapp_call_read or everyapp_call_write with a tool's name and arguments. Call everyapp_list_apps to see what each app is for.",
           "Apps: chef (Chef), todo (Todos).",
           "crm (CRM) is not available: needs setup.",
           "",

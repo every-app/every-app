@@ -189,7 +189,7 @@ function warnIfZoneApex(domain: string, zone: Zone, out: EventSink): void {
   out.emit({
     type: "warning",
     code: "GATEWAY_AT_ZONE_APEX",
-    message: `The Gateway's sign-in cookie will cover every subdomain of ${zone.name}\nApps take names directly below it too. Unless the domain is only for Every App,\ninstall on a subdomain instead, e.g. --domain apps.${zone.name}`,
+    message: `The Gateway's sign-in cookie will cover every subdomain of ${zone.name}\nApps take names directly below it too. Unless the domain is only for EveryApp,\ninstall on a subdomain instead, e.g. --domain apps.${zone.name}`,
     data: { suggestedDomain: `apps.${zone.name}` },
   });
 }

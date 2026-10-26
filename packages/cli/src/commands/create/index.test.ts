@@ -441,14 +441,14 @@ describe("everyapp create", () => {
     await expect(run("./my-app")).rejects.toMatchObject({
       code: "APP_DIR_IN_CHECKOUT",
       message:
-        "./my-app is inside your Every App checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.",
+        "./my-app is inside your EveryApp checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.",
       fix: "use apps/my-app (inside the checkout) or ../my-app (beside it)",
       rerun: undefined,
     });
     // From a directory of the checkout, ../my-app lands in the checkout: said from there.
     await expect(run("../my-app", path.join(root, "packages", "cli"))).rejects.toMatchObject({
       code: "APP_DIR_IN_CHECKOUT",
-      message: expect.stringMatching(/^\.\.\/my-app is inside your Every App checkout/),
+      message: expect.stringMatching(/^\.\.\/my-app is inside your EveryApp checkout/),
       fix: "use ../../apps/my-app (inside the checkout) or ../../../my-app (beside it)",
     });
     await expect(run(path.join(root, "tools", "my-app"), tmp())).rejects.toMatchObject({

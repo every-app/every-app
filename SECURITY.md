@@ -1,6 +1,6 @@
 # Security
 
-Every App is alpha and open source. If you find a hole, we'd rather know.
+EveryApp is alpha and open source. If you find a hole, we'd rather know.
 
 - Report it privately, not in a public issue: open a vulnerability report on
   the repository (**Security → Report a vulnerability**), so it isn't public

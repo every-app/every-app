@@ -1,6 +1,6 @@
 # everyapp
 
-The CLI for [Every App](https://everyapp.com): deploy and run private web apps on your own Cloudflare account.
+The CLI for [EveryApp](https://everyapp.com): deploy and run private web apps on your own Cloudflare account.
 
 Nothing is published while we work from the repository (`.github/RELEASE.md`), so the CLI runs from a checkout of it: `pnpm install` once at the root, then `pnpm everyapp <command>` anywhere in the repository (never `npx everyapp`, which is npm's old 0.2 CLI). It builds itself the first time and again whenever its source, or the SDK, perimeter or toolbus it bundles, changed (`bin/everyapp.js`). Requires Node.js 22.18 or newer.
 

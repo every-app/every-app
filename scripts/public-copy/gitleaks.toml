@@ -4,7 +4,7 @@
 # account-owned `cfat_` kind and the 40-character user kind), Anthropic,
 # OpenAI and OpenRouter keys, the Gateway's Better Auth secret and identity
 # key, setup links. D1 and account ids are not secrets and are not matched.
-title = "Every App public copy"
+title = "EveryApp public copy"
 
 [extend]
 useDefault = true

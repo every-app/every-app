@@ -15,7 +15,7 @@ export const Route = createRootRoute({
         charSet: "utf-8",
       },
       // Pages set their own; this is what the 404 page shows.
-      { title: "Every App" },
+      { title: "EveryApp" },
       {
         name: "viewport",
         content: "width=device-width, initial-scale=1",

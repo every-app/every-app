@@ -1,11 +1,11 @@
 ---
 name: build-every-app
-description: Build or change an app on Every App: create one, add a feature, a page, a table, an AI tool, a capability, a public route or a secret, the way the apps already on Every App do it. Use before writing any code for an Every App app, for "build me an app", "add X to the app" or "make the app do Y".
+description: Build or change an app on EveryApp: create one, add a feature, a page, a table, an AI tool, a capability, a public route or a secret, the way the apps already on EveryApp do it. Use before writing any code for an EveryApp app, for "build me an app", "add X to the app" or "make the app do Y".
 ---
 
-# Build an app on Every App
+# Build an app on EveryApp
 
-An Every App app is a private web app on the person's own Cloudflare account,
+An EveryApp app is a private web app on the person's own Cloudflare account,
 behind their Gateway. The Gateway signs people in, holds every key, serves the
 app's tools to AI clients, and gives the app nothing it doesn't declare in
 `everyapp.config.ts`. You build the app; the plumbing is done.
@@ -15,7 +15,7 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
 1. `patterns.md`, beside this file (in an app,
    `.agents/skills/build-every-app/patterns.md`; in the checkout,
    `packages/cli/skills/build-every-app/patterns.md`; on the web,
-   https://everyapp.com/docs/agent/patterns): how the apps on Every App do
+   https://everyapp.com/docs/agent/patterns): how the apps on EveryApp do
    each thing, and the file to copy from, in the starter or in one of four
    open apps (OpenCRM, OpenAnalytics, OpenSEO, Agentic Inbox), at
    `https://github.com/every-app/<name>`. Read the sections for the job
@@ -27,7 +27,7 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
    `--json`, setup, secrets, what only a person can do. Read it before running
    `pnpm everyapp`; never guess a flag.
 3. https://everyapp.com/llms.txt lists every agent page with a one-line
-   summary; a page is Markdown at its URL plus `.md`. In an Every App checkout
+   summary; a page is Markdown at its URL plus `.md`. In an EveryApp checkout
    they are `landing-page/content/agent/*.md`. Read the page for the job:
    manifest (`everyapp.config.ts`: resources, public, providers,
    capabilities, secrets, migrations), identity (what the Worker receives,
@@ -146,9 +146,9 @@ becomes something else, not on the first feature.
     `EVERYAPP_IDENTITY_ISSUER`, or the dev host under `everyapp dev`; the four
     apps read `GATEWAY_URL` first, then the issuer); keep it. When the app
     gets a sidebar, the convention the identity page states is the first row:
-    muted, "‹ Every App", aria-label "Back to Every App", above the app's own
+    muted, "‹ EveryApp", aria-label "Back to EveryApp", above the app's own
     name. OpenCRM and OpenSEO keep theirs in the sidebar footer today,
-    labelled "Back to Every App".
+    labelled "Back to EveryApp".
 14. After editing `everyapp.config.ts`, restart `pnpm dev`: the local Gateway
     reads it when it starts (the tools catalog is the exception). Every
     manifest change reaches the real Gateway on the next deploy.

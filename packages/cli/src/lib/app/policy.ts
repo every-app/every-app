@@ -344,7 +344,7 @@ function bindingProblems(
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
-        `${name} is a ${String(binding.type)} binding, which Every App apps can't use`,
+        `${name} is a ${String(binding.type)} binding, which EveryApp apps can't use`,
       );
       continue;
     }
@@ -530,13 +530,13 @@ function exportProblems(
     }
     if (entry.type !== "durable-object") {
       problems.push(
-        `export ${name} is a ${String(entry.type)}, which Every App apps can't declare`,
+        `export ${name} is a ${String(entry.type)}, which EveryApp apps can't declare`,
       );
       continue;
     }
     if (entry["container"] !== undefined) {
       problems.push(
-        `Durable Object class ${name} is backed by a container, which Every App apps can't run`,
+        `Durable Object class ${name} is backed by a container, which EveryApp apps can't run`,
       );
     }
     switch (entry.state ?? "created") {
@@ -632,7 +632,7 @@ export async function prepareAppBuildOutput({
   if (problems.length > 0) {
     throw new EveryAppError(
       "APP_POLICY",
-      `The built Worker can't be deployed as an Every App app:\n  - ${problems.join("\n  - ")}\nBuild it from everyAppWorker() in cloudflare.config.ts.`,
+      `The built Worker can't be deployed as an EveryApp app:\n  - ${problems.join("\n  - ")}\nBuild it from everyAppWorker() in cloudflare.config.ts.`,
     );
   }
 

@@ -219,7 +219,7 @@ async function verifyPinnedJwt(
   }
   if (expectedTyp !== "public" && !options.issuer) {
     throw new IdentityError(
-      `${ISSUER_ENV} not configured — deploy with the Every App CLI or provide an explicit issuer.`,
+      `${ISSUER_ENV} not configured — deploy with the EveryApp CLI or provide an explicit issuer.`,
     );
   }
 

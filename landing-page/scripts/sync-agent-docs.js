@@ -216,7 +216,7 @@ for (const doc of present) {
   )
     .join("\n")
     .replace(/^\n+/, "");
-  const note = `> Mirrored from [\`${doc.from}\`](${GITHUB}/${doc.from}) in the Every App repository, where it is edited.${doc.note ? `\n>\n> **Read with care:** ${doc.note}` : ""}\n\n`;
+  const note = `> Mirrored from [\`${doc.from}\`](${GITHUB}/${doc.from}) in the EveryApp repository, where it is edited.${doc.note ? `\n>\n> **Read with care:** ${doc.note}` : ""}\n\n`;
   const content = `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(doc.description)}\n---\n\n${note}${escapeTags(rewriteLinks(body, doc.from))}`;
   const target = join(outDir, `${doc.to}.md`);
   mkdirSync(dirname(target), { recursive: true });

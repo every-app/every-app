@@ -1,11 +1,11 @@
 ---
 name: everyapp
-description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (Every App). Use before running any everyapp command, to deploy an app, set a secret, query its database, check the Gateway, or answer any "how do I" question about Every App.
+description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (EveryApp). Use before running any everyapp command, to deploy an app, set a secret, query its database, check the Gateway, or answer any "how do I" question about EveryApp.
 ---
 
 everyapp: self-hosted platform for private web apps on Cloudflare. While
 publishing is paused the command is `pnpm everyapp` (never `npx everyapp`),
-run from the Every App checkout or from an app's directory (its package.json
+run from the EveryApp checkout or from an app's directory (its package.json
 links the CLI).
 
 Docs: two worlds. The user docs (https://everyapp.com/docs) are short and
@@ -61,8 +61,8 @@ scope sets (google-workspace, microsoft-365, slack) is listed with
 scopes: [...] and held to them; after a schema change run pnpm run
 db:generate; a value only dev needs goes in .dev.vars, never in git (dev
 page). The way back: the first row of the app's sidebar (or of its page
-header when it has no sidebar) is a muted "‹ Every App" link to
-GATEWAY_URL (aria-label "Back to Every App"), above the app's own name,
+header when it has no sidebar) is a muted "‹ EveryApp" link to
+GATEWAY_URL (aria-label "Back to EveryApp"), above the app's own name,
 so every app on the Gateway reads the same; put nothing else about the
 Gateway in the footer.
 
@@ -258,7 +258,7 @@ Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.
          How to write, connect and debug them: mcp.md beside this file.
 Wipe:    pnpm everyapp teardown --account-id <id> --dry-run --json   deletes
-         EVERYTHING Every App made in one Cloudflare account (the Gateway too):
+         EVERYTHING EveryApp made in one Cloudflare account (the Gateway too):
          only on a dedicated test account the user names, never one they use.
          Always --dry-run --json first and show the user data.plan. It needs
          EVERYAPP_TEST_ACCOUNTS=<id> and CLOUDFLARE_API_TOKEN scoped to that
@@ -280,7 +280,7 @@ Security: the Gateway signs people in and passes identity to the app in a
          against the list there. No CI job and no API key: the review runs
          where you run. Fix what it finds, or say in the pull request why a
          finding is a false positive. What the Gateway promises and what an
-         app must do itself: docs/threat-model.md in the Every App checkout
+         app must do itself: docs/threat-model.md in the EveryApp checkout
          (https://everyapp.com/docs/agent/repo/threat-model).
 
 Only a person can: approve the Cloudflare login, open the owner link, pick

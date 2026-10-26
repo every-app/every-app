@@ -1,6 +1,6 @@
 # Test Cloudflare accounts for the onboarding loop
 
-The onboarding loop (docs/design/2026-10-onboarding-loop.md) installs Every App from nothing, over and over, and wipes everything it made between runs. It needs Cloudflare accounts that hold nothing else. This runbook creates them.
+The onboarding loop (docs/design/2026-10-onboarding-loop.md) installs EveryApp from nothing, over and over, and wipes everything it made between runs. It needs Cloudflare accounts that hold nothing else. This runbook creates them.
 
 Two rules, decided 2026-10-23:
 
@@ -150,7 +150,7 @@ Seen on the first live wipe (2026-10-24, a test account with a Gateway and one a
 
 ## What teardown leaves in place
 
-The zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Trust team (Cloudflare has no API to delete one; its applications and policy are removed, its identity providers stay) and the user itself. Anything whose name doesn't start with `every-` and that no app recorded in the Gateway's database is never touched. In DNS, only A, AAAA and CNAME records at the published names go (what a Workers Custom Domain creates; `everyapp` writes no other record): a zone's MX, TXT, CAA and the rest at those names are someone else's and are listed under `kept`, as are Email Routing's own records while routing stays on for a rule or catch-all that isn't Every App's. R2 buckets created in the EU or FedRAMP jurisdiction aren't listed (cf lists the default jurisdiction alone): delete those in the dashboard. Everything else that `everyapp` created is removed.
+The zone, the Workers Paid subscription, the workers.dev subdomain, the Zero Trust team (Cloudflare has no API to delete one; its applications and policy are removed, its identity providers stay) and the user itself. Anything whose name doesn't start with `every-` and that no app recorded in the Gateway's database is never touched. In DNS, only A, AAAA and CNAME records at the published names go (what a Workers Custom Domain creates; `everyapp` writes no other record): a zone's MX, TXT, CAA and the rest at those names are someone else's and are listed under `kept`, as are Email Routing's own records while routing stays on for a rule or catch-all that isn't EveryApp's. R2 buckets created in the EU or FedRAMP jurisdiction aren't listed (cf lists the default jurisdiction alone): delete those in the dashboard. Everything else that `everyapp` created is removed.
 
 ## Live facts
 

@@ -177,7 +177,7 @@ function build(
     resourceMetadata: {
       resource,
       authorization_servers: [issuer],
-      resource_name: "Every App",
+      resource_name: "EveryApp",
     },
     // Advertised in the 401 challenge and the protected-resource metadata,
     // not enforced (the validator below takes a token with either): clients

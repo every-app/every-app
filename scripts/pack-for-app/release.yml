@@ -108,7 +108,7 @@ jobs:
           {
             echo "Built from ${GITHUB_SHA} by the Release workflow."
             echo
-            echo "Install it on your Gateway, or update it, from your Every App checkout:"
+            echo "Install it on your Gateway, or update it, from your EveryApp checkout:"
             echo
             echo '```'
             echo "pnpm everyapp install https://github.com/${GITHUB_REPOSITORY}"

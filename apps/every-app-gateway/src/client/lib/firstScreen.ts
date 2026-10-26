@@ -20,7 +20,7 @@ export const FIRST_SCREEN = {
       `${name} is open source and runs behind your Gateway, in your Cloudflare account.`,
     commandHeading: "Run this in a terminal",
     commandNote:
-      "Run it in the folder where you set up Every App. When it finishes, refresh this page. Run it again later to update.",
+      "Run it in the folder where you set up EveryApp. When it finishes, refresh this page. Run it again later to update.",
     needsHeading: "Before it opens",
     needsNote:
       "After the install, the app shows Needs setup here, with the command that sets them.",

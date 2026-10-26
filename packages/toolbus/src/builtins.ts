@@ -385,7 +385,7 @@ const BUILTINS: BuiltinTool[] = [
     name: "list_apps",
     title: "List apps",
     description:
-      "List the Every App apps this connection can use: what each is for, its URL, and how many tools it offers. Tool names are `<app>_<tool>`. An app that isn't available yet (it needs setup, or an admin hasn't turned it on) says so, with what an admin runs.",
+      "List the EveryApp apps this connection can use: what each is for, its URL, and how many tools it offers. Tool names are `<app>_<tool>`. An app that isn't available yet (it needs setup, or an admin hasn't turned it on) says so, with what an admin runs.",
     inputSchema: NO_INPUT,
     run: (view) => ({
       data: {

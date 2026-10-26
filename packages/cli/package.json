@@ -2,7 +2,7 @@
   "name": "everyapp",
   "private": true,
   "author": "",
-  "description": "Every App CLI - Deploy and manage apps.",
+  "description": "EveryApp CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
   "version": "0.3.0",

@@ -1,6 +1,6 @@
 # @every-app/sdk
 
-The embedded SDK for building apps on the Every App platform.
+The embedded SDK for building apps on the EveryApp platform.
 
 It verifies the identity the Gateway injects, defines the app's Worker and its agent tools, and reaches the Gateway's AI, email and integrations. There is no client-side export.
 

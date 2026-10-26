@@ -80,7 +80,7 @@ beforeEach(() => {
   workerEnv.RESEND_API_KEY = undefined;
   workerEnv.EMAIL_PROVIDER = undefined;
   workerEnv.EMAIL_FROM = "noreply@gateway.example.com";
-  workerEnv.EMAIL_FROM_NAME = "Every App";
+  workerEnv.EMAIL_FROM_NAME = "EveryApp";
   log = vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -230,7 +230,7 @@ describe("POST /api/integrations/email/send", () => {
     });
     expect(send).toHaveBeenCalledWith({
       to: "customer@example.net",
-      from: { email: "noreply@gateway.example.com", name: "Every App" },
+      from: { email: "noreply@gateway.example.com", name: "EveryApp" },
       replyTo: "support@mail.example.com",
       subject: MESSAGE.subject,
       text: MESSAGE.text,
@@ -770,7 +770,7 @@ describe("GET /api/integrations/email", () => {
       requested: true,
       configured: true,
       ready: true,
-      sender: { address: "noreply@gateway.example.com", name: "Every App" },
+      sender: { address: "noreply@gateway.example.com", name: "EveryApp" },
       senders: ["*@mail.example.com", "ceo@example.com"],
       provider: "cloudflare",
     });

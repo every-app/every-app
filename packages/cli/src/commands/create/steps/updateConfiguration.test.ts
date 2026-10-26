@@ -116,12 +116,12 @@ describe("updateReadme", () => {
       path.join(targetDir, "README.md"),
     );
     const before = await fs.readFile(path.join(targetDir, "README.md"), "utf-8");
-    expect(before.startsWith("# Every App\n")).toBe(true);
+    expect(before.startsWith("# EveryApp\n")).toBe(true);
 
     await updateReadme({ targetDir, appId: "my-new-app" });
 
     const readme = await fs.readFile(path.join(targetDir, "README.md"), "utf-8");
-    expect(readme).toBe(before.replace("# Every App\n", "# My New App\n"));
+    expect(readme).toBe(before.replace("# EveryApp\n", "# My New App\n"));
   });
 
   it("retitles only the first H1", async () => {

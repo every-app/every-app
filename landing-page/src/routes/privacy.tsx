@@ -8,7 +8,7 @@ export const Route = createFileRoute("/privacy")({
   head: () =>
     buildPageSeo({
       title: "Privacy",
-      titleSuffix: "Every App",
+      titleSuffix: "EveryApp",
       path: "/privacy",
       description:
         "What everyapp.com collects: self-hosted page view analytics and the email addresses people leave to hear about releases.",
@@ -53,7 +53,7 @@ function PrivacyPolicy() {
 
           <Section title="Your Gateway">
             <p>
-              Every App itself runs in your own Cloudflare account. This page is
+              EveryApp itself runs in your own Cloudflare account. This page is
               about everyapp.com only; the data your Gateway and apps hold stays
               with you.
             </p>

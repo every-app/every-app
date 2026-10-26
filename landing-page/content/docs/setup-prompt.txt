@@ -1,4 +1,4 @@
-Set up Every App for me. Docs: https://everyapp.com/llms.txt (read index.md
+Set up EveryApp for me. Docs: https://everyapp.com/llms.txt (read index.md
 and setup.md there; the everyapp skill in the repo says the same).
 
 1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
@@ -11,7 +11,7 @@ and setup.md there; the everyapp skill in the repo says the same).
 3. When it is done, create and deploy one app:
    `pnpm everyapp create hello --json`, then from apps/hello
    `pnpm everyapp deploy --json`. Tell me its URL.
-4. Then install the four Every App apps unless I say which to skip. Ask me
+4. Then install the four EveryApp apps unless I say which to skip. Ask me
    once: "I'll install OpenSEO, OpenCRM, OpenAnalytics and Agentic Inbox.
    Any you don't want?" For each one I keep, run
    `pnpm everyapp install https://github.com/every-app/<repo> --json` with

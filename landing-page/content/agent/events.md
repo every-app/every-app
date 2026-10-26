@@ -524,9 +524,9 @@ The bus's own housekeeping, from Admin → Events, `everyapp events add|remove|e
 
 ### Test
 
-| Type   | v   | Summary                     | `data`                                    |
-| ------ | --- | --------------------------- | ----------------------------------------- |
-| `ping` | 1   | "Test event from Every App" | `{ subscription: { id, name }, message }` |
+| Type   | v   | Summary                    | `data`                                    |
+| ------ | --- | -------------------------- | ----------------------------------------- |
+| `ping` | 1   | "Test event from EveryApp" | `{ subscription: { id, name }, message }` |
 
 Sent by `events test`, **Send test** or the test MCP tool, to that one subscription only, paused or not. `message` is a sentence saying the subscription works; the CLI's says it came from `everyapp events test`.
 

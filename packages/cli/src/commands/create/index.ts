@@ -104,7 +104,7 @@ export async function createApp({
     const said = (dir: string) => (target.absolute ? dir : path.relative(cwd, dir));
     throw new EveryAppError(
       "APP_DIR_IN_CHECKOUT",
-      `${shown} is inside your Every App checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.`,
+      `${shown} is inside your EveryApp checkout but not in its apps/ folder\nAn app inside the checkout goes in apps/<name>; one anywhere else is its own git repository.`,
       {
         fix: `use ${said(path.join(root, "apps", appId))} (inside the checkout) or ${said(path.join(path.dirname(root), appId))} (beside it)`,
       },

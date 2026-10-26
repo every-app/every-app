@@ -124,7 +124,7 @@ async function emitThroughGateway(
     throw new GatewayRefusalError({
       status: response.status,
       code: "event_emit_failed",
-      message: `The Every App gateway answered ${response.status} to the event.`,
+      message: `The EveryApp gateway answered ${response.status} to the event.`,
     });
   }
   return (await response.json()) as EmitEventResult;

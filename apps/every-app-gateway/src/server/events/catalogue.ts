@@ -1090,7 +1090,7 @@ export const catalogue = {
       },
       message:
         input.message ??
-        "Test event from Every App. Your subscription receives events.",
+        "Test event from EveryApp. Your subscription receives events.",
     });
   },
 } as const;
@@ -1399,7 +1399,7 @@ export function summarize(
       return `The default model provider is now ${name(now)}${was === null && now === null ? "" : ` (was ${name(was)})`}`;
     }
     case "ping":
-      return "Test event from Every App";
+      return "Test event from EveryApp";
     default:
       if (isAppOwnEventType(type)) {
         const rest = type.slice(APP_EVENT_PREFIX.length);

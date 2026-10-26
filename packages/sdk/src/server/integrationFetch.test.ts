@@ -476,7 +476,7 @@ describe("the email capability", () => {
       requested: true,
       configured: true,
       ready: true,
-      sender: { address: "noreply@example.com", name: "Every App" },
+      sender: { address: "noreply@example.com", name: "EveryApp" },
       senders: ["*@mail.example.com"],
       provider: "resend",
     };
@@ -534,14 +534,14 @@ describe("the email capability", () => {
     });
     await expect(
       integrationStatus({
-        env: { ...dev, EMAIL_FROM: "Every App <noreply@example.com>" },
+        env: { ...dev, EMAIL_FROM: "EveryApp <noreply@example.com>" },
         provider: "email",
       }),
     ).resolves.toEqual({
       requested: true,
       configured: true,
       ready: true,
-      sender: { address: "noreply@example.com", name: "Every App" },
+      sender: { address: "noreply@example.com", name: "EveryApp" },
       senders: ["*@mail.example.com"],
       // Printed, not sent: no provider is set up.
       provider: null,
@@ -554,7 +554,7 @@ describe("the email capability", () => {
         await integrationStatus({
           env: {
             EVERYAPP_DEV: "1",
-            EMAIL_FROM: "Every App <noreply@example.com>",
+            EMAIL_FROM: "EveryApp <noreply@example.com>",
             ...settings,
           },
           provider: "email",

@@ -239,7 +239,7 @@ function planItems(plan: TeardownPlan): Array<{ label: string; items: string[] }
 export function planLines(plan: TeardownPlan): string[] {
   const facts = planItems(plan).map(({ label, items }) => ({ label, value: items.join(", ") }));
   return [
-    ...(facts.length > 0 ? formatFacts(facts) : [chalk.dim("Nothing of Every App's to delete.")]),
+    ...(facts.length > 0 ? formatFacts(facts) : [chalk.dim("Nothing of EveryApp's to delete.")]),
     ...(plan.kept.length > 0 ? ["", chalk.dim(`Kept: ${plan.kept.join("; ")}.`)] : []),
   ];
 }

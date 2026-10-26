@@ -299,7 +299,7 @@ export function confirmFromTty(accountId: string): Promise<string> {
     }
     fs.writeSync(
       fd,
-      `Type ${accountId} to delete everything Every App made in it: `,
+      `Type ${accountId} to delete everything EveryApp made in it: `,
     );
     const buffer = Buffer.alloc(256);
     const read = fs.readSync(fd, buffer, 0, buffer.length, null);

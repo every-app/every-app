@@ -80,7 +80,7 @@ The client secret expires (24 months at most; Microsoft recommends under
 1. **You:** give the person `data.callbackUrl`.
 2. **Person:** https://entra.microsoft.com → **Entra ID** → **App
    registrations** → **New registration**. Name (what people see, for
-   example `Every App`). **Supported account types**:
+   example `EveryApp`). **Supported account types**:
    **Single tenant only - <your tenant>** (recommended), or **Any Entra ID
    Tenant + Personal Microsoft accounts** for anyone. **Register**. The **Overview** page
    shows **Application (client) ID** and **Directory (tenant) ID**: both

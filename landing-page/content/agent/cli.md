@@ -5,7 +5,7 @@ description: "Every everyapp command with its arguments, flags, defaults and hel
 
 <!-- Generated from packages/cli/src/app.ts and the command definitions by packages/cli/src/docs/cliReference.ts; the test in packages/cli/src/docs/agentDocs.test.ts fails when this page is stale. Regenerate with `pnpm -C packages/cli docs:update`. -->
 
-The command is `everyapp`, run as `pnpm everyapp` from the Every App checkout (publishing to npm is paused; never `npx everyapp`). Every command takes `--help`; an agent adds `--json` and reads the event stream described on [/docs/agent/json](/docs/agent/json). What each error code means is on [/docs/agent/errors](/docs/agent/errors).
+The command is `everyapp`, run as `pnpm everyapp` from the EveryApp checkout (publishing to npm is paused; never `npx everyapp`). Every command takes `--help`; an agent adds `--json` and reads the event stream described on [/docs/agent/json](/docs/agent/json). What each error code means is on [/docs/agent/errors](/docs/agent/errors).
 
 ## Exit codes
 
@@ -31,7 +31,7 @@ The command is `everyapp`, run as `pnpm everyapp` from the Every App checkout (p
 ## `everyapp --help`
 
 ```text
-Deploy and run Every App apps on your own Cloudflare account.
+Deploy and run EveryApp apps on your own Cloudflare account.
 
 USAGE
   pnpm everyapp <command> [flags]
@@ -59,7 +59,7 @@ RUN A GATEWAY
   mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
   email      Manage the addresses an app sends as and receives at
   events     Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
-  teardown   Delete everything Every App created in a dedicated test Cloudflare account
+  teardown   Delete everything EveryApp created in a dedicated test Cloudflare account
 
 MANAGE THE WORKSPACE
   workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections
@@ -297,7 +297,7 @@ USAGE
   pnpm everyapp create --help
 
 A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:
-outside your Every App checkout it is its own git repository, linked to the checkout;
+outside your EveryApp checkout it is its own git repository, linked to the checkout;
 inside it only apps/<name> is allowed. A bare name goes in apps/<name> when run from
 the checkout, in ./<name> anywhere else. Dependencies are installed and the local
 database is ready, so `pnpm dev` works straight away. Then: cd into it and
@@ -600,7 +600,7 @@ ARGUMENTS
 
 ### `everyapp teardown`
 
-Delete everything Every App created in a dedicated test Cloudflare account.
+Delete everything EveryApp created in a dedicated test Cloudflare account.
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1044,7 +1044,7 @@ USAGE
 
 Removes CLOUDFLARE_ACCESS_AUD, CLOUDFLARE_ACCESS_APPS_AUD and CLOUDFLARE_ACCESS_TEAM_DOMAIN
 from the Gateway in one change, so passwords sign people in again at once, then deletes the
-two Access applications (one that also covers something else only loses Every App's hosts).
+two Access applications (one that also covers something else only loses EveryApp's hosts).
 The Zero Trust team, its identity providers and the allow policy stay: other applications may
 use them. Asks first.
 

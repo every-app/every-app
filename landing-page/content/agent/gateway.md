@@ -122,7 +122,7 @@ Where each signal is read: `pnpm everyapp status --json` (`data.apps[]` with `st
 
 ## Other MCP servers to recommend
 
-A server the whole team should reach goes on the Gateway as an MCP app (`pnpm everyapp mcp add <url>`; the Gateway holds its credential), never into each person's client. For the client itself two are worth adding, and nothing else. The Gateway's own connector first: `https://<gateway>/mcp`, every app the caller can reach plus the `everyapp_` built-ins, behind the Gateway's OAuth and consent ([Connecting clients](/docs/agent/mcp#connecting-clients)); every member should have it. Cloudflare's, below, is for the owner or operator, the person whose Cloudflare login ran `everyapp setup`. The rule for both, decided for the launch (`TODO.md`, "Agent-forward layer (2026-10-24)"): `everyapp setup` and `everyapp create` install none and print nothing about them; an agent names one in a single line when the person's task needs it and waits for a yes; it never writes a client config unasked, and never one the repository shares (`.mcp.json` from Claude Code's `--scope project`, `.cursor/mcp.json`, `.codex/config.toml`). The same rule, with the add and remove lines per client, is the setup skill's section "Optional: MCP servers worth having beside Every App" (`packages/cli/skills/everyapp/setup/gateway.md`); the person's page is [/docs/connect-ai](/docs/connect-ai#also-worth-connecting).
+A server the whole team should reach goes on the Gateway as an MCP app (`pnpm everyapp mcp add <url>`; the Gateway holds its credential), never into each person's client. For the client itself two are worth adding, and nothing else. The Gateway's own connector first: `https://<gateway>/mcp`, every app the caller can reach plus the `everyapp_` built-ins, behind the Gateway's OAuth and consent ([Connecting clients](/docs/agent/mcp#connecting-clients)); every member should have it. Cloudflare's, below, is for the owner or operator, the person whose Cloudflare login ran `everyapp setup`. The rule for both, decided for the launch (`TODO.md`, "Agent-forward layer (2026-10-24)"): `everyapp setup` and `everyapp create` install none and print nothing about them; an agent names one in a single line when the person's task needs it and waits for a yes; it never writes a client config unasked, and never one the repository shares (`.mcp.json` from Claude Code's `--scope project`, `.cursor/mcp.json`, `.codex/config.toml`). The same rule, with the add and remove lines per client, is the setup skill's section "Optional: MCP servers worth having beside EveryApp" (`packages/cli/skills/everyapp/setup/gateway.md`); the person's page is [/docs/connect-ai](/docs/connect-ai#also-worth-connecting).
 
 ### Cloudflare's MCP server
 
@@ -136,7 +136,7 @@ Nothing to add. `pnpm everyapp install <GitHub URL>` fetches `releases/latest/do
 
 ### Not recommended
 
-Cloudflare's separate docs server `https://docs.mcp.cloudflare.com/mcp` (the API server's `docs` tool is the same search) and its product servers. A docs MCP for Every App: none; the agent docs are Markdown at `https://everyapp.com/docs/agent/<page>.md` and `/llms.txt`, fetched without MCP.
+Cloudflare's separate docs server `https://docs.mcp.cloudflare.com/mcp` (the API server's `docs` tool is the same search) and its product servers. A docs MCP for EveryApp: none; the agent docs are Markdown at `https://everyapp.com/docs/agent/<page>.md` and `/llms.txt`, fetched without MCP.
 
 ## Sources
 

@@ -24,7 +24,7 @@ Using Claude Code, Codex or Cursor? It can run these steps for you. [Or let your
 <Steps>
 <Step>
 
-### Download Every App
+### Download EveryApp
 
 ```bash
 git clone https://github.com/every-app/every-app.git
@@ -52,7 +52,7 @@ The terminal says **Log in to Cloudflare to continue**, then **Starting Cloudfla
 
 If you have more than one Cloudflare account, the terminal asks which one to use.
 
-What you're approving is Cloudflare's own sign-in for its `cf` command line tool, which Every App runs for you. Like `wrangler login`, it gives `cf` on this computer broad access to the Cloudflare accounts you belong to, not only the one you pick. Every App uses it for the Gateway, your apps and what you turn on later, like Cloudflare Access, and leaves everything else alone; setup stops rather than replace a DNS record that already exists. [What Every App puts in your account](/docs/cloudflare#what-every-app-puts-in-your-account)
+What you're approving is Cloudflare's own sign-in for its `cf` command line tool, which EveryApp runs for you. Like `wrangler login`, it gives `cf` on this computer broad access to the Cloudflare accounts you belong to, not only the one you pick. EveryApp uses it for the Gateway, your apps and what you turn on later, like Cloudflare Access, and leaves everything else alone; setup stops rather than replace a DNS record that already exists. [What EveryApp puts in your account](/docs/cloudflare#what-every-app-puts-in-your-account)
 
 If you'd rather not grant that, run setup with an API token instead. For setup, a token needs Account > Workers Scripts > Edit, Account > D1 > Edit, Account > Workers KV Storage > Edit, Zone > Zone > Read and Zone > DNS > Read, limited to this account and your domain; set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before the command.
 

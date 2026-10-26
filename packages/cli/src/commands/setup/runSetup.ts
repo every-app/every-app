@@ -333,7 +333,7 @@ export async function installGateway({
     type: "step",
     step: "setup.account",
     status: "ok",
-    message: `Setting up Every App in ${accountName}`,
+    message: `Setting up EveryApp in ${accountName}`,
     data: {
       id: account.id,
       name: account.name,
@@ -554,7 +554,7 @@ async function checkPlan(
     case WorkersPlan.Free:
       throw new ActionRequiredError(
         "upgrade_workers_paid",
-        "Subscribe this account to Workers Paid\nIt's on the Free plan. Every App needs Workers Paid ($5 a month, then usage): on Free, the Gateway stops once D1 hits its daily limit.",
+        "Subscribe this account to Workers Paid\nIt's on the Free plan. EveryApp needs Workers Paid ($5 a month, then usage): on Free, the Gateway stops once D1 hits its daily limit.",
         url,
         { data: { plan } },
       );
@@ -564,7 +564,7 @@ async function checkPlan(
         code: "WORKERS_PAID_UNVERIFIED",
         step: "setup.plan",
         message:
-          "Couldn't confirm this account is on Workers Paid\nEvery App needs it ($5 a month, then usage). On Free, the Gateway stops once D1 hits its daily limit.",
+          "Couldn't confirm this account is on Workers Paid\nEveryApp needs it ($5 a month, then usage). On Free, the Gateway stops once D1 hits its daily limit.",
         data: { url, plan },
       });
       return;
@@ -598,7 +598,7 @@ export async function activeZones(cf: CfRunner, accountId: string): Promise<stri
   }
   throw new ActionRequiredError(
     "add_domain",
-    "Add a domain to this Cloudflare account\nEvery App needs one. Buy one in the dashboard (about $10 a year for a .com, ready in minutes),\nor point a domain you own at Cloudflare's nameservers.",
+    "Add a domain to this Cloudflare account\nEveryApp needs one. Buy one in the dashboard (about $10 a year for a .com, ready in minutes),\nor point a domain you own at Cloudflare's nameservers.",
     registerDomainUrl(accountId),
   );
 }
@@ -1096,7 +1096,7 @@ const terminalPrompts: SetupPrompts = {
   },
   pickZone: (zones: string[]) =>
     choose(
-      "Which of your domains should Every App live under?",
+      "Which of your domains should EveryApp live under?",
       zones.map((zone) => ({ label: zone, value: zone })),
     ),
   gatewayAddress: (zones: string[]) =>

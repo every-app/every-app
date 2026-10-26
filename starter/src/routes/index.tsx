@@ -58,7 +58,7 @@ function Home() {
           lists for groceries and chores.
         </blockquote>
         <p className={note}>
-          The agent already knows Every App. The folder carries the{" "}
+          The agent already knows EveryApp. The folder carries the{" "}
           <code>{BUILD_SKILL}</code> skill: how to build one, with patterns from
           real apps.
         </p>

@@ -94,7 +94,7 @@ export async function inventoryAccount({
     type: "step",
     step: STEP,
     status: "start",
-    message: `Looking for what Every App created in ${accountId}...`,
+    message: `Looking for what EveryApp created in ${accountId}...`,
     data: { accountId },
   });
   const found = (kind: Kind, count: number, items: unknown) =>
@@ -407,7 +407,7 @@ export async function inventoryAccount({
       ),
     ].sort();
     if (others.length > 0) {
-      kept.push(`the ${listed(others)} ${others.length === 1 ? "record" : "records"} at ${name}, which Every App never created`);
+      kept.push(`the ${listed(others)} ${others.length === 1 ? "record" : "records"} at ${name}, which EveryApp never created`);
     }
     dns.push({
       zoneId: zone.id,
@@ -444,7 +444,7 @@ export async function inventoryAccount({
     type: "step",
     step: STEP,
     status: "ok",
-    message: `Found ${plural(planTotal(plan), "resource")} of Every App's in ${accountId}.`,
+    message: `Found ${plural(planTotal(plan), "resource")} of EveryApp's in ${accountId}.`,
     data: { accountId, counts: planCounts(plan), total: planTotal(plan) },
   });
   return plan;

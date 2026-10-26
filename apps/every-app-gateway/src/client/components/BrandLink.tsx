@@ -26,7 +26,7 @@ export function BrandMark({
         alt=""
         className={cn("rounded-md", mark)}
       />
-      Every App
+      EveryApp
     </span>
   );
 }

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/docs/agent/$")({
       title: loaderData?.title ?? "Docs for coding agents",
       description: loaderData?.description,
       path: loaderData?.url ?? "/docs/agent",
-      titleSuffix: "Every App Agent Docs",
+      titleSuffix: "EveryApp Agent Docs",
       ogType: "article",
     }),
   component: Page,

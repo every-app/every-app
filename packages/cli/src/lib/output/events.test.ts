@@ -554,7 +554,7 @@ describe("createHumanSink", () => {
     });
 
     expect(lines()).toEqual([
-      "Setting up Every App in Example Inc (ben@example.com)",
+      "Setting up EveryApp in Example Inc (ben@example.com)",
       // How long until the owner link, from the step's `data.expectedMinutes`.
       "Installing the Gateway at apps.example.com (0.4.0) (usually 5–10 minutes, then the owner link)",
       "Database created ✓ 2 migrations",

@@ -90,7 +90,7 @@ export const MCP_APP_COPY = {
   added: {
     credentialTitle: (name: string) => `Set ${name}'s credential`,
     credentialIntro:
-      "Run this in a terminal, in the folder where you set up Every App:",
+      "Run this in a terminal, in the folder where you set up EveryApp:",
     operatorNote:
       "Only the Gateway's operator can set it; the app shows Needs setup until then.",
     credentialSet: (secret: string) =>

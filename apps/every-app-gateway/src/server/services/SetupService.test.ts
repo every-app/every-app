@@ -178,7 +178,7 @@ describe("SetupService.claimOwner", () => {
     expect(mocks.deleteById).toHaveBeenCalledWith("user-1");
   });
 
-  it("names the hosted gateway's install organization Every App: the platform organization", async () => {
+  it("names the hosted gateway's install organization EveryApp: the platform organization", async () => {
     workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
     try {
       await expect(claim()).resolves.toEqual({
@@ -190,8 +190,8 @@ describe("SetupService.claimOwner", () => {
       });
       expect(mocks.createOrganization).toHaveBeenCalledWith({
         body: {
-          name: "Every App",
-          slug: "every-app",
+          name: "EveryApp",
+          slug: "everyapp",
           userId: "user-1",
           status: "active",
         },

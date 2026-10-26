@@ -70,7 +70,7 @@ interface SetupDialogModel {
   statusHint: boolean;
 }
 
-export const PLATFORM_NOTE = "Every App is still setting this up.";
+export const PLATFORM_NOTE = "EveryApp is still setting this up.";
 const ASK_AN_ADMIN = "Ask an admin to run:";
 const INTRO_CAN_RUN = "Set these before anyone can open it.";
 // The command's heading says who; the intro doesn't say "admin" twice.

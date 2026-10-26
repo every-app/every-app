@@ -299,7 +299,7 @@ function setup(state) {
     type: "step",
     step: "setup.account",
     status: "ok",
-    message: `Setting up Every App in ${state.accountName}`,
+    message: `Setting up EveryApp in ${state.accountName}`,
     data: { id: state.accountId, name: state.accountName, email: state.cloudflareEmail ?? null, gateway: Boolean(state.installed) },
   });
   if (parsed.flags.has("release")) {

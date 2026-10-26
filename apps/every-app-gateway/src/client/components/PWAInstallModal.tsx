@@ -86,7 +86,7 @@ function AlreadyInstalled({ onClose }: { onClose: () => void }) {
       <DialogHeader className="items-center">
         <DialogTitle>Already installed</DialogTitle>
         <DialogDescription>
-          You're already using Every App as an installed app.
+          You're already using EveryApp as an installed app.
         </DialogDescription>
       </DialogHeader>
       <Button onClick={onClose}>
@@ -102,11 +102,11 @@ function AndroidPrompt({ onInstall }: { onInstall: () => void }) {
     <div className="flex flex-col items-center gap-4 text-center">
       <img
         src="/android-chrome-192x192.png"
-        alt="Every App"
+        alt="EveryApp"
         className="size-16 rounded-xl"
       />
       <DialogHeader className="items-center">
-        <DialogTitle>Install Every App</DialogTitle>
+        <DialogTitle>Install EveryApp</DialogTitle>
         <DialogDescription>
           Add to your home screen for an app-like experience
         </DialogDescription>
@@ -223,7 +223,7 @@ function DesktopInstructions() {
       <DialogHeader>
         <DialogTitle>Install on mobile</DialogTitle>
         <DialogDescription>
-          Scan with your phone to install Every App.
+          Scan with your phone to install EveryApp.
         </DialogDescription>
       </DialogHeader>
       <div className="flex justify-center">

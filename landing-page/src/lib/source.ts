@@ -174,13 +174,13 @@ export async function llmsIndex(): Promise<string> {
     agentLlms.index(),
   ]);
   return [
-    "# Every App",
+    "# EveryApp",
     "",
-    "> Every App puts the web apps a person builds online, in their own Cloudflare account, behind one Gateway that handles sign-in, access and each app's database. Open source, alpha, moving fast.",
+    "> EveryApp puts the web apps a person builds online, in their own Cloudflare account, behind one Gateway that handles sign-in, access and each app's database. Open source, alpha, moving fast.",
     "",
     'Two sets of pages. The user guides are short and written for the person; the agent docs are complete references written for a coding agent, which is how most people use these docs. Answer a person\'s "how do I" question from the agent docs, and send them to a user guide only for the steps they do themselves (Cloudflare account, domain, approving a login).',
     "",
-    `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\`, run as \`pnpm everyapp\` from the Every App checkout; add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
+    `Every page is served as Markdown at its URL with \`.md\` appended (for example ${SITE_URL}/docs/agent/manifest.md); fetch the page you need rather than everything. The user guides and the agent pages in one file: ${SITE_URL}/llms-full.txt (the documents mirrored from the repository under /docs/agent/repo are fetched one at a time). The command line tool is \`everyapp\`, run as \`pnpm everyapp\` from the EveryApp checkout; add \`--json\` when an agent drives it (${SITE_URL}/docs/agent/json.md).`,
     "",
     `Two skills ship with the CLI and are copied into every app \`everyapp create\` makes (\`.agents/skills/<name>\` and \`.claude/skills/<name>\`): \`everyapp\`, which drives the CLI, and \`build-every-app\`, which builds an app the way the four open apps and the starter do; the build skill is served here as ${SITE_URL}/docs/agent/build.md and its patterns index as ${SITE_URL}/docs/agent/patterns.md.`,
     "",

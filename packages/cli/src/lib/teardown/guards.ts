@@ -164,7 +164,7 @@ export function checkAccountEligible({
   if (!allowlist.ids.includes(accountId)) {
     throw new EveryAppError(
       TeardownCode.NotAllowlisted,
-      `Cloudflare account ${accountId} isn't on the teardown allowlist\nteardown deletes everything Every App made in an account, so it runs only against accounts listed as dedicated test accounts.`,
+      `Cloudflare account ${accountId} isn't on the teardown allowlist\nteardown deletes everything EveryApp made in an account, so it runs only against accounts listed as dedicated test accounts.`,
       { fix: howToAllow(accountId, allowlist.file), data: { accountId, file: allowlist.file } },
     );
   }

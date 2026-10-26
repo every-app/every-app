@@ -1,11 +1,11 @@
 ---
-title: What is Every App?
+title: What is EveryApp?
 description: Your web apps online, in your own Cloudflare account, each with an address, a database and a sign-in.
 ---
 
-Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in.
+EveryApp puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in.
 
-Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor. Every App is open source and free. You pay Cloudflare.
+Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor. EveryApp is open source and free. You pay Cloudflare.
 
 ## The two parts
 
@@ -28,7 +28,7 @@ The [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-
 
 ## Alpha
 
-Every App is alpha: open source, very powerful, moving fast, and trying not to break things. That means:
+EveryApp is alpha: open source, very powerful, moving fast, and trying not to break things. That means:
 
 - A deploy keeps your data and saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
 - Updating your Gateway is `git pull`, `pnpm install`, then `pnpm everyapp update`. Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
@@ -45,7 +45,7 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 - **OpenAnalytics**: Web analytics for your sites. No cookies, no stored IP addresses.
 - **Agentic Inbox**: A team inbox with an AI agent that reads, drafts and sends email on your domain.
 
-`pnpm everyapp install https://github.com/every-app/<repo>` from your Every App folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and Agentic Inbox use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
+`pnpm everyapp install https://github.com/every-app/<repo>` from your EveryApp folder installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `pnpm everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and Agentic Inbox use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
 
 ## What it costs
 
@@ -56,9 +56,9 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 | A `.dev` or `.app` domain       | $1 for the first year                                                                                                 |
 | An AI key, for apps that use AI | Billed by use by OpenAI or OpenRouter, on your own account with them; Workers AI goes on your Cloudflare bill instead |
 | A DataForSEO key, for OpenSEO   | Pay as you go, billed by DataForSEO                                                                                   |
-| Every App                       | Free and open source                                                                                                  |
+| EveryApp                        | Free and open source                                                                                                  |
 
-The $5 includes 10 million requests a month and far more database reads and writes than a few apps for a small team use, so they fit inside it; an app adds no fixed cost. Past that, Cloudflare bills by use; the rates are on its [pricing page](https://developers.cloudflare.com/workers/platform/pricing/). Cloudflare is the only bill Every App itself causes: an AI or DataForSEO key comes from an account you open with that company, which bills you for what your apps use; the Gateway counts those calls and stops an app only at a cap you set. [Apps that use AI](/docs/create-an-app#apps-that-use-ai), [Usage and caps](/docs/usage)
+The $5 includes 10 million requests a month and far more database reads and writes than a few apps for a small team use, so they fit inside it; an app adds no fixed cost. Past that, Cloudflare bills by use; the rates are on its [pricing page](https://developers.cloudflare.com/workers/platform/pricing/). Cloudflare is the only bill EveryApp itself causes: an AI or DataForSEO key comes from an account you open with that company, which bills you for what your apps use; the Gateway counts those calls and stops an app only at a cap you set. [Apps that use AI](/docs/create-an-app#apps-that-use-ai), [Usage and caps](/docs/usage)
 
 ## What you need
 

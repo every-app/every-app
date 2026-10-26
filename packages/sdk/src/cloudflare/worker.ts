@@ -1314,7 +1314,7 @@ function appWorkerName(
   if (ctx.mode === "production") {
     if (process.env[BUILD_ENV] !== "1") {
       throw new Error(
-        `Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`), which sets ${BUILD_ENV}=1 and installs the build: ` +
+        `EveryApp Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`), which sets ${BUILD_ENV}=1 and installs the build: ` +
           "a bare `cf build` or `cf deploy` would ship a Worker whose name, identity keys, gateway binding and resources are placeholders. " +
           "For a local build, run Vite in development mode (`vite build --mode development`).",
       );

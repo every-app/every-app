@@ -817,7 +817,7 @@ describe("discovery", () => {
       authorization_servers: [GATEWAY],
       scopes_supported: ["mcp:read", "mcp:write"],
       bearer_methods_supported: ["header"],
-      resource_name: "Every App",
+      resource_name: "EveryApp",
     });
     // The origin's own metadata describes no resource here.
     expect((await send("/.well-known/oauth-protected-resource")).status).toBe(
@@ -1007,7 +1007,7 @@ describe("a DCR client (Codex-style)", () => {
     );
     expect(((await init.json()) as { result: unknown }).result).toMatchObject({
       protocolVersion: "2025-06-18",
-      serverInfo: { name: "every-app", title: "acme · Every App" },
+      serverInfo: { name: "every-app", title: "acme · EveryApp" },
       instructions: expect.stringContaining(
         "Apps: notes (Notes), todo (Todos).",
       ),
@@ -1348,7 +1348,7 @@ describe("dynamic client registration", () => {
   const registeredClients = () =>
     [...kv.store.keys()].filter((key) => key.startsWith("client:"));
 
-  it("stores only what Every App uses, for 60 days", async () => {
+  it("stores only what EveryApp uses, for 60 days", async () => {
     const response = await register({
       ...CURSOR,
       client_name: `Spam ${"x".repeat(500)}`,

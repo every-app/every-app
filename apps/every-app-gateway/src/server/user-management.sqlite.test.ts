@@ -633,7 +633,7 @@ describe("user management (SQLite)", () => {
     beforeEach(() => {
       mailbox.sent = [];
       Object.assign(workerEnv, {
-        EMAIL_FROM: "Every App <noreply@example.com>",
+        EMAIL_FROM: "EveryApp <noreply@example.com>",
         EMAIL: {
           send: async (mail: Mail) => {
             mailbox.sent.push(mail);
@@ -654,7 +654,7 @@ describe("user management (SQLite)", () => {
       expect(mailbox.sent).toEqual([
         expect.objectContaining({
           to: `${member}@example.com`,
-          subject: "Reset your Every App password",
+          subject: "Reset your EveryApp password",
         }),
       ]);
       expect(mailbox.sent[0]?.text).toMatch(

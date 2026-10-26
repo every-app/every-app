@@ -90,7 +90,7 @@ Dry run: nothing written. Add --write to keep the repository.
 
 The tree hash is the copy's identity. The same source commit gives the same
 tree hash and the same commit hash every run: the commit is dated as the
-source commit, authored as `Every App <noreply@everyapp.com>` (never the
+source commit, authored as `EveryApp <noreply@everyapp.com>` (never the
 source commit's author), and its message holds nothing of the source but the
 commit's id, so running the script twice, or on another machine, is the same
 copy. A `FAIL` line names the file and the line; the

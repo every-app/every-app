@@ -195,11 +195,11 @@ The Gateway has no owner yet, and this run minted the one-time setup link that c
 
 ### upgrade_workers_paid
 
-The account is on Cloudflare's Free plan; Every App needs Workers Paid. Three sources, none waits, `rerun` is always this command:
+The account is on Cloudflare's Free plan; EveryApp needs Workers Paid. Three sources, none waits, `rerun` is always this command:
 
 - `setup` on a new install reads the plan before anything is created (`checkPlan` in `packages/cli/src/commands/setup/runSetup.ts`): message `Subscribe this account to Workers Paid` / `It's on the Free plan. …`, `data: { plan, url, rerun }` with `url` `https://dash.cloudflare.com/<accountId>/workers/plans`. A plan that can't be told is the warning `WORKERS_PAID_UNVERIFIED` instead; one cf couldn't read is the step `setup.plan` `skip`.
 - cf refused an upload for the plan (cf error kind `free_plan`, `packages/cli/src/lib/cf/deploy.ts`): `data: { workerName, cloudflare, url, rerun }`, `cloudflare` being cf's message.
-- Any other cf call refused for the plan (`packages/cli/src/lib/output/report.ts`): message `Cloudflare refused, for the Free plan: <cf's message>` / `Every App needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`, `url` `https://dash.cloudflare.com/?to=/:account/workers/plans`.
+- Any other cf call refused for the plan (`packages/cli/src/lib/output/report.ts`): message `Cloudflare refused, for the Free plan: <cf's message>` / `EveryApp needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`, `url` `https://dash.cloudflare.com/?to=/:account/workers/plans`.
 
 ### rerun_interactive
 
@@ -215,7 +215,7 @@ Does not wait. `rerun` is this same command with `--json` left out (`thisCommand
 The Cloudflare account has no active zone a Gateway can live under. Raised by `setup` (and `deploy` installing a Gateway) from `activeZones` in `packages/cli/src/commands/setup/runSetup.ts` and `gatewayZone` in `packages/cli/src/commands/setup/deployGateway.ts`:
 
 - A zone exists but isn't active: message `Finish activating <zone> on Cloudflare` / `Its nameservers don't point at Cloudflare yet.`, `url` is the zone's dashboard page, `https://dash.cloudflare.com/<accountId>/<zone>` (`zoneUrl` in `packages/cli/src/lib/domains/zones.ts`); from `gatewayZone` (the zone of `--domain`) `data` adds `{ zone, status }`.
-- No zone at all: message `Add a domain to this Cloudflare account` / `Every App needs one. Buy one in the dashboard (about $10 a year for a .com, ready in minutes),` / `or point a domain you own at Cloudflare's nameservers.`, `url` is the account's domains page, `https://dash.cloudflare.com/<accountId>/domains/overview` (`registerDomainUrl` in `packages/cli/src/lib/domains/zones.ts`).
+- No zone at all: message `Add a domain to this Cloudflare account` / `EveryApp needs one. Buy one in the dashboard (about $10 a year for a .com, ready in minutes),` / `or point a domain you own at Cloudflare's nameservers.`, `url` is the account's domains page, `https://dash.cloudflare.com/<accountId>/domains/overview` (`registerDomainUrl` in `packages/cli/src/lib/domains/zones.ts`).
 
 `rerun` this command; does not wait.
 

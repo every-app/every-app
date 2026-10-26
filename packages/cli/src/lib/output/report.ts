@@ -90,7 +90,7 @@ export function reportFailure(
   if (isCfError(error, "free_plan")) {
     requireAction(
       "upgrade_workers_paid",
-      `Cloudflare refused, for the Free plan: ${error.message}\nEvery App needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`,
+      `Cloudflare refused, for the Free plan: ${error.message}\nEveryApp needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`,
       { url: WORKERS_PLANS_URL, rerun: thisCommand() },
     );
     return;

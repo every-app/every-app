@@ -19,7 +19,7 @@ import { appBaseDomain } from "@/server/app-hosts";
 const LOOPBACK_HOST = /^(?:localhost|127(?:\.\d{1,3}){3})$/;
 
 export const ON_PLATFORM_DOMAIN =
-  "This app uses an address on this gateway's own domain, which only Every App itself may use.";
+  "This app uses an address on this gateway's own domain, which only EveryApp itself may use.";
 
 /**
  * Whether a URL is on one of the platform's domains: the gateway's host

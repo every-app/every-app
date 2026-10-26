@@ -311,7 +311,7 @@ function explainDeployFailure(
   if (error.kind === "free_plan") {
     return new ActionRequiredError(
       "upgrade_workers_paid",
-      "Subscribe this account to Workers Paid\nCloudflare refused the upload on the Free plan. Every App needs Workers Paid ($5 a month, then usage).",
+      "Subscribe this account to Workers Paid\nCloudflare refused the upload on the Free plan. EveryApp needs Workers Paid ($5 a month, then usage).",
       workersPlansUrl(accountId),
       { data: { workerName, cloudflare: error.message } },
     );

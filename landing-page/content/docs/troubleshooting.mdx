@@ -34,7 +34,7 @@ If the record is `AAAA 100::` and you saw "Choose a workers.dev subdomain" on th
 
 ## The Gateway build fails with `connect ECONNREFUSED 127.0.0.1`
 
-On Linux, setup stopped at **Building the Gateway** with `GATEWAY_BUILD_FAILED` and a line like `connect ECONNREFUSED 127.0.0.1:43739`. Your copy of Every App is older than 2026-10-24: run `git pull` in your every-app folder, then run the command again. If you can't update yet, run it as `NODE_OPTIONS=--dns-result-order=ipv4first pnpm everyapp setup …`. On Linux, `localhost` can mean the IPv6 address first, and the build's preview server and its own client then disagree about where to meet; newer versions of everyapp set this option themselves. Deploying an app can hit the same error, with the same fix.
+On Linux, setup stopped at **Building the Gateway** with `GATEWAY_BUILD_FAILED` and a line like `connect ECONNREFUSED 127.0.0.1:43739`. Your copy of EveryApp is older than 2026-10-24: run `git pull` in your every-app folder, then run the command again. If you can't update yet, run it as `NODE_OPTIONS=--dns-result-order=ipv4first pnpm everyapp setup …`. On Linux, `localhost` can mean the IPv6 address first, and the build's preview server and its own client then disagree about where to meet; newer versions of everyapp set this option themselves. Deploying an app can hit the same error, with the same fix.
 
 ## Open the setup link above to create the owner account
 
@@ -61,7 +61,7 @@ Your app stores something new but has no migration for it. In the app's folder, 
 
 ## This checkout's Gateway is older than the live one
 
-Someone updated your Gateway from a newer copy of Every App. In your `every-app` folder, run `git pull` and `pnpm install`, then try again.
+Someone updated your Gateway from a newer copy of EveryApp. In your `every-app` folder, run `git pull` and `pnpm install`, then try again.
 
 ## Your every-app folder has a newer Gateway than the one online
 
@@ -77,7 +77,7 @@ Install the latest LTS version from [nodejs.org](https://nodejs.org), open a new
 
 Run `pnpm install` on its own, without `--frozen-lockfile`.
 
-If it still fails, run `pnpm --version`. Every App is built with pnpm 10.34.5, and pnpm 10 switches to that version by itself; an older pnpm doesn't. Run `npm install -g pnpm`, open a new terminal window, and try again.
+If it still fails, run `pnpm --version`. EveryApp is built with pnpm 10.34.5, and pnpm 10 switches to that version by itself; an older pnpm doesn't. Run `npm install -g pnpm`, open a new terminal window, and try again.
 
 ## Command "everyapp" not found
 
@@ -98,7 +98,7 @@ This command runs inside an app's folder. Run `cd apps/my-app` and try again.
 
 ## Strange errors after using npx
 
-`npx everyapp` downloads an old version that doesn't work: publishing to npm is paused, and the copy on npm is from before this Gateway. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the Every App repository**. Always run `pnpm everyapp` from your `every-app` folder.
+`npx everyapp` downloads an old version that doesn't work: publishing to npm is paused, and the copy on npm is from before this Gateway. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the EveryApp repository**. Always run `pnpm everyapp` from your `every-app` folder.
 
 ## Still stuck
 

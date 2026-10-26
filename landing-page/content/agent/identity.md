@@ -113,7 +113,7 @@ Verification is fail-closed (`verifyPinnedJwt`), in this order:
 1. With the dev opt-in on, the issuer must be `https://gateway.dev.localhost`; anything else is a `ConfigurationError` (500), whatever the env says, because the dev keypair is public (`packages/sdk/src/dev/keypair.ts`).
 2. An empty header is `no identity token`; an undecodable one `malformed identity token`.
 3. The protected header is pinned before any signature work: `alg` must be `RS256` (so `none` and HS256 confusion fail here), and `kid` must be `everyapp-identity`, or also `everyapp-identity-dev` under the dev opt-in.
-4. A user or system token needs a configured issuer (`EVERYAPP_IDENTITY_ISSUER` or the `issuer` option); without one the error is `EVERYAPP_IDENTITY_ISSUER not configured — deploy with the Every App CLI or provide an explicit issuer.`
+4. A user or system token needs a configured issuer (`EVERYAPP_IDENTITY_ISSUER` or the `issuer` option); without one the error is `EVERYAPP_IDENTITY_ISSUER not configured — deploy with the EveryApp CLI or provide an explicit issuer.`
 5. Each key in the set is tried with `jwtVerify` (`algorithms: ["RS256"]`, the expected `audience`, the issuer when configured, `requiredClaims` `["exp"]`, or `["exp", "iat"]` for a system token). The payload's `typ` must be the expected one.
 6. The claims are checked: `sub`, `email`, `org_id` and `org_role` are required (`identity token missing required claims`).
 
@@ -277,7 +277,7 @@ The other reserved path, `POST /__everyapp/tools/call`, takes an identity in `x-
 
 "Set locally" means read as the Vite plugin reads them (`localEnv` in `worker.ts`, used for the Hyperdrive connection strings, the manifest `secrets`, the dev Gateway keys and `EVERYAPP_EMAIL_SENDERS`): `.dev.vars.<mode>` when it exists, else `.dev.vars`, and that file alone; with neither, `.env`, `.env.local`, `.env.<mode>` and `.env.<mode>.local` merged in that order under the process environment, which wins. `<mode>` is the build's mode, `development` when none is given.
 
-`GATEWAY_URL` is also where an app's UI goes back to. The convention every app on a Gateway follows: the first row of the sidebar (or of the page header, when a page has no sidebar) is a muted "‹ Every App" link to `GATEWAY_URL` with the accessible name "Back to Every App", above the app's own name; the footer holds the app's own settings and help, nothing about the Gateway. Under `everyapp dev` the variable is absent (the app may fall back to `EVERYAPP_IDENTITY_ISSUER` or hide the row).
+`GATEWAY_URL` is also where an app's UI goes back to. The convention every app on a Gateway follows: the first row of the sidebar (or of the page header, when a page has no sidebar) is a muted "‹ EveryApp" link to `GATEWAY_URL` with the accessible name "Back to EveryApp", above the app's own name; the footer holds the app's own settings and help, nothing about the Gateway. Under `everyapp dev` the variable is absent (the app may fall back to `EVERYAPP_IDENTITY_ISSUER` or hide the row).
 
 Names the deploy owns are refused as an app's own secret, by `everyapp secret set` and by the manifest's `secrets`, case-insensitively: `GATEWAY_URL`, `CF_VERSION_METADATA` and anything starting `EVERYAPP_`, `EVERY_APP_` or `APP__` (`packages/sdk/src/internal/gatewaySettings.ts`). See [secrets](/docs/agent/secrets).
 
@@ -455,7 +455,7 @@ The full rules and budgets are in [email](/docs/agent/email) and the [capabiliti
 
 ### Refusals
 
-`GatewayRefusal` is `{ status: number, code: string, message: string }`. `gatewayRefusal(response)` returns one when the response carries `x-everyapp-error` (the `message` from the JSON body, or `The Every App gateway refused the call (<code>).`), else `null`: the response is then the provider's own, errors included. `GatewayRefusalError` is the thrown form.
+`GatewayRefusal` is `{ status: number, code: string, message: string }`. `gatewayRefusal(response)` returns one when the response carries `x-everyapp-error` (the `message` from the JSON body, or `The EveryApp gateway refused the call (<code>).`), else `null`: the response is then the provider's own, errors included. `GatewayRefusalError` is the thrown form.
 
 ## Agent tools
 

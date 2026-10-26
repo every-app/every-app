@@ -7,7 +7,7 @@ invariants, and where each invariant is enforced and tested. It is written
 for someone who wants to find a hole: pick an invariant, read the code it
 points at, and try to make the test's negative case pass.
 
-Every App is alpha software, moving fast, and the operator is root (see
+EveryApp is alpha software, moving fast, and the operator is root (see
 "Actors"). Read the known gaps at the end before relying on anything.
 
 The self-hosted shape is what launches, and is described first. The hosted
@@ -91,7 +91,7 @@ Gateway, attributed to an organization.
 
 | | Self-hosted (launches 2026-10-27) | Hosted (ours; not launching) | Local (`everyapp dev`) |
 |---|---|---|---|
-| Who runs it | A person or a 3–4 person company, in their own Cloudflare account on Workers Paid | Every App, at `app.everyapp.com` | A developer, on their machine |
+| Who runs it | A person or a 3–4 person company, in their own Cloudflare account on Workers Paid | EveryApp, at `app.everyapp.com` | A developer, on their machine |
 | `GATEWAY_DEPLOYMENT_MODE` | `self_hosted` | `hosted` | `self_hosted` (the dev build's default) |
 | Sign-up | Invite-only; the setup link makes the first owner | Open into personal organizations once claimed, behind a daily mail budget; `HOSTED_OPEN_SIGNUP=false` keeps it invite-only (the preview default) | A seeded dev user |
 | Apps | Private Workers in the same account, one organization | Shared first-party Workers (one per app, every organization) plus, behind a launch gate, third-party Workers in a dispatch namespace | The app under `vite dev` behind a gateway-lite |
@@ -144,7 +144,7 @@ ADR-0003 chose one credential (the Cloudflare login) over a second Gateway
 token that could only have confirmed what the login already had. Everything
 below assumes the operator is honest and their Cloudflare credential is
 safe; losing it is losing everything in the account, Gateway included. An
-**app's code** is the actor the perimeter is mostly built around: Every App
+**app's code** is the actor the perimeter is mostly built around: EveryApp
 exists so that people can run code they or an AI wrote without that code
 being able to hurt anyone but its own organization. On a self-hosted
 Gateway with one organization that means a buggy app can hurt only the data
@@ -197,7 +197,7 @@ remain the only thing between these and the data:
   `HttpOnly` and the binding cookie on (the runbook's defaults), and enable
   only identity providers that verify email addresses, since the Gateway
   treats Access's email as verified. `everyapp access on` allows on the two
-  Every App applications only the providers it vouches for: the one-time
+  EveryApp applications only the providers it vouches for: the one-time
   PIN, and Sign in with Cloudflare (type `cloudflare`) with Restrict to
   account members on, which it creates that way. A `cloudflare` provider
   with the restriction off, a generic `oidc` or `saml` one, and any other
@@ -222,7 +222,7 @@ Cloudflare's job, some are simply not built.
 
 - **A compromised Cloudflare account or credential.** Whoever holds it is
   the operator (ADR-0003). Every app's CI token with D1 write is too. There
-  is no second factor inside Every App for deploys, and revocation is
+  is no second factor inside EveryApp for deploys, and revocation is
   Cloudflare's.
 - **Cloudflare itself**: the runtime, D1, KV, the edge, Access, Email
   Sending, their staff and their bugs. Workers isolation between accounts
@@ -313,7 +313,7 @@ row being routed.
 |---|---|---|---|
 | `perimeter.public-default-private` | A request is public only if the manifest declares a route, its method matches (GET by default), and the raw path canonicalizes unambiguously: no control characters, backslashes, encoded separators, invalid or double encoding, encoded traversal. Anything ambiguous is private. | `packages/perimeter/src/publicRoutes.ts:41-113` (`normalizePath`) | `packages/perimeter/src/publicRoutes.test.ts` :: defaults to deny with no routes; :: never treats /\_\_everyapp/\* as public, even via traversal |
 | `perimeter.inbound-trust-headers-stripped` | Before any request is proxied, `Cookie`, `Authorization`, `Cloudflare-Workers-Version-Overrides` and every header starting `x-everyapp-` or `cf-access-` are removed, public and private routes alike. | `packages/perimeter/src/headers.ts:44-59` (`stripInboundHeaders`) | `packages/perimeter/src/headers.test.ts` :: removes Cookie, Authorization and all x-everyapp-\* headers; :: removes Cloudflare Access's assertion, email and service-token headers |
-| `perimeter.authorization-forwarding` | Inbound `Authorization` reaches the app only on a public route and only when it is neither an Every App bearer (`epat_…` or a gateway OAuth token) nor a credential the gateway consumed. | `packages/perimeter/src/headers.ts:69-120` | `packages/perimeter/src/gateway.test.ts` :: never forwards a gateway OAuth token to the app, even on a public route |
+| `perimeter.authorization-forwarding` | Inbound `Authorization` reaches the app only on a public route and only when it is neither an EveryApp bearer (`epat_…` or a gateway OAuth token) nor a credential the gateway consumed. | `packages/perimeter/src/headers.ts:69-120` | `packages/perimeter/src/gateway.test.ts` :: never forwards a gateway OAuth token to the app, even on a public route |
 | `perimeter.csrf-private-fail-closed` | A cookie-carrying request with a method other than GET/HEAD/OPTIONS to a private route is proxied only with `Sec-Fetch-Site: same-origin` or, when that header is absent, an `Origin` whose host is the app host. | `packages/perimeter/src/csrf.ts:25-65` (`evaluateCsrf`) | `packages/perimeter/src/csrf.test.ts` :: denies non-GET when Sec-Fetch-Site is cross-site or none |
 | `perimeter.csrf-public-downgrade` | On a declared public route a failed CSRF or WebSocket-Origin check never calls the authenticator: the request is served anonymously with the public marker. | `packages/perimeter/src/gateway.ts:383` | `packages/perimeter/src/gateway.test.ts` :: (f3) CSRF: downgrades a failed public request to anonymous |
 | `perimeter.identity-jwt` | A proxied private (or member public) request carries exactly one fresh RS256 identity JWT: `iss` = `GATEWAY_URL`, `aud` = the registry row's Worker name, `kid` = `everyapp-identity`, 120 seconds. | `packages/perimeter/src/gateway.ts:196-198` (`audienceOf`) | `packages/perimeter/src/gateway.test.ts` :: (a) a logged-in request reaches the app with a verified identity JWT; `packages/perimeter/src/integration/e2e.test.ts` :: (f) a token for one Worker is refused by another Worker of the same app id |
@@ -910,7 +910,7 @@ changing a remote MCP app.
 | `oauth.per-request-recheck` | Every `/mcp` request with an OAuth token re-reads the connection row, the user's live role, their ban state and app access; revoking, removing or deactivating takes effect on the next request. | `validate.ts:160-225` | `gateway-mcp.e2e.sqlite.test.ts` :: stops a revoked connection at once, and its refresh |
 | `oauth.refresh-rechecks-connection` | A refresh for a connection that no longer stands fails `invalid_grant` and deletes the grant; D1 unavailable is 503 and keeps the grant. | `config.ts:151-172` | same |
 | `oauth.revocation-paths` | A user revokes only their own connections; removing a member revokes that organization's connections and grants; deactivating revokes all of theirs. | `apps/every-app-gateway/src/server/services/McpConnectionService.ts:143-172` | `gateway-mcp.e2e.sqlite.test.ts` :: refuses another user's connection |
-| `dcr.bounded-and-budgeted` | A dynamic registration is read under 16 KiB, keeps only the client's name, up to ten redirect URIs, its grant/response types and auth method, lives 60 days unused, and is limited per address per minute (per isolate), per address per day and per gateway per day in D1. | `registration.ts:31-171`; `registration-limit.ts` | `gateway-mcp.e2e.sqlite.test.ts` :: stores only what Every App uses, for 60 days |
+| `dcr.bounded-and-budgeted` | A dynamic registration is read under 16 KiB, keeps only the client's name, up to ten redirect URIs, its grant/response types and auth method, lives 60 days unused, and is limited per address per minute (per isolate), per address per day and per gateway per day in D1. | `registration.ts:31-171`; `registration-limit.ts` | `gateway-mcp.e2e.sqlite.test.ts` :: stores only what EveryApp uses, for 60 days |
 | `switches.kill-and-dcr` | With `MCP_OAUTH_ENABLED` off (any unrecognized value fails closed) every `/oauth/*` path and discovery document is 404 and `/mcp` takes personal tokens only; `MCP_DCR_ENABLED=false` closes registration. | `apps/every-app-gateway/src/server/oauth-flag.ts:25-54` | `gateway-mcp.e2e.sqlite.test.ts` :: takes personal tokens only and names no authorization server when OAuth is off |
 | `mcp.browser-origin-rule` | A request to the gateway's `/mcp` carrying an `Origin` is served only when that origin is the gateway's own or listed exactly in `MCP_ALLOWED_ORIGINS` (empty by default); behind Managed OAuth the rule runs before the assertion is read. | `apps/every-app-gateway/src/server/toolbus/gateway-mcp.ts:51-77` | `gateway-mcp.e2e.sqlite.test.ts` :: serves only the gateway's origin and MCP_ALLOWED_ORIGINS |
 | `pat.format-and-hashing` | A personal token is `epat_` plus 32 random bytes as hex; only an HMAC-SHA256 under `BETTER_AUTH_SECRET` is stored, with a 9-character display prefix. | `UserPatService.ts:18-35, 133` | `UserPatService.test.ts` :: creates and verifies a PAT roundtrip |
@@ -1086,7 +1086,7 @@ and reconcile the Gateway's bindings. Since #371 (2026-10-23) there is a
 second path: the browser install, where the Gateway itself downloads a
 public release and uploads it with a `CF_DEPLOY_TOKEN` it holds.
 `everyapp teardown --account-id <id>` is the one command that deletes
-everything Every App made in an account: it runs only against an id on the
+everything EveryApp made in an account: it runs only against an id on the
 test-account allowlist (`EVERYAPP_TEST_ACCOUNTS` or
 `~/.config/everyapp/test-accounts`), never `CLOUDFLARE_ACCOUNT_ID`, and asks
 for the id again (`--confirm <id>` unattended). On the other side, the
@@ -1926,7 +1926,7 @@ scope narrowing is the OAuth-scopes design (`docs/design/2026-10-oauth-scopes.md
 
 ## Reporting a problem
 
-Every App is alpha and open source. If you find a hole, we'd rather know:
+EveryApp is alpha and open source. If you find a hole, we'd rather know:
 
 - Open a private vulnerability report on the repository (**Security → Report
   a vulnerability**) so it isn't public before a fix is out.

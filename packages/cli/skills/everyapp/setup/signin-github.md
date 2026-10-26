@@ -62,7 +62,7 @@ organization owner keeps it from depending on one person.
    organization: the organization's **Settings** → **Developer settings**
    → **OAuth Apps**) → **New OAuth App** (**Register a new application**
    when there is none yet). Application name (people see it, for example
-   `Every App`), Homepage URL `https://<gateway host>`, **Authorization
+   `EveryApp`), Homepage URL `https://<gateway host>`, **Authorization
    callback URL** the exact URL from step 1. Leave **Enable Device Flow**
    off. **Register application**. The app's page shows the **Client ID**.
 3. **Person:** on that page, **Generate a new client secret** (GitHub may

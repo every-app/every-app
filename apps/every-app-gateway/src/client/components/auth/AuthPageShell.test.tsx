@@ -23,7 +23,7 @@ describe("the product lockup on signed-out pages", () => {
     );
     const image = host.querySelector("img");
     expect(image?.getAttribute("src")).toBe("/android-chrome-192x192.png");
-    expect(image?.parentElement?.textContent).toBe("Every App");
+    expect(image?.parentElement?.textContent).toBe("EveryApp");
     expect(host.querySelector("a")).toBeNull();
     expect(host.querySelector("h1")?.textContent).toBe("Sign in");
   });
@@ -33,7 +33,7 @@ describe("the product lockup on signed-out pages", () => {
     expect(host.querySelector("img")?.getAttribute("src")).toBe(
       "/android-chrome-192x192.png",
     );
-    expect(host.textContent).toContain("Every App");
+    expect(host.textContent).toContain("EveryApp");
     expect(host.querySelector("a")).toBeNull();
   });
 });

@@ -127,7 +127,7 @@ async function registerClient(redirectUri) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      client_name: "Every App local test client",
+      client_name: "EveryApp local test client",
       redirect_uris: [redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

@@ -102,7 +102,7 @@ export async function runDev(
       "MISSING_CLOUDFLARE_CONFIG",
       [
         "No cloudflare.config.ts in this directory",
-        "Every App apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.",
+        "EveryApp apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.",
       ].join("\n"),
       { data: { fix: "copy cloudflare.config.ts from starter/" } },
     );

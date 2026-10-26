@@ -267,18 +267,18 @@ describe("senders", () => {
   });
 
   it("reads the configured sender as the gateway always has", () => {
-    expect(parseEmailSender("noreply@example.com", "Every App")).toEqual({
+    expect(parseEmailSender("noreply@example.com", "EveryApp")).toEqual({
       address: "noreply@example.com",
-      name: "Every App",
+      name: "EveryApp",
     });
     expect(
-      parseEmailSender('"Every App" <noreply@example.com>', undefined),
+      parseEmailSender('"EveryApp" <noreply@example.com>', undefined),
     ).toEqual({
       address: "noreply@example.com",
-      name: "Every App",
+      name: "EveryApp",
     });
     expect(parseEmailSender("noreply@example.com", undefined)).toBeNull();
-    expect(parseEmailSender(undefined, "Every App")).toBeNull();
+    expect(parseEmailSender(undefined, "EveryApp")).toBeNull();
   });
 });
 
@@ -514,7 +514,7 @@ describe("Email Sending's REST API", () => {
         bcc: [],
         subject: "Hi",
         html: "<p>Hi</p>",
-        from: { address: "noreply@example.com", name: "Every App" },
+        from: { address: "noreply@example.com", name: "EveryApp" },
         replyTo: { address: "help@example.com" },
         headers: { "X-Thing": "1" },
         attachments: [
@@ -530,7 +530,7 @@ describe("Email Sending's REST API", () => {
     ).toEqual({
       to: "a@example.net",
       cc: ["c@example.net"],
-      from: { address: "noreply@example.com", name: "Every App" },
+      from: { address: "noreply@example.com", name: "EveryApp" },
       reply_to: "help@example.com",
       subject: "Hi",
       html: "<p>Hi</p>",

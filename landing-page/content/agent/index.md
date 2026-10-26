@@ -1,13 +1,13 @@
 ---
 title: Docs for coding agents
-description: How a coding agent uses these docs to build, deploy and operate Every App apps for a person, and which page answers which question.
+description: How a coding agent uses these docs to build, deploy and operate EveryApp apps for a person, and which page answers which question.
 ---
 
-Every App has two sets of documentation. The [user docs](/docs) are short and written for the person: set up Cloudflare, get a domain, install the Gateway, create an app, invite people. These pages are the other set: complete references written for the coding agent (Claude Code, Codex, Cursor) that does the work and answers the person's questions. Most people never read these pages; their agent does.
+EveryApp has two sets of documentation. The [user docs](/docs) are short and written for the person: set up Cloudflare, get a domain, install the Gateway, create an app, invite people. These pages are the other set: complete references written for the coding agent (Claude Code, Codex, Cursor) that does the work and answers the person's questions. Most people never read these pages; their agent does.
 
 ## If you are the person
 
-Give your agent this address and ask it anything about Every App:
+Give your agent this address and ask it anything about EveryApp:
 
 ```text
 https://everyapp.com/llms.txt
@@ -19,7 +19,7 @@ New apps come with two skills, `everyapp` (drives the CLI; it already points her
 
 1. Fetch `https://everyapp.com/llms.txt`: every page with a one-line summary, in both sets.
 2. Fetch the page you need as Markdown by adding `.md` to its URL, for example `https://everyapp.com/docs/agent/manifest.md`. Everything in one file is `https://everyapp.com/llms-full.txt`; prefer single pages.
-3. In an Every App checkout the same pages are files: `landing-page/content/agent/*.md`, the user docs `landing-page/content/docs/*.mdx`, and the repository documents under `docs/` that the `repo/` pages mirror.
+3. In an EveryApp checkout the same pages are files: `landing-page/content/agent/*.md`, the user docs `landing-page/content/docs/*.mdx`, and the repository documents under `docs/` that the `repo/` pages mirror.
 4. Answer from the page, with the exact command, flag or manifest field, and name the page. When a command fails, look up its code on [errors](/docs/agent/errors) (the anchor is the code) before trying anything else.
 5. The command line tool is `everyapp`, run as `pnpm everyapp` from the checkout (never `npx everyapp`; publishing to npm is paused). Add `--json` when you drive it, and read [the protocol](/docs/agent/json). `everyapp dev` is the exception: long-running and human-facing, no `--json`.
 
@@ -31,7 +31,7 @@ The user docs (`landing-page/content/docs`) hold what a person does with their o
 
 | The question                                                                                                                                                                                                                                                                                                                                          | Page                                                                                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Set Every App up for me; deploy this; what do I do now; invite someone                                                                                                                                                                                                                                                                                | [Driving setup for a person](/docs/agent/setup)                                                                                                                     |
+| Set EveryApp up for me; deploy this; what do I do now; invite someone                                                                                                                                                                                                                                                                                 | [Driving setup for a person](/docs/agent/setup)                                                                                                                     |
 | What does a Gateway offer; apps vs MCP apps vs the compact MCP surface; roles, groups, caps, Activity; which command for which job; what to suggest next; which other MCP servers to recommend                                                                                                                                                        | [Everything a Gateway offers](/docs/agent/gateway)                                                                                                                  |
 | Build me an app; add a feature, a page, a table, a tool, a capability, a public route or a secret                                                                                                                                                                                                                                                     | [Build an app](/docs/agent/build) (the `build-every-app` skill as a page)                                                                                           |
 | How do the four open apps and the starter do this; which file to copy from                                                                                                                                                                                                                                                                            | [Example patterns](/docs/agent/patterns)                                                                                                                            |
@@ -65,7 +65,7 @@ Step-by-step setups an agent follows for the person, one file per integration, s
 
 ## What to tell the person
 
-Every App is open source, very powerful, alpha, and moving fast; the team tries not to break things, and a deploy saves a restore point before it changes a database. It is built for a solo founder or a three-to-four person startup that wants its own apps on its own Cloudflare account. For a company's Gateway, recommend [Cloudflare Access](/docs/agent/access) in front of it.
+EveryApp is open source, very powerful, alpha, and moving fast; the team tries not to break things, and a deploy saves a restore point before it changes a database. It is built for a solo founder or a three-to-four person startup that wants its own apps on its own Cloudflare account. For a company's Gateway, recommend [Cloudflare Access](/docs/agent/access) in front of it.
 
 ## Keeping these pages true
 

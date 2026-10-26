@@ -63,7 +63,7 @@ does, once, in
   personal organizations and verified email, shared first-party apps, no
   Access sign-in (its settings are ignored and its plugin is not
   registered), the setup claim (the first owner's organization is the
-  platform organization, named Every App), registration 200 a day per address and 20,000 per
+  platform organization, named EveryApp), registration 200 a day per address and 20,000 per
   gateway, and tenant admins can't act on accounts (deactivate, reactivate,
   reset a password, delete one): removing a member keeps the account.
   Third-party deploys stay off behind a launch gate.
@@ -272,7 +272,7 @@ does, once, in
   in its own organization (and, bound to an app, in that app only).
 - A shared app (`scope = 'shared'`, the hosted gateway's first-party apps)
   is a registry row of the platform organization (the install organization,
-  "Every App"), at `<appId>.<APP_BASE_DOMAIN>`, on a service binding, one
+  "EveryApp"), at `<appId>.<APP_BASE_DOMAIN>`, on a service binding, one
   Worker for every organization. Any live member of any active
   organization opens it, with no `user_app_access` row, acting under their
   session's organization: the JWT carries that organization, and the app
@@ -441,15 +441,15 @@ in the gateway's Cloudflare account **is** operator authority.
   docs/threat-model.md B1). Its tools stay out of `/mcp` until an admin runs
   the `secret set` command the app lists show.
 - The gateway strips `Cookie` and every inbound `x-everyapp-*` trust header on
-  both public and private routes. Apps must never trust client-supplied Every
-  App headers.
+  both public and private routes. Apps must never trust client-supplied
+  EveryApp headers.
 - Private routes also strip inbound `Authorization`, require a valid gateway
   session and app access, then receive a fresh RS256 identity JWT in
   `x-everyapp-identity`.
 - Public routes forward inbound `Authorization` so the app can implement its
   own bearer-token API or webhook authentication. The gateway does not
-  interpret that header and never treats it as Every App identity. Every
-  App's own bearers are never forwarded: a personal access token (`epat_…`)
+  interpret that header and never treats it as EveryApp identity.
+  EveryApp's own bearers are never forwarded: a personal access token (`epat_…`)
   or a token of the gateway's OAuth server authenticates, or the request
   fails closed.
 - Anonymous public requests receive a signed public marker. A signed-in member

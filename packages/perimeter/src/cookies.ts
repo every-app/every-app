@@ -19,7 +19,7 @@
  * person clears it.
  */
 export const DUPLICATE_SESSION_COOKIE_MESSAGE =
-  "Your browser sent more than one Every App session cookie, which another site on this domain can cause. Clear this site's cookies and sign in again.";
+  "Your browser sent more than one EveryApp session cookie, which another site on this domain can cause. Clear this site's cookies and sign in again.";
 
 /**
  * How many times the Cookie header names any of `names`. A request may carry

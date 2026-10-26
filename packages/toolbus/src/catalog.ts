@@ -302,7 +302,7 @@ export async function fetchAppCatalog(
   if ([401, 403, 404, 405].includes(response.status)) {
     return {
       status: "unsupported",
-      error: `the app answered ${response.status}; it does not serve agent tools (Every App SDK 0.3 or later)`,
+      error: `the app answered ${response.status}; it does not serve agent tools (EveryApp SDK 0.3 or later)`,
     };
   }
   return {

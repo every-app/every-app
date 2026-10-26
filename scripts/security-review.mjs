@@ -172,7 +172,7 @@ function prompt({ withDiff }) {
   const diffSection = withDiff
     ? `DIFF CONTENT:\n\`\`\`\n${diff}\n\`\`\`\n\nReview the complete diff above. This contains all code changes on the branch.`
     : "NOTE: the diff was omitted because it is too long for one prompt. Read the files listed above with the Read tool and review what they contain.";
-  return `You are a senior security engineer conducting a focused security review of the pending changes on branch "${branch}" of the Every App repository (a self-hosted platform for private web apps on Cloudflare), against ${base} (merge base ${mergeBase.slice(0, 8)}).
+  return `You are a senior security engineer conducting a focused security review of the pending changes on branch "${branch}" of the EveryApp repository (a self-hosted platform for private web apps on Cloudflare), against ${base} (merge base ${mergeBase.slice(0, 8)}).
 
 Files modified:
 ${files.map((f) => `- ${f}`).join("\n")}
@@ -181,7 +181,7 @@ ${diffSection}
 
 ${promptFile("audit-prompt.md")}
 
-EVERY APP'S BOUNDARIES (what to look for in this repository; read docs/threat-model.md with the Read tool when a change touches one, it names each boundary's invariants and the code that holds them):
+EVERYAPP'S BOUNDARIES (what to look for in this repository; read docs/threat-model.md with the Read tool when a change touches one, it names each boundary's invariants and the code that holds them):
 ${promptFile("scan-instructions.md")}
 
 FALSE-POSITIVE FILTERING: before reporting a finding, check it against every rule below as a second reviewer would, and drop it when a rule matches or your confidence is below 0.8.

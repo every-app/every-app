@@ -70,7 +70,7 @@ const routes = buildRouteMap({
   // provider registry's group now, and its hidden `on|off` run `mcp on|off`
   // through launch week for documents that still say them.
   docs: {
-    brief: "Deploy and run Every App apps on your own Cloudflare account.",
+    brief: "Deploy and run EveryApp apps on your own Cloudflare account.",
   },
 });
 

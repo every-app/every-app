@@ -161,12 +161,12 @@ before step 8.
 2. **Person:** signed in to Google with the Workspace account (a gmail.com
    account shows no organization), create the project at
    https://console.cloud.google.com/projectcreate: Project name (for example
-   `Every App`), Location → Browse → the Workspace organization (needed for
+   `EveryApp`), Location → Browse → the Workspace organization (needed for
    *Internal*; "No organization" otherwise) → Create. Done when the
    project's dashboard opens with its name in the top bar. With gcloud
    (checked against the reference today, not run here): the person runs
    `gcloud auth login` (opens a browser), then
-   `gcloud projects create every-app-gateway-<4 digits> --name="Every App" --set-as-default`
+   `gcloud projects create every-app-gateway-<4 digits> --name="EveryApp" --set-as-default`
    (any unused id: ids are global and never reusable, so a taken one is
    refused; add `--organization=ORGANIZATION_ID` for *Internal*, the number
    from `gcloud organizations list`).
@@ -185,7 +185,7 @@ before step 8.
    ids are the APIs' own hosts (their discovery documents, Sources).
 4. **Person:** configure the consent screen at
    https://console.cloud.google.com/auth/overview → Get Started. App
-   Information: App name (what members see, for example `Every App`), User
+   Information: App name (what members see, for example `EveryApp`), User
    support email → Next. Audience: *Internal* (only that Workspace's
    accounts, no verification) or *External* → Next. Contact Information: an
    email for Google's notices → Next. Finish: agree to the User Data Policy
@@ -203,7 +203,7 @@ before step 8.
    scopes" or "Your sensitive scopes".
 6. **Person:** create the client at https://console.cloud.google.com/auth/clients
    → Create client → Application type: Web application → Name (for example
-   `Every App Gateway`) → Authorized redirect URIs → Add URI → paste the exact
+   `EveryApp Gateway`) → Authorized redirect URIs → Add URI → paste the exact
    URI from step 1 → Create. No Authorized JavaScript origins. A dialog shows
    the Client ID and the Client secret once (afterwards only its last four
    characters). Click Download JSON; browsers save it as
@@ -261,7 +261,7 @@ before step 8.
    https://crm.<app base domain>/settings/connections/google
    (Settings → Connections → Google Workspace) → Connect → choose the
    account → (Testing: "Google hasn't verified this app" → Advanced → Go to
-   Every App (unsafe)) → Allow. Done when the page shows the "Connected"
+   EveryApp (unsafe)) → Allow. Done when the page shows the "Connected"
    badge with their address. Wait for that.
 
 ## Verify
@@ -320,7 +320,7 @@ before step 8.
 | App: "Google returned an error. Try again." (`error=exchange_failed`) | Google refused with any code but a decline (`admin_policy_enforced`, `org_internal`, a failed token exchange); the CRM's logs say `[mailbox] code exchange failed` with a reason | Read the code in the CRM's logs or on Google's page, then the rows below |
 | Google "Error 400: admin_policy_enforced" | The Workspace admin restricts the scopes or the app | A Workspace admin (Service Settings privilege): Admin console → Security → Access and data control → API controls (admin.google.com/ac/owl) → Manage App Access → Configure new app → search the client id → Continue → Trusted → Continue → Finish |
 | Google "Error 403: org_internal" | *Internal* audience, account outside the organization | Use a Workspace account, or switch to *External* |
-| "Google hasn't verified this app" | *External*, unverified, sensitive or restricted scopes | Advanced → Go to Every App (unsafe), or verify |
+| "Google hasn't verified this app" | *External*, unverified, sensitive or restricted scopes | Advanced → Go to EveryApp (unsafe), or verify |
 | Sync stops after 7 days, `invalid_grant` | *External* in Testing: consent expired | Reconnect; publish and verify to stop it |
 | `403 accessNotConfigured` ("has not been used in project") | Gmail or Calendar API not enabled in that project | Step 3 in the project the error names; wait a minute |
 | Google "Error 401: deleted_client" | The client was deleted (30-day restore window) | Restore it under Deleted credentials, or make a new one |

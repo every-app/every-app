@@ -247,7 +247,7 @@ set it. `true` turns passwords back on.
 
 ## Taking someone off: Deactivate
 
-Deactivate them in Every App (Manage workspace → Users → ⋯ →
+Deactivate them in EveryApp (Manage workspace → Users → ⋯ →
 Deactivate). That signs them out everywhere and revokes their personal
 access tokens and AI connections, whatever the provider says; their next
 "Continue with Google" is refused. Removing them at the provider (the

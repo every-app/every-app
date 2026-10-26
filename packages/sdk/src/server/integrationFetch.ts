@@ -1134,6 +1134,6 @@ export async function gatewayRefusal(
     typeof body === "object" &&
     typeof (body as { message?: unknown }).message === "string"
       ? (body as { message: string }).message
-      : `The Every App gateway refused the call (${code}).`;
+      : `The EveryApp gateway refused the call (${code}).`;
   return { status: response.status, code, message };
 }

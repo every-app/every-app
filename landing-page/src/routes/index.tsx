@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
-const homeTitle = "Every App: Make every app open source";
+const homeTitle = "EveryApp: Make every app open source";
 const homeDescription =
-  "Own your tools. Customize your tools. Pay as you go. Every App puts the web apps you build online, in your own Cloudflare account. Open source, alpha.";
+  "Own your tools. Customize your tools. Pay as you go. EveryApp puts the web apps you build online, in your own Cloudflare account. Open source, alpha.";
 // What the Open Graph card says, so a screen reader hears the same words a sighted reader sees.
-const ogImageAlt = "Every App. Make every app open source.";
+const ogImageAlt = "EveryApp. Make every app open source.";
 
 const openSeoRepo = "every-app/open-seo";
 // Seed value so the badge never renders empty; refreshed from the GitHub API on load.
@@ -202,7 +202,7 @@ function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <img
             src="/transparent-logo-256.png"
-            alt="Every App logo"
+            alt="EveryApp logo"
             className="h-12 w-12 opacity-80"
             width={48}
             height={48}
@@ -233,7 +233,7 @@ function Home() {
           <div className="mx-auto w-full max-w-6xl">
             <div className="max-w-2xl">
               <h1 className="landing-reveal mb-8 text-[clamp(3rem,10vw,7rem)] font-bold leading-none tracking-tight text-white">
-                EVERY APP
+                EVERYAPP
               </h1>
               <blockquote
                 className="landing-reveal mb-8 border-l-2 border-stone-600 pl-5 text-[clamp(1.5rem,3vw,2rem)] font-normal leading-snug text-white"
@@ -254,7 +254,7 @@ function Home() {
                 style={{ animationDelay: "200ms" }}
               >
                 <p>
-                  Every App puts the web apps you build online, in your own
+                  EveryApp puts the web apps you build online, in your own
                   Cloudflare account. Each app gets a web address, a database
                   and a sign-in. One Gateway sits in front of them all and gives
                   each app only what you allow.
@@ -339,7 +339,7 @@ function Home() {
             <Code>
               pnpm everyapp install https://github.com/every-app/&lt;repo&gt;
             </Code>{" "}
-            from your Every App folder installs one; run it again to update.
+            from your EveryApp folder installs one; run it again to update.
             OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key,
             OpenAnalytics a secret of its own. The three that use AI share one
             key on the Gateway.

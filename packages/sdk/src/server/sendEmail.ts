@@ -106,7 +106,7 @@ async function sendThroughGateway(
     throw new GatewayRefusalError({
       status: response.status,
       code: "email_send_failed",
-      message: `The Every App gateway answered ${response.status} to the send.`,
+      message: `The EveryApp gateway answered ${response.status} to the send.`,
     });
   }
   return (await response.json()) as SendEmailResult;

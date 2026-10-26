@@ -69,12 +69,12 @@ Account Holder or an Admin of the team can set up the identifiers.
 1. **You:** give the person `<gateway host>` and `data.callbackUrl`.
 2. **Person:** the App ID. https://developer.apple.com/account/resources/identifiers/list
    → **+** → **App IDs** → **Continue** → **App** → **Continue** →
-   Description (`Every App`), Bundle ID **Explicit** (`com.<their domain
+   Description (`EveryApp`), Bundle ID **Explicit** (`com.<their domain
    reversed>.everyapp`) → tick **Sign in with Apple** (as a primary App
    ID) → **Continue** → **Register**.
 3. **Person:** the Services ID, which is the client id. Same page → **+** →
    **Services IDs** → **Continue** → Description (people see it, for
-   example `Every App`), Identifier (`com.<their domain reversed>.gateway`;
+   example `EveryApp`), Identifier (`com.<their domain reversed>.gateway`;
    not the App ID's) → **Continue** → **Register**. Open it from the list
    (the filter top right switches to **Services IDs**) → tick **Sign in
    with Apple** → **Configure** → Primary App ID: step 2's → the domain
@@ -83,7 +83,7 @@ Account Holder or an Admin of the team can set up the identifiers.
    show **Domains and Subdomains** and **Return URLs** apart) → **Done** →
    **Continue** → **Save**. No file to upload to the domain.
 4. **Person:** the key. https://developer.apple.com/account/resources/authkeys/list
-   → **+** → Key Name (`Every App sign-in`) → tick **Sign in with Apple**
+   → **+** → Key Name (`EveryApp sign-in`) → tick **Sign in with Apple**
    → **Configure** → step 2's App ID → **Save** → **Continue** →
    **Register** → **Download** (one chance: the file is
    `AuthKey_<Key ID>.p8`, in Downloads) → **Done**. The Key ID is in the

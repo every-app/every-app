@@ -124,7 +124,7 @@ export function ConsentForm({
           </div>
           <CardTitle className="mt-4 text-xl">
             <h1 className="line-clamp-3 break-words" title={client.name}>
-              Connect {client.name} to Every App
+              Connect {client.name} to EveryApp
             </h1>
           </CardTitle>
           {verified ? (

@@ -63,7 +63,7 @@ describe("sendEmail", () => {
     const send = vi.fn().mockResolvedValue({ messageId: "message-1" });
     workerEnv.EMAIL = { send };
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
 
     await sendEmail({
       kind: "reset",
@@ -76,7 +76,7 @@ describe("sendEmail", () => {
     expect(send).toHaveBeenCalledOnce();
     expect(send).toHaveBeenCalledWith({
       to: "user@example.net",
-      from: { email: "noreply@example.com", name: "Every App" },
+      from: { email: "noreply@example.com", name: "EveryApp" },
       subject: "Reset your password",
       html: "<p>Reset it</p>",
       text: "Reset it",
@@ -104,7 +104,7 @@ describe("sendEmail", () => {
     workerEnv.EMAIL_REST_API_TOKEN = "rest-token";
     workerEnv.CLOUDFLARE_ACCOUNT_ID = "account-id";
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
 
     await sendEmail({
       kind: "reset",
@@ -130,8 +130,8 @@ describe("sendEmail", () => {
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(request.body as string)).toEqual({
       to: "user@example.net",
-      from: { address: "noreply@example.com", name: "Every App" },
-      reply_to: { address: "noreply@example.com", name: "Every App" },
+      from: { address: "noreply@example.com", name: "EveryApp" },
+      reply_to: { address: "noreply@example.com", name: "EveryApp" },
       subject: "Reset your password",
       html: "<p>Reset it</p>",
       text: "Reset it",
@@ -155,7 +155,7 @@ describe("sendEmail", () => {
     workerEnv.EMAIL_REST_API_TOKEN = "rest-token";
     workerEnv.CLOUDFLARE_ACCOUNT_ID = "account-id";
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -204,7 +204,7 @@ describe("sendEmail", () => {
     workerEnv.EMAIL_REST_API_TOKEN = "rest-token";
     workerEnv.CLOUDFLARE_ACCOUNT_ID = "account-id";
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -231,7 +231,7 @@ describe("sendEmail", () => {
   it("accepts the previous combined sender format", async () => {
     const send = vi.fn().mockResolvedValue({ messageId: "message-1" });
     workerEnv.EMAIL = { send };
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
 
     await sendEmail({
       kind: "invitation",
@@ -243,7 +243,7 @@ describe("sendEmail", () => {
 
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: { email: "noreply@example.com", name: "Every App" },
+        from: { email: "noreply@example.com", name: "EveryApp" },
       }),
     );
   });
@@ -283,7 +283,7 @@ describe("sendEmail", () => {
     });
     workerEnv.EMAIL = { send: vi.fn().mockRejectedValue(providerError) };
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -339,7 +339,7 @@ describe("sendEmail's provider", () => {
     workerEnv.RESEND_API_KEY = undefined;
     workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
   });
 
   it("sends through Resend once RESEND_API_KEY is set, the binding notwithstanding", async () => {
@@ -360,7 +360,7 @@ describe("sendEmail's provider", () => {
     );
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(request.body as string)).toEqual({
-      from: "Every App <noreply@example.com>",
+      from: "EveryApp <noreply@example.com>",
       to: ["user@example.net"],
       subject: "Invitation",
       html: "<p>Join us</p>",
@@ -491,7 +491,7 @@ describe("sendEmail for apps", () => {
     workerEnv.RESEND_API_KEY = undefined;
     workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
   });
 
   it("hands the binding the app's sender, recipients, headers and base64 attachments", async () => {
@@ -601,7 +601,7 @@ describe("sendEmail's daily budgets", () => {
     workerEnv.RESEND_API_KEY = undefined;
     workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = "noreply@example.com";
-    workerEnv.EMAIL_FROM_NAME = "Every App";
+    workerEnv.EMAIL_FROM_NAME = "EveryApp";
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
@@ -705,12 +705,12 @@ describe("isEmailConfigured", () => {
   });
 
   it("is false with a sender but no transport", () => {
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
     expect(isEmailConfigured()).toBe(false);
   });
 
   it("is true with a sender and the binding or the REST API", () => {
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
     workerEnv.EMAIL = { send: vi.fn() };
     expect(isEmailConfigured()).toBe(true);
 
@@ -723,7 +723,7 @@ describe("isEmailConfigured", () => {
   it("is true with a sender and Resend's key alone", () => {
     workerEnv.RESEND_API_KEY = "re_key";
     expect(isEmailConfigured()).toBe(false);
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
     expect(isEmailConfigured()).toBe(true);
     expect(configuredEmailProvider()).toBe("resend");
   });

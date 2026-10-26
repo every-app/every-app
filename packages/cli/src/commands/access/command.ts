@@ -116,7 +116,7 @@ const offCommand = buildCommand({
     fullDescription: [
       "Removes CLOUDFLARE_ACCESS_AUD, CLOUDFLARE_ACCESS_APPS_AUD and CLOUDFLARE_ACCESS_TEAM_DOMAIN",
       "from the Gateway in one change, so passwords sign people in again at once, then deletes the",
-      "two Access applications (one that also covers something else only loses Every App's hosts).",
+      "two Access applications (one that also covers something else only loses EveryApp's hosts).",
       "The Zero Trust team, its identity providers and the allow policy stay: other applications may",
       "use them. Asks first.",
       "",

@@ -170,7 +170,7 @@ describe("the Google-first proof: OpenSEO through the Gateway's Google connectio
             access: "read",
             optional: true,
             scopes: ["identity", "search-console.read", "analytics.read"],
-            why: "Search Console and GA4 reads for your sites, with the Google account you connect in Every App.",
+            why: "Search Console and GA4 reads for your sites, with the Google account you connect in EveryApp.",
           },
           "github-oauth": {
             access: "read",

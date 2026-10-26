@@ -4,7 +4,7 @@ import path from "node:path";
 /** What to add when an app has no cloudflare.config.ts. */
 export const MISSING_CLOUDFLARE_CONFIG = [
   "No cloudflare.config.ts in this app",
-  "Every App apps build their Worker in a cloudflare.config.ts at the app root:",
+  "EveryApp apps build their Worker in a cloudflare.config.ts at the app root:",
   "",
   '  import { defineConfig } from "cf/config";',
   '  import { everyAppWorker } from "@every-app/sdk/cloudflare";',

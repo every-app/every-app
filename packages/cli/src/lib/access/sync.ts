@@ -217,7 +217,7 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
       type: "warning",
       code: "ACCESS_FOREIGN_DESTINATION",
       step: "access.routes",
-      message: `The Access application "${application}" also covers ${listed(uris)}\n${plural(uris.length, "That destination").replace(/^1 That destination/, "That destination").replace(/^(\d+) That destinations?/, "Those $1 destinations")} ${uris.length === 1 ? "isn't" : "aren't"} Every App's and ${uris.length === 1 ? "stays" : "stay"} as ${uris.length === 1 ? "it is" : "they are"}. access off won't delete this application.`,
+      message: `The Access application "${application}" also covers ${listed(uris)}\n${plural(uris.length, "That destination").replace(/^1 That destination/, "That destination").replace(/^(\d+) That destinations?/, "Those $1 destinations")} ${uris.length === 1 ? "isn't" : "aren't"} EveryApp's and ${uris.length === 1 ? "stays" : "stay"} as ${uris.length === 1 ? "it is" : "they are"}. access off won't delete this application.`,
       data: { application, uris },
     });
   }

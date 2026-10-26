@@ -90,7 +90,7 @@ if (host !== gatewayHost && !app) {
 }
 
 const access = state.access ?? { on: false, team: null };
-const where = app ? `${app.name ?? app.id}` : "Every App";
+const where = app ? `${app.name ?? app.id}` : "EveryApp";
 let response;
 if (host === gatewayHost && url.pathname.startsWith("/.well-known/")) {
   response = {

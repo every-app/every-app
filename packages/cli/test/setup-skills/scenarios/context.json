@@ -48,7 +48,7 @@
     {
       "name": "key-copied",
       "when": "context\\.dev/dashboard/api-keys",
-      "reply": "I have it copied. The key is listed on that page as Every App Gateway.",
+      "reply": "I have it copied. The key is listed on that page as EveryApp Gateway.",
       "skipWhenDone": true
     },
     {

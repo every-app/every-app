@@ -156,7 +156,7 @@ export function listingChoice(request: Request): Listing | undefined {
 function refusalMessage(reason: RefusedCaller["reason"]): string | null {
   switch (reason) {
     case "not_connected":
-      return `No Every App account is connected to this Cloudflare Access identity. Open ${env.GATEWAY_URL?.trim() || "the gateway"} in your browser, sign in once, then connect again.`;
+      return `No EveryApp account is connected to this Cloudflare Access identity. Open ${env.GATEWAY_URL?.trim() || "the gateway"} in your browser, sign in once, then connect again.`;
     case "account_deactivated":
       return "This account has been deactivated.";
     case "organization_unresolved":

@@ -434,7 +434,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
       type: "warning",
       code: "ACCESS_IDP_UNVERIFIED_EMAILS",
       step: STEP,
-      message: `${listed(unverified.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${unverified.length === 1 ? "is a generic provider, left off the Every App applications" : "are generic providers, left off the Every App applications"}\nThe Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; allow only providers that verify addresses (runbook: "Verified emails").`,
+      message: `${listed(unverified.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${unverified.length === 1 ? "is a generic provider, left off the EveryApp applications" : "are generic providers, left off the EveryApp applications"}\nThe Gateway signs people in as the email Access asserts. A provider that lets people choose their own address would let them choose someone else's; allow only providers that verify addresses (runbook: "Verified emails").`,
       data: { providers: unverified.map((provider) => ({ id: provider.id, type: provider.type, name: provider.name ?? null })) },
     });
   }
@@ -661,7 +661,7 @@ function warnIfOpenToAnyCloudflareAccount(out: EventSink, providers: readonly Ac
     type: "warning",
     code: "ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT",
     step: STEP,
-    message: `${listed(open.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${open.length === 1 ? "is" : "are"} open to any Cloudflare account, so left off the Every App applications\nRestrict to account members is off, so anyone with a Cloudflare account could sign in there, and Cloudflare doesn't promise the address it asserts is verified: someone who registers a Cloudflare account under a member's address could sign in as that member. Turn Restrict to account members on (Zero Trust → Settings → Authentication → the provider), then run access on again; an application that allowed it before keeps it.`,
+    message: `${listed(open.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${open.length === 1 ? "is" : "are"} open to any Cloudflare account, so left off the EveryApp applications\nRestrict to account members is off, so anyone with a Cloudflare account could sign in there, and Cloudflare doesn't promise the address it asserts is verified: someone who registers a Cloudflare account under a member's address could sign in as that member. Turn Restrict to account members on (Zero Trust → Settings → Authentication → the provider), then run access on again; an application that allowed it before keeps it.`,
     data: { providers: open.map((provider) => ({ id: provider.id, type: provider.type, name: provider.name ?? null })) },
   });
 }
@@ -860,7 +860,7 @@ function reportOn(
   const leftOff = result.signInMethods.filter((provider) => !result.allowedMethods.includes(provider));
   if (leftOff.length > 0) {
     notes.push(
-      `${listed(leftOff.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${leftOff.length === 1 ? "is" : "are"} on the team but not allowed on the Every App applications: access on allows only the one-time PIN and a Cloudflare provider restricted to this account's members. Allow another on both applications in the dashboard (Zero Trust → Access controls → Applications); access on never takes a method off.`,
+      `${listed(leftOff.map((provider) => `${provider.name ?? provider.id} (${provider.type})`))} ${leftOff.length === 1 ? "is" : "are"} on the team but not allowed on the EveryApp applications: access on allows only the one-time PIN and a Cloudflare provider restricted to this account's members. Allow another on both applications in the dashboard (Zero Trust → Access controls → Applications); access on never takes a method off.`,
     );
   }
   notes.push("MCP clients and personal access tokens keep working: the Gateway's /mcp, the OAuth endpoints, /health and each app's public routes are let through without a login (an app host's /mcp only where its manifest asks for it).");

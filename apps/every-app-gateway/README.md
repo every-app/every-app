@@ -1,4 +1,4 @@
-# Every App Gateway
+# EveryApp Gateway
 
 The Gateway is the one public Worker: it signs people in, holds the organization
 and its members, proxies every app's hostname through the perimeter, serves the

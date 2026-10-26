@@ -8,7 +8,7 @@ by the agent that made the change, with no CI job and no API key.
 ## The app boundaries
 
 What the review looks for (what the Gateway promises and what the app must
-do itself is the threat model, `docs/threat-model.md` in the Every App
+do itself is the threat model, `docs/threat-model.md` in the EveryApp
 checkout, served at https://everyapp.com/docs/agent/repo/threat-model):
 
 - A route, server function or tool that reads who the user is from anything

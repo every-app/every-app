@@ -1484,7 +1484,7 @@ describe("an admin administering the workspace over /mcp", () => {
     // A sender: the mail goes to the member with a one-hour token, and the
     // answer carries no link.
     const sent: { to: string; subject: string; text?: string }[] = [];
-    hoisted.env["EMAIL_FROM"] = "Every App <noreply@example.com>";
+    hoisted.env["EMAIL_FROM"] = "EveryApp <noreply@example.com>";
     hoisted.env["EMAIL"] = {
       send: async (mail: { to: string; subject: string; text?: string }) => {
         sent.push(mail);
@@ -1504,7 +1504,7 @@ describe("an admin administering the workspace over /mcp", () => {
       expect(sent).toEqual([
         expect.objectContaining({
           to: "member@example.com",
-          subject: "Reset your Every App password",
+          subject: "Reset your EveryApp password",
         }),
       ]);
       expect(sent[0]?.text).toMatch(
@@ -2424,7 +2424,7 @@ describe("the events tools over /mcp", () => {
       delivered: true,
       delivery: {
         id: expect.stringMatching(/^dlv_[0-9a-f]{24}$/),
-        event: { type: "ping", summary: "Test event from Every App" },
+        event: { type: "ping", summary: "Test event from EveryApp" },
         subscription: { id: tested, name: "Tested" },
         state: "delivered",
         attempts: 1,

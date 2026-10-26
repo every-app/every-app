@@ -154,7 +154,7 @@ Its `data`: `{ app: { id, deployed, workerName, declared, workers: [{ workerName
 
 Every name `pnpm everyapp secret set` changes on the Gateway, from `SETTABLE_GATEWAY_SETTINGS` (`packages/sdk/src/internal/gatewaySettings.ts`) and the remote MCP credentials' `_MCP_TOKEN` family ("MCP apps" below), with what it configures (`apps/every-app-gateway/src/env.d.ts` and the modules named) and the manifest entry an app lists to use it. "Required" and "optional" are what the settings model reports for an app that lists the entry (`appSettings()` in `packages/sdk/src/internal/appSettings.ts`: required unless the entry says `optional: true` or names an `anyOf` group): required ones show as `! not set` in `secret list`, optional ones as `not set (optional)`.
 
-Where a setting has a setup skill, its section names it as `setup/<name>.md`: that is `packages/cli/skills/everyapp/setup/<name>.md` in the Every App checkout and, in an app, `.claude/skills/everyapp/setup/<name>.md` (also under `.agents/skills/everyapp/setup/`; `everyapp create` copies the skill into both, `packages/cli/src/lib/app/skill.ts`); the index is `setup/README.md`. The skills hold the step-by-step setup of each integration; this page holds what each setting does.
+Where a setting has a setup skill, its section names it as `setup/<name>.md`: that is `packages/cli/skills/everyapp/setup/<name>.md` in the EveryApp checkout and, in an app, `.claude/skills/everyapp/setup/<name>.md` (also under `.agents/skills/everyapp/setup/`; `everyapp create` copies the skill into both, `packages/cli/src/lib/app/skill.ts`); the index is `setup/README.md`. The skills hold the step-by-step setup of each integration; this page holds what each setting does.
 
 ### AI providers
 

@@ -112,7 +112,7 @@ value is set.
    Confirm the email if asked: until it is confirmed the API answers 40104.
    When it worked, the dashboard at app.dataforseo.com opens and shows a $1
    balance. Already registered: sign in at https://app.dataforseo.com. Ran
-   elsewhere: an OpenSEO deployed outside Every App held the base64 form of
+   elsewhere: an OpenSEO deployed outside EveryApp held the base64 form of
    the same credential, which works unchanged here (step 4's note), and if
    that deployment whitelisted its server's IP on API Access, the list has
    to be emptied (step 2). Wait for "I'm in".
@@ -197,7 +197,7 @@ value is set.
    (`https://<gateway host>/?setup=openseo`) means a required setting is
    still unset: Verify 1 says which. OpenSEO shows one message for a
    missing key and a rejected one alike: "DataForSEO isn't set up on your
-   Every App gateway yet, or rejected the key it holds. An owner or admin
+   EveryApp gateway yet, or rejected the key it holds. An owner or admin
    sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." Tell them apart with
    `pnpm everyapp secret list --json`: `DATAFORSEO_API_KEY` absent from
    `data.gateway.names` means step 4 did not land (behind the Gateway's
@@ -227,7 +227,7 @@ value is set.
 | `SECRET_SEVERAL_NAMES`                                                             | `--from-env` or a pipe with more than one name                                                                         | One name per call                                                                                                             |
 | `SECRET_EMPTY`                                                                     | The `--from-env` variable is empty or not exported in that shell                                                       | The hidden read (README's third way) in that same terminal first, then rerun                                                  |
 | A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key or the OpenRouter one; Context is optional) | `data.app.setup.command`, `pnpm everyapp configure openseo` (step 4), then Verify 1                                  |
-| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway yet, or rejected the key it holds. An owner or admin sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
+| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your EveryApp gateway yet, or rejected the key it holds. An owner or admin sets it with pnpm everyapp secret set DATAFORSEO_API_KEY." (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
 | `capability_not_requested` (403)                                                   | The deployed manifest does not list `capabilities.dataforseo`                                                          | OpenSEO's does; a fork must add it to `everyapp.config.ts` and deploy again                                                   |
 | `integration_path_not_allowed` (403)                                               | The app called an account-wide path (`appendix/user_data`, `appendix/webhook_resend`, `tasks_ready`, `id_list`, `errors`) | By design: one key serves every app. Check balance and limits from the terminal (Verify 2)                                 |
 | `integration_method_not_allowed` (405)                                             | A method other than GET or POST                                                                                        | DataForSEO reads with GET and POST only                                                                                       |

@@ -38,7 +38,7 @@ const POLICY_DIR = path.join(HERE, "public-copy");
 const PRIVATE_FILE = "scripts/public-copy/private.txt";
 const MARKER = "Built by scripts/public-copy.mjs";
 /** The one identity the public commits carry; the dates are the source commit's. */
-const AUTHOR = { name: "Every App", email: "noreply@everyapp.com" };
+const AUTHOR = { name: "EveryApp", email: "noreply@everyapp.com" };
 
 const HELP = `node scripts/public-copy.mjs [options]
 
@@ -366,7 +366,7 @@ async function run(opts) {
     git(["init", "--quiet", "--initial-branch=main"], { cwd: tree, env });
     git(["add", "--all", "--force", "."], { cwd: tree, env });
     const message = [
-      `Every App at ${committedAt.slice(0, 10)}`,
+      `EveryApp at ${committedAt.slice(0, 10)}`,
       "",
       "The public copy of the maintainers' main branch, as one commit.",
       `Source commit ${sha.slice(0, 12)}.`,

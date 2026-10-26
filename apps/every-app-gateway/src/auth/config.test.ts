@@ -181,7 +181,7 @@ describe("createAuth email configuration", () => {
   it("emails a reset link with the token in the query string, not the path", async () => {
     const send = vi.fn(async () => ({ messageId: "m-1" }));
     workerEnv.EMAIL = { send };
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
     try {
       createAuth();
       await (
@@ -209,7 +209,7 @@ describe("createAuth email configuration", () => {
         messageId: "m-1",
       }));
       workerEnv.EMAIL = { send };
-      workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+      workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
       try {
         createAuth();
         await (

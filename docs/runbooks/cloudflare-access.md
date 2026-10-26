@@ -70,7 +70,7 @@ verified email). Whether they are a member is still the gateway's decision:
 
 ### Taking someone off: Deactivate, not Delete
 
-Deactivate them in Every App (**Admin → Users → ⋯ → Deactivate**). That
+Deactivate them in EveryApp (**Admin → Users → ⋯ → Deactivate**). That
 signs them out everywhere at once and revokes their personal access tokens
 and AI app connections, whatever Access says. Deploying is another matter:
 it takes the Cloudflare login, not a gateway account, so someone who still
@@ -195,16 +195,16 @@ npx cf@1.0.0-beta.14 zero-trust identity-providers create \
 npx cf@1.0.0-beta.14 zero-trust identity-providers create \
   --body '{"name":"One-time PIN","type":"onetimepin","config":{}}'
 
-# Who may use Every App (here: anyone at acme.com). Note its id.
+# Who may use EveryApp (here: anyone at acme.com). Note its id.
 npx cf@1.0.0-beta.14 zero-trust access policies create \
-  --name "Every App users" --decision allow \
+  --name "EveryApp users" --decision allow \
   --include '[{"email_domain":{"domain":"acme.com"}}]'
 ```
 
 In the dashboard: **Zero Trust** (pick a team name and plan on first visit;
 the Cloudflare provider comes with it) → **Integrations → Identity providers
 → Add new → One-time PIN**, and **Access controls → Policies → Add a policy**
-for the people who may use Every App.
+for the people who may use EveryApp.
 
 ## OIDC sign-in
 
@@ -217,7 +217,7 @@ The gateway sends PKCE (S256) and authenticates with the client secret.
 
 ```sh
 npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
-  "name": "Every App",
+  "name": "EveryApp",
   "type": "saas",
   "saas_app": {
     "auth_type": "oidc",
@@ -234,7 +234,7 @@ only here). The issuer is
 `https://<team>.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<client id>`.
 
 In the dashboard: **Access controls → Applications → Create new application
-→ SaaS application**, type a name (Every App) and select it, choose
+→ SaaS application**, type a name (EveryApp) and select it, choose
 **OIDC**, add the redirect URL, keep the `openid`, `email` and `profile`
 scopes, turn on **Proof of Key Exchange (PKCE)**, attach your policy and
 identity providers, and copy the **Client ID**, **Client secret** and
@@ -465,7 +465,7 @@ What changes:
   401" under "Troubleshooting").
 - Someone taken out of the policy loses MCP within the access token
   lifetime, 15 minutes by default: Access re-checks the policy at each
-  refresh. Deactivating them in Every App still cuts them off at once.
+  refresh. Deactivating them in EveryApp still cuts them off at once.
 - An AI app connected before the switch gets Access's 401 on its next
   request and connects again, this time through Access. Its old connection
   under **Connected AI apps** is dead weight: disconnect it.
@@ -668,7 +668,7 @@ open that one app and nothing else, bind the token to that app (Manage
 workspace → Tokens → Create access token, one app), and note that its expiry
 (90 days by default, a year at most) ends the monitor. Behind the outer ring
 the request also needs an Access **service token** (`CF-Access-Client-Id`
-and `CF-Access-Client-Secret`) from a Service Auth policy on the "Every App
+and `CF-Access-Client-Secret`) from a Service Auth policy on the "EveryApp
 apps" application. Make it a **reusable** policy: a policy added inline from
 the application's own page makes `access on` skip that application for good
 (`ACCESS_INLINE_POLICIES`), so later public routes never get through. The

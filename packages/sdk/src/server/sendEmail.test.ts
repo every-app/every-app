@@ -247,7 +247,7 @@ describe("sendEmail in local dev", () => {
           ...DEV,
           EMAIL_REST_API_TOKEN: "dev-token",
           CLOUDFLARE_ACCOUNT_ID: "dev-account",
-          EMAIL_FROM: "Every App <noreply@example.com>",
+          EMAIL_FROM: "EveryApp <noreply@example.com>",
         },
         message: { ...MESSAGE, from: "support@mail.example.com" },
       }),

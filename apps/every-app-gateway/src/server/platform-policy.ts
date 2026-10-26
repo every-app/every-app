@@ -203,7 +203,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         requireEmailVerification: true,
         accessSignIn: false,
         setupClaim: true,
-        platformOrganizationName: "Every App",
+        platformOrganizationName: "EveryApp",
         sharedApps: true,
         // Exactly "on": a typo, or anything else, keeps the gate shut.
         thirdPartyDeploys: env.THIRD_PARTY_DEPLOYS === "on",

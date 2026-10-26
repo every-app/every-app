@@ -15,7 +15,7 @@ export const BUILD_DOCS = {
   patterns: "https://everyapp.com/docs/agent/patterns.md",
 } as const;
 
-export const BUILD_PROMPT = `Help me build an app on Every App.
+export const BUILD_PROMPT = `Help me build an app on EveryApp.
 
 Read ${BUILD_DOCS.llms} first, then ${BUILD_DOCS.build} (the build-every-app skill) and ${BUILD_DOCS.patterns}; come back to them whenever unsure. The patterns point at the four example apps and the starter.
 

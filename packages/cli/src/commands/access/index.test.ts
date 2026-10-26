@@ -361,7 +361,7 @@ describe("access on, from nothing", () => {
     await on();
     expect(warnings("ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT")).toEqual([
       expect.objectContaining({
-        message: expect.stringContaining("Any Cloudflare user (cloudflare) is open to any Cloudflare account, so left off the Every App applications"),
+        message: expect.stringContaining("Any Cloudflare user (cloudflare) is open to any Cloudflare account, so left off the EveryApp applications"),
         data: { providers: [{ id: "idp-cf", type: "cloudflare", name: "Any Cloudflare user" }] },
       }),
     ]);
@@ -433,7 +433,7 @@ describe("access on, from nothing", () => {
     });
     expect(done()!["message"]).toContain("sign-in methods added");
     expect(done()!["message"]).toContain("sign-in with a Cloudflare account or a one-time PIN");
-    expect(done()!["message"]).toContain("Okta (okta) is on the team but not allowed on the Every App applications");
+    expect(done()!["message"]).toContain("Okta (okta) is on the team but not allowed on the EveryApp applications");
 
     // `show` agrees: in sync now, Okta listed as the team's, not compared.
     await show();

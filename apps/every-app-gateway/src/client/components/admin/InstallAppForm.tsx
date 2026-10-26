@@ -245,8 +245,8 @@ function Refusal({ error }: { error: Error }) {
         <CircleAlert />
         <AlertDescription className="flex min-w-0 flex-col gap-2">
           <span>
-            This repository publishes no Every App release. Clone it and deploy
-            from its checkout with the Every App CLI:
+            This repository publishes no EveryApp release. Clone it and deploy
+            from its checkout with the EveryApp CLI:
           </span>
           <CodeBlock code="pnpm everyapp deploy" />
         </AlertDescription>

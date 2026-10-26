@@ -121,7 +121,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
-        <meta name="apple-mobile-web-app-title" content="Every App" />
+        <meta name="apple-mobile-web-app-title" content="EveryApp" />
         <meta
           name="theme-color"
           content="#121212"
@@ -152,7 +152,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           href="/favicon-16x16.png"
         />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <title>Every App</title>
+        <title>EveryApp</title>
         <HeadContent />
       </head>
       <body>

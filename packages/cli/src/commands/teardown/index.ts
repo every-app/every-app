@@ -88,7 +88,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
   if (dryRun) {
     const message =
       total === 0
-        ? `Nothing of Every App is left in ${accountId}.`
+        ? `Nothing of EveryApp is left in ${accountId}.`
         : `Dry run: ${planSummary(plan)} would be removed from ${accountId}. Nothing was changed.`;
     out.emit({
       type: "done",
@@ -103,7 +103,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
     return;
   }
   if (total === 0) {
-    const message = `Nothing of Every App is left in ${accountId}.`;
+    const message = `Nothing of EveryApp is left in ${accountId}.`;
     out.emit({
       type: "done",
       message,
@@ -140,7 +140,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
       type: "step",
       step: "teardown.plan",
       status: "ok",
-      message: `Deleting everything Every App created in ${accountId}:`,
+      message: `Deleting everything EveryApp created in ${accountId}:`,
       data: { accountId, lines: shown },
     });
   }
@@ -153,7 +153,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
 function askAtTerminal(accountId: string, shown: readonly string[]): Promise<string> {
   return askText(`Type ${accountId} to delete all of this`, {
     context: [
-      `This deletes everything Every App created in Cloudflare account ${accountId}, for good:`,
+      `This deletes everything EveryApp created in Cloudflare account ${accountId}, for good:`,
       "",
       ...shown,
       "",

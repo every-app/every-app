@@ -80,7 +80,7 @@ describe("app email configuration (SQLite)", () => {
     isConfigured: () => true,
     sender: () => ({
       address: "noreply@gateway.example.com",
-      name: "Every App",
+      name: "EveryApp",
     }),
     provider: () => "cloudflare" as const,
     send,

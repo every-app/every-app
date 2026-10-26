@@ -43,7 +43,7 @@ pnpm install
 pnpm everyapp update
 ```
 
-Your people, apps and data stay. The apps you made in `apps/` are yours, not Every App's: git neither tracks nor ignores them, and `git pull` leaves them alone. If it stops with **Your local changes to the following files would be overwritten by merge: pnpm-lock.yaml**, run `git checkout -- pnpm-lock.yaml` and pull again: creating an app rewrote that file, and `pnpm install` adds your app back to it.
+Your people, apps and data stay. The apps you made in `apps/` are yours, not EveryApp's: git neither tracks nor ignores them, and `git pull` leaves them alone. If it stops with **Your local changes to the following files would be overwritten by merge: pnpm-lock.yaml**, run `git checkout -- pnpm-lock.yaml` and pull again: creating an app rewrote that file, and `pnpm install` adds your app back to it.
 
 When there's an update to take, `pnpm everyapp status` says **Your every-app folder has a newer Gateway than the one online**. That isn't a problem: your Gateway keeps working until you update it. Deploying a new app from the newer folder updates the Gateway on the way; deploying an app again never touches it.
 
@@ -59,7 +59,7 @@ Add `--purge` to delete its data too. This can't be undone, so it asks you to ty
 
 ## Remove everything
 
-There's no command for this yet. To take Every App out of your Cloudflare account, or to start again at a different address:
+There's no command for this yet. To take EveryApp out of your Cloudflare account, or to start again at a different address:
 
 1. Remove each app while the Gateway is still there: `pnpm everyapp delete my-app --purge` (above).
 2. If you turned Cloudflare Access on, run `pnpm everyapp access off`. [Check it, or turn it off](/docs/access#check-it-or-turn-it-off)

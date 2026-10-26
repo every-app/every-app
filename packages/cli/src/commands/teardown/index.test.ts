@@ -497,7 +497,7 @@ describe("teardown --dry-run", () => {
     expect(plan.dns.flatMap((name: { name: string; records: Array<{ type: string }> }) => name.records.map((record) => `${record.type} ${name.name}`))).toEqual(
       [`AAAA ${HOST}`, `AAAA todo.${HOST}`, `A todo.${HOST}`],
     );
-    expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which Every App never created`);
+    expect(plan.kept).toContain(`the TXT record at todo.${HOST}, which EveryApp never created`);
     expect(plan.counts).toMatchObject({ workers: 2, workflows: 1, d1: 2, kv: 2, r2: 2, hyperdrive: 1, vectorize: 1, aiGateway: 1, secretsStore: 1, access: 3, email: 2, dns: 3 });
     expect(plan.secretsStore).toEqual([{ storeId: expect.any(String), name: `${TODO_WORKER}--stripe-key`, id: "ss-ours" }]);
     // Nothing of what isn't ours.
@@ -506,7 +506,7 @@ describe("teardown --dry-run", () => {
 });
 
 describe("teardown", () => {
-  it("removes everything of Every App's and leaves everything else, then finds nothing left", async () => {
+  it("removes everything of EveryApp's and leaves everything else, then finds nothing left", async () => {
     await populate();
     const gatewayDbId = [...account.databases].find(([, entry]) => entry.name === GATEWAY)![0];
 
@@ -612,14 +612,14 @@ describe("teardown", () => {
     await run();
     expect(events.find((event) => event["type"] === "error")).toBeUndefined();
     expect(done()).toMatchObject({
-      message: `Nothing of Every App is left in ${ACCOUNT_ID}.`,
+      message: `Nothing of EveryApp is left in ${ACCOUNT_ID}.`,
       data: { accountId: ACCOUNT_ID, removed: [], kept: [], plan: expect.objectContaining({ total: 0, gateway: null }) },
     });
     expect(writes()).toEqual([]);
     expect([...account.workers.keys()]).toEqual(["other-worker"]);
   });
 
-  it("turns Email Routing off, and its MX records go, once only Every App's rules were there", async () => {
+  it("turns Email Routing off, and its MX records go, once only EveryApp's rules were there", async () => {
     await populate({ foreignMailRule: false });
 
     await run({ confirm: ACCOUNT_ID });
@@ -719,7 +719,7 @@ describe("teardown", () => {
     expect([...account.workers.keys()]).toEqual(["other-worker"]);
 
     await run();
-    expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
+    expect(done()!["message"]).toBe(`Nothing of EveryApp is left in ${ACCOUNT_ID}.`);
   });
 
   it("counts a certificate pack Cloudflare refused but had already removed with its Custom Domain as removed, and the Gateway's D1 goes", async () => {
@@ -768,7 +768,7 @@ describe("teardown", () => {
 
     account.buckets.delete(`${TODO_WORKER}--uploads`);
     await run();
-    expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
+    expect(done()!["message"]).toBe(`Nothing of EveryApp is left in ${ACCOUNT_ID}.`);
   });
 
   it("keeps a certificate pack Cloudflare truly refused, with the note, and no longer holds the Gateway's D1 for it", async () => {
@@ -809,7 +809,7 @@ describe("teardown", () => {
     // empty, and the pack is the dashboard's (or Cloudflare's own cleanup).
     account.buckets.delete(`${TODO_WORKER}--uploads`);
     await run();
-    expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
+    expect(done()!["message"]).toBe(`Nothing of EveryApp is left in ${ACCOUNT_ID}.`);
     expect(packs()).toHaveLength(before.length - 1);
   });
 
@@ -969,7 +969,7 @@ describe("teardown", () => {
  * Each failing test here is a hole reported with it.
  */
 describe("teardown review: what it must leave alone", () => {
-  it("leaves DNS records at the Gateway host and an app host that Every App never created (another provider's MX, SPF, verification)", async () => {
+  it("leaves DNS records at the Gateway host and an app host that EveryApp never created (another provider's MX, SPF, verification)", async () => {
     await populate();
     // The Gateway sits at the apex, as everyapp.team does; the zone's mail and
     // verification records live at the same name, next to the Custom Domain

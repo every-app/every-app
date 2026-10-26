@@ -3,7 +3,7 @@ import { cloudflareEmailProvider as cloudflare } from "./cloudflare";
 import type { OutboundEmail } from "./types";
 
 const MESSAGE: OutboundEmail = {
-  from: { address: "noreply@example.com", name: "Every App" },
+  from: { address: "noreply@example.com", name: "EveryApp" },
   to: ["user@example.net"],
   cc: [],
   bcc: [],
@@ -59,7 +59,7 @@ describe("the Cloudflare provider", () => {
     expect(send).toHaveBeenCalledWith({
       to: ["a@example.net", "b@example.net"],
       cc: ["c@example.net"],
-      from: { email: "noreply@example.com", name: "Every App" },
+      from: { email: "noreply@example.com", name: "EveryApp" },
       replyTo: "help@example.com",
       subject: "Reset your password",
       html: "<p>Reset it</p>",

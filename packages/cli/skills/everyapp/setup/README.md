@@ -67,7 +67,7 @@ and the same client serves both the app-driven flow those files describe
 and the Gateway-owned one.
 
 Which integrations a person needs: the apps they deploy decide. The four
-Every App apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
+EveryApp apps (OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox) are
 installed from their GitHub releases by [gateway.md](gateway.md)'s last
 step, each unless the person skips it; the keys they then ask for are the
 files below. From any

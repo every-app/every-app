@@ -100,7 +100,7 @@ export async function sendEventEmail(
     summary: input.summary,
     fields: eventEmailFields(input.type, input.data),
     url: `${input.gatewayUrl}${path}`,
-    pageLabel: PAGE_LABELS[path] ?? "Open Every App",
+    pageLabel: PAGE_LABELS[path] ?? "Open EveryApp",
   });
   const hashes = new Map<string, string>();
   for (const recipient of recipients) {

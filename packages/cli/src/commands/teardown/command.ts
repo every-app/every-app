@@ -34,7 +34,7 @@ export const teardownCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Delete everything Every App created in a dedicated test Cloudflare account",
+    brief: "Delete everything EveryApp created in a dedicated test Cloudflare account",
     fullDescription: [
       "For the accounts the onboarding loop installs into, over and over: removes every Worker,",
       "Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config, queue, Vectorize index,",

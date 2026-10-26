@@ -7,7 +7,7 @@ Agentic Inbox, or yours) is installed on a Gateway with
 (`landing-page/content/agent/deploy.md`, "Release installs"). A repository
 that publishes no release answers `NO_RELEASE`. This runbook is how a
 repository gets to publish one on every push, and how its clone builds with
-no Every App checkout beside it. It was set up for the four launch apps on
+no EveryApp checkout beside it. It was set up for the four launch apps on
 2026-10-24 and verified live on the onboarding loop's test account (a fresh
 clone's release of OpenAnalytics installed and went live; OpenCRM's stopped
 on `R2_NOT_ENABLED`, the account having never enabled R2).
@@ -42,7 +42,7 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    perimeter and the toolbus; its other imports are its declared
    dependencies). It can't `create`, `setup`, `update`, `deploy` or
    `install`: those build the Gateway from a checkout and stop with
-   `CHECKOUT_MISSING`. Deploys therefore run from an Every App checkout
+   `CHECKOUT_MISSING`. Deploys therefore run from an EveryApp checkout
    (`pnpm everyapp install <url>` there, or that checkout's CLI from the
    app's directory: `node ../every-app/packages/cli/bin/everyapp.js deploy`).
 
@@ -58,7 +58,7 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
 
 ## One command sets both up
 
-From an Every App checkout, with the app's repository cloned beside it:
+From an EveryApp checkout, with the app's repository cloned beside it:
 
 ```sh
 pnpm pack-for-app ../open-crm --npm 0.3.0-rc.1 --workflow
@@ -97,7 +97,7 @@ the pushed branch is the repository's default.
   `packages/cli/src/lib/app/release.ts`; the tarball's name and layout
   (`release.json`, `.cloudflare/output/v0/`, `migrations/`) are what
   `extractRelease` checks. `pnpm everyapp install ./everyapp-release.tar.gz`
-  from an Every App checkout installs a downloaded asset without GitHub.
+  from an EveryApp checkout installs a downloaded asset without GitHub.
 - Downloads from GitHub are anonymous, so a private repository's releases
   answer 404 (`NO_RELEASE`) even to its own members: the URL form only works
   once the repository is public. Until then, download the asset with

@@ -298,7 +298,7 @@ describe("shared apps across organizations (SQLite)", () => {
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, platformOwner.organizationId));
-    expect(platform?.name).toBe("Every App");
+    expect(platform?.name).toBe("EveryApp");
     expect(hosts.openseo).toBe(`openseo.${BASE}`);
     expect(hosts.todo).toMatch(
       new RegExp(`^todo-[a-z0-9]+\\.${BASE.replaceAll(".", "\\.")}$`),

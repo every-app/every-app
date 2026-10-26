@@ -72,7 +72,7 @@ Administrator or OAuth Client Write role on the account.
 2. **Person:** in the Cloudflare dashboard, the account the Gateway runs
    in: https://dash.cloudflare.com/?to=/:account/oauth-clients (or
    **Manage Account** → **OAuth clients**) → **Create client**. Client name
-   (`Every App`); response type code, grant type **Authorization Code**;
+   (`EveryApp`); response type code, grant type **Authorization Code**;
    token authentication method `client_secret_basic`; redirect URL the
    exact URL from step 1 → **Continue** → scopes: **User Details Read**,
    left **Required** (an optional one can be declined, and then sign-in

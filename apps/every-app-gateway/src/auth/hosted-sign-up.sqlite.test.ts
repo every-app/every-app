@@ -19,7 +19,7 @@ const workerEnv = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
   DB: {},
   HOSTED_OPEN_SIGNUP: undefined as string | undefined,
-  EMAIL_FROM: "Every App <noreply@example.com>" as string | undefined,
+  EMAIL_FROM: "EveryApp <noreply@example.com>" as string | undefined,
   EMAIL: undefined as { send: (mail: Mail) => Promise<unknown> } | undefined,
 }));
 
@@ -129,7 +129,7 @@ function mailsTo(email: string, subject?: string): Mail[] {
   );
 }
 
-const VERIFY_SUBJECT = "Verify your Every App email";
+const VERIFY_SUBJECT = "Verify your EveryApp email";
 
 /** The link in the latest verification mail to this address. */
 function verificationLink(email: string): string {
@@ -215,7 +215,7 @@ describe("hosted sign-up (SQLite)", () => {
     mailbox.sent = [];
     workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
     workerEnv.HOSTED_OPEN_SIGNUP = undefined;
-    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL_FROM = "EveryApp <noreply@example.com>";
     workerEnv.EMAIL = {
       send: async (mail: Mail) => {
         mailbox.sent.push(mail);
@@ -341,7 +341,7 @@ describe("hosted sign-up (SQLite)", () => {
       const token = inviteTokenOf(inviteUrl);
       expect(mailsTo("invitee@example.com")).toEqual([
         expect.objectContaining({
-          subject: "You have been invited to Every App",
+          subject: "You have been invited to EveryApp",
         }),
       ]);
 

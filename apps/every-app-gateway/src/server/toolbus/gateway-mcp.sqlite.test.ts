@@ -537,7 +537,7 @@ describe("the gateway /mcp and a provider app an admin could turn on", () => {
     expect(text).toContain("Apps: todo (Todos).");
     // After the not-available line, in the head.
     expect(text.split("\n").slice(0, 4)).toEqual([
-      expect.stringMatching(/^Tools for acme on Every App\./),
+      expect.stringMatching(/^Tools for acme on EveryApp\./),
       "Apps: todo (Todos).",
       "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp configure openseo.",
       LINE,

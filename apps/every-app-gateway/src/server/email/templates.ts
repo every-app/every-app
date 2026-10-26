@@ -37,7 +37,7 @@ function link(url: string, label: string): string {
 
 export function verificationEmail(url: string): Email {
   return {
-    subject: "Verify your Every App email",
+    subject: "Verify your EveryApp email",
     text: `Use this link to verify your email address: ${url}`,
     html: `<p>Use this link to verify your email address:</p><p>${link(url, url)}</p>`,
   };
@@ -45,7 +45,7 @@ export function verificationEmail(url: string): Email {
 
 export function passwordResetEmail(url: string): Email {
   return {
-    subject: "Reset your Every App password",
+    subject: "Reset your EveryApp password",
     text: `Use this link to reset your password: ${url}`,
     html: `<p>Use this link to reset your password:</p><p>${link(url, url)}</p>`,
   };

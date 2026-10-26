@@ -16,12 +16,12 @@ export function baseOptions(): BaseLayoutProps {
         <div className="flex items-center gap-2">
           <img
             src="/transparent-logo-256.png"
-            alt="Every App"
+            alt="EveryApp"
             className="w-6 h-6"
             width={24}
             height={24}
           />
-          <span>Every App</span>
+          <span>EveryApp</span>
         </div>
       ),
     },

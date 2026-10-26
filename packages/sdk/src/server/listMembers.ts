@@ -86,7 +86,7 @@ async function listThroughGateway(
     throw new GatewayRefusalError({
       status: response.status,
       code: "members_list_failed",
-      message: `The Every App gateway answered ${response.status} to the members list.`,
+      message: `The EveryApp gateway answered ${response.status} to the members list.`,
     });
   }
   return (await response.json()) as ListMembersResult;

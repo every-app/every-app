@@ -226,7 +226,7 @@ describe("appPolicyProblems", () => {
           storage: "sqlite",
           container: "every-acme-todo-sandbox",
         }),
-      /UserSyncDO is backed by a container, which Every App apps can't run/,
+      /UserSyncDO is backed by a container, which EveryApp apps can't run/,
     ],
     [
       "a Workflow export not named after it",
