@@ -66,7 +66,7 @@ import { version as cliVersion } from "../../../package.json";
 import { manifestTierProblems, validateManifestStrict } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
-import { capabilityIdsOf, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
+import { capabilityIdsOf, providerIds, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
 import {
   awaitLive,
   bindIfNeeded,
@@ -1017,6 +1017,23 @@ function checkCapabilitiesOffered(
   providers: ProviderRegistry,
   gatewayUrl: string,
 ): void {
+  // The AI providers under `providers` too: the catalog's `ai` entries and
+  // the registered `ai` rows (an OpenAI-compatible spec).
+  const unknownProviders = providerIds(manifest).filter((id) => providers.get(id)?.mode !== "ai");
+  if (unknownProviders.length > 0) {
+    const offered = providers.ids().filter((id) => providers.get(id)?.mode === "ai" && !("kind" in providers.get(id)!));
+    throw new EveryAppError(
+      "CAPABILITY_UNKNOWN",
+      [
+        `${manifest.id} lists ${listed(unknownProviders)} under providers, which ${gatewayUrl.replace(/^https:\/\//, "")} doesn't offer as a model provider`,
+        `Neither the built-in catalog nor the providers registered on this Gateway ${unknownProviders.length === 1 ? "has it" : "have them"}. It offers: ${offered.join(", ")}.`,
+      ].join("\n"),
+      {
+        fix: `register ${unknownProviders.length === 1 ? "it" : "each"} with ${CLI} provider add <spec.json> (an OpenAI-compatible provider is a spec with mode "ai"; or fix the id in everyapp.config.ts), then deploy again`,
+        data: { unknown: unknownProviders, offered },
+      },
+    );
+  }
   const unknown = Object.keys(manifest.capabilities ?? {}).filter((id) => !providers.get(id));
   if (unknown.length > 0) {
     const offered = capabilityIdsOf(providers);

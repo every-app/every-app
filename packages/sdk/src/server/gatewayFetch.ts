@@ -297,7 +297,9 @@ function directProviderPath(
         ? resolution.model
         : (resolution.embeddingsModel ?? null);
   }
-  const spec = provider ? devAiProvider(provider) : undefined;
+  const spec = provider
+    ? devAiProvider(provider, env as Record<string, unknown>)
+    : undefined;
   if (!provider || !spec) {
     throw new ConfigurationError(
       `Direct local provider fallback only supports ${listOf(

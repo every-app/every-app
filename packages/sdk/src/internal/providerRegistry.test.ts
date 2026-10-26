@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { aiDefaultCandidates, resolveAiDefault } from "./aiDefault";
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
@@ -11,6 +12,8 @@ import {
   providerSettingPrefix,
   publicHostProblem,
   rowSecretProblem,
+  providerBindingKey,
+  registrableHosts,
 } from "./providerRegistry";
 
 const northwind = {
@@ -306,5 +309,95 @@ describe("gatewayHostRefusal", () => {
       }),
     ).toBe("gw.example.org is this gateway's own host");
     expect(gatewayHostRefusal("apps.example.com", {})).toBeNull();
+  });
+});
+
+describe("an ai row in the registry", () => {
+  const vendor = {
+    id: "vendor-ai",
+    mode: "ai",
+    name: "Vendor AI",
+    docs: "https://vendor.example/keys",
+    baseUrl: "https://api.vendor.example/openai",
+    auth: { kind: "bearer", secret: "VENDOR_AI_API_KEY" },
+    models: ["v-chat", "v-embed"],
+    defaultModel: "v-chat",
+    embeddingsModel: "v-embed",
+  };
+
+  it("is served as an ai entry, with its key bound to its base URL and auth, and its host under the host rules", () => {
+    const registry = providerRegistry([{ id: "vendor-ai", spec: vendor }]);
+    const capability = registry.get("vendor-ai");
+    expect(capability?.mode).toBe("ai");
+    expect(registry.settingNames().has("VENDOR_AI_API_KEY")).toBe(true);
+    expect(registry.bound("vendor-ai")).toBe(false);
+    const [row] = registry.rows();
+    const key = providerBindingKey(row!.capability);
+    expect(JSON.parse(key)).toEqual({
+      kind: "ai",
+      auth: { kind: "bearer", secret: "VENDOR_AI_API_KEY" },
+      origin: "https://api.vendor.example",
+      basePath: "/openai",
+    });
+    const bound = providerRegistry([
+      { id: "vendor-ai", spec: vendor, boundTo: key },
+    ]);
+    expect(bound.bound("vendor-ai")).toBe(true);
+    // Another base path is another key.
+    const moved = providerRegistry([
+      {
+        id: "vendor-ai",
+        spec: { ...vendor, baseUrl: "https://api.vendor.example/v2" },
+        boundTo: key,
+      },
+    ]);
+    expect(moved.bound("vendor-ai")).toBe(false);
+    expect(registrableHosts(row!.capability)).toEqual(["api.vendor.example"]);
+    const refused = providerRegistry([{ id: "vendor-ai", spec: vendor }], {
+      refuseHost: (host) =>
+        host === "api.vendor.example"
+          ? `${host} is this gateway's own host`
+          : null,
+    });
+    expect(refused.rejected.map((r) => r.code)).toEqual([
+      "PROVIDER_HOST_REFUSED",
+    ]);
+    // Its setting must carry its id, like any row's.
+    const taken = providerRegistry([
+      {
+        id: "vendor-ai",
+        spec: { ...vendor, auth: { kind: "bearer", secret: "OPENAI_API_KEY" } },
+      },
+    ]);
+    expect(taken.rejected.map((r) => r.code)).toEqual([
+      "PROVIDER_SECRET_TAKEN",
+    ]);
+  });
+
+  it("is a default-model candidate only once its key is bound", () => {
+    const registry = providerRegistry([{ id: "vendor-ai", spec: vendor }]);
+    const isSet = (name: string) => name === "VENDOR_AI_API_KEY";
+    const unbound = aiDefaultCandidates(isSet, registry).find(
+      (c) => c.id === "vendor-ai",
+    );
+    expect(unbound).toMatchObject({ id: "vendor-ai", configured: false });
+    const key = providerBindingKey(registry.rows()[0]!.capability);
+    const bound = providerRegistry([
+      { id: "vendor-ai", spec: vendor, boundTo: key },
+    ]);
+    expect(
+      aiDefaultCandidates(isSet, bound).find((c) => c.id === "vendor-ai"),
+    ).toMatchObject({ configured: true });
+    expect(
+      resolveAiDefault({
+        provider: "vendor-ai",
+        isSet,
+        lookup: bound,
+      }),
+    ).toMatchObject({
+      provider: "vendor-ai",
+      model: "v-chat",
+      configured: true,
+    });
   });
 });

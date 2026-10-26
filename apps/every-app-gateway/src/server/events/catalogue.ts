@@ -58,8 +58,8 @@ export interface EventApp {
 interface EventProvider {
   id: string;
   name: string;
-  /** An API key the Gateway holds, or an OAuth client it runs the flow for. */
-  kind?: "api_key" | "oauth";
+  /** An API key the Gateway holds, an OAuth client it runs the flow for, or an OpenAI-compatible model provider. */
+  kind?: "api_key" | "oauth" | "ai";
 }
 
 /** Whose account at a provider: a person's (with who) or the organization's. */

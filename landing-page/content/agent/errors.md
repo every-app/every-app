@@ -234,6 +234,8 @@ Source: `packages/cli/src/lib/app/buildApp.ts`, `packages/cli/src/lib/childLog.t
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkCapabilitiesOffered`)
 
+Also for an id under `providers` the Gateway doesn't offer as a model provider: `<app> lists <ids> under providers, which <host> doesn't offer as a model provider` / the catalog's `ai` entries and the registered `ai` rows it offers; `data.fix` names `provider add <spec.json>` with `mode: "ai"`.
+
 ### CLI_TOO_OLD
 
 A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `update` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `install <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).

@@ -134,6 +134,8 @@ Beside the fields every AI entry had ([the providers page](/docs/agent/providers
 
 `inferenceRoutes`, `unstoredRoutes`, `extraRoutes`, `normalize`, `cost.responseField`, `origin`, `basePath` and `alsoNeeds` are as before. A registered row never carries an `ai` entry (the spec parser refuses `mode: "ai"`, as it did).
 
+A registered row can be an `ai` entry too: `pnpm everyapp provider add <spec.json>` with `mode: "ai"` (its `baseUrl`, the key's placement, `models` and `defaultModel`; [/docs/agent/providers](/docs/agent/providers#mode-ai-an-openai-compatible-model-provider)). The proxy serves it with the same rules (inference POSTs on its routes alone, `store: false` on chat, the model allowlist, the usage tap, AI Gateway never in front since a row has no `aig` slug), refuses a model outside its `models`, and reads its key only while the row is bound (`everyapp secret set <KEY>` after `provider add`). Apps pin it under `providers` and call `/api/ai/<id>/…`; `everyapp ai default <id>` may choose it, and `ai list` shows it after the catalog's entries.
+
 ## The commands
 
 All under `everyapp ai`, under the Cloudflare login like every registry change, writing the install organization's `org_settings` row; with `--json`, one event per line and `done.data` as below.

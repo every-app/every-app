@@ -298,6 +298,7 @@ async function readCapped(response: Response, source: string): Promise<string> {
 /** "api.stripe.com", "api.stripe.com and the host STRIPE_HOST names"; an OAuth provider's API hosts. */
 function keyHosts(capability: RegistrableCapability): string {
   if (capability.mode === "oauth_client") return listed([...capability.api]);
+  if (capability.mode === "ai") return `${capability.origin}${capability.basePath ?? ""}`;
   return listed([
     ...capability.hosts,
     ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
@@ -504,6 +505,11 @@ export async function addFromSpec(
       `Its key goes to ${keyHosts(capability)} only, ${sentAs(capability)}.`,
       ...(added.replaced ? ["The key set before was for the old spec: set it again before the Gateway sends it."] : []),
       ...(devFile ? [`Wrote ${devFile} for everyapp dev (your key goes in .dev.vars).`] : []),
+      ...(capability.mode === "ai"
+        ? [
+            `Apps list it under providers: [{ id: ${JSON.stringify(id)}, why: "..." }] and call /api/ai/${id}/<route> with an OpenAI client; ${CLI} ai default ${id} makes it the default model provider.`,
+          ]
+        : []),
     ],
     needed: [...capabilitySettings(capability)],
     docs: null,
@@ -739,6 +745,8 @@ function specOf(id: string, capability: Capability, registry?: ProviderRegistry)
     case "api_key":
       return providerSpecOf(id, capability);
     case "ai":
+      // A registered row's whole spec (what `provider add` took); a catalog entry's setup facts.
+      if (capability.models && !capability.setup) return providerSpecOf(id, capability);
       return {
         id,
         kind: "ai",
@@ -826,7 +834,7 @@ export async function showProvider(
   const spec = specOf(id, capability, registry);
   let saved: string | null = null;
   if (flags.save) {
-    if (!row || capability.mode !== "api_key") {
+    if (!row || capability.mode === "oauth_client") {
       throw new EveryAppError(
         "PROVIDER_BUILTIN",
         `${id} is built in\neveryapp dev reaches it without a file. Nothing was written.`,

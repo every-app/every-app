@@ -116,6 +116,39 @@ A spec names Gateway settings and never holds a value: no field takes one. Every
 
 Setting names (`auth.secret`, `auth.user.secret`, `hostSetting`, `secrets[].name`) match `^[A-Z][A-Z0-9_]{2,63}$`. The parser reports every problem at once, each with its path, joined in the order of the table above as `PROVIDER_SPEC_INVALID`'s message: `hosts.0: must be a bare lowercase host with a dot and no port, path or scheme (api.stripe.com); auth.secret: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (STRIPE_API_KEY)`.
 
+### `mode: "ai"`: an OpenAI-compatible model provider
+
+A model vendor that speaks OpenAI's API shape is a spec of its own kind, served by the AI proxy exactly as a catalog `ai` entry is (`parseAiSpec` in `providerSpec.ts`; [/docs/agent/ai](/docs/agent/ai#what-an-ai-entry-says)):
+
+```json
+{
+  "id": "groq-compat",
+  "mode": "ai",
+  "name": "Groq",
+  "docs": "https://console.groq.com/keys",
+  "baseUrl": "https://api.groq.com/openai",
+  "auth": { "kind": "bearer", "secret": "GROQ_COMPAT_API_KEY" },
+  "models": ["llama-4-scout", "llama-4-maverick", "nomic-embed"],
+  "defaultModel": "llama-4-scout",
+  "embeddingsModel": "nomic-embed",
+  "cost": { "unit": "token", "responseField": "usage.cost" }
+}
+```
+
+| Field                          | Rule                                                                                                                                                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl`                      | Required. An https URL with no query, fragment, credentials or port, on a public host with a dot: its origin, plus a base path the proxy keeps in front of every route (`/openai`). Replaces `hosts`: the key goes to this one place                                                  |
+| `auth`                         | As an API-key spec's: `bearer`, `header`, `query` or `basic`, naming the Gateway setting (never `oauth2-user`)                                                                                                                                                                        |
+| `models`                       | Required, 1 to 100 model names. The proxy refuses an inference call naming any other (`model_not_allowed`), on the default route too; `provider show` and `everyapp_provider_list` carry the list                                                                                     |
+| `defaultModel`                 | Required, one of `models`: the chat model the Gateway fills in when an app names none or names `default`                                                                                                                                                                              |
+| `embeddingsModel`              | One of `models`: the model `/api/ai/default/v1/embeddings` uses; without it the row serves no embeddings on the default route                                                                                                                                                         |
+| `routes`                       | The inference paths apps may POST to (`/v1/chat/completions` style, lowercase segments; 20 at most). Default: the chat route, and the embeddings route when there is an embeddings model. Everything else is refused, as for a catalog entry (files, batches, fine-tunes stay closed) |
+| `chatRoute`, `embeddingsRoute` | Which of `routes` the default route maps onto (defaults `/v1/chat/completions` and `/v1/embeddings`). Chat answers get `store: false`                                                                                                                                                 |
+| `cost.responseField`           | Where the answer carries the call's price in USD (OpenRouter's `usage.cost`), read by the usage tap with the tokens; the usage counters and the dollar caps see it                                                                                                                    |
+| not taken                      | `hosts`, `hostSetting`, `data`, `access`, `readMethods`, `writeMethods`, `accountWidePaths` and the OAuth fields: the AI proxy's rules replace the capability proxy's                                                                                                                 |
+
+The row rules are the same (its setting carries its id, its host is public and not the Gateway's, it never takes a catalog id), and its key is bound to its base URL and auth as an API-key row's is to its hosts (`providerBindingKey`): a changed `baseUrl` unbinds it until `secret set` runs again. An app lists it under `providers` (never `capabilities`; `deploy` refuses an id under `providers` the Gateway doesn't offer as a model provider, `CAPABILITY_UNKNOWN`) and calls `/api/ai/<id>/<route>` with an OpenAI client; `everyapp ai default <id>` makes it the Gateway's default model provider, and the automatic order considers it after the catalog's entries once its key is set and bound. `provider show <id> --save` writes it for `everyapp dev`, whose fallback reaches it directly with the key from `.dev.vars`.
+
 ### Auth kinds: the request each makes
 
 `secret` is always the name of a Gateway setting; the value is read from the Gateway's settings at the call, trimmed. While a setting `auth` names is unset or blank, calls answer `503 integration_not_configured`.

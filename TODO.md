@@ -1900,6 +1900,17 @@ From "Hosted build":
 - [x] **The CLI's hosted-deploy success line** (bearer tokens only). Superseded: #316 (31a85593) dropped the wording; `deployToGateway.ts` now says what version was deployed and where the app is. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 - [x] **OpenSEO's first deploy is the Alchemy stage, registered with `everyapp register`.** Superseded by what runs: the live OpenSEO on everyapp.team came through `everyapp deploy` from its manifest (the item's stated target), and `register` refuses a gateway that isn't hosted. The Alchemy-stage path remains for a hosted gateway. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 
+### Platform shortcuts (2026-10-26)/6 extensibility: the ai spec kind
+
+A new OpenAI-compatible model vendor is a registered spec (`mode: "ai"`), not a catalog release: `baseUrl`, the key's placement, `models`, `defaultModel`, `embeddingsModel`, `routes`, `cost.responseField`. Defaults taken; confirm or change each.
+
+- [ ] **The row names its `models` and the proxy enforces them** (`model_not_allowed` for any other, the default route included); a catalog entry has no list. Alternative: the list as documentation only.
+- [ ] **Default routes are chat (and embeddings with an embeddings model) alone**; a row lists more (`/v1/completions`, `/v1/audio/speech`) explicitly. Files, batches and fine-tunes stay closed: a row never gets `extraRoutes`.
+- [ ] **A registered `ai` row may be the Gateway's default model provider** (`everyapp ai default <id>`, Admin → Usage, the tools), and the automatic order considers it after every catalog entry, only once its key is set and bound. Alternative: catalog entries only.
+- [ ] **AI Gateway never fronts a row** (no `aig` slug): calls go direct, with the row's key.
+- [ ] **The key is bound to the base URL and auth**, as an API-key row's is to its hosts: a changed `baseUrl` unbinds it (`ai_provider_not_configured` until `secret set` again).
+- [ ] **`deploy` refuses an id under `providers` the Gateway doesn't offer as a model provider** (`CAPABILITY_UNKNOWN`, naming what it offers); until now an unknown `providers` id passed the deploy and failed at the first call.
+- [ ] **The `models` field was added to `AiProviderCapability`** (a type in `capabilities.ts`, lane 5's file; additive, no catalog entry sets it) and the SDK's dev fallback resolves an `ai` row from `.everyapp/providers/<id>.json` (`devAiProvider(name, env)`, one line in lane 3's `gatewayFetch.ts`).
 ### Platform shortcuts (2026-10-26)/6 extensibility
 
 Lane 6 of the platform shortcuts swath (the brief in the coordinator thread): three things an app needed a platform release for, now registrable. HELD: egress and OAuth; Ben reviews the PRs. Defaults taken; confirm or change each.

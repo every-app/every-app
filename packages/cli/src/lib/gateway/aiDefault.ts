@@ -23,6 +23,7 @@
 import {
   aiDefaultChoiceProblem,
   aiModelPatchProblem,
+  type CapabilityLookup,
   formatAiDefaultChoice,
   formatAiModelSettings,
   parseAiDefaultChoice,
@@ -152,10 +153,15 @@ const choiceText = (choice: AiDefaultChoice | null) => (choice === null ? null :
  * untouched; the row deleted only when it holds nothing else) and
  * `ai.default_changed` when the choice changed.
  */
-export async function setAiDefault(ws: Workspace, choice: AiDefaultChoice | null): Promise<AiDefaultChange> {
+export async function setAiDefault(
+  ws: Workspace,
+  choice: AiDefaultChoice | null,
+  /** The Gateway's registry (a registered `ai` row may be the default); the catalog alone when absent. */
+  lookup?: CapabilityLookup,
+): Promise<AiDefaultChange> {
   if (choice) {
     const problem =
-      aiDefaultChoiceProblem(choice) ?? (choice.model ? aiModelPatchProblem(choice.provider, { chat: choice.model }) : null);
+      aiDefaultChoiceProblem(choice, lookup) ?? (choice.model ? aiModelPatchProblem(choice.provider, { chat: choice.model }) : null);
     if (problem) {
       throw new EveryAppError("AI_DEFAULT_INVALID", `${choice.provider} can't be the default model provider: ${problem}`, {
         fix: `pick one of the providers ${CLI} ai list shows, as <provider> or <provider>/<model>`,
@@ -245,10 +251,10 @@ export interface AiReport {
  * models and the Gateway Worker's secret names (a name present counts as set; values
  * are never read). AI Gateway is "on" when its id and the account are set.
  */
-export async function aiReport(cf: CfRunner, ws: Workspace): Promise<AiReport> {
+export async function aiReport(cf: CfRunner, ws: Workspace, lookup?: CapabilityLookup): Promise<AiReport> {
   const [names, stored] = await Promise.all([listGatewaySecretNames(cf), readAi(ws.db, ws.organization.id)]);
   const isSet = (name: string) => names.includes(name);
-  const resolution = resolveAiDefault({ ...stored, isSet });
+  const resolution = resolveAiDefault({ ...stored, isSet, ...(lookup ? { lookup } : {}) });
   return { resolution, names, aiGateway: { on: AI_GATEWAY_SETTINGS.every(isSet) } };
 }
 

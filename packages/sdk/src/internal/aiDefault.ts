@@ -375,8 +375,11 @@ export function aiDefaultCandidates(
   ];
   return ids.flatMap((id) => {
     const capability = lookup.get(id);
+    // A registered row whose key isn't bound to the hosts it has now reads
+    // as unset everywhere (`providers.value-bound-to-hosts`).
+    const set = lookup.bound && !lookup.bound(id) ? () => false : isSet;
     return canBeAiDefault(capability)
-      ? [candidateOf(id, capability, isSet, models)]
+      ? [candidateOf(id, capability, set, models)]
       : [];
   });
 }

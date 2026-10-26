@@ -107,6 +107,8 @@ interface AiProvider {
   aig?: { slug: string; trim?: string; header?: true };
   /** The entry fronts the others (AI Gateway itself): apps never call it by id. */
   proxy: boolean;
+  /** The models the entry serves, when it says (a registered row's `models`): any other is refused. */
+  models?: ReadonlySet<string>;
 }
 
 /** The proxy's view of an `ai` catalog entry. */
@@ -129,6 +131,7 @@ function aiProviderOf(capability: AiProviderCapability): AiProvider {
     ...(capability.embeddings ? { embeddings: capability.embeddings } : {}),
     ...(capability.aig ? { aig: capability.aig } : {}),
     proxy: capability.kind === "proxy",
+    ...(capability.models ? { models: new Set(capability.models) } : {}),
   };
 }
 
@@ -325,6 +328,16 @@ export async function handleAuthenticatedAiProxyRequest({
         : `Provider not supported: the gateway has no AI provider "${resolved}".`,
     );
   }
+  // A registered row's key is read only while it was set for the base URL
+  // and auth the row has now (`providers.value-bound-to-hosts`).
+  if (lookup.bound && !lookup.bound(resolved)) {
+    const settings = [aiProvider.keyEnv, ...aiProvider.alsoNeeds];
+    return aiRefusal(
+      "ai_provider_not_configured",
+      503,
+      `Provider is not configured: ${resolved}'s key isn't set for the base URL its row has now. Its operator sets it with: everyapp secret set ${settings.join(" ")}`,
+    );
+  }
   if (isDefault && !aiDefault!.configured) {
     return aiNotConfiguredRefusal(
       "ai_default_not_configured",
@@ -448,6 +461,24 @@ export async function handleAuthenticatedAiProxyRequest({
         disallowed
           ? `The app manifest does not allow this model (${disallowed}); list it in ai.models.`
           : "The app manifest does not allow this model: the request names none.",
+      );
+    }
+  }
+
+  // A registered row names the models it serves: the shared key goes to
+  // no other, on the default route included.
+  if (aiProvider.models && aiProvider.inferenceRoutes.has(upstreamPath)) {
+    const served = aiProvider.models;
+    const unserved = [prepared.model ?? "", ...prepared.alternates].find(
+      (candidate) => !served.has(candidate),
+    );
+    if (unserved !== undefined) {
+      return aiRefusal(
+        "model_not_allowed",
+        403,
+        unserved
+          ? `${resolved} doesn't serve this model (${unserved}); its spec lists: ${[...served].join(", ")}.`
+          : `${resolved} needs a model name: its spec lists ${[...served].join(", ")}.`,
       );
     }
   }

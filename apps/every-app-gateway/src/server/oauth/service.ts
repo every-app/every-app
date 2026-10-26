@@ -469,7 +469,11 @@ async function checkNewRow(
       `${id} is registered on this Gateway already`,
     );
   }
-  if (capability.mode !== "api_key" && capability.mode !== "oauth_client") {
+  if (
+    capability.mode !== "api_key" &&
+    capability.mode !== "oauth_client" &&
+    capability.mode !== "ai"
+  ) {
     throw new PublicError("PROVIDER_SPEC_INVALID", "not a registrable kind");
   }
   const others = registryFromRows(rows);

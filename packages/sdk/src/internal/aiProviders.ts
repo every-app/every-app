@@ -16,6 +16,7 @@ import {
   type ApiKeyAuth,
   type CapabilitySettings,
 } from "./capabilities.js";
+import { resolveDevProvider } from "./devProviders.js";
 
 export interface DevAiProviderSpec {
   origin: string;
@@ -78,9 +79,18 @@ export const DEV_AI_PROVIDERS: Readonly<
   }),
 ) as Record<DevAiProvider, DevAiProviderSpec>;
 
-export function devAiProvider(name: string): DevAiProviderSpec | undefined {
-  return Object.hasOwn(DEV_AI_PROVIDERS, name)
-    ? DEV_AI_PROVIDERS[name as DevAiProvider]
+export function devAiProvider(
+  name: string,
+  /** The dev Worker's bindings: a registered `ai` spec under `.everyapp/providers/<id>.json` resolves from them. */
+  values?: Readonly<Record<string, unknown>>,
+): DevAiProviderSpec | undefined {
+  if (Object.hasOwn(DEV_AI_PROVIDERS, name)) {
+    return DEV_AI_PROVIDERS[name as DevAiProvider];
+  }
+  if (!values) return undefined;
+  const resolved = resolveDevProvider(values, name);
+  return resolved.found && resolved.capability.mode === "ai"
+    ? devAiProviderSpec(resolved.capability)
     : undefined;
 }
 

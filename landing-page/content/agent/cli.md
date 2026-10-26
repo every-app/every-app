@@ -1576,6 +1576,12 @@ that isn't a built-in provider's, settings named after the id that nothing else 
 public hosts that aren't the Gateway's own or its apps'. Run in an app's directory, it also
 writes .everyapp/providers/<id>.json for everyapp dev (your key goes in .dev.vars).
 
+An OpenAI-compatible model provider is a spec with mode "ai": its baseUrl, the key's
+placement (auth), the models it serves and the defaultModel (embeddingsModel too, when it has
+one); the AI proxy serves it as a catalog AI provider, inference POSTs alone. Apps list it
+under providers and call /api/ai/<id>/v1/chat/completions; everyapp ai default <id> makes
+it the Gateway's default model provider.
+
 --oauth takes an OAuth spec file (auth.kind oauth2-user), or a preset or built-in client by
 name. --verbose adds an OAuth provider's scope sets and the manifest entry.
 

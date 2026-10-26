@@ -228,7 +228,7 @@ async function resolveOAuthSource(value: string, options: OAuthAddOptions): Prom
     if (parsed.ok && parsed.capability.mode !== "oauth_client") {
       throw new EveryAppError(
         "PROVIDER_SPEC_INVALID",
-        `${value} is an API-key spec (auth.kind ${parsed.capability.auth.kind})\n--oauth takes a spec with auth.kind "oauth2-user". Nothing was registered.`,
+        `${value} is ${parsed.capability.mode === "ai" ? "an ai spec" : `an API-key spec (auth.kind ${parsed.capability.auth.kind})`}\n--oauth takes a spec with auth.kind "oauth2-user". Nothing was registered.`,
         { fix: `register it with ${CLI} provider add ${value}` },
       );
     }

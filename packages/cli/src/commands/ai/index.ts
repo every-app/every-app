@@ -8,12 +8,13 @@
  * through the same path `secret set` takes.
  */
 import chalk from "chalk";
-import { formatAiDefaultChoice, type AiDefaultCandidate, type AiDefaultResolution } from "@every-app/sdk/internal";
+import { formatAiDefaultChoice, type AiDefaultCandidate, type AiDefaultResolution, type ProviderRegistry } from "@every-app/sdk/internal";
 import type { CfRunner } from "@/lib/cf/runner";
 import { ensureAiGateway, isValidAiGatewayId, type AiGateway } from "@/lib/cf/aiGateway";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { aiReport, parseAiDefaultArgument, setAiDefault, setAiModels, type AiReport } from "@/lib/gateway/aiDefault";
+import { gatewayRegistry } from "@/lib/gateway/providers";
 import { openWorkspace, type Workspace } from "@/lib/gateway/workspace";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -68,6 +69,8 @@ export async function gatewayOff(flags: GatewayCommandFlags): Promise<void> {
 interface Connected {
   gateway: Awaited<ReturnType<typeof connectToGateway>>;
   ws: Workspace;
+  /** The catalog and this Gateway's registered providers: a registered `ai` row may be the default. */
+  registry: ProviderRegistry;
 }
 
 /** The Gateway through the login, and the install organization's workspace. */
@@ -81,7 +84,7 @@ async function connect(options: AiOptions): Promise<Connected> {
     createCf,
   });
   const ws = await openWorkspace(gateway.db, gateway.deployer, { now: options.now?.() });
-  return { gateway, ws };
+  return { gateway, ws, registry: await gatewayRegistry(gateway.db, gateway.install) };
 }
 
 /** The resolution as `--json` carries it, with the AI Gateway state. */
@@ -143,8 +146,8 @@ function sourceSentence(report: AiReport): string {
 
 export async function showDefault(options: AiOptions): Promise<void> {
   const { out } = options;
-  const { gateway, ws } = await connect(options);
-  const report = await aiReport(gateway.cf, ws);
+  const { gateway, ws, registry } = await connect(options);
+  const report = await aiReport(gateway.cf, ws, registry);
   const { resolution, aiGateway } = report;
   const lines = [
     ...formatFacts([
@@ -167,8 +170,8 @@ export async function showDefault(options: AiOptions): Promise<void> {
 
 export async function listCandidates(options: AiOptions): Promise<void> {
   const { out } = options;
-  const { gateway, ws } = await connect(options);
-  const report = await aiReport(gateway.cf, ws);
+  const { gateway, ws, registry } = await connect(options);
+  const report = await aiReport(gateway.cf, ws, registry);
   const { resolution } = report;
   out.emit({
     type: "done",
@@ -184,10 +187,10 @@ export async function listCandidates(options: AiOptions): Promise<void> {
 export async function chooseDefault(options: AiOptions, argument: string): Promise<void> {
   const { out } = options;
   const choice = parseAiDefaultArgument(argument);
-  const { gateway, ws } = await connect(options);
+  const { gateway, ws, registry } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: "Setting the default model provider..." });
-  const change = await setAiDefault(ws, choice);
-  const report = await aiReport(gateway.cf, ws);
+  const change = await setAiDefault(ws, choice, registry);
+  const report = await aiReport(gateway.cf, ws, registry);
   const { resolution } = report;
   const says = (value: typeof choice) => (value === null ? "the shipped order" : formatAiDefaultChoice(value));
   out.emit({

@@ -768,7 +768,7 @@ async function checkTokenResponse(
 function devRegisteredProvider(
   provider: string,
   values: Record<string, unknown>,
-): RegistrableCapability {
+): ApiKeyCapability | OAuthClientCapability {
   if (!values["EVERYAPP_DEV"]) {
     throw new ConfigurationError(
       `"${provider}" isn't in the built-in provider catalog. A provider registered on the gateway (everyapp provider add) is reached through the EVERY_APP_GATEWAY binding, or in everyapp dev from ${devProviderFile(provider)}.`,
@@ -776,6 +776,11 @@ function devRegisteredProvider(
   }
   const resolved = resolveDevProvider(values, provider);
   if (!resolved.found) throw new ConfigurationError(resolved.problem);
+  if (resolved.capability.mode === "ai") {
+    throw new ConfigurationError(
+      `${provider} is an AI provider: list it under providers and call it with createGatewayFetch(), not integrationFetch().`,
+    );
+  }
   return resolved.capability;
 }
 

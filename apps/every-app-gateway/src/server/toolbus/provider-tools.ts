@@ -451,7 +451,11 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
       organizationId: ctx.orgId,
       actor: await actorFor(ctx),
       ...catalogue.providerAdded({
-        provider: { id, name: capability.label },
+        provider: {
+          id,
+          name: capability.label,
+          kind: capability.mode === "oauth_client" ? "oauth" : capability.mode,
+        },
       }),
     }));
     return {
@@ -460,22 +464,34 @@ export const PROVIDER_HANDLERS: Record<string, Handler> = {
         name: capability.label,
         ...(capability.mode === "api_key"
           ? { hosts: [...capability.hosts], auth: authSummary(capability.auth) }
-          : {
-              hosts: [...capability.api],
-              auth: { kind: "oauth2-user" },
-              authorizeUrl: capability.authorize.url,
-              scopeSets: Object.keys(capability.scopePolicy?.sets ?? {}),
-              redirectUri: `${String((env as { GATEWAY_URL?: string }).GATEWAY_URL ?? "").replace(/\/+$/, "")}/connect/${id}/callback`,
-              console: capability.console,
-              connectPath: `/connect/${id}`,
-            }),
+          : capability.mode === "ai"
+            ? {
+                kind: "ai",
+                hosts: [new URL(capability.origin).host],
+                auth: authSummary(capability.auth),
+                baseUrl: `${capability.origin}${capability.basePath ?? ""}`,
+                models: [...(capability.models ?? [])],
+                defaultModel: capability.chat?.seedModel ?? null,
+                routes: [...capability.inferenceRoutes],
+              }
+            : {
+                hosts: [...capability.api],
+                auth: { kind: "oauth2-user" },
+                authorizeUrl: capability.authorize.url,
+                scopeSets: Object.keys(capability.scopePolicy?.sets ?? {}),
+                redirectUri: `${String((env as { GATEWAY_URL?: string }).GATEWAY_URL ?? "").replace(/\/+$/, "")}/connect/${id}/callback`,
+                console: capability.console,
+                connectPath: `/connect/${id}`,
+              }),
       },
       settings: [...settings],
       bound: false,
       next:
         capability.mode === "api_key"
           ? `Set ${settings.length === 1 ? "its key" : "its settings"} from the terminal: everyapp secret set ${settings.join(" ")}. The Gateway sends nothing to ${capability.label} until then.`
-          : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${id} once the client is set.`,
+          : capability.mode === "ai"
+            ? `Set its key from the terminal: everyapp secret set ${settings.join(" ")}. Apps list it under providers and call /api/ai/${id}/<route> with an OpenAI client; everyapp ai default ${id} makes it the Gateway's default model provider.`
+            : `Set its client from the terminal: everyapp secret set ${settings.join(" ")}, or paste it under Admin → Providers. People connect at /connect/${id} once the client is set.`,
     };
   },
 

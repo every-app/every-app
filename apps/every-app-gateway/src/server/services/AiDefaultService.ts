@@ -35,6 +35,7 @@ import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
+import { gatewayProviders } from "@/server/providers";
 import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
 
 /** What the UI and the tools read: the resolution, and whether AI Gateway is in front. */
@@ -64,10 +65,14 @@ async function stored(orgId: string): Promise<AiDefaultSettings> {
   return aiDefaultSettingsOf(await OrgSettingsRepository.getAiSettings(orgId));
 }
 
-function reportOf(settings: AiDefaultSettings): AiDefaultReport {
+async function reportOf(settings: AiDefaultSettings): Promise<AiDefaultReport> {
   const choice = choiceOf(settings);
   return {
-    resolution: resolveAiDefault({ ...settings, isSet }),
+    resolution: resolveAiDefault({
+      ...settings,
+      isSet,
+      lookup: await gatewayProviders(),
+    }),
     choice: choice === null ? null : formatAiDefaultChoice(choice),
     models: settings.models,
     aiGateway: { on: AI_GATEWAY_SETTINGS.every(isSet) },
@@ -109,7 +114,7 @@ async function set(
   const { choice } = input;
   if (choice) {
     const problem =
-      aiDefaultChoiceProblem(choice) ??
+      aiDefaultChoiceProblem(choice, await gatewayProviders()) ??
       (choice.model
         ? aiModelPatchProblem(choice.provider, { chat: choice.model })
         : null);

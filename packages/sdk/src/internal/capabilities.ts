@@ -257,6 +257,13 @@ export interface AiProviderCapability extends ProviderDetails {
    * `providers`, never the default, reached through the entries it fronts.
    */
   kind?: "proxy";
+  /**
+   * The models the provider serves, when the entry says (a registered
+   * `ai` row's `models`): the proxy refuses an inference call naming
+   * another (`model_not_allowed`), and `provider show` lists them. Absent
+   * on the catalog's entries, whose model lists change weekly.
+   */
+  models?: readonly string[];
 }
 
 /** A route of an AI provider the default route maps onto, with the model used when the app names none. */

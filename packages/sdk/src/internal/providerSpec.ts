@@ -6,11 +6,15 @@
  * JSON into an {@link ApiKeyCapability} or names every problem; nothing
  * here reads a value: a spec names Gateway settings, never holds one.
  *
- * Two kinds parse: API-key providers (`auth.kind` bearer, header, query
- * or basic) and OAuth providers (`auth.kind` oauth2-user, the half in
+ * Three kinds parse: API-key providers (`auth.kind` bearer, header, query
+ * or basic), OAuth providers (`auth.kind` oauth2-user, the half in
  * ./oauthSpec.ts: the Gateway runs the flow and holds the tokens,
- * docs/design/2026-10-oauth-providers.md). An AI provider is a catalog
- * entry only; the parser says so rather than guessing.
+ * docs/design/2026-10-oauth-providers.md), and OpenAI-compatible model
+ * providers (`mode: "ai"`: a `baseUrl`, the key's placement, the models
+ * it serves and the default, its inference routes; the AI proxy serves a
+ * row exactly as it serves a catalog `ai` entry, inference POSTs alone,
+ * `store: false` on chat, the usage tap, so a new model vendor is a
+ * registered spec, not a catalog release).
  *
  * The rules that make a row safe on a particular gateway (its secret names
  * are its own, its hosts are public, it shadows no catalog entry) are the
@@ -19,6 +23,7 @@
 import {
   DEFAULT_WRITE_METHODS,
   authSettingNames,
+  type AiProviderCapability,
   type ApiKeyAuth,
   type ApiKeyCapability,
   type OAuthClientCapability,
@@ -74,6 +79,15 @@ const RESERVED_HEADERS = new Set([
 ]);
 const MAX_HOSTS = 20;
 const MAX_ACCOUNT_WIDE_PATHS = 50;
+/** An inference route an `ai` row names: `/v1/chat/completions`, segments of lowercase letters, digits, `_` and `-`. */
+const AI_ROUTE = /^(?:\/[a-z0-9_-]+)+$/;
+const MAX_AI_ROUTES = 20;
+const MAX_MODELS = 100;
+/** A model name as OpenAI-compatible APIs spell them: `gpt-6-luna`, `meta-llama/llama-4`, `claude-haiku-5-5:beta`. */
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/;
+/** What an `ai` row serves by default: chat, and embeddings when it names an embeddings model. */
+export const AI_SPEC_CHAT_ROUTE = "/v1/chat/completions";
+export const AI_SPEC_EMBEDDINGS_ROUTE = "/v1/embeddings";
 
 const KNOWN_FIELDS = new Set([
   "id",
@@ -102,7 +116,39 @@ const KNOWN_FIELDS = new Set([
   "scopeSets",
   "alwaysRequested",
   "tolerated",
+  // An `ai` spec's own.
+  "baseUrl",
+  "models",
+  "defaultModel",
+  "embeddingsModel",
+  "routes",
+  "chatRoute",
+  "embeddingsRoute",
 ]);
+/** Fields only an `ai` spec has. */
+const AI_ONLY_FIELDS = [
+  "baseUrl",
+  "models",
+  "defaultModel",
+  "embeddingsModel",
+  "routes",
+  "chatRoute",
+  "embeddingsRoute",
+] as const;
+/** Fields an `ai` spec never has: the key goes to one base URL, and the AI proxy's rules replace the capability proxy's. */
+const NOT_AI_FIELDS = [
+  "hosts",
+  "hostSetting",
+  "data",
+  "access",
+  "readMethods",
+  "writeMethods",
+  "accountWidePaths",
+  ...OAUTH_ONLY_FIELDS_LIST(),
+] as const;
+function OAUTH_ONLY_FIELDS_LIST(): readonly string[] {
+  return ["scopeSets", "alwaysRequested", "tolerated"];
+}
 /** Fields an API-key spec has that an `oauth2-user` spec does not. */
 const API_KEY_ONLY_FIELDS = [
   "hostSetting",
@@ -126,8 +172,11 @@ export interface ProviderSpecProblem {
   message: string;
 }
 
-/** What a row or a preset may be: an API key, or an OAuth provider with a `flow`. */
-export type RegistrableCapability = ApiKeyCapability | OAuthClientCapability;
+/** What a row or a preset may be: an API key, an OAuth provider with a `flow`, or an OpenAI-compatible model provider. */
+export type RegistrableCapability =
+  | ApiKeyCapability
+  | OAuthClientCapability
+  | AiProviderCapability;
 
 export type ParsedProviderSpec =
   | { ok: true; id: string; capability: RegistrableCapability }
@@ -719,13 +768,21 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
   }
   const isOAuth =
     isRecord(input["auth"]) && input["auth"]["kind"] === "oauth2-user";
+  const isAi = input["mode"] === "ai";
   const expectedMode = isOAuth ? "oauth_client" : "api_key";
-  if (input["mode"] !== undefined && input["mode"] !== expectedMode) {
+  if (!isAi && input["mode"] !== undefined && input["mode"] !== expectedMode) {
     problems.push({
       path: "mode",
       message: isOAuth
         ? "an oauth2-user spec's mode is oauth_client (or left out)"
-        : "this gateway registers api_key and oauth_client (auth.kind oauth2-user) providers; an AI provider is a catalog entry",
+        : 'this gateway registers api_key, oauth_client (auth.kind oauth2-user) and ai (mode: "ai", an OpenAI-compatible model provider) providers',
+    });
+  }
+  if (isAi && isOAuth) {
+    problems.push({
+      path: "auth.kind",
+      message:
+        "an ai spec's key is a bearer, header, query or basic key, never oauth2-user",
     });
   }
   const name = text(input["name"], "name", problems, { max: 64 });
@@ -755,6 +812,9 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
       }
     },
   });
+  if (isAi && !isOAuth) {
+    return parseAiSpec(input, problems, { id, name, description, docs, api });
+  }
   if (isOAuth) {
     const { access, readMethods, writeMethods } = grants(input, problems);
     const hint = text(input["hint"], "hint", problems, { max: 500 });
@@ -906,6 +966,230 @@ export function parseProviderSpec(input: unknown): ParsedProviderSpec {
   return { ok: true, id, capability };
 }
 
+/**
+ * The `ai` half of `parseProviderSpec`: an OpenAI-compatible model
+ * provider. `baseUrl` is where the app's path is joined (`https://api.groq.com/openai`:
+ * the origin, and a base path the proxy keeps in front of every route);
+ * `auth` places the key as an API-key spec does; `models` lists what the
+ * provider serves (1 to 100; the proxy refuses any other) with
+ * `defaultModel` the one the Gateway's default route fills in and
+ * `embeddingsModel` the one for `/api/ai/default/v1/embeddings`; `routes`
+ * are the inference paths apps may POST to (default chat, and embeddings
+ * with an embeddings model), `chatRoute` and `embeddingsRoute` which of
+ * them the default route maps onto. Chat answers are never stored
+ * (`store: false` on the chat route). `cost.responseField` is where the
+ * answer carries the call's price, read by the usage tap as OpenRouter's
+ * `usage.cost` is.
+ */
+function parseAiSpec(
+  input: Record<string, unknown>,
+  problems: Problems,
+  common: {
+    id: unknown;
+    name: string | undefined;
+    description: string | undefined;
+    docs: string | undefined;
+    api: string | undefined;
+  },
+): ParsedProviderSpec {
+  for (const field of NOT_AI_FIELDS) {
+    if (input[field] !== undefined) {
+      problems.push({ path: field, message: "not a field of an ai spec" });
+    }
+  }
+  const base = httpsUrl(input["baseUrl"], "baseUrl", problems);
+  let origin: string | undefined;
+  let basePath: string | undefined;
+  if (input["baseUrl"] === undefined) {
+    problems.push({
+      path: "baseUrl",
+      message:
+        "required: the https URL the app's paths are joined onto (https://api.groq.com/openai)",
+    });
+  } else if (base !== undefined) {
+    const url = new URL(base);
+    if (url.search || url.hash || url.username || url.password || url.port) {
+      problems.push({
+        path: "baseUrl",
+        message:
+          "must be an https URL with no query, fragment, credentials or port",
+      });
+    } else if (!PROVIDER_HOST.test(url.hostname)) {
+      problems.push({
+        path: "baseUrl",
+        message: "must name a public host with a dot (api.groq.com)",
+      });
+    } else {
+      origin = url.origin;
+      const path = url.pathname.replace(/\/+$/, "");
+      if (path && !AI_ROUTE.test(path)) {
+        problems.push({
+          path: "baseUrl",
+          message:
+            "its path must be segments of lowercase letters, digits, _ and -",
+        });
+      } else if (path) {
+        basePath = path;
+      }
+    }
+  }
+  const parsedAuth = auth(input["auth"], problems);
+  if (input["auth"] === undefined) {
+    problems.push({ path: "auth", message: "required" });
+  }
+  const secrets = secretDetails(
+    input["secrets"],
+    parsedAuth ? authSettingNames(parsedAuth) : [],
+    problems,
+  );
+  const models = stringList(input["models"], "models", problems, {
+    max: MAX_MODELS,
+    each: (model, at) => {
+      if (!MODEL_NAME.test(model)) {
+        problems.push({
+          path: at,
+          message: "must be a model name (gpt-6-luna, meta-llama/llama-4)",
+        });
+      }
+    },
+  });
+  if (input["models"] === undefined || (models && models.length === 0)) {
+    problems.push({
+      path: "models",
+      message: "required: the models the provider serves, at least one",
+    });
+  }
+  const defaultModel = text(input["defaultModel"], "defaultModel", problems, {
+    max: 200,
+  });
+  if (input["defaultModel"] === undefined) {
+    problems.push({
+      path: "defaultModel",
+      message:
+        "required: the chat model the Gateway fills in when an app names none; one of models",
+    });
+  } else if (
+    defaultModel !== undefined &&
+    models &&
+    !models.includes(defaultModel)
+  ) {
+    problems.push({ path: "defaultModel", message: "must be one of models" });
+  }
+  const embeddingsModel = text(
+    input["embeddingsModel"],
+    "embeddingsModel",
+    problems,
+    { max: 200 },
+  );
+  if (
+    embeddingsModel !== undefined &&
+    models &&
+    !models.includes(embeddingsModel)
+  ) {
+    problems.push({
+      path: "embeddingsModel",
+      message: "must be one of models",
+    });
+  }
+  const routeList = (value: unknown, path: string) =>
+    stringList(value, path, problems, {
+      max: MAX_AI_ROUTES,
+      each: (route, at) => {
+        if (!AI_ROUTE.test(route)) {
+          problems.push({
+            path: at,
+            message:
+              "must be a path of lowercase segments starting with / (/v1/chat/completions)",
+          });
+        }
+      },
+    });
+  const chatRoute =
+    text(input["chatRoute"], "chatRoute", problems, { max: 200 }) ??
+    AI_SPEC_CHAT_ROUTE;
+  const embeddingsRoute =
+    text(input["embeddingsRoute"], "embeddingsRoute", problems, { max: 200 }) ??
+    AI_SPEC_EMBEDDINGS_ROUTE;
+  for (const [field, route] of [
+    ["chatRoute", chatRoute],
+    ["embeddingsRoute", embeddingsRoute],
+  ] as const) {
+    if (!AI_ROUTE.test(route)) {
+      problems.push({
+        path: field,
+        message: "must be a path of lowercase segments starting with /",
+      });
+    }
+  }
+  const routes = routeList(input["routes"], "routes") ?? [
+    chatRoute,
+    ...(embeddingsModel !== undefined ? [embeddingsRoute] : []),
+  ];
+  if (routes.length === 0) {
+    problems.push({ path: "routes", message: "must list a route" });
+  }
+  if (!routes.includes(chatRoute)) {
+    problems.push({ path: "chatRoute", message: "must be one of routes" });
+  }
+  if (embeddingsModel !== undefined && !routes.includes(embeddingsRoute)) {
+    problems.push({
+      path: "embeddingsRoute",
+      message: "must be one of routes",
+    });
+  }
+  const hint = text(input["hint"], "hint", problems, { max: 500 });
+  const smokeRequest = smoke(
+    input["smoke"],
+    origin ? [new URL(origin).host] : [],
+    problems,
+  );
+  const parsedCost = cost(input["cost"], problems);
+  const parsedRate = rate(input["rate"], problems);
+  const example = text(input["example"], "example", problems, { max: 200 });
+  const parsedVerified = verified(input["verified"], problems);
+  const tags = tagList(input["tags"], problems);
+  const { id, name, description, docs, api } = common;
+  if (
+    problems.length > 0 ||
+    typeof id !== "string" ||
+    name === undefined ||
+    docs === undefined ||
+    origin === undefined ||
+    !parsedAuth ||
+    !models ||
+    defaultModel === undefined
+  ) {
+    return { ok: false, problems };
+  }
+  const capability: AiProviderCapability = {
+    mode: "ai",
+    label: name,
+    auth: parsedAuth,
+    docs,
+    origin,
+    ...(basePath === undefined ? {} : { basePath }),
+    inferenceRoutes: routes,
+    unstoredRoutes: [chatRoute],
+    shape: "openai",
+    chat: { path: chatRoute, seedModel: defaultModel },
+    ...(embeddingsModel === undefined
+      ? {}
+      : { embeddings: { path: embeddingsRoute, seedModel: embeddingsModel } }),
+    models,
+    ...(description === undefined ? {} : { description }),
+    ...(api === undefined ? {} : { api }),
+    ...(secrets === undefined ? {} : { secrets }),
+    ...(hint === undefined ? {} : { hint }),
+    ...(smokeRequest === undefined ? {} : { smoke: smokeRequest }),
+    ...(parsedCost === undefined ? {} : { cost: parsedCost }),
+    ...(parsedRate === undefined ? {} : { rate: parsedRate }),
+    ...(example === undefined ? {} : { example }),
+    ...(parsedVerified === undefined ? {} : { verified: parsedVerified }),
+    ...(tags === undefined ? {} : { tags }),
+  };
+  return { ok: true, id, capability };
+}
+
 /** The problems as one line: `auth.secret: must name a Gateway setting; hosts.0: …`. */
 export function describeSpecProblems(
   problems: readonly ProviderSpecProblem[],
@@ -933,6 +1217,60 @@ export function providerSpecOf(
       );
     }
     return spec;
+  }
+  if (capability.mode === "ai") {
+    if (!capability.chat || !capability.models) {
+      throw new Error(
+        `${id} is a catalog AI entry without a model list: it has no spec`,
+      );
+    }
+    return {
+      id,
+      mode: "ai",
+      name: capability.label,
+      ...(capability.description === undefined
+        ? {}
+        : { description: capability.description }),
+      docs: capability.docs,
+      ...(capability.api === undefined ? {} : { api: capability.api }),
+      baseUrl: `${capability.origin}${capability.basePath ?? ""}`,
+      auth: { ...capability.auth },
+      ...(capability.secrets === undefined
+        ? {}
+        : { secrets: capability.secrets.map((detail) => ({ ...detail })) }),
+      models: [...capability.models],
+      defaultModel: capability.chat.seedModel,
+      ...(capability.embeddings === undefined
+        ? {}
+        : { embeddingsModel: capability.embeddings.seedModel }),
+      routes: [...capability.inferenceRoutes],
+      chatRoute: capability.chat.path,
+      ...(capability.embeddings === undefined
+        ? {}
+        : { embeddingsRoute: capability.embeddings.path }),
+      ...(capability.hint === undefined ? {} : { hint: capability.hint }),
+      ...(capability.smoke === undefined
+        ? {}
+        : {
+            smoke: {
+              ...capability.smoke,
+              expect: [...capability.smoke.expect],
+            },
+          }),
+      ...(capability.cost === undefined
+        ? {}
+        : { cost: { ...capability.cost } }),
+      ...(capability.rate === undefined
+        ? {}
+        : { rate: { ...capability.rate } }),
+      ...(capability.example === undefined
+        ? {}
+        : { example: capability.example }),
+      ...(capability.verified === undefined
+        ? {}
+        : { verified: capability.verified }),
+      ...(capability.tags === undefined ? {} : { tags: [...capability.tags] }),
+    };
   }
   return {
     id,
@@ -979,5 +1317,8 @@ export function providerSpecOf(
 export function writeMethodsOf(
   capability: RegistrableCapability,
 ): readonly string[] {
-  return capability.writeMethods ?? DEFAULT_WRITE_METHODS;
+  return (
+    (capability.mode === "ai" ? undefined : capability.writeMethods) ??
+    DEFAULT_WRITE_METHODS
+  );
 }

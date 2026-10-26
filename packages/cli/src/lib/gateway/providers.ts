@@ -294,7 +294,7 @@ export async function addProvider(db: D1Database, input: AddProviderInput): Prom
   const event = await providerEvent(
     db,
     "provider.added",
-    { id, name: capability.label, kind: capability.mode === "oauth_client" ? "oauth" : "api_key" },
+    { id, name: capability.label, kind: capability.mode === "oauth_client" ? "oauth" : capability.mode },
     input.deployer,
     now,
     {
@@ -382,7 +382,7 @@ export async function removeProvider(
   const event = await providerEvent(
     db,
     "provider.removed",
-    { id, name, kind: parsed.ok && parsed.capability.mode === "oauth_client" ? "oauth" : "api_key" },
+    { id, name, kind: parsed.ok ? (parsed.capability.mode === "oauth_client" ? "oauth" : parsed.capability.mode) : "api_key" },
     deployer,
     now,
     {
@@ -424,7 +424,7 @@ export async function removeProvider(
 async function providerEvent(
   db: D1Database,
   type: "provider.added" | "provider.removed" | "provider.updated",
-  provider: { id: string; name: string; kind?: "api_key" | "oauth" },
+  provider: { id: string; name: string; kind?: "api_key" | "oauth" | "ai" },
   deployer: Deployer,
   now: number,
   onlyIf: { sql: string; params: Array<string | number> },

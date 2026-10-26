@@ -115,6 +115,8 @@ describe("parseProviderSpec", () => {
       "auth.secret: must name a Gateway setting: upper case letters, digits and underscores, a letter first, 3 to 64 characters (STRIPE_API_KEY)",
       "auth.kind: must be bearer, header, query, basic or oauth2-user (an AI provider is a catalog entry, not a spec this gateway takes)",
     ]);
+    // `mode: "ai"` is its own kind now (the ai spec tests below): an
+    // API-key spec's fields are refused on it, and its own are required.
     expect(
       problems({
         ...base,
@@ -122,7 +124,19 @@ describe("parseProviderSpec", () => {
         auth: { kind: "bearer", secret: "X_API_KEY" },
       }),
     ).toEqual([
-      "mode: this gateway registers api_key and oauth_client (auth.kind oauth2-user) providers; an AI provider is a catalog entry",
+      "hosts: not a field of an ai spec",
+      "baseUrl: required: the https URL the app's paths are joined onto (https://api.groq.com/openai)",
+      "models: required: the models the provider serves, at least one",
+      "defaultModel: required: the chat model the Gateway fills in when an app names none; one of models",
+    ]);
+    expect(
+      problems({
+        ...base,
+        mode: "other",
+        auth: { kind: "bearer", secret: "X_API_KEY" },
+      }),
+    ).toEqual([
+      'mode: this gateway registers api_key, oauth_client (auth.kind oauth2-user) and ai (mode: "ai", an OpenAI-compatible model provider) providers',
     ]);
   });
 
@@ -305,5 +319,120 @@ describe("cost.responseField", () => {
         );
       }
     }
+  });
+});
+
+describe("parseProviderSpec with mode ai", () => {
+  const GROQ = {
+    id: "groq-compat",
+    mode: "ai",
+    name: "Groq (OpenAI-compatible)",
+    description: "Fast open models through OpenAI's API shape.",
+    docs: "https://console.groq.com/keys",
+    api: "https://console.groq.com/docs/openai",
+    baseUrl: "https://api.groq.com/openai",
+    auth: { kind: "bearer", secret: "GROQ_COMPAT_API_KEY" },
+    models: ["llama-4-scout", "llama-4-maverick", "nomic-embed"],
+    defaultModel: "llama-4-scout",
+    embeddingsModel: "nomic-embed",
+    cost: { unit: "token", responseField: "usage.cost" },
+    hint: "A key from the Groq console.",
+  };
+
+  it("parses an OpenAI-compatible provider into an ai capability, defaults filled, and round-trips it", () => {
+    const parsed = parseProviderSpec(GROQ);
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok) return;
+    const capability = parsed.capability;
+    expect(capability.mode).toBe("ai");
+    if (capability.mode !== "ai") return;
+    expect(capability).toMatchObject({
+      label: "Groq (OpenAI-compatible)",
+      origin: "https://api.groq.com",
+      basePath: "/openai",
+      inferenceRoutes: ["/v1/chat/completions", "/v1/embeddings"],
+      unstoredRoutes: ["/v1/chat/completions"],
+      shape: "openai",
+      chat: { path: "/v1/chat/completions", seedModel: "llama-4-scout" },
+      embeddings: { path: "/v1/embeddings", seedModel: "nomic-embed" },
+      models: ["llama-4-scout", "llama-4-maverick", "nomic-embed"],
+      cost: { unit: "token", responseField: "usage.cost" },
+    });
+    const spec = providerSpecOf("groq-compat", capability);
+    expect(spec).toMatchObject({
+      mode: "ai",
+      baseUrl: "https://api.groq.com/openai",
+      routes: ["/v1/chat/completions", "/v1/embeddings"],
+      chatRoute: "/v1/chat/completions",
+    });
+    const again = parseProviderSpec(spec);
+    expect(again.ok && again.capability).toEqual(capability);
+  });
+
+  it("takes custom routes and a base URL without a path, and never stores chat", () => {
+    const parsed = parseProviderSpec({
+      ...GROQ,
+      baseUrl: "https://api.vendor.example",
+      embeddingsModel: undefined,
+      routes: ["/v1/chat/completions", "/v1/completions", "/v1/audio/speech"],
+    });
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok || parsed.capability.mode !== "ai") return;
+    expect(parsed.capability.basePath).toBeUndefined();
+    expect(parsed.capability.inferenceRoutes).toEqual([
+      "/v1/chat/completions",
+      "/v1/completions",
+      "/v1/audio/speech",
+    ]);
+    expect(parsed.capability.embeddings).toBeUndefined();
+  });
+
+  it("holds every field to its rule", () => {
+    expect(problems({ ...GROQ, baseUrl: undefined })).toEqual([
+      "baseUrl: required: the https URL the app's paths are joined onto (https://api.groq.com/openai)",
+    ]);
+    expect(problems({ ...GROQ, baseUrl: "http://api.groq.com" })).toEqual([
+      "baseUrl: must be an https URL",
+    ]);
+    expect(
+      problems({ ...GROQ, baseUrl: "https://api.groq.com:8443/openai" }),
+    ).toEqual([
+      "baseUrl: must be an https URL with no query, fragment, credentials or port",
+    ]);
+    expect(problems({ ...GROQ, baseUrl: "https://localhost/v1" })).toEqual([
+      "baseUrl: must name a public host with a dot (api.groq.com)",
+    ]);
+    expect(problems({ ...GROQ, models: [] })).toEqual([
+      "models: required: the models the provider serves, at least one",
+      "defaultModel: must be one of models",
+      "embeddingsModel: must be one of models",
+    ]);
+    expect(problems({ ...GROQ, defaultModel: "gpt-6" })).toEqual([
+      "defaultModel: must be one of models",
+    ]);
+    expect(problems({ ...GROQ, embeddingsModel: "other" })).toEqual([
+      "embeddingsModel: must be one of models",
+    ]);
+    expect(problems({ ...GROQ, routes: ["/v1/embeddings"] })).toEqual([
+      "chatRoute: must be one of routes",
+    ]);
+    expect(
+      problems({ ...GROQ, routes: ["/v1/chat/completions", "../v1/files"] }),
+    ).toEqual([
+      "routes.1: must be a path of lowercase segments starting with / (/v1/chat/completions)",
+      "embeddingsRoute: must be one of routes",
+    ]);
+    expect(
+      problems({ ...GROQ, hosts: ["api.groq.com"], access: ["read"] }),
+    ).toEqual([
+      "hosts: not a field of an ai spec",
+      "access: not a field of an ai spec",
+    ]);
+    expect(problems({ ...GROQ, auth: { kind: "oauth2-user" } })).toContain(
+      "auth.kind: an ai spec's key is a bearer, header, query or basic key, never oauth2-user",
+    );
+    expect(problems({ ...STRIPE, mode: "ai" })).toContain(
+      "hosts: not a field of an ai spec",
+    );
   });
 });

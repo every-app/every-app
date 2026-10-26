@@ -229,6 +229,7 @@ function hostsOf(capability: RegistrableCapability): string {
       ...capability.api,
     ]);
   }
+  if (capability.mode === "ai") return `${capability.origin}${capability.basePath ?? ""}`;
   return listed([
     ...capability.hosts,
     ...(capability.hostSetting ? [`the host ${capability.hostSetting} names`] : []),
@@ -239,7 +240,9 @@ function hostsOf(capability: RegistrableCapability): string {
 function rowHosts(capability: RegistrableCapability): string[] {
   return capability.mode === "oauth_client"
     ? [...capability.token.flatMap((endpoint) => (endpoint.host ? [endpoint.host] : [])), ...capability.api]
-    : [...capability.hosts];
+    : capability.mode === "ai"
+      ? [new URL(capability.origin).host]
+      : [...capability.hosts];
 }
 
 /**

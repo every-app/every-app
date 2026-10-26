@@ -119,6 +119,15 @@ export interface ScopeSetRefusal {
  * re-points `tokenUrl` has to paste the secret again.
  */
 export function providerBindingKey(capability: RegistrableCapability): string {
+  if (capability.mode === "ai") {
+    // An `ai` row's key is bound to where the proxy sends it: its base URL and the key's placement.
+    return JSON.stringify({
+      kind: "ai",
+      auth: sortedAuth(capability.auth),
+      origin: capability.origin,
+      basePath: capability.basePath ?? null,
+    });
+  }
   if (capability.mode === "oauth_client") {
     return JSON.stringify({
       kind: "oauth2-user",
@@ -131,8 +140,17 @@ export function providerBindingKey(capability: RegistrableCapability): string {
       hosts: [...capability.api].sort(),
     });
   }
-  const auth = Object.fromEntries(
-    Object.entries(capability.auth)
+  return JSON.stringify({
+    auth: sortedAuth(capability.auth),
+    hostSetting: capability.hostSetting ?? null,
+    hosts: [...capability.hosts].sort(),
+  });
+}
+
+/** An auth block with its keys sorted, one level down too, for a canonical key. */
+function sortedAuth(auth: object): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(auth)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([field, value]) => [
         field,
@@ -145,11 +163,6 @@ export function providerBindingKey(capability: RegistrableCapability): string {
           : value,
       ]),
   );
-  return JSON.stringify({
-    auth,
-    hostSetting: capability.hostSetting ?? null,
-    hosts: [...capability.hosts].sort(),
-  });
 }
 
 /** One registered row as `provider list` and `provider show` report it. */
@@ -364,6 +377,8 @@ export function checkProviderRow(
  */
 export function registrableHosts(capability: RegistrableCapability): string[] {
   if (capability.mode === "api_key") return [...capability.hosts];
+  if (capability.mode === "ai")
+    return [new URL(capability.origin).hostname.toLowerCase()];
   const hosts = [...capability.api];
   const urls = [
     capability.authorize.url,
