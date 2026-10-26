@@ -38,6 +38,29 @@ describe("resolveOrgContext", () => {
     mockFindMany.mockReset();
   });
 
+  it("carries the organization's name when the row brings it", async () => {
+    mockFindFirst.mockResolvedValue({
+      organizationId: "org-1",
+      role: "member",
+      organization: { name: "Acme" },
+    });
+    const context = await resolveOrgContext({
+      userId: "user-1",
+      activeOrganizationId: "org-1",
+    });
+    expect(context).toEqual({
+      orgId: "org-1",
+      userId: "user-1",
+      role: "member",
+      orgName: "Acme",
+    });
+    expect(mockFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        with: { organization: { columns: { name: true } } },
+      }),
+    );
+  });
+
   it("uses a cached membership on the second lookup", async () => {
     mockFindFirst.mockResolvedValue({
       organizationId: "org-1",

@@ -89,22 +89,23 @@ Minted by `mintIdentityJwt` (`packages/sdk/src/internal/protocol.ts`), verified 
 
 Header: `alg` is `RS256`; `kid` is `everyapp-identity` in production and `everyapp-identity-dev` for tokens `everyapp dev` mints.
 
-| Claim      | Value                                                                                                                                                                   |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `typ`      | `user`. (`public` on a marker, `system` on a system token; each is verified only where it is expected.)                                                                 |
-| `sub`      | The user id.                                                                                                                                                            |
-| `email`    | The user's email.                                                                                                                                                       |
-| `org_id`   | The organization the request acts under: for an organization's own app, the app's organization (the person's role there); for a shared app, the session's organization. |
-| `org_role` | The person's role in `org_id` (`owner`, `admin`, `member`).                                                                                                             |
-| `chan`     | The channel: `web`, `api`, `mcp` or `agent` ([below](#channels-actors-and-scopes)). Absent is read as `web`.                                                            |
-| `act`      | `{ "sub": "<actor>" }`: the principal acting for the user. Absent is read as `{ sub }`.                                                                                 |
-| `scopes`   | A string array. `["*"]` when the credential carries no scopes (a browser session, a personal access token created without scopes).                                      |
-| `jti`      | A UUID per token.                                                                                                                                                       |
-| `tc`       | Only on an MCP tool call: `{ "id": "<call id>", "name": "<tool>" }`, the one call the token was minted for. A malformed `tc` is a 401.                                  |
-| `aud`      | The audience: the app's Worker name (`every-<orgKey>-<appId>`), the value in `EVERYAPP_AUDIENCE`. `everyapp dev` mints for the app id instead.                          |
-| `iss`      | The Gateway's URL (`GATEWAY_URL` on the Gateway, `EVERYAPP_IDENTITY_ISSUER` on the app). `everyapp dev` mints with `https://gateway.dev.localhost`.                     |
-| `iat`      | Seconds since the epoch.                                                                                                                                                |
-| `exp`      | `iat` + 120 (`IDENTITY_TTL_SECONDS`). Required.                                                                                                                         |
+| Claim      | Value                                                                                                                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `typ`      | `user`. (`public` on a marker, `system` on a system token; each is verified only where it is expected.)                                                                                            |
+| `sub`      | The user id.                                                                                                                                                                                       |
+| `email`    | The user's email.                                                                                                                                                                                  |
+| `org_id`   | The organization the request acts under: for an organization's own app, the app's organization (the person's role there); for a shared app, the session's organization.                            |
+| `org_role` | The person's role in `org_id` (`owner`, `admin`, `member`).                                                                                                                                        |
+| `org_name` | The organization's display name, as its owners set it (trimmed, at most 64 characters, no control characters; `validOrganizationName`). Absent when the minter had none; for display, never a key. |
+| `chan`     | The channel: `web`, `api`, `mcp` or `agent` ([below](#channels-actors-and-scopes)). Absent is read as `web`.                                                                                       |
+| `act`      | `{ "sub": "<actor>" }`: the principal acting for the user. Absent is read as `{ sub }`.                                                                                                            |
+| `scopes`   | A string array. `["*"]` when the credential carries no scopes (a browser session, a personal access token created without scopes).                                                                 |
+| `jti`      | A UUID per token.                                                                                                                                                                                  |
+| `tc`       | Only on an MCP tool call: `{ "id": "<call id>", "name": "<tool>" }`, the one call the token was minted for. A malformed `tc` is a 401.                                                             |
+| `aud`      | The audience: the app's Worker name (`every-<orgKey>-<appId>`), the value in `EVERYAPP_AUDIENCE`. `everyapp dev` mints for the app id instead.                                                     |
+| `iss`      | The Gateway's URL (`GATEWAY_URL` on the Gateway, `EVERYAPP_IDENTITY_ISSUER` on the app). `everyapp dev` mints with `https://gateway.dev.localhost`.                                                |
+| `iat`      | Seconds since the epoch.                                                                                                                                                                           |
+| `exp`      | `iat` + 120 (`IDENTITY_TTL_SECONDS`). Required.                                                                                                                                                    |
 
 Keys arrive in `EVERYAPP_IDENTITY_PUBLIC_KEYS`: a JSON array of SPKI PEM strings (a single PEM string is also accepted), the current key and the next, so a Gateway can rotate without a window where apps reject it. `\n` escape sequences are unescaped. Nothing is fetched at runtime: there is no JWKS endpoint.
 
@@ -115,7 +116,7 @@ Verification is fail-closed (`verifyPinnedJwt`), in this order:
 3. The protected header is pinned before any signature work: `alg` must be `RS256` (so `none` and HS256 confusion fail here), and `kid` must be `everyapp-identity`, or also `everyapp-identity-dev` under the dev opt-in.
 4. A user or system token needs a configured issuer (`EVERYAPP_IDENTITY_ISSUER` or the `issuer` option); without one the error is `EVERYAPP_IDENTITY_ISSUER not configured — deploy with the EveryApp CLI or provide an explicit issuer.`
 5. Each key in the set is tried with `jwtVerify` (`algorithms: ["RS256"]`, the expected `audience`, the issuer when configured, `requiredClaims` `["exp"]`, or `["exp", "iat"]` for a system token). The payload's `typ` must be the expected one.
-6. The claims are checked: `sub`, `email`, `org_id` and `org_role` are required (`identity token missing required claims`).
+6. The claims are checked: `sub`, `email`, `org_id` and `org_role` are required (`identity token missing required claims`); `org_name` is read when it is a non-empty string and ignored otherwise.
 
 Every failure is an `IdentityError` (`status` 401, `name` `"IdentityError"`), which `everyApp()` answers as `401 { "error": "unauthenticated", "message" }`. A missing key set, an unset audience, a mismatched app id or the dev opt-in with the wrong issuer is a `ConfigurationError` (`status` 500), answered as `500 { "error": "misconfigured", "message" }` and logged with `console.error`.
 
@@ -125,17 +126,18 @@ The audience is resolved by `audienceFor` in `everyApp.ts`: `EVERYAPP_AUDIENCE` 
 
 What the handler's fourth argument, `getEveryAppUser()` and `requireEveryAppUser()` return (`identityClaimsToEveryAppUser` in `protocol.ts`):
 
-| Field      | From       | Notes                                                                                                                                    |
-| ---------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`       | `sub`      | The user id. Scope every database row by it.                                                                                             |
-| `email`    | `email`    |                                                                                                                                          |
-| `orgId`    | `org_id`   | The organization the request acts under.                                                                                                 |
-| `orgRole`  | `org_role` | `OrgRole`: `"owner"`, `"admin"` or `"member"`; any other value the Gateway mints is read as `member`. `isAdmin(user)` is owner or admin. |
-| `channel`  | `chan`     | `"web"` when absent.                                                                                                                     |
-| `actor`    | `act`      | `{ sub }`: the user id, or the credential acting for them (`pat:<id>`, `oauth:<id>`, `access:<email>`).                                  |
-| `scopes`   | `scopes`   | `["*"]` when absent or not an array; non-string entries are dropped.                                                                     |
-| `jti`      | `jti`      | `""` when absent.                                                                                                                        |
-| `toolCall` | `tc`       | Only on `channel: "mcp"`: `{ id, name }`.                                                                                                |
+| Field      | From       | Notes                                                                                                                                                                          |
+| ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`       | `sub`      | The user id. Scope every database row by it.                                                                                                                                   |
+| `email`    | `email`    |                                                                                                                                                                                |
+| `orgId`    | `org_id`   | The organization the request acts under.                                                                                                                                       |
+| `orgRole`  | `org_role` | `OrgRole`: `"owner"`, `"admin"` or `"member"`; any other value the Gateway mints is read as `member`. `isAdmin(user)` is owner or admin.                                       |
+| `orgName`  | `org_name` | The organization's display name; `undefined` when the token carries none or it isn't a non-empty string. Show it (`user.orgName ?? "your organization"`); key data by `orgId`. |
+| `channel`  | `chan`     | `"web"` when absent.                                                                                                                                                           |
+| `actor`    | `act`      | `{ sub }`: the user id, or the credential acting for them (`pat:<id>`, `oauth:<id>`, `access:<email>`).                                                                        |
+| `scopes`   | `scopes`   | `["*"]` when absent or not an array; non-string entries are dropped.                                                                                                           |
+| `jti`      | `jti`      | `""` when absent.                                                                                                                                                              |
+| `toolCall` | `tc`       | Only on `channel: "mcp"`: `{ id, name }`.                                                                                                                                      |
 
 ### Channels, actors and scopes
 

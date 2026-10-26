@@ -515,6 +515,7 @@ export async function handleGatewayRequest(
         email: session.email,
         orgId: session.orgId,
         orgRole: session.orgRole,
+        orgName: session.orgName,
       },
       audience: audienceOf(deps, app),
       issuer: deps.issuer,

@@ -2064,3 +2064,9 @@ Per-install plain settings (`settings` in the manifest). Defaults taken; confirm
 - [ ] **Provider name clashes.** The `PROVIDER_SECRET_TAKEN` checks (`provider add`, the gateway's provider routes; lane 6's files) still read `secrets` only. A provider registered later could take a setting's name. Follow-up: switch them to `appWorkerNames()`.
 - [ ] **Defaults are written by the deploy** (the stacked after-flip PR). Each deploy sends the `default` of every setting the app's Worker doesn't hold yet. A value someone set is never replaced, and there's no "reset to default" verb: set it again. In dev, `everyAppWorker()` binds an unset setting with a default as text.
 - [ ] **`install` asks `Set up <app> now?` (Yes by default)** at a terminal when the app needs setup, then runs `configure <app>`.
+
+## Platform shortcuts (2026-10-26)/L7 gateway-runtime
+
+Defaults taken for Ben in the gateway-runtime lane (identity token claims, the setup gate, the scope rule on app routes, WebSocket lifetime). HELD PRs: Ben merges.
+
+- [ ] **`org_name` is optional in the identity token** (PR 1). `EveryAppUser.orgName` is `string | undefined`: the claim is minted when the authenticator read the name (every production path does) and dropped when malformed, so an app shows `user.orgName ?? "your organization"`. Required would have made every test token and every third-party minter carry a name for a display-only field. The dev gateway's seeded organization is called `Dev organization`. A rename reaches apps within the 30 s membership cache, like a role change.

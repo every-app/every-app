@@ -13,6 +13,11 @@ export interface AuthenticatedSession {
   email: string;
   orgId: string;
   orgRole: string;
+  /**
+   * The organization's display name, when the authenticator read it (the
+   * production ones join it with the membership). Minted as `org_name`.
+   */
+  orgName?: string;
   credential?: {
     kind: "session" | "pat" | "oauth";
     channel: "web" | "api";

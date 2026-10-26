@@ -28,19 +28,22 @@ vi.mock("@/db", () => ({
         findFirst: mockOrganizationFindFirst,
       },
     },
-    // resolveLiveOrgRole: the membership joined with the user's ban state.
-    select: () => ({
-      from: () => ({
-        innerJoin: () => ({
-          where: () => ({
-            limit: async () => {
-              const row = await mockMemberFindFirst();
-              return row ? [{ banned: false, banExpires: null, ...row }] : [];
-            },
-          }),
+    // resolveLiveMembership: the membership joined with the user's ban
+    // state and the organization's name (two joins).
+    select: () => {
+      const joined = {
+        innerJoin: () => joined,
+        where: () => ({
+          limit: async () => {
+            const row = await mockMemberFindFirst();
+            return row
+              ? [{ banned: false, banExpires: null, orgName: "Acme", ...row }]
+              : [];
+          },
         }),
-      }),
-    }),
+      };
+      return { from: () => joined };
+    },
   },
 }));
 
@@ -161,6 +164,7 @@ describe("createProdAuthenticator PAT branch", () => {
       email: "user@example.com",
       orgId: "org-id",
       orgRole: "member",
+      orgName: "Acme",
       credential: {
         kind: "pat",
         channel: "api",

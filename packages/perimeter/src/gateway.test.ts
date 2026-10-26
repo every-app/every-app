@@ -263,6 +263,28 @@ describe("handleGatewayRequest", () => {
     expect(payload.scopes).toEqual(["mcp:read", "api:write"]);
   });
 
+  it("mints the organization's name as org_name when the authenticator read it", async () => {
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    const mint = async (session: AuthenticatedSession) => {
+      const res = await handleGatewayRequest(
+        req("/tasks"),
+        deps({
+          authenticator: {
+            sessionCookieNames: [],
+            authenticate: async () => session,
+            hasAppAccess: async () => true,
+          },
+        }),
+      );
+      const body = (await res.json()) as { identity: string };
+      return (await jwtVerify(body.identity, pub)).payload;
+    };
+    expect((await mint({ ...SESSION, orgName: "Acme" }))["org_name"]).toBe(
+      "Acme",
+    );
+    expect("org_name" in (await mint(SESSION))).toBe(false);
+  });
+
   it("never proxies protected-resource metadata requests, even under a broad public route", async () => {
     const fetcher = vi.fn();
     for (const method of ["GET", "POST"]) {

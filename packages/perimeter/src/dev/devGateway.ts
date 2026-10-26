@@ -50,6 +50,7 @@ export const DEV_USER: AuthenticatedSession = {
   email: "dev@everyapp.localhost",
   orgId: DEV_ORG_ID,
   orgRole: "owner",
+  orgName: "Dev organization",
 };
 
 export interface DevGatewayConfig {

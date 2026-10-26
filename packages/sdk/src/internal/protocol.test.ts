@@ -57,6 +57,43 @@ describe("mintIdentityJwt", () => {
     expect(typeof payload.jti).toBe("string");
   });
 
+  it("carries the organization's name as org_name, and leaves it off when the minter has none", async () => {
+    const pub = await importSPKI(publicKeyPem, IDENTITY_ALG);
+    const named = await mintIdentityJwt(privateKeyPem, {
+      subject: { ...subject, orgName: "Acme Corp" },
+      audience: "todo",
+      issuer: "https://home.example.com",
+    });
+    const { payload } = await jwtVerify(named, pub);
+    expect(payload["org_name"]).toBe("Acme Corp");
+    expect(identityClaimsToEveryAppUser(payload).orgName).toBe("Acme Corp");
+
+    const unnamed = await mintIdentityJwt(privateKeyPem, {
+      subject,
+      audience: "todo",
+      issuer: "https://home.example.com",
+    });
+    const bare = (await jwtVerify(unnamed, pub)).payload;
+    expect("org_name" in bare).toBe(false);
+    expect(identityClaimsToEveryAppUser(bare).orgName).toBeUndefined();
+  });
+
+  it("reads a malformed or empty org_name as no name, never as a failure", () => {
+    const base = {
+      typ: "user",
+      sub: "user_1",
+      email: "a@b.com",
+      org_id: "org_1",
+      org_role: "member",
+    };
+    expect(
+      identityClaimsToEveryAppUser({ ...base, org_name: 7 }).orgName,
+    ).toBeUndefined();
+    expect(
+      identityClaimsToEveryAppUser({ ...base, org_name: "" }).orgName,
+    ).toBeUndefined();
+  });
+
   it("sets a ~120s expiry", async () => {
     const now = 1_000_000_000_000;
     const jwt = await mintIdentityJwt(privateKeyPem, {

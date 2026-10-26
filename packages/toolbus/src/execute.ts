@@ -555,6 +555,7 @@ async function runAppTool(
       email: principal.email,
       orgId: principal.organizationId,
       orgRole: principal.orgRole,
+      orgName: principal.organizationName,
     },
     audience: app.audience,
     issuer: deps.signing.issuer,

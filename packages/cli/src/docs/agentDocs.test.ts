@@ -408,7 +408,7 @@ describe("identity.md", () => {
       "EVERYAPP_EMAIL_SENDERS",
     ]);
     expectDocumented("identity", "the key ids and the dev issuer", [IDENTITY_KEY_ID, IDENTITY_DEV_KEY_ID, DEV_ISSUER]);
-    expectDocumented("identity", "the token's claims", ["typ", "email", "org_id", "org_role", "chan", "act", "scopes", "jti", "tc", "aud", "iss", "sub", "exp", "iat"]);
+    expectDocumented("identity", "the token's claims", ["typ", "email", "org_id", "org_role", "org_name", "chan", "act", "scopes", "jti", "tc", "aud", "iss", "sub", "exp", "iat"]);
     expectDocumented("identity", "the channels", ["web", "api", "mcp", "agent"]);
   });
   it("documents every export of @every-app/sdk/server", () => {

@@ -107,6 +107,11 @@ export interface IdentitySubject {
   email: string;
   orgId: string;
   orgRole: string;
+  /**
+   * The organization's name as its owners set it (`org_name`), so an app
+   * can show "Acme" rather than an id. Left out when the minter has none.
+   */
+  orgName?: string;
 }
 
 /**
@@ -132,6 +137,13 @@ export interface EveryAppUser {
   email: string;
   orgId: string;
   orgRole: OrgRole;
+  /**
+   * The organization's display name (the `org_name` claim), as its owners
+   * set it: trimmed, at most 64 characters, no control characters. Show
+   * it; never key data by it (names change, `orgId` doesn't). Undefined
+   * when the token carries none.
+   */
+  orgName?: string;
   channel: IdentityChannel;
   /** The acting principal (user, or `mcp:<client>` / agent). */
   actor: IdentityActor;
@@ -149,6 +161,8 @@ export interface IdentityClaims extends JWTPayload {
   email: string;
   org_id: string;
   org_role: string;
+  /** The organization's display name; absent when the minter had none. */
+  org_name?: string;
   chan: IdentityChannel;
   act: IdentityActor;
   scopes: string[];
@@ -191,6 +205,7 @@ export function identitySubjectToClaims(
     email: subject.email,
     org_id: subject.orgId,
     org_role: subject.orgRole,
+    ...(subject.orgName ? { org_name: subject.orgName } : {}),
     chan: opts.channel ?? "web",
     act: opts.actor ?? { sub: subject.sub },
     scopes: opts.scopes ?? ["*"],
@@ -230,6 +245,12 @@ export function identityClaimsToEveryAppUser(
   if (!sub || !email || !orgId || !orgRole) {
     throw new ProtocolClaimsError("identity token missing required claims");
   }
+  // Display only, so a token without it (or with a malformed one) is still
+  // an identity: the app falls back to no name.
+  const orgName =
+    typeof payload.org_name === "string" && payload.org_name
+      ? payload.org_name
+      : undefined;
   const chan = (payload.chan as IdentityChannel | undefined) ?? "web";
   const act = (payload.act as { sub?: string } | undefined) ?? { sub };
   const scopes = Array.isArray(payload.scopes)
@@ -243,6 +264,7 @@ export function identityClaimsToEveryAppUser(
     email,
     orgId,
     orgRole: toOrgRole(orgRole),
+    ...(orgName ? { orgName } : {}),
     channel: chan,
     actor: { sub: act.sub ?? sub },
     scopes,

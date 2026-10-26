@@ -29,7 +29,10 @@ import { sessions, users } from "@/db/schema";
 import { isOrganizationActive } from "@/server/organization/orgContext";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { isUserBanned } from "@/server/user-ban";
-import { resolveLiveOrgRole } from "./betterAuthAuthenticator";
+import {
+  resolveLiveMembership,
+  resolveLiveOrgRole,
+} from "./betterAuthAuthenticator";
 
 /** A third-party app of an active organization, installed for this user. */
 async function installedThirdPartyApp(
@@ -113,13 +116,17 @@ export function createHostSessionAuthenticator(options: {
       }
       const user = await liveGatewaySessionUser(claims.sid, claims.sub);
       if (!user) return null;
-      const role = await resolveLiveOrgRole(claims.sub, app.organizationId);
-      if (!role) return null;
+      const membership = await resolveLiveMembership(
+        claims.sub,
+        app.organizationId,
+      );
+      if (!membership) return null;
       return {
         sub: claims.sub,
         email: user.email,
         orgId: app.organizationId,
-        orgRole: role,
+        orgRole: membership.role,
+        orgName: membership.orgName,
       };
     },
     async hasAppAccess(session, served) {

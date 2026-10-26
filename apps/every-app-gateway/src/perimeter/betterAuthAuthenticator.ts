@@ -24,7 +24,7 @@ import { prewarmOuterRingAssertion } from "@/auth/cloudflare-access";
 import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { members, users } from "@/db/schema";
+import { members, organizations, users } from "@/db/schema";
 import {
   isOrganizationActive,
   resolveOrgContext,
@@ -48,23 +48,32 @@ type CredentialBoundSession = AuthenticatedSession & {
   credentialAppRowId?: string | null;
 };
 
+/** A live membership: the role, and the organization's name for `org_name`. */
+export interface LiveMembership {
+  role: string;
+  orgName: string;
+}
+
 /**
- * The role a token's user holds in the token's org right now, or null when
- * they are no longer a member or have been deactivated (banned): tokens
- * outlive sessions, so both are checked on every request.
+ * The membership a token's user holds in the token's org right now (the
+ * role and the organization's name), or null when they are no longer a
+ * member or have been deactivated (banned): tokens outlive sessions, so
+ * both are checked on every request.
  */
-export async function resolveLiveOrgRole(
+export async function resolveLiveMembership(
   userId: string,
   organizationId: string,
-): Promise<string | null> {
+): Promise<LiveMembership | null> {
   const [row] = await db
     .select({
       role: members.role,
       banned: users.banned,
       banExpires: users.banExpires,
+      orgName: organizations.name,
     })
     .from(members)
     .innerJoin(users, eq(members.userId, users.id))
+    .innerJoin(organizations, eq(members.organizationId, organizations.id))
     .where(
       and(
         eq(members.userId, userId),
@@ -73,7 +82,16 @@ export async function resolveLiveOrgRole(
     )
     .limit(1);
   if (!row || isUserBanned(row)) return null;
-  return resolvePrimaryOrganizationRole(row.role);
+  const role = resolvePrimaryOrganizationRole(row.role);
+  return role ? { role, orgName: row.orgName } : null;
+}
+
+/** The role alone; see {@link resolveLiveMembership}. */
+export async function resolveLiveOrgRole(
+  userId: string,
+  organizationId: string,
+): Promise<string | null> {
+  return (await resolveLiveMembership(userId, organizationId))?.role ?? null;
 }
 
 /** A token bound to one app (`credentialAppRowId`) is used on another. */
@@ -112,8 +130,11 @@ export function createProdAuthenticator(
         // ambient cookie auth.
         if (!pat) return null;
 
-        const role = await resolveLiveOrgRole(pat.userId, pat.organizationId);
-        if (!role) return null;
+        const membership = await resolveLiveMembership(
+          pat.userId,
+          pat.organizationId,
+        );
+        if (!membership) return null;
         const scopes = pat.scopes.length ? pat.scopes : ["*"];
         if (scopes.some((scope) => scope.startsWith("provider:"))) {
           return null;
@@ -135,7 +156,8 @@ export function createProdAuthenticator(
           sub: pat.userId,
           email: pat.userEmail,
           orgId: pat.organizationId,
-          orgRole: role,
+          orgRole: membership.role,
+          orgName: membership.orgName,
           credential: {
             kind: "pat",
             channel: "api",
@@ -175,6 +197,7 @@ export function createProdAuthenticator(
         email: session.user.email,
         orgId: org.orgId,
         orgRole: org.role,
+        orgName: org.orgName,
       };
     },
 
@@ -225,6 +248,7 @@ export function createProdAuthenticator(
         ...session,
         orgId: membership.orgId,
         orgRole: membership.role,
+        orgName: membership.orgName,
       };
     },
   };

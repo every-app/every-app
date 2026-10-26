@@ -12,6 +12,8 @@ export interface OrgContext {
   orgId: string;
   userId: string;
   role: OrganizationRole;
+  /** The organization's name, for the identity token's `org_name`. */
+  orgName?: string;
   /**
    * Who the events of this context name as their cause, when it isn't the
    * signed-in member themselves: an agent calling the Gateway's MCP tools
@@ -105,6 +107,7 @@ async function resolveOrgContextFromDatabase({
         eq(members.userId, userId),
         eq(members.organizationId, activeOrganizationId),
       ),
+      with: { organization: { columns: { name: true } } },
     });
     return row ? toOrgContext(row, userId) : null;
   }
@@ -112,6 +115,7 @@ async function resolveOrgContextFromDatabase({
   const rows = await db.query.members.findMany({
     where: eq(members.userId, userId),
     limit: 2,
+    with: { organization: { columns: { name: true } } },
   });
   return rows.length === 1 ? toOrgContext(rows[0], userId) : null;
 }
@@ -120,11 +124,19 @@ function toOrgContext(
   row: {
     organizationId: string;
     role: string | readonly string[] | null | undefined;
+    organization?: { name: string } | null;
   },
   userId: string,
 ): OrgContext | null {
   const role = resolvePrimaryOrganizationRole(row.role);
-  return role ? { orgId: row.organizationId, userId, role } : null;
+  if (!role) return null;
+  const orgName = row.organization?.name;
+  return {
+    orgId: row.organizationId,
+    userId,
+    role,
+    ...(orgName ? { orgName } : {}),
+  };
 }
 
 /** How many of the user's latest sessions "last active" looks through. */

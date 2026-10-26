@@ -16,6 +16,7 @@ export interface SessionLike {
   email: string;
   orgId: string;
   orgRole: string;
+  orgName?: string;
   credential?: { kind: string; actor?: string; scopes?: string[] };
 }
 
@@ -31,6 +32,7 @@ export function principalFromSession(
     userId: session.sub,
     email: session.email,
     organizationId: session.orgId,
+    ...(session.orgName ? { organizationName: session.orgName } : {}),
     orgRole: session.orgRole,
   };
   const credential = session.credential;
