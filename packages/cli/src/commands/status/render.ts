@@ -7,6 +7,7 @@
  */
 import chalk from "chalk";
 import type { AccessState } from "@/lib/access/settings";
+import { listed } from "@/lib/output/text";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import { describeMcp, listPublicRoutes } from "@/lib/app/publicRoutes";
 import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
@@ -148,11 +149,30 @@ function release(install: InstallRecord, servingRecorded: boolean, checkout: Che
   return version;
 }
 
-/** The Access row: on, off, or what cf couldn't say. What to do about off is the Next block's (`access on`, next.ts). */
+/**
+ * The Access row: on (and whether what Zero Trust has is what this release
+ * wants: `drift` names what differs, and the problem ACCESS_DRIFT says what
+ * to run), off, or what cf couldn't say. What to do about off is the Next
+ * block's (`access on`, next.ts).
+ */
 function accessRow(access: AccessState | Unread): string {
   if ("error" in access) return chalk.yellow("! couldn't check");
-  if (access.on) return `${chalk.green("on")}${chalk.dim(" · everyone signs in through Cloudflare Access first")}`;
-  return chalk.dim("off");
+  if (!access.on) return chalk.dim("off");
+  const on = chalk.green("on");
+  if (access.drift === null) {
+    return access.driftUnread
+      ? `${on}${chalk.dim(access.driftUnread.permission ? " · in step? this login can't read Access" : " · in step? couldn't check")}`
+      : on;
+  }
+  const differs = [
+    ...(access.drift.missing.length > 0 ? [`no application in front of ${listed(access.drift.missing)}`] : []),
+    ...(access.drift.paths.length > 0 ? [`paths differ on ${listed(access.drift.paths)}`] : []),
+    ...(access.drift.signIn.length > 0 ? [`sign-in methods differ on ${listed(access.drift.signIn)}`] : []),
+    ...(access.drift.settings ? ["the settings name other applications"] : []),
+  ];
+  return differs.length > 0
+    ? `${on} ${chalk.yellow(`· drift: ${differs.join("; ")}`)}`
+    : `${on}${chalk.dim(" · in step with this Gateway · everyone signs in through Cloudflare Access first")}`;
 }
 
 function tls(

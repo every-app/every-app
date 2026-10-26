@@ -62,6 +62,7 @@ import {
   type ApplicationOutcome,
 } from "@/lib/access/applications";
 import {
+  accessDrift,
   allowedSignInProviders,
   appsDestinations,
   CLOUDFLARE_IDP_TYPE,
@@ -913,7 +914,8 @@ export async function showAccess(options: AccessOptions): Promise<void> {
     : { gateway: null, apps: null };
   const people = await readPeople(db, now());
   const managedOAuth = managedOAuthOn(found.gateway);
-  const plan = appsDestinations(base, await readPublicSurfaces(db), { managedOAuth });
+  const surfaces = await readPublicSurfaces(db);
+  const plan = appsDestinations(base, surfaces, { managedOAuth });
   if (organization) warnIfOpenToAnyCloudflareAccount(out, providers);
 
   const on = settings.length === ACCESS_SETTINGS.length && found.gateway !== null;
@@ -926,23 +928,14 @@ export async function showAccess(options: AccessOptions): Promise<void> {
           appsAud: found.apps.aud,
         })
       : null;
-  const ours = (application: AccessApplication) => splitDestinations(application.destinations ?? [], scope).owned;
   const combined = found.gateway !== null && found.gateway.id === found.apps?.id;
-  const appsInSync = found.apps
-    ? sameDestinations(
-        ours(found.apps).filter((d) => !combined || (d.uri ?? "").toLowerCase() !== gatewayHost),
-        plan.destinations,
-      )
-    : false;
-  const gatewayInSync = found.gateway
-    ? sameDestinations(
-        ours(found.gateway).filter((d) => (d.uri ?? "").toLowerCase() === gatewayHost),
-        [gatewayDestination(gatewayHost, managedOAuth)],
-      )
-    : false;
+  // What differs from what `on` would make, the way `status` reads it too (one source for both).
+  const drift = accessDrift({ scope, found, surfaces, providerIds });
+  const appsInSync = found.apps !== null && !drift.paths.includes(`*.${base}`);
+  const gatewayInSync = found.gateway !== null && !drift.paths.includes(gatewayHost);
   // Whether the application allows the team's sign-in providers as `on` would leave it (null: no application).
   const signInSynced = (application: AccessApplication | null): boolean | null =>
-    application === null ? null : signInInSync(application, providerIds);
+    application === null ? null : !drift.signIn.includes(application.id === found.gateway?.id ? gatewayHost : `*.${base}`);
   const policyAttached = (application: AccessApplication | null) =>
     application === null || policy === null || (application.policies ?? []).some((p) => p.id === policy.id);
   const notInPolicy = policy
@@ -1088,6 +1081,7 @@ export async function showAccess(options: AccessOptions): Promise<void> {
         combined,
       },
       desired: { apps: plan.destinations.map((d) => ({ uri: d.uri, public: d.overrides.map((o) => o.path_pattern) })) },
+      drift: { ...drift, settings: settingsCurrent === false },
       settings: { names: settings, current: settingsCurrent },
       linkPending: people.toLink,
       ...(fixes.length > 0 ? { fixes } : {}),

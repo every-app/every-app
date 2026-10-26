@@ -314,7 +314,10 @@ on is read from the live applications, so `access off` stays off; a failure
 there is a warning naming `access on`, never a failed update. An application that also covers another
 hostname keeps that destination; one with policies of its own is left
 alone, with a warning. `pnpm everyapp access show` reports the state and
-what `on` would change; `pnpm everyapp access off` removes the three
+what `on` would change, and `pnpm everyapp status` says in one line whether
+Access is on and in step with the deployed gateway (`drift: …` names what
+differs: paths, sign-in methods, a missing application, stale settings; the
+problem `ACCESS_DRIFT` under the report names `access on`); `pnpm everyapp access off` removes the three
 settings first (one version: the ring stops at once), then deletes the two
 applications (`--keep-applications` leaves Access in front with passwords
 working), and leaves the team, its providers and the policy.

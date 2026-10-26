@@ -62,7 +62,7 @@ function done(over: Partial<NextFacts> = {}): NextFacts {
     owner: { email: "owner@example.com", organizationName: "Acme" },
     apps: [app("todo")],
     gatewayNames: ["OPENAI_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"],
-    access: { on: true, teamDomain: "acme.cloudflareaccess.com" },
+    access: { on: true, teamDomain: "acme.cloudflareaccess.com", drift: null, driftUnread: null },
     providers: [dataforseo(false)],
     counts: { members: 2, invitations: 0, connections: 1, tokens: 0, toolApps: 1 },
     problems: [],
@@ -166,7 +166,7 @@ describe("nextStepsFor", () => {
 
   describe("ACCESS_OFF", () => {
     it("recommends Access on a self-hosted Gateway that has none", () => {
-      const facts = done({ access: { on: false, teamDomain: null } });
+      const facts = done({ access: { on: false, teamDomain: null, drift: null, driftUnread: null } });
       expect(nextStepsFor(facts)).toEqual([
         {
           code: NextCode.AccessOff,
@@ -276,7 +276,7 @@ describe("nextStepsFor", () => {
     const everything = done({
       gatewayNames: ["DATAFORSEO_API_KEY"],
       apps: [app("crm", { manifest: { providers: [{ id: "openrouter", optional: true }] } })],
-      access: { on: false, teamDomain: null },
+      access: { on: false, teamDomain: null, drift: null, driftUnread: null },
       counts: { members: 1, invitations: 0, connections: 0, tokens: 0, toolApps: 1 },
     });
     expect(codes(everything)).toEqual([
@@ -287,7 +287,7 @@ describe("nextStepsFor", () => {
     ]);
     expect(codes(everything)).toHaveLength(NEXT_STEPS_MAX);
     // With Access on, the next in line takes the fourth place.
-    expect(codes({ ...everything, access: { on: true, teamDomain: null } })).toEqual([
+    expect(codes({ ...everything, access: { on: true, teamDomain: null, drift: null, driftUnread: null } })).toEqual([
       NextCode.AiKey,
       NextCode.ProviderOffer,
       NextCode.Invite,

@@ -297,6 +297,71 @@ export function findAccessApplications(
 export const managedOAuthOn = (application: AccessApplication | null): boolean =>
   application?.oauth_configuration?.enabled === true;
 
+// --- Drift ------------------------------------------------------------------
+
+/**
+ * What the live applications have that differs from what `on` would make
+ * of them, by host (`<gateway host>`, `*.<base>`): the bypass paths, the
+ * sign-in methods, and the application being there at all. Empty lists
+ * mean in step. `status`, `access show` and the reconcile after a Gateway
+ * deploy all read it, so they never disagree.
+ */
+export interface AccessDrift {
+  /** Hosts whose application lets other paths through than the plan. */
+  paths: string[];
+  /** Hosts whose application doesn't allow the sign-in methods `on` vouches for, as `on` would leave it. */
+  signIn: string[];
+  /** Hosts with no application in front. */
+  missing: string[];
+}
+
+/** Whether a drift names anything. */
+export const hasDrift = (drift: AccessDrift): boolean =>
+  drift.paths.length > 0 || drift.signIn.length > 0 || drift.missing.length > 0;
+
+/**
+ * The drift of the applications found against the plan: the Gateway
+ * host's destination against `gatewayDestination` (Managed OAuth read
+ * from the application), the apps' destinations against
+ * `appsDestinations`' (one application covering both hosts is read twice,
+ * each half against its own plan), each application's sign-in settings
+ * against `signInInSync`.
+ */
+export function accessDrift({
+  scope,
+  found,
+  surfaces,
+  providerIds,
+}: {
+  scope: AccessScope;
+  found: { gateway: AccessApplication | null; apps: AccessApplication | null };
+  surfaces: readonly AppPublicSurface[];
+  providerIds: readonly string[];
+}): AccessDrift {
+  const gatewayHost = scope.gatewayHost.toLowerCase();
+  const wildcard = appsWildcard(scope.appBaseDomain);
+  const managedOAuth = managedOAuthOn(found.gateway);
+  const plan = appsDestinations(scope.appBaseDomain, surfaces, { managedOAuth });
+  const combined = found.gateway !== null && found.gateway.id === found.apps?.id;
+  const ours = (application: AccessApplication) => splitDestinations(application.destinations ?? [], scope).owned;
+  const drift: AccessDrift = { paths: [], signIn: [], missing: [] };
+  if (found.gateway) {
+    const gatewayOwn = ours(found.gateway).filter((d) => normalUri(d.uri) === gatewayHost);
+    if (!sameDestinations(gatewayOwn, [gatewayDestination(gatewayHost, managedOAuth)])) drift.paths.push(gatewayHost);
+    if (!signInInSync(found.gateway, providerIds)) drift.signIn.push(gatewayHost);
+  } else {
+    drift.missing.push(gatewayHost);
+  }
+  if (found.apps) {
+    const appsOwn = ours(found.apps).filter((d) => !combined || normalUri(d.uri) !== gatewayHost);
+    if (!sameDestinations(appsOwn, plan.destinations)) drift.paths.push(wildcard);
+    if (!combined && !signInInSync(found.apps, providerIds)) drift.signIn.push(wildcard);
+  } else {
+    drift.missing.push(wildcard);
+  }
+  return drift;
+}
+
 // --- Policy rules -----------------------------------------------------------
 
 export const emailRule = (email: string): AccessRule => ({ email: { email: email.toLowerCase() } });

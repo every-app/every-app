@@ -9,6 +9,8 @@ import chalk from "chalk";
 import { APP_SECRETS_FILE, describeOriginVariables } from "@/lib/app/deploySecrets";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import type { McpSummary, PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { hasDrift } from "@/lib/access/plan";
+import type { AccessState } from "@/lib/access/settings";
 import { describeUnmetSettings } from "@/lib/app/settings";
 import type { DesiredState } from "@/lib/gateway/desiredState";
 import type { InstallRecord } from "@/lib/gateway/install";
@@ -38,6 +40,8 @@ export enum ProblemCode {
   CertificatesUnknown = "CERTIFICATES_UNKNOWN",
   CertPending = "CERT_PENDING",
   AccessUnknown = "ACCESS_UNKNOWN",
+  AccessDrift = "ACCESS_DRIFT",
+  AccessDriftUnknown = "ACCESS_DRIFT_UNKNOWN",
   DeployRunning = "DEPLOY_RUNNING",
 }
 
@@ -182,6 +186,7 @@ export function problemsFor({
   waitingCertificates,
   certificates,
   access,
+  accessState,
   leases,
   checkout,
   emailProblems,
@@ -200,6 +205,8 @@ export function problemsFor({
   certificates: Unread | null;
   /** Why the Gateway Worker's settings couldn't be listed, when they couldn't. */
   access: Unread | null;
+  /** Whether Access is on and in step; null when it doesn't apply or wasn't read. */
+  accessState: AccessState | null;
   leases: LeaseHolder[];
   checkout: CheckoutState;
   emailProblems: EmailRouteProblem[] | Unread;
@@ -355,6 +362,17 @@ export function problemsFor({
       detail: [`Cloudflare said: ${access.error}.`],
     });
   }
+  if (accessState?.drift && (hasDrift(accessState.drift) || accessState.drift.settings)) {
+    problems.push(accessDrifted(accessState.drift));
+  }
+  if (accessState?.driftUnread && !accessState.driftUnread.permission) {
+    problems.push({
+      code: ProblemCode.AccessDriftUnknown,
+      severity: Severity.Warning,
+      headline: "Couldn't check whether Cloudflare Access is in step with this Gateway",
+      detail: [`Cloudflare said: ${accessState.driftUnread.error}.`],
+    });
+  }
   for (const lease of leases) {
     problems.push({
       code: ProblemCode.DeployRunning,
@@ -383,6 +401,29 @@ function appNeedsSetup(appId: string, setup: AppSetup): Problem {
     headline: `${appId} needs setup`,
     detail: describeUnmetSettings(setup.unmet),
     ...(setup.command ? { run: command`${setup.command.command}` } : {}),
+  };
+}
+
+/**
+ * Access is on, and what Zero Trust has isn't what this release wants: the
+ * paths an application lets through, the sign-in methods, an application
+ * gone, or settings naming other applications than the ones found.
+ */
+function accessDrifted(drift: NonNullable<AccessState["drift"]>): Problem {
+  return {
+    code: ProblemCode.AccessDrift,
+    severity: Severity.Warning,
+    headline: "Cloudflare Access is out of step with this Gateway",
+    detail: [
+      ...(drift.missing.length > 0 ? [`No Access application in front of ${listed(drift.missing)}.`] : []),
+      ...(drift.paths.length > 0 ? [`The paths let through without a login differ on ${listed(drift.paths)}.`] : []),
+      ...(drift.signIn.length > 0 ? [`The sign-in methods differ on ${listed(drift.signIn)}.`] : []),
+      ...(drift.settings
+        ? ["The Gateway's settings name other applications than the ones found: nobody can sign in until they are written again."]
+        : []),
+    ],
+    run: command`${CLI} access on`,
+    runNote: "brings Access in step with this Gateway",
   };
 }
 

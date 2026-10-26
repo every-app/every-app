@@ -2742,6 +2742,18 @@ Warning. cf couldn't list the Gateway Worker's settings, so whether Cloudflare A
 
 Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/lib/access/settings.ts`
 
+### ACCESS_DRIFT (status)
+
+Warning. Cloudflare Access is on (all three settings on the Worker) and what Zero Trust has isn't what this Gateway release wants (`accessDrift` in `packages/cli/src/lib/access/plan.ts`, the same read `access show` and the reconcile after `update` make): `Cloudflare Access is out of step with this Gateway`, then one line per difference: `No Access application in front of <hosts>.`, `The paths let through without a login differ on <hosts>.`, `The sign-in methods differ on <hosts>.`, `The Gateway's settings name other applications than the ones found: nobody can sign in until they are written again.` (the D1 record of `access on` against the applications' AUD tags and the team domain). `run`: `pnpm everyapp access on`, `note`: `brings Access in step with this Gateway`. `data.access.drift` carries the same as `{ paths, signIn, missing, settings }`.
+
+Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/commands/status/index.ts`
+
+### ACCESS_DRIFT_UNKNOWN (status)
+
+Warning. Access is on, but Zero Trust refused the read that tells whether it is in step, for a reason other than a login without the Access permissions (that one is silent: `data.access.driftUnread.permission: true`, the row reads `in step? this login can't read Access`): `Couldn't check whether Cloudflare Access is in step with this Gateway` / `Cloudflare said: <error>.` Nothing to run; `data.access.drift` is `null` and `data.access.driftUnread` is `{ permission: false, error }`.
+
+Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/commands/status/index.ts`
+
 ### DEPLOY_RUNNING
 
 Settling. A live lease: `<Holder's activity> is running` (as `describeLeaseHolder` words it). Nothing to run; wait.

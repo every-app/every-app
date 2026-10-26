@@ -1,8 +1,13 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { storedSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup, ProviderRegistry } from "@every-app/sdk/internal";
-import { readAccessSettingsRecord } from "@/lib/access/record";
+import { accessDrift, allowedSignInProviders, findAccessApplications } from "@/lib/access/plan";
+import { readAccessSettingsRecord, settingsNameApplications } from "@/lib/access/record";
 import { accessStateOf, type AccessState } from "@/lib/access/settings";
+import { readPublicSurfaces, scopeOf } from "@/lib/access/sync";
+import { getAccessOrganizationOrNone, listAccessApplications, listAccessIdentityProviders } from "@/lib/cf/access";
+import type { CfRunner } from "@/lib/cf/runner";
+import type { D1Database } from "@/lib/cf/d1";
 import { hyperdriveOriginVariables } from "@/lib/app/deploySecrets";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
@@ -17,7 +22,7 @@ import { certificateStatus } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { readDesiredState, workerExistence } from "@/lib/gateway/desiredState";
 import { findCheckoutRoot } from "@/lib/checkout";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { olderThanInstalled } from "@/lib/gateway/apply";
 import { checkoutSource } from "@/lib/gateway/checkoutRelease";
 import type { FoundGateway } from "@/lib/gateway/discover";
@@ -171,13 +176,25 @@ export async function reportStatus({
     keySetting: providerAppKeySetting(id),
     on: allApps.some((app) => app.tier === PROVIDER_APP_TIER && app.appSlug === id),
   }));
+  const accessSettings =
+    !accessApplies || (gatewayNames && "error" in gatewayNames) || (accessRecord && "error" in accessRecord)
+      ? null
+      : accessStateOf(gatewayNames!.value, accessRecord!.value);
+  // With Access on, what Zero Trust has against what this release wants.
   const access: { value: AccessState } | Unread | null = !accessApplies
     ? null
     : gatewayNames && "error" in gatewayNames
       ? gatewayNames
       : accessRecord && "error" in accessRecord
         ? accessRecord
-        : { value: accessStateOf(gatewayNames!.value, accessRecord!.value) };
+        : {
+            value: {
+              ...accessSettings!,
+              ...(accessSettings!.on
+                ? await readAccessDrift(cf, db, install, accessRecord!.value)
+                : { drift: null, driftUnread: null }),
+            },
+          };
   const accessState = access && "value" in access ? access.value : null;
   const accessUnread = access && "error" in access ? access : null;
   const missingWorkers = new Set(desired.missing.map((row) => row.workerName));
@@ -253,6 +270,7 @@ export async function reportStatus({
     waitingCertificates: waiting,
     certificates: "error" in certificates ? certificates : null,
     access: accessUnread,
+    accessState,
     leases,
     checkout: source,
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
@@ -323,6 +341,57 @@ export async function reportStatus({
       next: next.map(nextData),
     },
   });
+}
+
+/**
+ * With Access on: the live applications, the team's providers, the
+ * organization and every served app's public surface, against what this
+ * release wants (`accessDrift`), plus whether the settings `access on`
+ * recorded still name the applications found (an application recreated
+ * by hand has a new AUD tag). Zero Trust refusing is reported, not
+ * thrown: a login without the Access permissions reads as "not checked".
+ */
+async function readAccessDrift(
+  cf: CfRunner,
+  db: D1Database,
+  install: InstallRecord,
+  record: Awaited<ReturnType<typeof readAccessSettingsRecord>>,
+): Promise<Pick<AccessState, "drift" | "driftUnread">> {
+  try {
+    const [applications, providers, organization, surfaces] = await Promise.all([
+      listAccessApplications(cf),
+      listAccessIdentityProviders(cf),
+      getAccessOrganizationOrNone(cf),
+      readPublicSurfaces(db),
+    ]);
+    const scope = scopeOf(install);
+    const found = findAccessApplications(applications, scope);
+    const drift = accessDrift({
+      scope,
+      found,
+      surfaces,
+      providerIds: allowedSignInProviders(providers).map((provider) => provider.id),
+    });
+    const settings =
+      record !== null &&
+      organization !== null &&
+      found.gateway !== null &&
+      found.apps !== null &&
+      !settingsNameApplications(record, {
+        teamDomain: organization.auth_domain.toLowerCase(),
+        gatewayAud: found.gateway.aud,
+        appsAud: found.apps.aud,
+      });
+    return { drift: { ...drift, settings }, driftUnread: null };
+  } catch (error) {
+    return {
+      drift: null,
+      driftUnread: {
+        permission: error instanceof EveryAppError && error.code === "ACCESS_PERMISSION_MISSING",
+        error: errorMessage(error).split("\n")[0]!,
+      },
+    };
+  }
 }
 
 /** A next step as `data.next` carries it: its code, the command or the page, what it does and why. */
