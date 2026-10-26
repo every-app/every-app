@@ -7,6 +7,7 @@
  * slow hash. Signing up through an invitation and accepting one both need a
  * live token.
  */
+import { invitationIssuerStillAuthorized } from "./issuer-revocation";
 import { maskEmail } from "./mask-email";
 import { InvitationLinkRepository } from "./repositories/InvitationLinkRepository";
 import { OrganizationRepository } from "./repositories/OrganizationRepository";
@@ -35,7 +36,8 @@ export async function hashInvitationToken(token: string): Promise<string> {
 
 /**
  * The pending, unexpired invitation an invite link's token opens, or null
- * for an unknown, used, canceled or expired one.
+ * for an unknown, used, canceled or expired one, or one whose inviter is no
+ * longer an owner or admin of the organization (cancelled on the spot).
  */
 export async function findPendingInvitationByToken(
   token: string,
@@ -52,6 +54,7 @@ export async function findPendingInvitationByToken(
   ) {
     return null;
   }
+  if (!(await invitationIssuerStillAuthorized(invitation))) return null;
   return invitation;
 }
 

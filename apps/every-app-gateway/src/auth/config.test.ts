@@ -101,6 +101,10 @@ vi.mock("@/server/events/subjects", () => ({
   actorOf: (member: { id: string }) => ({ kind: "user", id: member.id }),
 }));
 
+vi.mock("@/server/issuer-revocation", () => ({
+  requireAdminResetTokenIssuer: async () => undefined,
+  releaseAdminResetToken: async () => undefined,
+}));
 vi.mock("@/server/invitation-token", () => ({
   findPendingInvitationByToken: vi.fn(),
 }));
@@ -576,6 +580,7 @@ describe("createAuth sign-up and organization hooks", () => {
       email: "invitee@example.com",
       status: "pending",
       expiresAt: new Date(Date.now() + 60_000),
+      inviterId: "owner-1",
     });
 
     await expect(
@@ -637,6 +642,7 @@ describe("createAuth sign-up and organization hooks", () => {
         email: "invitee@example.com",
         status: "pending",
         expiresAt: new Date(Date.now() + 60_000),
+        inviterId: "owner-1",
       });
       for (const path of passwordPaths) {
         await expect(

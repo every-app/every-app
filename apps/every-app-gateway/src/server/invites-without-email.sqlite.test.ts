@@ -16,6 +16,7 @@ vi.mock("cloudflare:workers", () => ({
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     DB: {},
   },
+  waitUntil: () => undefined,
 }));
 vi.mock("@/db", async () => {
   const { testDbProxy } = await import("@/test/sqlite-db");
@@ -469,6 +470,173 @@ describe("without email (SQLite)", () => {
       ).rejects.toMatchObject({ code: "USER_IN_OTHER_ORGANIZATION" });
     }
     expect(await db.select().from(verifications)).toEqual([]);
+  });
+
+  describe("what an admin issued ends with their authority", () => {
+    async function resetWith(token: string) {
+      return createAuth().handler(
+        authRequest("/reset-password", {
+          token,
+          newPassword: "brand-new-password-2",
+        }),
+      );
+    }
+    async function statusOf(invitationId: string) {
+      const [row] = await db
+        .select({ status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId));
+      return row?.status;
+    }
+
+    it("cancels an admin's pending invitations when they are removed, deactivated or demoted", async () => {
+      const cases = [
+        {
+          name: "removed",
+          revoke: (adminId: string) =>
+            AdminService.deleteUser(ownerCtx, adminId),
+        },
+        {
+          name: "deactivated",
+          revoke: (adminId: string) =>
+            MembershipService.deactivate(ownerCtx, adminId),
+        },
+        {
+          name: "demoted",
+          revoke: (adminId: string) =>
+            MembershipService.changeRole(ownerCtx, adminId, "member"),
+        },
+      ];
+      for (const [index, { name, revoke }] of cases.entries()) {
+        const admin = await join(`admin-${name}@example.com`, "admin");
+        const adminCtx = {
+          orgId: ownerCtx.orgId,
+          userId: admin.userId,
+          role: "admin" as const,
+        };
+        const invited = await InvitationService.invite(
+          adminCtx,
+          new Headers({ cookie: admin.cookie }),
+          { email: `invitee-${name}@example.com`, role: "member" },
+        );
+        const token = tokenOf(invited.inviteUrl);
+
+        await revoke(admin.userId);
+
+        // Cancelled; removing the account (self-hosted deleteUser) then
+        // takes the row with it by cascade.
+        expect(await statusOf(invited.invitationId)).toBe(
+          name === "removed" ? undefined : "canceled",
+        );
+        expect(
+          await db
+            .select()
+            .from(invitationLinkTokens)
+            .where(eq(invitationLinkTokens.invitationId, invited.invitationId)),
+        ).toEqual([]);
+        // Neither the link nor sign-up through it works any more.
+        expect(
+          (await signUp(token, `invitee-${name}@example.com`)).status,
+        ).toBe(403);
+        await expect(
+          InvitationService.findPending(ownerCtx, invited.invitationId),
+        ).resolves.toBeNull();
+        // Only theirs: the owner's own invitation stands.
+        const own = await invite(`own-${index}@example.com`);
+        expect(await statusOf(own.invitationId)).toBe("pending");
+      }
+    });
+
+    it("refuses an invitation at use once its inviter lost admin, whoever cancelled nothing", async () => {
+      const admin = await join("admin@example.com", "admin");
+      const invited = await InvitationService.invite(
+        { orgId: ownerCtx.orgId, userId: admin.userId, role: "admin" },
+        new Headers({ cookie: admin.cookie }),
+        { email: "invitee@example.com", role: "admin" },
+      );
+      const token = tokenOf(invited.inviteUrl);
+      // A role change written past the service (a D1 edit, a hook).
+      await db
+        .update(members)
+        .set({ role: "member" })
+        .where(eq(members.userId, admin.userId));
+
+      expect((await signUp(token, "invitee@example.com")).status).toBe(403);
+      expect(await statusOf(invited.invitationId)).toBe("canceled");
+      expect(await db.select().from(users)).toHaveLength(2);
+    });
+
+    it("deletes an admin's reset links when they lose admin, and keeps a current admin's working", async () => {
+      const target = await join("target@example.com");
+      const admin = await join("admin@example.com", "admin");
+      const adminCtx = {
+        orgId: ownerCtx.orgId,
+        userId: admin.userId,
+        role: "admin" as const,
+      };
+      const minted = await MembershipService.createPasswordResetLink(
+        adminCtx,
+        target.userId,
+      );
+      const token = new URL(minted.url).searchParams.get("token")!;
+      expect(await db.select().from(verifications)).toHaveLength(2);
+
+      await MembershipService.changeRole(ownerCtx, admin.userId, "member");
+
+      expect(await db.select().from(verifications)).toEqual([]);
+      expect((await resetWith(token)).status).toBe(400);
+      await signIn("target@example.com");
+
+      // The owner's link: single use, then gone.
+      const own = await MembershipService.createPasswordResetLink(
+        ownerCtx,
+        target.userId,
+      );
+      const ownToken = new URL(own.url).searchParams.get("token")!;
+      expect((await resetWith(ownToken)).status).toBe(200);
+      expect((await resetWith(ownToken)).status).toBe(400);
+      expect(await db.select().from(verifications)).toEqual([]);
+      await signIn("target@example.com", "brand-new-password-2");
+    });
+
+    it("refuses an admin's reset link at consumption once they were removed out of band", async () => {
+      const target = await join("target@example.com");
+      const admin = await join("admin@example.com", "admin");
+      const minted = await MembershipService.createPasswordResetLink(
+        { orgId: ownerCtx.orgId, userId: admin.userId, role: "admin" },
+        target.userId,
+      );
+      const token = new URL(minted.url).searchParams.get("token")!;
+      await db.delete(members).where(eq(members.userId, admin.userId));
+
+      // The token where Better Auth also reads it: the query string, with an
+      // empty body token in front of it.
+      const viaQuery = await createAuth().handler(
+        authRequest(`/reset-password?token=${encodeURIComponent(token)}`, {
+          token: "",
+          newPassword: "brand-new-password-2",
+        }),
+      );
+      expect(viaQuery.status).toBe(400);
+      expect(await db.select().from(verifications)).toEqual([]);
+      expect((await resetWith(token)).status).toBe(400);
+      await signIn("target@example.com");
+    });
+
+    it("leaves a reset the person requested themselves alone", async () => {
+      const target = await join("target@example.com");
+      // What Better Auth's requestPasswordReset writes: no companion row.
+      await db.insert(verifications).values({
+        id: "self-reset",
+        identifier: "reset-password:self-token",
+        value: target.userId,
+        expiresAt: new Date(Date.now() + 60_000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      expect((await resetWith("self-token")).status).toBe(200);
+      await signIn("target@example.com", "brand-new-password-2");
+    });
   });
 
   it("never hands out a reset link for an owner", async () => {

@@ -10,6 +10,10 @@ import { OrganizationMembersRepository } from "../repositories/OrganizationMembe
 import { McpConnectionService } from "./McpConnectionService";
 import { MembershipService } from "./MembershipService";
 import { accessWouldLetBackIn } from "@/server/access-rejoin";
+import {
+  cancelInvitationsIssuedBy,
+  revokeAdminResetTokensIssuedBy,
+} from "@/server/issuer-revocation";
 import { emit } from "@/server/events/bus";
 import { catalogue, type EventUser } from "@/server/events/catalogue";
 import { actorFor, userSubject } from "@/server/events/subjects";
@@ -120,6 +124,12 @@ async function deleteUser(
     );
     if (!deactivated) throw MembershipService.lastOwnerRefusal();
     await McpConnectionService.revokeForDeactivatedUser(targetUserId);
+    await cancelInvitationsIssuedBy(
+      { userId: targetUserId },
+      await actorFor(ctx),
+      "issuer_deactivated",
+    );
+    await revokeAdminResetTokensIssuedBy({ userId: targetUserId });
     forgetOrgContext(targetUserId);
     logEvent("member.deactivated", {
       organizationId: ctx.orgId,
@@ -149,6 +159,17 @@ async function deleteUser(
   );
   if (!removed) throw MembershipService.lastOwnerRefusal();
   await McpConnectionService.revokeForRemovedMember(targetUserId, ctx.orgId);
+  // Whatever they issued here ends with the membership: pending
+  // invitations they sent and reset links they minted in this organization.
+  await cancelInvitationsIssuedBy(
+    { userId: targetUserId, organizationId: ctx.orgId },
+    await actorFor(ctx),
+    "issuer_removed",
+  );
+  await revokeAdminResetTokensIssuedBy({
+    userId: targetUserId,
+    organizationId: ctx.orgId,
+  });
   forgetOrgContext(targetUserId);
 
   const [orgCountResult] = await db

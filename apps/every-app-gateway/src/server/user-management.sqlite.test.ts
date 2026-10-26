@@ -36,7 +36,9 @@ vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 import { env as workerEnv } from "cloudflare:workers";
 import { eq, sql } from "drizzle-orm";
 import { createAuth } from "@/auth";
+import { acceptPendingInvitations } from "@/auth/identity-membership";
 import {
+  invitations,
   members,
   sessions,
   userAccessTokens,
@@ -334,6 +336,98 @@ describe("user management (SQLite)", () => {
       }),
     );
   }
+
+  describe("invitations accepted by a sign-in (Access, a provider)", () => {
+    async function inviteFrom(inviterId: string, email: string) {
+      const id = `invitation-${email}`;
+      await db.insert(invitations).values({
+        id,
+        organizationId: org,
+        email,
+        role: "admin",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+        inviterId,
+      });
+      return id;
+    }
+    const joiner = (email: string) => ({
+      id: `joiner-${email}`,
+      email,
+      name: null,
+    });
+    const accepted = (email: string) =>
+      acceptPendingInvitations(joiner(email), {
+        log: "cloudflare_access",
+        event: "access",
+      });
+
+    it("honours an invitation from an admin who still is one, and cancels one whose inviter is not", async () => {
+      await db.insert(users).values([
+        { id: "joiner-a@example.com", name: "A", email: "a@example.com" },
+        { id: "joiner-b@example.com", name: "B", email: "b@example.com" },
+      ]);
+      await inviteFrom(admin, "a@example.com");
+      const stale = await inviteFrom(admin, "b@example.com");
+      await expect(accepted("a@example.com")).resolves.toBe(1);
+
+      // Demoted past the service: the live check at use still refuses.
+      await db
+        .update(members)
+        .set({ role: "member" })
+        .where(eq(members.userId, admin));
+      clearOrgContextCacheForTests();
+      await expect(accepted("b@example.com")).resolves.toBe(0);
+      const [row] = await db
+        .select({ status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, stale));
+      expect(row?.status).toBe("canceled");
+      expect(
+        await db
+          .select()
+          .from(members)
+          .where(eq(members.userId, "joiner-b@example.com")),
+      ).toEqual([]);
+    });
+
+    it("cancels the invitations an admin sent when the admin is deactivated, across organizations", async () => {
+      const other = await seedOrganization(db, "other");
+      await db.insert(members).values({
+        id: "admin-elsewhere",
+        organizationId: other,
+        userId: admin,
+        role: "admin",
+        createdAt: new Date(),
+      });
+      // Deactivation needs a single-organization user; the owner here
+      // acts after the other membership is read, so seed the invitation
+      // there and drop the membership before deactivating.
+      await db.insert(invitations).values({
+        id: "elsewhere-invitation",
+        organizationId: other,
+        email: "c@example.com",
+        role: "member",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+        inviterId: admin,
+      });
+      await db.delete(members).where(eq(members.id, "admin-elsewhere"));
+      const here = await inviteFrom(admin, "d@example.com");
+
+      await MembershipService.deactivate(ctx(owner, "owner"), admin);
+
+      const rows = await db
+        .select({ id: invitations.id, status: invitations.status })
+        .from(invitations);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { id: "elsewhere-invitation", status: "canceled" },
+          { id: here, status: "canceled" },
+        ]),
+      );
+    });
+  });
 
   describe("deactivate", () => {
     it("ends sessions and rejects the user's PAT", async () => {

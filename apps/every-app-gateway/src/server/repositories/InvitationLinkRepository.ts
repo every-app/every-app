@@ -20,6 +20,7 @@ async function findInvitationByTokenHash(tokenHash: string) {
       email: invitations.email,
       status: invitations.status,
       expiresAt: invitations.expiresAt,
+      inviterId: invitations.inviterId,
     })
     .from(invitationLinkTokens)
     .innerJoin(

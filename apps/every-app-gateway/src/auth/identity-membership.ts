@@ -12,6 +12,7 @@ import { invitations, members } from "@/db/schema";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { actorOf } from "@/server/events/subjects";
+import { invitationIssuerStillAuthorized } from "@/server/issuer-revocation";
 import { AppAccessService } from "@/server/services/AppAccessService";
 
 /** Which way in accepted the invitation, for the log and the event bus. */
@@ -40,6 +41,7 @@ export function pendingInvitationsFor(email: string) {
       id: invitations.id,
       organizationId: invitations.organizationId,
       role: invitations.role,
+      inviterId: invitations.inviterId,
     })
     .from(invitations)
     .where(
@@ -64,6 +66,9 @@ export async function acceptPendingInvitations(
   const joined = { id: user.id, email: user.email, name: user.name };
   let accepted = 0;
   for (const invitation of await pendingInvitationsFor(user.email)) {
+    // An invitation whose inviter lost owner or admin since is cancelled
+    // here rather than honoured.
+    if (!(await invitationIssuerStillAuthorized(invitation))) continue;
     const claimed = await db
       .update(invitations)
       .set({ status: "accepted" })

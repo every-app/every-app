@@ -21,6 +21,11 @@ import {
   forgetOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
+import {
+  cancelInvitationsIssuedBy,
+  recordAdminResetToken,
+  revokeAdminResetTokensIssuedBy,
+} from "@/server/issuer-revocation";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { McpConnectionService } from "./McpConnectionService";
 import { UserRepository } from "../repositories/UserRepository";
@@ -143,6 +148,19 @@ async function changeRole(
   );
   if (!changed) throw lastOwnerRefusal();
   forgetOrgContext(targetUserId);
+  // Below admin, nothing they issued is backed by anyone: their pending
+  // invitations and reset links in this organization end with the role.
+  if (role === "member" && previousRole !== "member") {
+    await cancelInvitationsIssuedBy(
+      { userId: targetUserId, organizationId: ctx.orgId },
+      await actorFor(ctx),
+      "issuer_demoted",
+    );
+    await revokeAdminResetTokensIssuedBy({
+      userId: targetUserId,
+      organizationId: ctx.orgId,
+    });
+  }
   logEvent("member.role_changed", {
     organizationId: ctx.orgId,
     userId: targetUserId,
@@ -205,6 +223,14 @@ async function deactivate(ctx: OrgContext, targetUserId: string) {
   );
   if (!deactivated) throw lastOwnerRefusal();
   await McpConnectionService.revokeForDeactivatedUser(targetUserId);
+  // Deactivation is account-wide, and so is what it cancels: every
+  // pending invitation they sent and every reset link they minted.
+  await cancelInvitationsIssuedBy(
+    { userId: targetUserId },
+    await actorFor(ctx),
+    "issuer_deactivated",
+  );
+  await revokeAdminResetTokensIssuedBy({ userId: targetUserId });
   forgetOrgContext(targetUserId);
   logEvent("member.deactivated", {
     organizationId: ctx.orgId,
@@ -279,9 +305,11 @@ async function requirePasswordResettable(
 /**
  * Better Auth's own reset token for a user: single use, one hour, stored as
  * `reset-password:<token>` the way requestPasswordReset stores it, so the
- * regular /reset-password page consumes it.
+ * regular /reset-password page consumes it. Who minted it is recorded
+ * beside it (issuer-revocation.ts): the token ends with the issuer's
+ * authority, and /reset-password re-checks it before consuming.
  */
-async function mintPasswordResetLink(userId: string) {
+async function mintPasswordResetLink(ctx: OrgContext, userId: string) {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   const token = btoa(String.fromCharCode(...bytes))
@@ -297,6 +325,13 @@ async function mintPasswordResetLink(userId: string) {
     value: userId,
     expiresAt,
   });
+  await recordAdminResetToken({
+    token,
+    userId,
+    issuerId: ctx.userId,
+    organizationId: ctx.orgId,
+    expiresAt,
+  });
   return { url: passwordResetUrl(token), expiresAt };
 }
 
@@ -306,7 +341,7 @@ async function mintPasswordResetLink(userId: string) {
  */
 async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
   const user = await requirePasswordResettable(ctx, targetUserId);
-  const { url, expiresAt } = await mintPasswordResetLink(user.id);
+  const { url, expiresAt } = await mintPasswordResetLink(ctx, user.id);
   logEvent("member.reset_link_created", {
     organizationId: ctx.orgId,
     userId: user.id,
@@ -337,7 +372,7 @@ async function sendPasswordResetEmail(ctx: OrgContext, targetUserId: string) {
       "This Gateway sends no email. Copy a password-reset link from Admin → Users, or run everyapp workspace reset-link",
     );
   }
-  const { url } = await mintPasswordResetLink(user.id);
+  const { url } = await mintPasswordResetLink(ctx, user.id);
   try {
     await sendEmail({
       kind: "reset",

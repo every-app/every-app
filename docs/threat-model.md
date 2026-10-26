@@ -1671,10 +1671,15 @@ means it is on main (every boundary fix from this pass merged on
     "First-party hosts share the control plane's cookie"); the remedy is
     per-host sessions as the third-party tier has.
 12. **Invitations and admin-minted reset links outlive the admin who
-    issued them** (B2, medium; Access mitigates). Deactivating or removing
-    an admin cancels nothing they created; an invitation they sent still
-    joins someone, a reset link they minted still resets. Small: cancel
-    pending invitations and reset tokens on deactivation and removal.
+    issued them** (B2, medium; fixed in #709,
+    `issuer.revocation-ends-what-they-issued`). Removing, deactivating or
+    demoting an owner or admin now cancels every pending invitation they
+    sent and deletes every reset link they minted (in that organization;
+    everywhere for a deactivation), and both are re-checked against the
+    issuer's live role when used: an invite link, sign-up through it,
+    Access or a sign-in provider accepting a pending invitation, and
+    `/reset-password` consuming an admin's token all refuse once the
+    issuer is below admin. The 2026-10-25 scan's findings 5 and 6.
 13. **Nobody but the holder can revoke a personal token** (B5, low). An
     admin who learns a member's token leaked must remove or deactivate the
     member; and a member has no page to end their own other sessions.

@@ -30,6 +30,10 @@ import {
   verificationEmail,
 } from "@/server/email/templates";
 import { findPendingInvitationByToken } from "@/server/invitation-token";
+import {
+  releaseAdminResetToken,
+  requireAdminResetTokenIssuer,
+} from "@/server/issuer-revocation";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { announcePasswordReset } from "@/server/events/password-reset";
@@ -592,6 +596,16 @@ export function createAuth() {
           });
         }
 
+        // An admin-minted reset token is consumed only while its issuer
+        // is still an owner or admin (server/issuer-revocation.ts).
+        // The token exactly as Better Auth's resetPassword reads it (`||`:
+        // an empty body token falls back to the query string).
+        if (ctx.path === "/reset-password") {
+          await requireAdminResetTokenIssuer(
+            ctx.body?.token || ctx.query?.token,
+          );
+        }
+
         if (isSignUpEmailPath(ctx.path)) {
           await enforceSignUpPolicy({
             request: ctx.request,
@@ -610,6 +624,12 @@ export function createAuth() {
           throw new APIError("FORBIDDEN", {
             message: "This gateway has not been set up yet.",
           });
+        }
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        // A consumed admin-minted reset token takes its issuer record with it.
+        if (ctx.path === "/reset-password") {
+          await releaseAdminResetToken(ctx.body?.token || ctx.query?.token);
         }
       }),
     },

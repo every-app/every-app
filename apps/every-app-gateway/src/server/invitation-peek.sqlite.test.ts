@@ -23,6 +23,7 @@ import { eq } from "drizzle-orm";
 import {
   invitationLinkTokens,
   invitations,
+  members,
   organizations,
   users,
 } from "@/db/schema";
@@ -76,6 +77,14 @@ describe("POST /api/invitations/lookup (SQLite)", () => {
       name: "Owner",
       email: "owner@example.com",
     });
+    // The inviter must still be an owner or admin for a link to be live.
+    await db.insert(members).values({
+      id: "owner-membership",
+      organizationId: ORG_ID,
+      userId: "owner",
+      role: "owner",
+      createdAt: new Date(),
+    });
   });
 
   /** A pending invitation with one link, 72 hours out unless told otherwise. */
@@ -112,6 +121,27 @@ describe("POST /api/invitations/lookup (SQLite)", () => {
       organizationName: "Acme Corp",
       invitedEmail: "i•••@example.com",
     });
+  });
+
+  it("answers the same 404 once the inviter is no longer an owner or admin", async () => {
+    const id = await inviteWithLink(LIVE_TOKEN);
+    await db
+      .update(members)
+      .set({ role: "member" })
+      .where(eq(members.userId, "owner"));
+
+    const response = await lookup({ token: LIVE_TOKEN });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: "INVITATION_NOT_VALID",
+    });
+    // Cancelled on the spot, link deleted: nothing left to probe or accept.
+    const [row] = await db
+      .select({ status: invitations.status })
+      .from(invitations)
+      .where(eq(invitations.id, id));
+    expect(row?.status).toBe("canceled");
+    await expect(db.select().from(invitationLinkTokens)).resolves.toEqual([]);
   });
 
   it("answers one identical 404 for unknown, used, canceled and expired links", async () => {
