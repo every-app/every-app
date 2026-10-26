@@ -82,6 +82,7 @@ export function createAccessOidcProvider(
         jwks: jwksClientFor(config.jwksUrl),
         issuer: config.issuer,
         audience: config.clientId,
+        idpIds: config.idpIds,
       });
       if (!identity) return null;
       return {

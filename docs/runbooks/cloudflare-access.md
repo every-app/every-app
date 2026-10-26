@@ -140,6 +140,17 @@ address it asserts was verified, so someone who registers a Cloudflare
 account under a member's address could sign in as that member; `everyapp
 access on` and `show` warn when it is off (`ACCESS_IDP_ANY_CLOUDFLARE_ACCOUNT`).
 
+To make the gateway hold the line itself, pin the identity providers whose
+tokens count: `pnpm everyapp secret set CLOUDFLARE_ACCESS_IDP_IDS` with the
+providers' ids, comma separated (`everyapp access show` lists each allowed
+provider with its id; Zero Trust → Settings → Authentication shows them
+too). With the list set, an assertion or an OIDC ID token from any other
+provider is refused, and so is one that names no provider at all
+(`access.idp_refused` in the logs, reason `not_listed` or `no_idp_claim`).
+Unset, any provider the Access policy let through counts, as before. A
+token that carries `email_verified` with anything but `true` is refused
+either way.
+
 This "Sign in with Cloudflare" is Access's identity provider, a login in
 front of the gateway. The gateway also has a `cloudflare` sign-in provider
 of its own: a Continue with Cloudflare button on its sign-in page, through a

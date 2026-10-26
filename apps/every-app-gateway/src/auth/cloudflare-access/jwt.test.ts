@@ -91,6 +91,7 @@ function client(endpoint: ReturnType<typeof jwksEndpoint>) {
 function options(jwks: JwksClient): VerifyAccessJwtOptions {
   return { jwks, issuer: TEAM, audience: [AUD], now: new Date(clock) };
 }
+const baseOptions = options;
 
 beforeEach(() => {
   clock = Date.now();
@@ -219,6 +220,37 @@ describe("verifyAccessJwt", () => {
     const endpoint = jwksEndpoint([current.jwk]);
     const token = await sign({ email_verified: false });
     expect(await verifyAccessJwt(token, options(client(endpoint)))).toBeNull();
+  });
+
+  it("counts only an affirmative email_verified when the claim is present", async () => {
+    const options = () => baseOptions(client(jwksEndpoint([current.jwk])));
+    for (const value of ["true", 1, null]) {
+      const token = await sign({ email_verified: value as never });
+      await expect(verifyAccessJwt(token, options())).resolves.toBeNull();
+    }
+    const token = await sign({ email_verified: true });
+    await expect(verifyAccessJwt(token, options())).resolves.toMatchObject({
+      email: "alice@example.com",
+    });
+  });
+
+  it("with an identity-provider allowlist, takes only a token from a listed provider, and none that names none", async () => {
+    const options = () => baseOptions(client(jwksEndpoint([current.jwk])));
+    const listed = { ...options(), idpIds: ["idp-okta", "idp-pin"] };
+    const okta = await sign({ idp: { id: "idp-okta", type: "okta" } });
+    await expect(verifyAccessJwt(okta, listed)).resolves.toMatchObject({
+      email: "alice@example.com",
+    });
+    const other = await sign({ idp: { id: "idp-generic-oidc", type: "oidc" } });
+    await expect(verifyAccessJwt(other, listed)).resolves.toBeNull();
+    const unnamed = await sign({});
+    await expect(verifyAccessJwt(unnamed, listed)).resolves.toBeNull();
+    const blank = await sign({ idp: { id: "", type: "okta" } });
+    await expect(verifyAccessJwt(blank, listed)).resolves.toBeNull();
+    // Without a list (or an empty one) the provider isn't looked at.
+    await expect(
+      verifyAccessJwt(unnamed, { ...options(), idpIds: [] }),
+    ).resolves.toMatchObject({ email: "alice@example.com" });
   });
 
   it("returns null for garbage instead of throwing", async () => {

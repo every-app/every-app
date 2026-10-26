@@ -109,6 +109,9 @@ export const POLICY_NAME = "Every App gateway members";
 export const GATEWAY_APPLICATION_NAME = "Every App gateway";
 export const APPS_APPLICATION_NAME = "Every App apps";
 /** The most Access allows for an application's session: a PIN a month, not a day. */
+/** The optional setting that pins the Gateway to listed identity providers (docs/runbooks/cloudflare-access.md). */
+const IDP_IDS_SETTING = "CLOUDFLARE_ACCESS_IDP_IDS";
+
 const DEFAULT_SESSION = "720h";
 /** Access's default for a team's global session, when unset. */
 const ACCESS_DEFAULT_GLOBAL_SESSION_SECONDS = 24 * 3600;
@@ -1119,6 +1122,9 @@ export async function showAccess(options: AccessOptions): Promise<void> {
   ];
   const openToAny = unrestrictedCloudflareProviders(providers);
   const notAllowed = providers.filter((provider) => !allowedProviders.includes(provider));
+  // Whether the Gateway itself refuses tokens from other providers (the value can't be read back).
+  const providersPinned = names.includes(IDP_IDS_SETTING);
+  const pinCommand = `${CLI} secret set ${IDP_IDS_SETTING}`;
   const who = policy ? [...ruleEmails(policy.include ?? []), ...ruleDomains(policy.include ?? []).map((d) => `@${d}`)] : [];
 
   const facts = [
@@ -1154,6 +1160,18 @@ export async function showAccess(options: AccessOptions): Promise<void> {
               notAllowed.length > 0
                 ? chalk.dim(` · on the team, not allowed here: ${listed(notAllowed.map((provider) => provider.name ?? provider.id))}`)
                 : ""
+            }`,
+          },
+          {
+            label: "Providers",
+            value: `${
+              allowedProviders.length > 0
+                ? listed(allowedProviders.map((provider) => `${provider.name ?? provider.type} ${chalk.dim(provider.id)}`))
+                : chalk.dim("none allowed")
+            } · ${
+              providersPinned
+                ? `pinned in the Gateway (${IDP_IDS_SETTING})`
+                : chalk.dim(`any the policy admits; pin them: ${pinCommand} ${allowedProviders.map((provider) => provider.id).join(",") || "<ids>"}`)
             }`,
           },
         ]
@@ -1207,6 +1225,8 @@ export async function showAccess(options: AccessOptions): Promise<void> {
             cloudflare: !missingProviders.cloudflare,
             pin: !missingProviders.pin,
             openToAnyCloudflareAccount: openToAny.map((provider) => provider.id),
+            pinned: providersPinned,
+            pinCommand: providersPinned ? null : `${pinCommand} ${allowedProviders.map((provider) => provider.id).join(",")}`,
           }
         : null,
       applications: {

@@ -41,6 +41,7 @@ const outerRing: AccessOuterRingConfig = {
   audiences: [AUD],
   certsUrl: `${TEAM}/cdn-cgi/access/certs`,
   autoJoinEveryone: false,
+  idpIds: [],
 };
 
 const verifications = vi.mocked(verifyAccessJwt);

@@ -28,6 +28,7 @@ describe("readAccessConfig", () => {
       outerRing: null,
       autoJoinDomains: [],
       passwordSignIn: true,
+      idpIds: [],
       problems: [],
     });
     expect(isAccessSignInConfigured(readAccessConfig({}, production))).toBe(
@@ -49,6 +50,7 @@ describe("readAccessConfig", () => {
         label: "Cloudflare Access",
         authorizationEndpoint: `${ISSUER}/authorization`,
         tokenEndpoint: `${ISSUER}/token`,
+        idpIds: [],
         jwksUrl: `${ISSUER}/jwks`,
       });
     });
@@ -135,6 +137,7 @@ describe("readAccessConfig", () => {
           audiences: [AUD, "other-aud"],
           certsUrl: "https://acme.cloudflareaccess.com/cdn-cgi/access/certs",
           autoJoinEveryone: false,
+          idpIds: [],
         });
       }
     });
@@ -212,6 +215,27 @@ describe("readAccessConfig", () => {
       expect(typo.outerRing?.autoJoinEveryone).toBe(false);
       expect(typo.problems).toHaveLength(1);
     });
+  });
+
+  it("reads the identity-provider allowlist onto both sign-ins, skipping anything that isn't an id", () => {
+    const config = readAccessConfig(
+      {
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "acme.cloudflareaccess.com",
+        CLOUDFLARE_ACCESS_AUD: AUD,
+        CLOUDFLARE_ACCESS_IDP_IDS:
+          " 0f1e2d3c-aaaa-bbbb-cccc-000000000001, not/an/id!\n0f1e2d3c-aaaa-bbbb-cccc-000000000001 second-id",
+      },
+      production,
+    );
+    expect(config.idpIds).toEqual([
+      "0f1e2d3c-aaaa-bbbb-cccc-000000000001",
+      "second-id",
+    ]);
+    expect(config.outerRing?.idpIds).toEqual(config.idpIds);
+    expect(config.problems).toEqual([
+      expect.stringContaining('"not/an/id!" isn\'t an identity provider id'),
+    ]);
+    expect(readAccessConfig({}, production).idpIds).toEqual([]);
   });
 
   it("reads auto-join email domains, skipping anything else", () => {

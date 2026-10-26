@@ -2556,6 +2556,7 @@ describe("the event bus (SQLite)", () => {
         outerRing: null,
         autoJoinDomains: ["acme.example"],
         passwordSignIn: true,
+        idpIds: [],
         problems: [],
       };
       await db.insert(users).values([

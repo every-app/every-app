@@ -42,6 +42,12 @@ export interface AccessEnv {
   CLOUDFLARE_ACCESS_APPS_AUD?: string;
   CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS?: string;
   CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN?: string;
+  /**
+   * The ids of the Access identity providers whose tokens count (comma or
+   * space separated; Zero Trust → Settings → Authentication, or `everyapp
+   * access show`). Unset: any provider the Access policy let through.
+   */
+  CLOUDFLARE_ACCESS_IDP_IDS?: string;
   EMAIL_PASSWORD_SIGN_IN?: string;
 }
 
@@ -53,6 +59,8 @@ export interface AccessOidcConfig {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   jwksUrl: string;
+  /** Identity providers whose ID tokens count (`idp.id`); empty: any. */
+  idpIds: string[];
 }
 
 export interface AccessOuterRingConfig {
@@ -71,6 +79,11 @@ export interface AccessOuterRingConfig {
   certsUrl: string;
   /** Everyone the outer ring lets in may join as a member. */
   autoJoinEveryone: boolean;
+  /**
+   * Identity providers whose assertions count (the token's `idp.id`); empty:
+   * any. With a list, a token naming no provider is refused.
+   */
+  idpIds: string[];
 }
 
 export interface AccessConfig {
@@ -80,6 +93,8 @@ export interface AccessConfig {
   autoJoinDomains: string[];
   /** False only when the operator turned it off and another sign-in works. */
   passwordSignIn: boolean;
+  /** CLOUDFLARE_ACCESS_IDP_IDS as read; empty when unset. */
+  idpIds: string[];
   /** What was wrong with the settings, for the logs. */
   problems: string[];
 }
@@ -143,6 +158,7 @@ function readOidc(
   env: AccessEnv,
   options: ReadOptions,
   problems: string[],
+  idpIds: string[],
 ): AccessOidcConfig | null {
   const issuerSetting = setting(env.CLOUDFLARE_ACCESS_OIDC_ISSUER);
   const clientId = setting(env.CLOUDFLARE_ACCESS_OIDC_CLIENT_ID);
@@ -186,6 +202,7 @@ function readOidc(
     authorizationEndpoint: `${issuer}/authorization`,
     tokenEndpoint: `${issuer}/token`,
     jwksUrl: `${issuer}/jwks`,
+    idpIds,
   };
 }
 
@@ -201,6 +218,7 @@ function readOuterRing(
   env: AccessEnv,
   options: ReadOptions,
   problems: string[],
+  idpIds: string[],
 ): AccessOuterRingConfig | null {
   const teamDomain = setting(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN);
   const audSetting = setting(env.CLOUDFLARE_ACCESS_AUD);
@@ -267,7 +285,31 @@ function readOuterRing(
     audiences: [...new Set([...signInAudiences, ...appAudiences])],
     certsUrl: `${url.origin}/cdn-cgi/access/certs`,
     autoJoinEveryone,
+    idpIds,
   };
+}
+
+const IDP_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * The identity providers whose tokens count. Access's identity provider ids
+ * are UUIDs; anything else in the list is a typo, named and skipped (so a
+ * list that is all typos pins nothing, and says so).
+ */
+function readIdpIds(env: AccessEnv, problems: string[]): string[] {
+  const ids = new Set<string>();
+  for (const entry of setting(env.CLOUDFLARE_ACCESS_IDP_IDS).split(/[\s,]+/)) {
+    const id = entry.trim();
+    if (!id) continue;
+    if (IDP_ID.test(id)) {
+      ids.add(id);
+    } else {
+      problems.push(
+        `CLOUDFLARE_ACCESS_IDP_IDS: "${id.slice(0, 64)}" isn't an identity provider id; skipped.`,
+      );
+    }
+  }
+  return [...ids];
 }
 
 const DOMAIN =
@@ -319,15 +361,16 @@ export function readAccessConfig(
   options: ReadOptions,
 ): AccessConfig {
   const problems: string[] = [];
-  const oidc = readOidc(env, options, problems);
-  const outerRing = readOuterRing(env, options, problems);
+  const idpIds = readIdpIds(env, problems);
+  const oidc = readOidc(env, options, problems, idpIds);
+  const outerRing = readOuterRing(env, options, problems, idpIds);
   const autoJoinDomains = readAutoJoinDomains(env, problems);
   const passwordSignIn = readPasswordSignIn(
     env,
     Boolean(oidc || outerRing || options.otherSignInConfigured),
     problems,
   );
-  return { oidc, outerRing, autoJoinDomains, passwordSignIn, problems };
+  return { oidc, outerRing, autoJoinDomains, passwordSignIn, idpIds, problems };
 }
 
 const reported = new Set<string>();

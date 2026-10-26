@@ -210,7 +210,24 @@ export interface VerifyAccessJwtOptions {
   issuer: string;
   /** Accepted `aud` values: the Access application's AUD tag(s), or the OIDC client id. */
   audience: string | string[];
+  /**
+   * Identity providers whose tokens count, by the `idp.id` claim; empty or
+   * unset: any. With a list, a token that names no provider is refused: the
+   * provenance the operator asked for is missing.
+   */
+  idpIds?: string[];
   now?: Date;
+}
+
+/** The identity provider a token names (`idp: { id, type }`), or null. */
+function identityProviderIdOf(payload: JWTPayload): string | null {
+  const idp = payload.idp;
+  if (typeof idp === "string" && idp.trim()) return idp.trim();
+  if (idp && typeof idp === "object" && !Array.isArray(idp)) {
+    const id = (idp as { id?: unknown }).id;
+    if (typeof id === "string" && id.trim()) return id.trim();
+  }
+  return null;
 }
 
 /**
@@ -252,8 +269,20 @@ export async function verifyAccessJwt(
   const email = typeof payload.email === "string" ? payload.email.trim() : "";
   if (!email || !email.includes("@") || /\s/.test(email)) return null;
   // Access vouches for the email it puts in a token; if the token itself
-  // says the email isn't verified, believe that.
-  if (payload.email_verified === false) return null;
+  // says anything about verification, only an affirmative `true` counts.
+  if ("email_verified" in payload && payload.email_verified !== true) {
+    return null;
+  }
+  // Only the identity providers the operator listed, when they listed any.
+  if (options.idpIds && options.idpIds.length > 0) {
+    const idp = identityProviderIdOf(payload);
+    if (!idp || !options.idpIds.includes(idp)) {
+      logEvent("access.idp_refused", {
+        reason: idp ? "not_listed" : "no_idp_claim",
+      });
+      return null;
+    }
+  }
 
   return {
     email: email.toLowerCase(),

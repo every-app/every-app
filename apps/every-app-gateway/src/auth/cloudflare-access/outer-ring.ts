@@ -58,7 +58,7 @@ export function clearOuterRingVouchesForTests(): void {
 }
 
 function vouchKey(token: string, outerRing: AccessOuterRingConfig): string {
-  return `${outerRing.certsUrl}\0${outerRing.issuer}\0${outerRing.audiences.join(",")}\0${outerRing.signInAudiences.join(",")}\0${token}`;
+  return `${outerRing.certsUrl}\0${outerRing.issuer}\0${outerRing.audiences.join(",")}\0${outerRing.signInAudiences.join(",")}\0${outerRing.idpIds.join(",")}\0${token}`;
 }
 
 function remember(key: string, vouch: Vouch): void {
@@ -78,6 +78,7 @@ async function verify(
     jwks: jwksClientFor(outerRing.certsUrl),
     issuer: outerRing.issuer,
     audience: outerRing.audiences,
+    idpIds: outerRing.idpIds,
   });
   // An application's token. Access's organization token (`type: "org"`, the
   // team domain's own session) is never sent to an application, and is no

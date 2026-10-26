@@ -1708,8 +1708,13 @@ means it is on main (every boundary fix from this pass merged on
     page's "switch account" and any other sign-out leave the Access
     session alive on a shared browser.
 19. **Access's email is trusted whatever identity provider issued it**
-    (B6, medium). The runbook tells operators to enable only verifying
-    providers; nothing in the gateway checks which one signed.
+    (B6, medium; fixed in #717, `access.idp-allowlist`). With
+    `CLOUDFLARE_ACCESS_IDP_IDS` set, the gateway takes an assertion or an
+    OIDC ID token only from a listed provider (the `idp.id` claim) and
+    refuses one that names none; `email_verified` present with anything but
+    `true` is refused either way. Unset, the runbook's rule (enable only
+    verifying providers) is still the operator's. `everyapp access show`
+    lists the providers with their ids. The 2026-10-25 scan's finding 7.
 20. **Refresh tokens for connected AI apps have no replay detection**
     (B5, medium, known; `oauth.refresh-rotation-no-reuse-detection` is not
     enforced). A stolen refresh token mints access tokens alongside the
