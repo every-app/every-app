@@ -101,58 +101,9 @@ declare namespace Cloudflare {
     OIDC_SIGNIN_CLIENT_SECRET?: string;
     OIDC_SIGNIN_LABEL?: string;
 
-    // Provider credentials used by gateway proxy routes
-    OPENAI_API_KEY?: string;
-    OPENROUTER_API_KEY?: string;
-    // Workers AI (`/api/ai/workers-ai`): a Cloudflare API token with
-    // Workers AI Read and Edit (the "Workers AI" template) on
-    // CLOUDFLARE_ACCOUNT_ID, the account it runs and bills in. Unset: the
-    // provider answers ai_provider_not_configured.
-    WORKERS_AI_API_TOKEN?: string;
-    // Integration keys the gateway holds for apps (src/server/integration-proxy.ts).
-    DATAFORSEO_API_KEY?: string;
-    CONTEXT_API_KEY?: string;
-    // Social networks' OAuth clients the gateway holds for apps
-    // (src/server/capabilities/oauthClient.ts): it puts them on apps' token
-    // endpoint calls only. MASTODON_URL is the instance the Mastodon client
-    // is registered on (https://mastodon.social when unset).
-    LINKEDIN_CLIENT_ID?: string;
-    LINKEDIN_CLIENT_SECRET?: string;
-    FACEBOOK_APP_ID?: string;
-    FACEBOOK_APP_SECRET?: string;
-    INSTAGRAM_APP_ID?: string;
-    INSTAGRAM_APP_SECRET?: string;
-    THREADS_APP_ID?: string;
-    THREADS_APP_SECRET?: string;
-    YOUTUBE_CLIENT_ID?: string;
-    YOUTUBE_CLIENT_SECRET?: string;
-    TIKTOK_CLIENT_ID?: string;
-    TIKTOK_CLIENT_SECRET?: string;
-    TIKTOK_BUSINESS_CLIENT_ID?: string;
-    TIKTOK_BUSINESS_CLIENT_SECRET?: string;
-    REDDIT_CLIENT_ID?: string;
-    REDDIT_CLIENT_SECRET?: string;
-    PINTEREST_CLIENT_ID?: string;
-    PINTEREST_CLIENT_SECRET?: string;
-    DISCORD_CLIENT_ID?: string;
-    DISCORD_CLIENT_SECRET?: string;
-    SLACK_CLIENT_ID?: string;
-    SLACK_CLIENT_SECRET?: string;
-    MASTODON_CLIENT_ID?: string;
-    MASTODON_CLIENT_SECRET?: string;
-    MASTODON_URL?: string;
-    KICK_CLIENT_ID?: string;
-    KICK_CLIENT_SECRET?: string;
-    TWITCH_CLIENT_ID?: string;
-    TWITCH_CLIENT_SECRET?: string;
-    TUMBLR_CLIENT_ID?: string;
-    TUMBLR_CLIENT_SECRET?: string;
-    DRIBBBLE_CLIENT_ID?: string;
-    DRIBBBLE_CLIENT_SECRET?: string;
-    GOOGLE_WORKSPACE_CLIENT_ID?: string;
-    GOOGLE_WORKSPACE_CLIENT_SECRET?: string;
-    MICROSOFT_365_CLIENT_ID?: string;
-    MICROSOFT_365_CLIENT_SECRET?: string;
+    // The catalog providers' settings (OPENAI_API_KEY, the OAuth clients'
+    // ids and secrets, …) are typed from cloudflare.config.ts, which
+    // declares CATALOG_GATEWAY_SETTINGS, generated from the catalog.
 
     // OpenAI paths beyond inference that apps may opt into with their
     // manifest's `ai.routes` (comma or space separated, e.g. "/v1/files").

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { bindings, defineConfig, triggers } from "cf/config";
-import { EVERYAPP_OBSERVABILITY } from "@every-app/sdk/cloudflare";
+import {
+  CATALOG_GATEWAY_SETTINGS,
+  EVERYAPP_OBSERVABILITY,
+} from "@every-app/sdk/cloudflare";
 import * as entrypoint from "./src/server.ts" with { type: "cf-worker" };
 
 // The gateway Worker, for `cf dev` and the release build CI runs
@@ -26,115 +29,13 @@ const LOCAL_D1_ID = createHash("sha256")
 // deploy. In dev the Vite plugin passes a value through only for a declared
 // secret, so the ones set locally are declared. A test checks every AI
 // provider's and capability's settings are here (src/optional-secrets.test.ts).
+// The catalog's come from the SDK, which generates them from the catalog
+// (this file may not import @every-app/sdk/internal, which the Worker loads).
 export const OPTIONAL_SECRETS = [
-  "OPENAI_API_KEY",
-  "OPENROUTER_API_KEY",
-  // Workers AI (`/api/ai/workers-ai`), with CLOUDFLARE_ACCOUNT_ID below.
-  "WORKERS_AI_API_TOKEN",
-  // Cloudflare AI Gateway in front of the AI providers: the gateway's id
-  // (with CLOUDFLARE_ACCOUNT_ID) and, for an authenticated gateway, its token.
-  "AI_GATEWAY_ID",
-  "AI_GATEWAY_API_KEY",
-  "DATAFORSEO_API_KEY",
-  "CONTEXT_API_KEY",
-  // The catalog's fifty API-key and AI providers (packages/sdk/src/internal/catalog/*.ts):
-  // every setting an entry reads, hosts settings and Basic usernames included.
-  "STRIPE_API_KEY",
-  "LEMONSQUEEZY_API_KEY",
-  "PADDLE_API_KEY",
-  "SHOPIFY_API_TOKEN",
-  "SHOPIFY_HOST",
-  "PLAID_SECRET",
-  "ATTIO_API_KEY",
-  "HUBSPOT_API_TOKEN",
-  "PIPEDRIVE_API_TOKEN",
-  "AIRTABLE_API_TOKEN",
-  "NOTION_API_TOKEN",
-  "POSTMARK_API_TOKEN",
-  "SENDGRID_API_KEY",
-  "TWILIO_API_SECRET",
-  "TWILIO_API_KEY",
-  "INTERCOM_API_TOKEN",
-  "CRISP_API_KEY",
-  "CRISP_API_IDENTIFIER",
-  "LINEAR_API_KEY",
-  "GITHUB_API_TOKEN",
-  "GITLAB_API_TOKEN",
-  "VERCEL_API_TOKEN",
-  "CLOUDFLARE_PROVIDER_API_TOKEN",
-  "POSTHOG_PERSONAL_API_KEY",
-  "MIXPANEL_SERVICE_ACCOUNT_SECRET",
-  "MIXPANEL_SERVICE_ACCOUNT_USERNAME",
-  "SEGMENT_WRITE_KEY",
-  "SUPABASE_SECRET_KEY",
-  "SUPABASE_HOST",
-  "TURSO_API_TOKEN",
-  "TURSO_DB_AUTH_TOKEN",
-  "TURSO_DB_HOST",
-  "NEON_API_KEY",
-  "PINECONE_API_KEY",
-  "PINECONE_HOST",
-  "MAPBOX_ACCESS_TOKEN",
-  "OPENWEATHER_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "GEMINI_API_KEY",
-  "MISTRAL_API_KEY",
-  "GROQ_API_KEY",
-  "COHERE_API_KEY",
-  "VOYAGE_API_KEY",
-  "PERPLEXITY_API_KEY",
-  "JINA_API_KEY",
-  "REPLICATE_API_TOKEN",
-  "HUGGINGFACE_API_TOKEN",
-  "FIRECRAWL_API_KEY",
-  "EXA_API_KEY",
-  "TAVILY_API_KEY",
-  "SERPER_API_KEY",
-  "BRAVE_SEARCH_API_KEY",
-  "APIFY_API_TOKEN",
-  "DEEPGRAM_API_KEY",
-  "ELEVENLABS_API_KEY",
-  "ASSEMBLYAI_API_KEY",
-  "NEWSAPI_API_KEY",
-  // Social networks' OAuth clients (src/server/capabilities/oauthClient.ts).
-  "LINKEDIN_CLIENT_ID",
-  "LINKEDIN_CLIENT_SECRET",
-  "FACEBOOK_APP_ID",
-  "FACEBOOK_APP_SECRET",
-  "INSTAGRAM_APP_ID",
-  "INSTAGRAM_APP_SECRET",
-  "THREADS_APP_ID",
-  "THREADS_APP_SECRET",
-  "YOUTUBE_CLIENT_ID",
-  "YOUTUBE_CLIENT_SECRET",
-  "TIKTOK_CLIENT_ID",
-  "TIKTOK_CLIENT_SECRET",
-  "TIKTOK_BUSINESS_CLIENT_ID",
-  "TIKTOK_BUSINESS_CLIENT_SECRET",
-  "REDDIT_CLIENT_ID",
-  "REDDIT_CLIENT_SECRET",
-  "PINTEREST_CLIENT_ID",
-  "PINTEREST_CLIENT_SECRET",
-  "DISCORD_CLIENT_ID",
-  "DISCORD_CLIENT_SECRET",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "MASTODON_CLIENT_ID",
-  "MASTODON_CLIENT_SECRET",
-  "MASTODON_URL",
-  "KICK_CLIENT_ID",
-  "KICK_CLIENT_SECRET",
-  "TWITCH_CLIENT_ID",
-  "TWITCH_CLIENT_SECRET",
-  "TUMBLR_CLIENT_ID",
-  "TUMBLR_CLIENT_SECRET",
-  "DRIBBBLE_CLIENT_ID",
-  "DRIBBBLE_CLIENT_SECRET",
-  // Mail and calendar clients.
-  "GOOGLE_WORKSPACE_CLIENT_ID",
-  "GOOGLE_WORKSPACE_CLIENT_SECRET",
-  "MICROSOFT_365_CLIENT_ID",
-  "MICROSOFT_365_CLIENT_SECRET",
+  // Every setting a catalog provider reads (its key, a Basic username,
+  // a host setting, an OAuth client's id and secret), generated from
+  // packages/sdk/src/internal/capabilities.ts.
+  ...CATALOG_GATEWAY_SETTINGS,
   "AI_PROXY_EXTRA_ROUTES",
   // Email's providers (src/server/email/providers): Cloudflare's REST pair
   // (with CLOUDFLARE_ACCOUNT_ID below), Resend's key, and the choice.

@@ -3,6 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { DEV_ISSUER, DEV_ORG_ID, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
+// The catalog's settings, generated from ../internal/capabilities.ts, which
+// this file must not import (see ./index.ts: the Vite plugin hides whatever
+// cloudflare.config.ts imports from the Worker).
+import { DEV_GATEWAY_KEYS } from "./catalogSettings.generated.js";
 import {
   sentinelDeployTarget,
   type AiGatewayValue,
@@ -561,131 +565,6 @@ type DatabaseEnv<M> = M extends { database: object }
   ? { DATABASE_PROVIDER: TextBinding }
   : unknown;
 
-/**
- * The gateway secrets holding the keys of the AI providers and capabilities
- * an app may ask for, with the settings a provider needs besides its key
- * (Workers AI's account, a Basic username held as a setting, a host
- * setting). With no gateway in development, the SDK reaches them with the
- * developer's own values under the same names. A copy of the catalog's
- * settings (`capabilitySettings()` over every entry of
- * ../internal/capabilities.ts), which the Worker loads and this file must
- * not import (see ./index.ts: the Vite plugin hides whatever
- * cloudflare.config.ts imports from the Worker). worker.test.ts keeps the
- * copy in step: a provider added to the catalog is added here.
- */
-const DEV_GATEWAY_KEYS = {
-  providers: {
-    openai: ["OPENAI_API_KEY"],
-    openrouter: ["OPENROUTER_API_KEY"],
-    "workers-ai": ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
-    // Not Cloudflare AI Gateway (the proxy entry): dev goes to the
-    // providers directly, so its settings are the Gateway's alone.
-    // The AI providers of ../internal/catalog/inference.ts.
-    anthropic: ["ANTHROPIC_API_KEY"],
-    gemini: ["GEMINI_API_KEY"],
-    mistral: ["MISTRAL_API_KEY"],
-    groq: ["GROQ_API_KEY"],
-    cohere: ["COHERE_API_KEY"],
-  },
-  capabilities: {
-    dataforseo: ["DATAFORSEO_API_KEY"],
-    context: ["CONTEXT_API_KEY"],
-    // The sender, and the developer's own Email Sending account: set all
-    // but the name and sendEmail() really sends; otherwise it prints.
-    // Resend's key and EMAIL_PROVIDER pick the provider integrationStatus()
-    // names, as the gateway would.
-    // TODO(integration): the last two added by the email-providers lane
-    // (this file is outside its ownership list).
-    email: [
-      "EMAIL_FROM",
-      "EMAIL_FROM_NAME",
-      "EMAIL_REST_API_TOKEN",
-      "CLOUDFLARE_ACCOUNT_ID",
-      "RESEND_API_KEY",
-      "EMAIL_PROVIDER",
-    ],
-    // The organization's members: nothing to set; listMembers() answers
-    // from the dev identity.
-    members: [],
-    // OAuth clients: the id, the secret, and the instance a provider with
-    // no fixed host is on.
-    linkedin: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
-    facebook: ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET"],
-    instagram: ["INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"],
-    threads: ["THREADS_APP_ID", "THREADS_APP_SECRET"],
-    youtube: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"],
-    tiktok: ["TIKTOK_CLIENT_ID", "TIKTOK_CLIENT_SECRET"],
-    "tiktok-business": [
-      "TIKTOK_BUSINESS_CLIENT_ID",
-      "TIKTOK_BUSINESS_CLIENT_SECRET",
-    ],
-    reddit: ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
-    pinterest: ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET"],
-    discord: ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET"],
-    slack: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
-    mastodon: ["MASTODON_CLIENT_ID", "MASTODON_CLIENT_SECRET", "MASTODON_URL"],
-    kick: ["KICK_CLIENT_ID", "KICK_CLIENT_SECRET"],
-    twitch: ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
-    tumblr: ["TUMBLR_CLIENT_ID", "TUMBLR_CLIENT_SECRET"],
-    dribbble: ["DRIBBBLE_CLIENT_ID", "DRIBBBLE_CLIENT_SECRET"],
-    "google-workspace": [
-      "GOOGLE_WORKSPACE_CLIENT_ID",
-      "GOOGLE_WORKSPACE_CLIENT_SECRET",
-    ],
-    "microsoft-365": ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"],
-    // The API-key providers of ../internal/catalog/*.ts, in catalog order:
-    // the key, then a Basic username held as a setting, then the host
-    // setting of a provider whose host is the operator's.
-    stripe: ["STRIPE_API_KEY"],
-    lemonsqueezy: ["LEMONSQUEEZY_API_KEY"],
-    paddle: ["PADDLE_API_KEY"],
-    shopify: ["SHOPIFY_API_TOKEN", "SHOPIFY_HOST"],
-    plaid: ["PLAID_SECRET"],
-    attio: ["ATTIO_API_KEY"],
-    hubspot: ["HUBSPOT_API_TOKEN"],
-    pipedrive: ["PIPEDRIVE_API_TOKEN"],
-    airtable: ["AIRTABLE_API_TOKEN"],
-    notion: ["NOTION_API_TOKEN"],
-    postmark: ["POSTMARK_API_TOKEN"],
-    sendgrid: ["SENDGRID_API_KEY"],
-    twilio: ["TWILIO_API_SECRET", "TWILIO_API_KEY"],
-    intercom: ["INTERCOM_API_TOKEN"],
-    crisp: ["CRISP_API_KEY", "CRISP_API_IDENTIFIER"],
-    linear: ["LINEAR_API_KEY"],
-    github: ["GITHUB_API_TOKEN"],
-    gitlab: ["GITLAB_API_TOKEN"],
-    vercel: ["VERCEL_API_TOKEN"],
-    cloudflare: ["CLOUDFLARE_PROVIDER_API_TOKEN"],
-    posthog: ["POSTHOG_PERSONAL_API_KEY"],
-    mixpanel: [
-      "MIXPANEL_SERVICE_ACCOUNT_SECRET",
-      "MIXPANEL_SERVICE_ACCOUNT_USERNAME",
-    ],
-    segment: ["SEGMENT_WRITE_KEY"],
-    supabase: ["SUPABASE_SECRET_KEY", "SUPABASE_HOST"],
-    turso: ["TURSO_API_TOKEN"],
-    "turso-db": ["TURSO_DB_AUTH_TOKEN", "TURSO_DB_HOST"],
-    neon: ["NEON_API_KEY"],
-    pinecone: ["PINECONE_API_KEY", "PINECONE_HOST"],
-    mapbox: ["MAPBOX_ACCESS_TOKEN"],
-    openweather: ["OPENWEATHER_API_KEY"],
-    voyage: ["VOYAGE_API_KEY"],
-    perplexity: ["PERPLEXITY_API_KEY"],
-    jina: ["JINA_API_KEY"],
-    replicate: ["REPLICATE_API_TOKEN"],
-    huggingface: ["HUGGINGFACE_API_TOKEN"],
-    firecrawl: ["FIRECRAWL_API_KEY"],
-    exa: ["EXA_API_KEY"],
-    tavily: ["TAVILY_API_KEY"],
-    serper: ["SERPER_API_KEY"],
-    "brave-search": ["BRAVE_SEARCH_API_KEY"],
-    apify: ["APIFY_API_TOKEN"],
-    deepgram: ["DEEPGRAM_API_KEY"],
-    elevenlabs: ["ELEVENLABS_API_KEY"],
-    assemblyai: ["ASSEMBLYAI_API_KEY"],
-    newsapi: ["NEWSAPI_API_KEY"],
-  },
-} as const;
 type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;
 type DevCapabilityKeys = typeof DEV_GATEWAY_KEYS.capabilities;
 
@@ -967,7 +846,7 @@ function devCapabilities(manifest: EveryAppWorkerManifest): TextBinding {
 /**
  * The binding the dev Worker gets the specs of providers registered on a
  * gateway in (`DEV_PROVIDERS_ENV` in ../internal/devProviders.ts; a copy,
- * kept in step by a test, for the reason {@link DEV_GATEWAY_KEYS} is one).
+ * kept in step by a test, since this file may not import ../internal).
  */
 const DEV_PROVIDERS_ENV = "EVERYAPP_DEV_PROVIDERS";
 

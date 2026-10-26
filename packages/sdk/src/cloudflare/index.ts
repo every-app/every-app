@@ -71,3 +71,6 @@ export {
   type AiGatewayValue,
   type EveryAppDeployTarget,
 } from "./sentinel.js";
+// Every setting a provider of the built-in catalog reads, generated from
+// it: the Gateway's cloudflare.config.ts declares them for local dev.
+export { CATALOG_GATEWAY_SETTINGS } from "./catalogSettings.generated.js";

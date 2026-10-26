@@ -14,6 +14,7 @@ import {
   CAPABILITIES,
   CAPABILITY_IDS,
   capabilitySettings,
+  type Capability,
   type CapabilitySecret,
 } from "./capabilities.js";
 import {
@@ -154,7 +155,6 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "EMAIL_FROM_NAME",
   "EMAIL_PROVIDER",
   "EMAIL_PASSWORD_SIGN_IN",
-  "MASTODON_URL",
   "AI_PROXY_EXTRA_ROUTES",
   "MCP_OAUTH_ENABLED",
   "MCP_DCR_ENABLED",
@@ -175,8 +175,22 @@ export const PLAIN_GATEWAY_SETTINGS = [
   "EVENTS_ALLOW_PRIVATE_TARGETS",
 ] as const satisfies readonly SettableGatewaySetting[];
 
+/**
+ * The settings naming the instance an OAuth client is registered on
+ * (`hostSetting` in the catalog: Mastodon's `MASTODON_URL`), in catalog
+ * order: an origin, a plain value.
+ */
+export const OAUTH_CLIENT_HOST_SETTINGS: readonly string[] =
+  CAPABILITY_IDS.flatMap((id) => {
+    const capability: Capability = CAPABILITIES[id];
+    return capability.mode === "oauth_client" && capability.hostSetting
+      ? [capability.hostSetting]
+      : [];
+  });
+
 const PLAIN: ReadonlySet<string> = new Set([
   ...PLAIN_GATEWAY_SETTINGS,
+  ...OAUTH_CLIENT_HOST_SETTINGS,
   // The sign-in providers' ids, issuer, label and tenant; their client
   // secrets are credentials.
   ...PLAIN_SIGN_IN_SETTINGS,

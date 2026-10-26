@@ -18,6 +18,8 @@ import {
   isPlainGatewaySetting,
   oauthClientOrigin,
   parseEmailSender,
+  type Capability,
+  type OAuthClientCapability,
   type PLAIN_GATEWAY_SETTINGS,
 } from "@every-app/sdk/internal";
 import { EveryAppError } from "@/lib/errors";
@@ -183,13 +185,6 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
       "true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)",
     check: oneOf(SWITCH_VALUES),
   },
-  MASTODON_URL: {
-    takes: "the Mastodon instance's https origin, e.g. https://mastodon.social",
-    check: (value) =>
-      oauthClientOrigin(CAPABILITIES.mastodon, { MASTODON_URL: value })
-        ? null
-        : `"${value}" isn't an https origin (no path).`,
-  },
   AI_PROXY_EXTRA_ROUTES: {
     takes: "/v1 paths beyond inference the AI proxy may forward, comma separated, e.g. /v1/files",
     check: listOf((route) => AI_ROUTE.test(route), "a /v1/... path"),
@@ -267,9 +262,32 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
   },
 };
 
-/** A plain setting's rule: the table above, else a sign-in provider's (lib/signinValues.ts). */
+/**
+ * The rule for the instance setting of an OAuth client in the catalog
+ * (its `hostSetting`, Mastodon's `MASTODON_URL`): an https origin, as
+ * `oauthClientOrigin` reads it.
+ */
+function oauthClientHostSetting(name: string): PlainSetting | undefined {
+  const client = Object.values(CAPABILITIES as Record<string, Capability>).find(
+    (capability): capability is OAuthClientCapability =>
+      capability.mode === "oauth_client" && capability.hostSetting === name,
+  );
+  if (!client) return undefined;
+  const example = client.defaultOrigin ? `, e.g. ${client.defaultOrigin}` : "";
+  return {
+    takes: `the ${client.label} instance's https origin${example}`,
+    check: (value) =>
+      oauthClientOrigin(client, { [name]: value }) ? null : `"${value}" isn't an https origin (no path).`,
+  };
+}
+
+/** A plain setting's rule: the table above, else an OAuth client's instance, else a sign-in provider's (lib/signinValues.ts). */
 function plainSetting(name: string): PlainSetting | undefined {
-  return (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name] ?? signInPlainSetting(name);
+  return (
+    (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name] ??
+    oauthClientHostSetting(name) ??
+    signInPlainSetting(name)
+  );
 }
 
 /** The lines above a plain setting's prompt: what it takes. */

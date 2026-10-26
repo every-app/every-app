@@ -7,6 +7,7 @@ import {
   HOSTED_ONLY_GATEWAY_SETTINGS,
   isHostedOnlyGatewaySetting,
   isPlainGatewaySetting,
+  OAUTH_CLIENT_HOST_SETTINGS,
   PLAIN_GATEWAY_SETTINGS,
   INSTALL_OWNED_GATEWAY_SETTINGS,
   isInstallOwnedGatewaySetting,
@@ -138,8 +139,13 @@ describe("plain and hosted-only settings", () => {
     for (const name of [
       ...PLAIN_GATEWAY_SETTINGS,
       ...HOSTED_ONLY_GATEWAY_SETTINGS,
+      ...OAUTH_CLIENT_HOST_SETTINGS,
     ]) {
       expect(isSettableGatewaySetting(name), name).toBe(true);
+    }
+    // An OAuth client's instance (the catalog's `hostSetting`) is an origin.
+    for (const name of OAUTH_CLIENT_HOST_SETTINGS) {
+      expect(isPlainGatewaySetting(name), name).toBe(true);
     }
     expect(isPlainGatewaySetting("EMAIL_FROM")).toBe(true);
     expect(isPlainGatewaySetting("MCP_OAUTH_ENABLED")).toBe(true);

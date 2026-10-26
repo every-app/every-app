@@ -51,7 +51,8 @@
     "format:write": "prettier . --write",
     "test": "vitest run --silent",
     "test:watch": "vitest",
-    "check:esm-relative-imports": "node ./scripts/check-esm-relative-imports.mjs"
+    "check:esm-relative-imports": "node ./scripts/check-esm-relative-imports.mjs",
+    "catalog:update": "UPDATE_CATALOG=1 vitest run src/cloudflare/catalogSettings.test.ts --silent"
   },
   "dependencies": {
     "jose": "^6.2.5"
