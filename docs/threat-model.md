@@ -1101,7 +1101,10 @@ Cloudflare account: every Worker, every database, the Gateway included.
 The code is `packages/cli/src/lib/app/policy.ts` (the policy),
 `packages/perimeter/src/registry/` (the registration rules the CLI runs
 before every write), `packages/cli/src/lib/gateway/` (discovery, leases,
-the downgrade guard, releases) and, for the browser path,
+the downgrade guard, releases; since 2026-10-26 `source.ts` and
+`liveRelease.ts`, where an everyapp installed from npm takes the Gateway
+from a published GitHub Release of every-app/every-app instead of a
+checkout's build) and, for the browser path,
 `apps/every-app-gateway/src/server/deploy/install.ts` and
 `browser-install.ts`.
 
@@ -1115,10 +1118,12 @@ Worker name (tombstones included), uses a reserved id, or grants a new app
 to everyone by default. A secret value on a command line or in output. A
 deploy from a checkout older than the live Gateway, or over a Worker
 version everyapp didn't record. A release that was tampered with, or a
-repository being built from its URL on the operator's machine. Two deploys
+repository being built from its URL on the operator's machine. A Gateway
+release downloaded for the wrong CLI version, or an app's deploy quietly
+changing the Gateway's code on the way. Two deploys
 racing.
 
-**Invariants.** The register has 52.
+**Invariants.** The register has 55.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1161,6 +1166,8 @@ racing.
 | `deploy.lease-serializes-writes` | One run at a time holds the app's and the Gateway's lease, taken by insert-on-conflict only when expired. | `packages/cli/src/lib/gateway/lease.ts:111-131` | `lease.test.ts` :: lets one of two deploys hold it (partial) |
 | `release.integrity-and-shape` | A release tarball is deployed only if its top level holds exactly its kind's entries, its SHA-256 over every file matches, and it is a production build. | `packages/cli/src/lib/gateway/release.ts:33-36, 146-159` | `release.test.ts` :: refuses a release whose files changed after it was built |
 | `release.never-built-from-url` | A GitHub URL fetches only the release's `everyapp-release.tar.gz`, anonymously, over HTTPS with HTTPS-only redirects, a 200 MB cap and a timeout, into a private temp file; a repository without a release is never built from its URL. | `packages/cli/src/lib/release/github.ts:46-98` | `packages/cli/src/commands/install/release.test.ts` :: takes a GitHub repository's latest release, and sends a repository without one to its clone |
+| `release.published-for-this-cli-version` | Outside a checkout and without `--release`, `setup` and `update` download only `every-app-gateway-release.tar.gz` of every-app/every-app's release tagged `gateway-v<this everyapp's version>`, anonymously over HTTPS as app releases are; when there is none yet, the newest stable release with warning `GATEWAY_RELEASE_LATEST`; the download is opened by the same `extractRelease` (sha256, shape, build-output version, `minCli`), and the downgrade guard orders it by its release.json. `--release` names a GitHub repository or release page, a tarball URL or a file, never a repository to build. | `packages/cli/src/lib/gateway/source.ts` (gatewayReleaseSource, fetchPublishedRelease); `packages/cli/src/lib/gateway/release.ts` (GATEWAY_RELEASE_REPO, gatewayReleaseTag) | `source.test.ts` :: without a checkout: the release for this CLI's version, downloaded once; :: falls back to the latest stable release when this CLI's version has none yet, and says so; :: refuses a download whose files don't match its release.json; `runSetup.test.ts` :: refuses a release older than the live Gateway, by its release.json, whichever source each came from |
+| `rebind.live-release-never-silent-upgrade` | The rebind an app's `deploy` or `delete` runs redeploys the live Gateway's own release, had again from the install row's recorded origin (`release_origin`, `release_git_sha`): its GitHub tag, URL or file, or this checkout's build cache for the row's tree hash; a fetched asset whose sha256 isn't the row's is warned (`GATEWAY_RELEASE_DIFFERS`) and ordered by the downgrade guard. When it can't be had again, the rebind deploys what `setup` would and says so before `gateway.upgrade` names the change, by version or by source; it never downgrades. | `packages/cli/src/lib/gateway/liveRelease.ts`; `packages/cli/src/commands/appGateway.ts` (gatewayFor, bindIfNeeded); `packages/cli/src/lib/gateway/install.ts` (release_origin) | `liveRelease.test.ts` :: from its GitHub release by tag, whatever this CLI's version; :: warns when the tag's asset isn't the live bytes any more; :: from a checkout's build cache, by the row's tree hash; without that build, this checkout's own Gateway, said so; :: a checkout-built Gateway, from an everyapp with no checkout: the published release, said so |
 | `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `packages/cli/src/commands/install/release.test.ts` :: refuses local state, a build that isn't production's, and Prisma migrations |
 | `gateway.no-deploy-api-on-self-host` | The HTTP deploy API (`/api/v1/*`) is served only when `thirdPartyDeploys` holds, which is false in `self_hosted` and invalid modes. | `apps/every-app-gateway/src/server.ts:151-157` | `platform-policy.test.ts` :: opens third-party deploys only on a hosted gateway whose gate is on |
 | `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
@@ -1226,6 +1233,20 @@ intent).
 **Docs to fix.** ADR-0003: a note that #371 added a gateway-served deploy
 path. `docs/runbooks/browser-app-install.md`: "on by default" is true only
 once the token exists; interactive setup defaults to No.
+
+- **What anchors trust in a downloaded Gateway release.** `release.json`'s
+  `sha256` travels inside the tarball, so it proves the download arrived
+  whole and that the files are the ones the builder hashed, not who
+  built them: a party who can replace the asset can replace release.json
+  with it. What actually anchors trust is TLS to github.com and push
+  access to every-app/every-app (the Gateway Release workflow runs with
+  the repository's own token on a `gateway-v*` tag, and only maintainers
+  push tags). The install row keeps the sha256 of what went live, so a
+  replaced asset is at least noticed on the next rebind
+  (`GATEWAY_RELEASE_DIFFERS`). Wanted later: a detached checksum or a
+  Sigstore signature on the Release that the CLI verifies before opening
+  the tarball, and a pin of the publishing commit (TODO "Setup from a
+  published release (2026-10-26)").
 
 ### B8. The hosted tier: the deploy API, the dispatch namespace, egress, third-party hosts, shared apps
 
