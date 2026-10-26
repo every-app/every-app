@@ -301,6 +301,7 @@ Deliveries are kept for 30 days.
 | `subscription.removed`        | An event subscription was removed                          |
 | `subscription.redelivered`    | A delivery was queued again by hand                        |
 | `ai.default_changed`          | The default model provider changed                         |
+| `ai.model_changed`            | A provider's default model changed                         |
 | `ping`                        | A test event, sent to one subscription on request          |
 
 Apps can send their own events too, named `app.<app id>.<name>`, like `app.crm.invoice.paid`. To get every event one app sends, subscribe to `app.crm.*`.

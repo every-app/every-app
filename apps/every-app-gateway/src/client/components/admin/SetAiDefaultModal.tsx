@@ -136,7 +136,7 @@ export function SetAiDefaultModal({
                       placeholder={
                         candidates.find((c) => c.id === provider)?.model ?? ""
                       }
-                      description="Leave empty for the provider's default model. A model id may contain slashes."
+                      description="Leave empty to keep the provider's model (shown). A model id may contain slashes."
                       autoComplete="off"
                       spellCheck={false}
                     />

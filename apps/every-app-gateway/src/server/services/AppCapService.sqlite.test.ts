@@ -601,9 +601,10 @@ describe("AppCapService (SQLite)", () => {
         defaultMonthlyCallCap: 100,
         defaultMonthlyCostCapMicros: 20_000_000,
       });
-      await OrgSettingsRepository.setAiDefault({
+      await OrgSettingsRepository.setAiSettings({
         organizationId: acme,
         aiDefault: "openrouter",
+        aiModels: null,
         updatedBy: acmeAdmin,
       });
       await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), {
@@ -618,9 +619,10 @@ describe("AppCapService (SQLite)", () => {
         }),
       ]);
       await AppCapService.setDefaultMonthlyCap(asAcmeAdmin(), { costUsd: 5 });
-      await OrgSettingsRepository.setAiDefault({
+      await OrgSettingsRepository.setAiSettings({
         organizationId: acme,
         aiDefault: null,
+        aiModels: null,
         updatedBy: acmeAdmin,
       });
       // The dollar default alone keeps the row.

@@ -122,6 +122,7 @@ describe("the workspace tool definitions", () => {
       "workspace_cap_default",
       "ai_show",
       "ai_default",
+      "ai_model",
       "workspace_app_delete",
       "workspace_usage",
       "workspace_activity",

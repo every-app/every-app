@@ -38,7 +38,6 @@ import {
   aiDefaultSetupHint,
   aiRequiredSettings,
   resolveAiDefault,
-  type AiDefaultChoice,
   type IsSet,
 } from "./aiDefault.js";
 import {
@@ -151,8 +150,8 @@ export type SettingNeed =
 
 /** What `appSettings` may be told about the Gateway, for the default model provider. */
 export interface AppSettingsOptions {
-  /** The operator's stored default (`everyapp ai default`), or none. */
-  aiDefault?: AiDefaultChoice | null;
+  /** The operator's stored default provider (`everyapp ai default`), or none. */
+  aiDefault?: string | null;
   /** What is set, to put the configured provider first; absent, the order decides. */
   isSet?: IsSet;
 }
@@ -547,7 +546,7 @@ export function appSettings(
     // ask for; with one configured, that provider's. `isSet` here only
     // orders the candidates; evaluateAppSettings decides what is set.
     const resolution = resolveAiDefault({
-      choice: options.aiDefault ?? null,
+      provider: options.aiDefault ?? null,
       isSet: options.isSet ?? (() => false),
       lookup,
     });

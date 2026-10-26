@@ -558,7 +558,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
     name: "ai_default",
     title: "Choose the default model provider",
     description:
-      "Set the organization's default model provider (Admin → Usage → AI default; `everyapp ai default`): the provider id, and optionally the model to fill in when an app names none; or clear it (`clear: true`) so the shipped order decides (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral, Gemini: the first whose key is set). Refused for an API provider, an entry without an OpenAI-shaped chat route (Cohere) or AI Gateway. A provider whose key isn't set is accepted: apps get ai_default_not_configured until the operator sets it from the terminal. Queues ai.default_changed when the choice changed. Owners and admins.",
+      "Set the organization's default model provider (Admin → Usage → AI default; `everyapp ai default`): the provider id, and optionally the chat model to fill in when an app names none (stored as that provider's chat model, as ai_model does); or clear it (`clear: true`) so the shipped order decides (OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral, Gemini: the first whose key is set). Refused for an API provider, an entry without an OpenAI-shaped chat route (Cohere) or AI Gateway. A provider whose key isn't set is accepted: apps get ai_default_not_configured until the operator sets it from the terminal. Queues ai.default_changed when the choice changed. Owners and admins.",
     inputSchema: objectWith({
       provider: {
         type: "string",
@@ -570,7 +570,7 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
       model: {
         type: "string",
         description:
-          "The model to fill in when an app names none (anthropic/claude-sonnet-5.5); omitted, the provider's own default model.",
+          "The chat model to fill in when an app names none (anthropic/claude-sonnet-5.5); omitted, the provider's model setting stays (the catalog's seed when none).",
         minLength: 1,
         maxLength: 200,
       },
@@ -580,6 +580,39 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolDefinition[] = [
           "True to clear the choice: the shipped order decides again. Give this or provider, not both.",
       },
     }),
+  },
+  {
+    ...ADMIN_WRITE,
+    name: "ai_model",
+    title: "Set a provider's default models",
+    description:
+      "Set the chat and embeddings models one provider serves when an app takes the default and names no model (`everyapp ai model`), whether or not it is the default provider now. A model name stores it; null puts the catalog's seed back; a field left out stays. Refused for a provider the default can't be, and for an embeddings model on a provider without embeddings (Anthropic, Groq). Queues ai.model_changed when a model changed. Answers as ai_show does. Owners and admins.",
+    inputSchema: objectWith(
+      {
+        provider: {
+          type: "string",
+          description:
+            "The provider's id, as ai_show lists the candidates (openrouter, workers-ai, openai, …).",
+          minLength: 2,
+          maxLength: ID_MAX,
+        },
+        chat: {
+          type: ["string", "null"],
+          description:
+            "The chat model (anthropic/claude-sonnet-5.5); null for the catalog's seed; leave it out to keep it.",
+          minLength: 1,
+          maxLength: 200,
+        },
+        embeddings: {
+          type: ["string", "null"],
+          description:
+            "The embeddings model (openai/text-embedding-3-large); null for the catalog's seed; leave it out to keep it.",
+          minLength: 1,
+          maxLength: 200,
+        },
+      },
+      ["provider"],
+    ),
   },
   {
     ...ADMIN_WRITE,

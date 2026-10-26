@@ -17,10 +17,15 @@ export const orgSettings = sqliteTable("org_settings", {
   defaultMonthlyCallCap: integer("default_monthly_call_cap"),
   // Millionths of a US dollar of provider-reported cost per UTC month.
   defaultMonthlyCostCapMicros: integer("default_monthly_cost_cap_micros"),
-  // The default model provider, `<provider>[/<model>]` as `everyapp ai
-  // default` stores it (the SDK's parseAiDefaultChoice); null leaves the
-  // shipped order to decide (docs/design/2026-10-model-providers.md).
+  // The default model provider's id as `everyapp ai default` stores it
+  // (the SDK's parseAiDefaultProvider); null leaves the shipped order to
+  // decide (docs/design/2026-10-model-providers.md).
   aiDefault: text("ai_default"),
+  // The operator's default models by provider, JSON `{ "<provider>":
+  // { "chat"?, "embeddings"? } }` as `everyapp ai model` stores it (the
+  // SDK's parseAiModelSettings); a provider or field left out serves the
+  // catalog's seed. Null: every provider serves its seeds.
+  aiModels: text("ai_models"),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   // The owner or admin who last set it (null once their user row is gone,
   // and from the CLI, which is not a gateway user).

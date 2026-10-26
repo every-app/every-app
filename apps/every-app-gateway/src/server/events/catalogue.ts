@@ -1081,6 +1081,24 @@ export const catalogue = {
     });
   },
 
+  /**
+   * One provider's default models changed (`everyapp ai model`, the
+   * `everyapp_ai_model` tool): the chat and
+   * embeddings model settings now and before, null where the catalog's
+   * seed serves.
+   */
+  aiModelChanged(input: {
+    provider: string;
+    models: { chat: string | null; embeddings: string | null };
+    previous: { chat: string | null; embeddings: string | null };
+  }): BuiltEvent {
+    return built("ai.model_changed", {
+      provider: input.provider,
+      models: input.models,
+      previous: input.previous,
+    });
+  },
+
   ping(input: {
     subscription: { id: string; name: string };
     message?: string;
@@ -1399,6 +1417,11 @@ export function summarize(
           ? "the shipped order"
           : `${str(choice.provider) ?? "?"}${str(choice.model) ? ` (${str(choice.model)})` : ""}`;
       return `The default model provider is now ${name(now)}${was === null && now === null ? "" : ` (was ${name(was)})`}`;
+    }
+    case "ai.model_changed": {
+      const now = obj(d.models);
+      const model = (value: unknown) => str(value) ?? "the seed";
+      return `${str(d.provider) ?? "A provider"}'s default models are now chat ${model(now.chat)}, embeddings ${model(now.embeddings)}`;
     }
     case "ping":
       return "Test event from EveryApp";

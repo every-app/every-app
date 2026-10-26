@@ -2817,7 +2817,7 @@ describe("the default model provider over /mcp", () => {
     });
   });
 
-  it("stores the choice with its model, emits ai.default_changed once, and clears it", async () => {
+  it("stores the choice with its model as the provider's chat model, emits ai.default_changed once, and clears the choice", async () => {
     const set = await data(
       "everyapp_ai_default",
       { provider: "openai", model: "gpt-6-sol" },
@@ -2832,8 +2832,15 @@ describe("the default model provider over /mcp", () => {
       choice: "openai/gpt-6-sol",
     });
     expect(
-      await db.select({ aiDefault: orgSettings.aiDefault }).from(orgSettings),
-    ).toEqual([{ aiDefault: "openai/gpt-6-sol" }]);
+      await db
+        .select({
+          aiDefault: orgSettings.aiDefault,
+          aiModels: orgSettings.aiModels,
+        })
+        .from(orgSettings),
+    ).toEqual([
+      { aiDefault: "openai", aiModels: '{"openai":{"chat":"gpt-6-sol"}}' },
+    ]);
     // The same choice again changes nothing and emits nothing.
     await data(
       "everyapp_ai_default",
@@ -2851,7 +2858,17 @@ describe("the default model provider over /mcp", () => {
     });
     const cleared = await data("everyapp_ai_default", { clear: true }, admin());
     expect(cleared).toMatchObject({ source: "none", choice: null });
-    expect(await db.select().from(orgSettings)).toEqual([]);
+    // The provider's model setting stays for when it serves again.
+    expect(
+      await db
+        .select({
+          aiDefault: orgSettings.aiDefault,
+          aiModels: orgSettings.aiModels,
+        })
+        .from(orgSettings),
+    ).toEqual([
+      { aiDefault: null, aiModels: '{"openai":{"chat":"gpt-6-sol"}}' },
+    ]);
     const after = await db
       .select({ data: events.data })
       .from(events)
@@ -2861,6 +2878,76 @@ describe("the default model provider over /mcp", () => {
       aiDefault: null,
       previous: { provider: "openai", model: "gpt-6-sol" },
     });
+  });
+
+  it("sets a provider's models, puts the seed back with null, emits ai.model_changed, and refuses what can't be", async () => {
+    const set = await data(
+      "everyapp_ai_model",
+      {
+        provider: "openrouter",
+        chat: "anthropic/claude-sonnet-5.5",
+        embeddings: "openai/text-embedding-3-large",
+      },
+      admin(),
+    );
+    expect(set).toMatchObject({
+      provider: "openrouter",
+      model: "anthropic/claude-sonnet-5.5",
+      embeddingsModel: "openai/text-embedding-3-large",
+      seed: {
+        chat: "anthropic/claude-haiku-5.5",
+        embeddings: "openai/text-embedding-3-small",
+      },
+      models: {
+        openrouter: {
+          chat: "anthropic/claude-sonnet-5.5",
+          embeddings: "openai/text-embedding-3-large",
+        },
+      },
+    });
+    const reset = await data(
+      "everyapp_ai_model",
+      { provider: "openrouter", chat: null, embeddings: null },
+      admin(),
+    );
+    expect(reset).toMatchObject({
+      model: "anthropic/claude-haiku-5.5",
+      embeddingsModel: "openai/text-embedding-3-small",
+      models: {},
+    });
+    expect(await db.select().from(orgSettings)).toEqual([]);
+    const emitted = await db
+      .select({ data: events.data })
+      .from(events)
+      .where(eq(events.type, "ai.model_changed"));
+    expect(emitted.map((row) => JSON.parse(row.data))).toEqual([
+      {
+        provider: "openrouter",
+        models: {
+          chat: "anthropic/claude-sonnet-5.5",
+          embeddings: "openai/text-embedding-3-large",
+        },
+        previous: { chat: null, embeddings: null },
+      },
+      {
+        provider: "openrouter",
+        models: { chat: null, embeddings: null },
+        previous: {
+          chat: "anthropic/claude-sonnet-5.5",
+          embeddings: "openai/text-embedding-3-large",
+        },
+      },
+    ]);
+    expect(
+      await refusal(
+        "everyapp_ai_model",
+        { provider: "groq", embeddings: "x" },
+        admin(),
+      ),
+    ).toContain("no embeddings route");
+    expect(
+      await refusal("everyapp_ai_model", { provider: "openrouter" }, admin()),
+    ).toContain("give chat or embeddings");
   });
 
   it("keeps the default cap when the choice clears, and the choice when the cap clears", async () => {

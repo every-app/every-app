@@ -2008,6 +2008,18 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 - [ ] **`gatewayAiBinding` goes to `workers-ai` unless told otherwise**, so `@cf/…` ids work as they are. `provider: "default"` sends an `@cf/…` id as `default` (the operator's model). It runs over the OpenAI-compatible routes, because the Gateway keeps Workers AI's native `/run/<model>` closed: text generation, streaming and embeddings only; images, audio, batches and the binding's other methods throw.
 - [ ] **Both return the app's own `Ai`/`SendEmail` type** (declared against the global Workers types), not an SDK type, so they drop in with no cast. `patterns.md` rows 63, 68, 76 and 83 now name `gatewayAiBinding()`/`gatewayEmailBinding()` (#775).
 
+## Platform shortcuts (2026-10-26)/lane 5 catalog
+
+Default models (PR "Default AI models become a Gateway setting"). Defaults taken for Ben:
+
+- [ ] **Shape: an `org_settings.ai_models` column (migration 0019), not Gateway env settings.** JSON `{ "<provider>": { chat?, embeddings? } }` beside `ai_default`, cached with it, written by `everyapp ai model`, `everyapp_ai_model` and the model in `ai default <provider>/<model>`. Env settings (`<PROVIDER>_CHAT_MODEL`) would need a secret write per change and the generated settings lists.
+- [ ] **`ai_default` now holds the provider alone.** A stored `provider/model` from before reads as the provider; its model is dropped (the seed serves). Re-run `ai default <provider>/<model>` on everyapp.team if one was set.
+- [ ] **Seeds are today's values, unchanged** (OpenRouter `anthropic/claude-haiku-5.5` + `openai/text-embedding-3-small`, Workers AI llama-4-scout + bge-m3, OpenAI `gpt-6-luna` + `text-embedding-3-small`, the rest as before), renamed `seedModel` in the catalog.
+- [ ] **`ai default off` keeps the model settings;** `ai default <provider>` without a model keeps that provider's model setting.
+- [ ] **Local dev serves the seeds** (no operator settings in `.dev.vars`); a request that names a model still wins.
+- [ ] **No UI for embeddings or other providers' models yet.** The AI default dialog still sets the chosen provider's chat model only. Add a per-provider models editor if Ben wants it on the page.
+- [ ] **`ai.model_changed` is a new event** (v1); `ai default <provider>/<model>` fires `ai.default_changed` only.
+
 ## Platform shortcuts (2026-10-26)/9 create-release
 
 - **dev token** (`everyapp dev token`, replaces the inbox's `scripts/mint-dev-identity.mjs`). Defaults taken for Ben:

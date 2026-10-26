@@ -23,7 +23,7 @@ import { SetAiDefaultModal } from "./SetAiDefaultModal";
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const route = { path: "/v1/chat/completions", model: "x" };
+const route = { path: "/v1/chat/completions", seedModel: "x" };
 const candidates = [
   {
     id: "openrouter",
@@ -62,6 +62,7 @@ function report(choice: string | null): AiDefaultReport {
       candidates,
     },
     choice,
+    models: {},
     aiGateway: { on: false },
   } as AiDefaultReport;
 }
@@ -160,7 +161,7 @@ it("preselects what serves now and saves it with the provider's own model", asyn
   expect(modelInput().value).toBe("");
   expect(modelInput().placeholder).toBe("anthropic/claude-haiku-5.5");
   expect(text()).toContain(
-    "Leave empty for the provider's default model. A model id may contain slashes.",
+    "Leave empty to keep the provider's model (shown). A model id may contain slashes.",
   );
   // Nothing stored: the order already decides.
   expect(button("Use the shipped order")).toBeUndefined();

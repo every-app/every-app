@@ -62,8 +62,9 @@ const defaultCommand = buildCommand({
     brief: "Choose the default model provider (and model) for every app that asks for one, or off for the shipped order",
     fullDescription: [
       "The same setting as Manage workspace → Usage → AI default. The provider id is everything",
-      "up to the first slash, the model everything after it (a model id may hold slashes). Without",
-      "a model, the provider's own default model is filled in. A provider whose key isn't set is",
+      "up to the first slash, the model everything after it (a model id may hold slashes); the",
+      `model is stored as that provider's chat model, as ${CLI} ai model --chat stores it. Without`,
+      "a model, the provider's model setting stays (the catalog's seed when none). A provider whose key isn't set is",
       "accepted with a warning naming the key; one the default can't be (an API provider, an entry",
       "without an OpenAI-shaped chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway",
       "reads the change within 30 seconds; a change queues ai.default_changed. Refused on a Gateway",
@@ -74,6 +75,56 @@ const defaultCommand = buildCommand({
       `  ${CLI} ai default openrouter/anthropic/claude-sonnet-5.5`,
       `  ${CLI} ai default workers-ai --json`,
       `  ${CLI} ai default off`,
+    ].join("\n"),
+  },
+});
+
+const modelCommand = buildCommand({
+  loader: async () => (await import(".")).setModel,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          placeholder: "provider",
+          brief: "The provider's id, as ai list shows it (openrouter, workers-ai, openai, …)",
+          parse: String,
+        },
+      ],
+    },
+    flags: {
+      chat: {
+        kind: "parsed",
+        parse: String,
+        brief: "The chat model to fill in when an app names none; seed for the catalog's",
+        optional: true,
+        placeholder: "model",
+      },
+      embeddings: {
+        kind: "parsed",
+        parse: String,
+        brief: "The embeddings model to fill in when an app names none; seed for the catalog's",
+        optional: true,
+        placeholder: "model",
+      },
+      ...connectFlags,
+    },
+  },
+  docs: {
+    brief: "Set the chat and embeddings models a provider serves when an app takes the default and names none",
+    fullDescription: [
+      "Each provider the default can be has a chat model and (most) an embeddings model the Gateway",
+      "fills in when an app calls /api/ai/default/… without naming one: the operator's setting here,",
+      "else the catalog's seed (ai list shows both). Works whether or not the provider is the",
+      "default now. --chat seed or --embeddings seed puts the seed back. Refused for a provider the",
+      "default can't be, or an embeddings model on a provider without embeddings (AI_DEFAULT_INVALID).",
+      "The Gateway reads the change within 30 seconds; a change queues ai.model_changed. Refused on a",
+      "Gateway from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.",
+      "",
+      "Examples:",
+      `  ${CLI} ai model openrouter --chat anthropic/claude-sonnet-5.5`,
+      `  ${CLI} ai model openrouter --embeddings openai/text-embedding-3-large`,
+      `  ${CLI} ai model workers-ai --chat seed --embeddings seed`,
     ].join("\n"),
   },
 });
@@ -131,8 +182,8 @@ const gatewayRoutes = buildRouteMap({
 });
 
 /**
- * `everyapp ai show|list|default|gateway`: the Gateway's default model
- * provider and Cloudflare AI Gateway in front of the providers
+ * `everyapp ai show|list|default|model|gateway`: the Gateway's default
+ * model provider, its models, and Cloudflare AI Gateway in front of the providers
  * (docs/design/2026-10-model-providers.md).
  */
 export const aiRoutes = buildRouteMap({
@@ -140,6 +191,7 @@ export const aiRoutes = buildRouteMap({
     show: showCommand,
     list: listCommand,
     default: defaultCommand,
+    model: modelCommand,
     gateway: gatewayRoutes,
   },
   aliases: { ls: "list" },

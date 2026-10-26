@@ -260,8 +260,14 @@ export interface AiProviderCapability extends ProviderDetails {
 export interface AiRoute {
   /** One of the entry's `inferenceRoutes`: `/api/v1/chat/completions`. */
   path: string;
-  /** The model the Gateway fills in: a cheap, capable one of the provider's. */
-  model: string;
+  /**
+   * The seed: the model the Gateway fills in when its operator set none
+   * for this provider (`everyapp ai model`, `org_settings.ai_models`), a
+   * cheap, capable one of the provider's. Data, never the only answer:
+   * read it through `resolveAiDefault` (./aiDefault.ts), which puts the
+   * operator's setting first.
+   */
+  seedModel: string;
 }
 
 /** What `access: "write"` adds to a provider's read methods when its entry doesn't say. */
@@ -554,8 +560,8 @@ export const CAPABILITIES = {
     extraRoutes: true,
     // Tool calling on chat completions needs `reasoning_effort: "none"`
     // on the GPT-6 family (the responses route takes tools as it is).
-    chat: { path: "/v1/chat/completions", model: "gpt-6-luna" },
-    embeddings: { path: "/v1/embeddings", model: "text-embedding-3-small" },
+    chat: { path: "/v1/chat/completions", seedModel: "gpt-6-luna" },
+    embeddings: { path: "/v1/embeddings", seedModel: "text-embedding-3-small" },
     // AI Gateway's OpenAI endpoint takes the path without `/v1`.
     aig: { slug: "openai", trim: "/v1" },
     hint: "A secret key from the API keys page; the Gateway puts it on every call as a bearer token.",
@@ -580,11 +586,11 @@ export const CAPABILITIES = {
     ],
     chat: {
       path: "/api/v1/chat/completions",
-      model: "anthropic/claude-haiku-5.5",
+      seedModel: "anthropic/claude-haiku-5.5",
     },
     embeddings: {
       path: "/api/v1/embeddings",
-      model: "openai/text-embedding-3-small",
+      seedModel: "openai/text-embedding-3-small",
     },
     // AI Gateway's OpenRouter endpoint takes the path without `/api`.
     aig: { slug: "openrouter", trim: "/api" },
@@ -622,9 +628,9 @@ export const CAPABILITIES = {
     normalize: "workers-ai",
     chat: {
       path: "/v1/chat/completions",
-      model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      seedModel: "@cf/meta/llama-4-scout-17b-16e-instruct",
     },
-    embeddings: { path: "/v1/embeddings", model: "@cf/baai/bge-m3" },
+    embeddings: { path: "/v1/embeddings", seedModel: "@cf/baai/bge-m3" },
     // Workers AI's REST API is AI Gateway's own host: the URL stays and
     // `cf-aig-gateway-id` names the gateway.
     aig: { slug: "workers-ai", header: true },

@@ -1434,6 +1434,11 @@ describe("the event bus (SQLite)", () => {
         },
         previous: null,
       }),
+      "ai.model_changed": catalogue.aiModelChanged({
+        provider: "openrouter",
+        models: { chat: "anthropic/claude-sonnet-5.5", embeddings: null },
+        previous: { chat: null, embeddings: null },
+      }),
       ping: catalogue.ping({ subscription: { id: "sub_x", name: "Slack" } }),
     };
 

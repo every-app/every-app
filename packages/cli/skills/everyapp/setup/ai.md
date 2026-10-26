@@ -83,9 +83,12 @@ Usage and in `pnpm everyapp workspace usage --json` (`byModel`).
    it is OpenRouter and the person is happy with its model. Otherwise:
    `pnpm everyapp ai default <provider>` (`groq`), or with a model,
    `pnpm everyapp ai default openrouter/anthropic/claude-sonnet-5.5`
-   (the provider id up to the first slash, the model after it). `pnpm
-   everyapp ai default off` clears it. Each change queues the
-   `ai.default_changed` event.
+   (the provider id up to the first slash, the model after it; the model
+   is stored as that provider's chat model). `pnpm everyapp ai default
+   off` clears it. Each change queues the `ai.default_changed` event.
+   To change a provider's models without choosing it, or its embeddings
+   model: `pnpm everyapp ai model openrouter --chat <model> --embeddings
+   <model>` (`seed` puts the catalog's back; `ai.model_changed`).
 4. **Optionally put AI Gateway in front**: [ai-gateway.md](ai-gateway.md)
    (`pnpm everyapp ai gateway on`), for logs, caching and limits on
    every model call; it changes no app and no key.

@@ -1,0 +1,1 @@
+ALTER TABLE `org_settings` ADD `ai_models` text;

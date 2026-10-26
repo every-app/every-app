@@ -20,11 +20,8 @@ import {
   aiStatusResponse,
   handleAuthenticatedAiProxyRequest,
 } from "./ai-proxy";
-import {
-  AI_DEFAULT_PROVIDER,
-  resolveAiDefault,
-  type AiDefaultChoice,
-} from "@every-app/sdk/internal";
+import { AI_DEFAULT_PROVIDER, resolveAiDefault } from "@every-app/sdk/internal";
+import type { AiDefaultSettings } from "./ai-default";
 import {
   capExceededFields,
   capRefusalMessage,
@@ -133,11 +130,12 @@ interface HandleAppGatewayRequestOptions {
     fetchUpstream: (request: Request) => Promise<Response>,
   ) => Promise<Omit<OAuthProxyDeps, "identify"> | null>;
   /**
-   * The organization's stored default model provider (`org_settings.ai_default`,
-   * ai-default.ts in the Worker), for the `default` route; the catalog's
-   * order alone when absent (tests).
+   * The organization's stored default model provider and models
+   * (`org_settings.ai_default` and `ai_models`, ai-default.ts in the
+   * Worker), for the `default` route; the catalog's order and seeds alone
+   * when absent (tests).
    */
-  aiDefault?: (organizationId: string) => Promise<AiDefaultChoice | null>;
+  aiDefault?: (organizationId: string) => Promise<AiDefaultSettings>;
   /**
    * What a cap check's standing is reported to, after the answer
    * (events/cap-events.ts: cap.warning at 80%, cap.reached and
@@ -243,7 +241,7 @@ export async function handleAppGatewayRequest({
   caps,
   providers,
   oauth = loadOAuthProxyDeps,
-  aiDefault = readAiDefaultChoice,
+  aiDefault = readAiDefaultSettings,
   onCap = noteCapCheckLater,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
@@ -517,7 +515,9 @@ export async function handleAppGatewayRequest({
         ...(isDefault && allowed
           ? {
               aiDefault: resolveAiDefault({
-                choice: organizationId ? await aiDefault(organizationId) : null,
+                ...(organizationId
+                  ? await aiDefault(organizationId)
+                  : { provider: null }),
                 isSet: (name) => {
                   const value = (env as Record<string, unknown>)[name];
                   return typeof value === "string"
@@ -554,7 +554,7 @@ export async function handleAppGatewayRequest({
     // the proxy refuses with what to set when nothing is configured.
     const resolution = isDefault
       ? resolveAiDefault({
-          choice: await aiDefault(organizationId),
+          ...(await aiDefault(organizationId)),
           isSet: (name) => {
             const value = (env as Record<string, unknown>)[name];
             return typeof value === "string"
@@ -672,12 +672,12 @@ function missingCallerIdentity(): AppGatewayError {
   );
 }
 
-/** The organization's stored default model provider, read through the per-isolate cache (ai-default.ts), loaded with the first default-route call. */
-async function readAiDefaultChoice(
+/** The organization's stored default model provider and models, read through the per-isolate cache (ai-default.ts), loaded with the first default-route call. */
+async function readAiDefaultSettings(
   organizationId: string,
-): Promise<AiDefaultChoice | null> {
-  const { aiDefaultChoiceFor } = await import("./ai-default");
-  return aiDefaultChoiceFor(organizationId);
+): Promise<AiDefaultSettings> {
+  const { aiDefaultSettingsFor } = await import("./ai-default");
+  return aiDefaultSettingsFor(organizationId);
 }
 
 /** The bus's cap events, loaded with the first cap that is set on an isolate. */

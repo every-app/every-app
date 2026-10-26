@@ -179,7 +179,7 @@ export async function aiStatus({
     command: null,
   });
   if (provider === AI_DEFAULT_PROVIDER) {
-    const resolution = resolveAiDefault({ choice: null, isSet });
+    const resolution = resolveAiDefault({ provider: null, isSet });
     return dev(
       "A chat model",
       resolution.settings,

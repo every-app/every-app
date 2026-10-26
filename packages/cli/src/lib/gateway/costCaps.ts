@@ -71,14 +71,16 @@ export const microsToUsd = (micros: number | null): number | null =>
 
 /**
  * SQL: the organization's `org_settings` row holds no default of any kind
- * this Gateway has (the call cap, the dollar cap, the model provider), so
+ * this Gateway has (the call cap, the dollar cap, the model provider, the
+ * models), so
  * the row can go. Every writer of the row ends its batch with a DELETE on
  * this condition rather than deleting outright.
  */
-export function emptyOrgSettingsSql(columns: { cost: boolean; ai: boolean }): string {
+export function emptyOrgSettingsSql(columns: { cost: boolean; ai: boolean; models: boolean }): string {
   return [
     "default_monthly_call_cap IS NULL",
     ...(columns.cost ? ["default_monthly_cost_cap_micros IS NULL"] : []),
     ...(columns.ai ? ["ai_default IS NULL"] : []),
+    ...(columns.models ? ["ai_models IS NULL"] : []),
   ].join(" AND ");
 }

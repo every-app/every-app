@@ -25,11 +25,12 @@ function report(overrides: Partial<Resolution>): AiDefaultReport {
       configured: true,
       settings: ["OPENROUTER_API_KEY"],
       via: "direct",
-      chat: { path: "/api/v1/chat/completions", model: "x" },
+      chat: { path: "/api/v1/chat/completions", seedModel: "x" },
       candidates: [],
       ...overrides,
     } as Resolution,
     choice: null,
+    models: {},
     aiGateway: { on: false },
   };
 }

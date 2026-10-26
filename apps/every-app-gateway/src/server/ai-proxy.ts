@@ -363,10 +363,12 @@ export async function handleAuthenticatedAiProxyRequest({
       );
     }
     upstreamPath = route.path;
+    // The operator's model for the provider, else the catalog's seed
+    // (resolveAiDefault).
     fillModel =
       requested.path === AI_DEFAULT_ROUTES.chat
         ? aiDefault!.model
-        : route.model;
+        : (aiDefault!.embeddingsModel ?? null);
   }
   const direct = joinProviderUrl(baseUrl, upstreamPath, requested.search);
   if (!direct) {

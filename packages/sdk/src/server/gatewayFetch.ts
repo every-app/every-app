@@ -260,10 +260,12 @@ function directProviderPath(
   let fillModel: string | null = null;
   if (provider === AI_DEFAULT_PROVIDER) {
     // The default in dev, by the gateway's rule on the developer's own
-    // `.dev.vars`: the first provider of the order with every setting set.
+    // `.dev.vars`: the first provider of the order with every setting set,
+    // with its seed models (dev has no operator settings; a request that
+    // names a model sends it as it is).
     const values = env as Record<string, unknown>;
     const resolution = resolveAiDefault({
-      choice: null,
+      provider: null,
       isSet: (name) =>
         typeof values[name] === "string" &&
         (values[name] as string).trim().length > 0,
@@ -290,7 +292,10 @@ function directProviderPath(
     }
     provider = resolution.provider;
     path = route.path;
-    fillModel = path === resolution.chat.path ? resolution.model : route.model;
+    fillModel =
+      route === resolution.chat
+        ? resolution.model
+        : (resolution.embeddingsModel ?? null);
   }
   const spec = provider ? devAiProvider(provider) : undefined;
   if (!provider || !spec) {

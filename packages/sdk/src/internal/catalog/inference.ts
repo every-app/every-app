@@ -37,7 +37,7 @@ export const INFERENCE = {
     unstoredRoutes: ["/v1/chat/completions"],
     // The Messages API is the shape an app pins `anthropic` for.
     shape: "anthropic",
-    chat: { path: "/v1/chat/completions", model: "claude-haiku-5-5" },
+    chat: { path: "/v1/chat/completions", seedModel: "claude-haiku-5-5" },
     aig: { slug: "anthropic" },
     hint: "An API key from the Claude Console's API keys page; the Gateway sends it as a bearer token. Apps send the anthropic-version header themselves.",
     secrets: [
@@ -82,11 +82,11 @@ export const INFERENCE = {
     ],
     chat: {
       path: "/v1beta/openai/chat/completions",
-      model: "gemini-3.1-flash-lite",
+      seedModel: "gemini-3.1-flash-lite",
     },
     embeddings: {
       path: "/v1beta/openai/embeddings",
-      model: "gemini-embedding-001",
+      seedModel: "gemini-embedding-001",
     },
     // No `aig`: AI Gateway documents Google AI Studio's native form only
     // (/v1/models/{model}:generateContent), not these OpenAI-shaped paths.
@@ -137,8 +137,8 @@ export const INFERENCE = {
       "/v1/audio/transcriptions",
       "/v1/audio/speech",
     ],
-    chat: { path: "/v1/chat/completions", model: "mistral-small-latest" },
-    embeddings: { path: "/v1/embeddings", model: "mistral-embed" },
+    chat: { path: "/v1/chat/completions", seedModel: "mistral-small-latest" },
+    embeddings: { path: "/v1/embeddings", seedModel: "mistral-embed" },
     aig: { slug: "mistral" },
     hint: "An API key from API Keys in the Mistral Studio console; the Gateway sends it as a bearer token. Free mode needs no card; usage and rate limits apply.",
     secrets: [
@@ -179,7 +179,10 @@ export const INFERENCE = {
       "/openai/v1/audio/translations",
       "/openai/v1/audio/speech",
     ],
-    chat: { path: "/openai/v1/chat/completions", model: "openai/gpt-oss-20b" },
+    chat: {
+      path: "/openai/v1/chat/completions",
+      seedModel: "openai/gpt-oss-20b",
+    },
     // AI Gateway's Groq endpoint takes the path without `/openai/v1`.
     aig: { slug: "groq", trim: "/openai/v1" },
     hint: "An API key from the Groq console; the Gateway sends it as a bearer token. Apps call the OpenAI-shaped paths under /openai/v1.",

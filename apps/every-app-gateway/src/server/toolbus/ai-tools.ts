@@ -1,6 +1,6 @@
 /**
  * The handlers behind the model-provider tools on the gateway's own /mcp
- * (`everyapp_ai_show`, `everyapp_ai_default`;
+ * (`everyapp_ai_show`, `everyapp_ai_default`, `everyapp_ai_model`;
  * docs/design/2026-10-model-providers.md), run like the workspace tools
  * (workspace-tools.ts spreads them into its handler map) for a resolved
  * caller. Whether each candidate's settings are set shows to owners and
@@ -29,6 +29,10 @@ function aiReportData(report: AiDefaultReport, admin: boolean): JsonObject {
     id: entry.id,
     label: entry.label,
     model: entry.model,
+    ...(entry.embeddingsModel
+      ? { embeddingsModel: entry.embeddingsModel }
+      : {}),
+    seed: entry.seed,
     embeddings: entry.embeddings,
     viaAiGateway: entry.viaAiGateway,
     ...(admin
@@ -39,9 +43,14 @@ function aiReportData(report: AiDefaultReport, admin: boolean): JsonObject {
     provider: resolution.provider,
     label: resolution.label,
     model: resolution.model,
+    ...(resolution.embeddingsModel
+      ? { embeddingsModel: resolution.embeddingsModel }
+      : {}),
+    seed: resolution.seed,
     source: resolution.source,
     via: resolution.via,
     choice: report.choice,
+    models: report.models as JsonObject,
     ...(admin
       ? { configured: resolution.configured, settings: resolution.settings }
       : {}),
@@ -78,6 +87,36 @@ export const AI_HANDLERS: Record<string, Handler> = {
     }
     const report = await AiDefaultService.set(ctx, {
       choice: clear ? null : { provider, ...(model ? { model } : {}) },
+    });
+    return aiReportData(report, true);
+  },
+
+  async ai_model(ctx, args) {
+    const provider =
+      typeof args["provider"] === "string" ? args["provider"].trim() : "";
+    if (!provider) {
+      throw new PublicError("INVALID_INPUT", "provider is required");
+    }
+    const field = (name: "chat" | "embeddings"): string | null | undefined => {
+      const value = args[name];
+      if (value === null) return null;
+      if (typeof value === "string") return value.trim();
+      return undefined;
+    };
+    const chat = field("chat");
+    const embeddings = field("embeddings");
+    if (chat === undefined && embeddings === undefined) {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "give chat or embeddings (a model name, or null for the catalog's seed)",
+      );
+    }
+    const report = await AiDefaultService.setModels(ctx, {
+      provider,
+      patch: {
+        ...(chat === undefined ? {} : { chat }),
+        ...(embeddings === undefined ? {} : { embeddings }),
+      },
     });
     return aiReportData(report, true);
   },

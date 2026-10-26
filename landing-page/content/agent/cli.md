@@ -2061,8 +2061,9 @@ USAGE
   pnpm everyapp ai default --help
 
 The same setting as Manage workspace → Usage → AI default. The provider id is everything
-up to the first slash, the model everything after it (a model id may hold slashes). Without
-a model, the provider's own default model is filled in. A provider whose key isn't set is
+up to the first slash, the model everything after it (a model id may hold slashes); the
+model is stored as that provider's chat model, as pnpm everyapp ai model --chat stores it. Without
+a model, the provider's model setting stays (the catalog's seed when none). A provider whose key isn't set is
 accepted with a warning naming the key; one the default can't be (an API provider, an entry
 without an OpenAI-shaped chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway
 reads the change within 30 seconds; a change queues ai.default_changed. Refused on a Gateway
@@ -2084,6 +2085,55 @@ FLAGS
 
 ARGUMENTS
   provider[/model]|off  The provider's id (openrouter), or the id and a model (openrouter/anthropic/claude-sonnet-5.5), or off
+```
+
+### `everyapp ai model`
+
+Set the chat and embeddings models a provider serves when an app takes the default and names none.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<provider>` | yes | The provider's id, as ai list shows it (openrouter, workers-ai, openai, …) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--chat` | `<model>` | no |  | The chat model to fill in when an app names none; seed for the catalog's |
+| `--embeddings` | `<model>` | no |  | The embeddings model to fill in when an app names none; seed for the catalog's |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp ai model [--chat model] [--embeddings model] [--gateway value] [--account-id value] [--json] [--verbose] <provider>
+  pnpm everyapp ai model --help
+
+Each provider the default can be has a chat model and (most) an embeddings model the Gateway
+fills in when an app calls /api/ai/default/… without naming one: the operator's setting here,
+else the catalog's seed (ai list shows both). Works whether or not the provider is the
+default now. --chat seed or --embeddings seed puts the seed back. Refused for a provider the
+default can't be, or an embeddings model on a provider without embeddings (AI_DEFAULT_INVALID).
+The Gateway reads the change within 30 seconds; a change queues ai.model_changed. Refused on a
+Gateway from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
+
+Examples:
+  pnpm everyapp ai model openrouter --chat anthropic/claude-sonnet-5.5
+  pnpm everyapp ai model openrouter --embeddings openai/text-embedding-3-large
+  pnpm everyapp ai model workers-ai --chat seed --embeddings seed
+
+FLAGS
+     [--chat]                  The chat model to fill in when an app names none; seed for the catalog's
+     [--embeddings]            The embeddings model to fill in when an app names none; seed for the catalog's
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  provider  The provider's id, as ai list shows it (openrouter, workers-ai, openai, …)
 ```
 
 ### `everyapp ai gateway on`

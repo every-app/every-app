@@ -127,6 +127,13 @@
       "when": 1792999679311,
       "tag": "0019_provider_scope_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1793004930549,
+      "tag": "0020_ai_models",
+      "breakpoints": true
     }
   ]
 }

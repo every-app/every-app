@@ -25,7 +25,7 @@ async function getDefaultMonthlyCaps(
 
 /**
  * Set or clear both default caps. The row stays when it still holds the
- * default model provider; with nothing left in it, it is deleted.
+ * default model provider or models; with nothing left in it, it is deleted.
  */
 async function setDefaultMonthlyCaps(input: {
   organizationId: string;
@@ -48,33 +48,43 @@ async function setDefaultMonthlyCaps(input: {
   await dropEmptyRow(organizationId);
 }
 
-/**
- * The organization's default model provider as stored (`<provider>` or
- * `<provider>/<model>`), or null when the shipped order decides.
- */
-async function getAiDefault(organizationId: string): Promise<string | null> {
+/** The organization's AI settings as stored: the default provider's id and the model settings (JSON), each null when unset. */
+export interface StoredAiSettings {
+  aiDefault: string | null;
+  aiModels: string | null;
+}
+
+/** The organization's default model provider and models as stored, null where the shipped order and the seeds decide. */
+async function getAiSettings(
+  organizationId: string,
+): Promise<StoredAiSettings> {
   const [row] = await db
-    .select({ aiDefault: orgSettings.aiDefault })
+    .select({
+      aiDefault: orgSettings.aiDefault,
+      aiModels: orgSettings.aiModels,
+    })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
     .limit(1);
-  return row?.aiDefault ?? null;
+  return { aiDefault: row?.aiDefault ?? null, aiModels: row?.aiModels ?? null };
 }
 
-/** Set or clear the default model provider; the row goes when nothing is left in it. */
-async function setAiDefault(input: {
-  organizationId: string;
-  aiDefault: string | null;
-  updatedBy: string;
-}): Promise<void> {
-  const { organizationId, aiDefault, updatedBy } = input;
+/**
+ * Write the default model provider and the model settings together (a
+ * choice with a model writes both); the row goes when nothing is left in
+ * it.
+ */
+async function setAiSettings(
+  input: StoredAiSettings & { organizationId: string; updatedBy: string },
+): Promise<void> {
+  const { organizationId, aiDefault, aiModels, updatedBy } = input;
   const updatedAt = new Date();
   await db
     .insert(orgSettings)
-    .values({ organizationId, aiDefault, updatedAt, updatedBy })
+    .values({ organizationId, aiDefault, aiModels, updatedAt, updatedBy })
     .onConflictDoUpdate({
       target: orgSettings.organizationId,
-      set: { aiDefault, updatedAt, updatedBy },
+      set: { aiDefault, aiModels, updatedAt, updatedBy },
     });
   await dropEmptyRow(organizationId);
 }
@@ -86,6 +96,7 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
       cap: orgSettings.defaultMonthlyCallCap,
       costCap: orgSettings.defaultMonthlyCostCapMicros,
       aiDefault: orgSettings.aiDefault,
+      aiModels: orgSettings.aiModels,
     })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
@@ -94,7 +105,8 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
     row &&
     row.cap === null &&
     row.costCap === null &&
-    row.aiDefault === null
+    row.aiDefault === null &&
+    row.aiModels === null
   ) {
     await db
       .delete(orgSettings)
@@ -105,6 +117,6 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
 export const OrgSettingsRepository = {
   getDefaultMonthlyCaps,
   setDefaultMonthlyCaps,
-  getAiDefault,
-  setAiDefault,
+  getAiSettings,
+  setAiSettings,
 } as const;

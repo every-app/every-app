@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mintIdentityJwt, type AiDefaultChoice } from "@every-app/sdk/internal";
+import { mintIdentityJwt } from "@every-app/sdk/internal";
+import type { AiDefaultSettings } from "./ai-default";
 import {
   InMemoryAppRegistry,
   type AppRegistry,
@@ -91,7 +92,7 @@ function call(
       check: MonthlyCapCheck,
     ) => Promise<void>;
     waitUntil?: (task: Promise<unknown>) => void;
-    aiDefault?: (organizationId: string) => Promise<AiDefaultChoice | null>;
+    aiDefault?: (organizationId: string) => Promise<AiDefaultSettings>;
   } = {},
 ) {
   const props = Object.hasOwn(options, "props") ? options.props : PROPS;
@@ -773,7 +774,7 @@ describe("AppGateway AI status (GET /api/ai/<provider>)", () => {
     const response = await call({
       inbound: new Request(`https://gateway.internal/api/ai/${provider}`),
       fetchUpstream,
-      aiDefault: async () => null,
+      aiDefault: async () => ({ provider: null, models: {} }),
       ...options,
     });
     expect(fetchUpstream).not.toHaveBeenCalled();

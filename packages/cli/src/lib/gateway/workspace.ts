@@ -38,7 +38,7 @@ import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { listed } from "@/lib/output/text";
-import { hasAiDefault } from "./aiDefault";
+import { hasAiDefault, hasAiModels } from "./aiDefault";
 import { costCapMicros, emptyOrgSettingsSql, hasCostCaps, microsToUsd, requireCostCaps } from "./costCaps";
 import {
   capAlertsStatement,
@@ -1950,7 +1950,7 @@ ON CONFLICT (organization_id) DO UPDATE SET default_monthly_call_cap = ?2, updat
     ...(cap === null || costCap === null
       ? [
           {
-            sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: costs, ai: await hasAiDefault(ws.db) })}`,
+            sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: costs, ai: await hasAiDefault(ws.db), models: await hasAiModels(ws.db) })}`,
             params: [org],
           },
         ]

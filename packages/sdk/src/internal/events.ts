@@ -179,6 +179,7 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "A delivery was queued again by hand",
   ),
   entry("ai", "ai.default_changed", "The default model provider changed"),
+  entry("ai", "ai.model_changed", "A provider's default model changed"),
   entry("ping", "ping", "A test event, sent to one subscription on request"),
 ];
 
