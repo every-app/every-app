@@ -517,8 +517,9 @@ function Home() {
                 Get updates about EveryApp
               </p>
               <WaitlistForm />
-
-              <div className="mt-16 flex gap-6 text-sm">
+            </div>
+            <div className="mt-16 flex flex-wrap items-center justify-between gap-x-8 gap-y-6">
+              <div className="flex gap-6 text-sm">
                 <a
                   href="https://discord.gg/c9uGs3cFXr"
                   target="_blank"
@@ -542,6 +543,15 @@ function Home() {
                   Privacy
                 </Link>
               </div>
+              <a
+                href="https://www.ycombinator.com/companies/openseo"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-11 items-center gap-2.5 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-stone-300 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ff6600]"
+              >
+                <img src="/y-combinator.svg" alt="" width={24} height={24} />
+                <span>Backed by Y Combinator</span>
+              </a>
             </div>
           </div>
         </footer>
