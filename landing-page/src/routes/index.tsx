@@ -5,7 +5,8 @@ import setupPrompt from "../../content/docs/setup-prompt.txt?raw";
 import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
-const homeTitle = "EveryApp: Make every app open source";
+const homeTitle =
+  "EveryApp: Every app you and your agent need to grow your business";
 const homeDescription =
   "Own your tools. Customize your tools. Pay as you go. EveryApp puts the web apps you build online, in your own Cloudflare account. Open source, alpha.";
 // What the Open Graph card says, so a screen reader hears the same words a sighted reader sees.
@@ -232,15 +233,16 @@ function Home() {
         <div className="flex min-h-svh items-center px-6 py-28">
           <div className="mx-auto w-full max-w-6xl">
             <h1 className="landing-reveal mb-6 max-w-4xl text-balance text-[clamp(2.75rem,7vw,5.25rem)] font-semibold leading-[1.08] tracking-[-0.015em] text-white">
-              Make every app open source
+              Every app you and your agent need to grow your business.
             </h1>
-            <p
-              className="landing-reveal mb-10 max-w-2xl text-balance text-[clamp(1.125rem,2vw,1.5rem)] leading-snug text-stone-300"
+            <h2
+              className="landing-reveal mb-10 max-w-2xl text-balance text-[clamp(1.125rem,2vw,1.5rem)] font-normal leading-snug text-stone-300"
               style={{ animationDelay: "50ms" }}
             >
-              The open source platform for every app you and your agent need to
-              grow your business.
-            </p>
+              We&apos;re building open source alternatives to every SaaS.
+              EveryApp is the platform to host these open source apps and your
+              personal software made with your agent.
+            </h2>
             <div className="landing-reveal" style={{ animationDelay: "100ms" }}>
               <CopySetupPrompt />
               <p className="mt-4 text-sm text-stone-400">
