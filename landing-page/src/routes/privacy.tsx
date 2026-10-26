@@ -68,10 +68,8 @@ function PrivacyPolicy() {
                 className="text-fd-primary hover:underline"
               >
                 support@everyapp.dev
-              </a>{" "}
-              (everyapp.dev is ours too; it redirects to this site). Expect a
-              fast, informal reply from a very small team. If we change it, the
-              new version appears here with a new effective date.
+              </a>
+              .
             </p>
           </Section>
         </div>
