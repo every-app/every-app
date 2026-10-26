@@ -275,8 +275,11 @@ snapshot yet shows no hint (its tools load on first use).
 Scripts and anything that takes a header: a personal access token. In the
 Gateway open **Admin** (the sidebar footer's **Manage workspace**; owners and
 admins only), tab **Tokens**, heading **Personal access tokens**, button
-**New token**: a name, **All my apps** or one app, an expiry (default
-90 days). The token is `epat_…`, shown once, read & write. Send it as
+**New token**: a name, an access level (**Read only**, the default:
+`mcp:read`; **Read & write**: `mcp:write`; **Full access**: `*`, with a
+warning), **All my apps** or one app (the one app is the default when there
+is one), an expiry (default 30 days). The token is `epat_…`, shown once.
+Send it as
 `Authorization: Bearer epat_…` to `https://<gateway>/mcp` (a token made for one
 app sees that app alone):
 

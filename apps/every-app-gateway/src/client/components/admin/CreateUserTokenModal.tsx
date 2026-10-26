@@ -41,6 +41,27 @@ const KIND_ITEMS = [
   { value: "deploy", label: "Deploy key (everyapp deploy in CI)" },
 ];
 
+/**
+ * What an access token may do, least first. The server stores the scopes as
+ * sent (`*` stays an explicit choice it accepts); an AI client that only
+ * reads should never hold more than `mcp:read`.
+ */
+const ACCESS_CHOICES = ["read", "write", "full"] as const;
+type AccessChoice = (typeof ACCESS_CHOICES)[number];
+export const ACCESS_SCOPES: Record<AccessChoice, string[]> = {
+  read: ["mcp:read"],
+  write: ["mcp:write"],
+  full: ["*"],
+};
+const ACCESS_ITEMS: { value: AccessChoice; label: string }[] = [
+  { value: "read", label: "Read only (MCP tools that read)" },
+  { value: "write", label: "Read & write (MCP tools; never delete)" },
+  { value: "full", label: "Full access (every app route and MCP)" },
+];
+
+// Every token starts with a month; a longer one is a choice.
+const DEFAULT_EXPIRY: ExpiryChoice = "30";
+
 const createUserTokenSchema = z
   .object({
     name: z
@@ -49,6 +70,7 @@ const createUserTokenSchema = z
       .min(1, "Enter a name.")
       .max(MAX_NAME_LENGTH, `Use ${MAX_NAME_LENGTH} characters or fewer.`),
     kind: z.enum(["access", "deploy"]),
+    access: z.enum(ACCESS_CHOICES),
     appId: z.string(),
     expiry: z.enum(EXPIRY_CHOICES),
     customExpiresAt: z.string(),
@@ -99,14 +121,17 @@ export function CreateUserTokenModal({
     [apps],
   );
   const [error, setError] = useState<string | null>(null);
+  // One app where there is one: a token for every app is a choice.
+  const defaultAppId = apps.length === 1 ? apps[0]!.id : ALL_APPS;
 
   const form = useAppForm({
     defaultValues: {
       name: "",
       kind: "access" as "access" | "deploy",
-      appId: ALL_APPS,
-      expiry: "90" as ExpiryChoice,
-      customExpiresAt: localDateTimeValue(90),
+      access: "read" as AccessChoice,
+      appId: defaultAppId,
+      expiry: DEFAULT_EXPIRY,
+      customExpiresAt: localDateTimeValue(Number(DEFAULT_EXPIRY)),
     },
     validationLogic: revalidateLogic(),
     validators: { onDynamic: createUserTokenSchema },
@@ -116,7 +141,12 @@ export function CreateUserTokenModal({
         await onCreate({
           name: value.name,
           appId: value.appId === ALL_APPS ? undefined : value.appId,
-          ...(value.kind === "deploy" ? { scopes: [DEPLOY_SCOPE] } : {}),
+          // Always explicit: the server's own default for omitted scopes
+          // is `*`, which this dialog never relies on.
+          scopes:
+            value.kind === "deploy"
+              ? [DEPLOY_SCOPE]
+              : ACCESS_SCOPES[value.access],
           expiresAt: expiryToIso(value.expiry, value.customExpiresAt),
         });
       } catch (err) {
@@ -155,22 +185,41 @@ export function CreateUserTokenModal({
               )}
             </form.AppField>
             {allowDeployKeys ? (
-              <form.AppField
-                name="kind"
-                listeners={{
-                  // Deploy keys sit in CI: a shorter default.
-                  onChange: ({ value }) =>
-                    form.setFieldValue(
-                      "expiry",
-                      value === "deploy" ? "30" : "90",
-                    ),
-                }}
-              >
+              <form.AppField name="kind">
                 {(field) => (
                   <field.SelectField label="Kind" items={KIND_ITEMS} />
                 )}
               </form.AppField>
             ) : null}
+            <form.Subscribe selector={(state) => state.values.kind}>
+              {(kind) =>
+                kind === "access" ? (
+                  <form.AppField name="access">
+                    {(field) => (
+                      <field.SelectField label="Access" items={ACCESS_ITEMS} />
+                    )}
+                  </form.AppField>
+                ) : null
+              }
+            </form.Subscribe>
+            <form.Subscribe
+              selector={(state) =>
+                state.values.kind === "access" && state.values.access === "full"
+              }
+            >
+              {(full) =>
+                full ? (
+                  <Alert variant="destructive">
+                    <CircleAlert aria-hidden />
+                    <AlertDescription>
+                      Full access acts as you on every app route and every MCP
+                      tool, read and write, until it expires or is revoked. Most
+                      AI clients need read only, or read &amp; write on one app.
+                    </AlertDescription>
+                  </Alert>
+                ) : null
+              }
+            </form.Subscribe>
             <form.Subscribe selector={(state) => state.values.kind}>
               {(kind) => (
                 <form.AppField name="appId">

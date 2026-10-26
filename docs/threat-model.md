@@ -1716,9 +1716,12 @@ means it is on main (every boundary fix from this pass merged on
     client until the client has refreshed twice; revoking the connection
     ends it.
 21. **Personal tokens default to `*` for 90 days and the UI offers no
-    narrower scope** (B5, medium, known; TODO "Access levels for personal
-    access tokens"). The read-only token an AI client should get can't be
-    made from the UI.
+    narrower scope** (B5, medium; fixed in #716,
+    `pat.ui-least-privilege-defaults`). The dialog now opens on Read only
+    (`mcp:read`), one app where there is one, 30 days; Read & write and
+    Full access (`*`, with a warning) are choices. The service still maps
+    omitted scopes to `*` and defaults to 90 days for a caller that passes
+    neither; the dialog passes both. The 2026-10-25 scan's finding 8.
 22. **An admin could mail a reset link to the owner, another admin,
     themselves or a deactivated member** (B2, low; fixed in #407, merged).
 23. **With `GATEWAY_URL` missing, the outer ring stops vouching as well as
