@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCfApi, createFakeCfFetch } from "./cf";
 import { FakeSandbox } from "./sandbox";
 import { createFakeSpawn } from "./spawn";
@@ -62,9 +65,35 @@ describe("siblingEnv", () => {
       "EVERYAPP_TEST_ACCOUNTS",
     ]);
   });
+
+  it("hands the teardown child the host's forbidden list, and no other child", () => {
+    const forbidden = ["badc0ffee0ddf00dbadc0ffee0ddf00d"];
+    expect(siblingEnv(account, true, {}, forbidden)).toMatchObject({
+      EVERYAPP_FORBIDDEN_ACCOUNTS: "badc0ffee0ddf00dbadc0ffee0ddf00d",
+    });
+    expect(siblingEnv(account, false, {}, forbidden)).not.toHaveProperty(
+      "EVERYAPP_FORBIDDEN_ACCOUNTS",
+    );
+    expect(siblingEnv(account, true, {}, [])).not.toHaveProperty(
+      "EVERYAPP_FORBIDDEN_ACCOUNTS",
+    );
+  });
 });
 
 describe("withTestAccount", () => {
+  // The host's forbidden list is read from the environment and
+  // ~/.config/everyapp: an empty config home keeps this machine's out.
+  let configHome: string;
+  beforeEach(() => {
+    configHome = fs.mkdtempSync(path.join(os.tmpdir(), "loop-config-"));
+    vi.stubEnv("XDG_CONFIG_HOME", configHome);
+    vi.stubEnv("EVERYAPP_FORBIDDEN_ACCOUNTS", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    fs.rmSync(configHome, { recursive: true, force: true });
+  });
+
   it("gates first: a token that sees two accounts creates nothing", async () => {
     const sandbox = new FakeSandbox();
     await expect(

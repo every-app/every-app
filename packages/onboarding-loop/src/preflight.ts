@@ -18,13 +18,13 @@ import {
   locksDir,
   AccountsError,
 } from "./accounts";
-import {
-  FORBIDDEN_ACCOUNT_IDS,
-  tokenGate,
-  type CfApi,
-  type FetchLike,
-} from "./cf";
+import { tokenGate, type CfApi, type FetchLike } from "./cf";
 import type { Docker, DockerInfo } from "./docker";
+import {
+  FORBIDDEN_VARIABLE,
+  forbiddenAccountIds,
+  forbiddenAccountsPath,
+} from "./forbidden";
 import {
   acquireAccountLock,
   liveLocks,
@@ -102,6 +102,8 @@ export interface PreflightOptions {
   /** The provider key this run hands the harness, checked against the rotate markers. */
   provider?: { name: ProviderVar; value: string } | null;
   env?: NodeJS.ProcessEnv;
+  /** The accounts never touched (default: forbidden.ts, from `env` and the home's config file). */
+  forbidden?: readonly string[];
   fetch?: FetchLike;
   spawn?: Spawn;
   now?: () => number;
@@ -218,13 +220,20 @@ export async function runPreflight(
   const { account } = options;
   if (!/^[0-9a-f]{32}$/.test(account.accountId))
     return fail("account", `"${account.name}" has no 32-hex account id.`);
-  if (FORBIDDEN_ACCOUNT_IDS.includes(account.accountId))
+  const forbidden = options.forbidden ?? forbiddenAccountIds(env);
+  if (forbidden.includes(account.accountId))
     return fail(
       "account",
       `${account.name} is a forbidden account: the loop never touches it.`,
       "whoami_gate_failed",
     );
-  check("account", "ok", `${account.name}: zone ${account.zone}`);
+  if (forbidden.length === 0)
+    check(
+      "account",
+      "warn",
+      `${account.name}: zone ${account.zone}; no forbidden account is listed: add the id of any live account this machine can reach to ${FORBIDDEN_VARIABLE} or ${forbiddenAccountsPath(env)}`,
+    );
+  else check("account", "ok", `${account.name}: zone ${account.zone}`);
 
   // 3. Rotate markers: a value an earlier run saw echoed is refused until it hashes differently.
   const markers = readRotateMarkers(runsDir(options.configDir));
@@ -441,7 +450,7 @@ export async function runPreflight(
     return result(true, null);
   }
   const cf = options.cf;
-  const gate = await tokenGate(cf, account.accountId);
+  const gate = await tokenGate(cf, account.accountId, forbidden);
   if (!gate.ok) {
     const code: InfraReasonCode =
       gate.code === "token_rejected"

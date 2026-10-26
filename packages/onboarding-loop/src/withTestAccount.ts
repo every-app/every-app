@@ -3,7 +3,8 @@
  * goes through (design 4.1, 5, 4.14): a sibling container from the same
  * image, with exactly CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in its
  * environment, plus EVERYAPP_TEST_ACCOUNTS=<accountId> when the child is
- * the teardown, through a 600 env file deleted the moment the container
+ * the teardown (with EVERYAPP_FORBIDDEN_ACCOUNTS from the host when it
+ * lists any), through a 600 env file deleted the moment the container
  * exists. A Linux container has no macOS Keychain, so Ben's own `cf` login
  * is structurally unreachable from it. The token gate (cf.ts) runs first,
  * from the host, before anything is created. The checkout inside is a
@@ -12,6 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { tokenGate, type CfApi, type TokenGate } from "./cf";
+import { FORBIDDEN_VARIABLE, forbiddenAccountIds } from "./forbidden";
 import {
   execCapture,
   siblingContainerPrefix,
@@ -98,12 +100,18 @@ export function siblingEnv(
   account: Account,
   allowlist: boolean,
   extra: Record<string, string> = {},
+  forbidden: readonly string[] = [],
 ): Record<string, string> {
   return {
     ...extra,
     CLOUDFLARE_API_TOKEN: account.token,
     CLOUDFLARE_ACCOUNT_ID: account.accountId,
     ...(allowlist ? { EVERYAPP_TEST_ACCOUNTS: account.accountId } : {}),
+    // The container has no ~/.config/everyapp of the host: the teardown child
+    // gets the host's forbidden list through its environment instead.
+    ...(allowlist && forbidden.length > 0
+      ? { [FORBIDDEN_VARIABLE]: forbidden.join(",") }
+      : {}),
   };
 }
 
@@ -143,8 +151,13 @@ export async function withTestAccount<T>(
   options: SiblingOptions,
   fn: (sibling: Sibling) => Promise<T>,
 ): Promise<T> {
+  const forbidden = forbiddenAccountIds();
   if (options.cf) {
-    const gate = await tokenGate(options.cf, options.account.accountId);
+    const gate = await tokenGate(
+      options.cf,
+      options.account.accountId,
+      forbidden,
+    );
     if (!gate.ok) throw new TokenGateError(gate);
   }
   const name = `${siblingContainerPrefix(options.runId)}${randomUUID().slice(0, 4)}`;
@@ -158,6 +171,7 @@ export async function withTestAccount<T>(
       options.account,
       options.allowlist ?? false,
       options.extraEnv,
+      forbidden,
     ),
     user: "dev",
     workdir: "/work",

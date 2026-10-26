@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { locksDir } from "./accounts";
-import { createCfApi, createFakeCfFetch, FORBIDDEN_ACCOUNT_IDS } from "./cf";
+import { createCfApi, createFakeCfFetch } from "./cf";
 import type { Docker, DockerInfo } from "./docker";
 import { acquireAccountLock } from "./lock";
 import { collectMain, gcMain, reportMain } from "./maintenance";
@@ -97,14 +97,17 @@ describe("preflight refuses the forbidden account by constant (design 1: 'whatev
   it("fails preflight for Ben's account id even with no Cloudflare client (dry run)", async () => {
     const configDir = tempDir("review-preflight-");
     const result = await runPreflight({
-      account: { ...account, accountId: FORBIDDEN_ACCOUNT_IDS[0]! },
+      account: { ...account, accountId: "badc0ffee0ddf00dbadc0ffee0ddf00d" },
       runId: "2026-10-25T12:00-script-abc123",
       dryRun: true,
       image: "everyapp-loop:abc",
       configDir,
       docker: null,
       cf: null,
-      env: { PATH: "/bin" },
+      env: {
+        PATH: "/bin",
+        EVERYAPP_FORBIDDEN_ACCOUNTS: "badc0ffee0ddf00dbadc0ffee0ddf00d",
+      },
       spawn: lsof,
       now: () => NOW,
     });

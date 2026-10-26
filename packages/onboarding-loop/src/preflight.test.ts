@@ -83,6 +83,7 @@ const options = (
   docker: fakeDocker().docker,
   cf: null,
   env: { PATH: "/bin" },
+  forbidden: ["badc0ffee0ddf00dbadc0ffee0ddf00d"],
   spawn: lsof,
   now: () => NOW,
   ...overrides,
@@ -178,6 +179,24 @@ describe("preflight (dry run: no network)", () => {
     expect(fs.existsSync(path.join(locksDir(dir), `${ID}.json`))).toBe(true);
     result.release();
     expect(fs.existsSync(path.join(locksDir(dir), `${ID}.json`))).toBe(false);
+  });
+
+  it("warns when no forbidden account is listed, and refuses a listed one", async () => {
+    const empty = await runPreflight(options(tempDir(), { forbidden: [] }));
+    expect(empty.ok).toBe(true);
+    expect(
+      empty.checks.find((check) => check.name === "account"),
+    ).toMatchObject({
+      status: "warn",
+      detail: expect.stringContaining("EVERYAPP_FORBIDDEN_ACCOUNTS"),
+    });
+    empty.release();
+
+    const listed = await runPreflight(options(tempDir(), { forbidden: [ID] }));
+    expect(listed.ok).toBe(false);
+    expect(
+      listed.checks.find((check) => check.name === "account")?.status,
+    ).toBe("fail");
   });
 
   it("refuses an inherited CLOUDFLARE_API_TOKEN before anything else", async () => {

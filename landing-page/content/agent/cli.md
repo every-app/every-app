@@ -725,9 +725,11 @@ start with every- and that no app recorded.
 It is destructive and exists for dedicated test accounts only. The account must be on the
 allowlist (EVERYAPP_TEST_ACCOUNTS, or one id per line in ~/.config/everyapp/test-accounts),
 the run needs CLOUDFLARE_API_TOKEN scoped to that account alone (a token that sees any other
-account is refused), and one account is refused by id whatever the lists say. It reads
-everything first and shows what it found; then the account id is typed at the terminal, or
-passed again with --confirm for a run without one. There is no --yes.
+account is refused), and an account on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, or
+one id per line in ~/.config/everyapp/forbidden-accounts) is refused first, whatever the
+allowlist says. It reads everything first and shows what it found; then the account id is
+typed at the terminal, or passed again with --confirm for a run without one. There is no
+--yes.
 
 Examples:
   EVERYAPP_TEST_ACCOUNTS=<id> everyapp teardown --account-id <id> --dry-run

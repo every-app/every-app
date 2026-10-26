@@ -1491,7 +1491,7 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 ### TEARDOWN_ACCOUNT_FORBIDDEN
 
-`teardown --account-id <id>` names an account that can never be torn down (`FORBIDDEN_ACCOUNTS` in `packages/cli/src/lib/teardown/guards.ts`: the live account that holds openseo.so and everyapp.team). Refused before the allowlist is read and before anything is asked of Cloudflare. Headline: `Cloudflare account <id> can never be torn down`, then `It is a live account, refused by id before any allowlist is read.`; `data.accountId`.
+`teardown --account-id <id>` names an account on the forbidden list: `EVERYAPP_FORBIDDEN_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/forbidden-accounts` (`$XDG_CONFIG_HOME/everyapp/forbidden-accounts` when set; one id per line, `#` starts a comment), read together, the same way as the allowlist. No id ships in the CLI: the machine that can reach a live account lists it there (the onboarding loop hands its host's list to the teardown child in `EVERYAPP_FORBIDDEN_ACCOUNTS`). Refused before the allowlist is read and before anything is asked of Cloudflare, whatever the allowlist says; `cf auth whoami` listing a forbidden account is `TEARDOWN_TOKEN_TOO_BROAD`. Headline: `Cloudflare account <id> can never be torn down`, then `It is on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, <file>): a live account, refused by id before any allowlist is read.`; `data.accountId`, `data.file`.
 
 **Fix:** none offered; no rerun; not retryable. Use a dedicated test account (docs/runbooks/onboarding-loop-test-accounts.md in the checkout).
 
@@ -2592,7 +2592,7 @@ Source: `packages/cli/src/commands/deploy/steps/checkSchemaDrift.ts`
 
 ### TEARDOWN_ALLOWLIST_IGNORED
 
-`teardown`, while reading the allowlist: an entry of `EVERYAPP_TEST_ACCOUNTS` or `~/.config/everyapp/test-accounts` isn't 32 hex characters and was ignored. `Ignored <n> entry|entries of the teardown allowlist that isn't|aren't account ids: <entries>` / `An account id is 32 hex characters (EVERYAPP_TEST_ACCOUNTS, <file>).`; `data.ignored`, `data.file`. The run goes on with the ids that parsed.
+`teardown`, while reading the forbidden list or the allowlist: an entry of `EVERYAPP_FORBIDDEN_ACCOUNTS` or `~/.config/everyapp/forbidden-accounts`, or of `EVERYAPP_TEST_ACCOUNTS` or `~/.config/everyapp/test-accounts`, isn't 32 hex characters and was ignored. `Ignored <n> entry|entries of the teardown forbidden list|allowlist that isn't|aren't account ids: <entries>` / `An account id is 32 hex characters (<variable>, <file>).`; `data.ignored`, `data.file`. The run goes on with the ids that parsed.
 
 Source: `packages/cli/src/lib/teardown/guards.ts`
 

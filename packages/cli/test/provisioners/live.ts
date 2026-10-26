@@ -13,7 +13,8 @@
  * token is never printed, logged or written. The harness refuses to run
  * unless `cf auth whoami` with that environment says the token is what it
  * authenticated with and it sees exactly the one account, which is never
- * the forbidden one (the loop's own constant), and unless no loop run
+ * on the teardown's forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS and
+ * `~/.config/everyapp/forbidden-accounts`, under the real home), and unless no loop run
  * holds the account's lock. Everything a test makes is named
  * `every-provisioners-…`, which the teardown's `every-` scan would find,
  * and each test deletes what it made in a `finally`.
@@ -28,6 +29,7 @@ import { isCfError } from "@/lib/cf/errors";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { CfWhoamiOutput } from "@/lib/cf/schemas";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
+import { readForbiddenList } from "@/lib/teardown/guards";
 
 /** Whether this run may reach the test account. */
 const LIVE = process.env["EVERYAPP_LIVE_PROVISIONERS"] === "1";
@@ -37,12 +39,6 @@ export const describeLive = LIVE ? describe : describe.skip;
 
 /** Every Worker and resource a live test makes starts so. */
 export const LIVE_PREFIX = "every-provisioners-";
-
-/**
- * Ben's own account, never a test account
- * (packages/onboarding-loop/src/cf.ts, FORBIDDEN_ACCOUNT_IDS).
- */
-const FORBIDDEN_ACCOUNT_IDS: readonly string[] = ["23bc28f0b638fbfc1c7f838573c17ee3"];
 
 const ACCOUNT_ID = /^[0-9a-f]{32}$/;
 
@@ -101,8 +97,9 @@ export async function liveAccount(name = "loop-1"): Promise<LiveAccount> {
     throw new Error(`No account "${name}" in ${file}; it has ${parsed.data.accounts.map((row) => row.name).join(", ")}.`);
   }
   if (!ACCOUNT_ID.test(account.accountId)) throw new Error(`${name}'s account id isn't 32 hex characters.`);
-  if (FORBIDDEN_ACCOUNT_IDS.includes(account.accountId)) {
-    throw new Error(`${name} is the forbidden account; never a test account.`);
+  const configHome = process.env["XDG_CONFIG_HOME"] || path.join(os.userInfo().homedir, ".config");
+  if (readForbiddenList({ ...process.env, XDG_CONFIG_HOME: configHome }).ids.includes(account.accountId)) {
+    throw new Error(`${name} is on the forbidden list; never a test account.`);
   }
   const lock = path.join(dir, "locks", `${account.accountId}.json`);
   if (fs.existsSync(lock)) {

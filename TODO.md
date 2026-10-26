@@ -1954,6 +1954,14 @@ Ben, launch morning: "currently this requires cloning every-app in the setup pro
 - [ ] **Ben, before the flip:** publish `@every-app/sdk` at the same version as `everyapp` (today npm has `everyapp@0.3.0-rc.4` but the SDK stops at rc.3), move `latest` to it, flip every-app/every-app public with the Gateway Release workflow on it, push `gateway-v<that version>` there. Then the loop-1 run from a fresh temp dir (`npx everyapp@<version> setup`, create, deploy, install, update, status) and the flip PR.
 - [ ] Follow-ups: `everyapp update` could say the tag it is about to take before downloading (it says it after: "Using Gateway 0.3.0-rc.4 from every-app/every-app release gateway-v0.3.0-rc.4"); a `--release` on `deploy` for a held rollout that wants a specific Gateway; the launch doc's clone-based checks (section D) become `npx`-based once the flip lands.
 
+## Platform shortcuts (2026-10-26)/lane 5 catalog
+
+Ben's Cloudflare account id is out of shipped code (CLI teardown guards, onboarding loop, live provisioner harness, docs). Defaults taken for Ben:
+
+- [x] **Add your live account to this machine's forbidden list.** Done for Ben's machine (2026-10-26, by the coordinator): `~/.config/everyapp/forbidden-accounts`, mode 600. Any other machine that can reach a live account runs `echo <account id> >> ~/.config/everyapp/forbidden-accounts` once; the loop's preflight warns on its `account` line while the list is empty.
+- [ ] **One sibling file, not a `!<id>` line syntax.** `EVERYAPP_FORBIDDEN_ACCOUNTS` plus `~/.config/everyapp/forbidden-accounts`, parsed like the allowlist; checked first, every error code kept. The CLI, the loop and `test/provisioners/live.ts` all read it; the loop hands its host's list to the teardown container in `EVERYAPP_FORBIDDEN_ACCOUNTS`.
+- [ ] **An empty list warns in the loop, does not refuse.** A refusal would have blocked the launch gate runs on loop-1. Make it a failure once the line is in place, if wanted.
+- [ ] **The id is still in git history** (the old constants and docs). Not a secret, but the public-history scan (thread mcp:149b23fd) may want it on its list.
 
 ## Platform shortcuts (2026-10-26)/lane 3 fromMcpTools
 

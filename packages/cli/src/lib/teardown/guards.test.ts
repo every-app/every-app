@@ -12,14 +12,16 @@ import {
   allowlistPath,
   checkAccountEligible,
   checkTokenScope,
-  FORBIDDEN_ACCOUNTS,
+  forbiddenListPath,
   parseAllowlist,
   readAllowlist,
+  readForbiddenList,
 } from "./guards";
 
 const TEST = "0123456789abcdef0123456789abcd01";
 const OTHER = "fedcba9876543210fedcba9876543210";
-const FORBIDDEN = FORBIDDEN_ACCOUNTS[0]!;
+/** A made-up live account: the real one lives in the machine's forbidden-accounts file, never in code. */
+const FORBIDDEN = "badc0ffee0ddf00dbadc0ffee0ddf00d";
 
 let home: string;
 let events: Array<Record<string, any>>;
@@ -78,6 +80,21 @@ describe("the teardown allowlist", () => {
   });
 });
 
+describe("the teardown forbidden list", () => {
+  it("is empty with neither the variable nor the file: no id ships in the code", () => {
+    expect(readForbiddenList({})).toEqual({ ids: [], ignored: [], file: forbiddenListPath({}) });
+  });
+
+  it("is the variable and the file together, the file beside the allowlist's", () => {
+    writeAllowlistFile(`# live\n${OTHER}\n`, forbiddenListPath({}));
+    expect(readForbiddenList({ EVERYAPP_FORBIDDEN_ACCOUNTS: FORBIDDEN })).toEqual({
+      ids: [FORBIDDEN, OTHER],
+      ignored: [],
+      file: path.join(home, ".config", "everyapp", "forbidden-accounts"),
+    });
+  });
+});
+
 describe("the guards, in order", () => {
   it("refuses an id that isn't one, before the allowlist could ever be asked to hold it", () => {
     expect(() =>
@@ -93,17 +110,35 @@ describe("the guards, in order", () => {
     expect(events).toEqual([]);
   });
 
-  it("refuses the forbidden account before reading any allowlist, even one that lists it", () => {
-    writeAllowlistFile(`${FORBIDDEN}\n`);
+  it("refuses a forbidden account before reading any allowlist, even one that lists it", () => {
+    writeAllowlistFile(`${FORBIDDEN}\nbogus\n`);
+    expect(() =>
+      checkAccountEligible({
+        accountId: FORBIDDEN,
+        out: out(),
+        env: { EVERYAPP_FORBIDDEN_ACCOUNTS: FORBIDDEN, EVERYAPP_TEST_ACCOUNTS: FORBIDDEN, CLOUDFLARE_API_TOKEN: "token" },
+      }),
+    ).toThrow(expect.objectContaining({ code: "TEARDOWN_ACCOUNT_FORBIDDEN" }));
+    // Nothing of the allowlist was looked at: no warning about it either.
+    expect(events).toEqual([]);
+
+    // The file form, with an entry that isn't an id said.
+    writeAllowlistFile(`${FORBIDDEN.toUpperCase()}\nnope\n`, forbiddenListPath({}));
     expect(() =>
       checkAccountEligible({
         accountId: FORBIDDEN,
         out: out(),
         env: { EVERYAPP_TEST_ACCOUNTS: FORBIDDEN, CLOUDFLARE_API_TOKEN: "token" },
       }),
-    ).toThrow(expect.objectContaining({ code: "TEARDOWN_ACCOUNT_FORBIDDEN" }));
-    // Nothing of the allowlist was looked at: no warning about it either.
-    expect(events).toEqual([]);
+    ).toThrow(
+      expect.objectContaining({
+        code: "TEARDOWN_ACCOUNT_FORBIDDEN",
+        data: { accountId: FORBIDDEN, file: forbiddenListPath({}) },
+      }),
+    );
+    expect(events).toEqual([
+      expect.objectContaining({ code: "TEARDOWN_ALLOWLIST_IGNORED", data: { ignored: ["nope"], file: forbiddenListPath({}) } }),
+    ]);
   });
 
   it("refuses an account off the allowlist, saying how to add it, before the token is looked at", () => {
@@ -140,7 +175,7 @@ describe("the guards, in order", () => {
         out: out(),
         env: { EVERYAPP_TEST_ACCOUNTS: `${TEST}, ${OTHER}`, CLOUDFLARE_API_TOKEN: "token" },
       }),
-    ).toEqual({ accountId: TEST, allowlist: [TEST, OTHER] });
+    ).toEqual({ accountId: TEST, allowlist: [TEST, OTHER], forbidden: [] });
   });
 
   it("refuses a token that sees an account outside the allowlist, or the forbidden one, and one that doesn't see the target", () => {
@@ -149,26 +184,27 @@ describe("the guards, in order", () => {
       email: null,
       accounts: ids.map((id) => ({ id, name: `Account ${id.slice(0, 4)}` })),
     });
-    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], whoami: whoami([TEST, OTHER]) })).toThrow(
+    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], forbidden: [], whoami: whoami([TEST, OTHER]) })).toThrow(
       expect.objectContaining({ code: "TEARDOWN_TOKEN_TOO_BROAD", data: { accountId: TEST, accounts: [{ id: OTHER, name: `Account ${OTHER.slice(0, 4)}` }] } }),
     );
     expect(() =>
-      checkTokenScope({ accountId: TEST, allowlist: [TEST, FORBIDDEN], whoami: whoami([TEST, FORBIDDEN]) }),
+      checkTokenScope({ accountId: TEST, allowlist: [TEST, FORBIDDEN], forbidden: [FORBIDDEN], whoami: whoami([TEST, FORBIDDEN]) }),
     ).toThrow(expect.objectContaining({ code: "TEARDOWN_TOKEN_TOO_BROAD" }));
-    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST, OTHER], whoami: whoami([OTHER]) })).toThrow(
+    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST, OTHER], forbidden: [], whoami: whoami([OTHER]) })).toThrow(
       expect.objectContaining({ code: "TEARDOWN_ACCOUNT_NOT_VISIBLE" }),
     );
-    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], whoami: whoami([]) })).toThrow(
+    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], forbidden: [], whoami: whoami([]) })).toThrow(
       expect.objectContaining({ code: "TEARDOWN_ACCOUNT_NOT_VISIBLE" }),
     );
     expect(() =>
-      checkTokenScope({ accountId: TEST, allowlist: [TEST], whoami: { authenticated: false, accounts: [] } }),
+      checkTokenScope({ accountId: TEST, allowlist: [TEST], forbidden: [], whoami: { authenticated: false, accounts: [] } }),
     ).toThrow(expect.objectContaining({ code: "CLOUDFLARE_TOKEN_REJECTED" }));
     // A bogus env token, as cf 1.0.0-beta.14 reports it: authenticated, tokenValid false, no accounts.
     expect(() =>
       checkTokenScope({
         accountId: TEST,
         allowlist: [TEST],
+        forbidden: [],
         whoami: { authenticated: true, authSource: "CLOUDFLARE_API_TOKEN environment variable", tokenValid: false, accounts: [] },
       }),
     ).toThrow(expect.objectContaining({ code: "CLOUDFLARE_TOKEN_REJECTED" }));
@@ -177,6 +213,7 @@ describe("the guards, in order", () => {
       checkTokenScope({
         accountId: TEST,
         allowlist: [TEST],
+        forbidden: [],
         whoami: { ...whoami([TEST]), authSource: "OAuth token from /Users/me/Library/Preferences/cloudflare/config/default.json", tokenValid: true },
       }),
     ).toThrow(expect.objectContaining({ code: "TEARDOWN_NEEDS_TOKEN", data: expect.objectContaining({ authSource: expect.stringContaining("OAuth") }) }));
@@ -184,9 +221,10 @@ describe("the guards, in order", () => {
       checkTokenScope({
         accountId: TEST,
         allowlist: [TEST],
+        forbidden: [],
         whoami: { ...whoami([TEST]), authSource: "CLOUDFLARE_API_TOKEN environment variable", tokenValid: true },
       }),
     ).not.toThrow();
-    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], whoami: whoami([TEST]) })).not.toThrow();
+    expect(() => checkTokenScope({ accountId: TEST, allowlist: [TEST], forbidden: [], whoami: whoami([TEST]) })).not.toThrow();
   });
 });

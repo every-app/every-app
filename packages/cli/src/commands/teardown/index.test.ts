@@ -18,7 +18,6 @@ import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
-import { FORBIDDEN_ACCOUNTS } from "@/lib/teardown/guards";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
@@ -271,7 +270,8 @@ function run({
 
 describe("teardown refuses", () => {
   it("the forbidden account, even when the allowlist names it, with no cf call made", async () => {
-    const forbidden = FORBIDDEN_ACCOUNTS[0]!;
+    const forbidden = "badc0ffee0ddf00dbadc0ffee0ddf00d";
+    vi.stubEnv("EVERYAPP_FORBIDDEN_ACCOUNTS", forbidden);
     await expect(run({ accountId: forbidden, allowlist: `${ACCOUNT_ID},${forbidden}`, confirm: forbidden })).rejects.toMatchObject({
       code: "TEARDOWN_ACCOUNT_FORBIDDEN",
       message: expect.stringContaining("can never be torn down"),

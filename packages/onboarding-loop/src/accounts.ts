@@ -5,8 +5,8 @@
  * (mode 600, one `VAR=value` per line). The driver refuses to start when
  * `EVERYAPP_TEST_ACCOUNTS`, `CLOUDFLARE_API_TOKEN` or `EVERYAPP_GATEWAY_URL`
  * is already in its own environment (the allowlist and the token are
- * derived from the file for each child, never inherited), refuses the
- * forbidden account id by constant, and refuses a value whose hash matches
+ * derived from the file for each child, never inherited), refuses an
+ * account on the forbidden list (forbidden.ts), and refuses a value whose hash matches
  * a `rotate.json` an earlier run wrote after an agent echoed it.
  */
 import { createHash } from "node:crypto";
@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { FORBIDDEN_ACCOUNT_IDS } from "./cf";
+import { forbiddenAccountIds } from "./forbidden";
 import type { Account, AccountsFile, Providers, ProviderVar } from "./types";
 
 const REFUSED_ENV_VARS = [
@@ -132,6 +132,7 @@ function readPrivate(file: string, what: string): string {
 export function parseAccountsFile(
   text: string,
   file = "accounts.json",
+  forbidden: readonly string[] = forbiddenAccountIds(),
 ): AccountsFile {
   let raw: unknown;
   try {
@@ -149,7 +150,7 @@ export function parseAccountsFile(
   }
   const names = new Set<string>();
   for (const account of parsed.data.accounts) {
-    if (FORBIDDEN_ACCOUNT_IDS.includes(account.accountId)) {
+    if (forbidden.includes(account.accountId)) {
       throw new AccountsError(
         "account_forbidden",
         `${file} lists a forbidden account under "${account.name}".`,

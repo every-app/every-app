@@ -18,7 +18,7 @@ import {
 } from "./accounts";
 
 const ID = "0123456789abcdef0123456789abcdef";
-const FORBIDDEN = "23bc28f0b638fbfc1c7f838573c17ee3";
+const FORBIDDEN = "badc0ffee0ddf00dbadc0ffee0ddf00d";
 const TOKEN = "fakeTokenValue_0123456789abcdefghij";
 
 const valid = () =>
@@ -71,9 +71,11 @@ describe("accounts", () => {
 
   it("refuses the forbidden account id whatever the file says", () => {
     const text = valid().replace(ID.toUpperCase(), FORBIDDEN);
-    expect(() => parseAccountsFile(text)).toThrow(/forbidden/);
+    expect(() => parseAccountsFile(text, "accounts.json", [FORBIDDEN])).toThrow(
+      /forbidden/,
+    );
     try {
-      parseAccountsFile(text);
+      parseAccountsFile(text, "accounts.json", [FORBIDDEN]);
     } catch (error) {
       expect((error as AccountsError).code).toBe("account_forbidden");
     }

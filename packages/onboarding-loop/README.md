@@ -210,8 +210,11 @@ that made it; no sibling container).
 - Never Ben's account, never the host's `cf` login: every token-bearing
   call runs in a sibling container with exactly the test account's token,
   and the Cloudflare API is reached from the host only through typed
-  `fetch` (`src/cf.ts`). `23bc28f0b638fbfc1c7f838573c17ee3` is refused by
-  constant.
+  `fetch` (`src/cf.ts`). An account on the forbidden list is refused
+  (`src/forbidden.ts`: `EVERYAPP_FORBIDDEN_ACCOUNTS` and
+  `~/.config/everyapp/forbidden-accounts`, the same list the CLI's teardown
+  reads; the teardown child gets the host's list in its environment).
+  Preflight warns on the `account` line while the list is empty.
 - No imports from `packages/cli` source; the loop shells out to
   `pnpm everyapp … --json` inside the containers.
 - The driver refuses to start when `EVERYAPP_TEST_ACCOUNTS`,
@@ -229,7 +232,9 @@ that made it; no sibling container).
 `providers.env` (mode 600, `ANTHROPIC_API_KEY=…`, `CODEX_API_KEY=…`,
 `OPENCODE_API_KEY=…`, `CURSOR_API_KEY=…`), and `confirm-<accountId>` (mode
 600, the one line `delete everything in <accountId>`) for unattended wipes;
-without it the account id is typed at `/dev/tty`.
+without it the account id is typed at `/dev/tty`. Beside them, outside the
+loop's directory: `~/.config/everyapp/forbidden-accounts` (one id per line,
+`#` comments) with the id of every live account this machine can reach.
 
 ## The run directory
 

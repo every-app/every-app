@@ -59,7 +59,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
 
   // 1–3. Before anything of Cloudflare is read.
   out.emit({ type: "step", step: CHECK, status: "start", message: "Checking the account may be torn down..." });
-  const { accountId, allowlist } = checkAccountEligible({ accountId: flags["account-id"], out, env });
+  const { accountId, allowlist, forbidden } = checkAccountEligible({ accountId: flags["account-id"], out, env });
   // A confirmation that can't match is refused before any read too.
   const confirm = flags.confirm?.trim().toLowerCase();
   if (confirm !== undefined && confirm !== accountId) {
@@ -70,7 +70,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
     );
   }
   // 4. What the token sees: the one read before the inventory.
-  checkTokenScope({ accountId, allowlist, whoami: await cfWhoami(createCf()) });
+  checkTokenScope({ accountId, allowlist, forbidden, whoami: await cfWhoami(createCf()) });
   out.emit({
     type: "step",
     step: CHECK,

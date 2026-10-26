@@ -1098,7 +1098,9 @@ public release and uploads it with a `CF_DEPLOY_TOKEN` it holds.
 `everyapp teardown --account-id <id>` is the one command that deletes
 everything EveryApp made in an account: it runs only against an id on the
 test-account allowlist (`EVERYAPP_TEST_ACCOUNTS` or
-`~/.config/everyapp/test-accounts`), never `CLOUDFLARE_ACCOUNT_ID`, and asks
+`~/.config/everyapp/test-accounts`) and not on the forbidden list
+(`EVERYAPP_FORBIDDEN_ACCOUNTS` or `~/.config/everyapp/forbidden-accounts`,
+checked first), never `CLOUDFLARE_ACCOUNT_ID`, and asks
 for the id again (`--confirm <id>` unattended). On the other side, the
 Cloudflare account: every Worker, every database, the Gateway included.
 The code is `packages/cli/src/lib/app/policy.ts` (the policy),

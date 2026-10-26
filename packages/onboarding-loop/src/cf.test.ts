@@ -9,7 +9,7 @@ import {
 
 const ID = "0123456789abcdef0123456789abcdef";
 const OTHER = "fedcba9876543210fedcba9876543210";
-const FORBIDDEN = "23bc28f0b638fbfc1c7f838573c17ee3";
+const FORBIDDEN = "badc0ffee0ddf00dbadc0ffee0ddf00d";
 const TOKEN = "fake-token-abcdefghijklmnopqrstuv";
 
 const okRoutes = (
@@ -286,13 +286,15 @@ describe("tokenGate", () => {
       code: "account_not_visible",
     });
     expect(
-      await tokenGate(api(okRoutes([ID, FORBIDDEN])).cf, ID),
+      await tokenGate(api(okRoutes([ID, FORBIDDEN])).cf, ID, [FORBIDDEN]),
     ).toMatchObject({ ok: false, code: "account_forbidden" });
     const forbidden = api(okRoutes([FORBIDDEN]));
-    expect(await tokenGate(forbidden.cf, FORBIDDEN)).toMatchObject({
-      ok: false,
-      code: "account_forbidden",
-    });
+    expect(await tokenGate(forbidden.cf, FORBIDDEN, [FORBIDDEN])).toMatchObject(
+      {
+        ok: false,
+        code: "account_forbidden",
+      },
+    );
     // Refused by constant before any call.
     expect(forbidden.calls).toHaveLength(0);
   });

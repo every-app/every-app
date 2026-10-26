@@ -3,7 +3,11 @@
  * the order it is checked, before any read of the account but `cf auth
  * whoami`, and before any write:
  *
- *   1. the account is not one that can never be torn down (FORBIDDEN_ACCOUNTS);
+ *   1. the account is not one that can never be torn down: the forbidden
+ *      list, EVERYAPP_FORBIDDEN_ACCOUNTS and the file
+ *      `~/.config/everyapp/forbidden-accounts`, together, read the same way
+ *      as the allowlist and checked before it (a live account is listed
+ *      there on the machine that can reach it; no id ships in the code);
  *   2. the account is on the allowlist of dedicated test accounts:
  *      EVERYAPP_TEST_ACCOUNTS (ids separated by commas or whitespace) and
  *      the file `~/.config/everyapp/test-accounts` (one id per line, `#`
@@ -23,14 +27,11 @@ import { EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
 import { listed, plural } from "@/lib/output/text";
 
-/** Accounts no configuration makes eligible: Ben's main account (openseo.so, everyapp.team). */
-export const FORBIDDEN_ACCOUNTS: readonly string[] = ["23bc28f0b638fbfc1c7f838573c17ee3"];
-
 /** The codes `teardown` raises (errors) and says (warnings), in one place. */
 export enum TeardownCode {
   /** `--account-id` isn't 32 hex characters: no allowlist could ever hold it. */
   InvalidAccountId = "TEARDOWN_INVALID_ACCOUNT_ID",
-  /** The account is in FORBIDDEN_ACCOUNTS: refused before the allowlist is read. */
+  /** The account is on the forbidden list: refused before the allowlist is read. */
   AccountForbidden = "TEARDOWN_ACCOUNT_FORBIDDEN",
   /** The account isn't in EVERYAPP_TEST_ACCOUNTS or the test-accounts file. */
   NotAllowlisted = "TEARDOWN_NOT_ALLOWLISTED",
@@ -44,7 +45,7 @@ export enum TeardownCode {
   ConfirmationRequired = "TEARDOWN_CONFIRMATION_REQUIRED",
   /** `--confirm` names another id than `--account-id`. */
   ConfirmMismatch = "TEARDOWN_CONFIRM_MISMATCH",
-  /** Warning: an allowlist entry that isn't an account id was ignored. */
+  /** Warning: an entry of the allowlist or the forbidden list that isn't an account id was ignored. */
   AllowlistIgnored = "TEARDOWN_ALLOWLIST_IGNORED",
   /** Warning: one kind couldn't be listed (a permission, say); it is kept, and the run goes on. */
   ReadFailed = "TEARDOWN_READ_FAILED",
@@ -60,10 +61,23 @@ const isAccountId = (value: string): boolean => ACCOUNT_ID.test(value);
 /** The environment variable listing test accounts, ids separated by commas or whitespace. */
 const ALLOWLIST_VARIABLE = "EVERYAPP_TEST_ACCOUNTS";
 
+/** The environment variable listing accounts never torn down, read like the allowlist's. */
+const FORBIDDEN_VARIABLE = "EVERYAPP_FORBIDDEN_ACCOUNTS";
+
+/** `$XDG_CONFIG_HOME/everyapp/<name>`, else `~/.config/everyapp/<name>`. */
+function configFile(name: string, env: NodeJS.ProcessEnv): string {
+  const configHome = env["XDG_CONFIG_HOME"] || path.join(os.homedir(), ".config");
+  return path.join(configHome, "everyapp", name);
+}
+
 /** The allowlist file: `$XDG_CONFIG_HOME/everyapp/test-accounts`, else `~/.config/everyapp/test-accounts`. */
 export function allowlistPath(env: NodeJS.ProcessEnv = process.env): string {
-  const configHome = env["XDG_CONFIG_HOME"] || path.join(os.homedir(), ".config");
-  return path.join(configHome, "everyapp", "test-accounts");
+  return configFile("test-accounts", env);
+}
+
+/** The forbidden list's file, beside the allowlist's: `…/everyapp/forbidden-accounts`. */
+export function forbiddenListPath(env: NodeJS.ProcessEnv = process.env): string {
+  return configFile("forbidden-accounts", env);
 }
 
 interface Allowlist {
@@ -93,22 +107,42 @@ export function parseAllowlist(text: string): Allowlist {
   return { ids: [...ids], ignored };
 }
 
-/** The variable's and the file's ids together (a missing file is an empty list). */
-export function readAllowlist(env: NodeJS.ProcessEnv = process.env): Allowlist & { file: string } {
-  const file = allowlistPath(env);
+/** One list: the variable's and the file's ids together (a missing file is an empty list). */
+function readList(variableName: string, file: string, env: NodeJS.ProcessEnv): Allowlist & { file: string } {
   let fromFile = "";
   try {
     fromFile = fs.readFileSync(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const variable = parseAllowlist(env[ALLOWLIST_VARIABLE] ?? "");
+  const variable = parseAllowlist(env[variableName] ?? "");
   const listed = parseAllowlist(fromFile);
   return {
     ids: [...new Set([...variable.ids, ...listed.ids])],
     ignored: [...variable.ignored, ...listed.ignored],
     file,
   };
+}
+
+/** The allowlist: EVERYAPP_TEST_ACCOUNTS and the test-accounts file. */
+export function readAllowlist(env: NodeJS.ProcessEnv = process.env): Allowlist & { file: string } {
+  return readList(ALLOWLIST_VARIABLE, allowlistPath(env), env);
+}
+
+/** The forbidden list: EVERYAPP_FORBIDDEN_ACCOUNTS and the forbidden-accounts file. */
+export function readForbiddenList(env: NodeJS.ProcessEnv = process.env): Allowlist & { file: string } {
+  return readList(FORBIDDEN_VARIABLE, forbiddenListPath(env), env);
+}
+
+/** Says the entries of one list that weren't account ids, if any. */
+function warnIgnored(out: EventSink, list: Allowlist & { file: string }, name: string, variable: string): void {
+  if (list.ignored.length === 0) return;
+  out.emit({
+    type: "warning",
+    code: TeardownCode.AllowlistIgnored,
+    message: `Ignored ${plural(list.ignored.length, "entry")} of the teardown ${name} that ${list.ignored.length === 1 ? "isn't" : "aren't"} account ids: ${listed(list.ignored)}\nAn account id is 32 hex characters (${variable}, ${list.file}).`,
+    data: { ignored: list.ignored, file: list.file },
+  });
 }
 
 /** How to put an id on the allowlist, said in every refusal that needs it. */
@@ -132,7 +166,7 @@ export function checkAccountEligible({
   accountId: string;
   out: EventSink;
   env?: NodeJS.ProcessEnv;
-}): { accountId: string; allowlist: string[] } {
+}): { accountId: string; allowlist: string[]; forbidden: string[] } {
   const accountId = given.trim().toLowerCase();
   // 0. An id at all: a malformed one could never be allowlisted, so the
   // refusal says so instead of sending the person to the allowlist.
@@ -143,24 +177,19 @@ export function checkAccountEligible({
       { fix: "pass the test account's id from the dashboard as --account-id", data: { accountId: given.trim() } },
     );
   }
-  // 1. Never, whatever any list says.
-  if (FORBIDDEN_ACCOUNTS.includes(accountId)) {
+  // 1. Never, whatever the allowlist says.
+  const forbidden = readForbiddenList(env);
+  warnIgnored(out, forbidden, "forbidden list", FORBIDDEN_VARIABLE);
+  if (forbidden.ids.includes(accountId)) {
     throw new EveryAppError(
       TeardownCode.AccountForbidden,
-      `Cloudflare account ${accountId} can never be torn down\nIt is a live account, refused by id before any allowlist is read.`,
-      { data: { accountId } },
+      `Cloudflare account ${accountId} can never be torn down\nIt is on the forbidden list (${FORBIDDEN_VARIABLE}, ${forbidden.file}): a live account, refused by id before any allowlist is read.`,
+      { data: { accountId, file: forbidden.file } },
     );
   }
   // 2. On the allowlist of test accounts.
   const allowlist = readAllowlist(env);
-  if (allowlist.ignored.length > 0) {
-    out.emit({
-      type: "warning",
-      code: TeardownCode.AllowlistIgnored,
-      message: `Ignored ${plural(allowlist.ignored.length, "entry")} of the teardown allowlist that ${allowlist.ignored.length === 1 ? "isn't" : "aren't"} account ids: ${listed(allowlist.ignored)}\nAn account id is 32 hex characters (${ALLOWLIST_VARIABLE}, ${allowlist.file}).`,
-      data: { ignored: allowlist.ignored, file: allowlist.file },
-    });
-  }
+  warnIgnored(out, allowlist, "allowlist", ALLOWLIST_VARIABLE);
   if (!allowlist.ids.includes(accountId)) {
     throw new EveryAppError(
       TeardownCode.NotAllowlisted,
@@ -176,7 +205,7 @@ export function checkAccountEligible({
       { fix: `set CLOUDFLARE_API_TOKEN to the test account's token for this one command, and run it again`, data: { accountId } },
     );
   }
-  return { accountId, allowlist: allowlist.ids };
+  return { accountId, allowlist: allowlist.ids, forbidden: forbidden.ids };
 }
 
 /**
@@ -186,10 +215,12 @@ export function checkAccountEligible({
 export function checkTokenScope({
   accountId,
   allowlist,
+  forbidden,
   whoami,
 }: {
   accountId: string;
   allowlist: readonly string[];
+  forbidden: readonly string[];
   whoami: CfWhoami;
 }): void {
   // A bad env token still reads `authenticated: true`: cf says `tokenValid:
@@ -217,7 +248,7 @@ export function checkTokenScope({
     id: account.id.toLowerCase(),
     name: account.name ?? null,
   }));
-  const outside = seen.filter((account) => FORBIDDEN_ACCOUNTS.includes(account.id) || !allowlist.includes(account.id));
+  const outside = seen.filter((account) => forbidden.includes(account.id) || !allowlist.includes(account.id));
   if (outside.length > 0) {
     throw new EveryAppError(
       TeardownCode.TokenTooBroad,

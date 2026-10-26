@@ -9,6 +9,7 @@
  * the same routes in tests. No error message ever carries the token.
  */
 import { z } from "zod";
+import { forbiddenAccountIds } from "./forbidden";
 
 const CF_API = "https://api.cloudflare.com/client/v4";
 
@@ -276,11 +277,6 @@ export function createCfApi(options: CfApiOptions): CfApi {
 // The token gate (design 5, tightened): applied before every token-bearing call.
 // ---------------------------------------------------------------------------
 
-/** Ben's main account: refused by constant, whatever any list says. */
-export const FORBIDDEN_ACCOUNT_IDS: readonly string[] = [
-  "23bc28f0b638fbfc1c7f838573c17ee3",
-];
-
 export type TokenGate =
   | { ok: true; accounts: string[] }
   | {
@@ -301,8 +297,9 @@ export type TokenGate =
 export async function tokenGate(
   cf: CfApi,
   accountId: string,
+  forbidden: readonly string[] = forbiddenAccountIds(),
 ): Promise<TokenGate> {
-  if (FORBIDDEN_ACCOUNT_IDS.includes(accountId)) {
+  if (forbidden.includes(accountId)) {
     return {
       ok: false,
       code: "account_forbidden",
@@ -330,8 +327,8 @@ export async function tokenGate(
     };
   }
   const accounts = (await cf.listAccounts()).map((row) => row.id);
-  const forbidden = accounts.filter((id) => FORBIDDEN_ACCOUNT_IDS.includes(id));
-  if (forbidden.length > 0) {
+  const seenForbidden = accounts.filter((id) => forbidden.includes(id));
+  if (seenForbidden.length > 0) {
     return {
       ok: false,
       code: "account_forbidden",
