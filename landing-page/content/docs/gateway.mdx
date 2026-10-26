@@ -75,7 +75,7 @@ Your browser opens **Set up your gateway**. Enter your name, email and a passwor
 Back in the terminal, setup asks two questions:
 
 - **Configure browser app installs?** Press Enter to skip. Yes lets owners and admins install apps from the Gateway's Admin page; it asks for a Cloudflare API token.
-- **Put Cloudflare Access in front of your Gateway?** Press Enter for Yes. People then sign in at Cloudflare before they reach your Gateway. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
+- **Put Cloudflare Access in front of your Gateway?** Press Enter for Yes. People then sign in at Cloudflare before they reach your Gateway. Free for up to 50 people. To leave it off, answer No or run setup with `--no-access`; `everyapp access off` turns it off later. [Sign in through Cloudflare Access](/docs/access)
 
 </Step>
 </Steps>
@@ -92,7 +92,7 @@ Paste this into Claude Code, Codex or Cursor and it runs the steps above for you
 
 <include lang="text">./setup-prompt.txt</include>
 
-It stops when it needs you: to approve the Cloudflare login, pick an account, and create your owner account. Then it creates and deploys a first app.
+It stops when it needs you: to approve the Cloudflare login, pick an account, and create your owner account. It turns Cloudflare Access on too, and asks you for a team name if your Cloudflare account has none yet; tell it if you'd rather leave Access off. Then it creates and deploys a first app.
 
 ## When it's done
 

@@ -16,6 +16,10 @@ If I'd rather wait, stop there.
    Setup can run 20 minutes (it downloads the Gateway release, deploys it,
    waits for a certificate, then waits for me at the owner link): give it a
    long timeout or run it in the background and read its output.
+   Setup puts Cloudflare Access in front of my Gateway by default. If it
+   warns ACCESS_SETUP_SKIPPED, tell me why, then run its data.rerun with
+   --json unless I say no (when it has --team, ask me for the team name
+   first: it can't be changed later).
 3. When it is done, create and deploy one app:
    `everyapp create hello --json`, then from hello
    `everyapp deploy --json`. Tell me its URL.
