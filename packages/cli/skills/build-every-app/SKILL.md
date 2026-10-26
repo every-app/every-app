@@ -42,19 +42,17 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
 in the app) to `my-app` beside the checkout (the path's last part is the app's
 id), a git repository of its own: a TanStack Start app on a Worker with a D1
 database, a todo list whose first screen shows who you are and what the app was
-allowed. It takes `@every-app/sdk` and `everyapp` from npm at the published
-range, and its first commit holds the `pnpm-lock.yaml` that pins them; `pnpm
-update @every-app/sdk everyapp` moves it to a newer release. One repository per
+allowed. It takes `@every-app/sdk` and `everyapp` from npm (`pnpm update
+@every-app/sdk everyapp` updates them). One repository per
 app is the default. (With many apps, or to try unreleased SDK changes, keep
 them inside the checkout instead: `pnpm everyapp create my-app` there makes
 `apps/my-app`, untracked by git, on the checkout's own packages.)
 Read the app's `README.md`, `AGENTS.md` and every file under `src/` once; they
 are short. An app may carry skills of its own at its top level
 (`.agents/skills/<name>`, `.claude/skills/<name>`), as OpenSEO's repository
-does; read them before changing the app. The `everyapp` and `build-every-app`
-copies there come from the CLI: `pnpm everyapp skills update` replaces them
-with the ones the CLI ships, so keep the app's own skills under other
-names.
+does; read them before changing the app. `pnpm everyapp skills update`
+replaces the `everyapp` and `build-every-app` copies there, so keep the app's
+own skills under other names.
 
 Keep, the plumbing: `everyapp.config.ts` (the manifest), `cloudflare.config.ts`
 (builds the Worker from it), `src/entry.worker.ts` (`everyApp()` verifies the
