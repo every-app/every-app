@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { env, waitUntil } from "cloudflare:workers";
-import { ensureUserMiddleware } from "@/middleware/ensureUser";
+import { ensureUserMiddleware } from "@every-app/sdk/tanstack-start";
 import { emitIfCompleted } from "@/server/events";
 import * as todos from "@/server/todos";
 

@@ -7,7 +7,7 @@ The manifest is the single source of truth for an app's identity, resources and 
 
 ## Shape and loading
 
-The file default-exports the manifest wrapped in `defineEveryApp()` from `@every-app/sdk` (`packages/sdk/src/manifest.ts`):
+The file default-exports the manifest wrapped in `defineEveryApp()` from `@every-app/sdk` (`packages/sdk/src/manifest.ts`; the starter's `everyapp.config.ts`):
 
 ```ts
 import { defineEveryApp } from "@every-app/sdk";

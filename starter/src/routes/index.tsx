@@ -13,6 +13,10 @@ export const Route = createFileRoute("/")({
     const [home, todos] = await Promise.all([getHome(), getTodos()]);
     return { home, todos };
   },
+  // The manifest's name, which the server read from env.EVERYAPP_MANIFEST.
+  head: ({ loaderData }) => ({
+    meta: loaderData ? [{ title: loaderData.home.name }] : [],
+  }),
   component: Home,
 });
 

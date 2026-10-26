@@ -1,4 +1,8 @@
-export default {
+import { defineEveryApp } from "@every-app/sdk";
+
+// defineEveryApp types the manifest; the Worker reads it back as
+// env.EVERYAPP_MANIFEST (src/serverFunctions/home.ts).
+export default defineEveryApp({
   id: "simple-todo-template",
   name: "Simple Todo",
   description: "A todo list that shows who you are and what it was allowed.",
@@ -12,4 +16,4 @@ export default {
   capabilities: {
     members: { access: "read", why: "Shows who can open this app." },
   },
-} as const;
+});

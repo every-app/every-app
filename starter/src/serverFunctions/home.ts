@@ -1,37 +1,30 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
-import { GatewayRefusalError, listMembers } from "@every-app/sdk/server";
+import {
+  GatewayRefusalError,
+  gatewayUrl,
+  listMembers,
+} from "@every-app/sdk/server";
+import type { EveryAppManifest } from "@every-app/sdk";
+import { ensureUserMiddleware } from "@every-app/sdk/tanstack-start";
 import { env } from "cloudflare:workers";
-import { ensureUserMiddleware } from "@/middleware/ensureUser";
 import { tools } from "@/tools";
-
-// The fields of everyapp.config.ts the first screen lists. The manifest is
-// inlined at build time by vite.config.ts: the Worker never imports the file.
-interface Manifest {
-  name: string;
-  resources?: Record<string, readonly (string | { name: string })[]>;
-  public?: readonly { path: string }[];
-  providers?: readonly (string | { id: string })[];
-  capabilities?: Record<string, { access: string }>;
-  secrets?: readonly (string | { name: string })[];
-}
-const manifest: Manifest = __EVERYAPP_MANIFEST__;
 
 /** The first screen's facts: who the Gateway signed in, and what it allowed this app. */
 export const getHome = createServerFn()
   .middleware([ensureUserMiddleware])
   .handler(async ({ context: { user } }) => {
-    const request = getRequest();
-    const url = new URL(request.url);
+    // everyapp.config.ts, as everyAppWorker() hands it to the Worker. Read
+    // through the SDK's manifest type: the first screen lists every kind.
+    const manifest: EveryAppManifest = env.EVERYAPP_MANIFEST;
     return {
       // Never the whole identity: pick what the page shows.
       user: { email: user.email, orgId: user.orgId, orgRole: user.orgRole },
-      name: manifest.name,
+      name: manifest.name ?? manifest.id,
       allowed: {
         resources: Object.entries(manifest.resources ?? {}).flatMap(
           ([kind, list]) =>
             list.map(
-              (entry) =>
+              (entry: string | { readonly name: string }) =>
                 `${kind} ${typeof entry === "string" ? entry : entry.name}`,
             ),
         ),
@@ -48,11 +41,8 @@ export const getHome = createServerFn()
         tools: tools.names,
       },
       members: await whoCanOpen(),
-      // The Gateway's URL is the identity issuer the deploy sets. `everyapp dev`
-      // mints with a placeholder issuer, so there it is the host one label up.
-      launcher: env.EVERYAPP_DEV
-        ? `${url.protocol}//${url.host.slice(url.host.indexOf(".") + 1)}/`
-        : env.EVERYAPP_IDENTITY_ISSUER,
+      // The way back: the Gateway, or `everyapp dev`'s launcher.
+      launcher: gatewayUrl(env),
     };
   });
 

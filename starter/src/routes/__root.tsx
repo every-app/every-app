@@ -7,7 +7,6 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: __EVERYAPP_MANIFEST__.name },
       // Keep: the onboarding loop's verifier reads it on the deployed app's page.
       { name: "apple-mobile-web-app-capable", content: "yes" },
     ],

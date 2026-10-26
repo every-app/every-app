@@ -376,13 +376,14 @@ function getStatus(port: number, host: string): Promise<number | null> {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * `manifest` with `block` as its last field: the starter ends in
- * `} as const;`, with or without a trailing comma on the field before.
+ * `manifest` with `block` as its last field: the starter ends in `});`
+ * (`defineEveryApp({ ... })`) or `} as const;`, with or without a trailing
+ * comma on the field before.
  */
 function withLastField(manifest: string, block: string): string {
-  const closing = /,?\s*\}\s*as const;?\s*$/;
-  expect(manifest, "the starter manifest should end in `} as const;`").toMatch(closing);
-  return manifest.replace(closing, `,\n  ${block}\n} as const;\n`);
+  const closing = /,?\s*\}(\)|\s*as const);?\s*$/;
+  expect(manifest, "the starter manifest should end in `});` or `} as const;`").toMatch(closing);
+  return manifest.replace(closing, (_match, end: string) => `,\n  ${block}\n}${end === ")" ? ")" : " as const"};\n`);
 }
 
 /** A fake Cloudflare account with a Gateway installed, reached by the built CLI through the cf seam. */

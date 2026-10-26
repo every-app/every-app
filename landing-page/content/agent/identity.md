@@ -181,7 +181,7 @@ export default everyApp<Env>(
 );
 ```
 
-A TanStack Start app hands the request to Start's server entry and reads the user in a server-function middleware, `ensureUserMiddleware` from `@every-app/sdk/tanstack-start` (`starter/src/entry.worker.ts`, `packages/sdk/src/tanstack-start/index.ts`):
+A TanStack Start app hands the request to Start's server entry and reads the user in a server-function middleware, `ensureUserMiddleware` from `@every-app/sdk/tanstack-start` (`starter/src/entry.worker.ts`, `starter/src/serverFunctions/todos.ts`):
 
 ```ts
 // src/entry.worker.ts
@@ -556,7 +556,7 @@ try {
 | `callTool(app, name, args?, { user?, scopes?, env?, ctx? })` | One tool call as the Gateway makes it for an AI client: a `chan: "mcp"` identity bound to the call, through `/__everyapp/tools/call`, so the SDK checks the scope, validates input and output and maps errors as deployed. `app` is the Worker `everyApp()` returned or the `defineTools()` set alone; `scopes` default to `mcp:read`, `mcp:write` and `mcp:destructive`. Answers `{ result }` (`ToolCallResult`: `content`, `structuredContent`, `isError`) or `{ error: { code, message } }` (`forbidden`, `invalid_arguments`, `unknown_tool`, …). |
 | `listTools(app, { env?, ctx? })`                             | The catalog as the Gateway reads it at deploy (a system token on `/__everyapp/tools/list`): `{ tools: [{ name, risk, inputSchema, … }], instructions?, hash }`.                                                                                                                                                                                                                                                                                                                                                                                       |
 
-`packages/sdk/src/testing/index.test.ts` is the example.
+The starter's `src/tools.test.ts` is the example.
 
 ## Shared and organization-scoped apps
 

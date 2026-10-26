@@ -60,16 +60,17 @@ names.
 
 Keep, the plumbing: `everyapp.config.ts` (the manifest), `cloudflare.config.ts`
 (builds the Worker from it), `src/entry.worker.ts` (`everyApp()` verifies the
-identity and serves the tools), `src/middleware/ensureUser.ts` (who the
-Gateway signed in), `src/db/index.ts`, `src/env.d.ts`, `vite.config.ts`,
+identity and serves the tools), `src/db/index.ts`, `src/env.d.ts`,
+`vite.config.ts`,
 `drizzle.config.ts`, `vitest.config.ts`, `src/routes/__root.tsx`,
 `src/router.tsx`.
 
 The example, which the app outgrows: `src/routes/index.tsx` (the page),
-`src/serverFunctions/` (what the page calls, each behind
+`src/serverFunctions/` (what the page calls, each behind the SDK's
 `ensureUserMiddleware`), `src/server/todos.ts` and its test (the queries),
 `src/db/schema.ts` and `drizzle/` (the table and its migrations),
-`src/tools.ts` (the same queries as tools), `src/routes/health.ts` (a JSON
+`src/tools.ts` and its test (the same queries as tools, called the way the
+Gateway calls them), `src/routes/health.ts` (a JSON
 endpoint without a page; private, like every route not under `public`). Keep
 the layering: page, then server function, then a query in `src/server/`, so the
 page, the tools and the test share one set of queries.
@@ -82,7 +83,7 @@ becomes something else, not on the first feature.
 ## The rules
 
 1. Identity only through the SDK: `context.user` behind `ensureUserMiddleware`
-   in a server function, the `user` a tool handler receives,
+   (`@every-app/sdk/tanstack-start`) in a server function, the `user` a tool handler receives,
    `getEveryAppUser()` on a route without a page (`null` only on a public
    route, for anyone not signed in). Never from a header, cookie, query or
    body a client sent.
@@ -150,10 +151,11 @@ becomes something else, not on the first feature.
 12. `description` in `everyapp.config.ts` is the one line the app library
     shows; change it, and `name`, as soon as the app stops being a todo list.
     Add an `icon` (an SVG the app serves) when it has a look.
-13. The way back: a link to the Gateway. The starter's header has one ("All
-    apps", `launcher` in `src/serverFunctions/home.ts`: the identity issuer,
-    `EVERYAPP_IDENTITY_ISSUER`, or the dev host under `everyapp dev`; the four
-    apps read `GATEWAY_URL` first, then the issuer); keep it. When the app
+13. The way back: a link to the Gateway, always `gatewayUrl(env)` from
+    `@every-app/sdk/server` (`gatewayUrl(env, "/admin/users")` for inviting
+    people); under `everyapp dev` it is the local launcher. The starter's
+    header has one ("All apps", `launcher` in
+    `src/serverFunctions/home.ts`); keep it. When the app
     gets a sidebar, the convention the identity page states is the first row:
     muted, "‹ EveryApp", aria-label "Back to EveryApp", above the app's own
     name. OpenCRM and OpenSEO keep theirs in the sidebar footer today,
@@ -201,7 +203,7 @@ connector. No stack traces, no file paths.
 
 | Pattern                                | Copy from                                                                                                     |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Identity in a server function          | `starter/src/middleware/ensureUser.ts`, `starter/src/serverFunctions/todos.ts`                                |
+| Identity in a server function          | `starter/src/serverFunctions/todos.ts` (`ensureUserMiddleware` from `@every-app/sdk/tanstack-start`)          |
 | Identity in a tool handler             | `starter/src/tools.ts`; `open-crm/src/server/everyapp/crm-tool.ts`                                            |
 | Identity on a public route             | `open-analytics/src/lib/edge/collector/collect.ts`; `open-crm/src/server/features/tracking/trackingRoutes.ts` |
 | Organization-wide rows                 | `open-crm/src/middleware/ensure-user/everyApp.ts`; `open-mail/workers/everyapp/identity.ts`               |

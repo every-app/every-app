@@ -1944,7 +1944,7 @@ Merged: private-agentic-inbox-everyapp #14, private-open-analytics #17, private-
 
 ## Platform shortcuts (2026-10-26)/lane 2 sdk-surface
 
-New in the SDK: `gatewayUrl()` and `EveryAppEnv` (`/server`), `defineEveryApp` and `EveryAppManifest` (the package root), `env.EVERYAPP_MANIFEST`, `@every-app/sdk/testing`, `@every-app/sdk/tanstack-start`. The starter, `patterns.md` and the build skill adopt them in the stacked after-flip PR (launch-path freeze). The apps drop their copies in phase 2, on the next rc. Defaults taken for Ben:
+New in the SDK: `gatewayUrl()` and `EveryAppEnv` (`/server`), `defineEveryApp` and `EveryAppManifest` (the package root), `env.EVERYAPP_MANIFEST`, `@every-app/sdk/testing`, `@every-app/sdk/tanstack-start`. The starter, `patterns.md` and the build skill use them (#778). The npm `create` path needs the next rc, which Ben publishes after the starter PRs. The apps drop their copies in phase 2, on the next rc. Defaults taken for Ben:
 
 - [ ] **`gatewayUrl(env, path?)`, not `gatewayUrl(env, request?)`.** `everyapp dev` now sets `GATEWAY_URL` to its launcher, so no request is needed to guess the dev host. The second argument is a path (`gatewayUrl(env, "/admin/users")` for inviting people). Without `everyapp dev` (a bare `cf dev`), it is `http://localhost:8787`.
 - [ ] **The manifest reaches the Worker as a JSON binding, `EVERYAPP_MANIFEST`, in dev and deployed.** `cf workers types` types it from the file. This replaces the starter's Vite `define`. The four apps' manifests are 1.0–2.3 KB as JSON, under Cloudflare's 5 KB per-variable limit. A manifest past it would fail the upload; nothing checks for that before.
