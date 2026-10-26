@@ -523,6 +523,46 @@ describe("everyapp setup", () => {
     expect(steps()).toContain("setup.owner ok");
   });
 
+  it("update never installs a Gateway: one whose database went after it was found is GATEWAY_NOT_FOUND, nothing created", async () => {
+    await setup({ domain: GW });
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+    const versions = account.workers.get("every-app-gateway")!.versions.length;
+    // A teardown removes the database while the release opens: after discovery, before the deploy.
+    const gone = () => {
+      for (const [uuid, entry] of account.databases) if (entry.name === "every-app-gateway") account.databases.delete(uuid);
+    };
+    events = [];
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+    await expect(
+      runGatewayDeploy(
+        { json: true },
+        out,
+        deps({
+          openRelease: async () => {
+            gone();
+            return openRelease(newer);
+          },
+          source: () => releaseSource(newer),
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+      message: expect.stringContaining(`The Gateway at ${GW} is gone\n`),
+      rerun: `pnpm everyapp setup --domain ${GW}`,
+    });
+    expect([...account.databases.values()].map((entry) => entry.name)).not.toContain("every-app-gateway");
+    expect(events.map((event) => event.step)).not.toContain("gateway.resources");
+    expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(versions);
+
+    // And with nothing found at all: GATEWAY_NOT_FOUND before anything, pointing at setup.
+    await expect(runGatewayDeploy({ json: true }, out, deps())).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+      rerun: "pnpm everyapp setup --domain <hostname>",
+    });
+    expect([...account.databases.values()].map((entry) => entry.name)).not.toContain("every-app-gateway");
+  });
+
   it("refuses a checkout behind the live Gateway, offering --allow-downgrade for an agent to ask about", async () => {
     const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
     await setup(

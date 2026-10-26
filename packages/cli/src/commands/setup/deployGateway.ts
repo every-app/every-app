@@ -24,8 +24,8 @@ import {
 } from "@/lib/gateway/apply";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { GatewayRelease } from "@/lib/gateway/release";
-import { ensureGatewayResources } from "@/lib/gateway/resources";
-import { thisCommandWithout } from "@/lib/output/command";
+import { ensureGatewayResources, existingGatewayResources } from "@/lib/gateway/resources";
+import { CLI, thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 
 /** Where a deploy goes: the install's own settings, or a new install's. */
@@ -119,6 +119,7 @@ export async function deployGatewayRelease({
   accountId,
   target,
   interactive,
+  existing,
   ...options
 }: {
   cf: CfRunner;
@@ -128,6 +129,12 @@ export async function deployGatewayRelease({
   accountId: string;
   target: GatewayTarget;
   interactive: boolean;
+  /**
+   * `update`: the Gateway database discovery found. Its resources must
+   * still be there, that same database; nothing is created, so an update
+   * never installs a Gateway (GATEWAY_NOT_FOUND otherwise).
+   */
+  existing?: { databaseId: string };
 } & Pick<
   ApplyGatewayOptions,
   | "forceDns"
@@ -145,7 +152,18 @@ export async function deployGatewayRelease({
     >;
   }): Promise<{ result: ApplyGatewayResult; db: D1Database }> {
   const { certificates, ...applyOptions } = options;
-  const resources = await ensureGatewayResources(cf);
+  const resources = existing ? await existingGatewayResources(cf) : await ensureGatewayResources(cf);
+  if (!resources || (existing && resources.d1Id !== existing.databaseId)) {
+    throw new EveryAppError(
+      "GATEWAY_NOT_FOUND",
+      `The Gateway at ${target.domain} is gone\nIts ${resources ? "database was replaced" : "database or KV namespace was deleted"} after this run found it. An update never installs a Gateway, so nothing was changed.`,
+      {
+        rerun: `${CLI} setup --domain ${target.domain}`,
+        rerunNote: "to install one",
+        data: { accounts: [{ id: accountId, name: null }], host: target.domain },
+      },
+    );
+  }
   out.emit({
     type: "step",
     step: "gateway.resources",

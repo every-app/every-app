@@ -4,7 +4,7 @@
  * namespace.
  */
 import type { CfRunner } from "@/lib/cf/runner";
-import { findD1, getOrCreateD1, getOrCreateKv } from "@/lib/cf/resources";
+import { findD1, findKv, getOrCreateD1, getOrCreateKv } from "@/lib/cf/resources";
 
 const GATEWAY_D1_NAME = "every-app-gateway";
 const GATEWAY_OAUTH_KV_TITLE = "every-app-gateway-OAUTH_KV";
@@ -29,6 +29,18 @@ export async function ensureGatewayResources(
       ...(oauthKv.created ? [`KV ${GATEWAY_OAUTH_KV_TITLE}`] : []),
     ],
   };
+}
+
+/**
+ * The gateway's resources when both are there, never creating either
+ * (`update`, which never installs a Gateway); null when one is missing.
+ */
+export async function existingGatewayResources(cf: CfRunner): Promise<GatewayResources | null> {
+  const [d1Id, oauthKvId] = await Promise.all([
+    findD1(cf, GATEWAY_D1_NAME),
+    findKv(cf, GATEWAY_OAUTH_KV_TITLE),
+  ]);
+  return d1Id && oauthKvId ? { d1Id, oauthKvId, created: [] } : null;
 }
 
 /** The gateway's D1 database id, or null when no gateway was deployed here. */

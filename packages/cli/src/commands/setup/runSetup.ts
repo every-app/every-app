@@ -267,7 +267,7 @@ export async function runGatewayDeploy(
   const found = requireGateway(discovery, whoami);
   if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
   // An update asks nothing new of a person: Access is setup's offer.
-  return installGateway({ whoami, discovery, flags, out, deps, offerAccess: false });
+  return installGateway({ whoami, discovery, flags, out, deps, offerAccess: false, updateOnly: true });
 }
 
 /** Cloudflare: login, then the Gateway the login's accounts have. */
@@ -323,6 +323,7 @@ export async function installGateway({
   out,
   deps,
   offerAccess = true,
+  updateOnly = false,
 }: {
   whoami: CfWhoami;
   discovery: Discovery;
@@ -331,6 +332,8 @@ export async function installGateway({
   deps: SetupDeps;
   /** Whether to offer Cloudflare Access once the owner exists (setup, and a deploy that installs a Gateway; not update). */
   offerAccess?: boolean;
+  /** `update`: deploy to the Gateway found, never create its resources. */
+  updateOnly?: boolean;
 }): Promise<SetupResult> {
   // With no Gateway, where to install one; never while an account that may hold it couldn't be asked.
   const found = discovery.gateway;
@@ -411,6 +414,7 @@ export async function installGateway({
     accountName,
     install,
     databaseId: found?.databaseId ?? null,
+    updateOnly,
     target,
     source,
     checkedDomains: newHost ? [target.domain] : [],
@@ -772,6 +776,7 @@ async function deployOrRepairGateway({
   accountName,
   install,
   databaseId,
+  updateOnly,
   target,
   source,
   checkedDomains,
@@ -784,6 +789,7 @@ async function deployOrRepairGateway({
   accountName: string;
   install: InstallRecord | null;
   databaseId: string | null;
+  updateOnly: boolean;
   target: Awaited<ReturnType<typeof gatewayTarget>>;
   source: CandidateRelease;
   checkedDomains: string[];
@@ -862,6 +868,7 @@ async function deployOrRepairGateway({
       accountId,
       target,
       interactive: deps.interactive,
+      ...(updateOnly && databaseId ? { existing: { databaseId } } : {}),
       forceDns: flags["force-dns"],
       checkedDomains,
       allowDowngrade,
