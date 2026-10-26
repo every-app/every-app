@@ -280,12 +280,13 @@ function Home() {
   return (
     <div className="min-h-screen bg-[#0a0f0d] text-stone-100">
       {/* Launch bar: the star we ask for is EveryApp's, so the OpenSEO chip
-          below stays social proof rather than the call to action. */}
+          below stays social proof rather than the call to action. Sticky, on
+          an opaque base, so it stays in view while the page scrolls. */}
       <a
         href="https://github.com/every-app/every-app"
         target="_blank"
         rel="noopener noreferrer"
-        className="group flex min-h-10 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 border-b border-white/[0.08] bg-gradient-to-r from-white/[0.02] via-white/[0.07] to-white/[0.02] px-4 py-2 text-center text-sm text-stone-300 transition-colors hover:text-white"
+        className="group sticky top-0 z-50 flex min-h-10 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 border-b border-white/[0.08] bg-[#0a0f0d] bg-gradient-to-r from-white/[0.02] via-white/[0.07] to-white/[0.02] px-4 py-2 text-center text-sm text-stone-300 transition-colors hover:text-white"
       >
         <span className="whitespace-nowrap">EveryApp launched this week.</span>
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-stone-100 underline decoration-stone-600 underline-offset-4 group-hover:decoration-stone-400">
