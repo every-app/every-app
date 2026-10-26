@@ -76,7 +76,10 @@ function RootComponent() {
       client={queryClient}
       persistOptions={{
         persister,
-        buster: CACHE_BUSTER,
+        // A cached server-function answer is only the shape the build that
+        // wrote it returned: a restored list renders before its refetch, so
+        // one from an older build would reach a page that reads newer fields.
+        buster: `${CACHE_BUSTER}:${__GATEWAY_BUILD__}`,
         dehydrateOptions: {
           // The default (successful queries only), minus any query with
           // `meta: { persist: false }`, which stays in memory: the invite

@@ -496,3 +496,48 @@ describe("the connections table", () => {
     expect(text).toContain("Needs reconnecting");
   });
 });
+
+describe("rows this build can't fully read", () => {
+  it("lists rows from an older Gateway build (no configured, settings or apps) instead of blanking the tab", async () => {
+    // The pre-#790 shape, as a list persisted in the browser by that build.
+    const old = ({
+      configured,
+      settings,
+      apps,
+      ...rest
+    }: {
+      configured: boolean;
+      settings: string[];
+      apps: unknown[];
+    } & Record<string, unknown>) => {
+      void [configured, settings, apps];
+      return rest;
+    };
+    mocks.listProviders.mockResolvedValue({
+      providers: [old(exa), old(dataforseo), github, email],
+    });
+    await render();
+    expect(body()).not.toContain("Something went wrong");
+    expect(rowNames("Set up")).toEqual(["GitHub"]);
+    expect(body()).toContain("2 more built in: APIs");
+    await showAll();
+    const table = container.querySelector("table")!.textContent ?? "";
+    expect(table).toContain("Exa");
+    expect(table).toContain("DataForSEO");
+  });
+
+  it("shows a row that fails to render as its name and a line, and the rest of the page as usual", async () => {
+    const broken = { ...google, id: "broken", name: "Broken", oauth: {} };
+    mocks.listProviders.mockResolvedValue({
+      providers: [openrouter, broken, dataforseo],
+    });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    await render();
+    quiet.mockRestore();
+    expect(rowNames("Set up")).toEqual(["OpenRouter", "Broken"]);
+    expect(group("Set up")!.textContent).toContain(
+      "Couldn't show this provider",
+    );
+    expect(rowNames("Needed by an app")).toEqual(["DataForSEO"]);
+  });
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -93,6 +93,61 @@ const DOCS_PAGE_OF: Readonly<Record<string, string>> = {
 
 function providerDocsUrl(id: string): string {
   return `${PROVIDER_DOCS_URL}/${DOCS_PAGE_OF[id] ?? id.replace(/-oauth$/, "")}`;
+}
+
+/**
+ * A row as this page reads it. A list from an older Gateway build (before
+ * `configured`, `settings` and `apps`, as a cache restored from the browser
+ * can be) reads as not set up and listed by no app, instead of throwing
+ * and blanking the tab.
+ */
+function readProvider(provider: Provider): Provider {
+  const row = provider as Partial<Provider> & Pick<Provider, "id">;
+  return {
+    ...provider,
+    name: row.name ?? provider.id,
+    hosts: Array.isArray(row.hosts) ? row.hosts : [],
+    configured: row.configured === true,
+    settings: Array.isArray(row.settings) ? row.settings : [],
+    apps: Array.isArray(row.apps) ? row.apps : [],
+  };
+}
+
+function readProviders(data: { providers: Provider[] }): {
+  providers: Provider[];
+} {
+  return {
+    providers: Array.isArray(data.providers)
+      ? data.providers.map(readProvider)
+      : [],
+  };
+}
+
+/** One row failing to render shows its name and a line instead of the tab's error page. */
+class ProviderBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+function BrokenProviderRow({ provider }: { provider: Provider }) {
+  return (
+    <li className="px-4 py-3">
+      <p className="truncate text-sm font-medium">{provider.name}</p>
+      <p className="text-xs text-muted-foreground">
+        Couldn't show this provider. Reload the page to try again.
+      </p>
+    </li>
+  );
 }
 
 /** What a provider still lacks, in the words its Set up action answers. */
@@ -543,6 +598,7 @@ function ProvidersPage() {
   const providersQuery = useQuery({
     queryKey: PROVIDERS_KEY,
     queryFn: () => listProviders(),
+    select: readProviders,
   });
   const connectionsQuery = useQuery({
     queryKey: CONNECTIONS_KEY,
@@ -717,21 +773,25 @@ function ProvidersPage() {
             {groups.setUp.length > 0 ? (
               <ProviderGroup title="Set up" count={groups.setUp.length}>
                 {groups.setUp.map((provider) => (
-                  <ProviderRow
+                  <ProviderBoundary
                     key={provider.id}
-                    provider={provider}
-                    detail={providerDetail(provider, { aiDefault })}
-                    status={
-                      provider.configured ? (
-                        <Badge variant="success">Ready</Badge>
-                      ) : (
-                        <Badge variant="warning">{needLabel(provider)}</Badge>
-                      )
-                    }
-                    action={
-                      <ProviderActions provider={provider} {...actions} />
-                    }
-                  />
+                    fallback={<BrokenProviderRow provider={provider} />}
+                  >
+                    <ProviderRow
+                      provider={provider}
+                      detail={providerDetail(provider, { aiDefault })}
+                      status={
+                        provider.configured ? (
+                          <Badge variant="success">Ready</Badge>
+                        ) : (
+                          <Badge variant="warning">{needLabel(provider)}</Badge>
+                        )
+                      }
+                      action={
+                        <ProviderActions provider={provider} {...actions} />
+                      }
+                    />
+                  </ProviderBoundary>
                 ))}
               </ProviderGroup>
             ) : (
@@ -747,30 +807,34 @@ function ProvidersPage() {
                 count={groups.needed.length}
               >
                 {groups.needed.map((provider) => (
-                  <ProviderRow
+                  <ProviderBoundary
                     key={provider.id}
-                    provider={provider}
-                    detail={providerDetail(provider, {
-                      aiDefault,
-                      needing: true,
-                    })}
-                    status={
-                      <Badge variant="warning">{needLabel(provider)}</Badge>
-                    }
-                    action={
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          provider.oauth
-                            ? setReplacing(provider.oauth)
-                            : setSettingKey(provider)
-                        }
-                      >
-                        Set up
-                      </Button>
-                    }
-                  />
+                    fallback={<BrokenProviderRow provider={provider} />}
+                  >
+                    <ProviderRow
+                      provider={provider}
+                      detail={providerDetail(provider, {
+                        aiDefault,
+                        needing: true,
+                      })}
+                      status={
+                        <Badge variant="warning">{needLabel(provider)}</Badge>
+                      }
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            provider.oauth
+                              ? setReplacing(provider.oauth)
+                              : setSettingKey(provider)
+                          }
+                        >
+                          Set up
+                        </Button>
+                      }
+                    />
+                  </ProviderBoundary>
                 ))}
               </ProviderGroup>
             ) : null}
@@ -794,14 +858,22 @@ function ProvidersPage() {
                     Hide
                   </Button>
                 </div>
-                <DataTable
-                  table={providersTable}
-                  isLoading={false}
-                  empty={{
-                    title: "No providers match",
-                    description: "Try another name or id.",
-                  }}
-                />
+                <ProviderBoundary
+                  fallback={
+                    <p className="text-sm text-muted-foreground">
+                      Couldn't show the full list. Reload the page to try again.
+                    </p>
+                  }
+                >
+                  <DataTable
+                    table={providersTable}
+                    isLoading={false}
+                    empty={{
+                      title: "No providers match",
+                      description: "Try another name or id.",
+                    }}
+                  />
+                </ProviderBoundary>
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3">
