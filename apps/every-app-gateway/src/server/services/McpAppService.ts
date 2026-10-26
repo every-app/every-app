@@ -699,9 +699,13 @@ async function get(
     authKind: block.auth.kind,
     authLabel: remoteMcpAuthLabel(block.auth),
     credential,
+    // Set but never pinned (`state: "set"`) needs the operator's `secret
+    // set` as much as unset: the Gateway pins nothing on first use.
     setupCommand:
       credential.name &&
-      (credential.state === "not_set" || credential.state === "bound_elsewhere")
+      (credential.state === "not_set" ||
+        credential.state === "set" ||
+        credential.state === "bound_elsewhere")
         ? secretSetCommand(credential.name)
         : null,
     snapshot,

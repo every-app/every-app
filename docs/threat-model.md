@@ -1791,12 +1791,13 @@ means it is on main (every boundary fix from this pass merged on
     registration, PKCE, a callback on the gateway, tokens encrypted at rest
     and refreshed) is a new boundary, to be designed before it is built.
 33. **A credential set outside the CLI is pinned on first use** (B4, low;
-    `remote-mcp.credential-only-to-bound-origin`). A `_MCP_TOKEN` set in
-    the Cloudflare dashboard has no pin until the gateway first uses it,
-    and is pinned to whichever row uses it first; an owner or admin who
-    adds a row naming it before the intended one is served receives it.
-    `everyapp secret set` pins it to the declaring app, and `everyapp mcp
-    show` says where each credential is pinned.
+    fixed in #718, `remote-mcp.credential-only-to-bound-origin`). The
+    gateway no longer pins on first use: a `_MCP_TOKEN` with no pin is
+    sent nowhere, every row naming it reads as needing setup with the
+    `secret set` command, and the refusal is logged
+    (`mcp.remote.credential_unpinned`). `everyapp secret set` is the one
+    way to pin, and `everyapp mcp show` says where each credential is
+    pinned. The 2026-10-25 scan's finding 11.
 34. **A remote server's tool descriptions, schemas and results are
     untrusted text the model reads** (B5, medium, known). The gateway
     bounds their size, strips `x-mcp-header`, and believes a server's

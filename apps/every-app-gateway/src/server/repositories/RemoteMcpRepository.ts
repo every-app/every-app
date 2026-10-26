@@ -31,25 +31,6 @@ async function findCredentialBinding(
   return row ?? null;
 }
 
-/**
- * Bind a credential name to an origin on first use, keeping an existing
- * binding: the operator's `secret set` record wins over the gateway's
- * trust-on-first-use. Returns the binding that stands afterwards.
- */
-async function bindCredentialIfUnbound(
-  name: string,
-  origin: string,
-  boundBy: string,
-  now = new Date(),
-): Promise<CredentialBinding> {
-  await db
-    .insert(remoteMcpCredentials)
-    .values({ name, origin, boundBy, boundAt: now })
-    .onConflictDoNothing();
-  const bound = await findCredentialBinding(name);
-  return bound ?? { name, origin, boundBy, boundAt: now };
-}
-
 /** Replace what a remote server listed for one app row, in one batch. */
 async function replaceTools(
   appRowId: string,
@@ -177,7 +158,6 @@ async function originUsingSecret(
 
 export const RemoteMcpRepository = {
   findCredentialBinding,
-  bindCredentialIfUnbound,
   replaceTools,
   findToolsByApp,
   findStaleRemoteApps,

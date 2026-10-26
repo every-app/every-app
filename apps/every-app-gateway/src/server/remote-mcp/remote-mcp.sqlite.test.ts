@@ -406,6 +406,9 @@ beforeEach(async () => {
   orgId = await seedOrganization(db, "acme");
   ownerId = await seedMember(db, { organizationId: orgId, role: "owner" });
   rowId = await addTreg();
+  // The operator's pin, as `everyapp secret set TREG_MCP_TOKEN` writes it:
+  // without one the Gateway sends the credential nowhere.
+  await pinTreg();
   seen = [];
   era = "modern";
   redirectTo = null;
@@ -432,6 +435,16 @@ beforeEach(async () => {
     return response;
   });
 });
+
+/** What `everyapp secret set TREG_MCP_TOKEN` records: the name pinned to Treg's origin. */
+async function pinTreg(): Promise<void> {
+  await db.insert(remoteMcpCredentials).values({
+    name: "TREG_MCP_TOKEN",
+    origin: "https://treg.example",
+    boundBy: "ben@example.com",
+    boundAt: new Date(),
+  });
+}
 
 afterEach(async () => {
   await settle();
@@ -599,6 +612,8 @@ describe("a remote MCP app on the gateway's /mcp", () => {
   });
 
   it("refuses to send a credential bound to another origin, and reads as needing setup", async () => {
+    await db.delete(remoteMcpCredentials);
+    resetRemoteMcpBindingsForTests();
     await db.insert(remoteMcpCredentials).values({
       name: "TREG_MCP_TOKEN",
       origin: "https://other.example",
@@ -619,20 +634,38 @@ describe("a remote MCP app on the gateway's /mcp", () => {
     expect(seen).toEqual([]);
   });
 
-  it("binds an unbound credential to the row's origin on first use, and needs setup while it is unset", async () => {
+  it("never pins a credential on first use: an unpinned one is sent nowhere and reads as needing setup (`remote-mcp.credential-only-to-bound-origin`)", async () => {
     const token = await pat(ownerId);
-    await toolNames(token);
-    const [binding] = await db.select().from(remoteMcpCredentials);
-    expect(binding).toMatchObject({
-      name: "TREG_MCP_TOKEN",
-      origin: "https://treg.example",
-      boundBy: "gateway",
-    });
+    // With the operator's pin (the fixture's): served.
+    expect(await toolNames(token)).toEqual(["treg_get_user", "treg_send_mail"]);
 
+    // The value set but no pin (the dashboard, say; or the pin undone):
+    // nothing is sent, nothing is pinned by the Gateway, and the row says
+    // what the operator runs.
+    seen = [];
+    await db.delete(remoteMcpCredentials);
+    resetAppSetupCacheForTests();
+    resetRemoteMcpForTests();
+    resetRemoteMcpBindingsForTests();
+    clearCatalogSyncClaimsForTests();
+    expect(await toolNames(token)).toEqual([]);
+    expect(await db.select().from(remoteMcpCredentials)).toEqual([]);
+    expect(seen).toEqual([]);
+    let listed = await listApps(token);
+    expect(listed.find((app) => app["id"] === "treg")).toMatchObject({
+      available: false,
+      reason:
+        "needs setup: an admin runs pnpm everyapp secret set TREG_MCP_TOKEN",
+    });
+    const call = await callTool(token, "treg_get_user", { id: "u1" });
+    expect(call.error?.message).toMatch(/Unknown tool/);
+    expect(seen).toEqual([]);
+
+    // Unset altogether: needs setup as well.
     delete hoisted.env["TREG_MCP_TOKEN"];
     resetAppSetupCacheForTests();
     resetRemoteMcpForTests();
-    const listed = await listApps(token);
+    listed = await listApps(token);
     expect(listed.find((app) => app["id"] === "treg")).toMatchObject({
       available: false,
       reason: expect.stringMatching(/secret set TREG_MCP_TOKEN/),

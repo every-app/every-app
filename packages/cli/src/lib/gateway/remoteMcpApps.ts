@@ -123,17 +123,29 @@ export interface McpAppRef {
 }
 
 /** What an `mcp_app.*` event says of a row: the catalogue's `app` and its kind. */
-function mcpAppEventData(app: StoredAppRow): { app: EventApp; kind: McpAppRef["kind"] } {
-  return { app: { id: app.appSlug, rowId: app.id, name: app.name }, kind: isRemoteMcpRow(app) ? "remote" : "builtin" };
+function mcpAppEventData(app: StoredAppRow): {
+  app: EventApp;
+  kind: McpAppRef["kind"];
+} {
+  return {
+    app: { id: app.appSlug, rowId: app.id, name: app.name },
+    kind: isRemoteMcpRow(app) ? "remote" : "builtin",
+  };
 }
 
 /** The URL of a row's `remote` block, read even from a tombstone. */
-function remoteUrlOf(app: Pick<StoredAppRow, "tier" | "manifest">): string | null {
+function remoteUrlOf(
+  app: Pick<StoredAppRow, "tier" | "manifest">,
+): string | null {
   return remoteMcpBlockOf(app)?.url ?? null;
 }
 
 /** The install organization's row for an id, tombstones included. */
-async function rowFor(db: D1Database, organizationId: string, id: string): Promise<StoredAppRow | null> {
+async function rowFor(
+  db: D1Database,
+  organizationId: string,
+  id: string,
+): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
     {
       sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
@@ -144,14 +156,20 @@ async function rowFor(db: D1Database, organizationId: string, id: string): Promi
 }
 
 /** The install organization's live remote MCP apps' ids, for what a refusal names. */
-async function remoteIds(db: D1Database, organizationId: string): Promise<string[]> {
+async function remoteIds(
+  db: D1Database,
+  organizationId: string,
+): Promise<string[]> {
   const [rows = []] = await db.run([
     {
       sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
       params: [organizationId, PROVIDER_APP_TIER],
     },
   ]);
-  return rows.map(toAppRow).filter(isRemoteMcpRow).map((app) => app.appSlug);
+  return rows
+    .map(toAppRow)
+    .filter(isRemoteMcpRow)
+    .map((app) => app.appSlug);
 }
 
 /**
@@ -161,15 +179,28 @@ async function remoteIds(db: D1Database, organizationId: string): Promise<string
  * and the remote apps there are, or for a deployed app's id, the command
  * that removes a deployed app.
  */
-export async function resolveMcpApp(db: D1Database, id: string): Promise<McpAppRef> {
+export async function resolveMcpApp(
+  db: D1Database,
+  id: string,
+): Promise<McpAppRef> {
   const found = await installOrganization(db);
   const organization = found?.organization ?? null;
   const app = organization ? await rowFor(db, organization.id, id) : null;
   if (isProviderAppId(id)) {
-    return { kind: "builtin", id, organization, app: app && app.tier === PROVIDER_APP_TIER ? app : null };
+    return {
+      kind: "builtin",
+      id,
+      organization,
+      app: app && app.tier === PROVIDER_APP_TIER ? app : null,
+    };
   }
-  if (app && isRemoteMcpRow(app)) return { kind: "remote", id, organization, app };
-  if (app && app.tier !== PROVIDER_APP_TIER && app.status !== DELETED_APP_STATUS) {
+  if (app && isRemoteMcpRow(app))
+    return { kind: "remote", id, organization, app };
+  if (
+    app &&
+    app.tier !== PROVIDER_APP_TIER &&
+    app.status !== DELETED_APP_STATUS
+  ) {
     throw new EveryAppError(
       "PROVIDER_APP_UNKNOWN",
       `"${id}" is an app deployed to this Gateway, not an MCP app\n${CLI} delete ${id} removes a deployed app.`,
@@ -185,7 +216,10 @@ export async function resolveMcpApp(db: D1Database, id: string): Promise<McpAppR
       `Built in: ${PROVIDER_APP_IDS.join(", ")}. Added: ${remote.length > 0 ? remote.join(", ") : "none yet"}.`,
     ].join("\n"),
     looksLikeUrl
-      ? { rerun: `${CLI} mcp add ${id}`, rerunNote: "adds the server at that address" }
+      ? {
+          rerun: `${CLI} mcp add ${id}`,
+          rerunNote: "adds the server at that address",
+        }
       : { rerun: `${CLI} mcp list`, rerunNote: "lists the MCP apps" },
   );
 }
@@ -197,7 +231,10 @@ export function removedRemoteApp(ref: McpAppRef): EveryAppError {
     "APP_NOT_FOUND",
     `${ref.id} was removed from this Gateway\nAdding it again starts fresh: nobody's access or tools are kept.`,
     url
-      ? { rerun: `${CLI} mcp add ${url} --name ${ref.id}`, rerunNote: "adds it again" }
+      ? {
+          rerun: `${CLI} mcp add ${url} --name ${ref.id}`,
+          rerunNote: "adds it again",
+        }
       : { rerun: `${CLI} mcp list`, rerunNote: "lists the MCP apps" },
   );
 }
@@ -207,7 +244,9 @@ export function removedRemoteApp(ref: McpAppRef): EveryAppError {
  * organization (the Gateway has one set of secrets): a name the registry
  * binds to one origin (REMOTE_MCP_SECRET_TAKEN otherwise).
  */
-async function credentialOrigins(db: D1Database): Promise<Map<string, Set<string>>> {
+async function credentialOrigins(
+  db: D1Database,
+): Promise<Map<string, Set<string>>> {
   const [rows = []] = await db.run([
     {
       sql: `SELECT tier, manifest FROM apps WHERE tier = ? AND status != '${DELETED_APP_STATUS}'`,
@@ -216,7 +255,10 @@ async function credentialOrigins(db: D1Database): Promise<Map<string, Set<string
   ]);
   const origins = new Map<string, Set<string>>();
   for (const row of rows) {
-    const block = remoteMcpBlockOf({ tier: String(row["tier"]), manifest: text(row["manifest"]) });
+    const block = remoteMcpBlockOf({
+      tier: String(row["tier"]),
+      manifest: text(row["manifest"]),
+    });
     const secret = block ? remoteMcpSecretOf(block.auth) : null;
     if (!block || !secret) continue;
     let origin: string;
@@ -320,7 +362,9 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
   ];
 }
 
-function remoteToolsDelete(app: Pick<StoredAppRow, "id" | "organizationId">): D1Statement {
+function remoteToolsDelete(
+  app: Pick<StoredAppRow, "id" | "organizationId">,
+): D1Statement {
   return {
     sql: "DELETE FROM remote_mcp_tools WHERE app_row_id = ? AND organization_id = ?",
     params: [app.id, app.organizationId],
@@ -335,13 +379,20 @@ function remoteToolsDelete(app: Pick<StoredAppRow, "id" | "organizationId">): D1
  * REMOTE_MCP_INVALID, REMOTE_MCP_EXISTS, REMOTE_MCP_SECRET_TAKEN,
  * APP_TIER_MISMATCH) write nothing.
  */
-export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promise<RemoteMcpAdded> {
+export function addRemoteMcpApp(
+  db: D1Database,
+  input: RemoteMcpAddInput,
+): Promise<RemoteMcpAdded> {
   return registryCall(async () => {
     const now = input.now ?? Date.now();
     const url = input.url.trim();
     // The id the rules will take, so its row is read in the same batch.
     const id = (input.id ?? "").trim() || remoteMcpIdFromUrl(url) || "";
-    const { organization, hasOwner } = await ensureInstallOrganization(db, input.organizationName, now);
+    const { organization, hasOwner } = await ensureInstallOrganization(
+      db,
+      input.organizationName,
+      now,
+    );
     const [existing = [], members = [], actors = []] = await db.run([
       {
         sql: `SELECT ${await appColumns(db)} FROM apps WHERE organization_id = ? AND app_slug = ?`,
@@ -362,7 +413,8 @@ export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promi
       risk: input.risk,
       env: input.env,
       existingApp: (slug) => {
-        if (slug !== id) throw new Error(`The rules asked for "${slug}", not "${id}".`);
+        if (slug !== id)
+          throw new Error(`The rules asked for "${slug}", not "${id}".`);
         return existingApp;
       },
       secretUsedAt: (secret) => {
@@ -380,7 +432,10 @@ export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promi
       organizationId: organization.id,
       type: "mcp_app.added",
       actor: operatorActor(input.deployer),
-      data: { app: { id: plan.app.appSlug, rowId: plan.app.id, name: plan.app.name }, kind: "remote" },
+      data: {
+        app: { id: plan.app.appSlug, rowId: plan.app.id, name: plan.app.name },
+        kind: "remote",
+      },
       appRowId: plan.app.id,
       // The revival is conditional on the tombstone: only if the row was written now.
       onlyIf: {
@@ -390,14 +445,19 @@ export function addRemoteMcpApp(db: D1Database, input: RemoteMcpAddInput): Promi
       now,
     });
     await db.run([
-      ...addWrites(plan, now, { secretNames: await hasSecretNamesColumn(db), remoteTools: tables.tools }),
+      ...addWrites(plan, now, {
+        secretNames: await hasSecretNamesColumn(db),
+        remoteTools: tables.tools,
+      }),
       ...added,
     ]);
     return {
       plan,
       organization,
       hasOwner,
-      actorGranted: actorUserId !== null && plan.grants.some((grant) => grant.userId === actorUserId),
+      actorGranted:
+        actorUserId !== null &&
+        plan.grants.some((grant) => grant.userId === actorUserId),
     };
   });
 }
@@ -475,7 +535,9 @@ export function removeMcpApp(
         sql: "UPDATE apps SET status = ?, is_default = ?, updated_at = ? WHERE id = ?",
         params: [update.status, update.isDefault ? 1 : 0, now, app.id],
       },
-      ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
+      ...withoutAppData(app, now, {
+        secretNames: await hasSecretNamesColumn(db),
+      }),
       ...(tables.tools ? [remoteToolsDelete(app)] : []),
       ...(await queueEventFromCli(db, {
         organizationId: app.organizationId,
@@ -516,20 +578,29 @@ function toSnapshot(row: D1Row | undefined): ToolSnapshot | null {
  * request, or within the hour for a remote app (the maintenance cron).
  * Returns the snapshot it dropped, null when there was none.
  */
-export async function refreshMcpAppTools(db: D1Database, app: StoredAppRow): Promise<ToolSnapshot | null> {
+export async function refreshMcpAppTools(
+  db: D1Database,
+  app: StoredAppRow,
+): Promise<ToolSnapshot | null> {
   const scoped = [app.id, app.organizationId];
   const [catalog = []] = await db.run([
     {
       sql: "SELECT status, tool_count, fetched_at, last_error FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?",
       params: scoped,
     },
-    { sql: "DELETE FROM app_tools WHERE app_row_id = ? AND organization_id = ?", params: scoped },
-    { sql: "DELETE FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?", params: scoped },
+    {
+      sql: "DELETE FROM app_tools WHERE app_row_id = ? AND organization_id = ?",
+      params: scoped,
+    },
+    {
+      sql: "DELETE FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?",
+      params: scoped,
+    },
   ]);
   return toSnapshot(catalog[0]);
 }
 
-/** A credential's pin: the origin `secret set` (or the Gateway's first use) bound it to. */
+/** A credential's pin: the origin `secret set` bound it to (the Gateway never pins on first use). */
 export interface CredentialBinding {
   origin: string;
   boundBy: string | null;
@@ -537,10 +608,14 @@ export interface CredentialBinding {
 }
 
 /** Every credential binding, by name; empty on a Gateway from before migration 0011. */
-export async function readCredentialBindings(db: D1Database): Promise<Map<string, CredentialBinding>> {
+export async function readCredentialBindings(
+  db: D1Database,
+): Promise<Map<string, CredentialBinding>> {
   if (!(await remoteMcpTables(db)).credentials) return new Map();
   const [rows = []] = await db.run([
-    { sql: "SELECT name, origin, bound_by, bound_at FROM remote_mcp_credentials ORDER BY name" },
+    {
+      sql: "SELECT name, origin, bound_by, bound_at FROM remote_mcp_credentials ORDER BY name",
+    },
   ]);
   return new Map(
     rows.map((row) => [
@@ -588,7 +663,8 @@ export async function listMcpApps(db: D1Database): Promise<McpAppEntry[]> {
       },
     ]);
     rows.push(...apps.map(toAppRow));
-    for (const catalog of catalogs) snapshots.set(String(catalog["app_row_id"]), toSnapshot(catalog)!);
+    for (const catalog of catalogs)
+      snapshots.set(String(catalog["app_row_id"]), toSnapshot(catalog)!);
   }
   const bySlug = new Map(rows.map((app) => [app.appSlug, app]));
   const builtins: McpAppEntry[] = PROVIDER_APP_IDS.map((id) => {
@@ -638,10 +714,12 @@ export function mcpAppState(
   if (!entry.app || entry.app.status === DELETED_APP_STATUS) return "not added";
   if (entry.app.status !== "active") return "off";
   if (entry.kind === "remote" && !entry.remote) return "needs setup";
-  if (entry.keyName && !gatewayNames.includes(entry.keyName)) return "needs setup";
+  if (entry.keyName && !gatewayNames.includes(entry.keyName))
+    return "needs setup";
   if (entry.kind === "remote" && entry.keyName && entry.remote) {
     const binding = bindings.get(entry.keyName);
-    if (binding && binding.origin !== originOf(entry.remote.url)) return "needs setup";
+    if (binding && binding.origin !== originOf(entry.remote.url))
+      return "needs setup";
   }
   return "on";
 }
@@ -692,7 +770,10 @@ interface McpAppDetail {
 }
 
 /** The hints a stored `risk_hint` stands for, in `remoteToolRisk`'s terms. */
-function hintsOf(riskHint: string): { readOnlyHint?: boolean; destructiveHint?: boolean } {
+function hintsOf(riskHint: string): {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+} {
   if (riskHint === "read") return { readOnlyHint: true };
   if (riskHint === "destructive") return { destructiveHint: true };
   return {};
@@ -716,7 +797,10 @@ function remoteToolEntries(
     const riskHint = String(row["risk_hint"]);
     const local = text(row["local_name"]);
     const ruled = remoteToolRisk(hintsOf(riskHint), block, serverName);
-    const source: RemoteToolRiskSource = ruled.source === "default" && riskHint === "write" ? "hint" : ruled.source;
+    const source: RemoteToolRiskSource =
+      ruled.source === "default" && riskHint === "write"
+        ? "hint"
+        : ruled.source;
     const catalogRisk = local ? catalog.get(local) : undefined;
     const enabled = remoteToolEnabled(block, serverName);
     const isListed = Boolean(Number(row["listed"]));
@@ -752,7 +836,10 @@ export async function readMcpAppDetail(
       sql: "SELECT status, tool_count, fetched_at, last_error FROM app_tool_catalogs WHERE app_row_id = ? AND organization_id = ?",
       params: scoped,
     },
-    { sql: "SELECT name, title, risk FROM app_tools WHERE app_row_id = ? AND organization_id = ? ORDER BY name", params: scoped },
+    {
+      sql: "SELECT name, title, risk FROM app_tools WHERE app_row_id = ? AND organization_id = ? ORDER BY name",
+      params: scoped,
+    },
     ...(tables.tools && remote
       ? [
           {
@@ -763,14 +850,23 @@ WHERE app_row_id = ? AND organization_id = ? ORDER BY upstream_name`,
         ]
       : [{ sql: "SELECT 1 WHERE 0" }]),
     ...(tables.credentials && secret
-      ? [{ sql: "SELECT origin, bound_by, bound_at FROM remote_mcp_credentials WHERE name = ?", params: [secret] }]
+      ? [
+          {
+            sql: "SELECT origin, bound_by, bound_at FROM remote_mcp_credentials WHERE name = ?",
+            params: [secret],
+          },
+        ]
       : [{ sql: "SELECT 1 WHERE 0" }]),
   ]);
-  const catalogRisks = new Map(tools.map((tool) => [String(tool["name"]), String(tool["risk"])]));
+  const catalogRisks = new Map(
+    tools.map((tool) => [String(tool["name"]), String(tool["risk"])]),
+  );
   const binding = bindings[0];
   return {
     snapshot: toSnapshot(catalog[0]),
-    remoteTools: remote ? remoteToolEntries(ref.id, remote, listed, catalogRisks) : [],
+    remoteTools: remote
+      ? remoteToolEntries(ref.id, remote, listed, catalogRisks)
+      : [],
     catalogTools: tools.map((tool) => ({
       name: `${ref.id}_${String(tool["name"])}`,
       title: text(tool["title"]),
@@ -780,7 +876,8 @@ WHERE app_row_id = ? AND organization_id = ? ORDER BY upstream_name`,
       ? {
           origin: String(binding["origin"]),
           boundBy: text(binding["bound_by"]),
-          boundAt: binding["bound_at"] == null ? null : Number(binding["bound_at"]),
+          boundAt:
+            binding["bound_at"] == null ? null : Number(binding["bound_at"]),
         }
       : null,
     listingKnown: tables.tools,
@@ -848,13 +945,22 @@ ORDER BY (upstream_name = ?2) DESC, upstream_name LIMIT 1`,
     let app = ref.app;
     for (let attempt = 1; ; attempt += 1) {
       const before = remoteMcpBlockOf(app)?.tools[serverName] ?? null;
-      const update = remoteMcpAppUpdate(app, { tool: { name: serverName, override } });
+      const update = remoteMcpAppUpdate(app, {
+        tool: { name: serverName, override },
+      });
       const after = update.remote.tools[serverName] ?? null;
       const [changed = []] = await db.run([
         {
           sql: `UPDATE apps SET manifest = ?, name = ?, description = ?, updated_at = ?
 WHERE id = ? AND manifest = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
-          params: [update.manifest, update.name, update.description, now, app.id, app.manifest],
+          params: [
+            update.manifest,
+            update.name,
+            update.description,
+            now,
+            app.id,
+            app.manifest,
+          ],
         },
         // mcp_app.tool_changed: the override after the change (the Gateway's Edit dialog queues the same), in the write's batch.
         ...(deployer
@@ -866,7 +972,9 @@ WHERE id = ? AND manifest = ? AND status != '${DELETED_APP_STATUS}' RETURNING id
                 ...mcpAppEventData(app),
                 tool: serverName,
                 ...(after?.risk ? { risk: after.risk } : {}),
-                ...(after?.enabled !== undefined ? { enabled: after.enabled } : {}),
+                ...(after?.enabled !== undefined
+                  ? { enabled: after.enabled }
+                  : {}),
                 ...(after === null ? { cleared: true } : {}),
               },
               appRowId: app.id,
@@ -922,16 +1030,24 @@ export async function bindRemoteMcpCredentials(
   actor: string,
   now = Date.now(),
 ): Promise<CredentialBindingResult> {
-  const result: CredentialBindingResult = { bound: [], undeclared: [], ambiguous: [] };
+  const result: CredentialBindingResult = {
+    bound: [],
+    undeclared: [],
+    ambiguous: [],
+  };
   const family = names.filter(isRemoteMcpSecretName);
-  if (family.length === 0 || !(await remoteMcpTables(db)).credentials) return result;
+  if (family.length === 0 || !(await remoteMcpTables(db)).credentials)
+    return result;
   const origins = await credentialOrigins(db);
   const existing = await readCredentialBindings(db);
   const writes: D1Statement[] = [];
   for (const name of family) {
     const declared = [...(origins.get(name) ?? [])].sort();
     if (declared.length === 0) {
-      result.undeclared.push({ name, kept: existing.get(name)?.origin ?? null });
+      result.undeclared.push({
+        name,
+        kept: existing.get(name)?.origin ?? null,
+      });
     } else if (declared.length > 1) {
       result.ambiguous.push({ name, origins: declared });
     } else {
@@ -952,9 +1068,13 @@ ON CONFLICT(name) DO UPDATE SET origin = excluded.origin, bound_by = excluded.bo
  * remote MCP credential name among them. Returns the names whose binding
  * went.
  */
-export async function unbindRemoteMcpCredentials(db: D1Database, names: readonly string[]): Promise<string[]> {
+export async function unbindRemoteMcpCredentials(
+  db: D1Database,
+  names: readonly string[],
+): Promise<string[]> {
   const family = names.filter(isRemoteMcpSecretName);
-  if (family.length === 0 || !(await remoteMcpTables(db)).credentials) return [];
+  if (family.length === 0 || !(await remoteMcpTables(db)).credentials)
+    return [];
   const [gone = []] = await db.run([
     {
       sql: `DELETE FROM remote_mcp_credentials WHERE name IN (${family.map(() => "?").join(", ")}) RETURNING name`,
@@ -965,7 +1085,9 @@ export async function unbindRemoteMcpCredentials(db: D1Database, names: readonly
 }
 
 /** Every live remote MCP app's credential name, across organizations, with the app ids that declare it. */
-export async function remoteMcpCredentialNames(db: D1Database): Promise<Map<string, string[]>> {
+export async function remoteMcpCredentialNames(
+  db: D1Database,
+): Promise<Map<string, string[]>> {
   const [rows = []] = await db.run([
     {
       sql: `SELECT app_slug, tier, manifest FROM apps WHERE tier = ? AND status != '${DELETED_APP_STATUS}' ORDER BY app_slug`,
@@ -974,7 +1096,10 @@ export async function remoteMcpCredentialNames(db: D1Database): Promise<Map<stri
   ]);
   const names = new Map<string, string[]>();
   for (const row of rows) {
-    const block = remoteMcpBlockOf({ tier: String(row["tier"]), manifest: text(row["manifest"]) });
+    const block = remoteMcpBlockOf({
+      tier: String(row["tier"]),
+      manifest: text(row["manifest"]),
+    });
     const secret = block ? remoteMcpSecretOf(block.auth) : null;
     if (!secret) continue;
     names.set(secret, [...(names.get(secret) ?? []), String(row["app_slug"])]);

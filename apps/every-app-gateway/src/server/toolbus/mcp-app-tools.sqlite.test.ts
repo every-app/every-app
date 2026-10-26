@@ -589,9 +589,17 @@ describe("an admin managing MCP apps over /mcp", () => {
     expect(refused).toMatch(/^REMOTE_MCP_INVALID: /);
     expect(refused).not.toContain("sk-live-abcdef");
 
-    // The operator sets it (a new isolate reads the new setting); the
-    // refresh lists through it and binds it to the server's origin.
+    // The operator sets it with `secret set`, which also pins the name to
+    // the server's origin (a new isolate reads the new setting; the Gateway
+    // never pins on first use itself); the refresh lists through it.
     hoisted.env["TREG_MCP_TOKEN"] = TOKEN;
+    await db.insert(remoteMcpCredentials).values({
+      name: "TREG_MCP_TOKEN",
+      origin: "https://treg.example",
+      boundBy: "ben@example.com",
+      boundAt: new Date(),
+    });
+    resetRemoteMcpBindingsForTests();
     resetAppSetupCacheForTests();
     expect(
       await data("everyapp_mcp_refresh", { app: "treg" }, admin()),

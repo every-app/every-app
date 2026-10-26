@@ -4,8 +4,10 @@
  * pinned"). The value is a Gateway setting named by the row's manifest
  * (`<ID>_MCP_TOKEN`), read from this Worker's env and never from anywhere
  * else. A name is bound to one origin: the one `everyapp secret set`
- * recorded, or, for a secret set some other way, the origin of the first
- * row that used it (trust on first use, logged). The gateway sends the
+ * recorded (the operator's explicit pin). A value set some other way (the
+ * Cloudflare dashboard) has no pin and is sent nowhere until the operator
+ * runs `secret set`: the gateway never pins on first use, since the first
+ * row to use a name could be any owner's or admin's. The gateway sends the
  * credential only to the origin it is bound to: a row whose URL names
  * another origin reads as needing setup, and nothing is sent.
  *
@@ -34,6 +36,8 @@ export type CredentialState =
     }
   /** The Gateway setting isn't set. */
   | { kind: "unset"; name: string }
+  /** The setting is set, but no operator pinned it to an origin: nothing is sent. */
+  | { kind: "unpinned"; name: string }
   /** The setting is set, but for another origin: nothing is sent. */
   | { kind: "mismatch"; name: string; boundOrigin: string }
   /** `auth.kind: oauth`: not served this week. */
@@ -60,43 +64,25 @@ function settingValue(name: string): string | null {
 }
 
 /**
- * The origin a credential name is bound to, binding it to `origin` when
- * nothing is recorded yet. Cached per isolate for a minute.
+ * The origin a credential name is pinned to, or null when no operator has
+ * pinned it (`everyapp secret set` writes the pin). Never written here. A
+ * pin is cached per isolate for a minute; its absence is not, so a pin
+ * written by the CLI is seen on the next read.
  */
-async function boundOrigin(
-  name: string,
-  origin: string,
-  rowId: string,
-): Promise<string> {
+async function boundOrigin(name: string): Promise<string | null> {
   const cached = bindings.get(name);
   const now = Date.now();
   if (cached && now - cached.readAt < BINDING_CACHE_MS) return cached.origin;
   const existing = await RemoteMcpRepository.findCredentialBinding(name);
-  if (existing) {
-    bindings.set(name, { origin: existing.origin, readAt: now });
-    return existing.origin;
-  }
-  const bound = await RemoteMcpRepository.bindCredentialIfUnbound(
-    name,
-    origin,
-    "gateway",
-  );
-  if (bound.origin === origin) {
-    logEvent("mcp.remote.credential_bound", {
-      name,
-      origin,
-      appRowId: rowId,
-      by: "gateway",
-    });
-  }
-  bindings.set(name, { origin: bound.origin, readAt: now });
-  return bound.origin;
+  if (!existing) return null;
+  bindings.set(name, { origin: existing.origin, readAt: now });
+  return existing.origin;
 }
 
 /**
  * The credential state for a row's `remote` block: the headers to send,
  * or why nothing can be sent. Reads the Gateway's env and the binding
- * table; writes a first-use binding; logs a mismatch once per read.
+ * table, writes nothing; logs a missing pin or a mismatch once per read.
  */
 export async function credentialFor(
   block: RemoteMcpBlock,
@@ -131,7 +117,15 @@ export async function credentialFor(
   const value = settingValue(name);
   if (!value) return { kind: "unset", name };
   const origin = new URL(block.url).origin;
-  const bound = await boundOrigin(name, origin, rowId);
+  const bound = await boundOrigin(name);
+  if (bound === null) {
+    logEvent(
+      "mcp.remote.credential_unpinned",
+      { name, appRowId: rowId, origin },
+      "warn",
+    );
+    return { kind: "unpinned", name };
+  }
   if (bound !== origin) {
     logEvent(
       "mcp.remote.credential_origin_mismatch",
@@ -166,6 +160,8 @@ export function credentialProblem(
       return null;
     case "unset":
       return `its credential ${state.name} isn't set on this Gateway: its operator sets it with ${cli} secret set ${state.name}`;
+    case "unpinned":
+      return `its credential ${state.name} is set but not pinned to a server: its operator runs ${cli} secret set ${state.name}, which pins it to this server`;
     case "mismatch":
       return `its credential ${state.name} was set for ${state.boundOrigin}, not for this server; its operator runs ${cli} secret set ${state.name} again`;
     case "unsupported":

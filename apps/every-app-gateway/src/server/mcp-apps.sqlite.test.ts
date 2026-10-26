@@ -942,9 +942,10 @@ describe("showing an MCP app", () => {
       tools: [],
     });
     hoisted.env["TREG_MCP_TOKEN"] = "s3cret";
+    // Set but unpinned: the Gateway sends it nowhere until `secret set` pins it.
     expect(await credential()).toMatchObject({
       credential: { set: true, boundTo: null, state: "set" },
-      setupCommand: null,
+      setupCommand: "pnpm everyapp secret set TREG_MCP_TOKEN",
     });
     await db.insert(remoteMcpCredentials).values({
       name: "TREG_MCP_TOKEN",
