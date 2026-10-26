@@ -1,26 +1,14 @@
-# EveryApp - Make every app open source
+# EveryApp
 
 > Make every app open source
 
-Own & customize your software. Pay as you go.
+Legacy SaaS tools are bloated and expensive. We started EveryApp out of annoyance.
 
-It's easy to build now, but hard to get it off localhost and host it securely.
+Now it's clear that, eventually, everything will be open source. The only questions are: How soon and how will everything work together?
 
-## Why is this cool?
-- Self host hundreds of web applications (& agents) for $5/month.
-- Agent first
-  - We don't like reading or manually doing things anymore either. 
-- Easily self host & customize open source apps
-- You can build your own apps too!
+> The backend for your agents
 
-## What's on our roadmap?
-oh, nothing much, just rebuilding every SaaS for Agents. 100% open source.
-
-## What is EveryApp
-- An open source app store
-- A home for internal apps and personal software
-- A framework to have every app your business needs, starting at $10/month
-- A directory of "software recipes" so that you don't need to build from scratch
+The Gateway takes the friction out of getting personal web apps and agents off localhost. You can manage everything through your agent. Set it up once, then self-host open source apps and personal software, all behind one secure sign-in.
 
 Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in. One Gateway sits in front of them all and gives each app only what you allow. Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor.
 
