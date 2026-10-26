@@ -1597,6 +1597,23 @@ export function validateManifestStrict(
         `Invalid everyapp.config: public: ${route.path} can't be public${named ? "" : " (it covers /mcp)"}; an app that runs its own MCP server sets mcp: { by: "app", why: "..." }`,
       );
     }
+    // A public route over the TanStack server-function endpoint makes every
+    // server function that skips its own user check callable by anyone: the
+    // same-origin guard there is a CSRF check, not authentication. A public
+    // page that needs data gets its own route (`/api/public/...`).
+    const serverFnBase = (manifest.serverFnBase ?? "/_serverFn").replace(
+      /\/+$/,
+      "",
+    );
+    const coversServerFns = ["GET", "POST"].some(
+      (method) =>
+        matchPublicRoute([route], method, `${serverFnBase}/fn`).public,
+    );
+    if (coversServerFns) {
+      throw new ManifestError(
+        `Invalid everyapp.config: public: ${route.path} can't be public (it covers ${serverFnBase}, where every server function lives); serve the public page's data from a route of its own, such as /api/public/...`,
+      );
+    }
   }
   for (const path of manifest.publicAssets ?? []) {
     assertPublicPathIsSafe(path, PUBLIC_ASSET_LABEL);

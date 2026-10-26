@@ -347,6 +347,36 @@ describe("mcp manifest field", () => {
     ).toMatchObject({ by: "app", why: "ok" });
   });
 
+  it("refuses a public route over the server-function endpoint", () => {
+    for (const path of ["/_serverFn/**", "/_serverFn/*", "/:any/*"]) {
+      expect(() =>
+        validateManifestStrict({
+          id: "todo",
+          public: [{ path, methods: ["POST"] }],
+        }),
+      ).toThrow("it covers /_serverFn");
+    }
+    // An app with its own base is held to that base.
+    expect(() =>
+      validateManifestStrict({
+        id: "todo",
+        serverFnBase: "/app/_serverFn",
+        public: [{ path: "/app/_serverFn/**" }],
+      }),
+    ).toThrow("it covers /app/_serverFn");
+    // Public pages and their own data routes stay allowed.
+    expect(() =>
+      validateManifestStrict({
+        id: "todo",
+        public: [
+          { path: "/share/**" },
+          { path: "/:locale/share/**" },
+          { path: "/api/public/share/**" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("refuses a public /mcp route when the manifest is authored", () => {
     for (const path of ["/mcp", "/mcp/*", "/mcp/sse"]) {
       expect(() =>
