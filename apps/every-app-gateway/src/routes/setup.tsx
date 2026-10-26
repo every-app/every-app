@@ -44,7 +44,7 @@ const claimSchema = z
  */
 function Setup() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
-  const { data: ownerData, isLoading } = useQuery({
+  const { data: ownerData, isPending } = useQuery({
     queryKey: ["hasOwner"],
     queryFn: () => hasOwner(),
     staleTime: Infinity,
@@ -62,7 +62,9 @@ function Setup() {
     }
   }, []);
 
-  if (isLoading || token === undefined) return <PageLoading />;
+  // isPending, not isLoading: while the persisted cache restores, the query
+  // isn't fetching yet, and the form would flash before the spinner.
+  if (isPending || token === undefined) return <PageLoading />;
 
   if (ownerData?.hasOwner) {
     return (
@@ -108,8 +110,13 @@ function ClaimForm({ token }: { token: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Stale for the next page that asks, not refetched here: this page would
+  // show "Gateway already set up" on the way out.
   const finish = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+    await queryClient.invalidateQueries({
+      queryKey: ["hasOwner"],
+      refetchType: "none",
+    });
     navigate({ to: "/" });
   };
 

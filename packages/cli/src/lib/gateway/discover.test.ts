@@ -187,6 +187,35 @@ describe("discoverGateway", () => {
   });
 
 
+  it("asks setup which account when the login sees several, though only one has a Gateway", async () => {
+    accounts = await Promise.all([
+      account("acct-1", "Personal", "apps.me.dev"),
+      account("acct-2", "Acme"),
+    ]);
+
+    await expect(discover({ anyAccount: true, host: "apps.acme.com" })).rejects.toMatchObject({
+      action: "choose_account",
+      message: expect.stringMatching(/^Choose the Cloudflare account to set up EveryApp in\n/),
+      data: {
+        choices: [
+          expect.objectContaining({ label: "Personal · apps.me.dev", rerun: expect.stringContaining("--account-id acct-1") }),
+          expect.objectContaining({ label: "Acme", gatewayUrl: null, rerun: expect.stringContaining("--account-id acct-2") }),
+        ],
+      },
+    });
+    const pickAccount = vi.fn(async (listed: Array<{ id: string }>) => listed[1]!);
+    await expect(
+      discover({ anyAccount: true, interactive: true, pickAccount: pickAccount as never }),
+    ).resolves.toMatchObject({ gateway: null, requestedAccountId: "acct-2" });
+    expect(pickAccount).toHaveBeenCalledOnce();
+
+    // Named by the account or by its Gateway's address: nothing to ask.
+    await expect(discover({ anyAccount: true, accountId: "acct-2" })).resolves.toMatchObject({ gateway: null });
+    await expect(discover({ anyAccount: true, host: "apps.me.dev" })).resolves.toMatchObject({
+      gateway: { account: { id: "acct-1" } },
+    });
+  });
+
   it("builds each choice's rerun like a plain rerun: --json once when the run had it", async () => {
     accounts = await Promise.all([
       account("acct-1", "Personal", "apps.me.dev"),

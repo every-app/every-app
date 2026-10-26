@@ -21,7 +21,9 @@
  * the host the command names (--gateway, setup's --domain), or a person at
  * the terminal picks; anyone else is asked to (`choose_account`). None: the
  * caller decides (`setup` installs one; anything else fails, listing the
- * accounts asked).
+ * accounts asked). `setup` with several accounts (`anyAccount`) never assumes
+ * a Gateway in one is where it goes: unless the account or the host is
+ * named, the person picks any account the login can ask.
  */
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { isCfError, isNetworkDrop } from "@/lib/cf/errors";
@@ -81,9 +83,20 @@ interface DiscoverOptions {
    * choices among several say it, rather than an account id.
    */
   hostFlag?: string;
+  /**
+   * setup: a Gateway in one of the login's several accounts isn't taken to
+   * be where this run goes; the person picks the account, any of them.
+   */
+  anyAccount?: boolean;
   interactive: boolean;
   /** Asks the person at the terminal which Gateway (tests answer for them). */
   pick?: (found: FoundGateway[], whoami: CfWhoami) => Promise<FoundGateway>;
+  /** Asks the person at the terminal which account, for `anyAccount` (tests answer for them). */
+  pickAccount?: (
+    accounts: CloudflareAccount[],
+    found: FoundGateway[],
+    whoami: CfWhoami,
+  ) => Promise<CloudflareAccount>;
   /** How long to wait before asking an account again (tests: 0). */
   retryDelayMs?: number;
 }
@@ -96,8 +109,10 @@ export async function discoverGateway({
   accountId,
   host,
   hostFlag,
+  anyAccount = false,
   interactive,
   pick = pickAtTerminal,
+  pickAccount = pickAccountAtTerminal,
   retryDelayMs = RETRY_DELAY_MS,
 }: DiscoverOptions): Promise<Discovery> {
   const requestedAccountId =
@@ -122,12 +137,22 @@ export async function discoverGateway({
       gateway: found.find((g) => g.account.id === requestedAccountId) ?? null,
     };
   }
-  if (found.length <= 1) return { ...result, gateway: found[0] ?? null };
-
   const atHost = host
     ? found.filter((g) => g.install?.gatewayHost.toLowerCase() === host.toLowerCase())
     : [];
   if (atHost.length === 1) return { ...result, gateway: atHost[0]! };
+
+  // An account that couldn't be asked may hold a Gateway already: never offered.
+  const candidates = probed.filter((a) => !unchecked.some((u) => u.id === a.id));
+  if (anyAccount && found.length > 0 && candidates.length > 1) {
+    const chosen = await chooseAccount(candidates, found, whoami, interactive, pickAccount);
+    return {
+      ...result,
+      requestedAccountId: chosen.id,
+      gateway: found.find((g) => g.account.id === chosen.id) ?? null,
+    };
+  }
+  if (found.length <= 1) return { ...result, gateway: found[0] ?? null };
   if (interactive) return { ...result, gateway: await pick(found, whoami) };
   // One command per Gateway, ready to run: no single rerun fits.
   throw new ActionRequiredError(
@@ -298,6 +323,60 @@ export function checkGatewayUrl(
 function describeGateway(gateway: FoundGateway): string {
   const account = gateway.account.name ?? gateway.account.id;
   return `${account}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}`;
+}
+
+/** `anyAccount`'s choice: the person at the terminal picks, anyone else is asked to (`choose_account`). */
+function chooseAccount(
+  accounts: CloudflareAccount[],
+  found: FoundGateway[],
+  whoami: CfWhoami,
+  interactive: boolean,
+  pickAccount: NonNullable<DiscoverOptions["pickAccount"]>,
+): Promise<CloudflareAccount> {
+  if (interactive) return pickAccount(accounts, found, whoami);
+  // One command per account, ready to run: no single rerun fits.
+  throw new ActionRequiredError(
+    "choose_account",
+    `Choose the Cloudflare account to set up EveryApp in\n${whoami.email ?? "This login"} can use ${accounts.length} accounts, and ${found.map(describeGateway).join("; ")} already has a Gateway. Run one of:`,
+    undefined,
+    {
+      rerun: null,
+      data: {
+        choices: accounts.map((account) => {
+          const gatewayHost = found.find((g) => g.account.id === account.id)?.install?.gatewayHost;
+          return {
+            accountId: account.id,
+            accountName: account.name,
+            gatewayUrl: gatewayHost ? `https://${gatewayHost}` : null,
+            label: [account.name ?? account.id, gatewayHost].filter(Boolean).join(" · "),
+            rerun: thisCommand(["--account-id", account.id]),
+          };
+        }),
+      },
+    },
+  );
+}
+
+/** Ask the person at the terminal which account; a Gateway already in one dim beside it. */
+function pickAccountAtTerminal(
+  accounts: CloudflareAccount[],
+  found: FoundGateway[],
+  whoami: CfWhoami,
+): Promise<CloudflareAccount> {
+  return choose(
+    "Which account should EveryApp go in?",
+    accounts.map((account) => {
+      const gatewayHost = found.find((g) => g.account.id === account.id)?.install?.gatewayHost;
+      return {
+        label: account.name ?? account.id,
+        ...(gatewayHost ? { hint: `Gateway at ${gatewayHost}` } : {}),
+        value: account,
+      };
+    }),
+    {
+      context: [`${whoami.email ?? "This login"} can use ${accounts.length} Cloudflare accounts`],
+    },
+  );
 }
 
 /** Ask the person at the terminal which Gateway, by its address; its account dim beside it. */

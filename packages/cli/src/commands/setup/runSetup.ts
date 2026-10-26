@@ -13,10 +13,10 @@
  *    toolchain   Node and cf
  *    auth        cf logged in: `cf auth login` at a terminal, cf's device
  *                link and code under --json, or CLOUDFLARE_API_TOKEN
- *    account     the account whose Gateway the login finds
- *                (lib/gateway/discover.ts), or with none, where to install
- *                one: --account-id, CLOUDFLARE_ACCOUNT_ID, the only one, or
- *                a choice at the terminal
+ *    account     --account-id, CLOUDFLARE_ACCOUNT_ID, the only one the
+ *                login sees, the one whose Gateway is at --domain, or else
+ *                the person's choice (lib/gateway/discover.ts): a Gateway in
+ *                one of several accounts is never assumed to be the one
  *    release     what this run deploys (lib/gateway/checkoutRelease.ts), described
  *                before anything is asked: a checkout that can't be read,
  *                or one that needs a newer everyapp, stops here
@@ -248,6 +248,7 @@ export async function runSetup(
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
     host: domain,
     hostFlag: "--domain",
+    anyAccount: true,
   });
   return installGateway({ whoami, discovery, flags, out, deps });
 }
@@ -275,7 +276,7 @@ async function loginAndDiscover(
   flags: GatewayDeployFlags,
   out: EventSink,
   deps: SetupDeps,
-  byHost?: { host: string | undefined; hostFlag: string },
+  bySetup?: { host: string | undefined; hostFlag: string; anyAccount: boolean },
 ): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
   const whoami = await ensureCfAuth({
     cf: deps.createCf(),
@@ -293,7 +294,7 @@ async function loginAndDiscover(
     whoami,
     createCf: deps.createCf,
     accountId: flags["account-id"],
-    ...byHost,
+    ...bySetup,
     interactive: deps.interactive,
   });
   return { whoami, discovery };
@@ -342,7 +343,8 @@ export async function installGateway({
     found?.account ??
     (await resolveAccount({
       whoami,
-      flag: flags["account-id"],
+      // The account the person picked in discovery, when they had to.
+      flag: flags["account-id"] ?? discovery.requestedAccountId,
       interactive: deps.interactive,
     }));
   const accountName = account.name ?? account.id;

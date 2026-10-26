@@ -4,14 +4,18 @@ and setup.md there; the everyapp skill in the package says the same).
 Before you start, tell me exactly this and wait for my answer:
 "EveryApp is in early development so expect some rough edges. Here's a
 link with more details about giving feedback:
+
 https://everyapp.com/docs/early-adopters
+
 Do you still want to get set up or would you rather wait a few weeks?"
 If I'd rather wait, stop there.
 
 1. Check `node --version` is 22.18 or newer and `pnpm --version` answers
    (install them if not), then `npm install -g everyapp@latest`. Every
    command below is `everyapp`; no clone, no checkout.
-2. Ask me which domain to use, then run
+2. Ask me which domain on my Cloudflare account to use, and if I don't
+   have one yet, link me https://everyapp.com/docs/domain (how to buy one
+   on Cloudflare or bring one I own). Then run
    `everyapp setup --domain apps.<my domain> --json`.
    Setup can run 20 minutes (it downloads the Gateway release, deploys it,
    waits for a certificate, then waits for me at the owner link): give it a
