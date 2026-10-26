@@ -47,6 +47,7 @@ import {
 } from "@/client/components/ui/dropdown-menu";
 
 const DOCS_URL = "https://everyapp.com/docs";
+const DISCORD_URL = "https://discord.gg/c9uGs3cFXr";
 
 const navButtonClass =
   "h-10 rounded-lg px-3 text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground";
@@ -375,6 +376,20 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                     }
                   >
                     Documentation
+                    <span className="sr-only"> (opens in a new tab)</span>
+                    <ArrowUpRight className="ml-auto size-3.5" aria-hidden />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={
+                      <a
+                        href={DISCORD_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setOpenMobile(false)}
+                      />
+                    }
+                  >
+                    Discord
                     <span className="sr-only"> (opens in a new tab)</span>
                     <ArrowUpRight className="ml-auto size-3.5" aria-hidden />
                   </DropdownMenuItem>

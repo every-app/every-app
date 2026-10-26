@@ -48,7 +48,7 @@ Run one as it is, or fork it as the starting point for your own. Many more are c
 
 ## Get started
 
-EveryApp is in early development, so expect some rough edges. [For early adopters](https://everyapp.com/docs/early-adopters) says how to get help and tell us what could be smoother.
+EveryApp is in early development, so expect some rough edges. [For early adopters](https://everyapp.com/docs/early-adopters) says how to get help and tell us what could be smoother. Questions? Ask in [Discord](https://discord.gg/c9uGs3cFXr).
 
 You need a Cloudflare account on Workers Paid ($5/month) and a domain on Cloudflare. Setup takes about 15 minutes.
 

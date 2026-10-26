@@ -43,4 +43,4 @@ workers.dev name (my apps never use it), pay for Workers Paid, buy a domain,
 enable R2 in the dashboard once, or confirm in a terminal a Worker changed
 outside everyapp. Keep it short.
 When everything is done print DONE and the Gateway URL; if stuck print
-BLOCKED: <why> and stop.
+BLOCKED: <why>, tell me I can ask in https://discord.gg/c9uGs3cFXr, and stop.

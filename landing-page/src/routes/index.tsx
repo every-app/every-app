@@ -304,6 +304,14 @@ function Home() {
             >
               GitHub
             </a>
+            <a
+              href="https://discord.gg/c9uGs3cFXr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-stone-400 transition-colors hover:text-white"
+            >
+              Discord
+            </a>
           </nav>
         </div>
       </header>
@@ -482,10 +490,26 @@ function Home() {
             </p>
             <WaitlistForm />
 
-            <div className="mt-16">
+            <div className="mt-16 flex gap-6 text-sm">
+              <a
+                href="https://discord.gg/c9uGs3cFXr"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-stone-500 transition-colors hover:text-stone-300"
+              >
+                Discord
+              </a>
+              <a
+                href="https://github.com/every-app/every-app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-stone-500 transition-colors hover:text-stone-300"
+              >
+                GitHub
+              </a>
               <Link
                 to="/privacy"
-                className="text-sm text-stone-500 transition-colors hover:text-stone-300"
+                className="text-stone-500 transition-colors hover:text-stone-300"
               >
                 Privacy
               </Link>

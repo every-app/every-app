@@ -78,6 +78,7 @@ EXAMPLES
   $ pnpm everyapp configure crm
 
 Run pnpm everyapp <command> --help for a command's flags.
+Stuck? Ask in Discord: https://discord.gg/c9uGs3cFXr
 ```
 
 ## Command groups

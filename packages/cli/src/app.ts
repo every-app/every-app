@@ -231,6 +231,7 @@ export function rootHelp(): string {
     `  $ ${CLI} configure crm`,
     "",
     `Run ${chalk.bold(`${CLI} <command> --help`)} for a command's flags.`,
+    `Stuck? Ask in Discord: https://discord.gg/c9uGs3cFXr`,
     "",
   ].join("\n");
 }
