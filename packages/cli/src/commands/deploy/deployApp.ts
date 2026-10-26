@@ -1086,7 +1086,7 @@ function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
   throw new EveryAppError(
     "RELEASE_MIGRATIONS_UNSUPPORTED",
     `${manifest.id} can't deploy from a release: its Postgres migrations need the source`,
-    { fix: `clone it, then run pnpm install in it and this checkout's ${CLI} deploy from its directory` },
+    { fix: `clone it, run pnpm install in it, then ${CLI} deploy from its directory` },
   );
 }
 

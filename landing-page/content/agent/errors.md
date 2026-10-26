@@ -1022,7 +1022,7 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 `everyapp install <github.com repository URL>` (the repository, its `/releases` or `/releases/latest`, or `/releases/tag/<tag>`): that release has no `everyapp-release.tar.gz` an anonymous download can get (GitHub answers 404; a private repository looks the same). It is the download's `RELEASE_NOT_FOUND`, rewrapped for a repository; the CLI never builds a repository from source. Message `<owner/repo> publishes no everyapp release` (then ` <tag>` when one was named) then `Its GitHub releases have no everyapp-release.tar.gz.`
 
-**Fix:** `data.fix`: `clone it, then run pnpm install in it and this checkout's pnpm everyapp deploy from its directory`. No rerun, not retryable.
+**Fix:** `data.fix`: `clone it, run pnpm install in it, then pnpm everyapp deploy from its directory`. No rerun, not retryable.
 
 Source: `packages/cli/src/lib/app/release.ts`, `packages/cli/src/lib/release/github.ts`
 
@@ -1228,7 +1228,7 @@ Source: `packages/cli/src/lib/app/release.ts`
 
 ### RELEASE_MIGRATIONS_UNSUPPORTED
 
-A release carries SQL files, which only the D1 migration applies by itself; Postgres migrations run the app's own drizzle-kit or Prisma with its config, which a release doesn't have. Two raise sites: self-host `install <release>` of a manifest with `migrations.dialect: "postgresql"` (`deployApp.ts`, before anything else): `<app> can't deploy from a release: its Postgres migrations need the source`, `data.fix` `clone it, then run pnpm install in it and this checkout's pnpm everyapp deploy from its directory`; and `release` of a manifest with `migrations.engine: "prisma"` (`lib/app/release.ts`): `<app> migrates with Prisma, which a release can't carry` then `Prisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`, `data.rerun` `pnpm everyapp deploy`, `data.rerunNote` `from the app's checkout`.
+A release carries SQL files, which only the D1 migration applies by itself; Postgres migrations run the app's own drizzle-kit or Prisma with its config, which a release doesn't have. Two raise sites: self-host `install <release>` of a manifest with `migrations.dialect: "postgresql"` (`deployApp.ts`, before anything else): `<app> can't deploy from a release: its Postgres migrations need the source`, `data.fix` `clone it, run pnpm install in it, then pnpm everyapp deploy from its directory`; and `release` of a manifest with `migrations.engine: "prisma"` (`lib/app/release.ts`): `<app> migrates with Prisma, which a release can't carry` then `Prisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`, `data.rerun` `pnpm everyapp deploy`, `data.rerunNote` `from a clone of the app, after pnpm install in it`.
 
 **Fix:** as above; not retryable.
 

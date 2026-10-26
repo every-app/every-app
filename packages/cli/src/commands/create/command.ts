@@ -1,4 +1,5 @@
 import { buildCommand } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
 import { jsonFlag } from "../flags";
 
 export const createCommand = buildCommand({
@@ -36,17 +37,18 @@ export const createCommand = buildCommand({
   docs: {
     brief: "Create a new app from the starter template",
     fullDescription: [
-      "A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:",
-      "outside your EveryApp checkout it is its own git repository, on the published",
-      "@every-app/sdk and everyapp from npm, its pnpm-lock.yaml in the first commit;",
-      "inside it (on the checkout's own packages) only apps/<name> is allowed. A bare name goes in apps/<name> when run from",
-      "the checkout, in ./<name> anywhere else. Dependencies are installed and the local",
-      "database is ready, so `pnpm dev` works straight away. Then: cd into it and",
-      "`pnpm run deploy`.",
+      "A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there,",
+      "named after its last part. Each is its own git repository on the published",
+      "@every-app/sdk and everyapp from npm, its pnpm-lock.yaml in the first commit.",
+      "Dependencies are installed and the local database is ready, so `pnpm dev` works",
+      "straight away. Then: cd into it and `pnpm run deploy`.",
+      "",
+      "Run from a checkout of the EveryApp repository, a bare name goes in apps/<name>",
+      "(on the checkout's own packages); a path inside the checkout must be apps/<name>.",
       "",
       "Examples:",
-      "  pnpm everyapp create ../my-app    beside the checkout, its own repository",
-      "  pnpm everyapp create analytics    apps/analytics, from the checkout",
+      `  ${CLI} create my-app      ./my-app, its own repository`,
+      `  ${CLI} create ~/apps/crm  ~/apps/crm, its own repository`,
     ].join("\n"),
   },
 });

@@ -34,7 +34,7 @@ The command is `everyapp`: `npm install -g everyapp`, then `everyapp …` (in a 
 Deploy and run EveryApp apps on your own Cloudflare account.
 
 USAGE
-  pnpm everyapp <command> [flags]
+  everyapp <command> [flags]
 
 BUILD AN APP
   create     Create a new app from the starter template
@@ -71,13 +71,13 @@ FLAGS
       --no-color  Print without colors (also NO_COLOR=1)
 
 EXAMPLES
-  $ pnpm everyapp setup --domain apps.example.com
-  $ pnpm everyapp create todo
-  $ pnpm everyapp deploy
-  $ pnpm everyapp install https://github.com/<owner>/<repo>
-  $ pnpm everyapp configure crm
+  $ everyapp setup --domain apps.example.com
+  $ everyapp create todo
+  $ everyapp deploy
+  $ everyapp install https://github.com/<owner>/<repo>
+  $ everyapp configure crm
 
-Run pnpm everyapp <command> --help for a command's flags.
+Run everyapp <command> --help for a command's flags.
 Stuck? Ask in Discord: https://discord.gg/c9uGs3cFXr
 ```
 
@@ -89,7 +89,7 @@ Stuck? Ask in Discord: https://discord.gg/c9uGs3cFXr
 Migrate, query and restore an app's D1 database.
 
 USAGE
-  pnpm everyapp db <command> [flags]
+  everyapp db <command> [flags]
 
 COMMANDS
   migrate  Apply migrations to the local database
@@ -97,10 +97,10 @@ COMMANDS
   restore  Put the production database back to before the last migrations
 
 EXAMPLES
-  $ pnpm everyapp db migrate
-  $ pnpm everyapp db query 'select count(*) from todos'
+  $ everyapp db migrate
+  $ everyapp db query 'select count(*) from todos'
 
-Run pnpm everyapp db <command> --help for its flags.
+Run everyapp db <command> --help for its flags.
 ```
 
 ### `everyapp access`
@@ -109,7 +109,7 @@ Run pnpm everyapp db <command> --help for its flags.
 Put Cloudflare Access in front of the Gateway and its apps, or take it off.
 
 USAGE
-  pnpm everyapp access <command> [flags]
+  everyapp access <command> [flags]
 
 COMMANDS
   on    Turn Cloudflare Access on in front of the Gateway and its apps, or bring it up to date
@@ -117,11 +117,11 @@ COMMANDS
   show  Show how Cloudflare Access fronts the Gateway, and what access on would change
 
 EXAMPLES
-  $ pnpm everyapp access on
-  $ pnpm everyapp access on --email-domain example.com
-  $ pnpm everyapp access off
+  $ everyapp access on
+  $ everyapp access on --email-domain example.com
+  $ everyapp access off
 
-Run pnpm everyapp access <command> --help for its flags.
+Run everyapp access <command> --help for its flags.
 ```
 
 ### `everyapp secret`
@@ -130,7 +130,7 @@ Run pnpm everyapp access <command> --help for its flags.
 Set, remove and list secrets and Gateway settings.
 
 USAGE
-  pnpm everyapp secret <command> [flags]
+  everyapp secret <command> [flags]
 
 COMMANDS
   set    Set secrets on your app or your Gateway
@@ -138,12 +138,12 @@ COMMANDS
   list   List what an app needs set and what is: its own secrets and the Gateway's settings
 
 EXAMPLES
-  $ pnpm everyapp secret set GITHUB_TOKEN
-  $ pnpm everyapp secret set GITHUB_TOKEN --from-env GH_TOKEN
-  $ pnpm everyapp secret set MAIN_SECRET --app analytics
-  $ pnpm everyapp secret list crm
+  $ everyapp secret set GITHUB_TOKEN
+  $ everyapp secret set GITHUB_TOKEN --from-env GH_TOKEN
+  $ everyapp secret set MAIN_SECRET --app analytics
+  $ everyapp secret list crm
 
-Run pnpm everyapp secret <command> --help for its flags.
+Run everyapp secret <command> --help for its flags.
 ```
 
 ### `everyapp provider`
@@ -152,7 +152,7 @@ Run pnpm everyapp secret <command> --help for its flags.
 Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to.
 
 USAGE
-  pnpm everyapp provider <command> [flags]
+  everyapp provider <command> [flags]
 
 COMMANDS
   add          Add a provider and set its key or OAuth client in one step, so apps can list it
@@ -165,13 +165,13 @@ COMMANDS
   scope-set    Scope sets an operator adds to the built-in OAuth clients (Google, Microsoft, Slack)
 
 EXAMPLES
-  $ pnpm everyapp provider list
-  $ pnpm everyapp provider add openrouter
-  $ pnpm everyapp provider add google-workspace
-  $ pnpm everyapp provider add stripe.json
-  $ pnpm everyapp provider connections
+  $ everyapp provider list
+  $ everyapp provider add openrouter
+  $ everyapp provider add google-workspace
+  $ everyapp provider add stripe.json
+  $ everyapp provider connections
 
-Run pnpm everyapp provider <command> --help for its flags.
+Run everyapp provider <command> --help for its flags.
 ```
 
 ### `everyapp mcp`
@@ -180,7 +180,7 @@ Run pnpm everyapp provider <command> --help for its flags.
 Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key.
 
 USAGE
-  pnpm everyapp mcp <command> [flags]
+  everyapp mcp <command> [flags]
 
 COMMANDS
   add      Add any remote MCP server as an MCP app: its tools reach members' AI clients through the Gateway's /mcp
@@ -193,13 +193,13 @@ COMMANDS
   tool     Override one tool of a remote MCP app: its risk, or whether it is listed at all
 
 EXAMPLES
-  $ pnpm everyapp mcp list
-  $ pnpm everyapp mcp on dataforseo
-  $ pnpm everyapp mcp add https://treg.to/mcp/ --auth bearer
-  $ pnpm everyapp mcp show treg
-  $ pnpm everyapp mcp off treg
+  $ everyapp mcp list
+  $ everyapp mcp on dataforseo
+  $ everyapp mcp add https://treg.to/mcp/ --auth bearer
+  $ everyapp mcp show treg
+  $ everyapp mcp off treg
 
-Run pnpm everyapp mcp <command> --help for its flags.
+Run everyapp mcp <command> --help for its flags.
 ```
 
 ### `everyapp email`
@@ -208,10 +208,10 @@ Run pnpm everyapp mcp <command> --help for its flags.
 Manage the addresses an app sends as and receives at.
 
 Invites, and apps that don't set their own senders, send as the Gateway's sender.
-Set it with: pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
+Set it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
 
 USAGE
-  pnpm everyapp email <command> [flags]
+  everyapp email <command> [flags]
 
 COMMANDS
   show   Show the app's senders and inbound addresses
@@ -219,11 +219,11 @@ COMMANDS
   unset  Clear senders or inbound addresses, without a deploy
 
 EXAMPLES
-  $ pnpm everyapp email show
-  $ pnpm everyapp email set --sender '*@mail.example.com'
-  $ pnpm everyapp email unset inbound
+  $ everyapp email show
+  $ everyapp email set --sender '*@mail.example.com'
+  $ everyapp email unset inbound
 
-Run pnpm everyapp email <command> --help for its flags.
+Run everyapp email <command> --help for its flags.
 ```
 
 ### `everyapp workspace`
@@ -236,10 +236,10 @@ Acts under your Cloudflare login (the operator is root in every organization of 
 on the install organization unless --org names another by slug, id or name (a name two
 organizations share is refused: give the slug). The Gateway mails nothing from here: invite
 and reset-link print the link to hand over.
-Depth-two groups have their own help: pnpm everyapp workspace group --help, app, token, connection.
+Depth-two groups have their own help: everyapp workspace group --help, app, token, connection.
 
 USAGE
-  pnpm everyapp workspace <command> [flags]
+  everyapp workspace <command> [flags]
 
 COMMANDS
   show         The organization: its owners, whether it can send mail, and how many members, invitations, groups and apps it has
@@ -267,16 +267,16 @@ COMMANDS
   connection   Revoke an AI connection
 
 EXAMPLES
-  $ pnpm everyapp workspace rename 'Acme Corp'
-  $ pnpm everyapp workspace users
-  $ pnpm everyapp workspace role sam@example.com owner
-  $ pnpm everyapp workspace role sam@example.com member
-  $ pnpm everyapp workspace invite ann@example.com --role admin
-  $ pnpm everyapp workspace app access crm --add ann@example.com
-  $ pnpm everyapp workspace group members Sales --set ann@example.com --set bob@example.com
-  $ pnpm everyapp workspace usage --month 2026-10 --json
+  $ everyapp workspace rename 'Acme Corp'
+  $ everyapp workspace users
+  $ everyapp workspace role sam@example.com owner
+  $ everyapp workspace role sam@example.com member
+  $ everyapp workspace invite ann@example.com --role admin
+  $ everyapp workspace app access crm --add ann@example.com
+  $ everyapp workspace group members Sales --set ann@example.com --set bob@example.com
+  $ everyapp workspace usage --month 2026-10 --json
 
-Run pnpm everyapp workspace <command> --help for its flags.
+Run everyapp workspace <command> --help for its flags.
 ```
 
 ## Commands
@@ -297,20 +297,21 @@ Create a new app from the starter template.
 
 ```text
 USAGE
-  pnpm everyapp create [--yes] [--json] [--verbose] [<name or path>]
-  pnpm everyapp create --help
+  everyapp create [--yes] [--json] [--verbose] [<name or path>]
+  everyapp create --help
 
-A path (../my-app, ~/apps/my-app) makes the app there, named after its last part:
-outside your EveryApp checkout it is its own git repository, on the published
-@every-app/sdk and everyapp from npm, its pnpm-lock.yaml in the first commit;
-inside it (on the checkout's own packages) only apps/<name> is allowed. A bare name goes in apps/<name> when run from
-the checkout, in ./<name> anywhere else. Dependencies are installed and the local
-database is ready, so `pnpm dev` works straight away. Then: cd into it and
-`pnpm run deploy`.
+A bare name makes ./<name>; a path (../my-app, ~/apps/my-app) makes the app there,
+named after its last part. Each is its own git repository on the published
+@every-app/sdk and everyapp from npm, its pnpm-lock.yaml in the first commit.
+Dependencies are installed and the local database is ready, so `pnpm dev` works
+straight away. Then: cd into it and `pnpm run deploy`.
+
+Run from a checkout of the EveryApp repository, a bare name goes in apps/<name>
+(on the checkout's own packages); a path inside the checkout must be apps/<name>.
 
 Examples:
-  pnpm everyapp create ../my-app    beside the checkout, its own repository
-  pnpm everyapp create analytics    apps/analytics, from the checkout
+  everyapp create my-app      ./my-app, its own repository
+  everyapp create ~/apps/crm  ~/apps/crm, its own repository
 
 FLAGS
   -y [--yes/--no-yes]          Don't ask anything (a name is then required)
@@ -338,8 +339,8 @@ Run the app locally behind a dev Gateway.
 
 ```text
 USAGE
-  pnpm everyapp dev [--port value] [--host value] [--mode value] [--gateway value] [--base-host value] [--skip-migrations]
-  pnpm everyapp dev --help
+  everyapp dev [--port value] [--host value] [--mode value] [--gateway value] [--base-host value] [--skip-migrations]
+  everyapp dev --help
 
 Runs the app under `cf dev` (or the manifest's dev command) on an internal
 port and a gateway-lite in front of it on $PORT (default 8787) — the REAL
@@ -366,7 +367,7 @@ Every request goes through the real perimeter (identity header, public-route
 policy, CSRF). Public routes are auth-optional; to call them anonymously send
 the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1
 (browser). Requests straight to the app's internal port get 401 unless they
-carry an identity token in x-everyapp-identity: `pnpm everyapp dev token` prints one.
+carry an identity token in x-everyapp-identity: `everyapp dev token` prints one.
 
 An app that declares crons runs one on demand with
   curl -X POST http://<app-id>.localhost:8787/__everyapp/cron -d '<schedule>'
@@ -397,7 +398,7 @@ FLAGS
 COMMANDS
   token  Print a dev identity token for scripts that call the app's dev port
 
-Run pnpm everyapp dev <command> --help for its flags.
+Run everyapp dev <command> --help for its flags.
 ```
 
 ### `everyapp dev token`
@@ -415,10 +416,10 @@ Print a dev identity token for scripts that call the app's dev port.
 
 ```text
 USAGE
-  pnpm everyapp dev token [--role owner|admin|member] [--user email] [--org id] [--app id] [--ttl duration] [--json]
-  pnpm everyapp dev token --help
+  everyapp dev token [--role owner|admin|member] [--user email] [--org id] [--app id] [--ttl duration] [--json]
+  everyapp dev token --help
 
-Prints an identity token the app accepts while it runs under `pnpm everyapp dev`, for
+Prints an identity token the app accepts while it runs under `everyapp dev`, for
 scripts and curl that call the app's internal dev port directly as someone other
 than the gateway-lite's seeded user: a member, an admin, another organization.
 Send it as the x-everyapp-identity header. The gateway-lite itself replaces that
@@ -439,9 +440,9 @@ Prints the token alone; --json prints a done event whose data has token,
 expiresAt, header, appId and user.
 
 Examples:
-  curl -H "x-everyapp-identity: $(pnpm everyapp dev token --role member)" http://127.0.0.1:<app port>/api/me
-  pnpm everyapp dev token --user ana@example.com --role admin --ttl 15m
-  pnpm everyapp dev token --app my-app --org other-org --json
+  curl -H "x-everyapp-identity: $(everyapp dev token --role member)" http://127.0.0.1:<app port>/api/me
+  everyapp dev token --user ana@example.com --role admin --ttl 15m
+  everyapp dev token --app my-app --org other-org --json
 
 FLAGS
      [--role]            The organization role the token carries                                                                                    [owner|admin|member, default = owner]
@@ -474,8 +475,8 @@ Deploy the app in this directory.
 
 ```text
 USAGE
-  pnpm everyapp deploy [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--register-providers] [--no-wait] [--yes] [--json] [--verbose]
-  pnpm everyapp deploy --help
+  everyapp deploy [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--register-providers] [--no-wait] [--yes] [--json] [--verbose]
+  everyapp deploy --help
 
 Deploys the app in this directory as a private Cloudflare Worker defined by cloudflare.config.ts,
 with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:
@@ -487,15 +488,15 @@ with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's ac
   5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email
      Routing rules for its inbound addresses (turning routing on for a domain asks first)
   6. Binds a new app on the Gateway by redeploying the live Gateway's own release (never a
-     newer one: that is pnpm everyapp update), then waits for the app's hostname to go live
+     newer one: that is everyapp update), then waits for the app's hostname to go live
 
 No Gateway in any account the login sees, and none named? At a terminal it offers to install one at
-apps.<zone> (what pnpm everyapp setup does), then deploys; otherwise it stops with action_required
+apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required
 install_gateway and the setup command to run. Nothing else asks first. Install and build
 output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the
 Gateway already serves never touches the Gateway.
 
-Someone else's published app: pnpm everyapp install <url>. To publish this one: pnpm everyapp release.
+Someone else's published app: everyapp install <url>. To publish this one: everyapp release.
 --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.
 With --json, each step is an NDJSON event.
 
@@ -529,14 +530,14 @@ Pack the app in this directory as a release others can install.
 
 ```text
 USAGE
-  pnpm everyapp release [--out file] [--publish] [--dry-run] [--json] [--verbose]
-  pnpm everyapp release --help
+  everyapp release [--out file] [--publish] [--dry-run] [--json] [--verbose]
+  everyapp release --help
 
 Builds the app in this directory as a deploy would (tenant-neutral), checks its Build Output
 against the app policy and its migrations against its schema, and packs the release
 (default ./everyapp-release.tar.gz) without deploying it: no Gateway and no Cloudflare login,
 so it runs in CI. Attach the tarball to a GitHub release of the app's repository, and
-pnpm everyapp install <repository url> installs it on any Gateway.
+everyapp install <repository url> installs it on any Gateway.
 With --publish (in the app repository's Release workflow) it then publishes the tarball on
 a GitHub release of the repository the run builds, from GITHUB_REPOSITORY, GITHUB_SHA,
 GITHUB_EVENT_NAME, GITHUB_REF_* and GITHUB_TOKEN: v<package.json version> on a push to the
@@ -566,14 +567,14 @@ Apply migrations to the local database.
 
 ```text
 USAGE
-  pnpm everyapp db migrate [--json] [--verbose]
-  pnpm everyapp db migrate --help
+  everyapp db migrate [--json] [--verbose]
+  everyapp db migrate --help
 
 Apply the app's migrations to the local database
 
 Reads migrations from migrations.dir in everyapp.config.ts (default drizzle/).
-`pnpm everyapp dev` runs this on every start. Production migrations run only during
-`pnpm everyapp deploy`, after a restore point is saved.
+`everyapp dev` runs this on every start. Production migrations run only during
+`everyapp deploy`, after a restore point is saved.
 
 FLAGS
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -603,8 +604,8 @@ Run SQL against the production database (or --local).
 
 ```text
 USAGE
-  pnpm everyapp db query [--local] [--file path] [--binding name] [--gateway value] [--account-id value] [--yes] [--json] [--verbose] [<sql>]
-  pnpm everyapp db query --help
+  everyapp db query [--local] [--file path] [--binding name] [--gateway value] [--account-id value] [--yes] [--json] [--verbose] [<sql>]
+  everyapp db query --help
 
 Run SQL against the app's D1 database
 
@@ -613,9 +614,9 @@ confirmed first (--yes skips that). Rows print as a table; with --json they are 
 done event's data.results.
 
 EXAMPLES
-  $ pnpm everyapp db query "select * from todos limit 5"
-  $ pnpm everyapp db query --local "select count(*) from events"
-  $ pnpm everyapp db query --file scripts/backfill.sql
+  $ everyapp db query "select * from todos limit 5"
+  $ everyapp db query --local "select count(*) from events"
+  $ everyapp db query --file scripts/backfill.sql
 
 FLAGS
      [--local/--no-local]      Query the local database `everyapp dev` uses
@@ -650,8 +651,8 @@ Put the production database back to before the last migrations.
 
 ```text
 USAGE
-  pnpm everyapp db restore [--gateway] [--account-id value] [--yes] [--json] [<app>]
-  pnpm everyapp db restore --help
+  everyapp db restore [--gateway] [--account-id value] [--yes] [--json] [<app>]
+  everyapp db restore --help
 
 Put the app's production database back to before its last migrations
 
@@ -660,8 +661,8 @@ This restores the last one, after asking: the migrations are undone, and so is a
 written to the database since. --gateway does the same for the Gateway's database.
 
 EXAMPLES
-  $ pnpm everyapp db restore
-  $ pnpm everyapp db restore --gateway
+  $ everyapp db restore
+  $ everyapp db restore --gateway
 
 FLAGS
      [--gateway/--no-gateway]  Restore the Gateway's database, from its last migrating setup or upgrade
@@ -685,8 +686,8 @@ Replace this app's copies of the skills with the ones this CLI ships.
 
 ```text
 USAGE
-  pnpm everyapp skills update [--json]
-  pnpm everyapp skills update --help
+  everyapp skills update [--json]
+  everyapp skills update --help
 
 Replace the app's copies of the skills with the ones this CLI ships
 
@@ -698,8 +699,8 @@ AGENTS.md gets a line for any skill it doesn't mention. Prints what was added, u
 or left unchanged; with --json, done carries each copy's files added, updated and removed.
 
 EXAMPLES
-  $ pnpm everyapp skills update
-  $ pnpm everyapp skills update --json
+  $ everyapp skills update
+  $ everyapp skills update --json
 
 FLAGS
      [--json/--no-json]  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -721,8 +722,8 @@ Delete everything EveryApp created in a dedicated test Cloudflare account.
 
 ```text
 USAGE
-  pnpm everyapp teardown (--account-id id) [--confirm id] [--dry-run] [--json] [--verbose]
-  pnpm everyapp teardown --help
+  everyapp teardown (--account-id id) [--confirm id] [--dry-run] [--json] [--verbose]
+  everyapp teardown --help
 
 For the accounts the onboarding loop installs into, over and over: removes every Worker,
 Workflow, D1 database, KV namespace, R2 bucket, Hyperdrive config, queue, Vectorize index,
@@ -771,8 +772,8 @@ Log in to Cloudflare.
 
 ```text
 USAGE
-  pnpm everyapp login [--json] [--verbose]
-  pnpm everyapp login --help
+  everyapp login [--json] [--verbose]
+  everyapp login --help
 
 Log in to Cloudflare
 
@@ -807,12 +808,12 @@ Install or repair the Gateway.
 
 ```text
 USAGE
-  pnpm everyapp setup [--domain value] [--account-id value] [--release value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
-  pnpm everyapp setup --help
+  everyapp setup [--domain value] [--account-id value] [--release value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
+  everyapp setup --help
 
 One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its
 owner, and the one to run when something is off. Run it again any time: it picks up where it
-stopped, and does nothing once everything is there. pnpm everyapp update takes a newer Gateway
+stopped, and does nothing once everything is there. everyapp update takes a newer Gateway
 later (setup does that too, on its way).
 
 A fresh install takes 5 to 20 minutes, most of it waiting for you at the owner link: give it a
@@ -836,7 +837,7 @@ long timeout, or run it in the background and watch its output.
 The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own
 questions; never cf's). With --json each step is an NDJSON event; a run that stops on
 something only a person can do exits 2 with action_required.
-Then: pnpm everyapp create ../my-app, cd into it, pnpm everyapp dev, pnpm everyapp deploy.
+Then: everyapp create ../my-app, cd into it, everyapp dev, everyapp deploy.
 More: https://everyapp.com/docs/gateway
 
 FLAGS
@@ -869,12 +870,12 @@ Update the Gateway to a newer release.
 
 ```text
 USAGE
-  pnpm everyapp update [--account-id value] [--release value] [--force-dns] [--yes] [--json] [--verbose]
-  pnpm everyapp update --help
+  everyapp update [--account-id value] [--release value] [--force-dns] [--yes] [--json] [--verbose]
+  everyapp update --help
 
 Deploys a newer Gateway over the one your Cloudflare login finds, where it is, keeping its
 data, users and apps. It never installs a Gateway: with none, it stops and says to run
-pnpm everyapp setup. The Gateway comes from --release (a GitHub repository or release URL, a
+everyapp setup. The Gateway comes from --release (a GitHub repository or release URL, a
 tarball's URL, or a downloaded every-app-gateway-release.tar.gz); otherwise this checkout's
 build when everyapp runs from one; otherwise the published release for this everyapp
 version (https://github.com/every-app/every-app, gateway-v<version>).
@@ -925,24 +926,24 @@ Install an app someone published, from GitHub or a release file.
 
 ```text
 USAGE
-  pnpm everyapp install [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--register-providers] [--no-wait] [--yes] [--json] [--verbose] <source>
-  pnpm everyapp install --help
+  everyapp install [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--register-providers] [--no-wait] [--yes] [--json] [--verbose] <source>
+  everyapp install --help
 
-Installs an app release on your Gateway with no checkout of the app, as pnpm everyapp deploy
+Installs an app release on your Gateway with no checkout of the app, as everyapp deploy
 would from the app's directory, with nothing to build: <source> is a GitHub repository URL
 (the everyapp-release.tar.gz on its latest release; …/releases/tag/<tag> for that one), a
 tarball's HTTPS URL, or a downloaded everyapp-release.tar.gz. The release holds the app's
 tenant-neutral Build Output, migrations and manifest, checked against its SHA-256. Run it
-again later to update the app. Its settings are set with pnpm everyapp configure <id>;
+again later to update the app. Its settings are set with everyapp configure <id>;
 .everyapp/secrets.env in this directory is the deploy's own file, read only for a Hyperdrive
 app's database URL.
 
-A repository without a release is never built from its URL: clone it, then run pnpm
-install in it and this checkout's pnpm everyapp deploy from its directory. Postgres migrations
+A repository without a release is never built from its URL: clone it, run pnpm
+install in it, then everyapp deploy from its directory. Postgres migrations
 need the app's source, so their releases are refused.
 
 No Gateway in any account the login sees, and none named? At a terminal it offers to install one at
-apps.<zone> (what pnpm everyapp setup does, owner link included), then installs the app; otherwise
+apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise
 it stops with action_required install_gateway and the setup command to run.
 --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.
 With --json, each step is an NDJSON event.
@@ -984,8 +985,8 @@ Set up an app: asks for each setting it needs, required ones first, then the opt
 
 ```text
 USAGE
-  pnpm everyapp configure [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
-  pnpm everyapp configure --help
+  everyapp configure [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
+  everyapp configure --help
 
 Reads what the app's everyapp.config.ts declares (AI providers, capabilities, its own
 secrets) and what is set, then asks for each required setting that isn't (hidden input,
@@ -1004,12 +1005,12 @@ one pair of quotes around it dropped), or export the variables under the setting
 names and add --from-env (then stdin isn't read). A value never goes on the command line.
 
 Examples:
-  pnpm everyapp configure crm
-  pnpm everyapp configure                       (in the app's directory)
-  pnpm everyapp configure crm --from-env --json
-  printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" | pnpm everyapp configure crm --json
+  everyapp configure crm
+  everyapp configure                       (in the app's directory)
+  everyapp configure crm --from-env --json
+  printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY" | everyapp configure crm --json
 
-One setting at a time, by name: pnpm everyapp secret set <NAME> [--app <id>]
+One setting at a time, by name: everyapp secret set <NAME> [--app <id>]
 
 FLAGS
      [--from-env/--no-from-env]  Take each unset setting's value, optional ones too, from the environment variable of its name (DATAFORSEO_API_KEY from $DATAFORSEO_API_KEY); a set name is never replaced; stdin isn't read; the rest are asked for at a terminal
@@ -1036,8 +1037,8 @@ Show the Gateway, its apps and anything to fix.
 
 ```text
 USAGE
-  pnpm everyapp status [--account-id value] [--json] [--verbose]
-  pnpm everyapp status --help
+  everyapp status [--account-id value] [--json] [--verbose]
+  everyapp status --help
 
 One screen, all of it from the Gateway's D1 database and cf, nothing asked of the Gateway:
 its URL and release (and whether this checkout builds it), its owner, the apps its registry
@@ -1072,8 +1073,8 @@ Remove an app from the Gateway.
 
 ```text
 USAGE
-  pnpm everyapp delete [--gateway value] [--account-id value] [--purge] [--yes] [--json] [--verbose] [<id>]
-  pnpm everyapp delete --help
+  everyapp delete [--gateway value] [--account-id value] [--purge] [--yes] [--json] [--verbose] [<id>]
+  everyapp delete --help
 
 Deletes the app in the Gateway's D1 database (its name stays reserved; deploy it again to
 bring it back) and removes its Gateway binding and hostname, with a redeploy of the Gateway
@@ -1114,8 +1115,8 @@ Turn Cloudflare Access on in front of the Gateway and its apps, or bring it up t
 
 ```text
 USAGE
-  pnpm everyapp access on [--email address]... [--email-domain domain]... [--team name] [--session duration] [--team-session duration] [--write-settings] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp access on --help
+  everyapp access on [--email address]... [--email-domain domain]... [--team name] [--session duration] [--team-session duration] [--write-settings] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp access on --help
 
 Everyone opens the Gateway and its apps through Cloudflare Access first (a one-time PIN to
 their email, or your identity provider), then lands signed in. With your Cloudflare login it
@@ -1130,12 +1131,12 @@ changed by hand. It changes only what differs, never removes anyone from the pol
 leaves alone what it didn't set up. Deploys keep an app's public routes in step themselves.
 
 Afterwards each existing member signs in once with their password through Access, which
-links the two. Then passwords can go: pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN (false).
+links the two. Then passwords can go: everyapp secret set EMAIL_PASSWORD_SIGN_IN (false).
 
 Examples:
-  pnpm everyapp access on
-  pnpm everyapp access on --email-domain example.com
-  pnpm everyapp access on --team acme --json
+  everyapp access on
+  everyapp access on --email-domain example.com
+  everyapp access on --team acme --json
 
 FLAGS
      [--email]...                            Also let this email address past Access (repeat for several; an account still takes an invitation)
@@ -1167,8 +1168,8 @@ Turn Cloudflare Access off for the Gateway and its apps.
 
 ```text
 USAGE
-  pnpm everyapp access off [--keep-applications] [--yes] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp access off --help
+  everyapp access off [--keep-applications] [--yes] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp access off --help
 
 Removes CLOUDFLARE_ACCESS_AUD, CLOUDFLARE_ACCESS_APPS_AUD and CLOUDFLARE_ACCESS_TEAM_DOMAIN
 from the Gateway in one change, so passwords sign people in again at once, then deletes the
@@ -1177,7 +1178,7 @@ The Zero Trust team, its identity providers and the allow policy stay: other app
 use them. Asks first.
 
 Example:
-  pnpm everyapp access off
+  everyapp access off
 
 FLAGS
      [--keep-applications/--no-keep-applications]  Keep the two Access applications: Access still asks people to sign in there, and the Gateway no longer requires it
@@ -1203,15 +1204,15 @@ Show how Cloudflare Access fronts the Gateway, and what access on would change.
 
 ```text
 USAGE
-  pnpm everyapp access show [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp access show --help
+  everyapp access show [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp access show --help
 
 The Zero Trust team, who the allow policy lets in, the two Access applications and whether
 their public paths match the apps' public routes, and which Access settings the Gateway has
 (their values can't be read back). Nothing is changed.
 
 Example:
-  pnpm everyapp access show
+  everyapp access show
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1244,8 +1245,8 @@ Turn a sign-in provider on: "Continue with Google" (or Microsoft, GitHub, Apple,
 
 ```text
 USAGE
-  pnpm everyapp signin add [--client-id value] [--client-secret-from-env VAR] [--issuer url] [--label text] [--tenant value] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp signin add --help
+  everyapp signin add [--client-id value] [--client-secret-from-env VAR] [--issuer url] [--label text] [--tenant value] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp signin add --help
 
 Says where to create the OAuth app and the redirect URL to register with it
 (https://<gateway>/api/auth/callback/<id>), then sets the provider's settings on the
@@ -1260,15 +1261,15 @@ A provider says who someone is; the Gateway still decides who gets in: a member,
 someone with a pending invitation for that exact, verified email. Nobody else.
 
 Safe to repeat: running it again replaces the values given (a rotated secret, a new
-client). An optional setting not given stays as it is; pnpm everyapp secret unset <NAME>
+client). An optional setting not given stays as it is; everyapp secret unset <NAME>
 removes one. The everyapp skill's setup/signin-<id>.md walks through each provider's
 console.
 
 Examples:
-  pnpm everyapp signin add google
-  pnpm everyapp signin add github --client-id Iv1.0123456789abcdef --client-secret-from-env GITHUB_SECRET --json
-  pnpm everyapp signin add microsoft --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47
-  pnpm everyapp signin add oidc --issuer https://acme.okta.com --label Okta
+  everyapp signin add google
+  everyapp signin add github --client-id Iv1.0123456789abcdef --client-secret-from-env GITHUB_SECRET --json
+  everyapp signin add microsoft --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47
+  everyapp signin add oidc --issuer https://acme.okta.com --label Okta
 
 FLAGS
      [--client-id]               The OAuth app's client id (not a secret; for apple, the Services ID)
@@ -1300,8 +1301,8 @@ List the sign-in providers: on, needs setup (naming what is missing) or off.
 
 ```text
 USAGE
-  pnpm everyapp signin list [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp signin list --help
+  everyapp signin list [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp signin list --help
 
 Reads which of each provider's settings the Gateway Worker holds (names only: a value
 can't be read back) and says whether the provider is on (every required setting set),
@@ -1310,10 +1311,10 @@ configured) or off. A value that is set but malformed also keeps a provider off;
 Gateway's log says so (signin.config_problem). Nothing is changed.
 
 Example:
-  pnpm everyapp signin list
+  everyapp signin list
 
 ALIASES
-  pnpm everyapp signin ls
+  everyapp signin ls
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1341,8 +1342,8 @@ Show a sign-in provider: where to make its OAuth app, the redirect URL, its sett
 
 ```text
 USAGE
-  pnpm everyapp signin show [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp signin show --help
+  everyapp signin show [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp signin show --help
 
 The provider's console and what the OAuth app is called there, the redirect URL to
 register for this Gateway, the scopes asked for (identity only), which claim becomes
@@ -1350,7 +1351,7 @@ the email and when it counts as verified, every setting with what it holds and w
 it is set, the provider's caveats and its setup guide. Nothing is changed.
 
 Example:
-  pnpm everyapp signin show apple
+  everyapp signin show apple
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1382,8 +1383,8 @@ Turn a sign-in provider off: its settings leave the Gateway; accounts stay.
 
 ```text
 USAGE
-  pnpm everyapp signin remove [--yes] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp signin remove --help
+  everyapp signin remove [--yes] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp signin remove --help
 
 Asks first (--yes doesn't), then removes every setting of the provider from the Gateway
 Worker in one new version: the button leaves the sign-in page on the next request.
@@ -1392,7 +1393,7 @@ via Forgot password, another provider, Access). Delete the OAuth app at the prov
 too: a client the Gateway no longer holds is still a client.
 
 Example:
-  pnpm everyapp signin remove github
+  everyapp signin remove github
 
 FLAGS
      [--yes/--no-yes]          Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
@@ -1426,8 +1427,8 @@ Set secrets on your app or your Gateway.
 
 ```text
 USAGE
-  pnpm everyapp secret set [--from-env VAR] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
-  pnpm everyapp secret set --help
+  everyapp secret set [--from-env VAR] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  everyapp secret set --help
 
 Gateway settings (AI provider keys, EMAIL_FROM, sign-in clients) go to the Gateway, from any
 directory. Other names go to the app in this directory, or with --app <id> to that app from
@@ -1436,12 +1437,12 @@ hidden prompt, --from-env or stdin, never the command line. Changes are live at 
 deploy needed.
 
 Examples:
-  pnpm everyapp secret set OPENAI_API_KEY
-  pnpm everyapp secret set GITHUB_TOKEN --from-env GITHUB_TOKEN
-  echo "$STRIPE_KEY" | pnpm everyapp secret set STRIPE_KEY
-  pnpm everyapp secret set MAIN_SECRET --app analytics
+  everyapp secret set OPENAI_API_KEY
+  everyapp secret set GITHUB_TOKEN --from-env GITHUB_TOKEN
+  echo "$STRIPE_KEY" | everyapp secret set STRIPE_KEY
+  everyapp secret set MAIN_SECRET --app analytics
 
-See what an app needs and what is set: pnpm everyapp secret list [<app>]
+See what an app needs and what is set: everyapp secret list [<app>]
 
 FLAGS
      [--from-env]              Read the value from this environment variable
@@ -1476,14 +1477,14 @@ Remove secrets from your app or your Gateway.
 
 ```text
 USAGE
-  pnpm everyapp secret unset [--yes] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
-  pnpm everyapp secret unset --help
+  everyapp secret unset [--yes] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  everyapp secret unset --help
 
 Names go where `secret set` sends them (--app <id> names the app from anywhere). Asks before
 removing; the change is live at once.
 
 Example:
-  pnpm everyapp secret unset GITHUB_TOKEN
+  everyapp secret unset GITHUB_TOKEN
 
 FLAGS
   -y [--yes/--no-yes]          Remove without asking
@@ -1516,12 +1517,12 @@ List what an app needs set and what is: its own secrets and the Gateway's settin
 
 ```text
 USAGE
-  pnpm everyapp secret list [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
-  pnpm everyapp secret list --help
+  everyapp secret list [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
+  everyapp secret list --help
 
 For one app (the app in this directory, or <app> from anywhere): every setting its manifest
 declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one
-command that opens the app when something required is missing (pnpm everyapp configure <app>).
+command that opens the app when something required is missing (everyapp configure <app>).
 Elsewhere with no app named: the Gateway's names and who set them, then every app's
 settings. Names only, never values.
 
@@ -1558,8 +1559,8 @@ Add a provider and set its key or OAuth client in one step, so apps can list it.
 
 ```text
 USAGE
-  pnpm everyapp provider add [--replace] [--oauth preset] [--client-id id] [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<provider>]
-  pnpm everyapp provider add --help
+  everyapp provider add [--replace] [--oauth preset] [--client-id id] [--from-env] [--gateway value] [--account-id value] [--json] [--verbose] [<provider>]
+  everyapp provider add --help
 
 Says the one thing to do at the provider (create a key, or register the redirect URI and
 make an OAuth client), links its page on everyapp.com, then asks for the key or client at
@@ -1567,7 +1568,7 @@ hidden prompts and sets it on the Gateway as secret set would. Live at once; no 
 
 Nobody at a terminal (--json, piped, CI), or Enter on nothing: nothing is set, and it prints
 the one command to run next:
-  pnpm everyapp secret set OPENROUTER_API_KEY
+  everyapp secret set OPENROUTER_API_KEY
 Scripts and agents set it in the same run with --from-env (the variables of the settings'
 names) or piped NAME=value lines; never on the command line.
 
@@ -1591,14 +1592,14 @@ it the Gateway's default model provider.
 name. --verbose adds an OAuth provider's scope sets and the manifest entry.
 
 Examples:
-  pnpm everyapp provider add google-workspace
-  pnpm everyapp provider add openrouter
-  OPENROUTER_API_KEY=sk-or-... pnpm everyapp provider add openrouter --from-env
-  pnpm everyapp provider add github-oauth
-  printf 'GITHUB_OAUTH_CLIENT_SECRET=%s\n' "$SECRET" | pnpm everyapp provider add github-oauth --client-id Iv1.abc
-  pnpm everyapp provider add stripe.json
-  pnpm everyapp provider add https://example.com/providers/stripe.json --replace
-  pnpm everyapp provider add --oauth ./acme.json --from-env
+  everyapp provider add google-workspace
+  everyapp provider add openrouter
+  OPENROUTER_API_KEY=sk-or-... everyapp provider add openrouter --from-env
+  everyapp provider add github-oauth
+  printf 'GITHUB_OAUTH_CLIENT_SECRET=%s\n' "$SECRET" | everyapp provider add github-oauth --client-id Iv1.abc
+  everyapp provider add stripe.json
+  everyapp provider add https://example.com/providers/stripe.json --replace
+  everyapp provider add --oauth ./acme.json --from-env
 
 FLAGS
      [--replace/--no-replace]    Replace the provider registered under the spec's id; its key must be set again
@@ -1629,17 +1630,17 @@ List the API providers the Gateway offers: built in and registered, each key's s
 
 ```text
 USAGE
-  pnpm everyapp provider list [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp provider list --help
+  everyapp provider list [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp provider list --help
 
 Nothing is changed. A key's value can't be read back; only whether it is set, and for a
 registered provider whether it was set for the hosts the row names now (bound).
 
 Example:
-  pnpm everyapp provider list
+  everyapp provider list
 
 ALIASES
-  pnpm everyapp provider ls
+  everyapp provider ls
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1668,15 +1669,15 @@ Print a provider's spec: its hosts, how its key is sent, its settings, who regis
 
 ```text
 USAGE
-  pnpm everyapp provider show [--save] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp provider show --help
+  everyapp provider show [--save] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp provider show --help
 
 What an agent reads to set up and call a provider without a setup guide. With --save, in an
 app's directory, the spec is written where everyapp dev reads it.
 
 Examples:
-  pnpm everyapp provider show stripe
-  pnpm everyapp provider show stripe --save
+  everyapp provider show stripe
+  everyapp provider show stripe --save
 
 FLAGS
      [--save/--no-save]        Also write the spec to .everyapp/providers/<id>.json in this app's directory, for everyapp dev
@@ -1709,18 +1710,18 @@ Remove a registered provider from the Gateway; its key stays set until secret un
 
 ```text
 USAGE
-  pnpm everyapp provider remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp provider remove --help
+  everyapp provider remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp provider remove --help
 
 The Gateway stops serving it within 30 seconds. A provider a deployed app lists under
 capabilities is refused unless --force. The Gateway setting holding its key stays; remove
-it with pnpm everyapp secret unset <NAME>. Registering it again needs the key set again too.
+it with everyapp secret unset <NAME>. Registering it again needs the key set again too.
 
 Example:
-  pnpm everyapp provider remove stripe
+  everyapp provider remove stripe
 
 ALIASES
-  pnpm everyapp provider rm
+  everyapp provider rm
 
 FLAGS
      [--force/--no-force]      Remove it even though deployed apps list it (their calls to it stop)
@@ -1746,14 +1747,14 @@ List the OAuth presets provider add --oauth takes: GitHub, Notion, Linear and mo
 
 ```text
 USAGE
-  pnpm everyapp provider presets [--json] [--verbose]
-  pnpm everyapp provider presets --help
+  everyapp provider presets [--json] [--verbose]
+  everyapp provider presets --help
 
 Each with its scope sets (what an app lists under scopes) and the console where its client
 is made. Nothing is read from the Gateway.
 
 Example:
-  pnpm everyapp provider presets
+  everyapp provider presets
 
 FLAGS
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -1778,16 +1779,16 @@ List the accounts people (and the organization) connected to OAuth providers on 
 
 ```text
 USAGE
-  pnpm everyapp provider connections [--all] [--user email] [--provider id] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp provider connections --help
+  everyapp provider connections [--all] [--user email] [--provider id] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp provider connections --help
 
 Who connected what, with the scope sets granted, the status and when it was last used.
 Never a token.
 
 Examples:
-  pnpm everyapp provider connections
-  pnpm everyapp provider connections --provider github-oauth
-  pnpm everyapp provider connections --user ben@example.com
+  everyapp provider connections
+  everyapp provider connections --provider github-oauth
+  everyapp provider connections --user ben@example.com
 
 FLAGS
      [--all/--no-all]          Every organization's connections (default: the Gateway's own organization's)
@@ -1821,17 +1822,17 @@ Remove a person's or the organization's connection to an OAuth provider from the
 
 ```text
 USAGE
-  pnpm everyapp provider disconnect [--user email] [--organization] [--all] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp provider disconnect --help
+  everyapp provider disconnect [--user email] [--organization] [--all] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp provider disconnect --help
 
 The Gateway drops the tokens it held; apps get "not connected" until the person connects
 again at /connect/<id>. The CLI holds no token, so the grant stays at the provider until it
 is revoked there (Admin → Providers → Disconnect revokes it from the Gateway).
 
 Examples:
-  pnpm everyapp provider disconnect github-oauth --user ben@example.com
-  pnpm everyapp provider disconnect github-oauth --organization
-  pnpm everyapp provider disconnect github-oauth --all
+  everyapp provider disconnect github-oauth --user ben@example.com
+  everyapp provider disconnect github-oauth --organization
+  everyapp provider disconnect github-oauth --all
 
 FLAGS
      [--user]                            This person's connection
@@ -1867,8 +1868,8 @@ Add a scope set to a built-in OAuth client, so apps can list it under scopes.
 
 ```text
 USAGE
-  pnpm everyapp provider scope-set add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <spec>
-  pnpm everyapp provider scope-set add --help
+  everyapp provider scope-set add [--replace] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <spec>
+  everyapp provider scope-set add --help
 
 The set says its name (identity, or <area>.<access>: gmail.send), its label, its access
 (read or write, said outright), the provider's scopes it asks for, and the routes on the
@@ -1879,7 +1880,7 @@ by; a name the client already has, or a host outside the client's, is refused. L
 at the provider's console, and people connect again to grant them.
 
 Example:
-  pnpm everyapp provider scope-set add google-workspace gmail-send.json
+  everyapp provider scope-set add google-workspace gmail-send.json
   gmail-send.json: { "name": "gmail.send", "label": "Gmail (send)", "access": "write",
     "scopes": ["https://www.googleapis.com/auth/gmail.send"],
     "routes": [{ "host": "gmail.googleapis.com", "paths": ["/gmail/v1/users/"] }] }
@@ -1917,18 +1918,18 @@ Remove a scope set added to a built-in OAuth client.
 
 ```text
 USAGE
-  pnpm everyapp provider scope-set remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <name>
-  pnpm everyapp provider scope-set remove --help
+  everyapp provider scope-set remove [--force] [--gateway value] [--account-id value] [--json] [--verbose] <provider> <name>
+  everyapp provider scope-set remove --help
 
 Only a set added with scope-set add can be removed; the client's own stay. A set a deployed
 app lists under scopes is refused unless --force. Connections keep their tokens; calls
 under the set answer integration_scopes_undeclared within 30 seconds.
 
 Example:
-  pnpm everyapp provider scope-set remove google-workspace gmail.send
+  everyapp provider scope-set remove google-workspace gmail.send
 
 ALIASES
-  pnpm everyapp provider scope-set rm
+  everyapp provider scope-set rm
 
 FLAGS
      [--force/--no-force]      Remove it even though deployed apps list it (their calls under it stop)
@@ -1946,7 +1947,7 @@ ARGUMENTS
 
 ### `everyapp provider on` (hidden)
 
-Same as pnpm everyapp mcp on; this alias goes after launch week.
+Same as everyapp mcp on; this alias goes after launch week.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
@@ -1965,7 +1966,7 @@ Same as pnpm everyapp mcp on; this alias goes after launch week.
 
 ### `everyapp provider off` (hidden)
 
-Same as pnpm everyapp mcp off; this alias goes after launch week.
+Same as everyapp mcp off; this alias goes after launch week.
 
 | Argument | Required | What it is |
 | --- | --- | --- |
@@ -1995,8 +1996,8 @@ What the Gateway's default model provider resolves to now, and why.
 
 ```text
 USAGE
-  pnpm everyapp ai show [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp ai show --help
+  everyapp ai show [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp ai show --help
 
 The provider and model an app that asks for the default chat model gets (ai: { chat: true }
 in its manifest, the SDK's ai()): the stored choice (ai default) if there is one, else the
@@ -2005,7 +2006,7 @@ Groq, Mistral, Gemini), else what to set. Reads the Gateway's setting names, nev
 Says whether calls go through Cloudflare AI Gateway (ai gateway on).
 
 Example:
-  pnpm everyapp ai show
+  everyapp ai show
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2029,18 +2030,18 @@ Every provider the default model could be, in order, each with its key set or no
 
 ```text
 USAGE
-  pnpm everyapp ai list [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp ai list --help
+  everyapp ai list [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp ai list --help
 
 The shipped order first, then any other AI provider with an OpenAI-shaped chat route; the
 one the default resolves to now is marked. An API provider (Stripe) or one without such a
 route (Cohere) isn't here: an app pins those under providers.
 
 Example:
-  pnpm everyapp ai list
+  everyapp ai list
 
 ALIASES
-  pnpm everyapp ai ls
+  everyapp ai ls
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2068,12 +2069,12 @@ Choose the default model provider (and model) for every app that asks for one, o
 
 ```text
 USAGE
-  pnpm everyapp ai default [--gateway value] [--account-id value] [--json] [--verbose] <provider[/model]|off>
-  pnpm everyapp ai default --help
+  everyapp ai default [--gateway value] [--account-id value] [--json] [--verbose] <provider[/model]|off>
+  everyapp ai default --help
 
 The same setting as Manage workspace → Usage → AI default. The provider id is everything
 up to the first slash, the model everything after it (a model id may hold slashes); the
-model is stored as that provider's chat model, as pnpm everyapp ai model --chat stores it. Without
+model is stored as that provider's chat model, as everyapp ai model --chat stores it. Without
 a model, the provider's model setting stays (the catalog's seed when none). A provider whose key isn't set is
 accepted with a warning naming the key; one the default can't be (an API provider, an entry
 without an OpenAI-shaped chat route, AI Gateway) is refused (AI_DEFAULT_INVALID). The Gateway
@@ -2081,10 +2082,10 @@ reads the change within 30 seconds; a change queues ai.default_changed. Refused 
 from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
 
 Examples:
-  pnpm everyapp ai default openrouter
-  pnpm everyapp ai default openrouter/anthropic/claude-sonnet-5.5
-  pnpm everyapp ai default workers-ai --json
-  pnpm everyapp ai default off
+  everyapp ai default openrouter
+  everyapp ai default openrouter/anthropic/claude-sonnet-5.5
+  everyapp ai default workers-ai --json
+  everyapp ai default off
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2117,8 +2118,8 @@ Set the chat and embeddings models a provider serves when an app takes the defau
 
 ```text
 USAGE
-  pnpm everyapp ai model [--chat model] [--embeddings model] [--gateway value] [--account-id value] [--json] [--verbose] <provider>
-  pnpm everyapp ai model --help
+  everyapp ai model [--chat model] [--embeddings model] [--gateway value] [--account-id value] [--json] [--verbose] <provider>
+  everyapp ai model --help
 
 Each provider the default can be has a chat model and (most) an embeddings model the Gateway
 fills in when an app calls /api/ai/default/… without naming one: the operator's setting here,
@@ -2129,9 +2130,9 @@ The Gateway reads the change within 30 seconds; a change queues ai.model_changed
 Gateway from before the setting (GATEWAY_PREDATES_AI_DEFAULT): run update first.
 
 Examples:
-  pnpm everyapp ai model openrouter --chat anthropic/claude-sonnet-5.5
-  pnpm everyapp ai model openrouter --embeddings openai/text-embedding-3-large
-  pnpm everyapp ai model workers-ai --chat seed --embeddings seed
+  everyapp ai model openrouter --chat anthropic/claude-sonnet-5.5
+  everyapp ai model openrouter --embeddings openai/text-embedding-3-large
+  everyapp ai model workers-ai --chat seed --embeddings seed
 
 FLAGS
      [--chat]                  The chat model to fill in when an app names none; seed for the catalog's
@@ -2161,19 +2162,19 @@ Put Cloudflare AI Gateway in front of every model call: find or make the gateway
 
 ```text
 USAGE
-  pnpm everyapp ai gateway on [--id id] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp ai gateway on --help
+  everyapp ai gateway on [--id id] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp ai gateway on --help
 
 Finds the AI Gateway in the Gateway's Cloudflare account (or makes it, logs on, no cache)
 and records its id as the Gateway setting AI_GATEWAY_ID. From the Gateway's next request
 every call to a model provider that AI Gateway fronts (OpenRouter, OpenAI, Anthropic, Groq,
 Mistral, Workers AI) goes through it with the provider's own key still on the call; Gemini
 and Cohere go direct. Changes no app and no key. For an authenticated gateway, set its
-token afterwards: pnpm everyapp secret set AI_GATEWAY_API_KEY.
+token afterwards: everyapp secret set AI_GATEWAY_API_KEY.
 
 Examples:
-  pnpm everyapp ai gateway on
-  pnpm everyapp ai gateway on --id acme-models
+  everyapp ai gateway on
+  everyapp ai gateway on --id acme-models
 
 FLAGS
      [--id]                    The AI Gateway's id (its name in the dashboard): lowercase letters, digits and single hyphens; everyapp by default
@@ -2198,14 +2199,14 @@ Send model calls direct again: unset AI_GATEWAY_ID (the Cloudflare resource stay
 
 ```text
 USAGE
-  pnpm everyapp ai gateway off [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp ai gateway off --help
+  everyapp ai gateway off [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp ai gateway off --help
 
 Unsets AI_GATEWAY_ID on the Gateway; every model call goes direct from its next request.
-The AI Gateway and its logs stay in the account. AI_GATEWAY_API_KEY stays until pnpm everyapp secret unset.
+The AI Gateway and its logs stay in the account. AI_GATEWAY_API_KEY stays until everyapp secret unset.
 
 Example:
-  pnpm everyapp ai gateway off
+  everyapp ai gateway off
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2240,8 +2241,8 @@ Add any remote MCP server as an MCP app: its tools reach members' AI clients thr
 
 ```text
 USAGE
-  pnpm everyapp mcp add [--name value] [--auth none|bearer|header|basic|oauth] [--header value] [--secret value] [--risk annotations|read|write] [--description value] [--from-env VAR] [--gateway value] [--account-id value] [--json] [--verbose] <url>
-  pnpm everyapp mcp add --help
+  everyapp mcp add [--name value] [--auth none|bearer|header|basic|oauth] [--header value] [--secret value] [--risk annotations|read|write] [--description value] [--from-env VAR] [--gateway value] [--account-id value] [--json] [--verbose] <url>
+  everyapp mcp add --help
 
 The Gateway serves the server's tools on its own /mcp under <id>_<tool> names, holding the
 server's credential itself: every call is attributed to the member, audited, counted and
@@ -2253,7 +2254,7 @@ The credential is a Gateway setting named <ID>_MCP_TOKEN (--secret picks another
 ending in _MCP_TOKEN), pinned to the URL's origin when it is set: the Gateway never sends
 it anywhere else. At a terminal, add offers to set it right away (hidden input, as secret
 set asks); --from-env VAR sets it from an environment variable; otherwise, afterwards:
-  pnpm everyapp secret set TREG_MCP_TOKEN
+  everyapp secret set TREG_MCP_TOKEN
 
 --auth bearer sends Authorization: Bearer <value>; header sends <header>: <value>; basic
 takes user:password; none sends nothing. oauth is recorded but not served yet: the Gateway
@@ -2264,9 +2265,9 @@ found (MCP, a 401, a redirect, or nothing); that is a warning, never a refusal, 
 Gateway, not this machine, is what fetches it. The Gateway follows no redirects.
 
 Examples:
-  pnpm everyapp mcp add https://mcp.deepwiki.com/mcp
-  pnpm everyapp mcp add https://treg.to/mcp/ --auth bearer
-  pnpm everyapp mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read
+  everyapp mcp add https://mcp.deepwiki.com/mcp
+  everyapp mcp add https://treg.to/mcp/ --auth bearer
+  everyapp mcp add https://api.example.org/mcp --name example --auth header --header X-Api-Key --risk read
 
 FLAGS
      [--name]                  The app's id and tool prefix (default: from the URL's host, https://mcp.treg.to/mcp → treg)
@@ -2304,19 +2305,19 @@ Remove an MCP app: it leaves /mcp and the home page, and everyone's access to it
 
 ```text
 USAGE
-  pnpm everyapp mcp remove [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp mcp remove --help
+  everyapp mcp remove [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp mcp remove --help
 
 Like deleting an app: the Gateway stops serving its tools within 30 seconds, and
 everyone's access to it, the personal tokens bound to it, its tools snapshot and its
 place in AI connections go with it. Adding it again starts fresh. To stop serving it
-and keep all that, turn it off instead: pnpm everyapp mcp off <id>.
+and keep all that, turn it off instead: everyapp mcp off <id>.
 
 The Gateway setting holding its key or credential stays, and so does a credential's pin
-to its origin; pnpm everyapp secret unset <NAME> removes both.
+to its origin; everyapp secret unset <NAME> removes both.
 
 Example:
-  pnpm everyapp mcp remove treg
+  everyapp mcp remove treg
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2347,11 +2348,11 @@ Turn an MCP app on: its tools reach members' AI clients through the Gateway's /m
 
 ```text
 USAGE
-  pnpm everyapp mcp on [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp mcp on --help
+  everyapp mcp on [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp mcp on --help
 
 An MCP app is a data provider (DataForSEO, built in) or any remote MCP server added with
-pnpm everyapp mcp add <url>, offered as an app of the Gateway's own with no page and nothing to
+everyapp mcp add <url>, offered as an app of the Gateway's own with no page and nothing to
 deploy: the Gateway serves its tools on its /mcp under <id>_<tool> names, with its own key,
 and counts and audits every call like an app's. It appears in Admin → Apps and under MCP
 apps on the home page.
@@ -2360,13 +2361,13 @@ A built-in's first on adds it: you, the owners and the admins get it at once, an
 admin grants other members with Manage access. On after off serves it again at once,
 with everyone's access kept. The key is a Gateway setting the tools need (mcp list names
 it):
-  pnpm everyapp secret set DATAFORSEO_API_KEY
+  everyapp secret set DATAFORSEO_API_KEY
 
 Safe to repeat: an app that is on stays on, with its access.
 
 Examples:
-  pnpm everyapp mcp on dataforseo
-  pnpm everyapp mcp on treg --json
+  everyapp mcp on dataforseo
+  everyapp mcp on treg --json
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2397,18 +2398,18 @@ Turn an MCP app off: its tools leave /mcp, and everyone's access is kept for on.
 
 ```text
 USAGE
-  pnpm everyapp mcp off [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp mcp off --help
+  everyapp mcp off [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp mcp off --help
 
 The Gateway stops serving the app's tools within 30 seconds and the home page stops
 listing it. Everyone's access, the personal tokens bound to it and its tools snapshot
-are kept, so pnpm everyapp mcp on <id> serves it again at once. To remove it for good, with
-all of that: pnpm everyapp mcp remove <id>.
+are kept, so everyapp mcp on <id> serves it again at once. To remove it for good, with
+all of that: everyapp mcp remove <id>.
 
 (Until 2026-10-25 off removed the app; that is remove now.)
 
 Example:
-  pnpm everyapp mcp off dataforseo
+  everyapp mcp off dataforseo
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2435,16 +2436,16 @@ List the MCP apps: built-in and added, on or off, their tools and whether each k
 
 ```text
 USAGE
-  pnpm everyapp mcp list [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp mcp list --help
+  everyapp mcp list [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp mcp list --help
 
 Nothing is changed. A key's value can't be read back; only whether it is set.
 
 Example:
-  pnpm everyapp mcp list
+  everyapp mcp list
 
 ALIASES
-  pnpm everyapp mcp ls
+  everyapp mcp ls
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2472,8 +2473,8 @@ Show an MCP app: its address, credential, status, last tool listing and every to
 
 ```text
 USAGE
-  pnpm everyapp mcp show [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp mcp show --help
+  everyapp mcp show [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp mcp show --help
 
 For a remote server: the URL, how the Gateway authenticates, the credential's name, whether
 it is set and the origin it is pinned to, the risk default, when the tools were last listed
@@ -2482,8 +2483,8 @@ the server's own name, its risk and where that comes from (the server's hint, th
 default, your override), and whether it is on. Nothing is changed.
 
 Examples:
-  pnpm everyapp mcp show treg
-  pnpm everyapp mcp show dataforseo --json
+  everyapp mcp show treg
+  everyapp mcp show dataforseo --json
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2514,15 +2515,15 @@ Drop an MCP app's tools snapshot, so the Gateway lists its tools again.
 
 ```text
 USAGE
-  pnpm everyapp mcp refresh [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp mcp refresh --help
+  everyapp mcp refresh [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp mcp refresh --help
 
 Only the snapshot goes (the Gateway's copy of the tool list); the app, its access and its
 settings stay. The Gateway lists the tools again on the next request to its /mcp, or
 within the hour. Use it after the server changed its tools.
 
 Example:
-  pnpm everyapp mcp refresh treg
+  everyapp mcp refresh treg
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -2557,8 +2558,8 @@ Override one tool of a remote MCP app: its risk, or whether it is listed at all.
 
 ```text
 USAGE
-  pnpm everyapp mcp tool [--risk read|write|destructive|annotations] [--on] [--off] [--gateway value] [--account-id value] [--json] [--verbose] <id> <tool>
-  pnpm everyapp mcp tool --help
+  everyapp mcp tool [--risk read|write|destructive|annotations] [--on] [--off] [--gateway value] [--account-id value] [--json] [--verbose] <id> <tool>
+  everyapp mcp tool --help
 
 A tool's risk decides who can call it: read tools every connection, write tools only
 read & write ones, destructive tools nobody until approvals exist. The server's hints
@@ -2567,9 +2568,9 @@ lists the tools again on first use. A built-in MCP app's tools are its own and c
 changed here.
 
 Examples:
-  pnpm everyapp mcp tool treg delete_everything --risk destructive
-  pnpm everyapp mcp tool treg treg_noisy_tool --off
-  pnpm everyapp mcp tool treg search --risk annotations
+  everyapp mcp tool treg delete_everything --risk destructive
+  everyapp mcp tool treg treg_noisy_tool --off
+  everyapp mcp tool treg search --risk annotations
 
 FLAGS
      [--risk]                  The tool's risk: read, write or destructive (hidden until approvals exist); annotations drops your override                [read|write|destructive|annotations]
@@ -2601,15 +2602,15 @@ Show the app's senders and inbound addresses.
 
 ```text
 USAGE
-  pnpm everyapp email show [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp email show --help
+  everyapp email show [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp email show --help
 
 Lists the app's senders and inbound addresses on the Gateway, and whether each
 inbound address is routed.
 
 Examples:
-  pnpm everyapp email show
-  pnpm everyapp email show --manifest ../analytics/everyapp.config.ts
+  everyapp email show
+  everyapp email show --manifest ../analytics/everyapp.config.ts
 
 FLAGS
      [--manifest]              Path to everyapp.config.ts, if it isn't in this directory
@@ -2638,8 +2639,8 @@ Set senders or inbound addresses, without a deploy.
 
 ```text
 USAGE
-  pnpm everyapp email set [--sender pattern]... [--inbound address]... [--enable-email-routing] [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp email set --help
+  everyapp email set [--sender pattern]... [--inbound address]... [--enable-email-routing] [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp email set --help
 
 Each flag replaces its whole list; a list you don't name is kept. The Gateway
 picks up a change within 30 seconds, without a deploy. Addresses set before
@@ -2650,9 +2651,9 @@ Requirements:
   --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS
 
 Examples:
-  pnpm everyapp email set --sender '*@mail.example.com'
-  pnpm everyapp email set --inbound reports@mail.example.com
-  pnpm everyapp email set --inbound '*@example.com' --enable-email-routing
+  everyapp email set --sender '*@mail.example.com'
+  everyapp email set --inbound reports@mail.example.com
+  everyapp email set --inbound '*@example.com' --enable-email-routing
 
 FLAGS
      [--sender]...                                       Address the app may send as: '*@<domain>' or one address (repeat, up to 20)
@@ -2685,15 +2686,15 @@ Clear senders or inbound addresses, without a deploy.
 
 ```text
 USAGE
-  pnpm everyapp email unset [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose] <senders|inbound>...
-  pnpm everyapp email unset --help
+  everyapp email unset [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose] <senders|inbound>...
+  everyapp email unset --help
 
 Clearing inbound addresses removes their Email Routing rules; a catch-all goes
 back to dropping mail. Nothing is built or deployed.
 
 Examples:
-  pnpm everyapp email unset inbound
-  pnpm everyapp email unset senders inbound
+  everyapp email unset inbound
+  everyapp email unset senders inbound
 
 FLAGS
      [--manifest]              Path to everyapp.config.ts, if it isn't in this directory
@@ -2731,8 +2732,8 @@ Send the organization's events to a URL (a signed POST) or by email to its owner
 
 ```text
 USAGE
-  pnpm everyapp events add [--events types]... [--name text] [--email owners|admins] [--secret] [--secret-from-env VAR] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<url>]
-  pnpm everyapp events add --help
+  everyapp events add [--events types]... [--name text] [--email owners|admins] [--secret] [--secret-from-env VAR] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<url>]
+  everyapp events add --help
 
 A webhook gets each event as a JSON POST, signed with the subscription's secret:
 X-EveryApp-Signature: t=<seconds>,v1=<hex>, HMAC-SHA256 over <t>.<body>; the receiver checks
@@ -2743,17 +2744,17 @@ top-level summary is a line a person reads.
 The URL must be https:// on a public hostname: not an IP address, not a local or internal
 name, not the Gateway or one of its apps. For a receiver on a private network, set
 EVENTS_ALLOW_PRIVATE_TARGETS on the Gateway with the value "true" (self-host only;
-pnpm everyapp secret set EVENTS_ALLOW_PRIVATE_TARGETS): then http://, IP addresses and private names are let through.
+everyapp secret set EVENTS_ALLOW_PRIVATE_TARGETS): then http://, IP addresses and private names are let through.
 
 --email mails each event to the organization's owners (owners) or owners and admins
 (admins), from the Gateway's sender (EMAIL_FROM); it takes no address. An organization has at
 most 25 subscriptions. The Gateway sends each event within a minute.
 
 Examples:
-  pnpm everyapp events add https://hooks.example.com/everyapp --events cap.*,member.*
-  pnpm everyapp events add https://hooks.zapier.com/hooks/catch/1/abc --name Zapier --secret
-  pnpm everyapp events add --email admins --events cap.*
-  pnpm everyapp events add https://n8n.example.com/webhook/x --secret-from-env N8N_SECRET --json
+  everyapp events add https://hooks.example.com/everyapp --events cap.*,member.*
+  everyapp events add https://hooks.zapier.com/hooks/catch/1/abc --name Zapier --secret
+  everyapp events add --email admins --events cap.*
+  everyapp events add https://n8n.example.com/webhook/x --secret-from-env N8N_SECRET --json
 
 FLAGS
      [--events]...             The events to send, comma separated: types (member.joined), prefixes (cap.*, app.crm.*) or * (repeat to add more; default: every event but test pings)
@@ -2787,17 +2788,17 @@ List the organization's subscriptions: where each goes, what it takes, how its l
 
 ```text
 USAGE
-  pnpm everyapp events list [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp events list --help
+  everyapp events list [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp events list --help
 
 A webhook shows its URL's host and path (never its query or secret); an email one, whom it
 mails. Nothing is changed.
 
 Example:
-  pnpm everyapp events list
+  everyapp events list
 
 ALIASES
-  pnpm everyapp events ls
+  everyapp events ls
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -2827,14 +2828,14 @@ Remove a subscription (a built-in one is disabled instead).
 
 ```text
 USAGE
-  pnpm everyapp events remove [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp events remove --help
+  everyapp events remove [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp events remove --help
 
 Nothing more is delivered to it; its delivery log stays for 30 days. The Gateway's built-in
 cap alerts are disabled instead of removed, so the Gateway never makes them again.
 
 Example:
-  pnpm everyapp events remove sub_0123456789abcdef01234567
+  everyapp events remove sub_0123456789abcdef01234567
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -2867,13 +2868,13 @@ Resume a subscription: new events are queued for it again.
 
 ```text
 USAGE
-  pnpm everyapp events enable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp events enable --help
+  everyapp events enable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp events enable --help
 
 What happened while it was disabled isn't sent. Safe to repeat.
 
 Example:
-  pnpm everyapp events enable sub_0123456789abcdef01234567
+  everyapp events enable sub_0123456789abcdef01234567
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -2906,13 +2907,13 @@ Pause a subscription: no new events are queued for it, and what is queued is dro
 
 ```text
 USAGE
-  pnpm everyapp events disable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp events disable --help
+  everyapp events disable [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp events disable --help
 
 Turn the built-in cap alerts off this way. Safe to repeat; events enable resumes it.
 
 Example:
-  pnpm everyapp events disable sub_0123456789abcdef01234567
+  everyapp events disable sub_0123456789abcdef01234567
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -2946,16 +2947,16 @@ Send a test event (ping) to one subscription and wait to see whether it was deli
 
 ```text
 USAGE
-  pnpm everyapp events test [--no-wait] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp events test --help
+  everyapp events test [--no-wait] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp events test --help
 
 Queues a ping for that subscription only, then waits up to 90 seconds while the Gateway
 sends it (it sends queued events every minute), and says delivered or failed with the
 receiver's status code or the error. A failed test is retried like any delivery.
 
 Examples:
-  pnpm everyapp events test sub_0123456789abcdef01234567
-  pnpm everyapp events test sub_0123456789abcdef01234567 --no-wait --json
+  everyapp events test sub_0123456789abcdef01234567
+  everyapp events test sub_0123456789abcdef01234567 --no-wait --json
 
 FLAGS
      [--no-wait/--no-no-wait]  Return once the test event is queued; events deliveries shows how it went
@@ -2991,16 +2992,16 @@ List the last deliveries (30 days): the event, its subscription, attempts, statu
 
 ```text
 USAGE
-  pnpm everyapp events deliveries [--dead] [--limit n] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<id>]
-  pnpm everyapp events deliveries --help
+  everyapp events deliveries [--dead] [--limit n] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<id>]
+  everyapp events deliveries --help
 
 A delivery is retried after 1, 5 and 30 minutes, then 2, 8 and 24 hours; the seventh failure
 is dead. Nothing is changed.
 
 Examples:
-  pnpm everyapp events deliveries
-  pnpm everyapp events deliveries sub_0123456789abcdef01234567 --limit 50
-  pnpm everyapp events deliveries --dead
+  everyapp events deliveries
+  everyapp events deliveries sub_0123456789abcdef01234567 --limit 50
+  everyapp events deliveries --dead
 
 FLAGS
      [--dead/--no-dead]        Only deliveries that ran out of attempts (dead), to redeliver
@@ -3035,14 +3036,14 @@ Send a failing or dead delivery again: the Gateway sends it within a minute, wit
 
 ```text
 USAGE
-  pnpm everyapp events redeliver [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <delivery>
-  pnpm everyapp events redeliver --help
+  everyapp events redeliver [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <delivery>
+  everyapp events redeliver --help
 
 Its attempts start over at 0. A delivered one is left alone. The receiver may get the same
 event id again: receivers deduplicate on it.
 
 Example:
-  pnpm everyapp events redeliver dlv_0123456789abcdef01234567
+  everyapp events redeliver dlv_0123456789abcdef01234567
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3068,14 +3069,14 @@ List the event types --events takes, with their versions.
 
 ```text
 USAGE
-  pnpm everyapp events types [--json] [--verbose]
-  pnpm everyapp events types --help
+  everyapp events types [--json] [--verbose]
+  everyapp events types --help
 
 The catalogue this CLI knows, and how a pattern names several (member.*, app.crm.*, *). No
 Gateway is needed.
 
 Example:
-  pnpm everyapp events types
+  everyapp events types
 
 FLAGS
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -3098,15 +3099,15 @@ The organization: its owners, whether it can send mail, and how many members, in
 
 ```text
 USAGE
-  pnpm everyapp workspace show [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace show --help
+  everyapp workspace show [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace show --help
 
 Nothing is changed. Email counts as configured when the Gateway settings EMAIL_FROM and a
 provider key are set, which is what invitations need to be mailed from the Gateway (this
 command prints links instead either way).
 
 Example:
-  pnpm everyapp workspace show --json
+  everyapp workspace show --json
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3135,8 +3136,8 @@ Rename the workspace: the name members see in the organization switcher and in i
 
 ```text
 USAGE
-  pnpm everyapp workspace rename [--gateway value] [--account-id value] [--json] [--verbose] <name>
-  pnpm everyapp workspace rename --help
+  everyapp workspace rename [--gateway value] [--account-id value] [--json] [--verbose] <name>
+  everyapp workspace rename --help
 
 The workspace is the Gateway's organization: the one the setup claim made, named after
 its owner. This gives it the name you want; the same rename is under Manage workspace in
@@ -3147,8 +3148,8 @@ Before the Gateway is claimed there is no workspace to rename (WORKSPACE_NOT_CLA
 claim it in a browser first.
 
 Examples:
-  pnpm everyapp workspace rename 'Acme Corp'
-  pnpm everyapp workspace rename 'Acme Corp' --json
+  everyapp workspace rename 'Acme Corp'
+  everyapp workspace rename 'Acme Corp' --json
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -3176,14 +3177,14 @@ The members with their role and state, then the pending invitations.
 
 ```text
 USAGE
-  pnpm everyapp workspace users [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace users --help
+  everyapp workspace users [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace users --help
 
 Nothing is changed. A deactivated member is listed as such; a pending invitation with when
 it expires.
 
 Example:
-  pnpm everyapp workspace users
+  everyapp workspace users
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3213,8 +3214,8 @@ Set a member's role: owner, admin or member.
 
 ```text
 USAGE
-  pnpm everyapp workspace role [--gateway value] [--account-id value] [--json] [--verbose] <email> <owner|admin|member>
-  pnpm everyapp workspace role --help
+  everyapp workspace role [--gateway value] [--account-id value] [--json] [--verbose] <email> <owner|admin|member>
+  everyapp workspace role --help
 
 The workspace is the Gateway's own organization, the one its owner claimed. Owners are
 peers: any owner can make a member or an admin an owner, and change another owner's
@@ -3228,8 +3229,8 @@ invited isn't one yet (MEMBER_NOT_FOUND). The Gateway picks up the change within
 seconds.
 
 Examples:
-  pnpm everyapp workspace role sam@example.com owner
-  pnpm everyapp workspace role sam@example.com member --json
+  everyapp workspace role sam@example.com owner
+  everyapp workspace role sam@example.com member --json
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -3263,8 +3264,8 @@ Invite someone by email and print the link to send them (the Gateway mails nothi
 
 ```text
 USAGE
-  pnpm everyapp workspace invite [--role member|admin] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
-  pnpm everyapp workspace invite --help
+  everyapp workspace invite [--role member|admin] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  everyapp workspace invite --help
 
 Makes a pending invitation (72 hours, single use, only for an account with that email) in
 your name: your Cloudflare login's email must be a member of the organization. Prints
@@ -3272,8 +3273,8 @@ your name: your Cloudflare login's email must be a member of the organization. P
 the person yourself. The Gateway mails invitations only from Admin → Users.
 
 Examples:
-  pnpm everyapp workspace invite ann@example.com
-  pnpm everyapp workspace invite ann@example.com --role admin --json
+  everyapp workspace invite ann@example.com
+  everyapp workspace invite ann@example.com --role admin --json
 
 FLAGS
      [--role]                  The role they join with                                                                                                                                      [member|admin, default = member]
@@ -3307,14 +3308,14 @@ Print a new link for a pending invitation (earlier links keep working until it i
 
 ```text
 USAGE
-  pnpm everyapp workspace invite-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
-  pnpm everyapp workspace invite-link --help
+  everyapp workspace invite-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
+  everyapp workspace invite-link --help
 
 The link's token is new each time and stored only as its hash. Every link of an invitation
 stops working once it is accepted, canceled or expired.
 
 Example:
-  pnpm everyapp workspace invite-link ann@example.com
+  everyapp workspace invite-link ann@example.com
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3347,11 +3348,11 @@ Cancel a pending invitation: its links stop working.
 
 ```text
 USAGE
-  pnpm everyapp workspace uninvite [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
-  pnpm everyapp workspace uninvite --help
+  everyapp workspace uninvite [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email|id>
+  everyapp workspace uninvite --help
 
 Example:
-  pnpm everyapp workspace uninvite ann@example.com
+  everyapp workspace uninvite ann@example.com
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3384,8 +3385,8 @@ Lock a member out everywhere: no sign-in, every session ended, their tokens and 
 
 ```text
 USAGE
-  pnpm everyapp workspace deactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
-  pnpm everyapp workspace deactivate --help
+  everyapp workspace deactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  everyapp workspace deactivate --help
 
 The account stays, listed as deactivated, and the ban holds in every organization it belongs
 to; workspace reactivate lifts it (revoked tokens and connections stay revoked). An
@@ -3394,7 +3395,7 @@ live owner of this organization, or of any other they own, can't be deactivated
 (LAST_OWNER, naming the organization): a deactivated owner doesn't count.
 
 Example:
-  pnpm everyapp workspace deactivate ann@example.com
+  everyapp workspace deactivate ann@example.com
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3427,11 +3428,11 @@ Lift a deactivation: they can sign in again (revoked tokens and connections stay
 
 ```text
 USAGE
-  pnpm everyapp workspace reactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
-  pnpm everyapp workspace reactivate --help
+  everyapp workspace reactivate [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  everyapp workspace reactivate --help
 
 Example:
-  pnpm everyapp workspace reactivate ann@example.com
+  everyapp workspace reactivate ann@example.com
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3465,8 +3466,8 @@ Remove a member from the organization, and their account when it belongs to no o
 
 ```text
 USAGE
-  pnpm everyapp workspace remove [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
-  pnpm everyapp workspace remove --help
+  everyapp workspace remove [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  everyapp workspace remove --help
 
 Deletes the membership, their app grants and places in groups, and revokes their personal
 access tokens for the organization and AI connections to it, in one write. The account goes
@@ -3478,7 +3479,7 @@ act: the last owner who isn't deactivated can't be removed (LAST_OWNER). Asks fi
 terminal; elsewhere it needs --yes.
 
 Example:
-  pnpm everyapp workspace remove ann@example.com --yes --json
+  everyapp workspace remove ann@example.com --yes --json
 
 FLAGS
   -y [--yes/--no-yes]          Remove without asking (needed where nobody is at a terminal)
@@ -3512,8 +3513,8 @@ Print a one-hour, single-use password-reset link to hand to a member.
 
 ```text
 USAGE
-  pnpm everyapp workspace reset-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
-  pnpm everyapp workspace reset-link --help
+  everyapp workspace reset-link [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <email>
+  everyapp workspace reset-link --help
 
 Better Auth's own reset token, consumed by the Gateway's /reset-password page: whoever opens
 it sets the account's password, so hand it to the person yourself. Only for an active
@@ -3524,7 +3525,7 @@ owner's too: the operator is root (the Gateway refuses that to admins and other 
 which is the way back in for a sole owner who lost their password.
 
 Example:
-  pnpm everyapp workspace reset-link ann@example.com
+  everyapp workspace reset-link ann@example.com
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3553,13 +3554,13 @@ The groups, with how many members and apps each has.
 
 ```text
 USAGE
-  pnpm everyapp workspace groups [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace groups --help
+  everyapp workspace groups [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace groups --help
 
 Nothing is changed.
 
 Example:
-  pnpm everyapp workspace groups
+  everyapp workspace groups
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3590,13 +3591,13 @@ Make a group: a named set of members that apps are granted to as one.
 
 ```text
 USAGE
-  pnpm everyapp workspace group create [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <name>
-  pnpm everyapp workspace group create --help
+  everyapp workspace group create [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <name>
+  everyapp workspace group create --help
 
 A member opens an app when they hold a grant to it, or belong to a group that does.
 
 Example:
-  pnpm everyapp workspace group create Sales --description "The sales team"
+  everyapp workspace group create Sales --description "The sales team"
 
 FLAGS
      [--description]           What the group is for (empty text clears it)
@@ -3632,11 +3633,11 @@ Rename or describe a group.
 
 ```text
 USAGE
-  pnpm everyapp workspace group set [--name name] [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
-  pnpm everyapp workspace group set --help
+  everyapp workspace group set [--name name] [--description text] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  everyapp workspace group set --help
 
 Example:
-  pnpm everyapp workspace group set Sales --name "Sales and marketing"
+  everyapp workspace group set Sales --name "Sales and marketing"
 
 FLAGS
      [--name]                  A new name
@@ -3672,14 +3673,14 @@ Delete a group: what it granted ends with it.
 
 ```text
 USAGE
-  pnpm everyapp workspace group delete [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
-  pnpm everyapp workspace group delete --help
+  everyapp workspace group delete [--yes] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  everyapp workspace group delete --help
 
 Its members keep their direct grants and their other groups. Asks first at a terminal;
 elsewhere it needs --yes.
 
 Example:
-  pnpm everyapp workspace group delete Sales --yes
+  everyapp workspace group delete Sales --yes
 
 FLAGS
   -y [--yes/--no-yes]          Delete without asking (needed where nobody is at a terminal)
@@ -3716,16 +3717,16 @@ Who is in a group; --add, --remove or --set change it.
 
 ```text
 USAGE
-  pnpm everyapp workspace group members [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
-  pnpm everyapp workspace group members --help
+  everyapp workspace group members [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  everyapp workspace group members --help
 
 Without a change flag, lists every member of the organization and whether they are in the
 group. Only members of the organization can be in its groups.
 
 Examples:
-  pnpm everyapp workspace group members Sales
-  pnpm everyapp workspace group members Sales --add ann@example.com --add bob@example.com
-  pnpm everyapp workspace group members Sales --set ann@example.com
+  everyapp workspace group members Sales
+  everyapp workspace group members Sales --add ann@example.com --add bob@example.com
+  everyapp workspace group members Sales --set ann@example.com
 
 FLAGS
      [--add]...                Add a member, by email or user id (repeat for several)
@@ -3764,15 +3765,15 @@ Which apps a group opens; --add, --remove or --set change it.
 
 ```text
 USAGE
-  pnpm everyapp workspace group apps [--add app]... [--remove app]... [--set app]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
-  pnpm everyapp workspace group apps --help
+  everyapp workspace group apps [--add app]... [--remove app]... [--set app]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <group>
+  everyapp workspace group apps --help
 
 Without a change flag, lists the organization's own apps and whether the group opens each.
 A shared app opens for everyone already and is never granted to a group.
 
 Examples:
-  pnpm everyapp workspace group apps Sales
-  pnpm everyapp workspace group apps Sales --add crm
+  everyapp workspace group apps Sales
+  everyapp workspace group apps Sales --add crm
 
 FLAGS
      [--add]...                Add an app, by id (repeat for several)
@@ -3804,13 +3805,13 @@ Every app with who can open it, whether everyone can, its state and what it stil
 
 ```text
 USAGE
-  pnpm everyapp workspace apps [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace apps --help
+  everyapp workspace apps [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace apps --help
 
 The admin's view (Admin → Apps); everyapp status has the operator's. Nothing is changed.
 
 Example:
-  pnpm everyapp workspace apps --json
+  everyapp workspace apps --json
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -3843,15 +3844,15 @@ Change an app's name, description or whether everyone can open it.
 
 ```text
 USAGE
-  pnpm everyapp workspace app set [--name name] [--description text] [--everyone on|off] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
-  pnpm everyapp workspace app set --help
+  everyapp workspace app set [--name name] [--description text] [--everyone on|off] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
+  everyapp workspace app set --help
 
 Catalog metadata only: the next deploy sets the name and description again from
 everyapp.config.ts.
 
 Examples:
-  pnpm everyapp workspace app set crm --everyone on
-  pnpm everyapp workspace app set crm --name "Open CRM" --description "Contacts and deals"
+  everyapp workspace app set crm --everyone on
+  everyapp workspace app set crm --name "Open CRM" --description "Contacts and deals"
 
 FLAGS
      [--name]                  The name the app library shows (1 to 255 characters)
@@ -3890,17 +3891,17 @@ Who can open an app; --add, --remove or --set change the direct grants.
 
 ```text
 USAGE
-  pnpm everyapp workspace app access [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
-  pnpm everyapp workspace app access --help
+  everyapp workspace app access [--add email]... [--remove email]... [--set email]... [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app>
+  everyapp workspace app access --help
 
 Without a change flag, lists every member with whether they hold a direct grant and which
 groups open the app for them. A change touches direct grants only; what a group grants
 stays (workspace group apps). A shared app's access can't be changed.
 
 Examples:
-  pnpm everyapp workspace app access crm
-  pnpm everyapp workspace app access crm --add ann@example.com
-  pnpm everyapp workspace app access crm --set ann@example.com --set bob@example.com --json
+  everyapp workspace app access crm
+  everyapp workspace app access crm --add ann@example.com
+  everyapp workspace app access crm --set ann@example.com --set bob@example.com --json
 
 FLAGS
      [--add]...                Add a member's direct grant, by email or user id (repeat for several)
@@ -3939,8 +3940,8 @@ Cap an app's provider calls or dollars per month, lift its own caps, or exempt i
 
 ```text
 USAGE
-  pnpm everyapp workspace app cap [--usd dollars|off] [--unlimited] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app> [<n|off>]
-  pnpm everyapp workspace app cap --help
+  everyapp workspace app cap [--usd dollars|off] [--unlimited] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <app> [<n|off>]
+  everyapp workspace app cap --help
 
 An app has caps of its own (a number of calls, --usd dollars, or both), no cap whatever
 the workspace defaults (--unlimited), or neither (off, and --usd off): the defaults set
@@ -3956,10 +3957,10 @@ Gateway from before the workspace default, --unlimited is refused
 caps, --usd is refused (GATEWAY_PREDATES_COST_CAPS).
 
 Examples:
-  pnpm everyapp workspace app cap crm 5000
-  pnpm everyapp workspace app cap crm --usd 20
-  pnpm everyapp workspace app cap crm off --usd off
-  pnpm everyapp workspace app cap crm --unlimited
+  everyapp workspace app cap crm 5000
+  everyapp workspace app cap crm --usd 20
+  everyapp workspace app cap crm off --usd off
+  everyapp workspace app cap crm --unlimited
 
 FLAGS
      [--usd]                       Dollars of provider-reported cost per UTC month (0.01 to 1,000,000), or off for no dollar cap of its own; counted only where the provider reports a price (OpenRouter, DataForSEO)
@@ -3996,8 +3997,8 @@ Set or clear the workspace default caps: what binds every app without a cap or -
 
 ```text
 USAGE
-  pnpm everyapp workspace cap default [--usd dollars|off] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<n|off>]
-  pnpm everyapp workspace cap default --help
+  everyapp workspace cap default [--usd dollars|off] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<n|off>]
+  everyapp workspace cap default --help
 
 The same setting as Manage workspace → Usage → Default monthly cap: a number of calls,
 --usd dollars of provider-reported cost, or both; a kind left out is kept. An app's own
@@ -4013,9 +4014,9 @@ same row stays. Refused on a Gateway from before the workspace default
 (GATEWAY_PREDATES_COST_CAPS): run update first.
 
 Examples:
-  pnpm everyapp workspace cap default 1000
-  pnpm everyapp workspace cap default --usd 20
-  pnpm everyapp workspace cap default off --usd off --json
+  everyapp workspace cap default 1000
+  everyapp workspace cap default --usd 20
+  everyapp workspace cap default off --usd off --json
 
 FLAGS
      [--usd]                   Dollars of provider-reported cost per UTC month (0.01 to 1,000,000) for every app without its own dollar cap, or off for no dollar default
@@ -4046,8 +4047,8 @@ What the apps spent in a month: per app (with the cap that binds it), per member
 
 ```text
 USAGE
-  pnpm everyapp workspace usage [--month YYYY-MM] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace usage --help
+  everyapp workspace usage [--month YYYY-MM] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace usage --help
 
 Provider calls, failures, tokens and provider-reported cost, counted at the Gateway after a
 provider answered, and allowed MCP tool calls from the audit trail. Every callable app is
@@ -4059,7 +4060,7 @@ changed. Refused on a Gateway from before the workspace default
 (GATEWAY_PREDATES_DEFAULT_CAPS): run update first.
 
 Example:
-  pnpm everyapp workspace usage --month 2026-10 --json
+  everyapp workspace usage --month 2026-10 --json
 
 FLAGS
      [--month]                 The UTC month (default: this one)
@@ -4093,15 +4094,15 @@ The tool-call audit trail, newest first: who called which tool on which app, and
 
 ```text
 USAGE
-  pnpm everyapp workspace activity [--app app] [--user email] [--decision allowed|blocked] [--risk read|write|destructive] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace activity --help
+  everyapp workspace activity [--app app] [--user email] [--decision allowed|blocked] [--risk read|write|destructive] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace activity --help
 
 Never the arguments or the result: the trail holds neither. One page at a time; --json
 carries data.nextBefore for the next page. Nothing is changed.
 
 Examples:
-  pnpm everyapp workspace activity --limit 20
-  pnpm everyapp workspace activity --app crm --decision blocked --since 2026-10-24 --json
+  everyapp workspace activity --limit 20
+  everyapp workspace activity --app crm --decision blocked --since 2026-10-24 --json
 
 FLAGS
      [--app]                   Calls on this app only, by id or row id
@@ -4139,8 +4140,8 @@ The audit log, newest first: every event the Gateway recorded (members, apps, ca
 
 ```text
 USAGE
-  pnpm everyapp workspace audit [--actor who] [--type type] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace audit --help
+  everyapp workspace audit [--actor who] [--type type] [--since time] [--limit n] [--before cursor] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace audit --help
 
 The same rows as Admin → Activity → Audit and everyapp_workspace_audit, kept 90 days. Each
 row is when, who (a member by name, agent · <AI app>, CLI · <operator>, app · <id>, or
@@ -4151,8 +4152,8 @@ data.nextBefore for the next page. Refused on a Gateway from before the audit lo
 (GATEWAY_OUTDATED): run update first. Nothing is changed.
 
 Examples:
-  pnpm everyapp workspace audit --limit 20
-  pnpm everyapp workspace audit --actor mia@acme.com --type member.* --since 2026-10-24 --json
+  everyapp workspace audit --limit 20
+  everyapp workspace audit --actor mia@acme.com --type member.* --since 2026-10-24 --json
 
 FLAGS
      [--actor]                 Events this actor caused: a member by email or user id, an AI connection's or token's id, an app's id, or an operator's email
@@ -4185,14 +4186,14 @@ Every member's personal access tokens for the organization (never a token's valu
 
 ```text
 USAGE
-  pnpm everyapp workspace tokens [--user email] [--all] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace tokens --help
+  everyapp workspace tokens [--user email] [--all] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace tokens --help
 
 Tokens are created in Admin → Tokens only: their hash is keyed by a Gateway secret the CLI
 never holds. Nothing is changed.
 
 Example:
-  pnpm everyapp workspace tokens --user ann@example.com
+  everyapp workspace tokens --user ann@example.com
 
 FLAGS
      [--user]                  One member's only, by email or user id
@@ -4224,11 +4225,11 @@ Revoke a personal access token: it stops working on its next request.
 
 ```text
 USAGE
-  pnpm everyapp workspace token revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp workspace token revoke --help
+  everyapp workspace token revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp workspace token revoke --help
 
 Example:
-  pnpm everyapp workspace token revoke 3f2a…
+  everyapp workspace token revoke 3f2a…
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
@@ -4258,14 +4259,14 @@ Every member's AI connections to the organization: which AI app, which apps it m
 
 ```text
 USAGE
-  pnpm everyapp workspace connections [--user email] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
-  pnpm everyapp workspace connections --help
+  everyapp workspace connections [--user email] [--org slug] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp workspace connections --help
 
 A connection is an OAuth client (Claude, Cursor, …) a member connected to the Gateway's /mcp.
 Nothing is changed.
 
 Example:
-  pnpm everyapp workspace connections
+  everyapp workspace connections
 
 FLAGS
      [--user]                  One member's only, by email or user id
@@ -4296,11 +4297,11 @@ Revoke an AI connection: the client is out on its next request.
 
 ```text
 USAGE
-  pnpm everyapp workspace connection revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
-  pnpm everyapp workspace connection revoke --help
+  everyapp workspace connection revoke [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] <id>
+  everyapp workspace connection revoke --help
 
 Example:
-  pnpm everyapp workspace connection revoke mcpc_…
+  everyapp workspace connection revoke mcpc_…
 
 FLAGS
      [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)

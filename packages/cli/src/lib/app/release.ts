@@ -117,7 +117,7 @@ function releasedMigrationsDir(manifest: EveryAppCliManifest): string | null {
     throw new EveryAppError(
       "RELEASE_MIGRATIONS_UNSUPPORTED",
       `${manifest.id} migrates with Prisma, which a release can't carry\nPrisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`,
-      { rerun: `${CLI} deploy`, rerunNote: "from the app's checkout" },
+      { rerun: `${CLI} deploy`, rerunNote: "from a clone of the app, after pnpm install in it" },
     );
   }
   if (manifest.migrations?.dialect === "postgresql") return migrationsDir(manifest);
@@ -363,7 +363,7 @@ export async function fetchAppRelease(
       throw new EveryAppError(
         "NO_RELEASE",
         `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""}\nIts GitHub releases have no ${APP_RELEASE_TARBALL}.`,
-        { fix: `clone it, then run pnpm install in it and this checkout's ${CLI} deploy from its directory` },
+        { fix: `clone it, run pnpm install in it, then ${CLI} deploy from its directory` },
       );
     }
     throw error;

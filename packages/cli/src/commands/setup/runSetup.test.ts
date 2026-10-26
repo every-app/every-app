@@ -688,7 +688,7 @@ describe("everyapp setup", () => {
         code: "DOWNGRADE_REFUSED",
         message: "The Gateway from every-app/every-app release gateway-v0.3.0 (0.2.0 from Oct 12) is older than the live one (from Oct 13)",
         data: {
-          fix: "pass --release a newer Gateway release",
+          fix: "update everyapp (npm install -g everyapp@latest) and run setup again, or pass --release a newer Gateway release",
           rerun: expect.stringContaining("--allow-downgrade"),
           authorize: true,
         },

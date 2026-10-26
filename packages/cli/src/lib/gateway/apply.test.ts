@@ -461,7 +461,7 @@ describe("applyGateway", () => {
         message: expect.stringMatching(
           /^The Gateway from \/.+\.tar\.gz \(0\.2\.0 from Oct 12\) is older than the live one \(from Oct 13\)$/,
         ),
-        fix: "run everyapp from a checkout at least as new",
+        fix: "update everyapp: npm install -g everyapp@latest",
         rerun: expect.stringMatching(/^pnpm everyapp/),
         authorize: false,
       });

@@ -10,7 +10,14 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The agent docs say commands as someone who installed everyapp with npm
+// types them (`everyapp …`), not as this test runner invokes it
+// (vitest.config.ts sets a pnpm user agent for the CLI's other tests).
+vi.hoisted(() => {
+  process.env["npm_config_user_agent"] = "";
+});
 import * as sdkServer from "@every-app/sdk/server";
 import {
   PROVIDER_APP_IDS,

@@ -240,14 +240,14 @@ function downgradeRefused(
     return new EveryAppError("DOWNGRADE_REFUSED", message, {
       fix: checkout
         ? "git pull, then run setup again"
-        : "pass --release a newer Gateway release",
+        : "update everyapp (npm install -g everyapp@latest) and run setup again, or pass --release a newer Gateway release",
       rerun: thisCommand(["--allow-downgrade"]),
       authorize: true,
       data,
     });
   }
   return new EveryAppError("DOWNGRADE_REFUSED", message, {
-    fix: checkout ? "git pull" : "run everyapp from a checkout at least as new",
+    fix: checkout ? "git pull" : "update everyapp: npm install -g everyapp@latest",
     rerun: thisCommand(),
     rerunNote: "after that",
     data,
