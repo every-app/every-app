@@ -7,6 +7,8 @@
   "assets": {
     "directory": "./dist/client",
     "html_handling": "drop-trailing-slash",
+    // The agent docs' Markdown (public/docs/agent) is read through it: src/lib/agent-docs.ts.
+    "binding": "ASSETS",
   },
   "workers_dev": true,
   "preview_urls": true,

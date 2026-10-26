@@ -2,26 +2,26 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import {
+  DocsBody,
+  DocsDescription,
+  DocsPage,
+  DocsTitle,
   MarkdownCopyButton,
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
-import { Suspense } from "react";
-import { DocsArticle } from "@/components/docs-article";
 import { getAgentPage } from "@/lib/content.functions";
 import { baseOptions } from "@/lib/layout.shared";
 import { buildPageSeo } from "@/lib/seo";
-import { agent } from "@/lib/source";
 
 // The agent docs: public and indexable, with their own sidebar. A person
 // lands here from the user docs' "Docs for your coding agent" link; an
-// agent fetches the same pages as Markdown (`.md`, llms.txt).
+// agent fetches the same pages as Markdown (`.md`, llms.txt). The page is
+// plain Markdown rendered on the server (src/lib/agent-docs.ts), not MDX.
 export const Route = createFileRoute("/docs/agent/$")({
   loader: async ({ params }) => {
     const splat = params._splat?.replace(/\/+$/, "") ?? "";
     const slugs = splat ? splat.split("/") : [];
-    const data = await getAgentPage({ data: slugs });
-    await agent.getPage(data.path)?.preload();
-    return data;
+    return getAgentPage({ data: slugs });
   },
   head: ({ loaderData }) =>
     buildPageSeo({
@@ -35,11 +35,8 @@ export const Route = createFileRoute("/docs/agent/$")({
 });
 
 function Page() {
-  const { path, pageTree, markdownUrl } = useFumadocsLoader(
-    Route.useLoaderData(),
-  );
-  const entry = agent.getPage(path);
-  if (!entry) throw new Error(`Unknown agent docs page: ${path}`);
+  const { pageTree, markdownUrl, title, description, html, toc } =
+    useFumadocsLoader(Route.useLoaderData());
 
   return (
     <DocsLayout
@@ -47,17 +44,15 @@ function Page() {
       tree={pageTree}
       searchToggle={{ enabled: false }}
     >
-      <Suspense>
-        <DocsArticle
-          entry={entry}
-          actions={
-            <div className="flex flex-row gap-2 items-center border-b -mt-4 pb-6">
-              <MarkdownCopyButton markdownUrl={markdownUrl} />
-              <ViewOptionsPopover markdownUrl={markdownUrl} />
-            </div>
-          }
-        />
-      </Suspense>
+      <DocsPage toc={toc}>
+        <DocsTitle>{title}</DocsTitle>
+        <DocsDescription>{description}</DocsDescription>
+        <div className="flex flex-row gap-2 items-center border-b -mt-4 pb-6">
+          <MarkdownCopyButton markdownUrl={markdownUrl} />
+          <ViewOptionsPopover markdownUrl={markdownUrl} />
+        </div>
+        <DocsBody dangerouslySetInnerHTML={{ __html: html }} />
+      </DocsPage>
     </DocsLayout>
   );
 }

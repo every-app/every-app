@@ -1,11 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  agentLlms,
-  agentSource,
-  decodeMarkdownSegments,
-  docsLlms,
-  source,
-} from "@/lib/source";
+import { agentLlms, docsLlms } from "@/lib/llms";
+import { agentSource, decodeMarkdownSegments, source } from "@/lib/source";
 
 export const Route = createFileRoute("/docs/{$}.md")({
   server: {

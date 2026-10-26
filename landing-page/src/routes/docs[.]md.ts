@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { docsLlms, source } from "@/lib/source";
+import { docsLlms } from "@/lib/llms";
+import { source } from "@/lib/source";
 
 // `/docs.md`: the docs home as Markdown (also `/docs/index.md`), so every
 // page is at its URL plus `.md`, as llms.txt says.

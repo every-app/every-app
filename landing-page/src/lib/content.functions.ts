@@ -1,5 +1,7 @@
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { agentPageBody, readAgentMarkdown } from "@/lib/agent-docs";
+import { renderAgentPage } from "@/lib/agent-markdown";
 import {
   agentSource,
   getAgentPageMarkdownUrl,
@@ -28,6 +30,9 @@ export const getAgentPage = createServerFn({ method: "GET" })
   .handler(async ({ data: slugs }) => {
     const page = agentSource.getPage(slugs);
     if (!page) throw notFound();
+    const { html, toc } = renderAgentPage(
+      agentPageBody(await readAgentMarkdown(page.path)),
+    );
 
     return {
       path: page.path,
@@ -36,5 +41,7 @@ export const getAgentPage = createServerFn({ method: "GET" })
       url: page.url,
       markdownUrl: getAgentPageMarkdownUrl(page.slugs),
       pageTree: await agentSource.serializePageTree(agentSource.getPageTree()),
+      html,
+      toc,
     };
   });

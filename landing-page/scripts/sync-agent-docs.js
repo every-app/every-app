@@ -1,31 +1,54 @@
 #!/usr/bin/env node
 /**
- * Mirror the repository's reference documents into the agent docs, so the
- * site serves them (/docs/agent/repo/…, llms.txt, llms-full.txt) without a
- * second copy to keep in step: docs/ stays the only place they are edited,
- * and this runs before every dev and build (package.json). The output,
- * content/agent/repo/, is not committed.
+ * Prepare the agent docs (content/agent) for the site. Runs before every
+ * dev, build and type check (package.json); nothing it writes is committed.
  *
- * Each document gets frontmatter (its H1 as the title, a description from
- * the table below), relative links between repository documents become site
- * links where the target is mirrored and GitHub links otherwise, and a `<`
- * that would read as an HTML tag outside code is escaped, since the pages
- * render as plain Markdown.
+ * 1. Mirror the repository's reference documents into content/agent/repo/,
+ *    so the site serves them (/docs/agent/repo/…, llms.txt, llms-full.txt)
+ *    without a second copy to keep in step: docs/ stays the only place they
+ *    are edited. Each document gets frontmatter (its H1 as the title, a
+ *    description from the table below), relative links between repository
+ *    documents become site links where the target is mirrored and GitHub
+ *    links otherwise, and a `<` that would read as an HTML tag outside code
+ *    is escaped, since the pages render as plain Markdown.
+ *
+ * 2. Write every agent page as the Markdown the site serves for it, into
+ *    public/docs/agent/<page>.md (and public/docs/agent.md for the home
+ *    page): its title and URL as a heading, then the page with an id on
+ *    every heading (`## Exit codes [#exit-codes]`), the form fumadocs'
+ *    remark-heading and remark-llms give the user docs. They ship as static
+ *    assets, so an agent's fetch of /docs/agent/<page>.md never runs the
+ *    Worker, and the Worker reads them through its ASSETS binding for the
+ *    HTML pages, llms.txt and llms-full.txt (src/lib/agent-docs.ts) instead
+ *    of bundling the pages: compiled to MDX, 3 MB of Markdown became 17 MB
+ *    of JavaScript in the Worker.
+ *
+ * 3. Write src/lib/agent-pages.generated.json: every page's path, title
+ *    and description, and the meta.json files, which is all the Worker
+ *    needs for the sidebar, the page tree and llms.txt.
  */
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import Slugger from "github-slugger";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
-const outDir = join(here, "..", "content", "agent", "repo");
+const contentDir = join(here, "..", "content", "agent");
+const outDir = join(contentDir, "repo");
+const publicDir = join(here, "..", "public", "docs", "agent");
+const pagesFile = join(here, "..", "src", "lib", "agent-pages.generated.json");
 const GITHUB = "https://github.com/every-app/every-app/blob/main";
+/** Where the docs are served from, for the heading each served page opens with (src/lib/source.ts has the same). */
+const SITE_URL = "https://everyapp.com";
 
 /**
  * Repository path → page under /docs/agent/repo, its one-line description
@@ -248,4 +271,120 @@ writeFileSync(
 );
 console.log(
   `Mirrored ${present.length} repository documents into ${relative(process.cwd(), outDir)}`,
+);
+
+// 2 and 3: the served Markdown of every agent page, and the pages index.
+
+/** `title: "x"` or `title: x` from a page's frontmatter. */
+function parseFrontmatter(raw) {
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n/);
+  if (!match) throw new Error("a page without frontmatter");
+  const data = {};
+  for (const line of match[1].split("\n")) {
+    const field = line.match(/^(\w+):\s*(.*)$/);
+    if (!field) continue;
+    const value = field[2].trim();
+    data[field[1]] = /^".*"$/.test(value) ? JSON.parse(value) : value;
+  }
+  return { data, body: raw.slice(match[0].length) };
+}
+
+/**
+ * The text of a heading the way remark sees it (mdast-util flattened): code
+ * spans and emphasis without their markers, a link as its text, an escape as
+ * the character.
+ */
+function headingText(inline) {
+  return inline
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(`+)(.*?)\1/g, "$2")
+    .replace(/(\*\*|__|~~)(.+?)\1/g, "$2")
+    .replace(/(^|[^\w\\])[*_](.+?)[*_](?=[^\w]|$)/g, "$1$2")
+    .replace(/\\([\\`*_{}[\]()#+\-.!<>|~])/g, "$1");
+}
+
+/**
+ * The page with an id on every heading outside code: a `[#custom]` the
+ * author wrote stays, every other heading gets `[#slug]` from its text
+ * (github-slugger, numbered on a repeat, as fumadocs' remark-heading does).
+ */
+function withHeadingIds(body) {
+  const slugger = new Slugger();
+  let fence = null;
+  const lines = body.split("\n").map((line) => {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1].startsWith(fence[0]) &&
+        fenceMatch[1].length >= fence.length
+      )
+        fence = null;
+      return line;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      return line;
+    }
+    const heading = line.match(/^(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/);
+    if (!heading) return line;
+    const text = heading[2].replace(/[ \t]+$/, "");
+    if (/\s*\[#[^]+?\]\s*$/.test(text) || text === "") return line;
+    return `${line.replace(/[ \t]+$/, "")} [#${slugger.slug(headingText(text))}]`;
+  });
+  return lines.join("\n");
+}
+
+function walk(dir, prefix = "") {
+  const files = [];
+  for (const name of readdirSync(dir).sort()) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory())
+      files.push(...walk(path, `${prefix}${name}/`));
+    else if (name.endsWith(".md") || name === "meta.json")
+      files.push(`${prefix}${name}`);
+  }
+  return files;
+}
+
+rmSync(publicDir, { recursive: true, force: true });
+rmSync(join(here, "..", "public", "docs", "agent.md"), { force: true });
+const files = [];
+for (const path of walk(contentDir)) {
+  if (path.endsWith("meta.json")) {
+    files.push({
+      type: "meta",
+      path,
+      data: JSON.parse(readFileSync(join(contentDir, path), "utf8")),
+    });
+    continue;
+  }
+  const { data, body } = parseFrontmatter(
+    readFileSync(join(contentDir, path), "utf8"),
+  );
+  if (!data.title) throw new Error(`${path} has no title`);
+  files.push({
+    type: "page",
+    path,
+    data: { title: data.title, description: data.description },
+  });
+  const slugs = path.replace(/\.md$/, "").split("/");
+  if (slugs.at(-1) === "index") slugs.pop();
+  const url = ["/docs/agent", ...slugs].join("/");
+  const markdown = `${withHeadingIds(body).trim()}\n`.replace(
+    /\n{3,}/g,
+    "\n\n",
+  );
+  const served = `# ${data.title} (${SITE_URL}${url})\n\n${markdown}`;
+  const target = join(publicDir, path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, served);
+  // `/docs/agent.md` is the home page too, like `/docs/agent/index.md`.
+  if (path === "index.md")
+    writeFileSync(join(here, "..", "public", "docs", "agent.md"), served);
+}
+writeFileSync(pagesFile, `${JSON.stringify({ files }, null, 2)}\n`);
+console.log(
+  `Wrote ${files.filter((f) => f.type === "page").length} agent pages as Markdown into ${relative(process.cwd(), publicDir)}`,
 );
