@@ -38,9 +38,10 @@ function PrivacyPolicy() {
           <Section title="Hear about releases">
             <p>
               If you leave your email address in the "Keep me posted" form on
-              the home page, we store it in a Cloudflare D1 database and use it
-              only to tell you about releases and breaking changes. Email
-              support@everyapp.dev to have it removed.
+              the home page, it goes to our mailing list at Loops (loops.so) and
+              we use it only to tell you about releases and breaking changes.
+              Every email has an unsubscribe link, or email support@everyapp.dev
+              to have it removed.
             </p>
           </Section>
 

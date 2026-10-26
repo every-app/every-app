@@ -11,11 +11,9 @@
     "preflight": "node scripts/preflight.js",
     "types:check": "wrangler types && tsc --noEmit",
     "cf-typegen": "wrangler types",
-    "db:migrate": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy",
     "deploy:redirect": "wrangler deploy -c redirect/wrangler.jsonc"
   },
   "dependencies": {

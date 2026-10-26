@@ -16,12 +16,4 @@
       "custom_domain": true,
     },
   ],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "every-app-waitlist",
-      "database_id": "d578d9d3-4d5d-4850-a640-a4dfdd078ab6",
-      "migrations_dir": "migrations",
-    },
-  ],
 }
