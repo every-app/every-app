@@ -55,7 +55,7 @@ async function render(subscription?: EventSubscription) {
   );
   for (let tick = 0; tick < 10; tick++) {
     await act(() => new Promise((resolve) => setTimeout(resolve, 5)));
-    if (dialog()?.textContent?.includes("Everything")) return;
+    if (dialog()?.textContent?.includes("All events")) return;
   }
   throw new Error("the dialog never loaded the event types");
 }
@@ -110,7 +110,7 @@ async function type(label: string, value: string) {
 
 /**
  * The checkbox of the label whose text starts with `start`: inside it (a
- * type or a group) or beside it in its field ("Everything").
+ * type or a group) or beside it in its field.
  */
 function checkbox(start: string): HTMLElement {
   const label = [...dialog()!.querySelectorAll("label")].find((element) =>
@@ -127,7 +127,7 @@ function checkbox(start: string): HTMLElement {
 
 /**
  * Toggle a checkbox: a type's or a group's by its input (a click on the
- * box inside a label bubbles to the label and toggles twice), Everything's
+ * box inside a label bubbles to the label and toggles twice), any other
  * by its box.
  */
 async function toggle(start: string) {
@@ -136,6 +136,15 @@ async function toggle(start: string) {
     .closest("label")
     ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
   await press(input ?? box);
+}
+
+/** Leave All events for the type checkboxes. */
+async function chooseEvents() {
+  await press(
+    dialog()!.querySelector<HTMLElement>(
+      '[role="radio"][aria-label="Choose events"]',
+    )!,
+  );
 }
 
 async function press(element: HTMLElement) {
@@ -160,13 +169,13 @@ describe("adding a webhook", () => {
     await render();
     await type("URL", "https://hooks.example.com/everyapp");
     await type("Signing secret (optional)", "short");
-    await toggle("Everything");
+    await chooseEvents();
     await submit();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(text()).toContain(
       "A signing secret is 16 to 128 characters with no spaces, or blank.",
     );
-    expect(text()).toContain("Choose the events to send, or Everything.");
+    expect(text()).toContain("Choose at least one event, or All events.");
   });
 
   it("sends everything with a blank secret, so the Gateway generates one", async () => {
@@ -186,7 +195,7 @@ describe("adding a webhook", () => {
     await render();
     await type("URL", "https://hooks.example.com/everyapp");
     await type("Name", "Slack #ops");
-    await toggle("Everything");
+    await chooseEvents();
     await toggle("Members");
     // A checked group takes its types: they read as checked and fixed.
     expect(checkbox("member.joined").getAttribute("aria-checked")).toBe("true");
@@ -207,7 +216,7 @@ describe("adding a webhook", () => {
   it("refuses a typed pattern that matches nothing, by the server's own rule", async () => {
     await render();
     await type("URL", "https://hooks.example.com/everyapp");
-    await toggle("Everything");
+    await chooseEvents();
     await type("Patterns", "billing.*");
     await submit();
     expect(onSubmit).not.toHaveBeenCalled();

@@ -1,8 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
+  ArrowUpRight,
+  Bot,
   List,
   Mail,
+  MessageSquare,
   Pause,
   Pencil,
   Play,
@@ -10,12 +13,13 @@ import {
   Trash2,
   TriangleAlert,
   Webhook,
+  Zap,
 } from "lucide-react";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
-import { CodeBlock } from "@/client/components/CodeBlock";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { DateCell } from "@/client/components/table/DateCell";
 import { Badge } from "@/client/components/ui/badge";
+import { Button } from "@/client/components/ui/button";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -106,7 +110,7 @@ function TargetCell({ subscription }: { subscription: EventSubscription }) {
 
 function EventsCell({ subscription }: { subscription: EventSubscription }) {
   if (isEverything(subscription.events)) {
-    return <Badge variant="soft">Everything</Badge>;
+    return <Badge variant="soft">All events</Badge>;
   }
   const shown = subscription.events.slice(0, CHIPS_SHOWN);
   const more = subscription.events.length - shown.length;
@@ -255,43 +259,55 @@ const columns: ColumnDef<EventSubscription>[] = [
   },
 ];
 
+/** The three things people wire events to, for the empty state. */
+const DESTINATIONS = [
+  {
+    icon: MessageSquare,
+    title: "Slack",
+    detail: "Post each event to a channel",
+  },
+  { icon: Zap, title: "Zapier or n8n", detail: "Start a workflow" },
+  { icon: Bot, title: "Your own agent", detail: "Check the signature and act" },
+] as const;
+
 /**
- * What events are, for a workspace with no subscription yet: what happens
- * becomes a signed POST or an email, the three things people wire, the
- * docs, and the same from a terminal.
+ * Where events go, for a workspace with no subscription yet: the three
+ * destinations people wire, then Add, the docs, and the CLI line.
  */
-function EventsIntro() {
+function EventsEmptyActions({ addAction }: { addAction?: ReactNode }) {
   return (
-    <div className="space-y-3">
-      <p>
-        Events are what happens in this workspace: someone joins, an app is
-        installed, a cap is reached, an agent's tool call is blocked. Each one
-        goes to the URLs you add as a signed JSON POST, or to the owners and
-        admins by email.
-      </p>
-      <ul className="space-y-1 text-left text-pretty">
-        <li>
-          <span className="font-medium text-foreground">Slack</span>: a Workflow
-          Builder webhook posts the event's summary to a channel.
-        </li>
-        <li>
-          <span className="font-medium text-foreground">Zapier or n8n</span>: a
-          catch hook starts a flow.
-        </li>
-        <li>
-          <span className="font-medium text-foreground">Your own agent</span>:
-          it checks the signature and acts.
-        </li>
+    <div className="flex w-full flex-col items-center gap-5">
+      <ul className="w-full divide-y divide-border rounded-lg border border-border text-left">
+        {DESTINATIONS.map(({ icon: Icon, title, detail }) => (
+          <li key={title} className="flex items-center gap-3 px-3 py-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+              <Icon className="size-3.5" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                {title}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {detail}
+              </span>
+            </span>
+          </li>
+        ))}
       </ul>
-      <p>
-        <a
-          href={EVENTS_DOCS_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-4 hover:text-foreground"
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {addAction}
+        <Button
+          variant="ghost"
+          nativeButton={false}
+          render={<a href={EVENTS_DOCS_URL} target="_blank" rel="noreferrer" />}
         >
           How events work
-        </a>
+          <ArrowUpRight data-icon="inline-end" />
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Or from a terminal:{" "}
+        <code className="font-mono text-foreground/80">{EVENTS_CLI_LINE}</code>
       </p>
     </div>
   );
@@ -319,18 +335,9 @@ export function EventSubscriptionsTable({
         empty={{
           icon: Webhook,
           title: "No event subscriptions yet",
-          description: <EventsIntro />,
-          action: (
-            <>
-              {addAction}
-              <div className="w-full space-y-1.5 text-left">
-                <p className="text-xs text-muted-foreground">
-                  Or from a terminal:
-                </p>
-                <CodeBlock code={EVENTS_CLI_LINE} />
-              </div>
-            </>
-          ),
+          description:
+            "Get a signed webhook or an email when someone joins, an app is installed, a cap is reached or an agent's tool call is blocked.",
+          action: <EventsEmptyActions addAction={addAction} />,
         }}
       />
     </SubscriptionRowContext.Provider>

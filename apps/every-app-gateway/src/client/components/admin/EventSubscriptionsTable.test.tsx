@@ -4,7 +4,7 @@
  * switch turns the subscription on and off, a dead subscription shows
  * Dead and how many attempts failed in a row (the count opens its
  * deliveries), a built-in row says so, the events read as chips or
- * "Everything", and an empty workspace learns what events are, where the
+ * "All events", and an empty workspace learns what events are, where the
  * docs are and the CLI line.
  */
 import { act } from "react";
@@ -163,7 +163,7 @@ describe("the subscriptions table", () => {
     expect(cells.textContent).toContain("Nothing sent yet");
   });
 
-  it("shows the events as chips, and Everything for *", () => {
+  it("shows the events as chips, and All events for *", () => {
     render([
       subscription(),
       subscription({
@@ -174,7 +174,7 @@ describe("the subscriptions table", () => {
     ]);
     expect(row("Slack #ops").textContent).toContain("member.*");
     expect(row("Slack #ops").textContent).toContain("cap.reached");
-    expect(row("Zapier").textContent).toContain("Everything");
+    expect(row("Zapier").textContent).toContain("All events");
   });
 
   it("offers Send test, Deliveries, Edit, Disable and Remove in the row menu", () => {
