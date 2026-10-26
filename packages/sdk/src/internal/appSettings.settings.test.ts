@@ -15,7 +15,7 @@ const manifest = {
       name: "POSTHOG_HOST",
       why: "Where events go.",
       type: "url" as const,
-      optional: true,
+      default: "https://us.i.posthog.com",
     },
     {
       name: "POSTHOG_PROJECT_ID",
@@ -42,12 +42,15 @@ describe("an app's plain settings", () => {
       ["setting", "POSTHOG_PROJECT_ID", "app"],
       ["setting", "REGION", "app"],
     ]);
-    expect(settings[1]!.value).toEqual({ type: "url" });
+    expect(settings[1]!.value).toEqual({
+      type: "url",
+      default: "https://us.i.posthog.com",
+    });
     expect(settings[3]!.value).toEqual({ type: "text", values: ["us", "eu"] });
     expect(settings[0]!.value).toBeUndefined();
   });
 
-  it("need: required unless marked optional", () => {
+  it("need: required by default, optional with a default (the deploy writes it) or when marked", () => {
     const needs = appSettings(manifest).map((setting) => setting.need.kind);
     expect(needs).toEqual(["required", "optional", "required", "optional"]);
     const report = evaluateAppSettings(
@@ -106,7 +109,9 @@ describe("settingValueProblem and settingValueTakes", () => {
   });
 
   it("says what each takes", () => {
-    expect(settingValueTakes({ type: "url" })).toBe("an http or https URL");
+    expect(
+      settingValueTakes({ type: "url", default: "https://us.i.posthog.com" }),
+    ).toBe("an http or https URL, default https://us.i.posthog.com");
     expect(settingValueTakes({ type: "text", values: ["a", "b", "c"] })).toBe(
       "one of a, b or c",
     );

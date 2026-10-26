@@ -18,7 +18,7 @@
  * here supply a default. An app's plain settings (`settings`: a host, a
  * project id, a region) are held like its secrets, on its Worker, but are
  * values rather than keys: each says what it takes (a URL, a number, one
- * of a list).
+ * of a list) and may give a default.
  *
  * Everything in this module is pure and tenant-neutral: a manifest ships
  * in a release, and what is set is asked of the caller (`isSet`), which
@@ -79,12 +79,15 @@ export interface SettingEntry {
   type?: SettingValueType;
   /** The values it may take, for a `text` setting that is one of a list. */
   values?: readonly string[];
+  /** What the deploy sets it to while nobody has set it. */
+  default?: string;
 }
 
 /** What a plain setting's value must be: what `configure` checks and every surface says. */
 export interface SettingValueRule {
   type: SettingValueType;
   values?: string[];
+  default?: string;
 }
 
 /** What any declaration may say about its need. */
@@ -317,6 +320,9 @@ export function settingEntries(
         values.every((value) => typeof value === "string")
           ? { values: values as string[] }
           : {}),
+        ...(typeof record["default"] === "string"
+          ? { default: record["default"] }
+          : {}),
       },
     ];
   });
@@ -345,6 +351,7 @@ export function settingValueRule(entry: SettingEntry): SettingValueRule {
   return {
     type: entry.type ?? "text",
     ...(entry.values?.length ? { values: [...entry.values] } : {}),
+    ...(entry.default !== undefined ? { default: entry.default } : {}),
   };
 }
 
@@ -357,10 +364,10 @@ function either(values: readonly string[]): string {
 
 /**
  * What a plain setting takes, completing "Takes …": "an http or https
- * URL", "one of us or eu".
+ * URL", "one of us or eu", with ", default <value>" when it has one.
  */
 export function settingValueTakes(rule: SettingValueRule): string {
-  return rule.values?.length
+  const what = rule.values?.length
     ? `${rule.values.length > 2 ? "one of " : ""}${either(rule.values)}`
     : {
         text: "any text",
@@ -368,6 +375,7 @@ export function settingValueTakes(rule: SettingValueRule): string {
         number: "a number",
         boolean: "true or false",
       }[rule.type];
+  return rule.default !== undefined ? `${what}, default ${rule.default}` : what;
 }
 
 /**
@@ -665,6 +673,9 @@ export function appSettings(
     );
   }
   for (const entry of settingEntries(manifest)) {
+    // A setting with a default is never unset for long: the deploy writes it.
+    const need: SettingNeedFields =
+      entry.default !== undefined ? { ...entry, optional: true } : entry;
     settings.push({
       ...withNeed(
         {
@@ -675,7 +686,7 @@ export function appSettings(
           names: [entry.name],
           alsoReads: [],
         },
-        entry,
+        need,
       ),
       value: settingValueRule(entry),
     });

@@ -14,6 +14,7 @@ import {
   CATALOG,
   evaluateAppSettings,
   isReservedAppSecretName,
+  settingEntries,
   settingValueTakes,
   type AppSettingsReport,
   type CapabilityLookup,
@@ -23,6 +24,7 @@ import {
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
+import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { CLI } from "@/lib/output/command";
@@ -39,6 +41,33 @@ export function listGatewaySecretNames(cf: CfRunner): Promise<string[]> {
  */
 export async function listAppSecretNames(cf: CfRunner, workerName: string): Promise<string[]> {
   return (await listWorkerSecrets(cf, workerName)).filter((name) => !isReservedAppSecretName(name));
+}
+
+/**
+ * The defaults of the manifest's plain settings that the app's Worker
+ * doesn't hold yet, to send with the version the deploy uploads (one
+ * nobody has set reads its default, as in development); one the Worker
+ * holds, the default or a value someone set, is never replaced. A Worker
+ * that doesn't exist yet (the first deploy) holds none. Without a
+ * defaulted setting, cf isn't asked.
+ */
+export async function settingDefaultsToWrite(
+  cf: CfRunner,
+  workerName: string,
+  manifest: Pick<SettingsManifestLike, "settings">,
+): Promise<Record<string, string>> {
+  const defaults = settingEntries(manifest).filter((entry) => entry.default !== undefined);
+  if (defaults.length === 0) return {};
+  let held: string[];
+  try {
+    held = await listWorkerSecrets(cf, workerName);
+  } catch (error) {
+    if (!isCfError(error, "not_found")) throw error;
+    held = [];
+  }
+  return Object.fromEntries(
+    defaults.filter((entry) => !held.includes(entry.name)).map((entry) => [entry.name, entry.default!]),
+  );
 }
 
 /**

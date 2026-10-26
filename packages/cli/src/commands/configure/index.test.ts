@@ -865,4 +865,23 @@ describe("an app's plain settings", () => {
     expect(unmet.map((setting: { id: string }) => setting.id)).toEqual(["POSTHOG_PROJECT_ID"]);
     expect(unmet[0].value).toEqual({ type: "number" });
   });
+
+  it("the deploy writes a default nobody has set, never over a value someone set", async () => {
+    const withDefault: EveryAppCliManifest = {
+      ...MC,
+      id: "mcd",
+      settings: [
+        { name: "POSTHOG_HOST", why: "Where the PostHog API is.", type: "url", default: "https://us.i.posthog.com" },
+        { name: "POSTHOG_PROJECT_ID", why: "Which PostHog project the dashboards read.", type: "number" },
+      ],
+    };
+    const dir = appDir(withDefault);
+    const workerName = await deploy(dir, withDefault);
+    expect(secretsOf(workerName)["POSTHOG_HOST"]).toBe("https://us.i.posthog.com");
+    expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBeUndefined();
+    await configureFrom({ cwd: dir, stdin: "POSTHOG_HOST=https://eu.i.posthog.com\nPOSTHOG_PROJECT_ID=42\n" });
+    await deploy(dir, withDefault);
+    expect(secretsOf(workerName)["POSTHOG_HOST"]).toBe("https://eu.i.posthog.com");
+    expect(secretsOf(workerName)["POSTHOG_PROJECT_ID"]).toBe("42");
+  });
 });

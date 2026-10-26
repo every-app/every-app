@@ -137,6 +137,8 @@ export interface EveryAppSettingEntry {
   readonly type?: "text" | "url" | "number" | "boolean";
   /** The values a text setting may take. */
   readonly values?: readonly string[];
+  /** What the app reads while nobody has set it; the deploy writes it. */
+  readonly default?: string;
 }
 
 /** One of the app's own secrets, with its need. */

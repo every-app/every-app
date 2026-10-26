@@ -238,7 +238,8 @@ function devSettings(manifest: SettingsManifestLike, lookup: CapabilityLookup): 
         return [];
       case "secret":
         return [setting];
-      // Set in .dev.vars like a secret.
+      // Set in .dev.vars like a secret; one with a default is optional,
+      // and the dev Worker reads the default.
       case "setting":
         return [setting];
     }

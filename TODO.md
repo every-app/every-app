@@ -2044,4 +2044,5 @@ Per-install plain settings (`settings` in the manifest). Defaults taken; confirm
 - [ ] **No `anyOf` or `setup` on settings.** Add them if an app asks.
 - [ ] **`secret set NAME` sets a declared setting too,** checked against its rule. `configure` is still the documented path.
 - [ ] **Provider name clashes.** The `PROVIDER_SECRET_TAKEN` checks (`provider add`, the gateway's provider routes; lane 6's files) still read `secrets` only. A provider registered later could take a setting's name. Follow-up: switch them to `appWorkerNames()`.
-- [ ] **After the flip (stacked PR):** `default` on a setting (the deploy writes it while unset; `everyAppWorker()` binds it as text in dev), `install` offering `configure` at a terminal, and the `patterns.md` row.
+- [ ] **Defaults are written by the deploy** (the stacked after-flip PR). Each deploy sends the `default` of every setting the app's Worker doesn't hold yet. A value someone set is never replaced, and there's no "reset to default" verb: set it again. In dev, `everyAppWorker()` binds an unset setting with a default as text.
+- [ ] **`install` asks `Set up <app> now?` (Yes by default)** at a terminal when the app needs setup, then runs `configure <app>`.

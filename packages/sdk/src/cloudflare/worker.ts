@@ -214,12 +214,17 @@ export interface EveryAppWorkerManifest {
   /**
    * The app's plain settings: values that aren't secrets and differ per
    * install (a PostHog host, a region), as `{ name, why, type, values,
-   * optional }`. A deployed Worker holds them like its secrets
-   * (`everyapp configure <app>` sets them), so production builds don't
-   * declare them. In development each one set locally (`.dev.vars`,
-   * `.env`, as for secrets) is declared as a secret.
+   * default, optional }`. A deployed Worker holds them like its secrets
+   * (`everyapp configure <app>` sets them; the deploy writes each
+   * default nobody has set), so production builds don't declare them. In
+   * development each one set locally (`.dev.vars`, `.env`, as for
+   * secrets) is declared as a secret, and one that isn't, but has a
+   * default, as text with its default.
    */
-  settings?: ReadonlyArray<{ readonly name: string }>;
+  settings?: ReadonlyArray<{
+    readonly name: string;
+    readonly default?: string;
+  }>;
 }
 
 /** The names of the manifest's `secrets`, whichever form each took. */
@@ -1807,7 +1812,8 @@ function classBindings(
 
 /**
  * Check the names of the manifest's `secrets` and `settings`, and in dev
- * declare the ones set locally, with the developer's own keys for the manifest's providers and
+ * declare the ones set locally (a setting that isn't, with its default),
+ * with the developer's own keys for the manifest's providers and
  * capabilities.
  */
 function addSecrets(
@@ -1852,6 +1858,12 @@ function addSecrets(
       [...names].filter((name) => !env[name]),
     )) {
       env[secret] = { type: "secret" };
+    }
+    // A setting nobody set locally reads its default, as a deployed one does.
+    for (const setting of settings) {
+      if (!env[setting.name] && setting.default !== undefined) {
+        env[setting.name] = { type: "text", value: setting.default };
+      }
     }
   }
 }

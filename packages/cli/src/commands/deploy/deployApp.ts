@@ -112,6 +112,7 @@ import {
   listAppSecretNames,
   listGatewaySecretNames,
   namesToSet,
+  settingDefaultsToWrite,
 } from "@/lib/app/settings";
 import {
   applyEmailRoutes,
@@ -667,7 +668,10 @@ async function deploySteps(
     // gateway and the organization to the SDK. A helper calls the gateway
     // too (a crawl's rendering, say), and without EVERY_APP_ORG_ID it would
     // name the app's own organization id, which the gateway refuses.
+    // With them, the default of each plain setting (`settings`) the Worker
+    // doesn't hold yet: an app reads one nobody has set as its default.
     const versionSecrets = {
+      ...(await settingDefaultsToWrite(cf, workerName, manifest)),
       GATEWAY_URL: gatewayUrl,
       EVERY_APP_ORG_ID: organization.id,
     };

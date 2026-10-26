@@ -30,6 +30,7 @@ import {
   secretEntries,
   secretNames,
   settingNames,
+  settingValueProblem,
   type CapabilityLookup,
   type SettingNeedFields,
 } from "@every-app/sdk/internal";
@@ -894,7 +895,7 @@ export const ManifestSchema = z
      * The app's plain settings: values that aren't secrets and differ per
      * install (a PostHog host, a region), set like its secrets with
      * `everyapp configure <app>` and read from `env`: each
-     * `{ name, why, type?, values?, optional?, docs? }`.
+     * `{ name, why, type?, values?, default?, optional?, docs? }`.
      * Default: none.
      */
     settings: z
@@ -1110,6 +1111,7 @@ const SettingEntrySchemaStrict = z
       .min(2)
       .max(50)
       .optional(),
+    default: z.string().trim().min(1).max(1000).optional(),
   })
   .strict()
   .superRefine((entry, ctx) => {
@@ -1124,6 +1126,26 @@ const SettingEntrySchemaStrict = z
     }
     if (entry.values && new Set(entry.values).size !== entry.values.length) {
       issue("values", "each value once");
+    }
+    if (entry.optional === true && entry.default !== undefined) {
+      issue(
+        "optional",
+        "a setting with a default is never unset (the deploy sets the default), so it is optional already; drop optional",
+      );
+    }
+    if (entry.default !== undefined) {
+      const problem = settingValueProblem(
+        {
+          type: entry.type ?? "text",
+          ...(entry.values ? { values: entry.values } : {}),
+        },
+        entry.default,
+      );
+      if (problem)
+        issue(
+          "default",
+          `the default isn't a value the setting takes: ${problem}`,
+        );
     }
   });
 

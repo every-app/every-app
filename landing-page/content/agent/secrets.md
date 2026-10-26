@@ -409,7 +409,7 @@ The SDK keeps the same rule as a regex in `packages/sdk/src/cloudflare/worker.ts
 
 ## App secrets
 
-An app's plain settings (`settings`: a host, a project id, a region) take the same path as its secrets: declared in the manifest, set with `configure` or `secret set`, held on its Workers, recorded in `apps.secret_names`, and kept by later deploys. They differ in two ways: a value is shown and checked as typed, and `why` is required. See [/docs/agent/manifest](/docs/agent/manifest#settings).
+An app's plain settings (`settings`: a host, a project id, a region) take the same path as its secrets: declared in the manifest, set with `configure` or `secret set`, held on its Workers, recorded in `apps.secret_names`, and kept by later deploys. They differ in three ways: a value is shown and checked as typed, the deploy writes a setting's `default` while nobody has set it, and `why` is required. See [/docs/agent/manifest](/docs/agent/manifest#settings).
 
 ### Declaring them
 

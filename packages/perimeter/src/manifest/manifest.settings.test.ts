@@ -11,11 +11,16 @@ const strict =
     validateManifestStrict({ id: "mc", settings, ...extra });
 
 describe("settings manifest field", () => {
-  it("takes plain settings with a why, a type, values", () => {
+  it("takes plain settings with a why, a type, values, a default", () => {
     const manifest = validateManifestStrict({
       id: "mc",
       settings: [
-        { name: "POSTHOG_HOST", why: "Where events go.", type: "url" },
+        {
+          name: "POSTHOG_HOST",
+          why: "Where events go.",
+          type: "url",
+          default: "https://us.i.posthog.com",
+        },
         {
           name: "POSTHOG_PROJECT_ID",
           why: "Which project.",
@@ -43,7 +48,18 @@ describe("settings manifest field", () => {
     ],
     [[{ name: "A", why: "x", values: ["a"] }], "settings.0.values"],
     [[{ name: "A", why: "x", values: ["a", "a"] }], "each value once"],
-    [[{ name: "A", why: "x", default: "a" }], 'Unrecognized key: "default"'],
+    [
+      [{ name: "A", why: "x", optional: true, default: "a" }],
+      "is optional already; drop optional",
+    ],
+    [
+      [{ name: "A", why: "x", type: "url", default: "nope" }],
+      `the default isn't a value the setting takes: "nope" isn't an http or https URL.`,
+    ],
+    [
+      [{ name: "A", why: "x", values: ["a", "b"], default: "c" }],
+      "the default isn't a value the setting takes: Not a or b.",
+    ],
     [
       [
         { name: "A", why: "x" },
