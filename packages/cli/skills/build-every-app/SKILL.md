@@ -37,10 +37,9 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
 
 ## The shape of an app
 
-`everyapp create my-app` copies the starter (packed in the everyapp package;
-`starter/` in a checkout of the EveryApp repository, where it is `pnpm everyapp
-create ../my-app`; in the app it made, a `starter/` path is that path in the app) to `my-app` beside the checkout (the path's last part is the app's
-id), a git repository of its own: a TanStack Start app on a Worker with a D1
+`everyapp create my-app` copies the starter (packed in the package; in a
+checkout, `starter/` and `pnpm everyapp create ../my-app`) to `my-app` (the
+path's last part is the app's id), a git repository of its own: a TanStack Start app on a Worker with a D1
 database, a todo list whose first screen shows who you are and what the app was
 allowed. It takes `@every-app/sdk` and `everyapp` from npm (`pnpm update
 @every-app/sdk everyapp` updates them). One repository per

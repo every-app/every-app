@@ -25,7 +25,7 @@ export const SITE_PROMPT_FILE = join(
 export type PromptVariant = "public" | "checkout-present";
 
 export const CHECKOUT_PRESENT_STEP_1 =
-  "1. The repository is already cloned at /work/every-app; run `pnpm install`\n   there and every command from that folder. Always `pnpm everyapp`, never npx.";
+  "1. The repository is already cloned at /work/every-app; run `pnpm install`\n   there and every command from that folder, as `pnpm everyapp` wherever\n   the steps below say `everyapp`.";
 
 export function readPrompt(path = PROMPT_FILE): string {
   return readFileSync(path, "utf8");
