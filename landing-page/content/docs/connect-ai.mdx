@@ -1,50 +1,62 @@
 ---
 title: Use your apps from Claude or ChatGPT
-description: Connect Claude, ChatGPT, Claude Code or Cursor to your Gateway once, and they can use every app you can open.
+description: Connect Claude, ChatGPT, Claude Code, Codex or Cursor to your Gateway once, and they can use every app you can open.
 ---
 
-Your Gateway has one address for AI assistants, and it covers all your apps:
+Connect your assistant once and it can use every app you can open: read and change things the way you can, but never delete. It uses one address:
 
 ```text
 https://apps.yourcompany.com/mcp
 ```
 
-In the Gateway, **Connect your agent** in the sidebar shows your address and the step for each assistant.
-
-Connect it once. The assistant signs in to your Gateway as you, asks which apps it may use, and from then on it can read and change things in those apps the way you can. An app only offers what its builder made available, and nothing that deletes data.
-
-Your Gateway can also offer assistants tools that come from somewhere else, as an MCP app: a built-in one like DataForSEO (`everyapp mcp on dataforseo`), or any remote MCP server by its URL (`everyapp mcp add https://…`, or in the Gateway, **Manage workspace** → **Apps** → **Add app** → **Add an MCP server**). Either way the server's key stays on the Gateway, never in your assistant, and the app shows under "MCP apps" on the home page, where its card says how to use it.
+In the Gateway, open **Connect your agent** in the sidebar. It shows your address and the steps for each assistant.
 
 ## Claude and ChatGPT
 
-In Claude (claude.ai or the desktop app) or ChatGPT, add a custom connector and paste the address above. Your Gateway's sign-in page opens: sign in, choose the apps and whether the assistant may change things or only read, and allow it.
+Add a custom connector and paste the address.
 
 ## Claude Code
-
-In a terminal, run:
 
 ```bash
 claude mcp add --transport http everyapp https://apps.yourcompany.com/mcp
 ```
 
-Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. Allow it in the page that opens.
+Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**.
 
-## Cursor and other tools
-
-Add an MCP server with the address above. Tools that can't sign in on their own take a personal access token instead. An owner or admin makes one for you: in the Gateway, open **Manage workspace**, then **Tokens**, select **New token**, and give the token to the tool as the `Authorization: Bearer` header. A new token reads only, for one app where there is one, and lasts 30 days; pick **Read & write** or **Full access** and a longer expiry only when the tool needs them.
-
-## Also worth connecting
-
-If you run the Gateway, Cloudflare's own MCP server lets your assistant read the account it runs in: DNS, Workers, Access, logs and the bill. It acts as you on your whole Cloudflare account, so add it to your own tools, not to a project file others share. Pick **Minimal** when it asks what to allow. Let it read; building and deploying stay with `everyapp`.
+## Codex
 
 ```bash
-claude mcp add --transport http cloudflare https://mcp.cloudflare.com/mcp
+codex mcp add everyapp --url https://apps.yourcompany.com/mcp
+codex mcp login everyapp
 ```
 
-In Claude, add it as a custom connector with that address.
+## Cursor
+
+Add this to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project). Cursor then asks you to sign in.
+
+```json
+{ "mcpServers": { "everyapp": { "url": "https://apps.yourcompany.com/mcp" } } }
+```
+
+## What happens next
+
+A sign-in page opens. Choose the apps, choose read & write or read only, and allow it.
+
+Tools that can't sign in take a personal access token as an `Authorization: Bearer` header. An owner or admin makes one in **Manage workspace** → **Tokens**.
+
+## Add tools from elsewhere
+
+Your Gateway can also offer tools from another MCP server, as an MCP app. Its key stays on the Gateway, never in your assistant.
+
+```bash
+everyapp mcp on dataforseo
+everyapp mcp add https://mcp.example.com/mcp
+```
+
+Or, in the Gateway: **Manage workspace** → **Apps** → **Add app** → **Add an MCP server**.
 
 ## Disconnect
 
-In the account menu at the bottom of the Gateway's sidebar, open **AI connections** to see every connection and revoke one. Deactivating a person disconnects all of theirs.
+Open the account menu at the bottom of the sidebar, then **AI connections**, and revoke a connection.
 
-This works behind [Cloudflare Access](/docs/access) too. For how tools, sign-in and tokens work underneath, ask your agent or see the [agent docs](/docs/agent/mcp).
+This works behind [Cloudflare Access](/docs/access) too. For the full reference, see [MCP](/docs/agent/mcp).

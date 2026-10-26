@@ -7,37 +7,29 @@ description: SEO research you pay for by use, not by the month.
 >
 > Keyword research, rank tracking, backlinks, site audits and AI visibility, on DataForSEO data billed per call. Claude Code, Codex, Cursor or ChatGPT can work with it through MCP.
 
-## Features
+You get keyword research, scheduled rank tracking, competitor and backlink profiles, page-by-page site audits, AI visibility (which sites AI answers cite in your market), and Search Console and GA4 beside the research. SAM, its built-in agent, can do any of it for you.
 
-- Keyword research: volume, CPC, difficulty, intent, trends and a SERP analysis.
-- Rank tracking on a schedule.
-- Domain overview and competitor insights.
-- Backlink profiles for your site or a competitor's.
-- Site audits, page by page.
-- AI visibility: what people ask AI in your market and which sites get cited.
-- Search Console and GA4 beside the research.
-- An agent, SAM, and every tool served to your AI clients over MCP.
+## Install
 
-## Install on EveryApp
+Enable R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started).
 
 ```bash
 everyapp install https://github.com/every-app/open-seo
 everyapp configure openseo
 ```
 
-Needs an OpenRouter key, a DataForSEO key, and R2 enabled on your Cloudflare account. Code: [github.com/every-app/open-seo](https://github.com/every-app/open-seo)
+`configure` asks for:
 
-### Settings
+- `OPENROUTER_API_KEY` (required): SAM and website research run on it.
+- `DATAFORSEO_API_KEY` (required): `login:password` from your DataForSEO dashboard.
+- Optional: `CONTEXT_API_KEY` to render JavaScript-heavy pages in audits, and a Google Workspace OAuth client for Search Console and GA4 ([Connect an OAuth provider](/docs/connect-oauth)).
 
-The second command asks for each key below, then the optional ones. Run the first again later to update. DataForSEO bills by use; the Gateway counts the calls and stops the app at a cap you set. [Usage and caps](/docs/usage)
+DataForSEO bills per call. Set a cap so the Gateway stops the app before you overspend: [Usage and caps](/docs/usage).
 
-| Setting                                                           | Held by | Needed   | Why                                                                                                                                                                      |
-| ----------------------------------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `OPENROUTER_API_KEY`                                              | Gateway | Yes      | SAM, prompt suggestions and website research run on it.                                                                                                                  |
-| `DATAFORSEO_API_KEY`                                              | Gateway | Yes      | Keyword, SERP, backlink, local business and AI answer data, including scheduled rank checks. The value is `login:password` from the DataForSEO dashboard, or its base64. |
-| `CONTEXT_API_KEY`                                                 | Gateway | Optional | Renders JavaScript-heavy pages when a site audit asks for it.                                                                                                            |
-| `GOOGLE_WORKSPACE_CLIENT_ID` and `GOOGLE_WORKSPACE_CLIENT_SECRET` | Gateway | Optional | Search Console and GA4 reads for your sites, with the Google account you connect in EveryApp. [Connect an OAuth provider](/docs/connect-oauth)                           |
-| `CRAWLER_ACCESS_SECRET`                                           | OpenSEO | Optional | Encrypts the Shopify crawler-access signatures that audits of protected stores send. Any string of 32 or more characters.                                                |
-| `OPENROUTER_MODEL`                                                | OpenSEO | Optional | Picks the OpenRouter model for SAM, prompt suggestions and website research. The default is `openai/gpt-5.6-luna`.                                                       |
+Run the install command again to update. Every member of your workspace can open it.
 
-Nothing in OpenSEO is public: every page needs a signed-in member. Once installed, every member of your workspace can open it.
+## Use it from your agent
+
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "Find keywords my competitor ranks for that I don't."
+
+Code: [github.com/every-app/open-seo](https://github.com/every-app/open-seo)

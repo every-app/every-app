@@ -4,36 +4,23 @@ title: "Cloudflare"
 description: "Cloudflare's API: zones, DNS, Workers, R2, D1, KV and the rest of an account."
 ---
 
-Cloudflare's API for an app that manages zones, DNS, Workers or storage. Your Gateway already runs on Cloudflare; this is a separate token an app uses on purpose.
-
-**Ways to connect:** API key, sign in.
+Cloudflare's API, for an app that manages zones, DNS, Workers or storage. It's a separate token from the one your Gateway runs on.
 
 ## API key
 
-- **Get your key here:** [dash.cloudflare.com](https://dash.cloudflare.com/profile/api-tokens)
-- **Setting:** `CLOUDFLARE_PROVIDER_API_TOKEN`
-- **API reference:** [developers.cloudflare.com](https://developers.cloudflare.com/api/)
-
-### Get the key
-
 1. Open [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) and select **Create Token**.
-2. Start from a template, or a custom token, with only the permissions and zones the app needs. Never use the Global API Key.
-3. A token on your Gateway's own account can change the Gateway. Keep it narrow, or use another account.
-4. Select **Continue to summary**, **Create Token**, and copy it. It's shown once.
+2. Give it only the permissions and zones the app needs. Never use the Global API Key. A token on your Gateway's own account can change the Gateway, so keep it narrow.
+3. Select **Continue to summary**, then **Create Token**, and copy it. It's shown once.
 
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set CLOUDFLARE_PROVIDER_API_TOKEN
+everyapp provider add cloudflare
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -41,47 +28,35 @@ capabilities: {
 },
 ```
 
-`access` is `"read"` (or `"write"` where it changes things). The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Cloudflare's [API](https://developers.cloudflare.com/api/) with `integrationFetch()`, and the Gateway adds the key. Use `"write"` if the app changes things. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show cloudflare` shows the key as set.
 
-- `everyapp provider show cloudflare` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
-- To test the key itself, `GET https://api.cloudflare.com/client/v4/user/tokens/verify` with it should answer 200; the call is free.
-
-### Cost and limits
-
-- **Rate limits:** 1,200 requests per 5 minutes per user or account token; 200 a second per IP; GraphQL by query cost, at most 320 per 5 minutes.
+**Rate limits:** 1,200 requests per 5 minutes per user or account token; 200 a second per IP; GraphQL by query cost, at most 320 per 5 minutes.
 
 ## Sign in with Cloudflare
 
-`Continue with Cloudflare` on your Gateway's sign-in page, for people you've invited. It's another way into the same account. [Sign-in](/docs/sign-in)
-
-### Make the OAuth app
+Adds **Continue with Cloudflare** to your Gateway's sign-in page, for people you've invited. [Sign-in](/docs/sign-in)
 
 1. Open [dash.cloudflare.com](https://dash.cloudflare.com/?to=/:account/oauth-clients) and create an OAuth client (Manage Account → OAuth clients).
-2. Add the redirect URL `https://<your gateway>/api/auth/callback/cloudflare`. It asks only for `user-details.read`: who someone is, nothing an app could act with.
-3. Copy what the Gateway needs:
+2. Add the redirect URL `https://<your gateway>/api/auth/callback/cloudflare`.
+3. Copy:
    - `CLOUDFLARE_SIGNIN_CLIENT_ID`: The OAuth client's Client ID.
    - `CLOUDFLARE_SIGNIN_CLIENT_SECRET`: The OAuth client's Client secret.
 
 - Keep the client private (the default): a public client lets any Cloudflare user sign in, and Cloudflare says nothing about whether their address is verified. Making a client public is permanent.
 - The Cloudflare account's members sign in; for everyone else use Cloudflare Access's one-time PIN (`everyapp access on`) or another provider.
 
-### Turn it on
+Turn it on. It asks for each value:
 
 ```bash
 everyapp signin add cloudflare
 ```
 
-It asks for each value, the secret at a hidden prompt, and the button is on the sign-in page as soon as it's done.
-
-### Check it worked
-
-`everyapp signin show cloudflare` shows each setting as set and the redirect URL. Then sign out and select the button.
+**Check it worked:** `everyapp signin show cloudflare` shows each setting as set. Then sign out and select the button.
 
 ## More help
 
-- Your coding agent has the full step-by-step guide in the everyapp skill: [`setup/signin-cloudflare.md`](https://github.com/every-app/every-app/blob/main/packages/cli/skills/everyapp/setup/signin-cloudflare.md). Ask it to set Cloudflare up.
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Cloudflare).
+Ask your coding agent to set Cloudflare up: the everyapp skill has the full guide ([`setup/signin-cloudflare.md`](https://github.com/every-app/every-app/blob/main/packages/cli/skills/everyapp/setup/signin-cloudflare.md)).
+
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Cloudflare).

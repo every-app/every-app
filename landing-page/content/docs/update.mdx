@@ -1,52 +1,36 @@
 ---
 title: Update an app
-description: Ship changes to an app, keep your Gateway up to date, remove apps you don't need, or remove everything.
+description: Ship changes to an app, update your Gateway, remove an app, or remove everything.
 ---
 
 ## Ship a change
 
-In the app's folder, deploy again:
+In the app's folder, deploy again. The app's data stays.
 
 ```bash
-pnpm run deploy
+everyapp deploy
 ```
 
-The app's data stays.
-
-## When the app stores something new
-
-If a change affects what the app saves, like a new field on a todo, the database needs a migration. Your coding agent usually writes it. If not, run this in the app's folder:
-
-```bash
-pnpm run db:generate
-```
-
-Without one, the deploy stops with **The schema has changes no migration covers** before changing anything.
+If the change adds to what the app stores, like a new field, it needs a database migration. Your coding agent usually writes it; if not, run `pnpm run db:generate`. Without one, the deploy stops with **The schema has changes no migration covers** before changing anything.
 
 ## Undo a database change
 
-Before a deploy changes an app's database, it saves a restore point. To go back to it, run this in the app's folder:
+A deploy saves a restore point before it changes an app's database. To go back to it, run this in the app's folder:
 
 ```bash
 everyapp db restore
 ```
 
-It asks first. Anything saved in the app since that deploy is lost too.
+It asks first. Anything saved since that deploy is lost.
 
 ## Update your Gateway
-
-To get the newest Gateway, update everyapp, then the Gateway:
 
 ```bash
 npm install -g everyapp@latest
 everyapp update
 ```
 
-Each everyapp version has a Gateway release to go with it; `everyapp update` downloads that one and deploys it over yours. (From a clone of `every-app` it is `git pull`, `pnpm install`, then `everyapp update`, which builds the Gateway from the clone.)
-
-Your people, apps and data stay, and if Cloudflare Access is in front it is brought in step with the new Gateway on the way (what it lets through without a login, the ways to sign in).
-
-`everyapp status` says which release your Gateway runs and where it came from. From a clone, it also says **Your every-app folder has a newer Gateway than the one online** when the clone is ahead; that isn't a problem, your Gateway keeps working until you update it. Deploying or deleting an app never updates it: only `everyapp update` does.
+Your people, apps and data stay, and Cloudflare Access is updated to match. Deploying an app never updates the Gateway; only `everyapp update` does. `everyapp status` shows which release is running.
 
 ## Remove an app
 
@@ -54,17 +38,15 @@ Your people, apps and data stay, and if Cloudflare Access is in front it is brou
 everyapp delete my-app
 ```
 
-This takes the app off your Gateway. Its data is kept.
-
-Add `--purge` to delete its data too. This can't be undone, so it asks you to type the app's name first.
+The app leaves your Gateway and its data is kept. Add `--purge` to delete its data too. That can't be undone, so it asks you to type the app's name.
 
 ## Remove everything
 
-There's no command for this yet. To take EveryApp out of your Cloudflare account, or to start again at a different address:
+There's no single command yet. To take EveryApp out of your Cloudflare account, or start over at another address:
 
-1. Remove each app while the Gateway is still there: `everyapp delete my-app --purge` (above).
-2. If you turned Cloudflare Access on, run `everyapp access off`. It deletes the two Access applications and keeps your Zero Trust team, its sign-in methods and the policy **Every App gateway members**, since other applications may use them. To remove the policy, delete it in the dashboard under **Zero Trust**, then **Access controls**, then **Policies**. The team itself stays; deleting it isn't needed, and its `<name>.cloudflareaccess.com` sign-in page does nothing without applications. [Check it, or turn it off](/docs/access#check-it-or-turn-it-off)
-3. In the Cloudflare dashboard, delete three things: under **Compute & AI**, then **Workers & Pages**, the Worker `every-app-gateway` (its address goes with it; if a DNS record is left at that name, delete it under your domain, then **DNS**); under **Storage & Databases**, the D1 database `every-app-gateway` and the KV namespace `every-app-gateway-OAUTH_KV`.
-4. To stop the $5 a month, open [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) and change to the Free plan. Your domain renews on its own, at Cloudflare's price.
+1. Remove each app: `everyapp delete my-app --purge`.
+2. If Cloudflare Access is on, run `everyapp access off`.
+3. In the Cloudflare dashboard, delete the Worker `every-app-gateway` (under **Workers & Pages**), then the D1 database `every-app-gateway` and the KV namespace `every-app-gateway-OAUTH_KV` (under **Storage & Databases**).
+4. To stop the $5 a month, switch [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) to Free.
 
-Everything else in your account stays as it was. Setup keeps no record of the Gateway on your computer and finds one only by its D1 database, so once that is gone, `everyapp setup` with the new address installs a fresh one: you create your owner account and invite people again, and deploy each app again from its folder.
+Then `everyapp setup` installs a fresh Gateway. You create your owner account, invite people and deploy each app again.

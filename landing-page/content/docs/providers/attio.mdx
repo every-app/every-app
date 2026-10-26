@@ -8,33 +8,20 @@ CRM: people, companies, deals, lists, notes and tasks in one Attio workspace.
 
 ## API key
 
-- **Get your key here:** [attio.com](https://attio.com/help/reference/apps/generating-an-api-key)
-- **Setting:** `ATTIO_API_KEY`
-- **API reference:** [docs.attio.com](https://docs.attio.com/rest-api/overview)
+1. Open [attio.com](https://attio.com/help/reference/apps/generating-an-api-key) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** An access token a workspace admin makes under Workspace settings > Developers, scoped to what the app needs.
 
-1. Sign in to Attio and open [attio.com](https://attio.com/help/reference/apps/generating-an-api-key).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** An access token a workspace admin makes under Workspace settings > Developers, scoped to what the app needs; the Gateway sends it as a bearer token. Listing and searching records are POSTs, so an app that lists records needs write access.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Attio) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set ATTIO_API_KEY
+everyapp provider add attio
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -42,19 +29,10 @@ capabilities: {
 },
 ```
 
-`access` is `"read"` (or `"write"` where it changes things). The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Attio's [API](https://docs.attio.com/rest-api/overview) with `integrationFetch()`, and the Gateway adds the key. Use `"write"` if the app changes things. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show attio` shows the key as set.
 
-- `everyapp provider show attio` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
-- To test the key itself, `GET https://api.attio.com/v2/objects` with it should answer 200; the call is free.
+**Rate limits:** 100 calls a second. 100 reads and 25 writes per second; listing records and entries also has score-based limits.
 
-### Cost and limits
-
-- **Rate limits:** 100 calls a second. 100 reads and 25 writes per second; listing records and entries also has score-based limits.
-
-## More help
-
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Attio).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Attio).

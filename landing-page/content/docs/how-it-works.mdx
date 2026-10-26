@@ -5,9 +5,9 @@ description: Where your apps run, how they stay private, and who can change them
 
 ## Where everything runs
 
-Everything runs in your Cloudflare account. The Gateway and each app are separate programs on Cloudflare (Workers), each with its own database.
+Everything runs in your Cloudflare account. The Gateway and each app are separate Cloudflare Workers, each with its own database.
 
-To sign you in to Cloudflare and upload each app, everyapp uses `cf`, Cloudflare's own command line tool. It brings its own copy and runs it for you; there's nothing to install or set up, and the login it keeps stays on your computer. If you've used Wrangler: `cf` is Cloudflare's newer tool, and everyapp runs it instead. The one file of yours everyapp reads for a secret is `.everyapp/secrets.env` in an app's folder, and only for an app with its own Postgres database: the address and password it needs to run the app's migrations and to connect Cloudflare's Hyperdrive to it. Nothing in it goes into the app's Worker; an app's keys are set with `everyapp secret set`.
+everyapp signs you in to Cloudflare and uploads apps with `cf`, Cloudflare's command line tool. It comes with everyapp; there's nothing else to install. If you've used Wrangler, `cf` is its successor.
 
 ## How apps stay private
 
@@ -16,30 +16,28 @@ Apps have no public address of their own. Every visit goes through the Gateway f
 When someone opens `todo.apps.yourcompany.com`:
 
 1. The Gateway checks that they're signed in and allowed to open the todo app. If not, the app never sees the request.
-2. It passes the request to the app over a private connection inside Cloudflare, with a signed note saying who they are. The note only works for that app, and only for about two minutes.
+2. It passes the request to the app inside Cloudflare, with a signed note saying who they are. The note works only for that app, for about two minutes.
 3. The app checks the note and shows that person their data.
 
 So even if an app has a bug, only people you've given access to can reach it.
 
 ## Your data
 
-Each app has its own database, so one app can't read or change another's data. Deploys save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change)
+Each app has its own database, so one app can't read another's data. Deploys save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change)
 
-Nothing is sent to us. The CLI and the Gateway have no telemetry and never check in with EveryApp. They talk to Cloudflare, to GitHub when you install a published app, and to the services you connect: the AI provider you add a key for, your email sender, the integrations you turn on. Your members' email addresses, your keys and your apps' data stay in your account; we can't see them. This website counts page views with analytics we host ourselves: [Privacy](/privacy).
+Nothing is sent to us. The CLI and the Gateway have no telemetry. They talk to Cloudflare, to GitHub when you install a published app, and to the services you connect. Your members, keys and data stay in your account. This website counts page views with analytics we host ourselves: [Privacy](/privacy).
 
 ## Who can change things
 
-Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust.
-
-To let someone else deploy, add them to your Cloudflare account. To stop them, remove them.
+Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Give that access only to people you fully trust. To let someone deploy, add them to your Cloudflare account; to stop them, remove them.
 
 ## How safe is it
 
-EveryApp is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
+EveryApp is alpha software. Setup puts Cloudflare Access in front of everything: a second sign-in, at Cloudflare. If it's off, run `everyapp access on` before you invite people. [Cloudflare Access](/docs/access) Found a hole? [Report it privately](https://github.com/every-app/every-app/security/advisories/new).
 
 ## Limits today
 
-- You update apps from the terminal. The Gateway can install published apps for you if you turn browser installs on during setup.
+- You update apps from the terminal.
 - When you remove someone, it can take up to two minutes before every app stops letting them in.
-- The Gateway can't move to a different address once it's set up. To change it, [remove everything](/docs/update#remove-everything) and set it up again.
-- A monthly cap counts calls, not dollars, and can stop an app a few calls late: the Gateway counts a call once the provider has answered. [Usage and caps](/docs/usage)
+- The Gateway can't move to a different address. To change it, [remove everything](/docs/update#remove-everything) and set it up again.
+- A monthly cap counts calls, not dollars, and can stop an app a few calls late. [Usage and caps](/docs/usage)

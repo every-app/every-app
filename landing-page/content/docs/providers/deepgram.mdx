@@ -8,33 +8,20 @@ Speech to text, text to speech and text analysis.
 
 ## API key
 
-- **Get your key here:** [console.deepgram.com](https://console.deepgram.com/)
-- **Setting:** `DEEPGRAM_API_KEY`
-- **API reference:** [developers.deepgram.com](https://developers.deepgram.com/reference/deepgram-api-overview)
+1. Open [console.deepgram.com](https://console.deepgram.com/) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** An API key from the Deepgram Console.
 
-1. Sign in to Deepgram and open [console.deepgram.com](https://console.deepgram.com/).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** An API key from the Deepgram Console; the Gateway sends it as Authorization: Token &lt;key>, and the EU, Australia and India hosts take the same key. Transcription (/v1/listen), speech (/v1/speak) and text analysis (/v1/read) are POSTs.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Deepgram) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set DEEPGRAM_API_KEY
+everyapp provider add deepgram
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -42,20 +29,12 @@ capabilities: {
 },
 ```
 
-`access` is `"read"`. The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Deepgram's [API](https://developers.deepgram.com/reference/deepgram-api-overview) with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show deepgram` shows the key as set.
 
-- `everyapp provider show deepgram` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
-- To test the key itself, `GET https://api.deepgram.com/v1/models` with it should answer 200; the call is free.
+**Cost:** Nova-3 pre-recorded $0.0043 per audio minute (pay as you go); Aura-2 speech $0.030 per 1k characters; $200 free credit.
 
-### Cost and limits
+**Rate limits:** Concurrency per project on pay as you go: 50 pre-recorded transcriptions, 15 text-to-speech requests.
 
-- **Cost:** Nova-3 pre-recorded $0.0043 per audio minute (pay as you go); Aura-2 speech $0.030 per 1k characters; $200 free credit.
-- **Rate limits:** Concurrency per project on pay as you go: 50 pre-recorded transcriptions, 15 text-to-speech requests.
-
-## More help
-
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Deepgram).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Deepgram).

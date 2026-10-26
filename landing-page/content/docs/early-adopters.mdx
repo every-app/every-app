@@ -1,6 +1,6 @@
 ---
 title: For early adopters
-description: EveryApp is in early development. What's rough today, how to get help, and how to tell us what could be smoother.
+description: What's rough today, how to get help, and how to stay up to date.
 ---
 
 EveryApp is in early development, so expect some rough edges. Thank you for trying it this early. If you'd rather skip the rough edges, come back in a few weeks.
@@ -21,24 +21,17 @@ Expect a fast, informal reply from a very small team. [Troubleshooting](/docs/tr
 
 ## Tell us what could be smoother
 
-We want to hear about the small things too: a step that confused you, a message that didn't say what to do, a wait that felt too long. A line in Discord or a GitHub issue is enough.
+Small things count: a confusing step, a message that didn't say what to do, a wait that felt too long. A line in Discord or a GitHub issue is enough.
 
 ## Stay up to date
 
-From your `every-app` folder:
-
 ```bash
-git pull
-pnpm install
+npm install -g everyapp@latest
 everyapp update
 ```
 
-Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
+Your people, apps and data stay.
 
-## What "trying not to break things" means
-
-- A deploy keeps your data and saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
-- When something must change, the release notes say so.
-- We don't promise backwards compatibility yet.
+Deploys keep your data and save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change) We don't promise backwards compatibility yet; the release notes say what changed.
 
 ⭐ [Star the repository](https://github.com/every-app/every-app) to follow along.

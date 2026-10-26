@@ -7,42 +7,29 @@ description: A CRM that fills itself in.
 >
 > Add a company and a research agent finds its website, logo and people. Connect Gmail or Outlook and your conversations and meetings land on the right records.
 
-## Features
+You get companies, contacts, deals, tasks and notes, with custom fields and saved views. The agent briefs you before meetings. Mail and calendar capture is read only: it never sends or drafts mail. Website visitors and form submissions become contacts.
 
-- Companies, contacts, deals, tasks and notes, with custom fields and saved views.
-- A research agent that profiles new companies and contacts and briefs you before meetings.
-- Gmail, Google Calendar and Outlook capture, read only. It never sends or drafts mail.
-- Website tracking: visitors and form submissions become contacts.
-- CSV import and export.
-- Team agents that post to an approved Slack channel.
-- MCP tools for Claude Code, Cursor and your other AI clients.
+## Install
 
-## Install on EveryApp
+Enable R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started).
 
 ```bash
 everyapp install https://github.com/every-app/open-crm
 everyapp configure crm
 ```
 
-Needs a model key (OpenRouter first), a Context.dev key, and R2 enabled on your Cloudflare account. Code: [github.com/every-app/open-crm](https://github.com/every-app/open-crm)
+`configure` asks for:
 
-### Settings
+- A model key (required). `OPENROUTER_API_KEY` is the one to pick; it also turns on web research.
+- `CONTEXT_API_KEY` (required): company data, LinkedIn profiles and website extraction.
+- Optional: Google Workspace or Microsoft 365 OAuth clients to capture mail and meetings, and a Slack client for team agents ([Connect an OAuth provider](/docs/connect-oauth)). Set `TOKEN_ENCRYPTION_KEY` (32 or more random characters) before anyone connects them.
 
-The second command asks for each key below, then the optional ones. Run the first again later to update. Researching a record costs at most about $0.25 of model and Context.dev calls, plus its web searches.
+Researching a record costs at most about $0.25 in model and Context.dev calls, plus web searches.
 
-| Setting                                                           | Held by | Needed   | Why                                                                                                                                                                |
-| ----------------------------------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A model provider's key, `OPENROUTER_API_KEY` first                | Gateway | Yes      | The research agent's model, through the Gateway's default model provider. Any one provider's key is enough.                                                        |
-| `OPENROUTER_API_KEY`                                              | Gateway | Optional | Web research through Perplexity's Sonar models and OpenRouter's web search tool. The same key serves as the model key when it is the one you set.                  |
-| `CONTEXT_API_KEY`                                                 | Gateway | Yes      | Company brand data, LinkedIn profiles and website extraction for the research agent.                                                                               |
-| `GOOGLE_WORKSPACE_CLIENT_ID` and `GOOGLE_WORKSPACE_CLIENT_SECRET` | Gateway | Optional | Members connect their Gmail and Google Calendar, read only, so their work conversations and meetings are filed on companies and contacts.                          |
-| `MICROSOFT_365_CLIENT_ID` and `MICROSOFT_365_CLIENT_SECRET`       | Gateway | Optional | Members connect their Outlook mail, read only, so their work conversations are filed on companies and contacts.                                                    |
-| `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET`                       | Gateway | Optional | Connects the workspace's Slack so team agents can post to an approved channel.                                                                                     |
-| `TOKEN_ENCRYPTION_KEY`                                            | OpenCRM | Optional | Needed before anyone connects mail, a calendar or Slack: their tokens are encrypted under it. 32 or more random characters, for example `openssl rand -base64 32`. |
-| `GITHUB_TOKEN`                                                    | OpenCRM | Optional | Raises GitHub's rate limit when the agent matches people to GitHub profiles. Any classic token with no scopes will do.                                             |
-| `AGENT_MODEL`                                                     | OpenCRM | Optional | The model id the agent runs on, as the Gateway's default provider names it. Empty takes the operator's default.                                                    |
-| `ERASURE_SECRET`                                                  | OpenCRM | Optional | Set only while an operator erases an organization: it signs the erasure requests. Unset it afterwards.                                                             |
+Run the install command again to update. Every member of your workspace can open it.
 
-The OAuth clients are set up on the Gateway, as for any app. [Connect an OAuth provider](/docs/connect-oauth)
+## Use it from your agent
 
-**Public without sign-in:** the website tracking routes, `/t/*` (GET) and `/t/e` (POST), which run on your own website for anonymous visitors. `/internal/erase-organization` (POST) answers 404 until `ERASURE_SECRET` is set. Everything else needs a signed-in member. Once installed, every member of your workspace can open it.
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "Brief me on my 2pm meeting" or "Add Acme and research it."
+
+Code: [github.com/every-app/open-crm](https://github.com/every-app/open-crm)

@@ -1,9 +1,9 @@
 ---
 title: Apps
-description: The open source apps that run behind your Gateway. What each one does, what it needs, and the two commands that install it.
+description: Open source apps that run behind your Gateway, and how to install them.
 ---
 
-Each app is open source and runs behind your Gateway, in your own Cloudflare account. Run one as it is, or fork it as the starting point for your own.
+Each app is open source and runs behind your Gateway, in your own Cloudflare account. Run one as it is, or fork it as the start of your own.
 
 - **[OpenSEO](/docs/apps/openseo)**: SEO research you pay for by use, not by the month.
 - **[OpenCRM](/docs/apps/crm)**: A CRM that fills itself in.
@@ -11,27 +11,19 @@ Each app is open source and runs behind your Gateway, in your own Cloudflare acc
 - **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
 - **[RepoLens](/docs/apps/repolens)**: Keep the GitHub traffic history GitHub drops after 14 days.
 
-## How an install works
-
-Two commands, from your EveryApp folder. The first installs the app's latest release and puts it at `<app>.<your gateway domain>`. The second asks for each key the app needs, then the optional ones. Until the required keys are set, the app shows **Needs setup** on your Gateway and won't open.
+## Install one
 
 ```bash
 everyapp install https://github.com/every-app/open-crm
 everyapp configure crm
 ```
 
-Run the install command again later to update. Your data stays.
+The first command puts the app at `<app>.<your gateway domain>`. The second asks for the keys it needs. Until the required ones are set, the app shows **Needs setup** and won't open. Run the install command again to update; your data stays.
 
-Keys that more than one app uses are set once, on the Gateway. Three of these apps use AI, and they share one model key: `OPENROUTER_API_KEY` is the one to set first. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
+Keys several apps use, like `OPENROUTER_API_KEY`, are set once on the Gateway and shared.
 
-| App                                   | Install                                                        | Needs                                                                            |
-| ------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [OpenSEO](/docs/apps/openseo)         | `everyapp install https://github.com/every-app/open-seo`       | An OpenRouter key, a DataForSEO key, R2 enabled                                  |
-| [OpenCRM](/docs/apps/crm)             | `everyapp install https://github.com/every-app/open-crm`       | A model key (OpenRouter first), a Context.dev key, R2 enabled                    |
-| [OpenAnalytics](/docs/apps/analytics) | `everyapp install https://github.com/every-app/open-analytics` | A secret of its own, at least 32 random characters                               |
-| [OpenMail](/docs/apps/openmail)       | `everyapp install https://github.com/every-app/open-mail`      | A model key, a mail domain on Cloudflare, the Gateway's email sender, R2 enabled |
-| [RepoLens](/docs/apps/repolens)       | See its page: the repository is private today                  | A read-only GitHub token                                                         |
+OpenSEO, OpenCRM and OpenMail need R2. Enable it once in your Cloudflare dashboard (R2 Object Storage, then Get started), or the install stops with `R2_NOT_ENABLED`.
 
-**R2.** OpenSEO, OpenCRM and OpenMail each keep files in an R2 bucket. Enable R2 once in your Cloudflare dashboard (R2 Object Storage, then Get started) before you install them, or the install stops with `R2_NOT_ENABLED`. OpenAnalytics and RepoLens don't need it.
+Every member of your workspace can open these apps once installed, except RepoLens, which starts with owners and admins. [Invite people](/docs/people)
 
-Every app here lets every member of your workspace open it once it is installed, except RepoLens, which opens for owners and admins until you grant the rest. [Invite people](/docs/people)
+Each app's page lists what it asks for. The full settings for agents are in [the apps reference](/docs/agent/apps).

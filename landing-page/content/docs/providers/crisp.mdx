@@ -8,33 +8,20 @@ Customer chat: conversations, messages, people and visitors of one Crisp workspa
 
 ## API key
 
-- **Get your key here:** [docs.crisp.chat](https://docs.crisp.chat/guides/rest-api/authentication/website-token/)
-- **Settings:** `CRISP_API_KEY`, `CRISP_API_IDENTIFIER`
-- **API reference:** [docs.crisp.chat](https://docs.crisp.chat/references/rest-api/v1/)
+1. Open [docs.crisp.chat](https://docs.crisp.chat/guides/rest-api/authentication/website-token/) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** A website token, which the workspace owner generates under Settings > Workspace Settings > Advanced configuration > API Token.
 
-1. Sign in to Crisp and open [docs.crisp.chat](https://docs.crisp.chat/guides/rest-api/authentication/website-token/).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** A website token, which the workspace owner generates under Settings > Workspace Settings > Advanced configuration > API Token. The Gateway sends the identifier and key as HTTP Basic; the app sends X-Crisp-Tier: website on every call.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Crisp) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set CRISP_API_KEY CRISP_API_IDENTIFIER
+everyapp provider add crisp
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -42,18 +29,10 @@ capabilities: {
 },
 ```
 
-`access` is `"read"` (or `"write"` where it changes things). The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Crisp's [API](https://docs.crisp.chat/references/rest-api/v1/) with `integrationFetch()`, and the Gateway adds the key. Use `"write"` if the app changes things. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show crisp` shows the key as set.
 
-- `everyapp provider show crisp` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
+**Rate limits:** 10000 a day. The website token's daily quota.
 
-### Cost and limits
-
-- **Rate limits:** 10000 a day. The website token's daily quota.
-
-## More help
-
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Crisp).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Crisp).

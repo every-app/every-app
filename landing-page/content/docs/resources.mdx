@@ -1,11 +1,9 @@
 ---
 title: Cloudflare resources your app can use
-description: Databases, files, queues, search by meaning, AI, a headless browser, images, analytics, email and secrets. Declare them in your app's everyapp.config.ts and the deploy makes them in your Cloudflare account.
+description: Databases, files, queues, AI, a headless browser and more. Declare them in everyapp.config.ts and the deploy makes them in your Cloudflare account.
 ---
 
-An app on EveryApp runs in your own Cloudflare account, so it can use what Cloudflare offers: a database, a place for files, a queue of jobs, search by meaning, AI models, a headless browser, image resizing, analytics, sending email and a store for secrets. Your app says what it needs in its `everyapp.config.ts`, under `resources`, and `everyapp deploy` makes each one, named after the app, and connects it to the app. Nothing is created in your account that an app you deployed didn't declare.
-
-Your coding agent knows every field: the full reference is [everyapp.config.ts](/docs/agent/manifest) and the patterns to copy from are in [Example patterns](/docs/agent/patterns). This page is what each one is, what it costs, and the one-time steps that are yours.
+Your app runs in your own Cloudflare account, so it can use what Cloudflare offers. List what it needs under `resources` in its `everyapp.config.ts`, and `everyapp deploy` creates each one and connects it to the app. Your coding agent has the full reference: [everyapp.config.ts](/docs/agent/manifest) and [Example patterns](/docs/agent/patterns).
 
 ## What you can declare
 
@@ -26,21 +24,19 @@ Your coding agent knows every field: the full reference is [everyapp.config.ts](
 | Email sending      | `sendEmail`                   | Send mail with Cloudflare's own binding, from an address on a domain you route | Free (Email Routing on the domain)                                |
 | Secrets Store      | `secretsStore`                | A key the app reads from Cloudflare's store rather than from its own settings  | Free; make a store once in your dashboard                         |
 
-The deploy creates the database, key-value store, files bucket, Hyperdrive config, queues, index, AI Gateway and store secret for each app and records them as that app's. `everyapp delete <app> --purge` deletes what it recorded, and `everyapp status` lists what each app has. The ones with nothing to create (AI, browser, images, analytics, email) are turned on by declaring them.
+`everyapp status` lists what each app has, and `everyapp delete <app> --purge` deletes it.
 
 ## One-time steps that are yours
 
-- **Workers Paid** ($5 a month) is the plan every Gateway needs anyway ([Set up Cloudflare](/docs/cloudflare)); AI, Browser Rendering and Queues bill by use on top of it.
-- **R2**: the first app that stores files stops with `R2_NOT_ENABLED` until you open R2 Object Storage in your dashboard once and choose Get started. Nothing to make by hand.
-- **A Secrets Store**: the first app that declares one stops with `SECRETS_STORE_MISSING` until you make a store once in your dashboard (Secrets Store → Create store). The deploy puts the secret in it from the app's `.everyapp/secrets.env`.
-- **Email sending**: the app names the addresses it sends as, and their domain must be set up for Email Sending in your account (the same step as the Gateway's own sender, [Send email](/docs/people)); Cloudflare refuses the rest when the app sends.
+- **Workers Paid** ($5 a month) is already needed for the Gateway ([Set up Cloudflare](/docs/cloudflare)). AI, Browser Rendering and Queues bill by use on top.
+- **R2**: if a deploy stops with `R2_NOT_ENABLED`, open R2 Object Storage in your dashboard once and choose Get started.
+- **Secrets Store**: if a deploy stops with `SECRETS_STORE_MISSING`, create a store once in your dashboard (Secrets Store → Create store).
+- **Email sending**: the domain the app sends from must be set up for Email Sending, the same step as the Gateway's sender. [Send email](/docs/people#send-email)
 
 ## Postgres
 
-If your app wants Postgres rather than the built-in database, make one anywhere that gives you a URL (Neon, Supabase, PlanetScale Postgres, Xata, Crunchy Bridge, your own server), put the URL in the app's `.everyapp/secrets.env` as `POSTGRES_DATABASE_URL=postgres://user:password@host:5432/db`, and have the app declare `resources: { hyperdrive: [{ name: "HYPERDRIVE" }] }` with `database: { provider: "postgres" }`. The deploy makes a Hyperdrive config pointed at your database (Cloudflare keeps the connection warm near your app) and runs the app's migrations against it before anything goes live. The URL stays on the machine that deploys; it never reaches the Worker. Neon and Supabase have a pooled and a direct URL: use the direct one.
-
-Turso is not Postgres, so it isn't Hyperdrive: an app uses it with its own client and two app secrets, `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, set like any [key only one app uses](/docs/create-an-app).
+To use Postgres instead of the built-in database, get a database URL from any host (Neon, Supabase, PlanetScale, your own server). Put it in the app's `.everyapp/secrets.env` as `POSTGRES_DATABASE_URL=postgres://...`, and have the app declare `resources: { hyperdrive: [{ name: "HYPERDRIVE" }] }` with `database: { provider: "postgres" }`. The deploy connects it and runs the app's migrations. With Neon or Supabase, use the direct URL, not the pooled one.
 
 ## On your computer
 
-`pnpm dev` runs the app with local stand-ins for the database, files, queues, the browser, images, analytics and email (mail is written to a file, not sent). Two have no local version: AI models and search by meaning call your Cloudflare account instead, once the app's `vite.config.ts` turns `remoteBindings` on and you've run `cf auth login`; until then a call to them says `needs to be run remotely`. An AI Gateway binding is present in development with an empty address, so the app calls the provider directly.
+`everyapp dev` runs the app with local stand-ins for most resources; email is written to a file instead of sent. AI models and search by meaning have no local version: turn `remoteBindings` on in the app's `vite.config.ts` and run `cf auth login` to use your Cloudflare account's.

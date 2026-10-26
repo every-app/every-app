@@ -158,21 +158,20 @@ function settableOf(capability: Capability): string[] {
   return capabilitySettings(capability).filter((name) => isSettableGatewaySetting(name));
 }
 
-function verifiedLine(details: ProviderDetails): string | null {
+function verifiedLine(details: ProviderDetails, name: string): string | null {
   if (details.verified === false) {
-    return "**Unverified.** Nobody has checked this entry against the provider's own docs yet. If something here is wrong, [tell us](" + requestUrl("Fix provider docs: ") + ").";
+    return `**Unverified:** nobody has checked this against ${prose(name)}'s own docs yet. [Tell us](${requestUrl("Fix provider docs: ")}) if something is wrong.`;
   }
   return null;
 }
 
 function costLines(details: ProviderDetails): string[] {
   const lines: string[] = [];
-  if (details.cost?.note) lines.push(`- **Cost:** ${prose(sentence(details.cost.note))}`);
+  if (details.cost?.note) lines.push(`**Cost:** ${prose(sentence(details.cost.note))}`);
   else if (details.cost?.usd !== undefined) {
     const unit = { call: "a call", result: "a result", token: "a token" }[details.cost.unit];
-    lines.push(`- **Cost:** $${details.cost.usd} ${unit}.`);
+    lines.push(`**Cost:** $${details.cost.usd} ${unit}.`);
   }
-  if (details.cost?.responseField) lines.push("- The Gateway reads each call's price from the answer, so it shows in **Manage workspace → Usage**.");
   const rate = details.rate;
   if (rate) {
     const limits = [
@@ -181,207 +180,160 @@ function costLines(details: ProviderDetails): string[] {
       ...(rate.perDay === undefined ? [] : [`${rate.perDay} a day`]),
     ];
     const text = [limits.join(", "), rate.note].filter(Boolean).join(". ");
-    if (text) lines.push(`- **Rate limits:** ${prose(sentence(text))}`);
+    if (text) lines.push(`**Rate limits:** ${prose(sentence(text))}`);
   }
   return lines;
 }
+
+/**
+ * The part of a catalog hint a person acts on: its first sentence, without
+ * how the Gateway sends the key ("…; the Gateway sends it as a bearer token").
+ */
+function whatToCreate(hint: string): string {
+  const first = hint.split(/(?<=[.!?])\s+(?=[A-Z])/)[0] ?? hint;
+  const kept = first.split(/;\s*the Gateway\b|,\s*sent (?:as|in)\b|;\s*sent (?:as|in)\b/)[0]!.trim().replace(/[;,]$/, "");
+  return /[.!?]$/.test(kept) ? kept : `${kept}.`;
+}
+
+const capabilityKey = (id: string) => (/^[a-z][a-z0-9]*$/.test(id) ? id : JSON.stringify(id));
 
 // ---------------------------------------------------------------------------
 // Sections
 
 function keySection(company: Company, [id, capability]: KeyEntry, heading: string): string[] {
   const guide = company.guide;
-  const settable = settableOf(capability);
   const isAi = capability.mode === "ai";
   const isProxy = isAi && capability.kind === "proxy";
   const steps = guide.key && company.keys.length === 1 ? guide.key : null;
   const hint = capability.hint ?? capability.secrets?.find((detail) => detail.hint)?.hint;
   const out: string[] = [`## ${heading}`, ""];
-  if (capability.description && company.keys.length > 1) out.push(prose(sentence(capability.description)), "");
-  const facts = [
-    `- **${isProxy ? "Open it here" : "Get your key here"}:** ${link(capability.docs)}`,
-    ...(settable.length > 0 && !isProxy ? [`- **Setting${settable.length > 1 ? "s" : ""}:** ${settable.map(code).join(", ")}`] : []),
-    ...(capability.api ? [`- **API reference:** ${link(capability.api)}`] : []),
-  ];
-  out.push(...facts, "");
-  const unverified = verifiedLine(capability);
+  if (capability.description && company.keys.length > 1 && (guide.blurb || sentence(capability.description) !== summaryOf(company))) {
+    out.push(prose(sentence(capability.description)), "");
+  }
+  const unverified = verifiedLine(capability, company.name);
   if (unverified) out.push(unverified, "");
 
-  out.push(isProxy ? "### Steps" : "### Get the key", "");
   if (steps) {
     out.push(numbered(steps), "");
   } else {
     out.push(
       numbered([
-        `Sign in to ${prose(capability.label)} and open ${link(capability.docs)}.`,
-        "Create an API key (or token) with only the access your apps need.",
-        "Copy it. Many providers show a key only once.",
+        `Open ${link(capability.docs)} and create an API key with only the access your apps need.`,
+        "Copy it. It may be shown only once.",
       ]),
       "",
-      ...(hint ? [`**What to create:** ${prose(sentence(hint))}`, ""] : []),
-      `Steps for this provider are brief. [Open an issue](${requestUrl(`Provider guide: ${capability.label}`)}) to request a full guide.`,
-      "",
+      ...(hint ? [`**What to create:** ${prose(whatToCreate(hint))}`, ""] : []),
     );
   }
 
   if (!isProxy) {
-    out.push(
-      "### Set it on your Gateway",
-      "",
-      "From your EveryApp folder:",
-      "",
-      bash(`everyapp secret set ${settable.join(" ")}`),
-      "",
-      "It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.",
-      "",
-    );
+    out.push("Add it to your Gateway. It asks for the key:", "", bash(`everyapp provider add ${id}`), "");
     if (isAi && capability.chat) {
-      out.push(
-        `To make it the model provider apps get when they ask for the default:`,
-        "",
-        bash(`everyapp ai default ${id}`),
-        "",
-      );
+      out.push("To make it the model provider apps get by default:", "", bash(`everyapp ai default ${id}`), "");
     }
-    out.push("### Use it in an app", "", "List it in the app's `everyapp.config.ts`:", "");
+    out.push("### Use it in an app", "", "In the app's `everyapp.config.ts`:", "");
     if (isAi) {
       out.push("```ts", `providers: ["${id}"],`, "```", "", `The app calls \`/api/ai/${id}/…\` with \`createGatewayFetch()\`. More in [AI](/docs/agent/ai).`, "");
     } else {
-      const write = capability.access.includes("write") ? ' (or `"write"` where it changes things)' : "";
+      const write = capability.access.includes("write") ? ' Use `"write"` if the app changes things.' : "";
+      const api = capability.api ? `[API](${capability.api})` : "API";
       out.push(
         "```ts",
         "capabilities: {",
-        `  ${/^[a-z][a-z0-9]*$/.test(id) ? id : JSON.stringify(id)}: { access: "read", why: "What the app does with it." },`,
+        `  ${capabilityKey(id)}: { access: "read", why: "What the app does with it." },`,
         "},",
         "```",
         "",
-        `\`access\` is \`"read"\`${write}. The app calls the provider's own URLs with \`integrationFetch()\`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).`,
+        `The app calls ${prose(shortLabel(capability.label))}'s ${api} with \`integrationFetch()\`, and the Gateway adds the key.${write} More in [API providers](/docs/agent/providers).`,
         "",
       );
     }
   }
 
-  out.push("### Check it worked", "");
-  const checks = isProxy
-    ? ["`everyapp secret list` lists `AI_GATEWAY_ID`, and the AI Gateway's dashboard shows the calls your apps make."]
+  const check = isProxy
+    ? "`everyapp secret list` lists `AI_GATEWAY_ID`, and the AI Gateway dashboard shows your apps' calls."
     : isAi
-    ? [`\`everyapp ai list\` shows ${code(id)} with its key set, and \`everyapp ai show\` says which provider apps get by default.`]
-    : [`\`everyapp provider show ${id}\` shows the key as set and which apps use it.`];
-  if (!isProxy) checks.push("`everyapp status` shows apps that were waiting for it as ready.");
-  if (capability.smoke) {
-    const host = capability.smoke.host ?? (capability.mode === "api_key" ? capability.hosts[0] : new URL(capability.origin).host);
-    if (host) {
-      checks.push(
-        `To test the key itself, ${code(`${capability.smoke.method} https://${host}${capability.smoke.path}`)} with it should answer ${capability.smoke.expect.join(" or ")}${capability.smoke.free ? "; the call is free" : "; the call is charged"}.`,
-      );
-    }
-  }
-  out.push(checks.map((check) => `- ${check}`).join("\n"), "");
-
-  const cost = costLines(capability);
-  if (cost.length > 0) out.push("### Cost and limits", "", ...cost, "");
+      ? `\`everyapp ai list\` shows ${code(id)} with its key set.`
+      : `\`everyapp provider show ${id}\` shows the key as set.`;
+  out.push(`**Check it worked:** ${check}`, "");
+  out.push(...costLines(capability).flatMap((line) => [line, ""]));
   return out;
 }
 
-function connectSection(company: Company, { id, client, preset }: ClientEntry, heading: string): string[] {
+function connectSection(company: Company, { id, client }: ClientEntry, heading: string): string[] {
   const guide = company.guide;
   const gatewayFlow = client.flow !== undefined;
-  const settings = [client.secrets.clientId, ...(client.secrets.clientSecret ? [client.secrets.clientSecret] : [])];
   const sets = Object.entries(client.scopePolicy?.sets ?? {});
   const console = link(client.console);
+  const name = prose(shortLabel(client.label));
   const out: string[] = [`## ${heading}`, ""];
   out.push(
     gatewayFlow
-      ? `Each person connects their own ${prose(shortLabel(client.label))} account once, in the Gateway, and every app that asks for it uses that connection. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`
-      : `The Gateway holds the OAuth client; the app runs the sign-in itself and keeps people's tokens.`,
+      ? `Each person connects their own ${name} account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)`
+      : "The Gateway holds the OAuth client; the app runs the sign-in itself.",
     "",
   );
   if (client.description && company.clients.length > 1) out.push(prose(sentence(client.description)), "");
-  out.push(
-    `- **Make the OAuth app here:** ${console}`,
-    `- **Settings:** ${settings.map(code).join(", ")}`,
-    ...(preset ? [`- **Added with:** ${code(`everyapp provider add --oauth ${id}`)}`] : ["- **Built in:** nothing to add, only the client to set"]),
-    "",
-  );
-
-  out.push("### Redirect URI", "");
-  const appCallbacks = `An app that runs the sign-in itself lists its own callbacks under \`redirectPaths\` in its manifest entry; register those too, as \`https://<app>.<your gateway><path>\`. \`everyapp provider show ${id}\` prints every one.`;
   if (gatewayFlow) {
-    out.push("Register this at the provider:", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
-    out.push(`\`<your gateway>\` is your Gateway's address, like \`apps.example.com\`.`, "", appCallbacks, "");
+    out.push("The redirect URI to register, with your Gateway's address (like `apps.example.com`):", "", "```text", `https://<your gateway>/connect/${id}/callback`, "```", "");
   } else {
-    out.push(appCallbacks, "");
+    out.push(`Register the app's own callback URLs; \`everyapp provider show ${id}\` prints them.`, "");
   }
 
-  out.push("### Make the OAuth app", "");
   if (guide.connect && company.clients.length === 1) {
     out.push(numbered(guide.connect), "");
   } else {
     if (client.hint) out.push(prose(sentence(client.hint)), "");
     out.push(
       numbered([
-        `Open ${console} and create an OAuth app (sometimes called a client or an integration).`,
+        `Open ${console} and create an OAuth app (also called a client or an integration).`,
         "Add the redirect URI above.",
-        ...(sets.length > 0 ? ["Allow the scopes behind the sets your apps use (the table below), and no others."] : []),
-        "Copy the client ID and the client secret. The secret is often shown once.",
+        "Copy the client ID and client secret. The secret is often shown only once.",
       ]),
-      "",
-      `Steps for this provider are brief. [Open an issue](${requestUrl(`Provider guide: ${shortLabel(client.label)}`)}) to request a full guide.`,
       "",
     );
   }
-  out.push("### Set it on your Gateway", "", "From your EveryApp folder:", "");
-  if (preset) {
-    out.push(bash(`everyapp provider add --oauth ${id}`, `everyapp secret set ${settings.join(" ")}`), "");
-  } else {
-    out.push(bash(`everyapp secret set ${settings.join(" ")}`), "");
-  }
   out.push(
-    "Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.",
+    "Add it to your Gateway. It asks for the client ID and secret:",
+    "",
+    bash(`everyapp provider add ${id}`),
+    "",
+    "Or add it in **Manage workspace → Providers**.",
     "",
   );
 
-  if (sets.length > 0) {
-    out.push(
-      "### Scope sets",
-      "",
-      "Apps ask for named sets, never raw scopes, and the Gateway holds each app to the sets it declared.",
-      "",
-      "| Set | Allows | Provider scopes |",
-      "| --- | --- | --- |",
-      ...sets.map(
-        ([name, set]) =>
-          `| ${code(name)} | ${prose(set.label).replace(/\|/g, "\\|")} | ${[...set.scopes, ...(set.userScopes ?? [])].map(code).join(", ")} |`,
-      ),
-      "",
-    );
-  }
-
   // The example asks for the first set beyond `identity`, with the access that set needs.
-  const [example] = sets.filter(([name]) => name !== "identity").concat(sets);
-  const key = /^[a-z][a-z0-9]*$/.test(id) ? id : JSON.stringify(id);
+  const [example] = sets.filter(([setName]) => setName !== "identity").concat(sets);
   out.push(
     "### Use it in an app",
     "",
     "```ts",
     "capabilities: {",
-    `  ${key}: { access: "${example?.[1].access ?? "read"}",${example ? ` scopes: [${JSON.stringify(example[0])}],` : ""} why: "What the app does with it." },`,
+    `  ${capabilityKey(id)}: { access: "${example?.[1].access ?? "read"}",${example ? ` scopes: [${JSON.stringify(example[0])}],` : ""} why: "What the app does with it." },`,
     "},",
     "```",
     "",
   );
+  if (sets.length > 0) {
+    const scopes = (set: (typeof sets)[number][1]) => [...set.scopes, ...(set.userScopes ?? [])];
+    const withScopes = sets.some(([, set]) => scopes(set).length > 0);
+    out.push(
+      "Apps ask for these scope sets:",
+      "",
+      withScopes ? "| Set | Allows | Provider scopes |" : "| Set | Allows |",
+      withScopes ? "| --- | --- | --- |" : "| --- | --- |",
+      ...sets.map(
+        ([setName, set]) =>
+          `| ${code(setName)} | ${prose(set.label).replace(/\|/g, "\\|")} |${withScopes ? ` ${scopes(set).map(code).join(", ")} |` : ""}`,
+      ),
+      "",
+    );
+  }
 
-  out.push("### Check it worked", "");
   out.push(
-    [
-      `- \`everyapp provider show ${id}\` shows the client as set, and the redirect URI.`,
-      ...(gatewayFlow
-        ? [
-            `- Open the account menu → **Connected accounts** → **Connect ${prose(shortLabel(client.label))}**. You land back in the Gateway, connected.`,
-            "- `everyapp provider connections` lists who has connected.",
-          ]
-        : []),
-    ].join("\n"),
+    `**Check it worked:** \`everyapp provider show ${id}\` shows the client as set.${
+      gatewayFlow ? ` Then open the account menu → **Connected accounts** → **Connect ${name}**.` : ""
+    }`,
     "",
   );
   return out;
@@ -390,16 +342,15 @@ function connectSection(company: Company, { id, client, preset }: ClientEntry, h
 function signInSection(provider: SignInProvider, heading: string): string[] {
   const out: string[] = [`## ${heading}`, ""];
   out.push(
-    `${code(`Continue with ${provider.id === "oidc" ? "SSO" : provider.label}`)} on your Gateway's sign-in page, for people you've invited. It's another way into the same account. [Sign-in](/docs/sign-in)`,
+    `Adds **Continue with ${provider.id === "oidc" ? "SSO" : prose(provider.label)}** to your Gateway's sign-in page, for people you've invited. [Sign-in](/docs/sign-in)`,
     "",
   );
   const console = provider.console.startsWith("https://") ? link(provider.console) : prose(provider.console);
-  out.push("### Make the OAuth app", "");
   out.push(
     numbered([
       `Open ${console} and create ${/^[aeiou]/i.test(provider.appNoun) ? "an" : "a"} ${prose(provider.appNoun)}.`,
-      `Add the redirect URL ${code(`https://<your gateway>${signInCallbackPath(provider.id)}`)}. It asks only for ${provider.scopes.map(code).join(", ")}: who someone is, nothing an app could act with.`,
-      `Copy what the Gateway needs:\n${provider.settings
+      `Add the redirect URL ${code(`https://<your gateway>${signInCallbackPath(provider.id)}`)}.`,
+      `Copy:\n${provider.settings
         .filter((setting) => setting.required)
         .map((setting) => `   - ${code(setting.name)}: ${prose(sentence(setting.what))}`)
         .join("\n")}`,
@@ -412,15 +363,11 @@ function signInSection(provider: SignInProvider, heading: string): string[] {
     out.push(`Optional: ${optional.map((setting) => `${code(setting.name)}, ${prose(setting.what.replace(/\.$/, ""))}`).join("; ")}.`, "");
   }
   out.push(
-    "### Turn it on",
+    "Turn it on. It asks for each value:",
     "",
     bash(`everyapp signin add ${provider.id}`),
     "",
-    "It asks for each value, the secret at a hidden prompt, and the button is on the sign-in page as soon as it's done.",
-    "",
-    "### Check it worked",
-    "",
-    `\`everyapp signin show ${provider.id}\` shows each setting as set and the redirect URL. Then sign out and select the button.`,
+    `**Check it worked:** \`everyapp signin show ${provider.id}\` shows each setting as set. Then sign out and select the button.`,
     "",
   );
   return out;
@@ -455,16 +402,6 @@ function summaryOf(company: Company): string {
   return `${company.name}.`;
 }
 
-/** The ways a company connects, in page order, as the index lists them. */
-function waysOf(company: Company): string[] {
-  return [
-    ...(company.keys.length > 0 ? [company.keys.some(([, c]) => c.mode === "ai" && c.kind !== "proxy") ? "model key" : company.keys.some(([, c]) => c.mode === "ai") ? "switch" : "API key"] : []),
-    ...(company.service ? ["Gateway service"] : []),
-    ...(company.clients.length > 0 ? ["connect accounts"] : []),
-    ...(company.signIn ? ["sign in"] : []),
-  ];
-}
-
 function setupGuideOf(company: Company): string[] {
   const guides = new Set<string>();
   for (const [, capability] of company.keys) if (capability.setup) guides.add(capability.setup);
@@ -484,8 +421,6 @@ function companyPage(company: Company): string {
   if (guide.usedBy && guide.usedBy.length > 0) {
     out.push(`**Used by:** ${guide.usedBy.join("; ")}.`, "");
   }
-  const ways = waysOf(company);
-  if (ways.length > 1) out.push(`**Ways to connect:** ${ways.join(", ")}.`, "");
 
   for (const entry of company.keys) {
     const [, capability] = entry;
@@ -503,51 +438,43 @@ function companyPage(company: Company): string {
   }
 
   const guides = setupGuideOf(company);
-  out.push("## More help", "");
-  const help = [
-    ...guides.map((path) => `- Your coding agent has the full step-by-step guide in the everyapp skill: [${code(path)}](${SETUP_GUIDES}/${path.replace(/^setup\//, "")}). Ask it to set ${prose(company.name)} up.`),
-    "- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).",
-    `- Something wrong or missing? [Open an issue](${requestUrl(`Provider guide: ${company.name}`)}).`,
-  ];
-  out.push(help.join("\n"), "");
+  if (guides.length > 0) {
+    out.push(
+      "## More help",
+      "",
+      `Ask your coding agent to set ${prose(company.name)} up: the everyapp skill has the full guide (${guides.map((path) => `[${code(path)}](${SETUP_GUIDES}/${path.replace(/^setup\//, "")})`).join(", ")}).`,
+      "",
+    );
+  }
+  out.push(`Something wrong or missing? [Open an issue](${requestUrl(`Provider guide: ${company.name}`)}).`, "");
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n+$/, "")}\n`;
 }
 
 function providersIndexPage(companies: readonly Company[]): string {
   const out: string[] = [
-    frontmatter(
-      "Providers",
-      "Every service EveryApp has built-in support for: model providers, search and data APIs, email, people's Google, Microsoft and GitHub accounts, and sign-in. Where to get each key and the command that sets it.",
-    ),
+    frontmatter("Providers", "The services your apps can use, where to get each key, and the command that adds it."),
     "",
-    "A provider is a service your apps use: a model provider, a search API, people's Google accounts. Each page below says where to get the key, the steps, and the `everyapp` command that sets it.",
+    "A provider is a service your apps use: a model, a search API, people's Google accounts. Your Gateway holds the key, adds it to each call, and never hands it to app code.",
     "",
-    "**Supported** means three things:",
+    "Add one with its id. It asks for the key:",
     "",
-    "- **Your Gateway holds the key.** You set it once, from your EveryApp folder, and every app that needs it uses it.",
-    "- **Apps declare what they need** in `everyapp.config.ts`, and `everyapp configure <app>` asks for exactly that.",
-    "- **Keys never reach app code.** The Gateway adds the key to each call, and only to that provider's own addresses.",
+    bash("everyapp provider add openrouter"),
     "",
-    "Not listed? You can [add any provider yourself](/docs/providers/custom), or ask us for a page.",
+    "Installing an app? `everyapp configure <app>` asks for every key it needs. Not listed below? [Add any API yourself](/docs/providers/custom).",
     "",
   ];
   for (const category of CATEGORIES) {
     const members = companies.filter((company) => company.category === category.id);
     if (members.length === 0) continue;
     out.push(`## ${category.title}`, "");
-    out.push(
-      members
-        .map((company) => `- **[${prose(company.name)}](/docs/providers/${company.slug})**: ${prose(summaryOf(company))} _${waysOf(company).join(", ")}_`)
-        .join("\n"),
-      "",
-    );
+    out.push(members.map((company) => `- **[${prose(company.name)}](/docs/providers/${company.slug})**: ${prose(summaryOf(company))}`).join("\n"), "");
   }
   out.push(
     "## Not listed",
     "",
-    "- [Add a custom provider](/docs/providers/custom): any API with a key, or any OAuth provider, in one JSON file.",
-    "- [Remote MCP servers](/docs/agent/mcp#mcp-apps): add an MCP server by its URL and your agents get its tools.",
-    `- [Request a provider](${requestUrl("Provider request: ")}): open an issue and we'll write its page.`,
+    "- [Add a custom provider](/docs/providers/custom): any API with a key, or any OAuth provider.",
+    "- [Remote MCP servers](/docs/agent/mcp#mcp-apps): add an MCP server by its URL.",
+    `- [Request a provider](${requestUrl("Provider request: ")}).`,
     "",
   );
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n+$/, "")}\n`;

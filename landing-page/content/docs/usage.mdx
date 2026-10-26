@@ -1,42 +1,44 @@
 ---
 title: Usage and caps
-description: See what your apps spend on AI and data providers, cap an app's calls or dollars per month, and be emailed when a cap is near.
+description: See what your apps spend on AI and data providers, cap them per month, and get an email when a cap is near.
 ---
 
-Apps that use AI or a data provider like DataForSEO make those calls through your Gateway, with the key you added once, and the Gateway counts every call it makes for an app. Everything below is under **Manage workspace** at the bottom of the Gateway's sidebar, in the **Usage** tab, for owners and admins.
+Apps that use AI or a data provider like DataForSEO make those calls through your Gateway, and the Gateway counts them per app. Open **Manage workspace** at the bottom of the sidebar, then **Usage** (owners and admins).
 
 ## What is counted
 
-**Provider calls** is the number of calls the Gateway made for the app that month: to AI providers (OpenAI, OpenRouter, Workers AI) and to capabilities like DataForSEO, counted together, whether an app or an [MCP app](/docs/connect-ai) made them. A call is a call, whatever it cost.
+- **Provider calls**: every call the Gateway made for an app this month, to AI providers and to services like DataForSEO.
+- **Provider cost**: dollars, where the provider reports a price (OpenRouter and DataForSEO do; OpenAI and Workers AI don't).
 
-- **Calls, and dollars where reported.** One call costs a fraction of a cent or several dollars, depending on the model and the endpoint. **Provider cost** shows money only where the provider reports it with the answer: DataForSEO and OpenRouter do; OpenAI reports tokens only; Workers AI reports nothing.
-- **Your provider bills you.** The Gateway holds the key and makes the call; the invoice comes from OpenAI, OpenRouter, DataForSEO or Cloudflare, and that invoice is the bill. [What it costs](/docs#what-it-costs)
-- **Only calls through the Gateway.** An app that calls a service with a key of its own is invisible here, and so is email the Gateway sends for an app.
+Your provider still bills you directly; their invoice is the real bill. Calls an app makes with its own key, outside the Gateway, aren't counted.
 
 ## Cap an app
 
-In the **Monthly cap** column, select **Set cap** and enter a number of calls, or in a terminal run `everyapp workspace app cap <app> 1000` (`off` removes it). The cap is per calendar month (UTC) and takes effect within 30 seconds.
+In the **Monthly cap** column, select **Set cap** and enter calls, dollars, or both. Or:
 
-## Cap in dollars
+```bash
+everyapp workspace app cap <app> 1000
+everyapp workspace app cap <app> --usd 20
+```
 
-The same dialog takes **dollars per month** instead of calls, or beside them: `everyapp workspace app cap <app> --usd 20`. A dollar cap counts only what a provider reports a price for: OpenRouter and DataForSEO. Calls to OpenAI, Workers AI and the rest don't move it; they count toward the call cap alone. Pair the two if an app uses both kinds.
+`off` removes a cap. Caps reset each calendar month (UTC). A dollar cap only counts providers that report a price, so pair it with a call cap if an app also uses OpenAI or Workers AI.
 
-## When an app reaches a cap
-
-The Gateway refuses its AI and provider calls until the month ends or someone raises the cap. With both caps set, whichever it reaches first stops it. The app still opens and shows its data; only the calls that spend money stop. Its row says **Paused by calls** or **Paused by dollars**, and its card on the Gateway's home says **Paused**. Select **Raise** in the row to set a higher cap for that app.
-
-A cap is a soft stop. The Gateway counts a call, and its price, once the provider has answered, so a burst of calls can run a few calls or a few cents past the cap.
+When an app reaches a cap, its AI and provider calls stop until next month or until you select **Raise**. The app still opens and shows its data. A burst of calls can run slightly past the cap.
 
 ## A default for every app
 
-**Default monthly cap**, above the table, caps every app that has no cap of its own, including apps you add later, in calls, dollars or both (`everyapp workspace cap default 1000 --usd 20`). An app's own cap replaces the default of that kind for that app. To leave one app uncapped while the default stands, select **Edit** in its row and choose **No cap**. **Raise** on an app the default paused gives that app a cap of its own; the default itself changes in its own row.
+**Default monthly cap**, above the table, caps every app without its own cap, including apps you add later:
+
+```bash
+everyapp workspace cap default 1000 --usd 20
+```
+
+To exempt one app, select **Edit** in its row and choose **No cap**.
 
 ## Cap alerts
 
-Owners and admins are emailed at 80% and at the cap once the Gateway can send mail; change that under **Manage workspace → Events**. The alerts come with your first cap, the default included; an admin switches them off there, or adds a webhook that gets the same events. [Email alerts](/docs/events#email-alerts), [Send email](/docs/people#send-email)
+Once you set a cap, owners and admins get an email at 80% and at the cap (your Gateway needs to [send email](/docs/people#send-email)). Turn it off, or send the same alerts to a webhook, under **Manage workspace → Events**. [Events](/docs/events#email-alerts)
 
 ## Audit log
 
-**Manage workspace → Activity → Audit** is the workspace's audit log: who did what, newest first. Someone joined or was invited, an app was installed or updated, a cap was set or reached, an AI app was connected or a token revoked, Access turned on, an MCP app or provider added, and what your apps report about themselves. Each row says when, who (a member, an AI app, the command line, an app, or the Gateway itself), what happened in plain words, and what it was about. Filter by who, by kind of event and by time; it never holds a secret, a tool's arguments or an event's payload.
-
-Owners and admins see it; it is kept for 90 days. The same from a terminal is `everyapp workspace audit`, and from your AI app the `everyapp_workspace_audit` tool. The default view, **Agent activity**, lists every tool call an AI app made. [Events](/docs/events)
+**Manage workspace → Activity → Audit** shows who did what, newest first: invites, installs, caps, connected AI apps, Access changes and more. It's kept for 90 days and never holds a secret. From a terminal, run `everyapp workspace audit`.

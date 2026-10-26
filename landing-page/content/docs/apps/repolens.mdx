@@ -7,32 +7,25 @@ description: Keep the GitHub traffic history GitHub drops after 14 days.
 >
 > RepoLens captures views, clones, referrers, stars, forks and release downloads every six hours into a database in your own Cloudflare account. Your read-only GitHub token stays on your Worker.
 
-## Features
+You get views, clones, referrers and popular paths kept past 14 days, star and fork history backfilled when you start tracking, release downloads by day, CSV export, and a stars badge with a 30-day sparkline for your README.
 
-- Views, clones, referrers and popular paths, kept past GitHub's 14 days.
-- Stars, forks and watchers over time, backfilled when you start tracking.
-- Release downloads and issues, by day.
-- A stars badge with a 30-day sparkline for your README.
-- CSV export of a repository's daily history.
-- Capture every six hours, or now from the dashboard.
-- MCP tools for your AI clients.
-- Public-stats-only mode for repositories the token can't administer.
+## Install
 
-## Install on EveryApp
+The repository is private for now, so there is nothing to install from yet. If you have access, clone it, run `pnpm install`, then `pnpm run deploy` in its folder. Once it is public:
 
 ```bash
 everyapp install <its repository URL>
 everyapp configure repolens
 ```
 
-Needs a read-only GitHub token. No R2, no other key. The repository is private today, so there is no address to install from yet; until then, someone with access clones it, runs `pnpm install` in it, and from its folder runs `pnpm run deploy`.
+`configure` asks for one key:
 
-### Settings
+- `GITHUB_TOKEN` (required): a classic token with the `repo` scope, or a fine-grained token with Administration, Contents and Metadata read. Traffic needs Administration. Don't use the GitHub CLI's token: some organizations block it, and star history then fails.
 
-| Setting        | Held by  | Needed | Why                                                                                                                                                                                   |
-| -------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN` | RepoLens | Yes    | Reads the repositories RepoLens tracks: a classic token with the `repo` scope, or a fine-grained token with Administration, Contents and Metadata read. Traffic needs Administration. |
+Badges at `/badge/OWNER/REPO.svg` are public, even for private repositories, so anyone who knows a tracked repository's name can see its star count. Everything else needs sign-in.
 
-Avoid OAuth-app tokens, the GitHub CLI's included: organizations that restrict third-party OAuth apps make the star and fork history return 404 for them. A fine-grained token with public-repository read access avoids this.
+A new install opens only for owners and admins. Grant others under **Admin → Apps** on your Gateway.
 
-**Public without sign-in:** the badges, `/badge/OWNER/REPO.svg` (GET), cached for an hour. That holds for private repositories too: anyone who knows a tracked private repository's name can see its star count. Everything else, the CSV export included, needs a signed-in member. A new install opens for you and the workspace's owners and admins; grant others under **Admin → Apps** on your Gateway.
+## Use it from your agent
+
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "How did views on my repo change after the launch?"

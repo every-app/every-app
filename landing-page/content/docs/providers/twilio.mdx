@@ -8,33 +8,20 @@ SMS, MMS and voice: send text messages and place calls from your Twilio numbers.
 
 ## API key
 
-- **Get your key here:** [twilio.com](https://www.twilio.com/docs/iam/api-keys/keys-in-console)
-- **Settings:** `TWILIO_API_SECRET`, `TWILIO_API_KEY`
-- **API reference:** [twilio.com](https://www.twilio.com/docs/usage/requests-to-twilio)
+1. Open [twilio.com](https://www.twilio.com/docs/iam/api-keys/keys-in-console) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** A Standard or Restricted API key from Account settings > API keys & auth tokens in the Twilio Console.
 
-1. Sign in to Twilio and open [twilio.com](https://www.twilio.com/docs/iam/api-keys/keys-in-console).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** A Standard or Restricted API key from Account settings > API keys & auth tokens in the Twilio Console, sent as HTTP Basic (the key's SID and secret); a Standard key can't reach the Accounts or Keys resources. Every path names the account, so the app puts its Account SID in it: /2010-04-01/Accounts/&lt;Account SID>/Messages.json, with a form-encoded body.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Twilio) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set TWILIO_API_SECRET TWILIO_API_KEY
+everyapp provider add twilio
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -42,14 +29,8 @@ capabilities: {
 },
 ```
 
-`access` is `"read"` (or `"write"` where it changes things). The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Twilio's [API](https://www.twilio.com/docs/usage/requests-to-twilio) with `integrationFetch()`, and the Gateway adds the key. Use `"write"` if the app changes things. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show twilio` shows the key as set.
 
-- `everyapp provider show twilio` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
-
-## More help
-
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Twilio).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Twilio).

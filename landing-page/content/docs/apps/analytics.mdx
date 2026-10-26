@@ -7,36 +7,26 @@ description: Web analytics on your own Cloudflare account. No cookies.
 >
 > Add a 3 KB tag to a site and see its pages, referrers, campaigns, funnels and goals, with a live view. It stores no IP addresses; Cloudflare resolves location at the edge.
 
-## Features
+You get dashboards for pages, referrers, campaigns, sessions, funnels, goals, retention and devices, plus a live view, read-only share links, and scheduled or threshold email reports. Bots are filtered out.
 
-- No cookies and no stored IP addresses.
-- A 3 KB tracker with custom events, user identification and Web Vitals.
-- Dashboards for pages, referrers, campaigns, sessions, funnels, goals, retention and devices, with a live view.
-- Read-only public share links for any site.
-- Scheduled and threshold email reports.
-- Bot filtering, with a page that shows what was blocked.
-- MCP tools so your agents can query reports and manage sites.
-- English, Chinese and Japanese.
-
-## Install on EveryApp
+## Install
 
 ```bash
 everyapp install https://github.com/every-app/open-analytics
 everyapp configure analytics
 ```
 
-Needs one secret of its own (32 or more random characters). No API keys, no R2. Code: [github.com/every-app/open-analytics](https://github.com/every-app/open-analytics)
+`configure` asks for one key:
 
-### Settings
+- `MAIN_SECRET` (required): 32 or more random characters, for example from `openssl rand -base64 32`. Don't change it later, or visitor counts split.
 
-The second command asks for the one key below. Run the first again later to update.
+Email reports also need the Gateway's email sender ([Email](/docs/agent/email)). Without it, reports stay in the app.
 
-| Setting                            | Held by       | Needed   | Why                                                                                                                                                                           |
-| ---------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MAIN_SECRET`                      | OpenAnalytics | Yes      | The root secret for visitor salts and collect tokens; 32 or more random characters, for example `openssl rand -base64 32`. Keep it stable: changing it splits visitor counts. |
-| `EMAIL_FROM` and `EMAIL_FROM_NAME` | Gateway       | Optional | Emails scheduled reports and alerts to members who turned email notifications on. Without it, reports and alerts stay in the app. [Email](/docs/agent/email)                  |
+Run the install command again to update.
 
-Then open `https://analytics.<your gateway domain>`, create a site, and add its snippet to your website:
+## Add it to your site
+
+Open `https://analytics.<your gateway domain>`, create a site, and paste its snippet into your website:
 
 ```html
 <script
@@ -45,4 +35,10 @@ Then open `https://analytics.<your gateway domain>`, create a site, and add its 
 ></script>
 ```
 
-**Public without sign-in:** what visitors and share-link viewers need. The tracker `/script.js` (GET) and the collector `/collect` (POST), the share pages under `/share/**` and `/:locale/share/**` with their data under `/api/public/share/**` and `/api/public/resources/**`, and the built assets and icons. Everything else needs a signed-in member. Once installed, every member of your workspace can open the dashboards.
+The tracker, the collector and share links work without sign-in. Everything else needs a member of your workspace, and every member can open the dashboards.
+
+## Use it from your agent
+
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "Which referrers grew this week?" or "Add a site for example.com."
+
+Code: [github.com/every-app/open-analytics](https://github.com/every-app/open-analytics)

@@ -6,37 +6,22 @@ description: "CRM and marketing: contacts, companies, deals, tickets and more in
 
 CRM and marketing: contacts, companies, deals, tickets and more in one HubSpot account.
 
-**Ways to connect:** API key, connect accounts.
-
 ## API key
 
-- **Get your key here:** [developers.hubspot.com](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview)
-- **Setting:** `HUBSPOT_API_TOKEN`
-- **API reference:** [developers.hubspot.com](https://developers.hubspot.com/docs/api-reference/latest/overview)
+1. Open [developers.hubspot.com](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** An access token from a HubSpot legacy private app (Development > Legacy apps > Create legacy app > Private), scoped to what the app needs.
 
-1. Sign in to HubSpot and open [developers.hubspot.com](https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** An access token from a HubSpot legacy private app (Development > Legacy apps > Create legacy app > Private), scoped to what the app needs; the Gateway sends it as a bearer token. CRM search is a POST, so an app that searches needs write access.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20HubSpot) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set HUBSPOT_API_TOKEN
+everyapp provider add hubspot
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -44,70 +29,35 @@ capabilities: {
 },
 ```
 
-`access` is `"read"` (or `"write"` where it changes things). The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls HubSpot's [API](https://developers.hubspot.com/docs/api-reference/latest/overview) with `integrationFetch()`, and the Gateway adds the key. Use `"write"` if the app changes things. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show hubspot` shows the key as set.
 
-- `everyapp provider show hubspot` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
-- To test the key itself, `GET https://api.hubapi.com/account-info/2026-09/details` with it should answer 200; the call is free.
-
-### Cost and limits
-
-- **Rate limits:** 250000 a day. Private apps on Free and Starter: 100 per 10 seconds per app and 250,000 a day per account; Pro 190 and 625,000; Enterprise 190 and 1,000,000.
+**Rate limits:** 250000 a day. Private apps on Free and Starter: 100 per 10 seconds per app and 250,000 a day per account; Pro 190 and 625,000; Enterprise 190 and 1,000,000.
 
 ## Connect accounts
 
-Each person connects their own HubSpot account once, in the Gateway, and every app that asks for it uses that connection. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own HubSpot account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
-- **Make the OAuth app here:** [developers.hubspot.com](https://developers.hubspot.com/)
-- **Settings:** `HUBSPOT_OAUTH_CLIENT_ID`, `HUBSPOT_OAUTH_CLIENT_SECRET`
-- **Added with:** `everyapp provider add --oauth hubspot-oauth`
-
-### Redirect URI
-
-Register this at the provider:
+The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
 ```text
 https://<your gateway>/connect/hubspot-oauth/callback
 ```
 
-`<your gateway>` is your Gateway's address, like `apps.example.com`.
-
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show hubspot-oauth` prints every one.
-
-### Make the OAuth app
-
 The app's scopes in HubSpot's developer console must match the sets apps declare, or HubSpot refuses the authorize URL.
 
-1. Open [developers.hubspot.com](https://developers.hubspot.com/) and create an OAuth app (sometimes called a client or an integration).
+1. Open [developers.hubspot.com](https://developers.hubspot.com/) and create an OAuth app (also called a client or an integration).
 2. Add the redirect URI above.
-3. Allow the scopes behind the sets your apps use (the table below), and no others.
-4. Copy the client ID and the client secret. The secret is often shown once.
+3. Copy the client ID and client secret. The secret is often shown only once.
 
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20HubSpot) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the client ID and secret:
 
 ```bash
-everyapp provider add --oauth hubspot-oauth
-everyapp secret set HUBSPOT_OAUTH_CLIENT_ID HUBSPOT_OAUTH_CLIENT_SECRET
+everyapp provider add hubspot-oauth
 ```
 
-Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
-
-### Scope sets
-
-Apps ask for named sets, never raw scopes, and the Gateway holds each app to the sets it declared.
-
-| Set | Allows | Provider scopes |
-| --- | --- | --- |
-| `contacts.read` | Contacts (read) | `crm.objects.contacts.read` |
-| `contacts.write` | Contacts (read and write) | `crm.objects.contacts.read`, `crm.objects.contacts.write` |
-| `companies.read` | Companies (read) | `crm.objects.companies.read` |
-| `deals.read` | Deals (read) | `crm.objects.deals.read` |
+Or add it in **Manage workspace → Providers**.
 
 ### Use it in an app
 
@@ -117,13 +67,15 @@ capabilities: {
 },
 ```
 
-### Check it worked
+Apps ask for these scope sets:
 
-- `everyapp provider show hubspot-oauth` shows the client as set, and the redirect URI.
-- Open the account menu → **Connected accounts** → **Connect HubSpot**. You land back in the Gateway, connected.
-- `everyapp provider connections` lists who has connected.
+| Set | Allows | Provider scopes |
+| --- | --- | --- |
+| `contacts.read` | Contacts (read) | `crm.objects.contacts.read` |
+| `contacts.write` | Contacts (read and write) | `crm.objects.contacts.read`, `crm.objects.contacts.write` |
+| `companies.read` | Companies (read) | `crm.objects.companies.read` |
+| `deals.read` | Deals (read) | `crm.objects.deals.read` |
 
-## More help
+**Check it worked:** `everyapp provider show hubspot-oauth` shows the client as set. Then open the account menu → **Connected accounts** → **Connect HubSpot**.
 
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20HubSpot).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20HubSpot).

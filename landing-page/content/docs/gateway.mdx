@@ -4,39 +4,32 @@ description: Install the Gateway in your Cloudflare account and create your owne
 ---
 
 <Callout type="warn">
-  EveryApp is in early development so expect some rough edges. [For early
+  EveryApp is in early development, so expect some rough edges. [For early
   adopters](/docs/early-adopters) has more details about giving feedback. Still
   want to get set up, or would you rather wait a few weeks?
 </Callout>
 
 The Gateway is where you and the people you invite sign in and open your apps. Before you start, you need a [Cloudflare account on Workers Paid](/docs/cloudflare) and a [domain on Cloudflare](/docs/domain).
 
-Using Claude Code, Codex or Cursor? It can run these steps for you. [Or let your coding agent do it](#or-let-your-coding-agent-do-it)
+Using Claude Code, Codex or Cursor? [Let your coding agent do it](#or-let-your-coding-agent-do-it).
 
 ## Install the tools
 
-1. **Node.js.** Download the LTS version from [nodejs.org](https://nodejs.org) and run the installer. You need version 22.18 or newer.
-2. **A terminal.** On a Mac, open the **Terminal** app. On Windows, open **Windows Terminal**.
-3. **pnpm.** In the terminal, run:
-
-   ```bash
-   npm install -g pnpm
-   ```
-
-4. **Git.** On a Mac, run `git --version`. If it isn't installed, your Mac offers to install it. On Windows, install it from [git-scm.com](https://git-scm.com). If git has never been used on this computer, tell it your name and email, which it puts on each new app's first commit:
+1. **Node.js.** Download the LTS version (22.18 or newer) from [nodejs.org](https://nodejs.org) and run the installer.
+2. **A terminal.** On a Mac, open **Terminal**. On Windows, open **Windows Terminal**.
+3. **pnpm.** Run `npm install -g pnpm`.
+4. **Git.** On a Mac, run `git --version` and accept the offer to install it. On Windows, install it from [git-scm.com](https://git-scm.com). If you've never used git on this computer, tell it who you are:
 
    ```bash
    git config --global user.name "Your Name"
    git config --global user.email you@example.com
    ```
 
-5. **EveryApp.** In the terminal, run:
+5. **EveryApp.** Run:
 
    ```bash
    npm install -g everyapp
    ```
-
-   Later, `npm install -g everyapp@latest` updates it.
 
 ## Set it up
 
@@ -54,46 +47,43 @@ everyapp setup
 
 ### Log in to Cloudflare
 
-The terminal says **Log in to Cloudflare to continue**, then **Starting Cloudflare's login. Open its link and enter the code.** A Cloudflare page opens in your browser. Approve it there. If the page asks for a code, type the one the terminal shows.
+A Cloudflare page opens in your browser. Approve it, and type the code the terminal shows if asked. If you have more than one Cloudflare account, the terminal asks which one to use.
 
-If you have more than one Cloudflare account, the terminal asks which one to use.
-
-What you're approving is Cloudflare's own sign-in for its `cf` command line tool, which EveryApp runs for you. Like `wrangler login`, it gives `cf` on this computer broad access to the Cloudflare accounts you belong to, not only the one you pick. EveryApp uses it for the Gateway, your apps and what you turn on later, like Cloudflare Access, and leaves everything else alone; setup stops rather than replace a DNS record that already exists. [What EveryApp puts in your account](/docs/cloudflare#what-every-app-puts-in-your-account)
-
-If you'd rather not grant that, run setup with an API token instead. For setup, a token needs Account > Workers Scripts > Edit, Account > D1 > Edit, Account > Workers KV Storage > Edit, Zone > Zone > Read and Zone > DNS > Read, limited to this account and your domain; set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before the command. For `everyapp access on` it also needs Account > Access: Apps and Policies > Edit and Account > Access: Organizations, Identity Providers, and Groups > Edit.
+Rather not grant a broad login? Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before the command. [The permissions it needs](/docs/agent/setup)
 
 </Step>
 <Step>
 
 ### Choose your address
 
-The terminal asks for the **Gateway address** and suggests `apps.yourcompany.com`. Press Enter to use it, or type another name under your domain. [Choosing your address](/docs/domain#choosing-your-address)
+Press Enter to use the suggested `apps.yourcompany.com`, or type another name under your domain. [Choosing your address](/docs/domain#choosing-your-address)
 
 </Step>
 <Step>
 
 ### Wait a few minutes
 
-Setup downloads the Gateway release that goes with your everyapp and puts it online. This step usually takes 5 to 10 minutes; the whole setup about 15, most of the rest waiting for you at the owner link.
+Setup puts the Gateway online. This usually takes 5 to 10 minutes.
 
 </Step>
 <Step>
 
 ### Create your owner account
 
-Your browser opens a page called **Set up your gateway**. Enter your name, email and a password of at least 8 characters (twice), then select **Create owner account**.
+Your browser opens **Set up your gateway**. Enter your name, email and a password, then select **Create owner account**.
 
-Back in the terminal, setup asks **Configure browser app installs?** Yes lets owners and admins install published apps from the Gateway's Admin page instead of the terminal; it asks for a Cloudflare API token (it tells you which permissions) and stores it as a secret on your Gateway, `CF_DEPLOY_TOKEN`. Press Enter to skip it for now. In a script, add `--yes` and setup answers No for you. You can turn it on later by running setup again.
+Back in the terminal, setup asks two questions:
 
-Then it asks **Put Cloudflare Access in front of your Gateway?** Press Enter for Yes: people then sign in at Cloudflare's edge before they reach your Gateway or its apps, with their Cloudflare account or a code sent by email, and Cloudflare's free Zero Trust plan covers 50 people. If your Cloudflare account has no Zero Trust team yet, setup asks for a team name; people sign in at `<name>.cloudflareaccess.com`, and the name can't be changed later. In a script, or when an agent runs setup for you, Access goes on without a question when it can (your account has a Zero Trust team and your Cloudflare login is an owner or admin of the Gateway). With an API token it never does: a token has no email address, so setup can't tell who to let in. Run `everyapp access on` after setup. Otherwise setup says why and names `everyapp access on`. Add `--no-access` to leave it off. You can turn it off any time with `everyapp access off`, and on later with `everyapp access on`. [Sign in through Cloudflare Access](/docs/access)
+- **Configure browser app installs?** Press Enter to skip. Yes lets owners and admins install apps from the Gateway's Admin page; it asks for a Cloudflare API token.
+- **Put Cloudflare Access in front of your Gateway?** Press Enter for Yes. People then sign in at Cloudflare before they reach your Gateway. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
 
 </Step>
 </Steps>
 
 <Callout type="warn">
-  The owner link works once and expires after about 24 hours. Anyone who opens
-  it first becomes the owner, so don't share it. If you lose it, run `pnpm
-  everyapp setup` again for a new one.
+  The owner link works once and expires after about 24 hours. Whoever opens it
+  first becomes the owner, so don't share it. Lost it? Run `everyapp setup`
+  again for a new one.
 </Callout>
 
 ## Or let your coding agent do it
@@ -102,7 +92,7 @@ Paste this into Claude Code, Codex or Cursor and it runs the steps above for you
 
 <include lang="text">./setup-prompt.txt</include>
 
-It stops where the steps above need you: to approve the Cloudflare login, to pick the Cloudflare account if you have several, to pick a workers.dev name the first time this account runs a Worker (your apps never use it), and to create your owner account. Then it creates and deploys a first app called hello.
+It stops when it needs you: to approve the Cloudflare login, pick an account, and create your owner account. Then it creates and deploys a first app.
 
 ## When it's done
 
@@ -119,18 +109,12 @@ Next:
   everyapp secret set EMAIL_FROM EMAIL_FROM_NAME  email invites and password resets; needs Cloudflare Email Sending
 ```
 
-Open it and you're signed in.
+Open the address and you're signed in. AI and email are optional: [Apps that use AI](/docs/create-an-app#apps-that-use-ai), [Send email](/docs/people#send-email).
 
-Apps that use AI need a key on your Gateway: OpenAI, OpenRouter or Workers AI. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
+If setup stops, run `everyapp setup` again. It picks up where it left off. [Troubleshooting](/docs/troubleshooting)
 
-Email is optional. With it, invites go out by email. [Send email](/docs/people#send-email)
-
-If you said No to Cloudflare Access, the list also shows `everyapp access on`. Before you invite anyone, we strongly recommend it: one command, and people sign in with their Cloudflare account or a code by email before they reach your Gateway. [Sign in through Cloudflare Access](/docs/access)
-
-## If setup stops
-
-Run `everyapp setup` again. It picks up where it left off. [Troubleshooting](/docs/troubleshooting) covers the common reasons it stops.
+To check on things later, run `everyapp status`. [Check your setup](/docs/status)
 
 ## Add it to your phone
 
-Open `https://apps.yourcompany.com/pwa` on your computer and scan the code with your phone, or open that address on your phone and follow the steps. Your apps then open from your home screen.
+Open `https://apps.yourcompany.com/pwa` and follow the steps, or scan its code with your phone. Your apps then open from your home screen.

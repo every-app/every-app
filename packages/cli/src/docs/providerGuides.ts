@@ -146,13 +146,13 @@ const REPOLENS = "[RepoLens](/docs/apps/repolens)";
 export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   openrouter: {
     blurb:
-      "One key for hundreds of models from every major lab. It's the key to set first: OpenSEO, OpenCRM and OpenMail all run on it.",
+      "One key for hundreds of models from every major lab. Set it first: most apps run on it.",
     usedBy: [`${OPENSEO} for its SEO agent`, `${CRM} for its research agent and web research`, `${INBOX} for its email agent`],
     key: [
       "Sign in or sign up at [openrouter.ai](https://openrouter.ai/sign-in), with Google, GitHub or an email address.",
       "Add credits at [Settings → Credits](https://openrouter.ai/settings/credits): $10 is a good start, $5 the minimum. Without credits every call fails.",
-      "Open [Settings → Keys](https://openrouter.ai/settings/keys) and select **Create Key**. Name it after your Gateway, and give it a credit limit you're happy to lose, reset monthly.",
-      "Copy the key. OpenRouter shows it once, so keep the tab open until it's set.",
+      "Open [Settings → Keys](https://openrouter.ai/settings/keys) and select **Create Key**. Give it a monthly credit limit you're happy to lose.",
+      "Copy the key. It's shown once.",
     ],
   },
   openai: {
@@ -177,7 +177,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Sign in to [Google AI Studio](https://aistudio.google.com) with a Google account.",
       "Open [Get API key](https://aistudio.google.com/apikey) and select **Create API key**, in a new or an existing Google Cloud project.",
       "Restrict the key to the Gemini API (the key's settings in the Cloud console, **API restrictions**).",
-      "Copy the key. Free tier keys have low limits; turn on billing in the project for real use.",
+      "Copy the key. Free keys have low limits; turn on billing in the project for real use.",
     ],
   },
   mistral: {
@@ -204,38 +204,37 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   },
   "workers-ai": {
     blurb:
-      "Cloudflare's own models, run in the same Cloudflare account as your Gateway. There's no separate sign-up and nothing to prepay: usage is billed to that account.",
+      "Cloudflare's own models, billed to your Gateway's Cloudflare account. No separate sign-up.",
     usedBy: [`${INBOX} can use it as its model provider`],
     key: [
       "In the Cloudflare dashboard, open the [Workers AI page](https://dash.cloudflare.com/?to=/:account/ai/workers-ai) of your Gateway's account.",
-      "Select **Use REST API**, then **Create a Workers AI API Token**. The form comes prefilled with Workers AI permissions on this account; check the account and select **Create API Token**.",
-      "Copy the token. It's shown once.",
-      "`CLOUDFLARE_ACCOUNT_ID` is your Gateway's own account, which `everyapp setup` already set. You only set the token.",
+      "Select **Use REST API**, then **Create a Workers AI API Token**, then **Create API Token**.",
+      "Copy the token. It's shown once. The account ID is already set.",
     ],
   },
   "ai-gateway": {
     name: "Cloudflare AI Gateway",
     blurb:
-      "Not a model provider of its own: once it's on, model calls to providers it supports pass through Cloudflare AI Gateway, in your account, for its logs, caching and analytics. Your keys stay on the Gateway.",
+      "Routes your apps' model calls through Cloudflare AI Gateway in your account, for logs, caching and analytics. Your keys stay on your Gateway.",
     key: [
-      "Run `everyapp ai gateway on`. It finds or creates an AI Gateway named `everyapp` in your account and turns it on. Nothing to copy.",
-      "Optional: to require a token, open the AI Gateway in the dashboard, **Settings → Authenticated Gateway**, turn it on and create a token. Then set it with `everyapp secret set AI_GATEWAY_API_KEY`.",
+      "Run `everyapp ai gateway on`. It creates an AI Gateway named `everyapp` in your account, or reuses it.",
+      "Optional: to require a token, turn on **Settings → Authenticated Gateway** in the AI Gateway dashboard, create a token, and run `everyapp secret set AI_GATEWAY_API_KEY`.",
     ],
   },
   dataforseo: {
-    blurb: "Search data for SEO: keyword volumes, live Google results, domain rankings and backlinks. You pay per call, from a prepaid balance.",
+    blurb: "Search data for SEO: keyword volumes, live Google results, domain rankings and backlinks. Pay per call from a prepaid balance.",
     usedBy: [`${OPENSEO} for all of its research (required)`],
     key: [
       "Sign up at [app.dataforseo.com](https://app.dataforseo.com/register) and confirm your email. New accounts get $1 of credit.",
-      "Open [API Access](https://app.dataforseo.com/api-access). It shows your **API login** and **API password** (after 24 hours, select **Send by e-mail** to get the password again). It's not your dashboard password.",
-      "Leave the **IP Access** list empty: the Gateway calls from Cloudflare's addresses, which change.",
-      "Optional, before real use: **Add Funds** ($50 minimum) and a daily limit under [API Settings](https://app.dataforseo.com/api-settings).",
-      "The value to set is the login and password joined by a colon: `login:password`.",
+      "Open [API Access](https://app.dataforseo.com/api-access) for your **API login** and **API password** (not your dashboard password; after 24 hours, **Send by e-mail** resends it).",
+      "Leave the **IP Access** list empty.",
+      "Optional, before real use: **Add Funds** ($50 minimum) and set a daily limit under [API Settings](https://app.dataforseo.com/api-settings).",
+      "When asked for the key, enter `login:password`.",
     ],
   },
   context: {
     name: "Context.dev",
-    blurb: "Renders and reads web pages, JavaScript included: brand data, LinkedIn profiles and clean page text. Free up to 1,000 rendered pages a month.",
+    blurb: "Reads web pages, JavaScript included: brand data, LinkedIn profiles and clean page text. Free up to 1,000 pages a month.",
     usedBy: [`${CRM} for company research (required)`, `${OPENSEO} for rendered site audits (optional)`],
     key: [
       "Sign up or sign in at [context.dev](https://www.context.dev/signup), with an email, Google or GitHub.",
@@ -245,14 +244,18 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   },
   stripe: {
     key: [
-      "Sign in to the [Stripe dashboard](https://dashboard.stripe.com). To try things first, switch to a sandbox (test mode).",
+      "Sign in to the [Stripe dashboard](https://dashboard.stripe.com). Switch to a sandbox to try things first.",
       "Open [Developers → API keys](https://dashboard.stripe.com/apikeys) and select **Create restricted key**.",
-      "Give it a name, and set **Read** only on what the app needs (for example Customers, Subscriptions and Charges). Leave everything else at **None**.",
+      "Set **Read** only on what the app needs (for example Customers, Subscriptions and Charges). Leave the rest at **None**.",
       "Select **Create key** and copy it (`rk_live_…`, or `rk_test_…` in a sandbox).",
     ],
   },
+  shopify: {
+    blurb:
+      "One store's Admin API (GraphQL): products, orders, customers and inventory. Shopify no longer lets stores create new admin custom apps, and Dev Dashboard tokens expire after 24 hours, which the Gateway can't refresh yet.",
+  },
   github: {
-    blurb: "Repositories, issues, pull requests and releases. Use a token when an app works on your own repositories; let people connect their own accounts when it works on theirs.",
+    blurb: "Repositories, issues, pull requests and releases. Use a token for your own repositories; let people connect their accounts for theirs.",
     usedBy: [`${REPOLENS} reads traffic, stars and downloads with a token`],
     key: [
       "Open [Settings → Developer settings → Fine-grained tokens → Generate new token](https://github.com/settings/personal-access-tokens/new).",
@@ -263,7 +266,7 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
     ],
     connect: [
       "Open [Settings → Developer settings → OAuth Apps](https://github.com/settings/developers) and select **New OAuth App**. Make an OAuth App, not a GitHub App.",
-      "Fill in a name and your Gateway's address as the homepage. For **Authorization callback URL**, paste the redirect URI above.",
+      "Enter a name, your Gateway's address as the homepage, and the redirect URI above as the **Authorization callback URL**.",
       "Select **Register application**, then **Generate a new client secret**.",
       "Copy the **Client ID** and the client secret. The secret is shown once.",
     ],
@@ -304,68 +307,45 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   },
   cloudflare: {
     blurb:
-      "Cloudflare's API for an app that manages zones, DNS, Workers or storage. Your Gateway already runs on Cloudflare; this is a separate token an app uses on purpose.",
+      "Cloudflare's API, for an app that manages zones, DNS, Workers or storage. It's a separate token from the one your Gateway runs on.",
     key: [
       "Open [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) and select **Create Token**.",
-      "Start from a template, or a custom token, with only the permissions and zones the app needs. Never use the Global API Key.",
-      "A token on your Gateway's own account can change the Gateway. Keep it narrow, or use another account.",
-      "Select **Continue to summary**, **Create Token**, and copy it. It's shown once.",
+      "Give it only the permissions and zones the app needs. Never use the Global API Key. A token on your Gateway's own account can change the Gateway, so keep it narrow.",
+      "Select **Continue to summary**, then **Create Token**, and copy it. It's shown once.",
     ],
   },
   google: {
     name: "Google",
     blurb:
-      "One OAuth client in your own Google Cloud project lets each person connect their own Google account: Gmail, Calendar, Search Console and Analytics, read only, whichever the apps you run ask for. The same page covers Sign in with Google, which is a separate client.",
+      "One OAuth client in your Google Cloud project lets each person connect their Google account: Gmail, Calendar, Search Console and Analytics, read only. Sign in with Google is a separate client, below.",
     usedBy: [
       `${OPENSEO} for Search Console and Google Analytics (the \`identity\`, \`search-console.read\` and \`analytics.read\` sets)`,
       `${CRM} for Gmail and Google Calendar (the \`gmail.read\` and \`calendar.read\` sets)`,
     ],
     connect: [
       "Signed in to Google, [create a Cloud project](https://console.cloud.google.com/projectcreate) (for example `EveryApp`). With Google Workspace, put it in your organization.",
-      "Enable the APIs behind the sets your apps use (the table below): for OpenSEO, the [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com), the [Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com) and the [Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com); for OpenCRM, the Gmail API and the Google Calendar API.",
+      "Enable the APIs your apps use: for OpenSEO, the [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com), the [Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com) and the [Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com); for OpenCRM, the Gmail API and the Google Calendar API.",
       "Set up the [consent screen](https://console.cloud.google.com/auth/overview): an app name people will see, a support email, and the audience: **Internal** (your Workspace only, no review) or **External**.",
-      "On [Data Access](https://console.cloud.google.com/auth/scopes), add the scopes of those sets and no others: `webmasters.readonly` and `analytics.readonly` for OpenSEO, `gmail.readonly` and `calendar.readonly` for OpenCRM.",
+      "On [Data Access](https://console.cloud.google.com/auth/scopes), add only the scopes your apps use: `webmasters.readonly` and `analytics.readonly` for OpenSEO, `gmail.readonly` and `calendar.readonly` for OpenCRM.",
       "[Create a client](https://console.cloud.google.com/auth/clients): type **Web application**, and under **Authorized redirect URIs** add the redirect URI above. Copy the **Client ID** and **Client secret**, or select **Download JSON**.",
-      "**External** only: while the app is in Testing, add each person under **Audience → Test users**. Their access lasts 7 days at a time until you publish the app and Google verifies it.",
-    ],
-    extra: [
-      {
-        title: "Search Console",
-        body: [
-          "For an app that lists the `search-console.read` set, OpenSEO among them:",
-          "",
-          "1. Enable the [Google Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com) in the client's project.",
-          "2. Add `https://www.googleapis.com/auth/webmasters.readonly` on the consent screen's [Data Access](https://console.cloud.google.com/auth/scopes) page.",
-          "3. Each person connects their own Google account, one that can see the site in Search Console.",
-        ].join("\n"),
-      },
-      {
-        title: "Google Analytics",
-        body: [
-          "For an app that lists the `analytics.read` set, OpenSEO among them:",
-          "",
-          "1. Enable the [Google Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com) and the [Google Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com) in the client's project.",
-          "2. Add `https://www.googleapis.com/auth/analytics.readonly` on the consent screen's [Data Access](https://console.cloud.google.com/auth/scopes) page.",
-          "3. Each person connects a Google account with access to the GA4 property.",
-        ].join("\n"),
-      },
+      "**External** only: while the app is in Testing, add each person under **Audience → Test users**. Their access expires every 7 days until Google verifies the app.",
     ],
   },
   microsoft: {
     name: "Microsoft",
     blurb:
-      "One app registration in Microsoft Entra lets each person connect their own Outlook mailbox and calendar, read only, from a work, school or personal account. The same page covers Sign in with Microsoft, which is a separate registration.",
+      "One app registration in Microsoft Entra lets each person connect their Outlook mail and calendar, read only. Sign in with Microsoft is a separate registration, below.",
     usedBy: [`${CRM} for Outlook mail (the \`mail.read\` set)`],
     connect: [
       "Sign in to [Microsoft Entra → App registrations](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) with an account that administers your tenant, and select **New registration**.",
-      "Name it (people see the name when they consent). For **Supported account types**, choose any Entra ID tenant plus personal Microsoft accounts, never single tenant.",
+      "Name it (people see the name). For **Supported account types**, choose any Entra ID tenant plus personal Microsoft accounts.",
       "Under **Redirect URI**, platform **Web**, paste the redirect URI above, and select **Register**. Copy the **Application (client) ID**.",
       "Under **API permissions → Add a permission → Microsoft Graph → Delegated**, add `User.Read`, `Mail.Read` and `offline_access` (and `Calendars.Read` if an app asks for `calendar.read`).",
       "Under **Certificates & secrets → New client secret**, add one (24 months at most) and copy its **Value** right away. Note the expiry date.",
     ],
   },
   slack: {
-    blurb: "A Slack app in your workspace whose client the Gateway holds, so apps can post to approved channels and match people by email.",
+    blurb: "A Slack app in your workspace, so apps can post to approved channels and match people by email.",
     usedBy: [`${CRM} for team agents that post to Slack (optional)`],
     connect: [
       "Open [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App**. **From a manifest** is quickest: your coding agent can write one from the app's scopes.",
@@ -376,24 +356,23 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
   email: {
     name: "Email sending",
     blurb:
-      "The Gateway sends its own mail (invitations, password resets) and every app's, through one provider for the whole Gateway: Cloudflare Email Sending (the default) or Resend. It's optional: without it, an invitation shows a link to share instead.",
+      "Sends your Gateway's mail (invitations, password resets) and your apps' mail, through Cloudflare Email Sending (the default) or Resend. Optional: without it, invitations give you a link to share.",
     usedBy: [`${INBOX} to send replies (required)`, `${ANALYTICS} for reports and alerts (optional)`],
     extra: [
       {
         title: "Cloudflare Email Sending",
         body: [
-          "The default. Your domain must be on Cloudflare DNS in the Gateway's account, on Workers Paid. There's no key: the Gateway sends through its own `EMAIL` binding.",
+          "The default, with no key. Your domain must be on Cloudflare DNS in the Gateway's account, on Workers Paid.",
           "",
           "1. In the dashboard, open [Email Service → Email Sending](https://dash.cloudflare.com/?to=/:account/email-service/sending) and select **Onboard Domain**.",
           "2. Pick your domain (or a subdomain like `mail.example.com`), review the DNS records it adds, and confirm.",
-          "3. Wait until the domain is listed under Email Sending, usually 5 to 15 minutes.",
-          "4. Set the sender, below.",
+          "3. Wait until the domain is listed under Email Sending, usually 5 to 15 minutes. Then set the sender, below.",
         ].join("\n"),
       },
       {
         title: "Resend",
         body: [
-          "When you already use [Resend](https://resend.com) or want its dashboard.",
+          "If you already use [Resend](https://resend.com).",
           "",
           "1. Open [Domains](https://resend.com/domains), select **Add Domain**, and add the domain you'll send from. **Sign in to Cloudflare** adds the DNS records for you.",
           "2. Wait for the domain to show **Verified**.",
@@ -408,26 +387,24 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       {
         title: "Set the sender",
         body: [
-          "Either provider needs the address mail comes from and the name people see. Neither is a secret.",
+          "The address mail comes from and the name people see:",
           "",
           "```bash",
           "everyapp secret set EMAIL_FROM",
           "everyapp secret set EMAIL_FROM_NAME",
           "```",
           "",
-          "For example `noreply@example.com` and your company's name. Or run `everyapp configure openmail`, which asks for both. When both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.",
+          "For example `noreply@example.com` and your company's name. If both providers are set up, `EMAIL_PROVIDER` (`cloudflare` or `resend`) picks one.",
           "",
-          "An app that sends as addresses of its own, like OpenMail, also needs them allowed: `everyapp email set --sender '*@example.com'`.",
+          "An app that sends as its own addresses, like OpenMail, needs them allowed: `everyapp email set --sender '*@example.com'`.",
         ].join("\n"),
       },
       {
         title: "Check it worked",
         body: [
-          "`everyapp email show` prints the provider and the sender. Then invite someone from **Manage workspace → People**: the invitation should arrive by email.",
+          "`everyapp email show` prints the provider and the sender. Then invite someone from **Manage workspace → People**: the invitation should arrive.",
           "",
-          "Apps ask for it in `everyapp.config.ts` with `capabilities: { email: { access: \"write\", why: \"…\" } }` and send with `sendEmail()`. More in [Email](/docs/agent/email).",
-          "",
-          "**Postmark and SendGrid** are separate: an app that calls their APIs itself uses [Postmark](/docs/providers/postmark) or [SendGrid](/docs/providers/sendgrid).",
+          "Apps ask for it with `capabilities: { email: { access: \"write\", why: \"…\" } }` and send with `sendEmail()`. More in [Email](/docs/agent/email).",
         ].join("\n"),
       },
     ],

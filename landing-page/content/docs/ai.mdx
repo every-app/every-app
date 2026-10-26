@@ -1,65 +1,48 @@
 ---
 title: AI models
-description: Set one key so every app that needs a chat model works, and choose which provider and model your Gateway uses.
+description: Set one key so every app that needs a chat model works, and choose the provider and model.
 ---
 
-Some apps need "a chat model" and don't care which company runs it: OpenMail drafts replies, OpenCRM researches a company. They take your Gateway's default model. You set up one provider once, and every such app uses it, so four apps need one key, not four.
-
-## Which provider the Gateway picks
-
-If you haven't chosen, the Gateway uses the first provider on this list whose key is set: OpenRouter, Workers AI, OpenAI, Anthropic, Groq, Mistral, Gemini.
-
-OpenRouter is first because it is one key for many models, and every answer comes back with its price, so the Usage page can show dollars. Workers AI is second because it needs no account with a model company at all, only your Cloudflare account. Its models are weaker.
+Apps like OpenMail and OpenCRM need a chat model but don't care whose. Set one provider's key and every such app uses it.
 
 ## Set one key
-
-In a terminal:
 
 ```bash
 everyapp secret set OPENROUTER_API_KEY
 ```
 
-Or run `everyapp configure <app>` for an app that shows **Needs setup**: it asks for the one key that app needs. The value isn't shown as you type.
+Or run `everyapp configure <app>` for an app that shows **Needs setup**. It asks for the key that app needs.
 
-Where to get each key, step by step: [OpenRouter](/docs/providers/openrouter), [Workers AI](/docs/providers/workers-ai), [OpenAI](/docs/providers/openai), [Anthropic](/docs/providers/anthropic), [Groq](/docs/providers/groq), [Mistral](/docs/providers/mistral), [Gemini](/docs/providers/gemini). To send model calls through Cloudflare's logs and caching, see [AI Gateway](/docs/providers/ai-gateway).
+If you don't choose, the Gateway uses the first provider whose key is set, in this order: [OpenRouter](/docs/providers/openrouter), [Workers AI](/docs/providers/workers-ai), [OpenAI](/docs/providers/openai), [Anthropic](/docs/providers/anthropic), [Groq](/docs/providers/groq), [Mistral](/docs/providers/mistral), [Gemini](/docs/providers/gemini). Each link shows where to get the key.
+
+OpenRouter is one key for many models, and the Usage page can show what each call cost. Workers AI needs only your Cloudflare account, but its models are weaker.
 
 ## Choose a provider or model
-
-To use a different provider, or a specific model:
 
 ```bash
 everyapp ai default openrouter/anthropic/claude-sonnet-5.5
 everyapp ai default groq
-```
-
-The provider is the part before the first slash, the model is what follows. To go back to the list above:
-
-```bash
 everyapp ai default off
 ```
 
-You can also choose in **Manage workspace**, then **Usage**, then **AI default**.
+The part before the first slash is the provider; the rest is the model. `off` goes back to the order above. You can also choose in **Manage workspace** → **Usage** → **AI default**.
 
-## See what is in use
+To see what is in use and why:
 
 ```bash
 everyapp ai show
 ```
 
-It prints the provider and model the default resolves to now, and why. **Usage** shows the calls each provider and each model has served.
-
 ## Cloudflare AI Gateway
 
-Cloudflare AI Gateway is Cloudflare's proxy for model calls, with logs, caching and limits. It is not a model provider: it has no models of its own, so it still needs a provider's key behind it. That is why it is never "the default" by itself.
+[AI Gateway](/docs/providers/ai-gateway) adds Cloudflare's logs, caching and limits to every model call. It has no models of its own, so it still needs a provider's key.
 
 ```bash
 everyapp ai gateway on
 ```
 
-This puts it in front of every model call your Gateway makes. Your provider keys stay yours and no app changes. `everyapp ai gateway off` takes it out again. The pair that works best is OpenRouter through AI Gateway: one key, plus Cloudflare's logs and limits.
+`everyapp ai gateway off` takes it out. No app or key changes.
 
-## An app that needs one provider
+An app that needs one particular provider asks for that provider's key and ignores the default.
 
-Some apps need one particular provider, not just any model. Such an app lists that provider and asks for its key, and it ignores the default. OpenMail and OpenCRM take the default.
-
-For the full reference, give your coding agent [AI](/docs/agent/ai).
+For the full reference, see [AI](/docs/agent/ai).

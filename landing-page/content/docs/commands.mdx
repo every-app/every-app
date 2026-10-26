@@ -1,42 +1,35 @@
 ---
 title: Commands
-description: Every everyapp command, in one place.
+description: The everyapp commands you'll run most.
 ---
 
-Run these in a terminal; the app commands (`dev`, `deploy`, `release`, `db`) in the app's folder. Add `--help` to any command to see all its options.
+Add `--help` to any command to see its options. Every command and flag is in the [CLI reference](/docs/agent/cli).
 
-## Run a Gateway
+## Your Gateway
 
-| Command                         | What it does                                                                                 |
-| ------------------------------- | -------------------------------------------------------------------------------------------- |
-| `everyapp login`                | Logs in to Cloudflare.                                                                       |
-| `everyapp setup`                | Installs your Gateway. Run it again to resume or repair.                                     |
-| `everyapp update`               | Updates your Gateway to the version in your folder.                                          |
-| `everyapp install <GitHub URL>` | Installs an app someone published on GitHub.                                                 |
-| `everyapp status`               | Shows your Gateway and apps, and what to run if needed. [Every line explained](/docs/status) |
-| `everyapp delete my-app`        | Takes an app off your Gateway. `--purge` deletes its data.                                   |
-| `everyapp secret set <NAME>`    | Stores one key, like `OPENAI_API_KEY`, without showing it.                                   |
-| `everyapp configure my-app`     | Sets up an app: asks for each key it needs, then the optional ones.                          |
-| `everyapp access on`            | Puts Cloudflare Access in front of your Gateway and apps.                                    |
+| Command                         | What it does                                                          |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `everyapp setup`                | Installs your Gateway. Run it again to resume or repair.              |
+| `everyapp update`               | Updates your Gateway to the release for your everyapp version.        |
+| `everyapp status`               | Shows your Gateway and apps, and what to run. [More](/docs/status)    |
+| `everyapp install <GitHub URL>` | Installs an app someone published on GitHub.                          |
+| `everyapp configure my-app`     | Asks for each key an app needs.                                       |
+| `everyapp delete my-app`        | Takes an app off your Gateway. `--purge` deletes its data.            |
+| `everyapp access on`            | Puts Cloudflare Access in front of your Gateway. [More](/docs/access) |
+| `everyapp provider add <id>`    | Adds a key or OAuth client apps can use. [More](/docs/providers)      |
+| `everyapp workspace`            | Manages people, groups, apps and caps from the terminal.              |
 
-## Build an app
+## Your apps
 
-| Command                  | What it does                                                          |
-| ------------------------ | --------------------------------------------------------------------- |
-| `everyapp create my-app` | Makes a new app from the starter, in `my-app`, as its own repository. |
-| `everyapp release`       | Packs the app as a release others can install.                        |
+| Command                  | What it does                                               |
+| ------------------------ | ---------------------------------------------------------- |
+| `everyapp create my-app` | Makes a new app from the starter, as its own repository.   |
+| `pnpm dev`               | Runs the app on your computer.                             |
+| `pnpm run deploy`        | Puts the app online, or updates it.                        |
+| `pnpm run db:generate`   | Writes a migration after what the app stores changes.      |
+| `everyapp db restore`    | Puts the app's database back to before its last migration. |
+| `everyapp release`       | Packs the app as a release others can install.             |
 
-## Inside an app's folder
+Run the last five in the app's folder.
 
-| Command                | What it does                                                                              |
-| ---------------------- | ----------------------------------------------------------------------------------------- |
-| `pnpm dev`             | Runs the app on your computer.                                                            |
-| `pnpm run deploy`      | Puts the app online, or updates it.                                                       |
-| `pnpm run db:generate` | Writes a migration after what the app stores changes.                                     |
-| `everyapp db restore`  | Puts the app's database back to before its last migration, losing anything written since. |
-
-There's also `email` for the addresses an app sends from and receives at, `secret list` and `secret unset` for what an app needs set, `mcp add <url>` to offer any MCP server to AI assistants through your Gateway (`mcp on dataforseo` for the built-in one; `mcp off` pauses an MCP app and `mcp remove` removes it), `provider add github-oauth` to let apps use people's GitHub, Google, Notion or other accounts ([Connect GitHub](/docs/connect-oauth); `provider presets` lists what can be added, `provider connections --all` who is connected), `events` for [webhooks and email alerts](/docs/events), `workspace` to do from a terminal what Manage workspace does (rename it, invite and remove people, make someone an owner, admin or member, groups, who can open which app, caps, usage and activity), `access off` and `access show` for [Cloudflare Access](/docs/access), `db` for looking inside a database, and `teardown`, which empties a Cloudflare account set aside for testing and refuses any other.
-
-## For coding agents
-
-Your coding agent has its own docs, with every command and flag, the `--json` output it reads, and what each error means. Give it `https://everyapp.com/llms.txt`, or ask it. [Docs for coding agents](/docs/agent)
+Your coding agent has its own docs: give it `https://everyapp.com/llms.txt`. [Docs for coding agents](/docs/agent)

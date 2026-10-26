@@ -15,26 +15,16 @@ Made for a solo founder or a team of three or four who build their own tools wit
 
 ## What you can count on
 
-- **Private by default.** Nobody can open an app until they've signed in and you've given them access. An app can declare public routes, like a tracking script or a webhook, and the deploy prints them.
-- **An app only gets what you allow.** The Gateway tells it who the person is in a signed note that works for that app only and expires after about two minutes; you stay signed in, and every request gets a fresh note. The app also gets its own secrets you've set. AI and integration keys stay on the Gateway, which makes those calls for the app. It never sees your password or your session.
+- **Private by default.** Nobody opens an app until they've signed in and you've given them access. An app can open specific routes to the public, like a webhook, and the deploy lists them.
 - **One sign-in for every app.** You never build a login page.
+- **An app only gets what you allow.** It learns who is signed in, never their password. Shared keys, like your AI key, stay on the Gateway.
 - **Each app keeps its own data.** Removing one app never touches another.
-- **Updates keep your data.** Before a deploy changes an app's database, it saves a restore point.
-- **Safe to run again.** If setup or a deploy stops halfway, run it again. It picks up where it left off.
+- **Updates keep your data.** A deploy saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
+- **Safe to run again.** If setup or a deploy stops halfway, run it again.
 
-We strongly recommend Cloudflare Access before you invite anyone. `everyapp access on` adds a second sign-in at Cloudflare's edge, in front of the Gateway and your apps. Free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
+Before you invite anyone, turn on Cloudflare Access with `everyapp access on`. It adds a second sign-in in front of everything, free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
 
-The [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md) says what the Gateway promises, to whom, where each promise is enforced, and what's still open.
-
-## Alpha
-
-EveryApp is alpha: open source, very powerful, moving fast, and trying not to break things. That means:
-
-- A deploy keeps your data and saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
-- Updating your Gateway is `npm install -g everyapp@latest`, then `everyapp update`. Your people, apps and data stay. [Update your Gateway](/docs/update#update-your-gateway)
-- When something must change, the release notes say so.
-
-We don't promise backwards compatibility yet. Expect rough edges. [For early adopters](/docs/early-adopters) says how to get help and tell us what could be smoother.
+EveryApp is in early development, so expect some rough edges. To update, run `npm install -g everyapp@latest`, then `everyapp update`. [Update your Gateway](/docs/update#update-your-gateway), [For early adopters](/docs/early-adopters)
 
 ## Apps on day one
 
@@ -45,26 +35,24 @@ Each is open source and runs behind your Gateway. Run one as it is, or fork it a
 - **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
 - **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
 
-`everyapp install https://github.com/every-app/<repo>` installs one; run it again to update. OpenSEO needs a DataForSEO key, OpenCRM a Context.dev key, OpenAnalytics a secret of its own. The three that use AI share one key on the Gateway: `everyapp secret set OPENROUTER_API_KEY`. OpenSEO, OpenCRM and OpenMail use an R2 bucket: enable R2 once in your Cloudflare dashboard before you install them.
-
-Every key an app can ask for, and where to get it, is in [Providers](/docs/providers): model providers, search and data APIs, email, people's Google, Microsoft and GitHub accounts, and sign-in. Each page has the steps and the command that sets the key. You can [add any other API](/docs/providers/custom) yourself.
+`everyapp install https://github.com/every-app/<repo>` installs one, and `everyapp configure <app>` asks for the keys it needs. Every key an app can ask for, and where to get it, is in [Providers](/docs/providers).
 
 ## What it costs
 
-| What                            | Cost                                                                                                                  |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare's Workers Paid plan  | $5 a month, then usage                                                                                                |
-| A `.com` domain                 | About $10 a year                                                                                                      |
-| A `.dev` or `.app` domain       | $1 for the first year                                                                                                 |
-| An AI key, for apps that use AI | Billed by use by OpenAI or OpenRouter, on your own account with them; Workers AI goes on your Cloudflare bill instead |
-| A DataForSEO key, for OpenSEO   | Pay as you go, billed by DataForSEO                                                                                   |
-| EveryApp                        | Free and open source                                                                                                  |
+| What                            | Cost                                                 |
+| ------------------------------- | ---------------------------------------------------- |
+| Cloudflare's Workers Paid plan  | $5 a month, then usage                               |
+| A `.com` domain                 | About $10 a year                                     |
+| A `.dev` or `.app` domain       | $1 for the first year                                |
+| An AI key, for apps that use AI | Billed by use by OpenAI or OpenRouter, or Workers AI |
+| A DataForSEO key, for OpenSEO   | Pay as you go, billed by DataForSEO                  |
+| EveryApp                        | Free and open source                                 |
 
-The $5 includes 10 million requests a month and far more database reads and writes than a few apps for a small team use, so they fit inside it; an app adds no fixed cost. Past that, Cloudflare bills by use; the rates are on its [pricing page](https://developers.cloudflare.com/workers/platform/pricing/). Cloudflare is the only bill EveryApp itself causes: an AI or DataForSEO key comes from an account you open with that company, which bills you for what your apps use; the Gateway counts those calls and stops an app only at a cap you set. [Apps that use AI](/docs/create-an-app#apps-that-use-ai), [Usage and caps](/docs/usage)
+The $5 covers 10 million requests a month, far more than a few apps for a small team use. Past that, Cloudflare bills by use ([pricing](https://developers.cloudflare.com/workers/platform/pricing/)). The Gateway counts what your apps spend on AI and other keys, and can stop at a cap you set. [Usage and caps](/docs/usage)
 
 ## What you need
 
 1. A Cloudflare account on Workers Paid. [Set up Cloudflare](/docs/cloudflare)
 2. A domain on Cloudflare. [Get a domain](/docs/domain)
 3. Node.js, pnpm and git. [Install the tools](/docs/gateway#install-the-tools), or [let your coding agent do it](/docs/gateway#or-let-your-coding-agent-do-it)
-4. A Mac, Windows or Linux computer, and about 30 minutes for all of this. Setting up the Gateway itself is about 15 of them.
+4. About 30 minutes. Setting up the Gateway itself is about 15 of them.

@@ -1,11 +1,11 @@
 ---
 title: Add a custom provider
-description: Use any API your Gateway doesn't list yet. Describe it in one JSON file, add it with one command, and apps use it like a built-in provider. Or ask us for a page.
+description: Use any API your Gateway doesn't list yet. Describe it in one JSON file and add it with one command.
 ---
 
-The [providers list](/docs/providers) is what EveryApp knows out of the box. You can add any other API yourself. You describe it in a small JSON file: where its key comes from, which addresses the key may go to, and how it's sent. Your Gateway then holds the key and adds it to calls, exactly as it does for a built-in provider. Apps never see it.
+You can add any API that isn't in the [providers list](/docs/providers). Describe it in a small JSON file, and your Gateway holds its key and adds it to calls, like a built-in provider. Apps never see the key.
 
-Your coding agent can write the file for you from the provider's API docs. Ask it to "add Todoist as a custom provider to my Gateway", with the provider you want.
+Your coding agent can write the file from the provider's API docs. Ask it to "add Todoist as a custom provider to my Gateway".
 
 ## Add an API with a key
 
@@ -14,7 +14,7 @@ Your coding agent can write the file for you from the provider's API docs. Ask i
 
 ### Write the spec
 
-Save a file like this one as `todoist.json`, anywhere:
+Save a file like this as `todoist.json`:
 
 ```json
 {
@@ -44,51 +44,35 @@ Save a file like this one as `todoist.json`, anywhere:
 }
 ```
 
-The fields that matter most:
+| Field                                   | What it is                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `id`                                    | Lowercase letters, digits and hyphens. Apps ask for the provider by it.                     |
+| `docs`                                  | Where someone gets the key. Required.                                                       |
+| `hosts`                                 | The only addresses the key is ever sent to. No scheme, no path.                             |
+| `auth`                                  | How the key is sent: `bearer`, `header`, `query` or `basic`.                                |
+| `auth.secret`                           | The name of the setting that holds the key, like `TODOIST_API_TOKEN`. Never the key itself. |
+| `access`, `readMethods`, `writeMethods` | What apps may do. `read` allows `readMethods`; `write` adds `writeMethods`.                 |
+| `smoke`                                 | Optional: one free call that shows the key works.                                           |
 
-| Field                                   | What it is                                                                                                                              |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                                    | Lowercase letters, digits and hyphens. Apps use it to ask for the provider. It can't be a built-in provider's id.                       |
-| `name`, `description`                   | What people see in lists.                                                                                                               |
-| `docs`                                  | Where someone gets the key. Required.                                                                                                   |
-| `hosts`                                 | The only addresses the key is ever sent to, like `api.todoist.com`. No scheme, no path.                                                 |
-| `auth`                                  | How the key is sent: `bearer` (`Authorization: Bearer …`), `header` (a header you name), `query` (a URL parameter you name) or `basic`. |
-| `auth.secret`                           | The name of the setting that holds the key, in capitals, like `TODOIST_API_TOKEN`. Never the key itself.                                |
-| `access`, `readMethods`, `writeMethods` | What apps may do. `read` allows `readMethods`; an app that asks for `write` also gets `writeMethods`.                                   |
-| `smoke`                                 | Optional: one free call that shows the key works.                                                                                       |
-
-Every field and rule is in [the spec reference](/docs/agent/providers#the-spec), and the four `auth` kinds are in [auth kinds](/docs/agent/providers#auth-kinds-the-request-each-makes).
+Every field and rule is in [the spec reference](/docs/agent/providers#the-spec).
 
 </Step>
 <Step>
 
 ### Add it to your Gateway
 
-From your EveryApp folder:
-
 ```bash
 everyapp provider add todoist.json
 ```
 
-It checks the file, prints the hosts the key may go to, and tells you the next command. The spec can also be an `https://` URL.
-
-</Step>
-<Step>
-
-### Set the key
-
-```bash
-everyapp secret set TODOIST_API_TOKEN
-```
-
-Paste the key at the hidden prompt. It's live at once, with no deploy.
+It checks the file, shows the hosts the key may go to, and asks for the key. The spec can also be an `https://` URL.
 
 </Step>
 <Step>
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`, as you would a built-in provider:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -96,41 +80,34 @@ capabilities: {
 },
 ```
 
-The app calls the provider's own URLs (`https://api.todoist.com/rest/v2/tasks`) with `integrationFetch()`, and the Gateway adds the key. [How apps call providers](/docs/agent/providers#how-an-app-lists-one)
+The app calls `https://api.todoist.com/...` with `integrationFetch()`, and the Gateway adds the key. [How apps call providers](/docs/agent/providers#how-an-app-lists-one)
 
 </Step>
 </Steps>
 
-To check it, `everyapp provider show todoist` prints the spec, whether the key is set and which apps use it. `everyapp provider list` shows every provider, built in and added. To take it off again, `everyapp provider remove todoist` (it refuses while an app still uses it).
+`everyapp provider show todoist` shows whether the key is set and which apps use it. `everyapp provider remove todoist` takes it off.
 
 ## Add an OAuth provider
 
-For a service where each person connects their own account, the Gateway runs the OAuth flow and holds people's tokens. Common ones are ready to add as presets, like GitHub, Notion, Linear, Atlassian, HubSpot, Zoom, Dropbox, Spotify and X. `provider presets` lists them all:
+For a service where each person connects their own account. Common ones are presets (GitHub, Notion, Linear, HubSpot, Zoom and more):
 
 ```bash
 everyapp provider presets
-everyapp provider add --oauth notion-oauth
+everyapp provider add notion-oauth
 ```
 
-For any other, write a spec whose `auth.kind` is `"oauth2-user"`, with the provider's authorize and token URLs and the scope sets apps may ask for, and add it with `everyapp provider add --oauth your-spec.json`. Owners and admins can do the same in **Manage workspace → Providers → Add OAuth provider → Custom**. The format, with GitHub as the example, is in [the OAuth spec](/docs/agent/providers#the-spec-authkind-oauth2-user). How people connect is in [Connect GitHub (or any OAuth provider)](/docs/connect-oauth).
+For any other, write a spec with `auth.kind` `"oauth2-user"` and add it with `everyapp provider add --oauth your-spec.json`, or in **Manage workspace → Providers**. The format is in [the OAuth spec](/docs/agent/providers#the-spec-authkind-oauth2-user). How people connect: [Connect accounts](/docs/connect-oauth).
 
 ## Remote MCP servers
 
-A service that publishes an MCP server doesn't need a spec. Add the server by its URL, and the AI clients connected to your Gateway get its tools:
+A service with an MCP server needs no spec. Add it by its URL, and the AI clients connected to your Gateway get its tools:
 
 ```bash
 everyapp mcp add https://mcp.example.com/mcp
 ```
 
-[MCP apps](/docs/agent/mcp#mcp-apps)
+More in [MCP apps](/docs/agent/mcp#mcp-apps).
 
 ## Ask us for a page
 
-Want a provider on the list, with its own page and step-by-step guide? Or is a page's guide too brief? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml) and tell us:
-
-- the provider's name,
-- a link to its API docs,
-- how it authenticates (an API key, OAuth, or sign-in),
-- and what you want to do with it.
-
-Never paste a key or a secret in an issue.
+[Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml) with the provider's name, a link to its API docs, how it authenticates, and what you want to do with it. Never paste a key in an issue.

@@ -3,42 +3,39 @@ title: Connect GitHub (or any OAuth provider)
 description: Let your apps use people's GitHub, Google, Notion or other accounts. You add the provider once; each person connects their own account.
 ---
 
-Some apps work on things that belong to a person's account somewhere else: their repositories at GitHub, their Search Console at Google, their pages at Notion. Your Gateway can hold those connections for every app at once. You add the provider once, with the client id and secret the provider gives you. Each person then connects their own account once, in the Gateway, and every app that asks for it uses that connection. Apps never see the tokens.
+Your apps can work with a person's GitHub repositories, Google Search Console or Notion pages. You add the provider once. Each person connects their own account once, and every app that needs it uses that connection. Apps never see the tokens.
 
 ## Add a provider
 
-Whoever runs the Gateway does this once per provider, as an owner or admin.
+An owner or admin does this once per provider.
 
-1. Open **Manage workspace**, then **Providers**, and select **Add OAuth provider**.
-2. Pick the provider: **GitHub**, Google, Notion, Linear, GitLab, Atlassian, HubSpot, Zoom, Dropbox, Spotify, X, or a social network (LinkedIn, Facebook, Instagram, Threads, YouTube, Reddit, Pinterest, Discord, Kick, Twitch, Tumblr), or **Custom** for one that isn't listed (you type its authorize and token addresses, its scopes and its API hosts).
-3. The dialog shows the **redirect URI** to register, like `https://apps.yourcompany.com/connect/github-oauth/callback`. Copy it.
-4. At the provider, make an OAuth app and paste that redirect URI. For GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App** (an OAuth App, not a GitHub App). The provider gives you a client id and a client secret.
-5. Back in the dialog, paste the client id and the client secret, and select **Add**.
+1. Open **Manage workspace** → **Providers** → **Add OAuth provider**.
+2. Pick the provider, or **Custom** for one that isn't listed.
+3. Copy the **redirect URI** the dialog shows, like `https://apps.yourcompany.com/connect/github-oauth/callback`.
+4. At the provider, create an OAuth app with that redirect URI. For GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App** (an OAuth App, not a GitHub App).
+5. Paste the client id and client secret into the dialog and select **Add**.
 
-Each provider's page has its console, the steps, the scopes to allow and the exact redirect URI: [GitHub](/docs/providers/github#connect-accounts), [Google](/docs/providers/google#connect-accounts), [Microsoft 365](/docs/providers/microsoft#connect-accounts), [Slack](/docs/providers/slack#connect-accounts), and [the rest](/docs/providers).
-
-The secret is stored sealed and never shown again. To change it later, select the provider's **⋯** → **Replace client**. From a terminal, the same is one command. It prints the redirect URI to register, then asks for the client id and secret:
+Or from a terminal. It prints the redirect URI, then asks for the client id and secret:
 
 ```bash
 everyapp provider add github-oauth
 ```
 
+Steps for each provider's console: [GitHub](/docs/providers/github#connect-accounts), [Google](/docs/providers/google#connect-accounts), [Microsoft 365](/docs/providers/microsoft#connect-accounts), [Slack](/docs/providers/slack#connect-accounts), and [the rest](/docs/providers).
+
+To change the secret later, select the provider's **⋯** → **Replace client**.
+
 ## Connect your account
 
-Each person does this for themselves, once per provider.
-
 1. Open the account menu at the bottom of the sidebar, then **Connected accounts**.
-2. Select **Connect GitHub** (or the provider's name). The provider asks you to allow what the apps on your Gateway need, nothing more.
-3. You land back in the Gateway, connected.
+2. Select **Connect GitHub** (or the provider's name) and allow it.
 
-An app can send you there itself: a "Connect GitHub" button in the app opens the same page, and brings you back to the app afterwards. If an app later needs more than you allowed, the page shows **Reconnect**.
+An app's "Connect GitHub" button opens the same page and brings you back. If a connection expires, the page shows **Reconnect**.
 
-## For the whole workspace
-
-Some work runs for the workspace rather than for one person, like a nightly sync. An owner or admin can connect an account for the workspace: in **Manage workspace → Providers**, select **Connect for the organization** beside the provider. Apps use it for work no person started.
+For work no person started, like a nightly sync, an owner or admin can select **Connect for the organization** beside the provider in **Manage workspace** → **Providers**.
 
 ## Disconnect
 
-Under **Connected accounts**, select **Disconnect** beside the account. Apps stop using it at once. Where the provider supports it (GitHub does), the Gateway also tells the provider to revoke what it was given. An owner or admin sees every connection in the workspace under **Manage workspace → Providers** and can disconnect any of them. Removing a provider there disconnects everyone from it.
+Under **Connected accounts**, select **Disconnect**. Apps stop using it at once. An owner or admin can disconnect anyone's connection in **Manage workspace** → **Providers**. Removing a provider disconnects everyone from it.
 
-Which apps use a connection, and what they may do with it, is set by each app: an app asks for named parts of the account (repositories to read, for instance) and the Gateway holds it to those. For how this works underneath, ask your agent or see the [agent docs](/docs/agent/providers#oauth-providers-upload-a-client-the-gateway-runs-the-flow).
+For the full reference, see [OAuth providers](/docs/agent/providers#oauth-providers-upload-a-client-the-gateway-runs-the-flow).

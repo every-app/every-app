@@ -8,35 +8,22 @@ Google search results as JSON: web, news, images, places, shopping, scholar and 
 
 ## API key
 
-- **Get your key here:** [serper.dev](https://serper.dev/api-keys)
-- **Setting:** `SERPER_API_KEY`
-- **API reference:** [serper.dev](https://serper.dev/playground)
+**Unverified:** nobody has checked this against Serper's own docs yet. [Tell us](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Fix%20provider%20docs%3A%20) if something is wrong.
 
-**Unverified.** Nobody has checked this entry against the provider's own docs yet. If something here is wrong, [tell us](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Fix%20provider%20docs%3A%20).
+1. Open [serper.dev](https://serper.dev/api-keys) and create an API key with only the access your apps need.
+2. Copy it. It may be shown only once.
 
-### Get the key
+**What to create:** An API key from serper.dev (2,500 free queries to start).
 
-1. Sign in to Serper and open [serper.dev](https://serper.dev/api-keys).
-2. Create an API key (or token) with only the access your apps need.
-3. Copy it. Many providers show a key only once.
-
-**What to create:** An API key from serper.dev (2,500 free queries to start); the Gateway sends it in the X-API-KEY header. Every search is a POST to google.serper.dev/&lt;type> (search, news, images, places, …) with a JSON body such as \{"q": "…"\}.
-
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Serper) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the key:
 
 ```bash
-everyapp secret set SERPER_API_KEY
+everyapp provider add serper
 ```
-
-It asks for the value at a hidden prompt, and it's live at once, with no deploy. If an app you've installed needs it, `everyapp configure <app>` asks for it along with everything else the app needs.
 
 ### Use it in an app
 
-List it in the app's `everyapp.config.ts`:
+In the app's `everyapp.config.ts`:
 
 ```ts
 capabilities: {
@@ -44,19 +31,12 @@ capabilities: {
 },
 ```
 
-`access` is `"read"`. The app calls the provider's own URLs with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
+The app calls Serper's [API](https://serper.dev/playground) with `integrationFetch()`, and the Gateway adds the key. More in [API providers](/docs/agent/providers).
 
-### Check it worked
+**Check it worked:** `everyapp provider show serper` shows the key as set.
 
-- `everyapp provider show serper` shows the key as set and which apps use it.
-- `everyapp status` shows apps that were waiting for it as ready.
+**Cost:** Prepaid credits, one per successful query: $1.00 per 1k on the 50k pack, down to $0.30 per 1k on the largest.
 
-### Cost and limits
+**Rate limits:** 50 calls a second. Starter credits 50 queries per second; Standard 100, Scale 200, Ultimate 300.
 
-- **Cost:** Prepaid credits, one per successful query: $1.00 per 1k on the 50k pack, down to $0.30 per 1k on the largest.
-- **Rate limits:** 50 calls a second. Starter credits 50 queries per second; Standard 100, Scale 200, Ultimate 300.
-
-## More help
-
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Serper).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Serper).

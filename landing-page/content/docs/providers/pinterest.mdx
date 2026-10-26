@@ -8,55 +8,27 @@ Boards and pins on a Pinterest account.
 
 ## Connect accounts
 
-Each person connects their own Pinterest account once, in the Gateway, and every app that asks for it uses that connection. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
+Each person connects their own Pinterest account in the Gateway, once, and every app that asks uses it. Apps never see the tokens. [How connecting works](/docs/connect-oauth)
 
-- **Make the OAuth app here:** [developers.pinterest.com](https://developers.pinterest.com/apps/)
-- **Settings:** `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET`
-- **Added with:** `everyapp provider add --oauth pinterest`
-
-### Redirect URI
-
-Register this at the provider:
+The redirect URI to register, with your Gateway's address (like `apps.example.com`):
 
 ```text
 https://<your gateway>/connect/pinterest/callback
 ```
 
-`<your gateway>` is your Gateway's address, like `apps.example.com`.
-
-An app that runs the sign-in itself lists its own callbacks under `redirectPaths` in its manifest entry; register those too, as `https://<app>.<your gateway><path>`. `everyapp provider show pinterest` prints every one.
-
-### Make the OAuth app
-
 Not yet tried against a live connect.
 
-1. Open [developers.pinterest.com](https://developers.pinterest.com/apps/) and create an OAuth app (sometimes called a client or an integration).
+1. Open [developers.pinterest.com](https://developers.pinterest.com/apps/) and create an OAuth app (also called a client or an integration).
 2. Add the redirect URI above.
-3. Allow the scopes behind the sets your apps use (the table below), and no others.
-4. Copy the client ID and the client secret. The secret is often shown once.
+3. Copy the client ID and client secret. The secret is often shown only once.
 
-Steps for this provider are brief. [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Pinterest) to request a full guide.
-
-### Set it on your Gateway
-
-From your EveryApp folder:
+Add it to your Gateway. It asks for the client ID and secret:
 
 ```bash
-everyapp provider add --oauth pinterest
-everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET
+everyapp provider add pinterest
 ```
 
-Each value goes in at a hidden prompt. Or, as an owner or admin, paste the client in **Manage workspace → Providers → Add OAuth provider**.
-
-### Scope sets
-
-Apps ask for named sets, never raw scopes, and the Gateway holds each app to the sets it declared.
-
-| Set | Allows | Provider scopes |
-| --- | --- | --- |
-| `identity` | Pinterest account (who you are) | `user_accounts:read` |
-| `pins.read` | Boards and pins (read) | `user_accounts:read`, `boards:read`, `pins:read` |
-| `pins.write` | Boards and pins (read and write) | `user_accounts:read`, `boards:read`, `boards:write`, `pins:read`, `pins:write` |
+Or add it in **Manage workspace → Providers**.
 
 ### Use it in an app
 
@@ -66,13 +38,14 @@ capabilities: {
 },
 ```
 
-### Check it worked
+Apps ask for these scope sets:
 
-- `everyapp provider show pinterest` shows the client as set, and the redirect URI.
-- Open the account menu → **Connected accounts** → **Connect Pinterest**. You land back in the Gateway, connected.
-- `everyapp provider connections` lists who has connected.
+| Set | Allows | Provider scopes |
+| --- | --- | --- |
+| `identity` | Pinterest account (who you are) | `user_accounts:read` |
+| `pins.read` | Boards and pins (read) | `user_accounts:read`, `boards:read`, `pins:read` |
+| `pins.write` | Boards and pins (read and write) | `user_accounts:read`, `boards:read`, `boards:write`, `pins:read`, `pins:write` |
 
-## More help
+**Check it worked:** `everyapp provider show pinterest` shows the client as set. Then open the account menu → **Connected accounts** → **Connect Pinterest**.
 
-- [All providers](/docs/providers), and [adding one that isn't listed](/docs/providers/custom).
-- Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Pinterest).
+Something wrong or missing? [Open an issue](https://github.com/every-app/every-app/issues/new?template=provider-request.yml&title=Provider%20guide%3A%20Pinterest).

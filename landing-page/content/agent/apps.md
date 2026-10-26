@@ -7,7 +7,7 @@ Five open source apps run behind a Gateway as the person's own: four the README,
 
 ## The flow
 
-1. `pnpm everyapp install <repository URL> --json` from the checkout: the repository's latest release's `everyapp-release.tar.gz` is deployed and the app is registered under its manifest id. `NO_RELEASE`: the repository publishes none (RepoLens, while private). `R2_NOT_ENABLED`: the person enables R2 once in the Cloudflare dashboard (R2 Object Storage, Get started), then rerun. [The deploy pipeline](/docs/agent/deploy)
+1. `pnpm everyapp install <repository URL> --json` from any directory: the repository's latest release's `everyapp-release.tar.gz` is deployed and the app is registered under its manifest id. `NO_RELEASE`: the repository publishes none (RepoLens, while private). `R2_NOT_ENABLED`: the person enables R2 once in the Cloudflare dashboard (R2 Object Storage, Get started), then rerun. [The deploy pipeline](/docs/agent/deploy)
 2. `pnpm everyapp configure <id>` from any directory: asks for every setting the manifest declares that isn't set, Gateway settings and the app's own alike, and sets each where it belongs. Without a terminal, pipe `NAME=value` lines or export the names and add `--from-env`. [Secrets, Gateway settings and capabilities](/docs/agent/secrets)
 3. `pnpm everyapp status --json`: the app leaves **Needs setup** once its required settings are set. [`everyapp status`](/docs/agent/status)
 4. Update: the same `install` command again. The deploy saves a restore point before it migrates the app's database.
@@ -106,7 +106,7 @@ No secrets of its own. `email: { inbound: true }`: the Worker has an `email()` h
 
 Keep the GitHub traffic history GitHub drops after 14 days.
 
-The repository is private at the time of writing, so there is no URL to `install` from (an install by URL would answer `NO_RELEASE`: no anonymous download). A person with access clones it beside the checkout, runs `pnpm install` in it, and deploys with the checkout's CLI from its directory: `node ../every-app/packages/cli/bin/everyapp.js deploy`, then `pnpm everyapp configure repolens`. When it is public, the install is `pnpm everyapp install <repository URL>` like the others.
+The repository is private at the time of writing, so there is no URL to `install` from (an install by URL would answer `NO_RELEASE`: no anonymous download). A person with access clones it, runs `pnpm install` in it, and runs `everyapp deploy` from its directory (with a checkout's CLI: `node ../every-app/packages/cli/bin/everyapp.js deploy`), then `everyapp configure repolens`. When it is public, the install is `pnpm everyapp install <repository URL>` like the others.
 
 | Setting        | Held by | Need     | Why (from the manifest)                                                                                                                                                              |
 | -------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

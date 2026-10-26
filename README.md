@@ -72,7 +72,7 @@ pnpm install
 pnpm everyapp setup --domain apps.yourcompany.com
 ```
 
-`pnpm everyapp` inside the checkout runs the CLI from the tree and builds the Gateway from it (instead of downloading the published release), and `pnpm everyapp create ../my-app` links a new app to the checkout. Everything else is the same. `.github/RELEASE.md` says how releases are cut.
+`pnpm everyapp` runs the CLI and builds the Gateway from your checkout. `pnpm everyapp create ../my-app` links a new app to it.
 
 ## What's on the roadmap?
 
