@@ -1872,8 +1872,12 @@ means it is on main (every boundary fix from this pass merged on
 
 46. A dispatch-tier Worker sends mail from the platform's own sender and
     spends the platform's provider keys with no per-organization bound
-    (B8, medium; the launch gate's "capability calls refused for
-    dispatch-tier rows").
+    (B8, medium; fixed in #715, `tier.dispatch-no-capability-broker`:
+    the AppGateway entrypoint refuses every `dispatch` row with 403
+    `caller_tier_refused` before the route is read, so the launch gate's
+    "capability calls refused for dispatch-tier rows" holds; a per-capability
+    hosted grant table is the day the hosted tier wants them back). The
+    2026-10-25 scan's finding 2.
 47. With open sign-up, anyone with an invite link can plant an account for
     someone else's email, which the victim's own verification click then
     hands over (B2, medium; `HOSTED_OPEN_SIGNUP=false` keeps the preview

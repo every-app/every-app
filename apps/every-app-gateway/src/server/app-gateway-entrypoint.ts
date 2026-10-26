@@ -150,6 +150,7 @@ type AppGatewayErrorCode =
   | "missing_caller_identity"
   | "caller_not_registered"
   | "caller_not_active"
+  | "caller_tier_refused"
   | "caller_identity_mismatch"
   | "caller_identity_required"
   | "caller_identity_invalid"
@@ -243,7 +244,6 @@ export async function handleAppGatewayRequest({
   try {
     const policy = platformPolicy(env);
     const props = parseCallerProps(rawProps);
-    const route = routeFromPath(request);
     let app: RegisteredApp | null;
     try {
       app = await resolveCallerApp(registry, props);
@@ -273,6 +273,19 @@ export async function handleAppGatewayRequest({
         "The calling app is not active.",
       );
     }
+    // Only a first-party Worker (the operator's, or the platform's own on
+    // the hosted gateway) reaches the platform's providers and capabilities.
+    // A dispatch-tier Worker is a customer's code behind the hosted tier's
+    // trust boundary (docs/threat-model.md B8): refused before the route is
+    // even read, whatever its manifest declares.
+    if (app.tier !== "service_binding") {
+      throw new AppGatewayError(
+        "caller_tier_refused",
+        403,
+        "Apps on the dispatch tier have no access to the Gateway's providers and capabilities.",
+      );
+    }
+    const route = routeFromPath(request);
     if (
       app.organizationId !== props.organizationId ||
       app.appId !== props.appId ||

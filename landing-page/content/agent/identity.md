@@ -322,20 +322,21 @@ Types exported beside them: `EveryAppOptions`, `EveryAppManifestLike`, `EveryApp
 
 Before any route is served the entrypoint checks the caller (cached per isolate: 30 s for a hit, 5 s for a miss, 500 entries):
 
-| Code                          | Status | When                                                                                                                             |
-| ----------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `missing_caller_identity`     | 401    | the props are missing or malformed                                                                                               |
-| `caller_registry_unavailable` | 500    | the registry (or, for background work, the organization directory) could not be read                                             |
-| `caller_not_registered`       | 403    | no registry row for the props' organization and app                                                                              |
-| `caller_not_active`           | 403    | the app's row is not `active`, or it is a shared app on a Gateway without shared apps                                            |
-| `caller_identity_mismatch`    | 403    | the row's organization, app id or Worker name differs from the props                                                             |
-| `invalid_gateway_route`       | 404    | neither `/api/ai/<provider>` nor `/api/integrations/…`                                                                           |
-| `provider_not_allowed`        | 403    | the manifest's `providers` does not list the AI provider                                                                         |
-| `caller_identity_required`    | 403    | a shared app's call with neither `x-everyapp-identity` nor `x-everyapp-org`                                                      |
-| `caller_identity_invalid`     | 401    | a shared app forwarded an identity that does not verify (the Worker name as audience, `GATEWAY_URL` as issuer, `JWT_PUBLIC_KEY`) |
-| `caller_org_mismatch`         | 403    | `x-everyapp-org` names another organization than the props (own app) or than the forwarded identity's `org_id` (shared app)      |
-| `caller_org_not_attributable` | 403    | the organization in `x-everyapp-org` is unknown, suspended, or has no active member                                              |
-| `internal_error`              | 500    | anything else                                                                                                                    |
+| Code                          | Status | When                                                                                                                                                                                                                           |
+| ----------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `missing_caller_identity`     | 401    | the props are missing or malformed                                                                                                                                                                                             |
+| `caller_registry_unavailable` | 500    | the registry (or, for background work, the organization directory) could not be read                                                                                                                                           |
+| `caller_not_registered`       | 403    | no registry row for the props' organization and app                                                                                                                                                                            |
+| `caller_not_active`           | 403    | the app's row is not `active`, or it is a shared app on a Gateway without shared apps                                                                                                                                          |
+| `caller_tier_refused`         | 403    | the app's row is on the `dispatch` tier (a hosted third-party Worker): the Gateway's providers, capabilities and event emit are for first-party Workers only, whatever the manifest declares; refused before the route is read |
+| `caller_identity_mismatch`    | 403    | the row's organization, app id or Worker name differs from the props                                                                                                                                                           |
+| `invalid_gateway_route`       | 404    | neither `/api/ai/<provider>` nor `/api/integrations/…`                                                                                                                                                                         |
+| `provider_not_allowed`        | 403    | the manifest's `providers` does not list the AI provider                                                                                                                                                                       |
+| `caller_identity_required`    | 403    | a shared app's call with neither `x-everyapp-identity` nor `x-everyapp-org`                                                                                                                                                    |
+| `caller_identity_invalid`     | 401    | a shared app forwarded an identity that does not verify (the Worker name as audience, `GATEWAY_URL` as issuer, `JWT_PUBLIC_KEY`)                                                                                               |
+| `caller_org_mismatch`         | 403    | `x-everyapp-org` names another organization than the props (own app) or than the forwarded identity's `org_id` (shared app)                                                                                                    |
+| `caller_org_not_attributable` | 403    | the organization in `x-everyapp-org` is unknown, suspended, or has no active member                                                                                                                                            |
+| `internal_error`              | 500    | anything else                                                                                                                                                                                                                  |
 
 On `/api/ai/*` these come back in OpenAI's error shape, `{ "error": { "message", "code", "type": "gateway_refusal" }, "code", "message" }`; elsewhere as `{ "error": "<status label>", "code", "message" }`. Both carry `x-everyapp-error`.
 

@@ -198,6 +198,34 @@ describe("AppGateway caller authorization", () => {
     );
   });
 
+  it("refuses a dispatch-tier row on every route, before the route is read (`tier.dispatch-no-capability-broker`)", async () => {
+    const dispatched = app({ tier: "dispatch" });
+    for (const path of [
+      "/api/ai/openai/v1/responses",
+      "/api/integrations/dataforseo/v3/serp/google/organic/live/advanced",
+      "/api/events/emit",
+      "/not/a/gateway/route",
+    ]) {
+      const fetchUpstream = vi.fn(async () => Response.json({ id: "no" }));
+      await expectError(
+        call({
+          registeredApps: [dispatched],
+          inbound: new Request(`https://gateway.internal${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: "gpt-5.2", input: "hello" }),
+          }),
+          fetchUpstream,
+          env: { GATEWAY_DEPLOYMENT_MODE: "hosted" },
+        }),
+        403,
+        "caller_tier_refused",
+      );
+      expect(fetchUpstream).not.toHaveBeenCalled();
+    }
+    // (The same row on the service-binding tier is the first test above.)
+  });
+
   it("rejects a registered app that is not active", async () => {
     await expectError(
       call({ registeredApps: [app({ status: "disabled" })] }),
