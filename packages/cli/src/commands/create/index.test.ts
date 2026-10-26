@@ -82,15 +82,24 @@ beforeEach(() => {
     GIT_AUTHOR_EMAIL: "test@example.com",
     GIT_COMMITTER_NAME: "Test",
     GIT_COMMITTER_EMAIL: "test@example.com",
+    // No detached `git maintenance`/`gc --auto` after the first commit: it
+    // outlives the awaited git child and writes .git/objects while the
+    // teardown removes it (ENOTEMPTY on Linux CI).
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "gc.auto",
+    GIT_CONFIG_VALUE_0: "0",
+    GIT_CONFIG_KEY_1: "maintenance.auto",
+    GIT_CONFIG_VALUE_1: "false",
   });
 });
 
-afterEach(() => {
+/** A recursive remove that rides out a straggling writer (ENOTEMPTY/EBUSY). */
+const removeDir = (dir: string) =>
+  fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+
+afterEach(async () => {
   process.env = { ...savedEnv };
-  for (const dir of dirs.splice(0)) {
-    // macOS answers ENOTEMPTY to a recursive rm now and then; retrying is the usual cure.
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
-  }
+  await Promise.all(dirs.splice(0).map(removeDir));
 });
 
 function seams() {
@@ -471,7 +480,7 @@ describe("everyapp create", () => {
     expect(events.at(-1)).toMatchObject({ type: "done", data: { dir: app, next: [{ command: "cd apps/my-app" }, {}, {}] } });
     expect(events.flatMap((event) => (event["step"] === "create.git" ? [event] : []))).toEqual([]);
 
-    fs.rmSync(app, { recursive: true });
+    await removeDir(app);
     events.length = 0;
     const from = path.join(root, "packages", "cli");
     await createApp({ flags: { json: true }, appIdArg: "../../apps/my-app", out, cwd: from, source: sourceOf(root), cf, install });
