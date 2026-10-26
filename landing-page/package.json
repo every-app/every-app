@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/sync-agent-docs.js && vite dev",
     "sync:agent-docs": "node scripts/sync-agent-docs.js",
-    "build": "node scripts/sync-agent-docs.js && wrangler types && NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/generate-sitemap.js",
+    "build": "node scripts/sync-agent-docs.js && wrangler types && NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/generate-sitemap.js && node scripts/generate-social-cards.js",
     "sitemap": "node scripts/generate-sitemap.js",
     "preflight": "node scripts/preflight.js",
     "types:check": "node scripts/sync-agent-docs.js && wrangler types && tsc --noEmit",
@@ -42,6 +42,7 @@
     "prettier": "^3.6.2",
     "srvx": "^0.11.22",
     "tailwindcss": "^4.3.3",
+    "takumi-js": "2.13.7",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.0.5",
     "wrangler": "^4.152.0"

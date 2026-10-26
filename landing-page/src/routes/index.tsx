@@ -2,14 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Check, Copy, Pause, Play, Star } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import setupPrompt from "../../content/docs/setup-prompt.txt?raw";
-import { OG_IMAGE_PATH, toCanonicalUrl } from "@/lib/seo";
+import { buildPageSeo } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
 const homeTitle = "EveryApp: Open source apps in your own Cloudflare account";
 const homeDescription =
   "Own your tools. Customize your tools. Pay as you go. EveryApp puts the web apps you build online, in your own Cloudflare account. Open source, alpha.";
-// What the Open Graph card says, so a screen reader hears the same words a sighted reader sees.
-const ogImageAlt = "EveryApp. Make every app open source.";
 
 const openSeoRepo = "every-app/open-seo";
 // Hard-coded, not fetched: a GitHub API call per visit hits its rate limit. Update by hand.
@@ -44,24 +42,8 @@ const apps: Array<{ name: string; line: string; href: string }> = [
 ];
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: homeTitle },
-      { name: "description", content: homeDescription },
-      { property: "og:type", content: "website" },
-      { property: "og:title", content: homeTitle },
-      { property: "og:description", content: homeDescription },
-      { property: "og:url", content: toCanonicalUrl("/") },
-      { property: "og:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
-      { property: "og:image:alt", content: ogImageAlt },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: homeTitle },
-      { name: "twitter:description", content: homeDescription },
-      { name: "twitter:image", content: toCanonicalUrl(OG_IMAGE_PATH) },
-      { name: "twitter:image:alt", content: ogImageAlt },
-    ],
-    links: [{ rel: "canonical", href: toCanonicalUrl("/") }],
-  }),
+  head: () =>
+    buildPageSeo({ title: homeTitle, description: homeDescription, path: "/" }),
   component: Home,
 });
 

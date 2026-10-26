@@ -30,7 +30,7 @@ Then by hand, since a script can't:
 - On `https://everyapp.com/docs/gateway`, the setup prompt under "Or let your coding agent do it" is one code block with a copy button, and what it copies is `landing-page/content/docs/setup-prompt.txt` word for word (the same text `packages/onboarding-loop/prompts/setup.md` holds; `packages/onboarding-loop` has a test that fails when the two differ).
 - The search box on any docs page finds "Access".
 - Leave an address in the home page's "Keep me posted" form: it answers "Thanks. We'll keep you posted." (it writes to the `waitlist_signups` table of the landing page's D1 database, which `pnpm -C landing-page deploy` migrates first).
-- Paste `https://everyapp.com/` and one docs page into a link preview debugger (Slack, X, or opengraph.xyz): the title, the description and `/OpenGraphPreview.png` show.
+- Paste `https://everyapp.com/` and one docs page into a link preview debugger (Slack, X, or opengraph.xyz): the title and the description show, with the home card (`/og/home.png`) for the home page and a card with the page's title (`/og/docs/<page>.png`) for the docs page.
 - The browser console on the home page and on `/docs` shows no errors (the analytics `collect` request may show as cancelled when the page is left; that is the beacon, not an error).
 
 ## What the script checks
