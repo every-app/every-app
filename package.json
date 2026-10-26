@@ -12,7 +12,8 @@
     "loop": "pnpm -C packages/onboarding-loop loop",
     "public-copy": "node scripts/public-copy.mjs",
     "pack-for-app": "node scripts/pack-for-app.mjs",
-    "security-review": "node scripts/security-review.mjs"
+    "security-review": "node scripts/security-review.mjs",
+    "publish:rc": "node scripts/publish-rc.mjs"
   },
   "devDependencies": {
     "everyapp": "workspace:*"

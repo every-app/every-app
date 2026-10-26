@@ -62,7 +62,7 @@
  * and whenever the app's version changes.
  */
 import path from "node:path";
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import { manifestTierProblems, validateManifestStrict } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";

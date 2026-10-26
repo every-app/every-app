@@ -42,7 +42,7 @@ import type { EventSink } from "@/lib/output/events";
 import { askText, canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { listed, plural } from "@/lib/output/text";
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import type { GatewayCommandFlags } from "../flags";
 
 interface DeleteCommandFlags extends GatewayCommandFlags {

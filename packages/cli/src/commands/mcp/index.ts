@@ -68,7 +68,7 @@ import { runCommand } from "@/lib/output/run";
 import { formatFacts, formatTable } from "@/lib/output/table";
 import { plural } from "@/lib/output/text";
 import { readSecretValue } from "@/lib/secretValue";
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import type { GatewayCommandFlags } from "../flags";
 import { applyGatewaySettings } from "../secret";
 

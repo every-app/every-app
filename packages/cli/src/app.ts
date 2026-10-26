@@ -9,7 +9,7 @@ import {
   type CommandContext,
   type RouteMap,
 } from "@stricli/core";
-import { name, version } from "../package.json";
+import { cliName as name, cliVersion as version } from "@/lib/version";
 import {
   argumentProblem,
   ArgumentErrorCode,

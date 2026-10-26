@@ -64,7 +64,7 @@
  * is `action_required`; a run that stops on one exits 2, and running the
  * same command again resumes it.
  */
-import { version as packageVersion } from "../../../package.json";
+import { cliVersion as packageVersion } from "@/lib/version";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { turnAccessOn } from "../access";
 import { applySecretValues } from "../secret";

@@ -44,18 +44,24 @@ GitHub prerelease, so `/releases/latest` stays the newest stable one.
 
 The CLI downloads anonymously from `github.com/every-app/every-app`, so
 the release has to be on the public repository: push the tag there.
-Publishing the CLI is therefore three steps, in this order:
+Publishing is one script, then the tag:
 
-1. Set `PUBLISHED_VERSION` in `packages/cli/src/lib/app/publishedVersions.ts`
-   to `<version>` and merge it (`everyapp create` writes `^<version>` from it
-   into every app made outside a checkout), then publish
-   `@every-app/sdk@<version>`, then `everyapp@<version>`, to npm from that
-   commit. Both packages go out at the same version.
-2. Tag the commit they were built from and push the tag to the public
-   repository: `git tag gateway-v<version> && git push <public> gateway-v<version>`.
+1. From a clean `main`: `pnpm publish:rc <version>` (`scripts/publish-rc.mjs`).
+   It sets both packages to that version, builds the SDK then the CLI,
+   checks that the built CLI says that version, publishes both under `next`
+   (npm asks for web authentication), puts the package.json files back,
+   moves `latest`, and prints the next two commands.
+2. Push that commit to the public repository, then tag it there:
+   `git tag gateway-v<version> <commit> && git push public gateway-v<version>`.
    The workflow publishes the release in a few minutes.
-3. Check `npx everyapp@<version> status` from a directory with no
-   checkout: it must name the release.
+3. Check `npx everyapp@<version> --version` and `status` from a directory with
+   no checkout: it must name the version and the release.
+
+The CLI reads its version from its own package.json at run time
+(`packages/cli/src/lib/version.ts`), so the version set at publish time is
+the one it says and the Gateway release it asks for. Never import
+`version` from package.json in the CLI: tsup inlines it at build time, which
+is how 0.3.0-rc.6 shipped saying 0.3.0.
 
 Keep the Gateway package's version (`apps/every-app-gateway/package.json`)
 on the CLI's, prerelease suffix aside: a checkout's own build reports that

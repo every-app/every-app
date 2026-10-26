@@ -27,7 +27,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { z } from "zod";
 import { ManifestError, validateManifestStrict } from "@every-app/perimeter/manifest";
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";

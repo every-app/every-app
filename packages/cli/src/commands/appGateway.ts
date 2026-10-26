@@ -14,7 +14,7 @@ import { register, type Deployer } from "@/lib/gateway/registry";
 import { refuseNewerThanCli, type CandidateRelease, type GatewayRelease } from "@/lib/gateway/release";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
-import { version as cliVersion } from "../../package.json";
+import { cliVersion } from "@/lib/version";
 import { LiveWaitVerb, waitForLive, type LiveWaitSeams } from "./deploy/steps/waitForLive";
 
 /**

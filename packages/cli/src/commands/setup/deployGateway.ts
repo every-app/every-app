@@ -4,7 +4,7 @@
  * builds, deployed through lib/gateway/apply.ts, and the new hostnames'
  * certificates.
  */
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import { cfD1Database } from "@/lib/cf/d1";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import {

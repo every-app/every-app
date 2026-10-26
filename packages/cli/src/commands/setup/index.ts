@@ -7,7 +7,7 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts } from "@/lib/output/table";
 import { duration } from "@/lib/output/time";
-import { version as cliVersion } from "../../../package.json";
+import { cliVersion } from "@/lib/version";
 import {
   runSetup,
   setupDeps,
