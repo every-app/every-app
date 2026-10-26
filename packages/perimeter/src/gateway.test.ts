@@ -61,13 +61,14 @@ const SESSION: AuthenticatedSession = {
   orgRole: "member",
 };
 
+/** A personal access token with full member scope: the one kind that opens app routes. */
 const PAT_SESSION: AuthenticatedSession = {
   ...SESSION,
   credential: {
     kind: "pat",
     channel: "api",
     actor: "pat:token_1",
-    scopes: ["mcp:read", "api:write"],
+    scopes: ["*"],
   },
 };
 
@@ -77,7 +78,7 @@ const OAUTH_SESSION: AuthenticatedSession = {
     kind: "oauth",
     channel: "api",
     actor: "oauth:grant_1",
-    scopes: ["todos:read"],
+    scopes: ["*"],
   },
 };
 
@@ -260,7 +261,7 @@ describe("handleGatewayRequest", () => {
     });
     expect(payload.chan).toBe("api");
     expect(payload.act).toEqual({ sub: "pat:token_1" });
-    expect(payload.scopes).toEqual(["mcp:read", "api:write"]);
+    expect(payload.scopes).toEqual(["*"]);
   });
 
   it("mints the organization's name as org_name when the authenticator read it", async () => {
@@ -2241,7 +2242,6 @@ describe("MCP-only tokens", () => {
       for (const [path, init] of [
         ["/tasks", {}],
         ["/api/todos", { method: "POST" }],
-        ["/health", {}], // public routes too
         ["/mcp/", { method: "POST" }],
         ["/MCP", { method: "POST" }],
       ] as const) {
@@ -2289,11 +2289,10 @@ describe("MCP-only tokens", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("open nothing at a /mcp a public route covers, even where the manifest opts in", async () => {
-    // The ToolBus skips a public /mcp, so the only one left to answer
-    // would be the app, with the token's identity: a pattern the author-
-    // time linter refuses, or a row stored before it did.
-    const fetcher = vi.fn();
+  it("serve a /mcp a public route covers anonymously, never with the token's identity, even where the manifest opts in", async () => {
+    // The ToolBus skips a public /mcp (a pattern the author-time linter
+    // refuses, or a row stored before it did), so the app answers: as it
+    // answers anyone on a public route, with the marker and no identity.
     const interceptMcp = vi.fn(async () => new Response("toolbus"));
     for (const routes of [
       [{ path: "/:page", methods: ["GET", "POST"] }],
@@ -2310,21 +2309,20 @@ describe("MCP-only tokens", () => {
       const res = await call(
         "/mcp",
         credential(["mcp:read"]),
-        {
-          interceptMcp,
-          registry: new InMemoryAppRegistry([covered]),
-          fetcherFor: () => ({ fetch: fetcher }),
-        },
+        { interceptMcp, registry: new InMemoryAppRegistry([covered]) },
         { method: "POST" },
       );
-      expect(res.status, routes[0]!.path).toBe(403);
-      expect(await res.json()).toEqual({
-        error: "forbidden",
-        reason: "token_scope",
-      });
+      expect(res.status, routes[0]!.path).toBe(200);
+      const body = (await res.json()) as {
+        identity: string | null;
+        publicMarker: string | null;
+        authorization: string | null;
+      };
+      expect(body.identity).toBeNull();
+      expect(body.publicMarker).toEqual(expect.any(String));
+      expect(body.authorization).toBeNull();
     }
     expect(interceptMcp).not.toHaveBeenCalled();
-    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("let them through at /mcp, to the ToolBus or to the app's own server", async () => {
@@ -2379,13 +2377,114 @@ describe("MCP-only tokens", () => {
     expect(interceptMcp).toHaveBeenCalledOnce();
   });
 
-  it("leave full-access and API-scoped tokens on every route", async () => {
-    for (const scopes of [["*"], ["mcp:read", "todos:write"], ["todos:read"]]) {
+  it("leave full-scope tokens on every route, and refuse any narrower one off /mcp: apps never check scopes", async () => {
+    for (const scopes of [["*"], ["*", "mcp:read"], ["todos:read", "*"]]) {
       const res = await call("/tasks", credential(scopes));
       expect(res.status, scopes.join(" ")).toBe(200);
       const { identity } = (await res.json()) as { identity: string };
       expect(identity).toBeTruthy();
     }
+    const fetcher = vi.fn();
+    for (const scopes of [
+      ["todos:read"],
+      ["mcp:read", "todos:write"],
+      ["api:write"],
+      [],
+    ]) {
+      for (const [path, init] of [
+        ["/tasks", {}],
+        ["/api/todos", { method: "POST" }],
+      ] as const) {
+        const res = await call(
+          path,
+          credential(scopes),
+          {
+            registry: new InMemoryAppRegistry([TODO_MCP]),
+            fetcherFor: () => ({ fetch: fetcher }),
+          },
+          init,
+        );
+        expect(res.status, `${scopes.join(" ")} ${path}`).toBe(403);
+        expect(await res.json()).toEqual({
+          error: "forbidden",
+          reason: "token_scope",
+        });
+      }
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("serves a declared public route to a narrow token as anonymous: the marker, no identity, the bearer stripped", async () => {
+    // A narrow token must never get less than no token: a webhook or badge
+    // answers it as it answers anyone, and the app never sees its identity.
+    for (const scopes of [
+      ["mcp:read"],
+      ["todos:read"],
+      ["mcp:read", "todos:write"],
+    ]) {
+      for (const [path, init] of [
+        ["/health", {}],
+        ["/webhook", { method: "POST", body: "{}" }],
+      ] as const) {
+        const res = await call(
+          path,
+          credential(scopes),
+          { registry: new InMemoryAppRegistry([TODO_MCP]) },
+          init,
+        );
+        expect(res.status, `${scopes.join(" ")} ${path}`).toBe(200);
+        const body = (await res.json()) as {
+          identity: string | null;
+          publicMarker: string | null;
+          authorization: string | null;
+        };
+        expect(body.identity).toBeNull();
+        expect(body.publicMarker).toEqual(expect.any(String));
+        expect(body.authorization).toBeNull();
+      }
+    }
+    // The method the public row doesn't cover is a private route: refused.
+    const res = await call("/webhook", credential(["todos:read"]), {
+      registry: new InMemoryAppRegistry([TODO_MCP]),
+    });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({
+      error: "forbidden",
+      reason: "token_scope",
+    });
+  });
+
+  it("at a served /mcp, take an mcp: scope beside app-domain ones and refuse a token with none", async () => {
+    const interceptMcp = vi.fn(async () => new Response("toolbus"));
+    const mixed = await call(
+      "/mcp",
+      credential(["mcp:read", "todos:write"]),
+      { interceptMcp, registry: new InMemoryAppRegistry([TODO_MCP]) },
+      { method: "POST" },
+    );
+    expect(await mixed.text()).toBe("toolbus");
+    expect(interceptMcp).toHaveBeenCalledOnce();
+
+    const fetcher = vi.fn();
+    for (const scopes of [["todos:read"], ["api:write"]]) {
+      const res = await call(
+        "/mcp",
+        credential(scopes),
+        {
+          interceptMcp,
+          registry: new InMemoryAppRegistry([TODO_MCP]),
+          fetcherFor: () => ({ fetch: fetcher }),
+        },
+        { method: "POST" },
+      );
+      expect(res.status, scopes.join(" ")).toBe(403);
+      expect(await res.json()).toEqual({
+        error: "forbidden",
+        reason: "token_scope",
+      });
+    }
+    expect(interceptMcp).toHaveBeenCalledOnce();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 

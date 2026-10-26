@@ -30,7 +30,8 @@ import {
   type RegisteredApp,
 } from "./registry";
 import {
-  isMcpOnlyCredential,
+  hasFullAppScope,
+  mayUseMcp,
   type AuthenticatedSession,
   type SessionAuthenticator,
 } from "./session";
@@ -508,25 +509,40 @@ export async function handleGatewayRequest(
     reservedBearerPresent || consumedBearer,
   );
 
+  // The host answers /mcp only where the manifest says so, and only on
+  // the exact path: by "gateway", the ToolBus serves it unless a public
+  // route covers it (then nobody the Gateway vouches for would answer);
+  // by "app", the app's own server does. Left out, the gateway's own
+  // /mcp is the one connector and /mcp here is an ordinary private route
+  // (the app answers, usually 404).
+  const mcpBy = app.manifest.mcp?.by;
+  const gatewayServesMcp =
+    mcpBy === "gateway" && url.pathname === "/mcp" && !publicMatch.public;
+  const mcpServedHere =
+    gatewayServesMcp || (mcpBy === "app" && url.pathname === "/mcp");
+  // The one scope rule (session.ts): an app's own routes take full member
+  // scope only, so apps never check scopes; where MCP is served, /mcp also
+  // takes a token with an `mcp:` scope, and the ToolBus (or the app's own
+  // MCP server) reads the exact scopes. A narrower token's identity never
+  // reaches an app route, not on a host without `mcp` and not at a /mcp a
+  // public route covers (a pattern, or a row stored before the author-time
+  // refusal): on a private route it is refused, on a declared public route
+  // it is served as anyone is, anonymously, since a narrow token must
+  // never get less than no token.
+  let anonymousByScope = false;
   if (session && allowed) {
-    // The host answers /mcp only where the manifest says so, and only on
-    // the exact path: by "gateway", the ToolBus serves it unless a public
-    // route covers it (then nobody the Gateway vouches for would answer);
-    // by "app", the app's own server does. Left out, the gateway's own
-    // /mcp is the one connector and /mcp here is an ordinary private route
-    // (the app answers, usually 404).
-    const mcpBy = app.manifest.mcp?.by;
-    const gatewayServesMcp =
-      mcpBy === "gateway" && url.pathname === "/mcp" && !publicMatch.public;
-    const mcpServedHere =
-      gatewayServesMcp || (mcpBy === "app" && url.pathname === "/mcp");
-    // An MCP-only token answers where MCP is served and nowhere else: apps
-    // don't scope-check their own routes, so its identity never reaches
-    // one, not on a host without `mcp` and not at a /mcp a public route
-    // covers (a pattern, or a row stored before the author-time refusal).
-    if (isMcpOnlyCredential(session.credential) && !mcpServedHere) {
-      return json(403, { error: "forbidden", reason: "token_scope" });
+    const scopeOk = mcpServedHere
+      ? mayUseMcp(session.credential)
+      : hasFullAppScope(session.credential);
+    if (!scopeOk) {
+      if (!publicMatch.public) {
+        return json(403, { error: "forbidden", reason: "token_scope" });
+      }
+      anonymousByScope = true;
     }
+  }
+
+  if (session && allowed && !anonymousByScope) {
     if (gatewayServesMcp) {
       const served = deps.interceptMcp
         ? await deps.interceptMcp({ request, app, session })
@@ -557,9 +573,10 @@ export async function handleGatewayRequest(
     });
     outboundHeaders.set(IDENTITY_HEADER, identity);
   } else if (
-    reservedBearerPresent ||
-    consumedBearer ||
-    (bearerPresent && !publicMatch.public)
+    !anonymousByScope &&
+    (reservedBearerPresent ||
+      consumedBearer ||
+      (bearerPresent && !publicMatch.public))
   ) {
     // A consumed (gateway-validated) credential without app access fails
     // closed on every route — downgrading it to anonymous public access would

@@ -192,8 +192,6 @@ export interface EveryAppManifest {
   readonly secrets?: readonly (string | EveryAppSecretEntry)[];
   /** The app's plain settings: per-install values that aren't secrets. */
   readonly settings?: readonly EveryAppSettingEntry[];
-  /** App-domain scopes personal access tokens may request, with descriptions. */
-  readonly scopes?: { readonly [scope: string]: string };
   readonly ai?: {
     /** Model ids the app may request; any other is `model_not_allowed`. */
     readonly models?: readonly string[];

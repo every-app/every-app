@@ -276,10 +276,8 @@ const CompatibilityDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD");
 
-const SCOPE_ID = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
-
 /**
- * The records keyed by an id (`scopes`, `capabilities`) take `z.string()`
+ * The records keyed by an id (`capabilities`) take `z.string()`
  * keys and check each id in their refinement, so that every problem in the
  * record is reported in one pass. A key schema would read as zod 4's own
  * `Invalid key in record` and, since that issue stops the refinement, one
@@ -291,31 +289,6 @@ const everyKey: z.core.$ZodSuperRefineParams = {
   when: ({ value }) =>
     typeof value === "object" && value !== null && !Array.isArray(value),
 };
-
-// Reserved ids are rejected in BOTH the tolerant (gateway) and strict (CLI)
-// schemas: provider:* scopes belonged to the retired egress credential plane
-// and must not be registrable from any path.
-const ScopesSchema = z
-  .record(z.string(), z.string().min(1).max(200))
-  .superRefine((scopes, ctx) => {
-    for (const scope of Object.keys(scopes)) {
-      if (scope === "*" || scope.startsWith("provider:")) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [scope],
-          message: "reserved scope id",
-        });
-      } else if (!SCOPE_ID.test(scope)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [scope],
-          message: "invalid scope id",
-        });
-      }
-    }
-  }, everyKey);
-
-const ScopesSchemaStrict = ScopesSchema;
 
 export const MigrationsSchema = z
   .object({
@@ -950,8 +923,6 @@ export const ManifestSchema = z
       .array(z.object({ name: SecretNameSchema }).passthrough())
       .max(100)
       .optional(),
-    /** Opaque app-domain scopes that PATs may request. */
-    scopes: ScopesSchema.optional(),
     /** Limits on what the app may do through the gateway's AI proxy. */
     ai: AiPolicySchema.optional(),
     /**
@@ -1411,7 +1382,6 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
       )
       .optional(),
     public: z.array(PublicRouteSchemaStrict).optional(),
-    scopes: ScopesSchemaStrict.optional(),
     ai: AiPolicySchemaStrict.optional(),
     capabilities: capabilities.optional(),
     secrets: (options.capabilities

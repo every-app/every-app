@@ -761,8 +761,7 @@ the session is the same as after a password.
   only where an app's manifest sets `mcp: { by: "gateway", why }`, that
   app host's `/mcp`, for that app alone under its tools' own names. By
   default an app host serves no MCP: its `/mcp` is a private route like
-  any other, and a token whose scopes are all `mcp:` scopes opens nothing
-  there.
+  any other, and a token without `*` opens nothing there.
   Both are served by the gateway's ToolBus from the tool catalogs it
   snapshots in D1 when an app is activated, when a hosted deploy goes live,
   when the app's host sees it run a new version, when the consent page
@@ -810,13 +809,17 @@ the session is the same as after a password.
   Only a POST makes the gateway call the app (to sync a missing or
   outdated catalog), so the GETs a sibling page can send with the cookie
   never do.
-- A token whose scopes are all `mcp:` scopes is MCP-only: every app route
-  other than a `/mcp` the host serves as MCP (public ones, every route of a
-  host without `mcp`, and a `/mcp` a public route covers on a `by: "gateway"`
-  host included) answers it `403 token_scope`, so
-  an `mcp:read` token stays read only even though apps don't check scopes on
-  their own routes. Tokens holding `*` (what a token created without scopes
-  gets) or any non-MCP scope keep working on every route.
+- One scope rule for app routes (`hasFullAppScope`, `mayUseMcp` in
+  `packages/perimeter/src/session.ts`): an app's own routes take a browser
+  session or a token holding `*` (what a token created without scopes
+  gets); any narrower token (`mcp:read`, any other scope a person typed)
+  answers `403 token_scope` on every private app route and is served as
+  an anonymous visitor on a declared public route (a narrow token never
+  gets less than no token), so apps never check scopes on their own
+  routes. A `/mcp` the host serves as MCP
+  also takes a token with an `mcp:` scope (the ToolBus reads the exact
+  scopes); every route of a host without `mcp`, and a `/mcp` a public
+  route covers on a `by: "gateway"` host, take full scope alone.
 - Each call carries a fresh identity minted for that call alone:
   `chan: "mcp"`, explicit `mcp:*` scopes (never `*`, never
   `mcp:destructive`), and a `tc` claim naming the tool and call id. The SDK

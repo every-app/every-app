@@ -27,18 +27,32 @@ export interface AuthenticatedSession {
 }
 
 /**
- * Whether a credential is for MCP only: every one of its scopes is an `mcp:`
- * scope (a personal token created with `["mcp:read"]`, say). Such a
- * credential reaches an app's `/mcp` and nothing else, so a read-only token
- * stays read-only even though apps don't check scopes on their own routes.
- * Browser sessions carry no credential, and a token created without scopes
- * holds `*`, full access.
+ * The one scope rule for app routes: a credential opens an app's own
+ * routes only with full member scope, `*` (a browser session carries no
+ * credential and counts as full; a personal token created without scopes
+ * holds `*`). Any narrower token (`mcp:read`, an app-domain scope the
+ * person typed) opens nothing there, so apps never check scopes on their
+ * own routes: every identity they receive on one acts as the member in
+ * full.
  */
-export function isMcpOnlyCredential(
+export function hasFullAppScope(
   credential: AuthenticatedSession["credential"],
 ): boolean {
-  const scopes = credential?.scopes ?? [];
-  return scopes.length > 0 && scopes.every((scope) => scope.startsWith("mcp:"));
+  if (!credential) return true;
+  return (credential.scopes ?? []).includes("*");
+}
+
+/**
+ * What may reach a host's `/mcp` where MCP is served: full scope, or at
+ * least one `mcp:` scope (the ToolBus then decides read or write from the
+ * exact scopes, and `*` alone counts there). A token with only app-domain
+ * scopes opens no MCP either.
+ */
+export function mayUseMcp(
+  credential: AuthenticatedSession["credential"],
+): boolean {
+  if (hasFullAppScope(credential)) return true;
+  return (credential?.scopes ?? []).some((scope) => scope.startsWith("mcp:"));
 }
 
 export interface SessionAuthenticator {

@@ -91,40 +91,17 @@ describe("validateManifest", () => {
     expect(validateManifest({ id: "todo" }).providers).toBeUndefined();
   });
 
-  it("accepts declared app-domain scopes", () => {
-    const m = validateManifestStrict({
-      id: "todo",
-      scopes: {
-        "mcp:read": "Read MCP resources",
-        api_write: "Write API records",
-      },
-    });
-
-    expect(m.scopes?.["mcp:read"]).toBe("Read MCP resources");
-  });
-
-  it("rejects reserved scope declarations in strict mode", () => {
+  it("has no top-level scopes field: strict refuses the key, the gateway drops it", () => {
+    // Personal access tokens take whatever scopes a person types, and the
+    // perimeter admits only `*` to app routes, so a manifest declares none.
     expect(() =>
-      validateManifestStrict({
-        id: "todo",
-        scopes: { "provider:openai": "OpenAI egress" },
-      }),
-    ).toThrow(ManifestError);
+      validateManifestStrict({ id: "todo", scopes: { "mcp:read": "Read" } }),
+    ).toThrow(/scopes/);
+    // The tolerant path reads stored rows and refuses nothing for a key it
+    // doesn't know; it validates nothing about it either.
     expect(() =>
-      validateManifestStrict({
-        id: "todo",
-        scopes: { "*": "Everything" },
-      }),
-    ).toThrow(ManifestError);
-  });
-
-  it("rejects reserved scope declarations in tolerant (gateway) mode too", () => {
-    expect(() =>
-      validateManifest({
-        id: "todo",
-        scopes: { "provider:openai": "OpenAI egress" },
-      }),
-    ).toThrow(ManifestError);
+      validateManifest({ id: "todo", scopes: { "*": "Everything" } }),
+    ).not.toThrow();
   });
 
   it("rejects malformed compatibility dates", () => {
@@ -2067,21 +2044,6 @@ describe("what a problem reads as", () => {
     },
   );
 
-  it.each(both)(
-    "%s reads a malformed scope id as `invalid scope id` and `*` as reserved",
-    (_name, validate, prefix) => {
-      expect(problem(validate, { id: "a", scopes: { "Bad Id": "x" } })).toBe(
-        `${prefix}scopes.Bad Id: invalid scope id`,
-      );
-      expect(problem(validate, { id: "a", scopes: { "*": "x" } })).toBe(
-        `${prefix}scopes.*: reserved scope id`,
-      );
-      expect(
-        problem(validate, { id: "a", scopes: { "provider:openai": "x" } }),
-      ).toBe(`${prefix}scopes.provider:openai: reserved scope id`);
-    },
-  );
-
   it("reports a malformed id and its siblings' problems in one pass", () => {
     const message = problem(validateManifestStrict, {
       id: "a",
@@ -2098,15 +2060,6 @@ describe("what a problem reads as", () => {
           "capabilities.members.scopes: Members takes no scopes; list it as { access: ..., why }",
           'capabilities.email: Unrecognized key: "retired"',
         ].join("; "),
-    );
-    // Likewise a scope whose value is wrong beside a key that is.
-    expect(
-      problem(validateManifestStrict, {
-        id: "a",
-        scopes: { "Bad Id": "x", "*": "y", ok: "" },
-      }),
-    ).toBe(
-      "Invalid everyapp.config: scopes.ok: Too small: expected string to have >=1 characters; scopes.Bad Id: invalid scope id; scopes.*: reserved scope id",
     );
     // At registration a sibling's wrong access level doesn't hide the id.
     expect(
@@ -2129,8 +2082,8 @@ describe("what a problem reads as", () => {
         `${prefix}(root): Invalid input: expected object, received string`,
       );
       expect(problem(validate, null)).toMatch(/^.*\(root\): Invalid input/);
-      expect(problem(validate, { id: "a", scopes: "x" })).toBe(
-        `${prefix}scopes: Invalid input: expected record, received string`,
+      expect(problem(validate, { id: "a", public: "x" })).toBe(
+        `${prefix}public: Invalid input: expected array, received string`,
       );
     },
   );
