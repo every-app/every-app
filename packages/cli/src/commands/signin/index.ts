@@ -226,7 +226,7 @@ async function askAtTerminal(setting: SignInSetting, { canKeep, set }: { canKeep
   const keep = set ? "Set already: Enter keeps it." : canKeep ? "Optional: Enter leaves it unset." : null;
   const context = [setting.what, ...(takes ? [`Takes ${takes}`] : []), ...(keep ? [keep] : [])];
   if (!setting.plain) {
-    return (await askSecret(`${setting.name} (hidden)`, { context, optional: canKeep })).trim();
+    return (await askSecret(`${setting.name}`, { context, optional: canKeep })).trim();
   }
   const value = await askText(setting.name, {
     context,

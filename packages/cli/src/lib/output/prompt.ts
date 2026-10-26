@@ -135,19 +135,21 @@ export function askText(
 }
 
 /**
- * A secret: typed invisibly (its length shows nowhere), answered as a fixed
- * mask. With `optional`, Enter on nothing is an answer too (echoed as
- * "skipped"): the caller leaves the setting as it is.
+ * A secret: each typed character draws as a bullet, so a paste shows it
+ * arrived (a silent prompt reads as a hung one), and the answer is echoed
+ * as a fixed mask so the value's length isn't left on screen. With
+ * `optional`, Enter on nothing is an answer too (echoed as "skipped"): the
+ * caller leaves the setting as it is.
  */
 export function askSecret(question: string, asked: Asked & { optional?: boolean } = {}): Promise<string> {
-  // The prompt hands its answer style nothing (the value is never drawn),
-  // so what was typed is kept from the validation, which runs just before.
+  // The prompt hands its answer style nothing, so what was typed is kept
+  // from the validation, which runs just before.
   let typed = "";
   return ask(asked, (streams) =>
     password(
       {
         message: question,
-        mask: false,
+        mask: "•",
         toggleMask: false,
         validate: (value: string) => {
           typed = value;
@@ -157,7 +159,6 @@ export function askSecret(question: string, asked: Asked & { optional?: boolean 
           ...theme,
           style: {
             ...theme.style,
-            maskedText: "(hidden)",
             answer: () => (typed.trim() ? chalk.dim("••••••••") : chalk.dim("skipped")),
           },
         },
