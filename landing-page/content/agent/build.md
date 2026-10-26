@@ -42,11 +42,14 @@ app's tools to AI clients, and gives the app nothing it doesn't declare in
 `pnpm everyapp create ../my-app`, from the every-app folder, copies the starter
 (`starter/` in the checkout; in the app it made, a `starter/` path is that path
 in the app) to `my-app` beside the checkout (the path's last part is the app's
-id), a git repository of its own linked to the checkout: a TanStack Start app
-on a Worker with a D1 database, a todo list whose first screen shows who you
-are and what the app was allowed. One repository per app is the default. (With
-many apps, keep them inside the checkout instead: `pnpm everyapp create my-app`
-there makes `apps/my-app`, untracked by git.)
+id), a git repository of its own: a TanStack Start app on a Worker with a D1
+database, a todo list whose first screen shows who you are and what the app was
+allowed. It takes `@every-app/sdk` and `everyapp` from npm at the published
+range, and its first commit holds the `pnpm-lock.yaml` that pins them; `pnpm
+update @every-app/sdk everyapp` moves it to a newer release. One repository per
+app is the default. (With many apps, or to try unreleased SDK changes, keep
+them inside the checkout instead: `pnpm everyapp create my-app` there makes
+`apps/my-app`, untracked by git, on the checkout's own packages.)
 Read the app's `README.md`, `AGENTS.md` and every file under `src/` once; they
 are short. An app may carry skills of its own at its top level
 (`.agents/skills/<name>`, `.claude/skills/<name>`), as OpenSEO's repository

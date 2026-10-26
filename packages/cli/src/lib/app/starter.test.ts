@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkoutRoot, type TemplateSource } from "@/lib/checkout";
+import { PUBLISHED_VERSION } from "./publishedVersions";
 import { skillsSource } from "./skill";
 import { copyStarter, newAppDir, starterTemplateDir } from "./starter";
 
@@ -68,7 +69,7 @@ describe("the starter template", () => {
     const root = fakeCheckout();
     const target = path.join(root, "apps", "my-app");
 
-    await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app", version: "0.3.0" });
+    await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app" });
 
     expect(fs.readFileSync(path.join(target, "everyapp.config.ts"), "utf8")).toContain('id: "my-app"');
     const packageJson = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
@@ -85,19 +86,17 @@ describe("the starter template", () => {
     expect(fs.existsSync(path.join(target, "pnpm-workspace.yaml"))).toBe(false);
   });
 
-  it("copies as its own pnpm workspace, linked to the checkout, anywhere else", async () => {
+  it("copies as its own pnpm workspace, on the published packages, anywhere else", async () => {
     const root = fakeCheckout();
     const target = path.join(tmp(), "my-app");
 
-    await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app", version: "0.3.0" });
+    await copyStarter({ source: sourceOf(root), targetDir: target, appId: "my-app" });
 
     const packageJson = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
-    expect(path.resolve(target, packageJson.dependencies["@every-app/sdk"].slice("link:".length))).toBe(
-      path.join(root, "packages", "sdk"),
-    );
-    expect(path.resolve(target, packageJson.devDependencies.everyapp.slice("link:".length))).toBe(
-      path.join(root, "packages", "cli"),
-    );
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+    // Its lockfile is committed: the template's .gitignore doesn't ignore it.
+    expect(fs.readFileSync(path.join(target, ".gitignore"), "utf8")).not.toMatch(/^pnpm-lock\.yaml$/m);
     // Its own pnpm-workspace.yaml allows the build scripts the checkout's
     // does, so `pnpm install` there doesn't warn about ignored builds.
     const workspace = fs.readFileSync(path.join(target, "pnpm-workspace.yaml"), "utf8");
@@ -109,7 +108,7 @@ describe("the starter template", () => {
     for (const name of checkoutAllows) expect(workspace).toContain(`  ${name}: true\n`);
   });
 
-  it("copies from an installed package, with no checkout: its own workspace, pinned at this everyapp's version, .gitignore back", async () => {
+  it("copies from an installed package, with no checkout: its own workspace, on the published packages, .gitignore back", async () => {
     // What scripts/bundle-starter.mjs packs: the template with its .gitignore as `gitignore`.
     const pkg = tmp();
     fs.cpSync(starterTemplateDir(checkoutRoot()), path.join(pkg, "starter"), {
@@ -123,13 +122,12 @@ describe("the starter template", () => {
       source: { root: null, starterDir: path.join(pkg, "starter"), skillsDir: path.join(pkg, "skills") },
       targetDir: target,
       appId: "my-app",
-      version: "0.3.0-rc.4",
     });
 
     const packageJson = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
     expect(packageJson.name).toBe("my-app");
-    expect(packageJson.dependencies["@every-app/sdk"]).toBe("0.3.0-rc.4");
-    expect(packageJson.devDependencies.everyapp).toBe("0.3.0-rc.4");
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
     expect(JSON.stringify(packageJson)).not.toContain("workspace:");
     expect(JSON.stringify(packageJson)).not.toContain("link:");
     expect(fs.existsSync(path.join(target, ".gitignore"))).toBe(true);

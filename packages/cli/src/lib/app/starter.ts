@@ -87,14 +87,11 @@ export async function copyStarter({
   source,
   targetDir,
   appId,
-  version,
 }: {
   /** The template, and the checkout the packages are linked from, if any. */
   source: TemplateSource;
   targetDir: string;
   appId: string;
-  /** This everyapp's version: what an app made from a package pins. */
-  version: string;
 }): Promise<void> {
   const { root } = source;
   await copyDirectory(source.starterDir, targetDir, { exclude: LOCAL_ONLY });
@@ -103,7 +100,7 @@ export async function copyStarter({
   if (!isInCheckout(targetDir, root)) {
     await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
   }
-  await updatePackageJson({ targetDir, appId, root, version });
+  await updatePackageJson({ targetDir, appId, root });
   await updateEveryappManifest({ targetDir, appId });
   await updateReadme({ targetDir, appId });
 }

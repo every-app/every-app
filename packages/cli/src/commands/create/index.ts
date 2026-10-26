@@ -38,7 +38,6 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { strings, text } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
-import { version as cliVersion } from "../../../package.json";
 import { resolveAppTarget } from "./steps/appId";
 
 interface CreateCommandFlags {
@@ -129,7 +128,7 @@ export async function createApp({
     // where they are.
     data: { appId, shown, elsewhere: target.dir === null && relative.startsWith("..") },
   });
-  await copyStarter({ source, targetDir, appId, version: cliVersion });
+  await copyStarter({ source, targetDir, appId });
   out.emit({
     type: "step",
     step: "create.copy",

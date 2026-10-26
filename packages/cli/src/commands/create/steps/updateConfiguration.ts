@@ -1,6 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { publishedRange } from "@/lib/app/publishedVersions";
 import { isInCheckout } from "@/lib/checkout";
+
+/** Where the published packages live in the checkout, for `EVERYAPP_CREATE_LINK`. */
+const CHECKOUT_PACKAGES: Readonly<Record<string, string>> = {
+  "@every-app/sdk": "packages/sdk",
+  everyapp: "packages/cli",
+};
 
 interface UpdatePackageJsonOptions {
   targetDir: string;
@@ -11,51 +18,56 @@ interface UpdatePackageJsonOptions {
 /**
  * Name the copied template's package.json after the app. The template
  * takes the SDK and the CLI from this workspace (`workspace:*`), which
- * pnpm links inside the checkout. An app created anywhere else links
- * those packages from the checkout by path; one created by an everyapp
- * installed from npm (no checkout) pins both at that everyapp's version,
- * which is the version they are published together under.
+ * pnpm links inside the checkout: an app in the checkout's apps/ keeps
+ * them, so it runs on the checkout's own SDK and CLI. An app made
+ * anywhere else, by a checkout's everyapp or one installed from npm, is
+ * its own repository and takes both from npm at the published range
+ * (lib/app/publishedVersions.ts); its install writes the lockfile its
+ * first commit records.
+ *
+ * `EVERYAPP_CREATE_LINK=1`, from a checkout, links the checkout's
+ * packages by path instead: for testing this commit's SDK and CLI in a
+ * standalone app before they are published (the built-CLI test in CI).
  */
 export async function updatePackageJson({
   targetDir,
   appId,
   root,
-  version,
+  env = process.env,
 }: UpdatePackageJsonOptions & {
-  /** The checkout the workspace packages come from; null from an installed package. */
+  /** The checkout everyapp runs from; null from an installed package. */
   root: string | null;
-  /** This everyapp's version. */
-  version: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<void> {
   const packageJsonPath = path.join(targetDir, "package.json");
   const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
 
   packageJson.name = appId;
 
-  if (root === null) {
-    for (const section of ["dependencies", "devDependencies"] as const) {
-      const deps = packageJson[section];
-      if (!deps) continue;
-      for (const [depName, spec] of Object.entries(deps)) {
-        if (typeof spec === "string" && spec.startsWith("workspace:")) deps[depName] = version;
-      }
-    }
-  } else if (!isInCheckout(targetDir, root)) {
+  if (!isInCheckout(targetDir, root)) {
     // Real paths both ends: pnpm resolves link: from where the app really is.
-    const packages = await workspacePackages(await fs.realpath(root));
-    const from = await fs.realpath(targetDir);
+    const linkFrom =
+      root !== null && env["EVERYAPP_CREATE_LINK"] === "1"
+        ? { root: await fs.realpath(root), app: await fs.realpath(targetDir) }
+        : null;
     for (const section of ["dependencies", "devDependencies"] as const) {
       const deps = packageJson[section];
       if (!deps) continue;
       for (const [depName, spec] of Object.entries(deps)) {
         if (typeof spec !== "string" || !spec.startsWith("workspace:")) continue;
-        const packageDir = packages.get(depName);
-        if (!packageDir) {
+        const linked = linkFrom && CHECKOUT_PACKAGES[depName];
+        if (linkFrom && linked) {
+          const dir = path.join(linkFrom.root, linked);
+          deps[depName] = `link:${path.relative(linkFrom.app, dir).split(path.sep).join("/")}`;
+          continue;
+        }
+        const range = publishedRange(depName);
+        if (!range) {
           throw new Error(
-            `Template dependency "${depName}" is a workspace package ("${spec}") that isn't in ${path.join(root, "packages")}.`,
+            `Template dependency "${depName}" is a workspace package ("${spec}") that isn't published to npm.`,
           );
         }
-        deps[depName] = `link:${path.relative(from, packageDir).split(path.sep).join("/")}`;
+        deps[depName] = range;
       }
     }
   }
@@ -65,23 +77,6 @@ export async function updatePackageJson({
     JSON.stringify(packageJson, null, 2) + "\n",
     "utf-8",
   );
-}
-
-/** The checkout's packages/*, by package name. */
-async function workspacePackages(root: string): Promise<Map<string, string>> {
-  const packages = new Map<string, string>();
-  const packagesDir = path.join(root, "packages");
-  for (const entry of await fs.readdir(packagesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const dir = path.join(packagesDir, entry.name);
-    try {
-      const { name } = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
-      if (typeof name === "string") packages.set(name, dir);
-    } catch {
-      // Not a package.
-    }
-  }
-  return packages;
 }
 
 /**

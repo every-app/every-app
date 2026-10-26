@@ -2,10 +2,10 @@
  * The Every App checkout this CLI runs from, if any, and where the
  * starter template and the shipped skills come from: the checkout when
  * everyapp runs from one (`pnpm everyapp`: the template as it is in the
- * tree, and a new app links the workspace packages by path), otherwise
- * the installed everyapp package (`npx everyapp`: the template packed
- * with it, and a new app pins the published packages at the CLI's own
- * version). The Gateway comes from the checkout too, when there is one
+ * tree), otherwise the installed everyapp package (`npx everyapp`: the
+ * template packed with it). Either way an app made outside the checkout
+ * takes the published packages from npm (lib/app/publishedVersions.ts).
+ * The Gateway comes from the checkout too, when there is one
  * (lib/gateway/source.ts).
  */
 import fs from "node:fs";

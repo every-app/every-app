@@ -46,7 +46,11 @@ The CLI downloads anonymously from `github.com/every-app/every-app`, so
 the release has to be on the public repository: push the tag there.
 Publishing the CLI is therefore three steps, in this order:
 
-1. Publish `@every-app/sdk@<version>`, then `everyapp@<version>` to npm.
+1. Set `PUBLISHED_VERSION` in `packages/cli/src/lib/app/publishedVersions.ts`
+   to `<version>` and merge it (`everyapp create` writes `^<version>` from it
+   into every app made outside a checkout), then publish
+   `@every-app/sdk@<version>`, then `everyapp@<version>`, to npm from that
+   commit. Both packages go out at the same version.
 2. Tag the commit they were built from and push the tag to the public
    repository: `git tag gateway-v<version> && git push <public> gateway-v<version>`.
    The workflow publishes the release in a few minutes.

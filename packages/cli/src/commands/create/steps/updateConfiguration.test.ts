@@ -9,6 +9,7 @@ import {
   updatePackageJson,
   updateReadme,
 } from "./updateConfiguration";
+import { PUBLISHED_VERSION } from "@/lib/app/publishedVersions";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const simpleTodoTemplatePath = path.resolve(
@@ -153,7 +154,7 @@ describe("updatePackageJson", () => {
     const targetDir = path.join(root, "apps", "my-new-app");
     await copiedPackageJson(targetDir);
 
-    await updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" });
+    await updatePackageJson({ targetDir, appId: "my-new-app", root });
 
     const packageJson = await readPackageJson(targetDir);
     expect(packageJson.name).toBe("my-new-app");
@@ -163,28 +164,49 @@ describe("updatePackageJson", () => {
     expect(packageJson.scripts.deploy).toBe("everyapp deploy");
   });
 
-  it("links the workspace packages from the checkout for an app outside it", async () => {
+  it("takes the published packages from npm for an app outside the checkout, or with none", async () => {
+    for (const root of [await fakeCheckout(), null]) {
+      const targetDir = path.join(await tmp(), "my-new-app");
+      await copiedPackageJson(targetDir);
+
+      await updatePackageJson({ targetDir, appId: "my-new-app", root });
+
+      const packageJson = await readPackageJson(targetDir);
+      expect(packageJson.name).toBe("my-new-app");
+      expect(packageJson.dependencies["@every-app/sdk"]).toBe(
+        `^${PUBLISHED_VERSION}`,
+      );
+      expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
+      expect(JSON.stringify(packageJson)).not.toMatch(/workspace:|link:|file:/);
+    }
+  });
+
+  it("links the checkout's packages under EVERYAPP_CREATE_LINK=1, and only from a checkout", async () => {
     const root = await fakeCheckout();
     const targetDir = path.join(await tmp(), "my-new-app");
     await copiedPackageJson(targetDir);
 
-    await updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" });
+    await updatePackageJson({ targetDir, appId: "my-new-app", root, env: { EVERYAPP_CREATE_LINK: "1" } });
 
     const packageJson = await readPackageJson(targetDir);
     const linked = (spec: string) => {
       expect(spec).toMatch(/^link:\.\.\//);
-      return path.resolve(targetDir, spec.slice("link:".length));
+      return fs.realpath(path.resolve(targetDir, spec.slice("link:".length)));
     };
-    expect(await fs.realpath(linked(packageJson.dependencies["@every-app/sdk"]))).toBe(
+    expect(await linked(packageJson.dependencies["@every-app/sdk"])).toBe(
       await fs.realpath(path.join(root, "packages", "sdk")),
     );
-    expect(await fs.realpath(linked(packageJson.devDependencies.everyapp))).toBe(
+    expect(await linked(packageJson.devDependencies.everyapp)).toBe(
       await fs.realpath(path.join(root, "packages", "cli")),
     );
-    expect(JSON.stringify(packageJson)).not.toContain("workspace:");
+
+    const noCheckout = path.join(await tmp(), "my-new-app");
+    await copiedPackageJson(noCheckout);
+    await updatePackageJson({ targetDir: noCheckout, appId: "my-new-app", root: null, env: { EVERYAPP_CREATE_LINK: "1" } });
+    expect((await readPackageJson(noCheckout)).devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
   });
 
-  it("refuses a workspace package the checkout doesn't have", async () => {
+  it("refuses a workspace package that isn't published", async () => {
     const root = await fakeCheckout();
     const targetDir = path.join(await tmp(), "my-new-app");
     await fs.mkdir(targetDir, { recursive: true });
@@ -194,7 +216,7 @@ describe("updatePackageJson", () => {
     );
 
     await expect(
-      updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" }),
+      updatePackageJson({ targetDir, appId: "my-new-app", root }),
     ).rejects.toThrow(/@every-app\/nope/);
   });
 });

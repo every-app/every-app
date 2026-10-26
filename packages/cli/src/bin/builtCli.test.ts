@@ -30,7 +30,7 @@
  * The new app's `pnpm install` needs the network once;
  * .github/workflows/built-cli.yml runs it on every pull request.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -561,7 +561,10 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
 
   it("creates an app from the starter in a directory outside the checkout", () =>
     timed("create", async () => {
-      const run = await everyapp(["create", APP_ID, "--json"], { cwd: tmp });
+      // This commit's SDK and CLI, linked from the checkout: the published
+      // range may name a version that isn't on npm yet (it is set before
+      // publishing). Without the variable, create writes the range.
+      const run = await everyapp(["create", APP_ID, "--json"], { cwd: tmp, env: { EVERYAPP_CREATE_LINK: "1" } });
       const last = expectProtocol(run);
       expect(run.exitCode, describeRun(run)).toBe(0);
       expect(
@@ -592,9 +595,12 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
         devDependencies: Record<string, string>;
       };
       expect(packageJson.name).toBe(APP_ID);
-      const everyappSpec = packageJson.devDependencies["everyapp"] ?? packageJson.dependencies["everyapp"];
-      expect(everyappSpec).toMatch(/^link:/);
+      expect(packageJson.devDependencies["everyapp"]).toMatch(/^link:/);
+      expect(packageJson.dependencies["@every-app/sdk"]).toMatch(/^link:/);
       expect(fs.realpathSync(path.join(appDir, "node_modules", "everyapp"))).toBe(fs.realpathSync(CLI_DIR));
+      // Its lockfile is in its first commit.
+      const tracked = spawnSync("git", ["ls-files", "pnpm-lock.yaml"], { cwd: appDir, encoding: "utf8" });
+      expect(tracked.stdout.trim()).toBe("pnpm-lock.yaml");
       appReady = true;
     }));
 

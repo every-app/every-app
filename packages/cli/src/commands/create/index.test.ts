@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PUBLISHED_VERSION } from "@/lib/app/publishedVersions";
 import { skillsSource } from "@/lib/app/skill";
 import { starterTemplateDir } from "@/lib/app/starter";
 import { checkoutRoot, type TemplateSource } from "@/lib/checkout";
@@ -365,7 +366,7 @@ describe("everyapp create", () => {
     });
   });
 
-  it("makes the app beside the checkout from ../my-app, as its own repository linked to the checkout", async () => {
+  it("makes the app beside the checkout from ../my-app, as its own repository on the published packages", async () => {
     const outer = tmp();
     const root = fakeCheckout(path.join(outer, "every-app"));
     const { cf, install } = seams();
@@ -376,9 +377,10 @@ describe("everyapp create", () => {
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
     expect(fs.existsSync(path.join(app, ".git"))).toBe(true);
     expect(fs.existsSync(path.join(root, "apps"))).toBe(false);
-    // Linked to the checkout by path, as an app made anywhere else is.
+    // From npm, as an app made anywhere else is.
     const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
-    expect(packageJson.dependencies["@every-app/sdk"]).toBe("link:../every-app/packages/sdk");
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
     expect(fs.existsSync(path.join(app, "pnpm-workspace.yaml"))).toBe(true);
     expect(install).toHaveBeenCalledWith(expect.objectContaining({ cwd: app }));
     // Said as the path was given: no note about apps/, and `cd ../my-app`.
@@ -392,7 +394,7 @@ describe("everyapp create", () => {
     expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
   });
 
-  it("from an installed package (no checkout): ./<name> wherever it runs, its own repository, pinned at this everyapp's version", async () => {
+  it("from an installed package (no checkout): ./<name> wherever it runs, its own repository, on the published packages", async () => {
     const source = fakePackage();
     const cwd = tmp();
     const { cf, install } = seams();
@@ -405,8 +407,8 @@ describe("everyapp create", () => {
     expect(fs.existsSync(path.join(app, ".gitignore"))).toBe(true);
     expect(fs.existsSync(path.join(app, "pnpm-workspace.yaml"))).toBe(true);
     const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
-    expect(packageJson.dependencies["@every-app/sdk"]).toMatch(/^\d+\.\d+\.\d+/);
-    expect(packageJson.devDependencies.everyapp).toBe(packageJson.dependencies["@every-app/sdk"]);
+    expect(packageJson.dependencies["@every-app/sdk"]).toBe(`^${PUBLISHED_VERSION}`);
+    expect(packageJson.devDependencies.everyapp).toBe(`^${PUBLISHED_VERSION}`);
     expect(fs.existsSync(path.join(app, ".agents", "skills", "everyapp", "SKILL.md"))).toBe(true);
     expect(fs.existsSync(path.join(app, ".claude", "skills", "build-every-app", "SKILL.md"))).toBe(true);
     expect(events.at(-1)).toMatchObject({
