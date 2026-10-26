@@ -1855,3 +1855,12 @@ Found while putting RepoLens on everyapp.team with its old Wrangler D1 history (
 - The published `everyapp` CLI (0.3.0-rc.3) cannot do a first deploy: the rebind fails with `CHECKOUT_MISSING`. App READMEs that pin npm still need a platform checkout for the first deploy.
 - `cf` has no `d1 export`/`import`; the thread used the D1 REST API with cf's stored token. Worth a `everyapp db export|import --app` so history moves without raw API calls.
 - No way to adopt an existing D1 into the ledger (a claimed row would be purged by `delete --purge`); export + import is the documented path.
+
+## Platform shortcuts (2026-10-26)/lane 10 app-quickfix
+
+Merged: private-agentic-inbox-everyapp #14, private-open-analytics #17, private-open-crm #14 (jose `^6.2.12`), private-repolens #6 (roles, private badge), private-mission-control-everyapp #2 (admins, rc.3, no Autumn key). Nothing deployed. Defaults taken for Ben:
+
+- [ ] **Mission Control on everyapp.team is still open to every member.** The manifest now asks for the admins default, but a redeploy never changes access. An owner or admin turns off **Available to everyone** in Admin → Apps (and removes member grants). Members can see MRR and Stripe customer emails until then.
+- [ ] **RepoLens: who manages.** Owners and admins add, remove, retry a backfill and capture, since all of these spend the shared GitHub token. Members read everything. The dashboard still shows the buttons to members, who get "Only owners and admins can add, remove or capture repositories" when they click. Hide them (a `canManage` flag on `listRepos`) if that reads badly.
+- [ ] **RepoLens: private repositories have no badge.** `/badge/<owner>/<name>.svg` answers 404 `NOT_FOUND`, the same as for an untracked repository, and the page hides **Copy badge**. A repository that turns private keeps a cached badge for up to an hour (`max-age=3600`), and loses it at the next capture.
+- [x] The `every-app/{open-crm,open-analytics,agentic-inbox}` links in `patterns.md`, README and the apps docs stay: Ben creates those public repositories before the flip (coordinator, 2026-10-26).
