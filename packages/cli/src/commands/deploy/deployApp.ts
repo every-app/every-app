@@ -164,6 +164,8 @@ import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
+import { readBundledProviderSpecs, releasedProviderSpecs } from "@/lib/app/bundledProviders";
+import { registerBundledProviders } from "./steps/bundledProviders";
 
 interface DeployAppOptions {
   /** The app's directory; with `release`, where its secrets file is read. */
@@ -197,6 +199,12 @@ interface DeployAppOptions {
    * first visit.
    */
   waitForLive?: boolean;
+  /**
+   * `--yes`: register the providers the app bundles (`.everyapp/providers`,
+   * a release's `providers`) without asking; `offerInstall.yes` is the
+   * same flag for the Gateway install.
+   */
+  yes?: boolean;
   /**
    * With no Gateway in any account the login sees, offer to install one
    * (`deploy`): at a terminal setup's pipeline runs
@@ -334,6 +342,21 @@ async function deploySteps(
         : undefined,
     });
   out.emit({ type: "step", step: "app.connect", status: "ok", data: { gatewayUrl } });
+  // The providers the app bundles (`.everyapp/providers`, or a release's
+  // `providers`), registered after one confirmation, before the manifest
+  // is checked against the registry they join.
+  const bundled = await registerBundledProviders({
+    specs: release ? releasedProviderSpecs(release.release.providers) : await readBundledProviderSpecs(cwd),
+    appId: manifest.id,
+    db: registry,
+    install,
+    deployer,
+    gatewayUrl,
+    out,
+    interactive,
+    yes: options.yes,
+    confirm: options.confirm,
+  });
   // The manifest against what this Gateway offers: the catalog and the
   // providers registered on it, before anything is registered or built.
   const providers = await gatewayRegistry(registry, install);

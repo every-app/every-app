@@ -22,7 +22,7 @@ export const deployCommand = buildCommand({
       yes: {
         kind: "boolean",
         brief:
-          "With no Gateway yet, install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
+          "Register the providers the app bundles (.everyapp/providers/*.json) without asking, and with no Gateway yet install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
         optional: true,
       },
       json: jsonFlag,

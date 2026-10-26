@@ -220,6 +220,37 @@ describe("everyapp release", () => {
     expect([...read.bundle.modules.keys()]).toContain("index.js");
   });
 
+  it("carries the provider specs the app bundles in release.json, and refuses one that isn't JSON", async () => {
+    await bundle();
+    const specsDir = path.join(appDir, ".everyapp", "providers");
+    fs.mkdirSync(specsDir, { recursive: true });
+    const northwind = {
+      id: "northwind",
+      name: "Northwind",
+      docs: "https://developer.northwind.io/keys",
+      hosts: ["api.northwind.io"],
+      auth: { kind: "bearer", secret: "NORTHWIND_API_KEY" },
+    };
+    fs.writeFileSync(path.join(specsDir, "northwind.json"), JSON.stringify(northwind));
+    const outFile = path.join(appDir, "with-providers.tar.gz");
+    const packed = await packAppRelease({ cwd: appDir, manifest: TODO, outFile, cfVersion: "1.0.0" });
+    expect(packed.providers).toEqual([northwind]);
+    const opened = await openAppRelease(outFile);
+    try {
+      expect(opened.release.providers).toEqual([northwind]);
+      // `.everyapp/` itself never ships: the specs ride in release.json alone.
+      expect(fs.existsSync(path.join(opened.dir, ".everyapp"))).toBe(false);
+    } finally {
+      await opened.cleanup();
+    }
+    fs.writeFileSync(path.join(specsDir, "broken.json"), "{ not json");
+    await expect(packAppRelease({ cwd: appDir, manifest: TODO, outFile, cfVersion: "1.0.0" })).rejects.toMatchObject({
+      code: "RELEASE_PACK_FAILED",
+      message: expect.stringContaining("broken.json isn't JSON"),
+    });
+    fs.rmSync(specsDir, { recursive: true });
+  });
+
   it("refuses local state, a build that isn't production's, and Prisma migrations", async () => {
     await bundle();
     const outFile = path.join(appDir, "again.tar.gz");

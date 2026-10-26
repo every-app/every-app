@@ -1902,6 +1902,16 @@ From "Hosted build":
 - [x] **The CLI's hosted-deploy success line** (bearer tokens only). Superseded: #316 (31a85593) dropped the wording; `deployToGateway.ts` now says what version was deployed and where the app is. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 - [x] **OpenSEO's first deploy is the Alchemy stage, registered with `everyapp register`.** Superseded by what runs: the live OpenSEO on everyapp.team came through `everyapp deploy` from its manifest (the item's stated target), and `register` refuses a gateway that isn't hosted. The Alchemy-stage path remains for a hosted gateway. (CLI surface removed 2026-10-24; see docs/hosted-vision.md)
 
+### Platform shortcuts (2026-10-26)/6 extensibility: bundled specs
+
+`everyapp deploy` and `install` register the provider specs an app bundles (`.everyapp/providers/<id>.json`; a release carries them in `release.json` as `providers`) after one explicit confirmation, so a third-party app brings its own provider. Defaults taken; confirm or change each.
+
+- [ ] **One confirmation per deploy, `--yes` for agents, refused under `--json` without it** (`CONFIRMATION_REQUIRED`, the existing takeover shape; `data.providers` lists what would be registered). The same `--yes` also installs a Gateway when there is none. Alternative: a flag of its own (`--register-providers`).
+- [ ] **A row with a different spec stops the deploy (`PROVIDER_SPEC_DIFFERS`) before anything is registered**; a deploy never replaces a row (replacing unbinds the key). The person runs `provider add <file> --replace` or deletes the file. Alternative: `--yes` also replaces.
+- [ ] **Specs compare canonically** (keys sorted at every level): a row that says the same thing however it was written is left alone, silently noted on `app.providers`.
+- [ ] **A catalog id in a bundled file is a warning and the file is ignored** (`PROVIDER_BUNDLED_BUILTIN`), never a refusal: an app written against a provider that later joined the catalog keeps deploying.
+- [ ] **Specs ride in `release.json` (`providers`, 50 at most), never as a `.everyapp/` directory in the tarball**, so neither release reader needs a new entry and the browser installer (the hosted deploy API) ignores them for now: browser installs register nothing (a follow-up once it has a confirmation step).
+- [ ] **Registration happens before the manifest check**, so an app whose manifest lists the bundled provider deploys in one go; the rows are the login's (`added_by`), exactly as `provider add` writes them, and the keys are set next (the setup warning names them).
 ### Platform shortcuts (2026-10-26)/6 extensibility: the ai spec kind
 
 A new OpenAI-compatible model vendor is a registered spec (`mode: "ai"`), not a catalog release: `baseUrl`, the key's placement, `models`, `defaultModel`, `embeddingsModel`, `routes`, `cost.responseField`. Defaults taken; confirm or change each.

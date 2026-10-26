@@ -6,7 +6,10 @@
  *
  *   release.json                    schema 1, kind "app": the app id, its
  *                                   version, toolchain, sha256, migration
- *                                   journal and evaluated manifest
+ *                                   journal, evaluated manifest and the
+ *                                   provider specs the app bundles
+ *                                   (`providers`: .everyapp/providers/*.json,
+ *                                   which `install` registers)
  *   .cloudflare/output/v0/...       the Build Output, placeholders and all
  *   migrations/                     the manifest's migrations directory,
  *                                   as it is (when there is one)
@@ -44,6 +47,7 @@ import {
 } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { fetchReleaseTarball, githubRepository, isUrl } from "@/lib/release/fetch";
+import { readBundledProviderSpecs } from "./bundledProviders";
 import { isProductionBuild } from "./buildOutput";
 
 /** The asset an app's GitHub release carries. */
@@ -74,6 +78,8 @@ const AppReleaseSchema = BaseReleaseSchema.extend({
   cliVersion: z.string(),
   sdkVersion: z.string().nullable(),
   manifest: z.record(z.string(), z.unknown()),
+  /** The specs the app bundled (`.everyapp/providers/*.json`), for `install` to register. */
+  providers: z.array(z.unknown()).max(50).optional(),
 });
 type AppReleaseManifest = z.infer<typeof AppReleaseSchema>;
 
@@ -222,6 +228,14 @@ export async function packAppRelease({
     );
   }
   const migrations = releasedMigrationsDir(manifest);
+  // The specs the app bundles ride in release.json: a spec names settings
+  // and never holds a value, and `.everyapp/` itself never ships.
+  const providers = (await readBundledProviderSpecs(cwd)).map(({ file, spec }) => {
+    if (typeof spec === "string") {
+      throw new EveryAppError("RELEASE_PACK_FAILED", `${file} isn't JSON\nA release carries the app's provider specs; fix or delete the file.`);
+    }
+    return spec;
+  });
 
   const { dir: stageDir, cleanup } = await privateTempDir("app-release-stage-");
   try {
@@ -258,6 +272,7 @@ export async function packAppRelease({
       migrations: hasMigrations ? await readJournal(path.join(stageDir, RELEASE_MIGRATIONS_DIR)) : [],
       minCli: MIN_CLI_VERSION,
       minSdk: MIN_SDK_VERSION,
+      ...(providers.length > 0 ? { providers } : {}),
       // Its migrations, wherever the app keeps them, are migrations/ here.
       manifest: (manifest.migrations || hasMigrations
         ? {

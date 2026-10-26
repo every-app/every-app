@@ -278,6 +278,8 @@ A step needs a person's yes, `--yes` wasn't given, and nobody is at a terminal (
 | `workspace remove <email>`                              | `Removing a member needs confirmation at a terminal, or --yes` (raised after the member is found; `data`: `userId`, `email`. At a terminal: `Remove <email> from <organization>?`, No is `Cancelled. Nothing removed.`)                                                                                                                                                                                                       |
 | `workspace group delete <group>`                        | `Deleting a group needs confirmation at a terminal, or --yes` (raised after the group is found; `data`: `groupId`, `name`. At a terminal: `Delete the group <name>?`, No is `Cancelled. Nothing deleted.`)                                                                                                                                                                                                                    |
 
+| `deploy`, `install`                                     | `<app> bundles <ids> to register on <host>` / `Registering a provider gives the Gateway a new host to send a key to, so it takes the person's yes. Nothing was registered.` (`data.providers[]`: each spec's `id`, `name`, `file`, `hosts`, `settings`; raised after every bundled spec passed its checks, before anything is registered. At a terminal: `Register <ids> on <host>?`, No is `Nothing was registered or deployed.`) |
+
 **Fix:** takeover: `rerun` is this same command with `--yes`, and `data.authorize: true`. Show the message and ask the person before rerunning with `--yes`. Not retryable.
 
 Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/workspace/index.ts` (`removeMember`), `packages/cli/src/commands/workspace/groups.ts` (`deleteGroup`).
@@ -1149,7 +1151,15 @@ Source: `packages/cli/src/commands/provider/oauth.ts`
 
 Source: `packages/cli/src/lib/gateway/providers.ts`, `packages/sdk/src/internal/providerRegistry.ts` (`rowSecretProblem`)
 
+### PROVIDER_SPEC_DIFFERS
+
+`deploy` or `install`, for a provider spec the app bundles (`.everyapp/providers/<id>.json`, or a release's `providers`) whose id is registered on the Gateway with another spec: `<id> is registered on <host> with another spec than <app> bundles (<file>)` / `A deploy never replaces a registered provider's spec: replacing it changes where its key goes and unbinds the key. Nothing was registered.` Raised before any bundled spec is registered and before the app is registered; `data`: `id`, `file`, `registeredBy`. `data.fix`: compare with `pnpm everyapp provider show <id>`; to take the app's, `pnpm everyapp provider add <file> --replace` then `secret set`, or keep the Gateway's and delete the file. Not retryable.
+
+Source: `packages/cli/src/commands/deploy/steps/bundledProviders.ts`
+
 ### PROVIDER_SPEC_INVALID
+
+`deploy` or `install`, for a bundled spec that isn't JSON or that the parser refuses: `<app> bundles a provider spec this Gateway doesn't take: <file>` then `it isn't JSON` or every problem as `<field>: <problem>`; nothing is registered (`data.fix` names `provider add <file>` to check it, or deleting the file).
 
 `provider add <spec>`: the spec couldn't be read (no file there, not JSON, over 64 KiB, a URL that isn't https, didn't answer 2xx or couldn't be fetched) or the parser refused it: `The spec isn't one this Gateway takes` then every problem as `<field>: <problem>` (`parseProviderSpec`, `describeSpecProblems`). Nothing is written; `data.fix` says what to change.
 
@@ -2453,6 +2463,12 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/comma
 The Gateway rebind (any command that redeploys the Gateway: `setup`, and `deploy`/`delete` when they rebind), for each registered app whose Worker exists but isn't the one everyapp registered (`desired.skipped`): `Skipping <app>: its Worker isn't the one everyapp registered` / `So the Gateway won't route to it.` `data.appId`, `data.workerName`, `data.fix`: `deploy <app> again, or remove it with pnpm everyapp delete <app>`. `status` reports the same as the fix `APP_NOT_BOUND (status)` below.
 
 Source: `packages/cli/src/lib/gateway/apply.ts`
+
+### PROVIDER_BUNDLED_BUILTIN
+
+`deploy` or `install`, once per bundled spec (`.everyapp/providers/<id>.json`, a release's `providers`) whose id is a catalog provider's: `<file> describes <id>, which is built in` / `The catalog entry is what the Gateway serves; the file is ignored. Delete it, or give the provider another id.` `data.id`, `data.file`. The deploy goes on.
+
+Source: `packages/cli/src/commands/deploy/steps/bundledProviders.ts`
 
 ### CAPABILITY_NOT_IN_CATALOG
 
