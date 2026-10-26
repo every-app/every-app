@@ -301,10 +301,12 @@ setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
 It then puts Cloudflare Access in front by default (asked at a terminal,
 Yes by default; the team name asked for when the account has none); under
---json or --yes it goes on without a question when the account can (a Zero
-Trust team exists, the Cloudflare login is an owner or admin), else the
-warning ACCESS_SETUP_SKIPPED says why and names access on; --no-access
-leaves it off. --yes answers No to browser deployment.
+--json or --yes it goes on without a question, and an account with no Zero
+Trust team stops on ACCESS_TEAM_REQUIRED: ask the person for the name (it
+is permanent), then rerun setup with --team <name>. Only --no-access, a No,
+or an earlier access off leaves it off (remembered; the warning
+ACCESS_SETUP_SKIPPED says it isn't recommended). Never add --no-access
+unless the person says so. --yes answers No to browser deployment.
 Handing off: stop, tell the person in one or two lines what to do (the
 action's url and code, what to click, what to come back with), and resume
 with data.rerun when they say it is done. Two more only a person can do:

@@ -49,7 +49,14 @@ export const setupCommand = buildCommand({
       "no-access": {
         kind: "boolean",
         brief:
-          "Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later",
+          "Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on",
+        optional: true,
+      },
+      team: {
+        kind: "parsed",
+        parse: String,
+        brief:
+          "The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)",
         optional: true,
       },
       yes: yesFlag,
@@ -86,8 +93,8 @@ export const setupCommand = buildCommand({
       "  4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;",
       "     in CI there is no link, and the run ends with a warning to run setup at a terminal",
       "  5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default;",
-      "     with --yes or --json, done when the account can, else a warning names access on);",
-      "     --no-access leaves it off",
+      "     with --yes or --json, done without asking). An account with no Zero Trust team needs",
+      "     its name: asked at a terminal, else --team. --no-access leaves it off (not recommended)",
       "",
       "The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own",
       "questions; never cf's). With --json each step is an NDJSON event; a run that stops on",

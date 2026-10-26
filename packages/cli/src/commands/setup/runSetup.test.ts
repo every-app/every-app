@@ -13,6 +13,7 @@ import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
+import { readAccessOffChoice } from "@/lib/access/record";
 import { cfD1Database } from "@/lib/cf/d1";
 import { CancelledError } from "@/lib/errors";
 import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
@@ -103,12 +104,18 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
   };
 }
 
-/** One `everyapp setup --json` run: its events, exit code and result. */
+/**
+ * One `everyapp setup --json` run: its events, exit code and result.
+ * Access goes on by default and the fake account has no Zero Trust team,
+ * so runs about other steps leave it off (--no-access) unless they name
+ * `no-access` or `team` themselves, as the Access tests do.
+ */
 async function setup(flags: SetupFlags = {}, overrides: Partial<SetupDeps> = {}) {
   const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+  const access = "no-access" in flags || "team" in flags || overrides.interactive ? {} : { "no-access": true };
   let result;
   try {
-    result = await runSetup({ json: true, ...flags }, out, deps(overrides));
+    result = await runSetup({ json: true, ...access, ...flags }, out, deps(overrides));
     out.emit({ type: "done" });
   } catch (error) {
     reportFailure(out, error);
@@ -172,8 +179,8 @@ describe("everyapp setup", () => {
       gateway: "installed",
       ownerCreated: true,
       mode: "self_hosted",
-      // Unattended (--json): on by itself only when the account can. This
-      // one has no Zero Trust team yet, so one warning says so.
+      // Left off with --no-access (the helper's default for runs about
+      // other steps): one warning says it isn't recommended.
       accessOn: false,
     });
     expect(events).toContainEqual(
@@ -181,8 +188,8 @@ describe("everyapp setup", () => {
         type: "warning",
         code: "ACCESS_SETUP_SKIPPED",
         step: "setup.access",
-        message: expect.stringContaining("Cloudflare Access wasn't turned on\nThis Cloudflare account has no Zero Trust team yet"),
-        data: expect.objectContaining({ rerun: "pnpm everyapp access on --team example" }),
+        message: expect.stringContaining("Cloudflare Access is off\nSetup ran with --no-access. We don't recommend it"),
+        data: expect.objectContaining({ reason: "no-access", rerun: "pnpm everyapp access on" }),
       }),
     );
 
@@ -1215,7 +1222,7 @@ describe("everyapp setup", () => {
     expect(contexts).toHaveLength(2);
   });
 
-  it("turns Access on by itself unattended when the account can, leaves it off with --no-access, and never from update", async () => {
+  it("turns Access on by itself unattended, leaves it off with --no-access (remembered, warned), and never from update", async () => {
     let asked = 0;
     const prompts: SetupDeps["prompts"] = {
       ...deps().prompts,
@@ -1224,45 +1231,38 @@ describe("everyapp setup", () => {
         return true;
       },
     };
-    // The account can: a Zero Trust team exists, and whoever claims the
-    // Gateway is the Cloudflare login itself (the fake's whoami, dev@example.com).
+    // A Zero Trust team exists. Whoever claims the Gateway (owner@example.com)
+    // needn't be the Cloudflare login (dev@example.com): the policy lets the
+    // owner in by the emailed code.
     account.zeroTrust.organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", session_duration: "720h" };
-    const claimAsLogin = {
-      ...deps().seams,
-      owner: {
-        sleep: async () => {
-          const link = events.findLast((event) => event.type === "action_required" && event.action === "claim_owner");
-          try {
-            if (link) worker.claim(link.data.url, { email: "dev@example.com" });
-          } catch {
-            // Claimed already.
-          }
-        },
-        timeoutMs: 60_000,
-      },
-    };
     const zt = account.zeroTrust;
+    const leftOff = () => events.filter((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED");
 
-    // --no-access: installed, claimed, nothing at Access, no warning either.
-    const left = await setup({ domain: GW, "no-access": true }, { seams: claimAsLogin, prompts });
-    expect(left.result).toMatchObject({ gateway: "installed", ownerCreated: true, owner: "dev@example.com", accessOn: null });
-    expect(events.filter((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toEqual([]);
+    // --no-access: installed, claimed, nothing at Access, one warning, and the choice is kept.
+    const left = await setup({ domain: GW, "no-access": true });
+    expect(left.result).toMatchObject({ gateway: "installed", ownerCreated: true, accessOn: false });
+    expect(leftOff()).toEqual([expect.objectContaining({ data: expect.objectContaining({ reason: "no-access" }) })]);
+    expect(zt.applications.size).toBe(0);
+
+    // Unattended again without the flag: the choice holds, said once more.
+    events.length = 0;
+    const kept = await setup({ domain: GW, "no-access": false });
+    expect(kept.result).toMatchObject({ accessOn: false });
+    expect(leftOff()).toEqual([expect.objectContaining({ data: expect.objectContaining({ reason: "no-access" }) })]);
     expect(zt.applications.size).toBe(0);
 
     // `update` never offers it, --yes or not.
     const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
-    const updated = await runGatewayDeploy({ json: true, yes: true }, out, deps({ seams: claimAsLogin }));
+    const updated = await runGatewayDeploy({ json: true, yes: true }, out, deps());
     expect(updated).toMatchObject({ accessOn: null });
     expect(zt.applications.size).toBe(0);
 
-    // Unattended (--json here; --yes at a terminal does the same): on, with
-    // no question: both sign-in methods, the policy with the owner, both
-    // applications, the three settings; the inner done is the step.
+    // A person at a terminal is still asked, and Yes forgets the choice.
     events.length = 0;
-    const on = await setup({ domain: GW }, { seams: claimAsLogin, prompts });
+    const on = await setup({ json: false, domain: GW }, { interactive: true, prompts });
     expect(on.exitCode).toBe(0);
     expect(on.result).toMatchObject({ gateway: "up-to-date", accessOn: true });
-    expect(asked).toBe(0);
+    expect(asked).toBe(1);
     expect([...zt.identityProviders.values()].map((p) => p["type"]).sort()).toEqual(["cloudflare", "onetimepin"]);
     expect(zt.applications.size).toBe(2);
     const secrets = account.workers.get("every-app-gateway")!.secrets;
@@ -1270,87 +1270,84 @@ describe("everyapp setup", () => {
     expect(secrets).toHaveProperty("CLOUDFLARE_ACCESS_AUD");
     expect(secrets).toHaveProperty("CLOUDFLARE_ACCESS_APPS_AUD");
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "step", step: "setup.access", status: "ok", data: expect.objectContaining({ policy: expect.objectContaining({ emails: ["dev@example.com"] }) }) }),
+      expect.objectContaining({ type: "step", step: "setup.access", status: "ok", data: expect.objectContaining({ policy: expect.objectContaining({ emails: ["owner@example.com"] }) }) }),
     );
-    expect(events.filter((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toEqual([]);
+    expect(leftOff()).toEqual([]);
     expect(events.filter((event) => event.type === "done")).toHaveLength(1);
+    expect(await readAccessOffChoice(gatewayD1())).toBeNull();
 
     // On already: nothing more, and --yes at a terminal asks nothing either.
-    const again = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts, seams: claimAsLogin });
+    const again = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
     expect(again.result).toMatchObject({ accessOn: null });
-    expect(asked).toBe(0);
+    expect(asked).toBe(1);
   });
 
-  it("says why Access stayed off unattended, and names access on; a failure is a warning and setup still ends done", async () => {
-    let asked = 0;
-    const prompts: SetupDeps["prompts"] = {
-      ...deps().prompts,
-      accessInFront: async () => {
-        asked += 1;
-        return true;
-      },
-    };
-    const skipped = () => events.filter((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED");
+  it("turns Access on unattended with no question; with no team it stops for --team, and a failure fails the run", async () => {
+    const zt = account.zeroTrust;
 
-    // No Zero Trust team: its name is permanent, never picked for someone.
-    const noTeam = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
-    expect(noTeam.result).toMatchObject({ gateway: "installed", ownerCreated: true, accessOn: false });
-    expect(asked).toBe(0);
-    expect(skipped()).toEqual([
+    // No Zero Trust team: its name is permanent, never picked for someone. The
+    // Gateway and owner are done; the run stops on the name.
+    const noTeam = await setup({ domain: GW, "no-access": false });
+    expect(noTeam.exitCode).toBe(1);
+    expect(events).toContainEqual(
       expect.objectContaining({
-        step: "setup.access",
-        message: expect.stringContaining("This Cloudflare account has no Zero Trust team yet, and a team's name is permanent"),
-        data: { rerun: "pnpm everyapp access on --team example", rerunNote: expect.stringContaining("another name") },
+        type: "error",
+        code: "ACCESS_TEAM_REQUIRED",
+        message: expect.stringContaining("Choose a name for the Zero Trust team, then run setup again with --team"),
+        data: expect.objectContaining({ suggested: "example", fix: expect.stringContaining("--no-access leaves Access off (not recommended)") }),
       }),
-    ]);
-    expect(account.zeroTrust.applications.size).toBe(0);
+    );
+    expect(zt.organization).toBeNull();
+    expect(zt.applications.size).toBe(0);
 
-    // A team, but the Cloudflare login (dev@example.com) isn't an owner or
-    // admin of the Gateway (owner@example.com claimed it): Sign in with
-    // Cloudflare would sign them in as someone the Gateway refuses.
-    account.zeroTrust.organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", session_duration: "720h" };
+    // With --team: the team, both sign-in methods, the policy with the owner
+    // (not the Cloudflare login: no email check), both applications.
     events.length = 0;
-    const stranger = await setup({ domain: GW });
-    expect(stranger.result).toMatchObject({ gateway: "up-to-date", accessOn: false });
-    expect(skipped()).toEqual([
-      expect.objectContaining({
-        message: expect.stringContaining("would sign you in as dev@example.com, which isn't an owner or admin of this Gateway"),
-        data: { rerun: "pnpm everyapp access on", rerunNote: expect.stringContaining("dev@example.com is an owner or admin") },
-      }),
-    ]);
-    expect(account.zeroTrust.applications.size).toBe(0);
+    const named = await setup({ domain: GW, team: "acme-co" });
+    expect(named.exitCode).toBe(0);
+    expect(named.result).toMatchObject({ gateway: "up-to-date", accessOn: true });
+    expect(zt.organization).toMatchObject({ auth_domain: "acme-co.cloudflareaccess.com" });
+    expect(zt.applications.size).toBe(2);
+    expect(events.some((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toBe(false);
+  });
 
-    // A login that can't read Access: the same warning, with cf's reason.
+  it("fails the run, naming the rerun and --no-access, when Access refuses; a No at a terminal is remembered", async () => {
+    account.zeroTrust.organization = { name: "acme", auth_domain: "acme.cloudflareaccess.com", session_duration: "720h" };
+    let answer = true;
+    const prompts: SetupDeps["prompts"] = { ...deps().prompts, accessInFront: async () => answer };
+
+    // A login that can't manage Access: ACCESS_SETUP_FAILED with cf's reason.
     account.cf.override(["zero-trust", "organization", "get"], {
       exitCode: 1,
       stderr: "┌ APIError\n│ [10000] Authentication error\n└\n",
     });
-    events.length = 0;
-    const noPermission = await setup({ domain: GW });
-    expect(noPermission.result).toMatchObject({ accessOn: false });
-    expect(skipped()).toEqual([
+    const failed = await setup({ domain: GW, "no-access": false });
+    expect(failed.exitCode).toBe(1);
+    expect(events).toContainEqual(
       expect.objectContaining({
-        message: expect.stringContaining("Cloudflare Access wasn't turned on\nThis Cloudflare login can't manage Access"),
-        data: expect.objectContaining({ rerunNote: "with a login that can manage Access" }),
+        type: "error",
+        code: "ACCESS_SETUP_FAILED",
+        message: expect.stringContaining("Cloudflare Access didn't go on\nThis Cloudflare login can't manage Access"),
+        data: expect.objectContaining({ fix: expect.stringContaining("run setup again: it picks up at Access") }),
       }),
-    ]);
+    );
+    expect(account.zeroTrust.applications.size).toBe(0);
 
-    // Yes at a terminal, but Access refuses: a warning with the rerun, exit 0.
+    // No at a terminal: left off, warned, and remembered for unattended runs.
+    answer = false;
     events.length = 0;
-    const failed = await setup({ json: false, domain: GW }, { interactive: true, prompts });
-    expect(asked).toBe(1);
-    expect(failed.exitCode).toBe(0);
-    expect(failed.result).toMatchObject({ accessOn: false });
+    const declined = await setup({ json: false, domain: GW }, { interactive: true, prompts });
+    expect(declined.exitCode).toBe(0);
+    expect(declined.result).toMatchObject({ accessOn: false });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "warning",
         code: "ACCESS_SETUP_SKIPPED",
-        step: "setup.access",
-        message: expect.stringContaining("Cloudflare Access wasn't turned on\nThis Cloudflare login can't manage Access"),
-        data: expect.objectContaining({ rerun: expect.stringContaining("access on") }),
+        message: expect.stringContaining("You answered No. We don't recommend it"),
+        data: expect.objectContaining({ reason: "declined" }),
       }),
     );
-    expect(account.zeroTrust.applications.size).toBe(0);
+    expect(await readAccessOffChoice(gatewayD1())).toBe("declined");
   });
 
   it("ends the run when Ctrl-C answers the team name inside the Access offer, as at every other setup prompt", async () => {
@@ -1522,7 +1519,7 @@ describe("everyapp setup", () => {
     };
 
     // --yes answers everyapp's own question with a No, and nothing else changes.
-    const first = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
+    const first = await setup({ json: false, domain: GW, yes: true, "no-access": true }, { interactive: true, prompts });
     expect(first.exitCode).toBe(0);
     expect(first.result).toMatchObject({ gateway: "installed", ownerCreated: true });
     expect(asked).toBe(0);

@@ -379,6 +379,18 @@ Ben's ruling (2026-10-26): Cloudflare Access is the default, and once it is on i
 - [ ] **`--no-access` is `setup`'s only opt-out** (`access off` afterwards); the `deploy` that installs a Gateway takes the default and has no flag; `update` never offers Access and has no flag. The interactive question stays (Yes by default).
 - [ ] **Not done.** Managed OAuth isn't reconciled or offered; the hook doesn't attach a reusable policy that `access on` never made (no policy, policies kept as found); nothing runs on a schedule (a dashboard change between two CLI runs is caught by the next `status`, `update` or `access on`, not before); everyapp.team is not redeployed (Rollout 3 is Ben's).
 
+### Access forced on, explicit opt-out (2026-10-26)
+
+Ben's ruling (2026-10-26, after the Access-default audit): people must explicitly opt out of Access, with a warning that it isn't recommended; the opt-out is remembered. Supersedes the "Unattended setup turns Access on when the account can" default above. Defaults taken, each to confirm or change:
+
+- [ ] **No login-email check unattended.** The policy names every member (the owner included), who signs in by Access's emailed code, as at a terminal; an API-token login and a login that isn't an owner both turn Access on now. Alternative: keep the check and stop (exit 1) instead of skipping.
+- [ ] **No team stops the run on ACCESS_TEAM_REQUIRED** (exit 1, after the Gateway and owner are done; `setup --team <name>`), so the person picks the permanent name. Alternative: an `action_required` exit 2; or create the team from the zone's first label.
+- [ ] **An `access on` failure inside setup fails the run** (ACCESS_SETUP_FAILED, exit 1; setup again picks up at Access). Alternative: the old warning.
+- [ ] **The opt-out lives in D1** (`_everyapp_access_off`: `no-access`, `declined`, `access-off`); unattended setup honours it with ACCESS_SETUP_SKIPPED; a person at a terminal is still asked (Yes by default) on each setup; `access on` clears it.
+- [ ] **CI with no owner is unchanged**: OWNER_NOT_CLAIMED, Access not reached, `access on` in Next; the terminal rerun asks.
+- [ ] **Onboarding loop**: the scripted user answers ACCESS_TEAM_REQUIRED with `--no-access` unless `--with-access`. A loop account that already has a Zero Trust team now gets Access on (the old API-token skip is gone): check the verify rows on the next gate run.
+- [ ] **README** still says "Put it all behind Cloudflare Access" (reads as optional); Ben's copy, not changed.
+
 ### Platform shortcuts (2026-10-26)/cli-rebind
 
 Lane 4: an app's `deploy` or `delete` never changes the Gateway's code; only `update` and `setup` do. Stacked on the setup-from-release work (#746: the rebind redeploys the live release by the origin the install row records). Defaults taken, each to confirm or change.

@@ -803,14 +803,15 @@ Install or repair the Gateway.
 | `--force-dns` | switch | no |  | Publish new hostnames even where a DNS record answers them (one at a hostname is replaced) |
 | `--allow-downgrade` (hidden) | switch | no |  | Deploy this Gateway even though it is older than the live one (a deliberate rollback) |
 | `--redeploy` (hidden) | switch | no |  | Upload the Gateway even when it is up to date (after a change in the dashboard, such as a key rotation) |
-| `--no-access` | switch | no |  | Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later |
+| `--no-access` | switch | no |  | Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on |
+| `--team` | `<value>` | no |  | The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists) |
 | `--yes` | switch | no |  | Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
 | `--verbose` | switch | no |  | Show every step and progress line, and stream the Gateway's build output to stderr |
 
 ```text
 USAGE
-  everyapp setup [--domain value] [--account-id value] [--release value] [--force-dns] [--no-access] [--yes] [--json] [--verbose]
+  everyapp setup [--domain value] [--account-id value] [--release value] [--force-dns] [--no-access] [--team value] [--yes] [--json] [--verbose]
   everyapp setup --help
 
 One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its
@@ -833,8 +834,8 @@ long timeout, or run it in the background and watch its output.
   4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;
      in CI there is no link, and the run ends with a warning to run setup at a terminal
   5. Puts Cloudflare Access in front of the Gateway (asked at a terminal, Yes by default;
-     with --yes or --json, done when the account can, else a warning names access on);
-     --no-access leaves it off
+     with --yes or --json, done without asking). An account with no Zero Trust team needs
+     its name: asked at a terminal, else --team. --no-access leaves it off (not recommended)
 
 The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own
 questions; never cf's). With --json each step is an NDJSON event; a run that stops on
@@ -847,7 +848,8 @@ FLAGS
      [--account-id]                The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
      [--release]                   The Gateway release to deploy: a GitHub repository URL (its latest release) or release page, a release tarball's URL, or a downloaded every-app-gateway-release.tar.gz (default: this checkout's build, or without a checkout, the published release for this everyapp version)
      [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
-     [--no-access/--no-no-access]  Leave Cloudflare Access off: by default setup puts it in front of the Gateway once the owner exists (asked at a terminal; unattended when the account can). everyapp access off takes it off later
+     [--no-access/--no-no-access]  Leave Cloudflare Access off (not recommended): by default setup puts it in front of the Gateway once the owner exists. Remembered, so a later unattended setup leaves it off too; everyapp access on turns it on
+     [--team]                      The Zero Trust team's name, when the Cloudflare account has none yet: people sign in at <name>.cloudflareaccess.com, and it can't be changed later (ignored once a team exists)
   -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
      [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
      [--verbose/--no-verbose]      Show every step and progress line, and stream the Gateway's build output to stderr

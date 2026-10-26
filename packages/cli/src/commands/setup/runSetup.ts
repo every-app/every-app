@@ -47,16 +47,16 @@
  *                for browser installs (No by default, and with --yes;
  *                existing tokens stay)
  *    access      once the owner exists, Cloudflare Access in front of the
- *                Gateway, by default: at a terminal it is offered (Yes by
+ *                Gateway, by default: at a terminal it is asked (Yes by
  *                default: one command, undone with `access off`);
- *                unattended (--yes, --json, CI) it goes on without asking
- *                when the account can (a Zero Trust team exists, since a
- *                new team's name is permanent and never picked unattended,
- *                and the Cloudflare login is an owner or admin of the
- *                Gateway, so Sign in with Cloudflare gets them in), else
- *                one warning says why and names `access on`. --no-access
- *                leaves it off. Either way runs `access on`'s own code; a
- *                failure there is a warning, never a failed setup.
+ *                unattended (--yes, --json, CI) it goes on without asking.
+ *                An account with no Zero Trust team needs the team's name
+ *                (permanent, so never picked for someone): asked at a
+ *                terminal, else --team, or the run stops on
+ *                ACCESS_TEAM_REQUIRED. A failure there fails the run, and
+ *                the rerun picks up at Access. Only --no-access, a No, or
+ *                an earlier `access off` (remembered in D1) leaves it off,
+ *                with one warning that it isn't recommended.
  *                `update` never offers it
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
@@ -69,7 +69,7 @@ import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { turnAccessOn } from "../access";
 import { applySecretValues } from "../secret";
 import { keepAccessAfterGatewayDeploy } from "@/lib/access/applications";
-import { getAccessOrganizationOrNone } from "@/lib/cf/access";
+import { readAccessOffChoice, writeAccessOffChoice, type AccessOffReason } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { roughly } from "@/lib/output/time";
 import {
@@ -130,15 +130,17 @@ export interface SetupFlags {
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
-  /** Skip everyapp's own confirmations: the browser-install question is a No, and Access goes on when the account can. */
+  /** Skip everyapp's own confirmations: the browser-install question is a No, and Access goes on without asking. */
   yes?: boolean;
-  /** Leave Cloudflare Access off (the default is on once the owner exists). */
+  /** Leave Cloudflare Access off (the default is on once the owner exists); remembered, and warned about. */
   "no-access"?: boolean;
+  /** The Zero Trust team's name, when the account has none yet (permanent: the person picks it). */
+  team?: string;
   verbose?: boolean;
 }
 
 /** `update` takes setup's flags, but those only a new Gateway needs. */
-export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "no-access">;
+export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "no-access" | "team">;
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
@@ -454,7 +456,8 @@ export async function installGateway({
   // answers No to the browser-install one. What the Worker holds decides
   // whether each is asked: a token set stays, and Access on stays on.
   const asking = deps.interactive && !flags.yes && mode === "self_hosted";
-  const accessWanted = offerAccess && owner !== null && mode === "self_hosted" && !flags["no-access"];
+  // Access needs the owner (the policy lets them in); --no-access is recorded either way.
+  const accessWanted = offerAccess && mode === "self_hosted" && (owner !== null || Boolean(flags["no-access"]));
   const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, GATEWAY_WORKER_NAME) : [];
   // Browser installs need a deploy token and the operator's opt-in
   // (BROWSER_APP_INSTALLS=on: the Gateway keeps them off otherwise, since
@@ -474,7 +477,8 @@ export async function installGateway({
   }
   // Cloudflare Access in front, once the owner exists (the policy needs
   // someone to let in) and unless the three settings are on the Worker:
-  // offered at a terminal, on by itself unattended when the account can.
+  // asked at a terminal (Yes by default), on by itself unattended. Only
+  // --no-access, a No, or an earlier `access off` leaves it off.
   let accessOn: boolean | null = null;
   if (accessWanted && !ACCESS_SETTINGS.every((name) => secretNames.includes(name))) {
     const context = {
@@ -483,13 +487,13 @@ export async function installGateway({
       accountId: account.id,
       gatewayUrl,
       zoneName: target.zone.name,
-      owner: owner!.email,
+      owner: owner?.email ?? null,
       cloudflareEmail: whoami.email ?? null,
       flags,
       out,
       deps,
     };
-    accessOn = asking ? await offerAccessInFront(context) : await turnAccessOnUnattended(context);
+    accessOn = await accessFromSetup(context, asking);
   }
 
   return {
@@ -506,7 +510,7 @@ export async function installGateway({
   };
 }
 
-/** What turning Access on from setup needs, offered or unattended. */
+/** What turning Access on from setup needs, asked or unattended. */
 interface AccessFromSetup {
   cf: CfRunner;
   db: D1Database;
@@ -514,7 +518,8 @@ interface AccessFromSetup {
   gatewayUrl: string;
   /** The Gateway's zone: its first label is the team name `access on` suggests. */
   zoneName: string;
-  owner: string;
+  /** Null only with --no-access before anyone claimed the Gateway. */
+  owner: string | null;
   cloudflareEmail: string | null;
   flags: SetupFlags;
   out: EventSink;
@@ -522,96 +527,73 @@ interface AccessFromSetup {
 }
 
 /**
- * "Put Cloudflare Access in front of your Gateway?" (Yes by default), then
- * `access on`'s own code: the team (its name asked for when the account
- * has none), both sign-in methods, the policy with the owner, the two
- * applications and the three settings.
+ * Access is the default; leaving it off is a choice, remembered in D1 so
+ * an unattended rerun doesn't put it back on (`access on` forgets it):
+ * --no-access, or No to "Put Cloudflare Access in front of your
+ * Gateway?" (Yes by default). Unattended, an earlier choice (an `access
+ * off`) holds; otherwise `access on`'s own code runs, and a failure there
+ * fails the run (rerun picks up at Access), so nobody ends up without it
+ * by accident. Each way off says, once, that it isn't recommended.
  */
-async function offerAccessInFront(context: AccessFromSetup): Promise<boolean> {
-  const { owner, cloudflareEmail, deps } = context;
-  if (!(await deps.prompts.accessInFront({ owner, cloudflareEmail }))) return false;
-  return runAccessOn(context, { interactive: true });
-}
-
-/**
- * Unattended (--yes, --json, CI): Access goes on without a question when
- * the account can, which is read before anything is written: a Zero Trust
- * team exists (a new team's name is permanent, and never picked for
- * someone), and the Cloudflare login's address is an owner or admin of
- * the Gateway (Sign in with Cloudflare asserts that address, so the person
- * running setup can sign in; an API token has none). Otherwise one
- * warning, ACCESS_SETUP_SKIPPED, says why and names `access on`; the
- * Gateway works without it.
- */
-async function turnAccessOnUnattended(context: AccessFromSetup): Promise<boolean> {
-  const { cf, db, zoneName, cloudflareEmail, out } = context;
-  const suggested = zoneName.split(".")[0]!.toLowerCase().replace(/[^a-z0-9-]/g, "") || "every-app";
-  const skipped = (why: string, rerun = `${CLI} access on`, rerunNote = "to turn it on") => {
-    out.emit({
-      type: "warning",
-      code: "ACCESS_SETUP_SKIPPED",
-      step: "setup.access",
-      message: `Cloudflare Access wasn't turned on\n${why}\nThe Gateway works without it: passwords sign people in. ${CLI} access on turns it on.`,
-      data: { rerun, rerunNote },
-    });
+async function accessFromSetup(context: AccessFromSetup, asking: boolean): Promise<boolean> {
+  const { db, owner, cloudflareEmail, flags, out, deps } = context;
+  if (flags["no-access"]) {
+    await writeAccessOffChoice(db, "no-access");
+    accessLeftOff(out, "no-access");
     return false;
-  };
-  let organization: Awaited<ReturnType<typeof getAccessOrganizationOrNone>>;
-  try {
-    organization = await getAccessOrganizationOrNone(cf);
-  } catch (error) {
-    return skipped(errorMessage(error).split("\n")[0]!, `${CLI} access on`, "with a login that can manage Access");
   }
-  if (!organization) {
-    return skipped(
-      "This Cloudflare account has no Zero Trust team yet, and a team's name is permanent: it is never picked for you.",
-      `${CLI} access on --team ${suggested}`,
-      "or another name: its sign-in page becomes <name>.cloudflareaccess.com",
-    );
+  if (owner === null) return false;
+  if (asking) {
+    if (await deps.prompts.accessInFront({ owner, cloudflareEmail })) return runAccessOn(context, { interactive: true });
+    await writeAccessOffChoice(db, "declined");
+    accessLeftOff(out, "declined");
+    return false;
   }
-  if (cloudflareEmail === null) {
-    return skipped("This Cloudflare login has no email address (an API token), so nobody is known to get past Access.");
-  }
-  const admins = await readOwnerAndAdminEmails(db);
-  if (!admins.includes(cloudflareEmail.toLowerCase())) {
-    return skipped(
-      `Sign in with Cloudflare would sign you in as ${cloudflareEmail}, which isn't an owner or admin of this Gateway.`,
-      `${CLI} access on`,
-      `once ${cloudflareEmail} is an owner or admin, or at a terminal`,
-    );
+  const chosen = await readAccessOffChoice(db);
+  if (chosen) {
+    accessLeftOff(out, chosen);
+    return false;
   }
   return runAccessOn(context, { interactive: false });
 }
 
-/** The owners' and admins' addresses, deactivated members left out. */
-async function readOwnerAndAdminEmails(db: D1Database): Promise<string[]> {
-  const [rows = []] = await db.run([
-    {
-      sql: `SELECT DISTINCT u.email FROM members m JOIN users u ON u.id = m.user_id
-WHERE m.role IN ('owner', 'admin') AND (u.banned IS NULL OR u.banned = 0 OR (u.ban_expires IS NOT NULL AND u.ban_expires <= ?1))`,
-      params: [Date.now()],
-    },
-  ]);
-  return rows.map((row) => String(row["email"]).toLowerCase());
+const accessOffBecause: Record<AccessOffReason, string> = {
+  "no-access": "Setup ran with --no-access.",
+  declined: "You answered No.",
+  "access-off": "It was turned off with access off, so setup leaves it off.",
+};
+
+/** The one warning when Access stays off by choice: not recommended, and how to turn it on. */
+function accessLeftOff(out: EventSink, reason: AccessOffReason): void {
+  out.emit({
+    type: "warning",
+    code: "ACCESS_SETUP_SKIPPED",
+    step: "setup.access",
+    message: `Cloudflare Access is off\n${accessOffBecause[reason]} We don't recommend it: only the Gateway's own sign-in stands in front of it and its apps.`,
+    data: { reason, rerun: `${CLI} access on`, rerunNote: "to turn it on (recommended)" },
+  });
 }
 
 /**
  * `access on`'s own code from setup. It connects to the Gateway again by
  * its URL and account (one more login check; `turnAccessOn` takes no open
  * connection), and its `done` becomes the step `setup.access`, so the run
- * has one `done`. Anything that fails there is the warning
- * ACCESS_SETUP_SKIPPED with the rerun, never a failed setup: the Gateway
- * works without Access.
+ * has one `done`. Unattended with no Zero Trust team and no --team it
+ * stops on ACCESS_TEAM_REQUIRED: the name is permanent, so the person
+ * picks it. Anything else that fails is ACCESS_SETUP_FAILED; either way
+ * running setup again picks up at Access, and --no-access is the way out.
  */
 async function runAccessOn(
   { cf, accountId, gatewayUrl, flags, out, deps }: AccessFromSetup,
   { interactive }: { interactive: boolean },
 ): Promise<boolean> {
+  const orLeaveItOff = `${CLI} setup --no-access leaves Access off (not recommended).`;
   try {
     await turnAccessOn({
       flags: { json: flags.json, "account-id": accountId, gateway: gatewayUrl },
       out: stepInsteadOfDone(out, "setup.access"),
       interactive,
+      team: flags.team,
       createCf: () => cf,
       askTeam: deps.askTeam,
     });
@@ -619,14 +601,22 @@ async function runAccessOn(
   } catch (error) {
     // Ctrl-C at the team name ends the run as at every other setup prompt.
     if (error instanceof CancelledError) throw error;
-    out.emit({
-      type: "warning",
-      code: "ACCESS_SETUP_SKIPPED",
-      step: "setup.access",
-      message: `Cloudflare Access wasn't turned on\n${errorMessage(error).split("\n")[0]}\nThe Gateway works without it: passwords sign people in.`,
-      data: { rerun: `${CLI} access on`, rerunNote: "to try again" },
-    });
-    return false;
+    if (error instanceof EveryAppError && error.code === "ACCESS_TEAM_REQUIRED") {
+      const suggested = String(error.data?.["suggested"] ?? "every-app");
+      throw new EveryAppError(
+        "ACCESS_TEAM_REQUIRED",
+        "Choose a name for the Zero Trust team, then run setup again with --team\nSetup puts Cloudflare Access in front of the Gateway, and this Cloudflare account has no team yet. Its sign-in page becomes https://<name>.cloudflareaccess.com and can't be changed later.",
+        { fix: `add --team ${suggested}, or another name. ${orLeaveItOff}`, data: { suggested } },
+      );
+    }
+    throw new EveryAppError(
+      "ACCESS_SETUP_FAILED",
+      `Cloudflare Access didn't go on\n${errorMessage(error).split("\n")[0]}`,
+      {
+        fix: `fix that, then run setup again: it picks up at Access. ${orLeaveItOff}`,
+        data: { cause: error instanceof EveryAppError ? error.code : null },
+      },
+    );
   }
 }
 

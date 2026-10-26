@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readAccessOffChoice } from "@/lib/access/record";
 import { cfD1Database } from "@/lib/cf/d1";
 import type { RecordedCfCall } from "@/lib/cf/fakeCf";
 import { applyGateway } from "@/lib/gateway/apply";
@@ -929,7 +930,10 @@ describe("the access.changed events", () => {
     ]);
     await on({ team: "acme", emailDomains: ["acme.com"] });
     await on();
+    expect(await readAccessOffChoice(db())).toBeNull();
     await off();
+    // Off on purpose: an unattended setup won't put it back on.
+    expect(await readAccessOffChoice(db())).toBe("access-off");
     await off();
 
     expect(await queued()).toEqual([

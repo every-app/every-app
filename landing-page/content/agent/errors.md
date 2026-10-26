@@ -80,6 +80,8 @@ Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`).
 
 `access on` when the Cloudflare account has no Zero Trust team (`getAccessOrganization` answers null), no `--team` was given, and nobody is at a terminal (`--json`, `CI` set, or stdin/stderr not a TTY). At a terminal the name is asked for instead (`Zero Trust team name`, the suggestion as the default, answers checked against `TEAM`). The team's sign-in domain is permanent once used, so it is never chosen unasked. Headline: `Choose a name for the Zero Trust team with --team`, then `This Cloudflare account has none yet. Its sign-in page becomes https://<name>.cloudflareaccess.com and can't be changed later.`; `data.suggested`: the first label of the install's zone name, lowercased with anything outside `[a-z0-9-]` removed, or `every-app` when nothing is left.
 
+From `setup` (unattended, an account with no team and no `--team`; the Gateway and owner are done): `Choose a name for the Zero Trust team, then run setup again with --team` / `Setup puts Cloudflare Access in front of the Gateway, and this Cloudflare account has no team yet. …`, with the same `data.suggested`; its fix adds `pnpm everyapp setup --no-access leaves Access off (not recommended).` Ask the person for the name; `--no-access` only when they say so.
+
 **Fix:** `fix`: `add --team <suggested>, or another name`. No rerun; not retryable. The agent-driven Access setup, step by step: `packages/cli/skills/everyapp/setup/access.md` (in an app `.claude/skills/everyapp/setup/access.md`).
 
 Source: `packages/cli/src/commands/access/index.ts` (`turnAccessOn`, `askTeamAtTerminal`).
@@ -2430,9 +2432,15 @@ Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan
 
 ### ACCESS_SETUP_SKIPPED
 
-`setup` (and a `deploy` that installs a Gateway), step `setup.access`: Cloudflare Access, on by default once the owner exists, stayed off. Either `access on`'s code failed (the person answered Yes at the terminal, or the unattended run went ahead; a login without the Access permissions, a team name Cloudflare refused, anything it raises): `Cloudflare Access wasn't turned on` / `<the error's first line>` / `The Gateway works without it: passwords sign people in.`, `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `to try again`. Or, unattended (`--json`, `--yes`, CI; `turnAccessOnUnattended` in `packages/cli/src/commands/setup/runSetup.ts`), the account can't yet, said before anything is written, with `The Gateway works without it: passwords sign people in. pnpm everyapp access on turns it on.` as the last line: no Zero Trust team (`This Cloudflare account has no Zero Trust team yet, and a team's name is permanent: it is never picked for you.`, `data.rerun` `pnpm everyapp access on --team <the zone's first label>`, `data.rerunNote` `or another name: its sign-in page becomes <name>.cloudflareaccess.com`); the Cloudflare login has no email (an API token); the login's address isn't an owner or admin of the Gateway (`Sign in with Cloudflare would sign you in as <email>, which isn't an owner or admin of this Gateway.`, `data.rerunNote` `once <email> is an owner or admin, or at a terminal`); or Zero Trust refused the read (`data.rerunNote` `with a login that can manage Access`). Setup goes on to `done` with `data.accessOn: false`; exit 0. `--no-access` raises nothing: Access is then not offered (`data.accessOn: null`).
+`setup`, step `setup.access`: Cloudflare Access, on by default once the owner exists, was left off on purpose. Only three things do that, each recorded in the Gateway's D1 (`_everyapp_access_off`; `access on` clears it), so an unattended rerun doesn't put Access back on: `--no-access`, No to "Put Cloudflare Access in front of your Gateway?", or an earlier `access off`. `Cloudflare Access is off` / `<Setup ran with --no-access. | You answered No. | It was turned off with access off, so setup leaves it off.> We don't recommend it: only the Gateway's own sign-in stands in front of it and its apps.`; `data.reason` `no-access`, `declined` or `access-off`; `data.rerun` `pnpm everyapp access on`, `data.rerunNote` `to turn it on (recommended)`. Setup goes on to `done` with `data.accessOn: false`; exit 0. A person at a terminal is still asked on the next run.
 
-Source: `packages/cli/src/commands/setup/runSetup.ts` (`offerAccessInFront`)
+Source: `packages/cli/src/commands/setup/runSetup.ts` (`accessFromSetup`, `accessLeftOff`)
+
+### ACCESS_SETUP_FAILED
+
+`setup`, step `setup.access`: `access on`'s code failed inside setup (a login without the Access permissions, a team name Cloudflare refused, anything it raises). The run fails, exit 1, so a Gateway never ends up without Access by accident; the Gateway and its owner are done, and setup run again picks up at Access. `Cloudflare Access didn't go on` / `<the error's first line>`; `data.cause` the inner error's code, or null. **Fix:** `fix that, then run setup again: it picks up at Access. pnpm everyapp setup --no-access leaves Access off (not recommended).`
+
+Source: `packages/cli/src/commands/setup/runSetup.ts` (`runAccessOn`)
 
 ### ACCESS_SYNC_FAILED
 

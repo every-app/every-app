@@ -7,7 +7,7 @@ Cloudflare Access is a second sign-in in front of your Gateway and its apps. Nob
 
 ## Turn it on
 
-`everyapp setup` turns it on once your owner account exists. At a terminal it asks first; in a script or an agent run it goes on by itself when your Cloudflare login can do it, and otherwise says why. `--no-access` leaves it off.
+`everyapp setup` turns it on once your owner account exists. At a terminal it asks first, Yes by default; in a script or an agent run it goes on by itself, and stops to ask for a team name if your Cloudflare account has none. To leave it off, answer No or run `everyapp setup --no-access`. We don't recommend it, and setup remembers the choice.
 
 If it's off, run:
 

@@ -6,6 +6,7 @@ import {
   domainReply,
   EXPECTED_HANDOFFS,
   FIXTURE_ACTIONS,
+  NO_ACCESS_REPLY,
   isDomainQuestion,
   isEarlyAdopterQuestion,
   isFourAppsQuestion,
@@ -192,10 +193,14 @@ describe("the reply table", () => {
     ).toBeNull();
     expect(u.state.exercised).toEqual(["claim_owner"]);
   });
-  it("answers ACCESS_TEAM_REQUIRED only under --with-access", () => {
+  it("answers ACCESS_TEAM_REQUIRED with a team under --with-access, else by leaving Access off", () => {
     expect(
       user().onInput({ kind: "cli_error", code: "ACCESS_TEAM_REQUIRED" }),
-    ).toBeNull();
+    ).toMatchObject({
+      type: "reply",
+      trigger: "ACCESS_TEAM_REQUIRED",
+      text: NO_ACCESS_REPLY,
+    });
     expect(
       user({ withAccess: true }).onInput({
         kind: "cli_error",

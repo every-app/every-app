@@ -85,9 +85,11 @@ import {
   UNVERIFIED_EMAIL_IDP_TYPES,
 } from "@/lib/access/plan";
 import {
+  clearAccessOffChoice,
   clearAccessSettingsRecord,
   readAccessSettingsRecord,
   settingsNameApplications,
+  writeAccessOffChoice,
   writeAccessSettingsRecord,
 } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
@@ -540,6 +542,8 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
           });
     await writeAccessSettingsRecord(db, { ...values, writtenAt: now() }, changed);
   }
+  // On again: an earlier choice to leave it off no longer holds.
+  await clearAccessOffChoice(db);
   out.emit({ type: "step", step: STEP, status: "ok" });
 
   reportOn(
@@ -805,6 +809,8 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
   const toDelete = applications.filter((a) => splitDestinations(a.destinations ?? [], scope).foreign.length === 0);
   const toTrim = applications.filter((a) => !toDelete.includes(a));
   if (held.length === 0 && applications.length === 0) {
+    // Off on purpose: setup won't put it back on unattended.
+    await writeAccessOffChoice(db, "access-off");
     const message = `Cloudflare Access isn't in front of ${gatewayHost}. Nothing changed.`;
     out.emit({ type: "done", message, display: chalk.dim(message), data: { removed: false } });
     return;
@@ -840,6 +846,8 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
     });
   }
   await clearAccessSettingsRecord(db, await accessChanged(db, connection.deployer, { access: "off" }));
+  // Off on purpose: setup won't put it back on unattended.
+  await writeAccessOffChoice(db, "access-off");
   const deleted: string[] = [];
   for (const application of toDelete) {
     if (await deleteAccessApplication(cf, application.id)) deleted.push(label(application));

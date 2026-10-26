@@ -18,11 +18,14 @@ the person has Access's login before the Gateway, MCP clients, the Gateway's
 optionally no passwords. `pnpm everyapp setup` does the same by
 default once the owner exists: a person at a terminal is asked ("Put
 Cloudflare Access in front of your Gateway?", Yes by default); under
-`--json` or `--yes` it goes on without a question when the account can (a
-Zero Trust team exists, the Cloudflare login is an owner or admin of the
-Gateway), and otherwise the warning `ACCESS_SETUP_SKIPPED` says why and
-names `access on`: then the offer is yours. `setup --no-access` leaves it
-off. This
+`--json` or `--yes` it goes on without a question, and an account with no
+Zero Trust team stops the run on `ACCESS_TEAM_REQUIRED`: the person picks
+the name (step 1 below), then setup runs again with `--team <name>`. A
+failure there is `ACCESS_SETUP_FAILED`, and setup run again picks up at
+Access. Only `setup --no-access`, a No at the terminal, or an earlier
+`access off` leaves it off: remembered in the Gateway's D1 (`access on`
+forgets it), with the warning `ACCESS_SETUP_SKIPPED` that it isn't
+recommended. Never pass `--no-access` unless the person asks. This
 is the "outer ring" of `docs/runbooks/cloudflare-access.md`; the other way,
 a "Continue with Company SSO" button, is
 the runbook's "OIDC sign-in" and isn't covered here.
@@ -163,7 +166,7 @@ one-time PIN expires 10 minutes after it is sent.
 
 - Rerun: `pnpm everyapp access on --json` any time; it changes only what differs. Run it after inviting someone and after a change by hand. It records what it wrote in the Gateway's D1 (table `_everyapp_access`) and rewrites the three settings itself when one is missing, when it created an application, when nothing is recorded yet (settings written before the record existed: `data.settings.reason` says `unrecorded`), or when the applications it finds don't match the record (an application recreated in the dashboard has a new AUD tag: `changed`); `--write-settings` (`asked`) forces the rewrite when `show` still reports `data.settings.current` true.
 - Rotate: nothing here is a secret; the team name can be changed in the dashboard but better not (Only a person can). To end every Access session: dashboard **Zero Trust → Access controls → Applications → Configure → Revoke existing tokens**, or, when the person asks, `cf zero-trust access applications revoke-tokens <id>` for both ids in `access show --json` (`data.applications.gateway.id`, `data.applications.apps.id`). One person: Deactivate in the Gateway (**Manage workspace → Users → ⋯ → Deactivate**), which also revokes their personal access tokens and AI connections, which Access never sees; their Access sessions alone: **Team & Resources → Users → Action → Revoke**, or `cf zero-trust access users revoke --email <address>` when asked.
-- Remove: `pnpm everyapp access off --json` (asks; `--yes` only when the person said so; `--keep-applications` leaves Access asking while the Gateway stops requiring it). It removes the three settings first, so passwords sign people in again at once (`EMAIL_PASSWORD_SIGN_IN=false` is ignored without Access; set it to `true` anyway: `echo true | pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN --json`), then deletes the two applications. The team, the one-time PIN and the policy stay in the Cloudflare account; nothing to revoke elsewhere. Never delete the Zero Trust organization itself in the dashboard: Cloudflare reserves a deleted team's name forever, for every account.
+- Remove: `pnpm everyapp access off --json` (asks; `--yes` only when the person said so; `--keep-applications` leaves Access asking while the Gateway stops requiring it). The choice is remembered: a later unattended `setup` leaves Access off, with the warning `ACCESS_SETUP_SKIPPED`, until `access on` runs again. It removes the three settings first, so passwords sign people in again at once (`EMAIL_PASSWORD_SIGN_IN=false` is ignored without Access; set it to `true` anyway: `echo true | pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN --json`), then deletes the two applications. The team, the one-time PIN and the policy stay in the Cloudflare account; nothing to revoke elsewhere. Never delete the Zero Trust organization itself in the dashboard: Cloudflare reserves a deleted team's name forever, for every account.
 
 ## Sources
 

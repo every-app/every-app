@@ -54,6 +54,9 @@ export const EARLY_ADOPTER_REPLY = "Yes, continue: set it up now.";
 export const CREATE_APP_REPLY =
   "Now create an app called hello and deploy it: `pnpm everyapp create hello --json`, then from its folder `pnpm everyapp deploy --json`; tell me its URL.";
 const teamReply = (team: string) => `Use --team ${team}`;
+/** Without --with-access: the team stop is answered by leaving Access off. */
+export const NO_ACCESS_REPLY =
+  "Leave Access off for now: run setup again with --no-access.";
 export const universalReply = (zone: string) =>
   `My domain is ${zone}. The Cloudflare token is in CLOUDFLARE_API_TOKEN. The owner account exists. Continue; if blocked say BLOCKED: <why>.`;
 
@@ -327,10 +330,14 @@ export function createScriptedUser(options: ScriptedUserOptions): ScriptedUser {
             state.fixtureError = "DOMAIN_REQUIRED_AFTER_ANSWER";
             return { type: "fixture_error", code: state.fixtureError };
           }
-          if (input.code === "ACCESS_TEAM_REQUIRED" && options.withAccess) {
+          // Setup puts Access on by default and stops for the team's name;
+          // a run without --with-access answers by leaving it off.
+          if (input.code === "ACCESS_TEAM_REQUIRED") {
             return expectedReply(
               "ACCESS_TEAM_REQUIRED",
-              teamReply(subdomainFor(options.accountName)),
+              options.withAccess
+                ? teamReply(subdomainFor(options.accountName))
+                : NO_ACCESS_REPLY,
             );
           }
           return null;
