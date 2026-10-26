@@ -1008,7 +1008,7 @@ the same URL as a GET, which is not bypassed; the POST reads no session
 and creates nothing, and is served exact-case before the refusal like
 `/health`, so every other spelling is the JSON 404.
 
-**Invariants.** The register has 37.
+**Invariants.** The register has 42.
 
 | Id | Invariant | Enforced by | Pinned by |
 |---|---|---|---|
@@ -1034,6 +1034,9 @@ and creates nothing, and is served exact-case before the refusal like
 | `access.mcp.header-only-origin-first-gateway-aud` | On the gateway's `/mcp` an assertion is read from the header only, never the `CF_Authorization` cookie, only with the outer ring configured, only for the gateway application's AUD, and only after the browser `Origin` rule passed. | `apps/every-app-gateway/src/server/mcp-auth/routes.ts:174-202` | `access-mcp.sqlite.test.ts` :: never reads the CF_Authorization cookie |
 | `access.mcp.linked-account-only-nothing-created` | `/mcp` serves an Access identity only through the account row a browser sign-in linked; a user row that merely has that email is never a fallback; nothing is created from `/mcp`. | `access-caller.ts:56-73` | `access-mcp.sqlite.test.ts` :: refuses an identity no account is linked to, even when a user has that email |
 | `access.settings.secrets-only` | Every Access setting is read from the Worker's environment; no admin UI, server function or route writes one. | `config.ts:311-325` | **unpinned** (nothing asserts the absence of a writer) |
+| `access.cli.reconcile-on-gateway-deploy` | After every Gateway upload (`update`, `setup`, the installing `deploy`) on a live self-hosted Gateway behind Access (told by the live applications, never a flag), both Access applications are brought in line with what that release lets through, under the `access` lease; nothing created, settings never rewritten there; a failure is a warning naming `access on`. | `packages/cli/src/lib/access/applications.ts` (keepAccessAfterGatewayDeploy) | `runSetup.test.ts` :: brings both Access applications in line with the release on update, under the Access lease, and never fails the run for it |
+| `access.cli.status-reports-drift` | With Access on, `status` (and `access show`, from the same `accessDrift`) names every way the live shape differs from the release's plan: bypass paths, sign-in methods, a missing application, settings naming other applications; the problem ACCESS_DRIFT runs `access on`. | `packages/cli/src/lib/access/plan.ts` (accessDrift); `packages/cli/src/commands/status/index.ts` | `status.test.ts` :: says whether Cloudflare Access is in front, and whether it is in step with this Gateway |
+| `access.cli.default-on` | `setup` puts Access in front by default once the owner exists: asked at a terminal; unattended only when a Zero Trust team exists and the Cloudflare login is an owner or admin of the Gateway, else one warning names `access on`; `--no-access` opts out; `update` never offers it. | `packages/cli/src/commands/setup/runSetup.ts` (turnAccessOnUnattended) | `runSetup.test.ts` :: turns Access on by itself unattended when the account can, leaves it off with --no-access, and never from update |
 
 **Not this boundary's job.** Whether the Zero Trust configuration matches
 the runbook (two applications, the bypass list, HttpOnly, the binding
@@ -1054,10 +1057,14 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
 - *The outer ring's security depends on Zero Trust configuration the
   gateway doesn't verify* (medium, known, large). A single application for
   both hosts, a bypass wider than the list, HttpOnly off, are all silent
-  weakenings. `access.bypass-list.machine-endpoints-only` is **not
-  enforced** by the gateway (it is operator configuration). `everyapp
-  access on` makes the right shape; a `status` check that reads the
-  applications back is the follow-up.
+  weakenings to the gateway: `access.bypass-list.machine-endpoints-only`
+  is **not enforced** by it (it is operator configuration). Since
+  2026-10-26 the CLI closes most of the window: `everyapp access on` makes
+  the right shape, every Gateway upload brings both applications back to
+  it (`access.cli.reconcile-on-gateway-deploy`), and `status` reads them
+  back and reports drift (`access.cli.status-reports-drift`). What stays
+  open: a change made in the dashboard between two runs of the CLI, and a
+  gateway that would refuse to serve behind a shape it doesn't recognise.
 - *Access's email claim is trusted whatever identity provider issued it*
   (medium, medium fix). A generic OIDC provider that lets users pick their
   email would let them pick someone else's. The runbook says to enable only
@@ -1849,7 +1856,12 @@ means it is on main (every boundary fix from this pass merged on
     `/mcp` only where a manifest sets `mcp`, `/health` on the gateway's
     host, both sign-in methods) and `everyapp access show` says whether
     the applications it finds match it (paths, sign-in methods, the
-    recorded settings); a read-back in `status` is the follow-up.
+    recorded settings); since 2026-10-26 `status` reads the applications
+    back and reports drift (ACCESS_DRIFT), and every Gateway upload
+    (`update`, `setup`) brings both applications back in line with the
+    release (`access.cli.reconcile-on-gateway-deploy`); Access is also
+    setup's default unattended (`access.cli.default-on`). The gateway
+    itself still verifies nothing of the shape.
 41. **Hygiene before the public copy** (the launch-review thread's scan):
     no LICENSE file. The rest of its list is done: `docs/research/` (deleted, #433) and
     `apps/mobile-native/app.json` deleted, `/docs/internal` unpublished,
