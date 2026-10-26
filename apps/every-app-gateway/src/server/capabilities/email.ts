@@ -35,13 +35,20 @@ import type {
   SendEmailOptions,
   SendEmailResult,
 } from "@/server/email/sendEmail";
-import { EMAIL_TRANSPORTS_TEXT } from "@/server/email/providers";
 import type { IntegrationCallAdmission } from "@/server/integration-proxy";
 import { readCapped } from "./read-capped";
-import { capabilityRefusal } from "./refusal";
+import { setupInfo, type SetupInfo } from "@/server/setup-info";
+import { capabilityRefusal, notConfiguredRefusal } from "./refusal";
 
 const EMAIL = CAPABILITIES.email;
-const RUNBOOK = "docs/runbooks/email-sending-setup.md";
+/** What an unconfigured gateway lacks for email: a sender, then a transport `configure` asks for. */
+function emailSetup(command: string | null): SetupInfo {
+  return setupInfo({
+    label: "Email",
+    settings: EMAIL.settings,
+    command,
+  });
+}
 
 /** The gateway's mail, as the capability uses it. */
 export interface GatewayMail {
@@ -85,6 +92,8 @@ interface EmailCapabilityOptions {
   /** A hosted gateway: app senders are refused. */
   hosted: boolean;
   mail: () => Promise<GatewayMail>;
+  /** `pnpm everyapp configure <app>`, or null (server/setup-info.ts). */
+  setupCommand?: string | null;
 }
 
 /** Whether the app may send: its manifest lists email for writing. */
@@ -111,6 +120,7 @@ export async function emailCapabilityStatus({
   senders,
   hosted,
   mail,
+  setupCommand = null,
 }: EmailCapabilityOptions): Promise<Response> {
   const isRequested = requested(entry);
   const gatewayMail = isRequested ? await mail() : null;
@@ -124,7 +134,12 @@ export async function emailCapabilityStatus({
     senders: effectiveSenders(entry, senders, hosted),
     provider: configured ? (gatewayMail?.provider() ?? null) : null,
   };
-  return Response.json(status);
+  return Response.json({
+    ...status,
+    ...(isRequested && !configured
+      ? emailSetup(setupCommand)
+      : { settings: [], setup: null, command: null }),
+  });
 }
 
 /** `POST /api/integrations/email/send`, checked in the order below. */
@@ -135,6 +150,7 @@ export async function handleEmailSend({
   hosted,
   admit,
   mail,
+  setupCommand = null,
 }: EmailCapabilityOptions & {
   request: Request;
   admit: () => Promise<IntegrationCallAdmission>;
@@ -239,11 +255,7 @@ export async function handleEmailSend({
 
   // 6. A sender and a provider on the gateway.
   if (!gatewayMail.isConfigured()) {
-    return refuse(
-      503,
-      "integration_not_configured",
-      `Email isn't set up on this gateway. Its operator sets up a sending domain, then sets EMAIL_FROM and EMAIL_FROM_NAME and ${EMAIL_TRANSPORTS_TEXT}, with everyapp secret set <NAME> (${RUNBOOK}).`,
-    );
+    return notConfiguredRefusal(emailSetup(setupCommand));
   }
 
   // 7-8. The daily budgets, then the send.

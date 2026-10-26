@@ -8,10 +8,10 @@ import { ACCOUNT_HEADER, OAUTH_PRESETS } from "../internal/index.js";
 import { connectPath, connectUrl } from "./connectUrl.js";
 import {
   devAccessTokenName,
-  gatewayRefusal,
   integrationFetch,
   integrationStatus,
 } from "./integrationFetch.js";
+import { gatewayRefusal } from "./refusal.js";
 
 describe("connectUrl", () => {
   it("builds the Gateway's connect URL from GATEWAY_URL", () => {

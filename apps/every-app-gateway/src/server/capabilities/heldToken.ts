@@ -27,6 +27,7 @@ import {
   type CapabilitySettings,
   type ConnectionAccount,
   type OAuthClientCapability,
+  capabilitySettings,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
@@ -34,12 +35,15 @@ import type { IntegrationCallAdmission } from "@/server/integration-proxy";
 import type { OAuthClientResolver } from "@/server/oauth/client";
 import type { HeldTokenPort } from "@/server/oauth/heldTokens";
 import { forwardableHeaders } from "./forward";
-import { capabilityRefusal } from "./refusal";
+import { setupInfo } from "@/server/setup-info";
+import { capabilityRefusal, notConfiguredRefusal } from "./refusal";
 
 /** The query keys an app's call never carries to the provider: a token of its own. */
 const STRIPPED_QUERY = ["access_token", "token"];
 
 interface HeldTokenCallOptions {
+  /** `pnpm everyapp configure <app>`, or null (server/setup-info.ts). */
+  setupCommand?: string | null;
   request: Request;
   id: string;
   capability: OAuthClientCapability;
@@ -75,6 +79,7 @@ export async function handleHeldTokenCall({
   resolveClient,
   connections,
   onCall,
+  setupCommand,
 }: HeldTokenCallOptions): Promise<Response> {
   const connectPath = `/connect/${encodeURIComponent(id)}`;
   const notConnected = (
@@ -139,10 +144,14 @@ export async function handleHeldTokenCall({
     lookup,
   });
   if (!client) {
-    return capabilityRefusal(
-      503,
-      "integration_not_configured",
-      `${capability.label} has no client on this Gateway. An owner or admin adds one under Manage workspace → Providers.`,
+    return notConfiguredRefusal(
+      setupInfo({
+        label: capability.label,
+        settings: capabilitySettings(capability),
+        command: setupCommand ?? null,
+        alternative:
+          "an owner or admin adds a client under Manage workspace → Providers",
+      }),
     );
   }
   // 4. Whom the call is for.

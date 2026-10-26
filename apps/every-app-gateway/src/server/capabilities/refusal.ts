@@ -1,4 +1,5 @@
 import { GATEWAY_ERROR_HEADER } from "@every-app/sdk/internal";
+import type { SetupInfo } from "@/server/setup-info";
 
 const STATUS_LABELS: Record<number, string> = {
   400: "Bad Request",
@@ -25,5 +26,24 @@ export function capabilityRefusal(
   return Response.json(
     { error: STATUS_LABELS[status] ?? "Error", code, message },
     { status, headers: { ...headers, [GATEWAY_ERROR_HEADER]: code } },
+  );
+}
+
+/**
+ * `integration_not_configured` (503): the setup sentence as the message,
+ * with the unset settings and the command beside it (server/setup-info.ts).
+ */
+export function notConfiguredRefusal(info: SetupInfo): Response {
+  return Response.json(
+    {
+      error: STATUS_LABELS[503],
+      code: "integration_not_configured",
+      message: info.setup,
+      ...info,
+    },
+    {
+      status: 503,
+      headers: { [GATEWAY_ERROR_HEADER]: "integration_not_configured" },
+    },
   );
 }

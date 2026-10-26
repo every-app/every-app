@@ -25,7 +25,7 @@ import {
   type GatewayCallFor,
 } from "./attribution.js";
 import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
-import { GatewayRefusalError, gatewayRefusal } from "./integrationFetch.js";
+import { GatewayRefusalError, gatewayRefusal } from "./refusal.js";
 
 export interface EmitOptions {
   /** The Worker env: the EVERY_APP_GATEWAY binding when deployed; EVERYAPP_DEV in local dev. */

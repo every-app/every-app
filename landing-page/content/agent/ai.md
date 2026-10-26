@@ -31,7 +31,27 @@ const answer = await client.chat.completions.create({
 
 `ai({ env, for? })` returns `{ baseURL, fetch, model, chatCompletionsUrl, embeddingsUrl }`: `baseURL` is `AI_DEFAULT_BASE_URL`, `http://every-app-gateway.internal/api/ai/default/v1`; `fetch` is `createGatewayFetch({ env, for })`; `model` is the string `default`. A request that names no `model`, or names `default`, gets the resolved model; a request that names another model sends it as it is (the operator's provider must serve it). `for` is the attribution every Gateway call carries, taken from the request context when left out ([attribution](/docs/agent/identity#attribution)). Any OpenAI-compatible client (`openai`, `@ai-sdk/openai-compatible`, a plain `fetch` to `chatCompletionsUrl`) works the same way.
 
-**Local development.** With no Gateway binding and `EVERYAPP_DEV` set, `/api/ai/default/…` resolves on the developer's own `.dev.vars` by the same order below (the first provider whose settings are all set) and the SDK calls that provider directly with the model filled in. With none set: `ConfigurationError`, `Set OPENROUTER_API_KEY (or another model provider's key) in .dev.vars to call the default model in local development.`
+**Local development.** With no Gateway binding and `EVERYAPP_DEV` set, `/api/ai/default/…` resolves on the developer's own `.dev.vars` by the same order below (the first provider whose settings are all set) and the SDK calls that provider directly with the model filled in. With none set: `ConfigurationError`, `Set OPENROUTER_API_KEY (or another model provider's key) in .dev.vars to call the default model in local development.` (`code: "ai_default_not_configured"`, so `isAiNotConfigured()` reads it as the deployed refusal).
+
+## Gating a feature: `aiStatus()`
+
+`aiStatus({ env, provider?, for? })` from `@every-app/sdk/server` answers whether model calls would go through, without making one, so an app hides or explains an AI feature up front ("is AI set up" has one answer):
+
+```ts
+import { aiStatus } from "@every-app/sdk/server";
+
+const status = await aiStatus({ env, for: request }); // provider defaults to "default"
+if (!status.ready) {
+  // "A chat model (OpenRouter) isn't set up on this Gateway: it needs OPENROUTER_API_KEY.
+  //  An admin runs: pnpm everyapp configure inbox (or picks another model provider with
+  //  pnpm everyapp ai default <provider>)"
+  return { aiOff: true, setup: status.setup, command: status.command };
+}
+```
+
+The result (`AiStatus`, `packages/sdk/src/server/ai.ts`) is `{ provider, requested, configured, ready, resolved, settings, setup, command }`: `requested` is whether the manifest asks for it (`ai.chat` for `default`, else `providers`); `configured` whether the Gateway holds every setting it needs; `resolved`, for `default`, the `{ provider, label, model }` calls go to now (null while none is configured); `settings`, `setup` and `command` are [setup info](/docs/agent/identity#setup-info-what-to-set-in-the-gateways-words), worded by the Gateway, empty and null when ready or not requested. An app that doesn't ask for a provider learns nothing about its key. Over the binding it is `GET /api/ai/<provider>` (the bare path; the Gateway's `aiStatusResponse()` in `apps/every-app-gateway/src/server/ai-proxy.ts`), never counted or capped, and the default resolves on the organization's choice when `for` says whose. In local development it answers from `.dev.vars` by the same rule as the calls; a non-OK answer reads as not requested.
+
+After a call fails, `isAiNotConfigured(error)` says whether it was "no model set up" (`ai_provider_not_configured`, `ai_default_not_configured`, or dev's `ConfigurationError` for a missing key), whatever client threw it, and `refusalFromError(error).setup` is the sentence to show ([refusals](/docs/agent/identity#refusals)).
 
 ## Code written for `env.AI`: `gatewayAiBinding()`
 
@@ -68,12 +88,12 @@ Why the app's own `Ai` and not a type of the SDK's: `Ai` changes with each Worke
 
 The Gateway serves two paths under it, both OpenAI-shaped: `/v1/chat/completions` and `/v1/embeddings`. Each maps onto the resolved provider's own route for it (the entry's `chat` and `embeddings` blocks: OpenRouter's `/api/v1/chat/completions`, Workers AI's `/v1/chat/completions` under the account path, Groq's `/openai/v1/chat/completions`), with every rule of that provider's entry (`store: false` where it applies, the credential headers stripped, the usage tap). Then:
 
-| Refusal                     | Status | When                                                                                                                                                                                                                                          |
-| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider_not_allowed`      | 403    | The manifest doesn't say `ai.chat` (`The app manifest does not ask for the default model: set ai: { chat: true } (or list a provider under providers).`)                                                                                      |
-| `ai_default_not_configured` | 503    | Nothing is configured, or the operator's choice isn't: the message names the settings to set (`the gateway needs OPENROUTER_API_KEY`) and `everyapp ai default <provider>`; the app shows it where it would show `ai_provider_not_configured` |
-| `ai_route_not_allowed`      | 403    | Any other path (`The default route serves /v1/chat/completions and /v1/embeddings only; for anything else list the provider under providers and call /api/ai/<provider>/…`)                                                                   |
-| the provider's own          |        | After that, as on `/api/ai/<provider>`                                                                                                                                                                                                        |
+| Refusal                     | Status | When                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider_not_allowed`      | 403    | The manifest doesn't say `ai.chat` (`The app manifest does not ask for the default model: set ai: { chat: true } (or list a provider under providers).`)                                                                                                                                                        |
+| `ai_default_not_configured` | 503    | Nothing is configured, or the operator's choice isn't: [setup info](/docs/agent/identity#setup-info-what-to-set-in-the-gateways-words) names the provider's settings, `everyapp configure <app>` and `everyapp ai default <provider>`; `isAiNotConfigured()` is true for it as for `ai_provider_not_configured` |
+| `ai_route_not_allowed`      | 403    | Any other path (`The default route serves /v1/chat/completions and /v1/embeddings only; for anything else list the provider under providers and call /api/ai/<provider>/…`)                                                                                                                                     |
+| the provider's own          |        | After that, as on `/api/ai/<provider>`                                                                                                                                                                                                                                                                          |
 
 The usage counters count the call against the provider it went to (never `default`), with the model: Manage workspace → Usage shows provider and model, and `workspace usage --json` carries `byModel` (`{ provider, model, calls, failures, inputTokens, outputTokens, costMicros }`, most calls first) beside `byTarget`. The log line `ai.proxy.request` carries `provider` (the resolved one), `via: "default"` and `source` (`setting`, `order` or `none`).
 

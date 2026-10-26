@@ -22,7 +22,7 @@ import {
   type GatewayCallFor,
 } from "./attribution.js";
 import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
-import { GatewayRefusalError, gatewayRefusal } from "./integrationFetch.js";
+import { GatewayRefusalError, gatewayRefusal } from "./refusal.js";
 
 export interface SendEmailOptions {
   /**

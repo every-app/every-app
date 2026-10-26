@@ -6,7 +6,7 @@ import {
   type GatewayEmailBindingMessage,
   type GatewayEmailBindingOptions,
 } from "./emailBinding";
-import { GatewayRefusalError } from "./integrationFetch";
+import { GatewayRefusalError } from "./refusal";
 
 afterEach(() => {
   vi.restoreAllMocks();

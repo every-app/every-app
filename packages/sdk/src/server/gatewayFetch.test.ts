@@ -190,6 +190,10 @@ describe("createGatewayFetch", () => {
     ).rejects.toThrow(
       new ConfigurationError(
         "Set WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in .dev.vars to call workers-ai in local development.",
+        {
+          code: "ai_provider_not_configured",
+          settings: ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+        },
       ),
     );
     expect(directFetch).not.toHaveBeenCalled();

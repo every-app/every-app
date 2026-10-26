@@ -191,6 +191,9 @@ describe("a registered provider through the proxy", () => {
       requested: true,
       configured: true,
       ready: true,
+      settings: [],
+      setup: null,
+      command: null,
     });
     const unset = await call({
       path: "/api/integrations/northwind",

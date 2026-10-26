@@ -1983,3 +1983,14 @@ Defaults taken for `{ optional: true }`, `aiBaseUrl()` and `providerBaseUrl()` (
 - [ ] **`optional: true` only covers "unavailable"** (no binding, and in dev no settings in `.dev.vars`). A binding that isn't one, a wrong provider id and an attribution mistake still throw: those are bugs, not setup.
 - [ ] **`aiBaseUrl(provider)` comes from the catalog's chat route**, minus `/chat/completions`. A provider without an OpenAI-compatible chat route (Cohere), or one registered only on a Gateway, throws, and the error points at `providerBaseUrl(id)`.
 - [ ] **`GatewayFetchEnv` is no longer exported.** `env` is typed `object` on every factory, so apps drop their `env as GatewayFetchEnv` casts in the phase-2 slim-downs.
+
+## Platform shortcuts (2026-10-26)/lane 3 setup info
+
+Defaults taken for setup info on statuses and refusals, and for `aiStatus()` (`apps/every-app-gateway/src/server/setup-info.ts`, `packages/sdk/src/server/refusal.ts`):
+
+- [ ] **`settings` names every setting the capability needs, not only the unset ones.** The Gateway can't always tell which of a pair is missing (an OAuth client resolved from D1, email's sender plus transport). `configure` asks only for what is unset.
+- [ ] **`command` is null for a shared app and on a hosted Gateway.** The sentence then says the Gateway's operator sets it. Elsewhere it is `pnpm everyapp configure <app>` (`SETUP_CLI`, until publishing resumes).
+- [ ] **Email names `EMAIL_FROM` and `EMAIL_FROM_NAME` only.** The sentence no longer lists the transports or the runbook path; `configure` asks for a transport.
+- [ ] **`GET /api/ai/<provider>` (the bare path) is now the AI status.** Before, it was proxied to the provider's root. It is never counted or capped. The default resolves on the organization's choice when `for` says whose; it falls back to the order alone when attribution fails.
+- [ ] **A status for something the app doesn't ask for carries no setup info**, as `configured` already said nothing.
+- [ ] **`refusalFromError()` reads local dev's missing-key `ConfigurationError` as a 503 refusal**, `ai_provider_not_configured` or `ai_default_not_configured`, with the `.dev.vars` names and a null command.

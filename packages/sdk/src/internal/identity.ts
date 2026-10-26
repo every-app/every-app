@@ -65,9 +65,22 @@ export class IdentityError extends Error {
 
 export class ConfigurationError extends Error {
   readonly status = 500;
-  constructor(message: string) {
+  /**
+   * The Gateway refusal code the same gap gets once deployed
+   * (`ai_provider_not_configured`, `ai_default_not_configured`), when the
+   * error is "not set up" rather than a mistake in the code.
+   */
+  readonly code: string | undefined;
+  /** The settings that would close the gap (`.dev.vars` names in local dev). */
+  readonly settings: readonly string[];
+  constructor(
+    message: string,
+    setup?: { code: string; settings?: readonly string[] },
+  ) {
     super(message);
     this.name = "ConfigurationError";
+    this.code = setup?.code;
+    this.settings = setup?.settings ?? [];
   }
 }
 

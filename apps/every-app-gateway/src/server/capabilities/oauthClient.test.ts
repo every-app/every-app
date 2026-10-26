@@ -543,9 +543,14 @@ describe("Mastodon's instance", () => {
       503,
       "integration_not_configured",
     );
-    expect(body["message"]).toContain(
-      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL",
-    );
+    expect(body).toMatchObject({
+      settings: [
+        "MASTODON_CLIENT_ID",
+        "MASTODON_CLIENT_SECRET",
+        "MASTODON_URL",
+      ],
+      command: "pnpm everyapp configure postiz",
+    });
   });
 });
 
@@ -685,9 +690,10 @@ describe("refusals", () => {
         503,
         "integration_not_configured",
       );
-      expect(body["message"]).toContain(
-        "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET",
-      );
+      expect(body).toMatchObject({
+        settings: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
+        command: "pnpm everyapp configure postiz",
+      });
     }
     expect(upstream).not.toHaveBeenCalled();
   });
@@ -1292,6 +1298,9 @@ describe("GET /api/integrations/<client>", () => {
       configured: true,
       ready: true,
       clientId: "gw-linkedin-id",
+      settings: [],
+      setup: null,
+      command: null,
     });
     await expect(
       status("linkedin", { env: { LINKEDIN_CLIENT_SECRET: undefined } }),
@@ -1301,6 +1310,10 @@ describe("GET /api/integrations/<client>", () => {
       requested: true,
       configured: false,
       ready: false,
+      settings: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
+      setup:
+        "LinkedIn isn't set up on this Gateway: it needs LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET. An admin runs: pnpm everyapp configure postiz",
+      command: "pnpm everyapp configure postiz",
     });
   });
 
@@ -1315,6 +1328,9 @@ describe("GET /api/integrations/<client>", () => {
       requested: false,
       configured: false,
       ready: false,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -1329,6 +1345,9 @@ describe("GET /api/integrations/<client>", () => {
       ready: true,
       clientId: "gw-mastodon-id",
       origin: "https://fosstodon.org",
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -1347,6 +1366,9 @@ describe("GET /api/integrations/<client>", () => {
       clientId: "gw-google-id",
       scopeSets: ["gmail.read", "identity"],
       scopes: ["openid", "email", "profile", GMAIL],
+      settings: [],
+      setup: null,
+      command: null,
     });
     await expect(
       status("microsoft-365", { manifest: MICROSOFT_APP(["mail.read"]) }),
@@ -1360,6 +1382,9 @@ describe("GET /api/integrations/<client>", () => {
       clientId: "gw-microsoft-id",
       scopeSets: ["mail.read"],
       scopes: ["Mail.Read", "offline_access"],
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -1378,6 +1403,14 @@ describe("GET /api/integrations/<client>", () => {
       ready: false,
       scopeSets: ["gmail.read"],
       scopes: [GMAIL],
+      settings: [
+        "GOOGLE_WORKSPACE_CLIENT_ID",
+        "GOOGLE_WORKSPACE_CLIENT_SECRET",
+      ],
+      setup: expect.stringContaining(
+        "An admin runs: pnpm everyapp configure postiz (or an owner or admin adds a client under Manage workspace → Providers)",
+      ),
+      command: "pnpm everyapp configure postiz",
     });
   });
 
@@ -1393,6 +1426,9 @@ describe("GET /api/integrations/<client>", () => {
         configured: true,
         ready: false,
         scopeSets: [],
+        settings: [],
+        setup: null,
+        command: null,
       });
     }
     await expect(
@@ -1412,6 +1448,9 @@ describe("GET /api/integrations/<client>", () => {
       requested: false,
       configured: false,
       ready: false,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 });

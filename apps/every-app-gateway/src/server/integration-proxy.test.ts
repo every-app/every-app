@@ -270,9 +270,12 @@ describe("AppGateway capabilities", () => {
     );
     await expect(refused.json()).resolves.toMatchObject({
       code: "integration_not_configured",
-      message: expect.stringContaining(
-        "everyapp secret set DATAFORSEO_API_KEY",
-      ),
+      message:
+        "DataForSEO isn't set up on this Gateway: it needs DATAFORSEO_API_KEY. An admin runs: pnpm everyapp configure openseo",
+      settings: ["DATAFORSEO_API_KEY"],
+      setup:
+        "DataForSEO isn't set up on this Gateway: it needs DATAFORSEO_API_KEY. An admin runs: pnpm everyapp configure openseo",
+      command: "pnpm everyapp configure openseo",
     });
     expect(fetchUpstream).not.toHaveBeenCalled();
   });
@@ -321,10 +324,15 @@ describe("AppGateway capabilities", () => {
       requested: true,
       configured: true,
       ready: true,
+      settings: [],
+      setup: null,
+      command: null,
     });
     await expect(status(LISTS_DATAFORSEO, {})).resolves.toMatchObject({
       configured: false,
       ready: false,
+      settings: ["DATAFORSEO_API_KEY"],
+      command: "pnpm everyapp configure openseo",
     });
     // An app that doesn't list it never learns whether the operator holds a key.
     await expect(status()).resolves.toEqual({
@@ -332,6 +340,9 @@ describe("AppGateway capabilities", () => {
       requested: false,
       configured: false,
       ready: false,
+      settings: [],
+      setup: null,
+      command: null,
     });
     expect(fetchUpstream).not.toHaveBeenCalled();
   });

@@ -2,11 +2,11 @@ import { afterEach, describe, expect, expectTypeOf, vi } from "vitest";
 import { TEST_ORGANIZATION, it } from "../../test/inOrganization";
 import { withOrganization } from "./context";
 import { ConfigurationError } from "../internal/index";
-import {
-  gatewayRefusal,
-  integrationFetch,
-  integrationStatus,
-} from "./integrationFetch";
+import { integrationFetch, integrationStatus } from "./integrationFetch";
+import { gatewayRefusal } from "./refusal";
+
+/** A status or refusal with nothing to set. */
+const NO_SETUP = { settings: [], setup: null, command: null };
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -243,13 +243,26 @@ describe("integrationFetch", () => {
       ];
       expect(
         await integrationStatus({ env: devEnv(files), provider: "northwind" }),
-      ).toEqual({ requested: true, configured: true, ready: true });
+      ).toEqual({
+        requested: true,
+        configured: true,
+        ready: true,
+        ...NO_SETUP,
+      });
       expect(
         await integrationStatus({
           env: devEnv(files, {}),
           provider: "northwind",
         }),
-      ).toEqual({ requested: true, configured: false, ready: false });
+      ).toEqual({
+        requested: true,
+        configured: false,
+        ready: false,
+        settings: ["NORTHWIND_API_KEY"],
+        setup:
+          "Northwind isn't set up for local development: set NORTHWIND_API_KEY in .dev.vars.",
+        command: null,
+      });
       await expect(
         integrationStatus({ env: devEnv([]), provider: "northwind" }),
       ).rejects.toThrowError(/no \.everyapp\/providers\/northwind\.json/);
@@ -310,7 +323,12 @@ describe("integrationStatus", () => {
         env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
         provider: "dataforseo",
       }),
-    ).resolves.toEqual({ requested: true, configured: false, ready: false });
+    ).resolves.toEqual({
+      requested: true,
+      configured: false,
+      ready: false,
+      ...NO_SETUP,
+    });
     expect(String(bindingFetch.mock.calls[0]?.[0])).toBe(
       "http://every-app-gateway.internal/api/integrations/dataforseo",
     );
@@ -332,7 +350,12 @@ describe("integrationStatus", () => {
         env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
         provider: "context",
       }),
-    ).resolves.toEqual({ requested: false, configured: false, ready: false });
+    ).resolves.toEqual({
+      requested: false,
+      configured: false,
+      ready: false,
+      ...NO_SETUP,
+    });
   });
 
   it("asks the gateway about a provider outside the catalog, and refuses one in local dev", async () => {
@@ -345,7 +368,12 @@ describe("integrationStatus", () => {
         env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
         provider: "northwind",
       }),
-    ).resolves.toEqual({ requested: false, configured: false, ready: false });
+    ).resolves.toEqual({
+      requested: false,
+      configured: false,
+      ready: false,
+      ...NO_SETUP,
+    });
     // Whose status: the test's organization, as a call would carry it.
     expect(bindingFetch).toHaveBeenCalledWith(
       "http://every-app-gateway.internal/api/integrations/northwind",
@@ -436,6 +464,7 @@ describe("gatewayRefusal", () => {
       status: 403,
       code: "capability_not_requested",
       message: "This app doesn't list DataForSEO in its capabilities.",
+      ...NO_SETUP,
     });
   });
 
@@ -494,7 +523,7 @@ describe("the email capability", () => {
       env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
       provider: "email",
     });
-    expect(result).toEqual(status);
+    expect(result).toEqual({ ...status, ...NO_SETUP });
     expectTypeOf(result.senders).toEqualTypeOf<string[]>();
     expectTypeOf(result.provider).toEqualTypeOf<
       "cloudflare" | "resend" | null
@@ -521,6 +550,9 @@ describe("the email capability", () => {
       sender: null,
       senders: [],
       provider: null,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -541,6 +573,10 @@ describe("the email capability", () => {
       sender: null,
       senders: ["*@mail.example.com"],
       provider: null,
+      settings: ["EMAIL_FROM"],
+      setup:
+        "Email isn't set up for local development: set EMAIL_FROM in .dev.vars.",
+      command: null,
     });
     await expect(
       integrationStatus({
@@ -555,6 +591,9 @@ describe("the email capability", () => {
       senders: ["*@mail.example.com"],
       // Printed, not sent: no provider is set up.
       provider: null,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -908,7 +947,7 @@ describe("OAuth clients with scope sets", () => {
       },
       provider: "google-workspace",
     });
-    expect(status).toEqual(answered);
+    expect(status).toEqual({ ...answered, ...NO_SETUP });
     expectTypeOf(status.scopeSets).toEqualTypeOf<
       readonly string[] | undefined
     >();
@@ -1053,7 +1092,12 @@ describe("OAuth clients with scope sets", () => {
           provider: "google-workspace",
         }),
         capabilities,
-      ).resolves.toEqual({ requested: false, configured: false, ready: false });
+      ).resolves.toEqual({
+        requested: false,
+        configured: false,
+        ready: false,
+        ...NO_SETUP,
+      });
     }
     // Listed for reading: no token-endpoint call (the app-driven flow
     // needs the write grant), but a Gateway-owned connection serves API
@@ -1234,6 +1278,7 @@ describe("OAuth clients with scope sets", () => {
         status,
         code,
         message: expect.stringMatching(message),
+        ...NO_SETUP,
       });
       expect(await response.json()).toMatchObject({ code });
     },

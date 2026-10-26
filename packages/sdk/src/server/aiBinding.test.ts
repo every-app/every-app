@@ -2,7 +2,7 @@ import { afterEach, describe, expect, vi } from "vitest";
 import { it } from "../../test/inOrganization";
 import { ConfigurationError } from "../internal/index";
 import { gatewayAiBinding, type GatewayAiBindingOptions } from "./aiBinding";
-import { GatewayRefusalError } from "./integrationFetch";
+import { GatewayRefusalError } from "./refusal";
 
 afterEach(() => {
   vi.unstubAllGlobals();

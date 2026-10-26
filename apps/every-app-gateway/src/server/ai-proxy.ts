@@ -23,6 +23,8 @@ import { logEvent } from "@every-app/perimeter";
 import type { AiPolicy } from "@every-app/perimeter/manifest";
 import { tapUsage, type AiUsage } from "./ai-usage";
 import type { BodyEnd } from "./response-tap";
+import { SETUP_CLI } from "./setup-cli";
+import { setupInfo, type SetupInfo } from "./setup-info";
 
 const STRIPPED_PROXY_HEADERS = [
   "x-every-app-token",
@@ -194,6 +196,12 @@ interface HandleAuthenticatedAiProxyRequestOptions {
    * reader in this isolate cancelled it or the provider failed mid-body.
    */
   onUsage?: (report: AiUsageReport) => void;
+  /**
+   * The command that sets what the calling app lacks (`pnpm everyapp
+   * configure <app>`), or null when its reader can't run it: what a "not
+   * set up" refusal names (server/setup-info.ts). Absent: null.
+   */
+  setupCommand?: string | null;
 }
 
 interface AiAnswerReport {
@@ -295,13 +303,13 @@ export async function handleAuthenticatedAiProxyRequest({
   fetchUpstream = fetch,
   onAnswer,
   onUsage,
+  setupCommand = null,
 }: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
   const isDefault = provider === AI_DEFAULT_PROVIDER;
   if (isDefault && !aiDefault) {
-    return aiRefusal(
+    return aiNotConfiguredRefusal(
       "ai_default_not_configured",
-      503,
-      "The Gateway's default model provider isn't set up: its operator sets one key with everyapp ai default <provider> (or any provider's key, in the order everyapp ai show lists).",
+      defaultModelSetup(undefined, setupCommand),
     );
   }
   // The default route goes to the resolved provider; its entry decides
@@ -318,22 +326,22 @@ export async function handleAuthenticatedAiProxyRequest({
     );
   }
   if (isDefault && !aiDefault!.configured) {
-    const settings = aiDefault!.settings;
-    return aiRefusal(
+    return aiNotConfiguredRefusal(
       "ai_default_not_configured",
-      503,
-      `The Gateway's default model provider (${aiDefault!.label}) isn't configured: the gateway needs ${settings.join(" and ")}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")} (or picks another provider with everyapp ai default <provider>)`,
+      defaultModelSetup(aiDefault, setupCommand),
     );
   }
 
   const authorization = aiProvider.authorization(env);
   const baseUrl = aiProvider.upstreamBaseUrl(env);
   if (!authorization || !baseUrl) {
-    const settings = [aiProvider.keyEnv, ...aiProvider.alsoNeeds];
-    return aiRefusal(
+    return aiNotConfiguredRefusal(
       "ai_provider_not_configured",
-      503,
-      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${resolved}. Its operator sets ${settings.length === 1 ? "it" : "them"} with: everyapp secret set ${settings.join(" ")}`,
+      setupInfo({
+        label: lookup.get(resolved)?.label ?? resolved,
+        settings: [aiProvider.keyEnv, ...aiProvider.alsoNeeds],
+        command: setupCommand,
+      }),
     );
   }
 
@@ -713,6 +721,134 @@ function stripProxyHeaders(headers: Headers): void {
 function canIncludeBody(method: string): boolean {
   const normalized = method.toUpperCase();
   return normalized !== "GET" && normalized !== "HEAD";
+}
+
+/**
+ * The Gateway's default model isn't set up: the settings of the provider
+ * it resolves to (none when the operator's choice is unusable), and the
+ * other way, picking a provider whose key is set.
+ */
+function defaultModelSetup(
+  resolution: AiDefaultResolution | undefined,
+  command: string | null,
+): SetupInfo {
+  return setupInfo({
+    label: resolution ? `A chat model (${resolution.label})` : "A chat model",
+    settings: resolution?.settings ?? [],
+    command,
+    alternative: `picks another model provider with ${SETUP_CLI} ai default <provider>`,
+  });
+}
+
+/**
+ * `ai_provider_not_configured` or `ai_default_not_configured` (503), with
+ * the setup sentence as the message and the settings and command beside
+ * it, at the top level and in OpenAI's `error` (an OpenAI SDK's
+ * `APIError.error` is that object).
+ */
+function aiNotConfiguredRefusal(code: string, info: SetupInfo): Response {
+  return Response.json(
+    {
+      error: { message: info.setup, code, type: "gateway_refusal", ...info },
+      code,
+      message: info.setup,
+      ...info,
+    },
+    { status: 503, headers: { [GATEWAY_ERROR_HEADER]: code } },
+  );
+}
+
+/** Whether a model call to `provider` would go through, as `aiStatus()` reads it. */
+interface AiStatus {
+  /** The id asked about: `default`, or a provider's. */
+  provider: string;
+  /** The manifest asks for it: `ai.chat` for `default`, else `providers`. */
+  requested: boolean;
+  /** The Gateway holds every setting it needs. */
+  configured: boolean;
+  /** Calls would go through. */
+  ready: boolean;
+  /** For `default`: the provider and model calls go to now (null while none is configured). */
+  resolved: { provider: string; label: string; model: string } | null;
+  settings: string[];
+  setup: string | null;
+  command: string | null;
+}
+
+/**
+ * `GET /api/ai/<provider>` (no path after it): the status of a provider
+ * or of the default, without calling anything. Only an app that asks for
+ * it learns whether it is set up.
+ */
+export function aiStatusResponse({
+  provider,
+  requested,
+  env,
+  lookup = CATALOG,
+  aiDefault,
+  setupCommand = null,
+}: {
+  provider: string;
+  requested: boolean;
+  env: AiProxyEnv;
+  lookup?: CapabilityLookup;
+  aiDefault?: AiDefaultResolution;
+  setupCommand?: string | null;
+}): Response {
+  const none = { settings: [], setup: null, command: null };
+  const status = (
+    configured: boolean,
+    resolved: AiStatus["resolved"],
+    setup: SetupInfo | typeof none,
+  ): Response =>
+    // An app that doesn't ask for it learns nothing about its settings.
+    Response.json({
+      provider,
+      requested,
+      configured: requested && configured,
+      ready: requested && configured,
+      resolved: requested ? resolved : null,
+      ...(requested && !configured ? setup : none),
+    } satisfies AiStatus);
+  if (provider === AI_DEFAULT_PROVIDER) {
+    if (!aiDefault) {
+      return status(false, null, defaultModelSetup(undefined, setupCommand));
+    }
+    return status(
+      aiDefault.configured,
+      aiDefault.configured
+        ? {
+            provider: aiDefault.provider,
+            label: aiDefault.label,
+            model: aiDefault.model,
+          }
+        : null,
+      defaultModelSetup(aiDefault, setupCommand),
+    );
+  }
+  const aiProvider = aiProviderFor(provider, lookup);
+  if (!aiProvider || aiProvider.proxy) {
+    return Response.json({
+      provider,
+      requested: false,
+      configured: false,
+      ready: false,
+      resolved: null,
+      ...none,
+    } satisfies AiStatus);
+  }
+  const configured = Boolean(
+    aiProvider.authorization(env) && aiProvider.upstreamBaseUrl(env),
+  );
+  return status(
+    configured,
+    null,
+    setupInfo({
+      label: lookup.get(provider)?.label ?? provider,
+      settings: [aiProvider.keyEnv, ...aiProvider.alsoNeeds],
+      command: setupCommand,
+    }),
+  );
 }
 
 /**

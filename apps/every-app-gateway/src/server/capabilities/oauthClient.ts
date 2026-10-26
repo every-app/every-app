@@ -29,7 +29,6 @@ import {
   jsonObject,
   oauthClientCredentials,
   oauthClientOrigin,
-  oauthClientSecretSetCommand,
   parseIntegrationProxyPath,
   requestedGrantType,
   requestedScopes,
@@ -44,16 +43,36 @@ import {
   type OAuthClientCredentials,
   type OAuthScopePolicy,
   type TokenRequest,
+  capabilitySettings,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
 import type { IntegrationCallAdmission } from "@/server/integration-proxy";
 import { forwardableHeaders } from "./forward";
-import { capabilityRefusal } from "./refusal";
+import { setupInfo, type SetupInfo } from "@/server/setup-info";
+import { capabilityRefusal, notConfiguredRefusal } from "./refusal";
 
 /** Whether the app may use the client: its manifest lists it for writing. */
 function requested(entry: CapabilityRequest | undefined): boolean {
   return entry?.access === "write";
+}
+
+/** What a gateway without the client lacks: the client's settings (server/setup-info.ts). */
+function clientSetup(
+  capability: OAuthClientCapability,
+  command: string | null,
+): SetupInfo {
+  return setupInfo({
+    label: capability.label,
+    settings: capabilitySettings(capability),
+    command,
+    ...(capability.flow
+      ? {
+          alternative:
+            "an owner or admin adds a client under Manage workspace → Providers",
+        }
+      : {}),
+  });
 }
 
 /**
@@ -73,6 +92,7 @@ export function oauthClientStatus({
   lookup = CATALOG,
   client: resolved,
   connection,
+  setupCommand = null,
 }: {
   id: string;
   /** The client `id` names in the gateway's registry. */
@@ -93,6 +113,8 @@ export function oauthClientStatus({
    * entry declares; absent when the gateway didn't look.
    */
   connection?: HeldConnectionStatus | null;
+  /** `pnpm everyapp configure <app>`, or null (server/setup-info.ts). */
+  setupCommand?: string | null;
 }): Response {
   const flow = capability.flow ? ("both" as const) : ("app" as const);
   // A Gateway-owned flow is used with any grant (held-token calls read);
@@ -108,13 +130,20 @@ export function oauthClientStatus({
         : null;
   const origin = client ? oauthClientOrigin(capability, env) : null;
   const policy = capability.scopePolicy;
+  // A requested client the gateway doesn't hold: what to set. A missing
+  // connection is the person's to make (`connectPath`), not a setting.
+  const setup =
+    isRequested && !client
+      ? clientSetup(capability, setupCommand)
+      : { settings: [], setup: null, command: null };
   const extra = capability.flow
     ? {
+        ...setup,
         flow,
         connectPath: `/connect/${encodeURIComponent(id)}`,
         ...(connection !== undefined ? { connection } : {}),
       }
-    : { flow };
+    : { ...setup, flow };
   const readiness = (sets: readonly string[] | null) => {
     if (!client) return false;
     if (!capability.flow || connection === undefined) return true;
@@ -188,6 +217,7 @@ export async function handleOAuthClientCall({
   fetchUpstream,
   onCall,
   resolveClient,
+  setupCommand,
 }: {
   request: Request;
   id: string;
@@ -212,13 +242,11 @@ export async function handleOAuthClientCall({
     env: CapabilitySettings;
     lookup: CapabilityLookup;
   }) => Promise<OAuthClientCredentials | null>;
+  /** `pnpm everyapp configure <app>`, or null (server/setup-info.ts). */
+  setupCommand?: string | null;
 }): Promise<Response> {
   const notConfigured = () =>
-    capabilityRefusal(
-      503,
-      "integration_not_configured",
-      `${capability.label} isn't set up on this gateway. Its operator registers an OAuth client (docs/capabilities.md, "OAuth clients") and gives it to the gateway with: ${oauthClientSecretSetCommand(capability)}`,
-    );
+    notConfiguredRefusal(clientSetup(capability, setupCommand ?? null));
   // An instance setting that isn't an https origin: no call can go through.
   if (capability.hostSetting && !oauthClientOrigin(capability, env)) {
     return notConfigured();

@@ -15,7 +15,11 @@ import {
   type AppRegistry,
   type RegisteredApp,
 } from "@every-app/perimeter";
-import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
+import {
+  aiRefusal,
+  aiStatusResponse,
+  handleAuthenticatedAiProxyRequest,
+} from "./ai-proxy";
 import {
   AI_DEFAULT_PROVIDER,
   resolveAiDefault,
@@ -41,6 +45,7 @@ import {
   type IntegrationProxyEnv,
 } from "./integration-proxy";
 import { platformPolicy } from "./platform-policy";
+import { configureCommand } from "./setup-info";
 import {
   dollarsToMicros,
   type UsageEvent,
@@ -385,6 +390,13 @@ export async function handleAppGatewayRequest({
     }
 
     const lookup = providers ? await providers() : CATALOG;
+    // What a "not set up" refusal or status names: `configure <app>`, for
+    // an operator who can run it (not a shared app's other organizations,
+    // not a hosted gateway's customers).
+    const setupCommand = configureCommand(
+      app.appId,
+      !policy.hosted && app.scope !== "shared",
+    );
     if (route.kind === "integration") {
       const url = new URL(request.url);
       // Only to tell a provider call from a service's for the cap: a
@@ -444,6 +456,7 @@ export async function handleAppGatewayRequest({
         },
         fetchUpstream,
         ...(mail ? { mail } : {}),
+        setupCommand,
         // Loaded on first use: it reads D1.
         listMembers: async (organizationId) => {
           const { OrganizationMembersRepository } = await import(
@@ -486,6 +499,38 @@ export async function handleAppGatewayRequest({
     const allowed = isDefault
       ? Boolean(app.manifest.ai?.chat)
       : providerIds(app.manifest).includes(provider);
+    if (route.status) {
+      // `GET /api/ai/<provider>`: whether calls would go through. The
+      // default resolves on the organization's choice when the request
+      // says whose it is, else on the order alone.
+      const organizationId = allowed
+        ? await attributeCall(request, app, props, env, organizations).then(
+            (attribution) => attribution.organizationId,
+            () => null,
+          )
+        : null;
+      return aiStatusResponse({
+        provider,
+        requested: allowed,
+        env,
+        lookup,
+        ...(isDefault && allowed
+          ? {
+              aiDefault: resolveAiDefault({
+                choice: organizationId ? await aiDefault(organizationId) : null,
+                isSet: (name) => {
+                  const value = (env as Record<string, unknown>)[name];
+                  return typeof value === "string"
+                    ? value.trim().length > 0
+                    : Boolean(value);
+                },
+                lookup,
+              }),
+            }
+          : {}),
+        setupCommand,
+      });
+    }
     if (!allowed) {
       throw new AppGatewayError(
         "provider_not_allowed",
@@ -542,6 +587,7 @@ export async function handleAppGatewayRequest({
       ...(resolution ? { aiDefault: resolution } : {}),
       caller: { organizationId, appId: props.appId },
       fetchUpstream,
+      setupCommand,
       ...(appRowId
         ? {
             onAnswer: (report) =>
@@ -645,15 +691,19 @@ async function noteCapCheckLater(
 }
 
 type GatewayRoute =
-  | { kind: "ai"; provider: string }
+  | { kind: "ai"; provider: string; status: boolean }
   | { kind: "integration" }
   | { kind: "events" };
 
 /** AI providers under /api/ai/<provider>, capabilities under /api/integrations/, the app's own events at /api/events/emit. */
 function routeFromPath(request: Request): GatewayRoute {
   const { pathname } = new URL(request.url);
-  const ai = pathname.match(/^\/api\/ai\/([a-z][a-z0-9-]*)(?:\/|$)/);
-  if (ai?.[1]) return { kind: "ai", provider: ai[1] };
+  const ai = pathname.match(/^\/api\/ai\/([a-z][a-z0-9-]*)(\/|$)/);
+  if (ai?.[1]) {
+    // The bare `/api/ai/<provider>`, read with GET: its status (aiStatus()).
+    const status = ai[2] === "" && request.method.toUpperCase() === "GET";
+    return { kind: "ai", provider: ai[1], status };
+  }
   if (pathname.startsWith("/api/integrations/")) return { kind: "integration" };
   if (pathname === EVENTS_EMIT_PATH) return { kind: "events" };
   throw new AppGatewayError(

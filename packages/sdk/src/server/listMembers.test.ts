@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, vi } from "vitest";
 import { it } from "../../test/inOrganization";
 import type { EveryAppUser } from "../internal/index";
 import { getEveryAppUser } from "./everyApp";
-import { GatewayRefusalError } from "./integrationFetch";
+import { GatewayRefusalError } from "./refusal";
 import { listMembers } from "./listMembers";
 
 vi.mock("./everyApp", () => ({ getEveryAppUser: vi.fn() }));

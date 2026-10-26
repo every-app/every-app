@@ -28,14 +28,26 @@ describe("handleAuthenticatedAiProxyRequest", () => {
       request: createRequest("/api/ai/openai/v1/responses", { method: "POST" }),
       provider: "openai",
       env: {},
+      setupCommand: "pnpm everyapp configure notes",
     });
 
+    const setup =
+      "OpenAI isn't set up on this Gateway: it needs OPENAI_API_KEY. An admin runs: pnpm everyapp configure notes";
     expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toEqual({
       code: "ai_provider_not_configured",
+      message: setup,
+      settings: ["OPENAI_API_KEY"],
+      setup,
+      command: "pnpm everyapp configure notes",
+      // An OpenAI SDK's APIError.error is this object: the same fields.
       error: {
-        message:
-          "Provider is not configured: the gateway needs OPENAI_API_KEY for openai. Its operator sets it with: everyapp secret set OPENAI_API_KEY",
+        code: "ai_provider_not_configured",
+        type: "gateway_refusal",
+        message: setup,
+        settings: ["OPENAI_API_KEY"],
+        setup,
+        command: "pnpm everyapp configure notes",
       },
     });
   });
@@ -685,7 +697,8 @@ describe("Workers AI", () => {
         code: "ai_provider_not_configured",
         error: {
           message:
-            "Provider is not configured: the gateway needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID for workers-ai. Its operator sets them with: everyapp secret set WORKERS_AI_API_TOKEN CLOUDFLARE_ACCOUNT_ID",
+            "Workers AI isn't set up on this Gateway: it needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. The Gateway's operator sets them.",
+          settings: ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
           code: "ai_provider_not_configured",
           type: "gateway_refusal",
         },
@@ -911,10 +924,25 @@ describe("AI proxy refusals", () => {
       expect(response.status, code).toBe(status);
       expect(response.headers.get("x-everyapp-error"), code).toBe(code);
       const body = (await response.json()) as { message: string };
+      // A "not set up" refusal also carries what to set (setup-info.ts).
+      const setup =
+        code === "ai_provider_not_configured"
+          ? {
+              settings: expect.any(Array),
+              setup: body.message,
+              command: null,
+            }
+          : {};
       expect(body, code).toEqual({
-        error: { message: body.message, code, type: "gateway_refusal" },
+        error: {
+          message: body.message,
+          code,
+          type: "gateway_refusal",
+          ...setup,
+        },
         code,
         message: expect.any(String),
+        ...setup,
       });
       expect(body.message.length, code).toBeGreaterThan(0);
     }

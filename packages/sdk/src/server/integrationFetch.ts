@@ -49,6 +49,7 @@ import {
   attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
+import type { SetupInfo } from "./refusal.js";
 import {
   BINDING_ORIGIN,
   streamingRequest,
@@ -816,7 +817,7 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-export interface IntegrationStatus {
+export interface IntegrationStatus extends SetupInfo {
   /** The app's manifest lists the capability. */
   requested: boolean;
   /** The gateway holds a key for it (in local dev: `.dev.vars` sets one). */
@@ -919,6 +920,71 @@ export async function integrationStatus<
    */
   for?: GatewayCallFor;
 }): Promise<IntegrationStatusOf<P>> {
+  const status = await readIntegrationStatus({
+    env,
+    provider,
+    ...(explicitTarget === undefined ? {} : { for: explicitTarget }),
+  });
+  return withSetup(
+    status,
+    String(provider),
+    env as Record<string, unknown>,
+  ) as IntegrationStatusOf<P>;
+}
+
+/** A status before its setup fields are filled in. */
+type Bare<S> = Omit<S, keyof SetupInfo>;
+
+/**
+ * `status` with its setup fields: the Gateway's as it sent them, or in
+ * local development (no binding) the `.dev.vars` names a status that
+ * isn't configured lacks.
+ */
+function withSetup<S extends Omit<IntegrationStatus, keyof SetupInfo>>(
+  status: S & Partial<SetupInfo>,
+  provider: string,
+  values: Record<string, unknown>,
+): S & SetupInfo {
+  const binding = values["EVERY_APP_GATEWAY"] as
+    | GatewayServiceBinding
+    | undefined;
+  if (binding || !status.requested || status.configured) {
+    return {
+      ...status,
+      settings: Array.isArray(status.settings) ? status.settings : [],
+      setup: typeof status.setup === "string" ? status.setup : null,
+      command: typeof status.command === "string" ? status.command : null,
+    };
+  }
+  const integration =
+    CATALOG.get(provider) ?? devRegisteredProvider(provider, values);
+  const settings =
+    provider === "email"
+      ? ["EMAIL_FROM"]
+      : integration
+        ? [...capabilitySettings(integration)]
+        : [];
+  return {
+    ...status,
+    settings,
+    setup: settings.length
+      ? `${integration?.label ?? provider} isn't set up for local development: set ${settings.join(" and ")} in .dev.vars.`
+      : `${integration?.label ?? provider} isn't set up for local development.`,
+    command: null,
+  };
+}
+
+async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
+  env,
+  provider,
+  for: explicitTarget,
+}: {
+  env: object;
+  provider: P;
+  for?: GatewayCallFor;
+}): Promise<
+  Omit<IntegrationStatusOf<P>, keyof SetupInfo> & Partial<SetupInfo>
+> {
   const target = attributionFor(
     env,
     explicitTarget,
@@ -1012,7 +1078,7 @@ function devOAuthClientStatus(
   id: string,
   capability: OAuthClientCapability,
   values: Record<string, unknown>,
-): OAuthClientIntegrationStatus {
+): Bare<OAuthClientIntegrationStatus> {
   const client = values["EVERYAPP_DEV"]
     ? oauthClientCredentials(capability, values)
     : null;
@@ -1093,7 +1159,7 @@ function devOAuthClientStatus(
  */
 function devEmailStatus(
   values: Record<string, unknown>,
-): EmailIntegrationStatus {
+): Bare<EmailIntegrationStatus> {
   const dev = Boolean(values["EVERYAPP_DEV"]);
   const configured = dev && Boolean(stringValue(values["EMAIL_FROM"]));
   const choice = chooseEmailProvider(values["EMAIL_PROVIDER"], (provider) =>
@@ -1119,49 +1185,4 @@ function devEmailStatus(
     senders: dev ? parseEmailList(values[EMAIL_SENDERS_ENV]) : [],
     provider: configured && choice.ok ? choice.provider : null,
   };
-}
-
-/** A refusal the AppGateway binding made itself, not the provider. */
-export interface GatewayRefusal {
-  status: number;
-  /** e.g. `capability_not_requested`, `integration_not_configured`. */
-  code: string;
-  message: string;
-}
-
-/**
- * A refusal the AppGateway binding made, thrown: what `sendEmail()` throws
- * when the gateway won't send (`email_sender_not_allowed`,
- * `email_budget_exhausted`, ...). The thrown twin of {@link gatewayRefusal}.
- */
-export class GatewayRefusalError extends Error implements GatewayRefusal {
-  readonly status: number;
-  readonly code: string;
-
-  constructor({ status, code, message }: GatewayRefusal) {
-    super(message);
-    this.name = "GatewayRefusalError";
-    this.status = status;
-    this.code = code;
-  }
-}
-
-/**
- * The gateway's own refusal in `response`, or null when the response is the
- * provider's answer (which may be an error of its own). Reads the body only
- * for a refusal, so call it before reading the body yourself.
- */
-export async function gatewayRefusal(
-  response: Response,
-): Promise<GatewayRefusal | null> {
-  const code = response.headers.get(GATEWAY_ERROR_HEADER);
-  if (!code) return null;
-  const body: unknown = await response.json().catch(() => null);
-  const message =
-    body &&
-    typeof body === "object" &&
-    typeof (body as { message?: unknown }).message === "string"
-      ? (body as { message: string }).message
-      : `The EveryApp gateway refused the call (${code}).`;
-  return { status: response.status, code, message };
 }

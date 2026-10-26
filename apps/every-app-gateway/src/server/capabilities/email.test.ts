@@ -464,15 +464,14 @@ describe("POST /api/integrations/email/send", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("refuses when the gateway has no sender, naming the settings and the runbook", async () => {
+  it("refuses when the gateway has no sender, naming the settings and the command", async () => {
     workerEnv.EMAIL_FROM = undefined;
     const body = await expectRefusal(call(), 503, "integration_not_configured");
-    expect(body["message"]).toContain("EMAIL_FROM");
-    expect(body["message"]).toContain("EMAIL_FROM_NAME");
-    expect(body["message"]).toContain(
-      "Cloudflare Email Sending (the EMAIL binding, or EMAIL_REST_API_TOKEN with CLOUDFLARE_ACCOUNT_ID) or Resend (RESEND_API_KEY); EMAIL_PROVIDER picks one when both are set",
-    );
-    expect(body["message"]).toContain("docs/runbooks/email-sending-setup.md");
+    expect(body).toMatchObject({
+      settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
+      setup: body["message"],
+    });
+    expect(body["message"]).toContain("EMAIL_FROM and EMAIL_FROM_NAME");
   });
 
   it("refuses when EMAIL_PROVIDER picks a provider that isn't set up, sending nothing", async () => {
@@ -773,6 +772,9 @@ describe("GET /api/integrations/email", () => {
       sender: { address: "noreply@gateway.example.com", name: "EveryApp" },
       senders: ["*@mail.example.com", "ceo@example.com"],
       provider: "cloudflare",
+      settings: [],
+      setup: null,
+      command: null,
     });
     expect(send).not.toHaveBeenCalled();
   });
@@ -807,6 +809,7 @@ describe("GET /api/integrations/email", () => {
       sender: null,
       senders: ["*@mail.example.com", "ceo@example.com"],
       provider: null,
+      settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
     });
   });
 
@@ -821,6 +824,9 @@ describe("GET /api/integrations/email", () => {
       sender: null,
       senders: [],
       provider: null,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 

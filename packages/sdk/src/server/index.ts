@@ -43,18 +43,26 @@ export {
 export {
   ai,
   aiBaseUrl,
+  aiStatus,
   providerBaseUrl,
   AI_DEFAULT_BASE_URL,
   type AiClient,
+  type AiStatus,
 } from "./ai.js";
 export {
+  AI_NOT_CONFIGURED_CODES,
   GatewayRefusalError,
   gatewayRefusal,
+  isAiNotConfigured,
+  refusalFromError,
+  type GatewayRefusal,
+  type SetupInfo,
+} from "./refusal.js";
+export {
   devAccessTokenName,
   integrationFetch,
   integrationStatus,
   type EmailIntegrationStatus,
-  type GatewayRefusal,
   type IntegrationFetchOptions,
   type IntegrationStatus,
   type IntegrationStatusOf,

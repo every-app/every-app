@@ -24,12 +24,22 @@ import {
   AI_DEFAULT_PROVIDER,
   CATALOG,
   ConfigurationError,
+  aiProviderSettings,
+  devAiProvider,
+  resolveAiDefault,
 } from "../internal/index.js";
+import {
+  applyAttribution,
+  attributionFor,
+  type GatewayCallFor,
+} from "./attribution.js";
 import {
   BINDING_ORIGIN,
   createGatewayFetch,
   type CreateGatewayFetchOptions,
+  type GatewayServiceBinding,
 } from "./gatewayFetch.js";
+import type { SetupInfo } from "./refusal.js";
 
 export interface AiClient {
   /** `http://every-app-gateway.internal/api/ai/default/v1`: an OpenAI client's base URL. */
@@ -67,6 +77,132 @@ export function ai(options: CreateGatewayFetchOptions): AiClient | null {
     chatCompletionsUrl: `${AI_DEFAULT_BASE_URL}/chat/completions`,
     embeddingsUrl: `${AI_DEFAULT_BASE_URL}/embeddings`,
   };
+}
+
+/** Whether model calls to a provider (or the default) would go through. */
+export interface AiStatus extends SetupInfo {
+  /** The id asked about: `default`, or a provider's (`openrouter`, `workers-ai`, …). */
+  provider: string;
+  /** The manifest asks for it: `ai.chat` for `default`, else `providers`. */
+  requested: boolean;
+  /** The Gateway (in local dev, `.dev.vars`) holds every setting it needs. */
+  configured: boolean;
+  /** Calls would go through. */
+  ready: boolean;
+  /**
+   * For `default`: the provider and model calls go to now, or null while
+   * none is configured. Null for a named provider.
+   */
+  resolved: { provider: string; label: string; model: string } | null;
+}
+
+/**
+ * Whether the app can use a model right now, without calling one: gate
+ * an AI feature and show `setup` ("A chat model isn't set up on this
+ * Gateway: it needs OPENROUTER_API_KEY. An admin runs: pnpm everyapp
+ * configure inbox") up front instead of failing mid-task. `provider`
+ * defaults to `default`, the Gateway's default model (`ai: { chat: true }`);
+ * name one the manifest lists under `providers` to ask about it instead.
+ * The Gateway owns the wording: show `setup` and `command` as they are.
+ *
+ * Over the binding it sends `GET /api/ai/<provider>`; in local dev it
+ * answers from `.dev.vars` by the same rule `createGatewayFetch()` uses.
+ */
+export async function aiStatus({
+  env,
+  provider = AI_DEFAULT_PROVIDER,
+  for: explicitTarget,
+}: {
+  env: object;
+  provider?: string;
+  /**
+   * Whom the status is for: the default resolves on that organization's
+   * choice (`everyapp ai default`). Left out, the request `everyApp()` is
+   * serving or the organization `withOrganization()` named, as on every
+   * call.
+   */
+  for?: GatewayCallFor;
+}): Promise<AiStatus> {
+  const target = attributionFor(env, explicitTarget, "aiStatus");
+  const values = env as Record<string, unknown>;
+  const binding = values["EVERY_APP_GATEWAY"] as
+    | GatewayServiceBinding
+    | undefined;
+  const unavailable: AiStatus = {
+    provider,
+    requested: false,
+    configured: false,
+    ready: false,
+    resolved: null,
+    settings: [],
+    setup: null,
+    command: null,
+  };
+  if (binding && typeof binding.fetch === "function") {
+    const headers = new Headers();
+    if (target !== undefined) applyAttribution(headers, target);
+    const response = await binding.fetch(
+      `${BINDING_ORIGIN}/api/ai/${encodeURIComponent(provider)}`,
+      { headers },
+    );
+    if (!response.ok) return unavailable;
+    const body = (await response.json()) as Partial<AiStatus>;
+    return {
+      ...unavailable,
+      ...body,
+      provider,
+      settings: Array.isArray(body.settings) ? body.settings : [],
+      setup: typeof body.setup === "string" ? body.setup : null,
+      command: typeof body.command === "string" ? body.command : null,
+      resolved: body.resolved ?? null,
+    };
+  }
+  if (!values["EVERYAPP_DEV"]) return unavailable;
+  const isSet = (name: string) =>
+    typeof values[name] === "string" && (values[name] as string).trim() !== "";
+  const dev = (
+    label: string,
+    settings: readonly string[],
+    configured: boolean,
+    resolved: AiStatus["resolved"],
+    also = "",
+  ): AiStatus => ({
+    provider,
+    requested: true,
+    configured,
+    ready: configured,
+    resolved,
+    settings: configured ? [] : [...settings],
+    setup: configured
+      ? null
+      : `${label} isn't set up for local development: set ${settings.join(" and ")}${also} in .dev.vars.`,
+    command: null,
+  });
+  if (provider === AI_DEFAULT_PROVIDER) {
+    const resolution = resolveAiDefault({ choice: null, isSet });
+    return dev(
+      "A chat model",
+      resolution.settings,
+      resolution.configured,
+      resolution.configured
+        ? {
+            provider: resolution.provider,
+            label: resolution.label,
+            model: resolution.model,
+          }
+        : null,
+      " (or another model provider's key)",
+    );
+  }
+  const spec = devAiProvider(provider);
+  if (!spec) return unavailable;
+  const settings = aiProviderSettings(spec);
+  return dev(
+    CATALOG.get(provider)?.label ?? provider,
+    settings,
+    settings.every(isSet),
+    null,
+  );
 }
 
 const CHAT_COMPLETIONS = "/chat/completions";

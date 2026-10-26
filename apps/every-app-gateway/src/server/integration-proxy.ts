@@ -48,7 +48,11 @@ import {
 } from "./capabilities/oauthClient";
 import type { OAuthClientResolver } from "./oauth/client";
 import type { HeldTokenPort } from "./oauth/heldTokens";
-import { capabilityRefusal as refusal } from "./capabilities/refusal";
+import {
+  capabilityRefusal as refusal,
+  notConfiguredRefusal,
+} from "./capabilities/refusal";
+import { setupInfo } from "./setup-info";
 import { platformPolicy } from "./platform-policy";
 import { watchBody } from "./response-tap";
 
@@ -128,6 +132,13 @@ interface HandleIntegrationProxyRequestOptions {
    * clients, as before.
    */
   oauth?: OAuthProxyDeps;
+  /**
+   * The command that sets what the calling app lacks (`pnpm everyapp
+   * configure <app>`), or null when its reader can't run it (a shared
+   * app, a hosted gateway): what a "not set up" status or refusal names
+   * (server/setup-info.ts). Absent: null.
+   */
+  setupCommand?: string | null;
 }
 
 export interface OAuthProxyDeps {
@@ -167,6 +178,7 @@ export async function handleIntegrationProxyRequest({
   onCall,
   onCost,
   oauth,
+  setupCommand = null,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
   const hosted = platformPolicy(env).hosted;
@@ -177,13 +189,20 @@ export async function handleIntegrationProxyRequest({
     // Only an app that lists the capability learns whether a key is held.
     const entry = capabilities?.[status.id];
     return status.id === "email"
-      ? emailCapabilityStatus({ entry, senders: emailSenders, hosted, mail })
+      ? emailCapabilityStatus({
+          entry,
+          senders: emailSenders,
+          hosted,
+          mail,
+          setupCommand,
+        })
       : membersCapabilityStatus(entry);
   }
   if (status?.capability.mode === "oauth_client") {
     const entry = capabilities?.[status.id];
     if (!oauth) {
       return oauthClientStatus({
+        setupCommand,
         id: status.id,
         capability: status.capability,
         entry,
@@ -217,6 +236,7 @@ export async function handleIntegrationProxyRequest({
       connection = undefined;
     }
     return oauthClientStatus({
+      setupCommand,
       id: status.id,
       capability: status.capability,
       entry,
@@ -237,6 +257,13 @@ export async function handleIntegrationProxyRequest({
       requested,
       configured,
       ready: requested && configured,
+      ...(requested && !configured
+        ? setupInfo({
+            label: status.capability.label,
+            settings: capabilitySettings(status.capability),
+            command: setupCommand,
+          })
+        : { settings: [], setup: null, command: null }),
     });
   }
   // An AI provider's status is the AI proxy's business: its path below
@@ -248,6 +275,7 @@ export async function handleIntegrationProxyRequest({
     const held = heldTokenUpstream(url, oauthClient.id, oauthClient.capability);
     if (held) {
       return handleHeldTokenCall({
+        setupCommand,
         request,
         id: oauthClient.id,
         capability: oauthClient.capability,
@@ -265,6 +293,7 @@ export async function handleIntegrationProxyRequest({
   }
   if (oauthClient) {
     return handleOAuthClientCall({
+      setupCommand,
       request,
       id: oauthClient.id,
       capability: oauthClient.capability,
@@ -296,6 +325,7 @@ export async function handleIntegrationProxyRequest({
     const entry = capabilities?.[route.id];
     return route.id === "email"
       ? handleEmailSend({
+          setupCommand,
           request,
           entry,
           senders: emailSenders,
@@ -355,22 +385,25 @@ export async function handleIntegrationProxyRequest({
 
   const auth = authorizationFor(integration, env);
   if (!auth) {
-    const names = capabilitySettings(integration);
-    return refusal(
-      503,
-      "integration_not_configured",
-      `${integration.label} isn't set up on this gateway. Its operator sets ${names.join(" and ")} with: everyapp secret set ${names.join(" ")}`,
+    return notConfiguredRefusal(
+      setupInfo({
+        label: integration.label,
+        settings: capabilitySettings(integration),
+        command: setupCommand,
+      }),
     );
   }
   // A registered provider's value is read only for the hosts and auth it
   // was set for (`providers.value-bound-to-hosts`): a row replaced or
   // added again since reads nothing until the operator sets the key again.
   if (lookup.bound && !lookup.bound(route.id)) {
-    const names = capabilitySettings(integration);
-    return refusal(
-      503,
-      "integration_not_configured",
-      `${integration.label}'s key was set for other hosts than the provider has now. Its operator sets it again with: everyapp secret set ${names.join(" ")}`,
+    return notConfiguredRefusal(
+      setupInfo({
+        label: integration.label,
+        settings: capabilitySettings(integration),
+        command: setupCommand,
+        problem: "has a key set for other hosts than the provider has now",
+      }),
     );
   }
   // One key reaches one whole account: on a hosted gateway that would be

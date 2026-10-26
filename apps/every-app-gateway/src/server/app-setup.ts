@@ -30,8 +30,9 @@ import {
   remoteMcpOf,
 } from "@every-app/sdk/internal";
 
-/** How an operator runs everyapp while publishing is paused. */
-export const SETUP_CLI = "pnpm everyapp";
+import { SETUP_CLI } from "@/server/setup-cli";
+
+export { SETUP_CLI };
 
 export interface AppSetupInput {
   /** The row's id, the version it runs and its recorded secret names: the cache key. */

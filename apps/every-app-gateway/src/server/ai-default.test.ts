@@ -64,6 +64,7 @@ async function call(input: {
     env: input.env,
     ...(aiDefault ? { aiDefault } : {}),
     caller: { organizationId: "org-1", appId: "app" },
+    setupCommand: "pnpm everyapp configure app",
     fetchUpstream: async (request) => {
       captured = request;
       return Response.json({
@@ -167,8 +168,12 @@ describe("the default route", () => {
     });
     expect(seen.status).toBe(503);
     expect(seen.code).toBe("ai_default_not_configured");
-    expect(seen.answer).toContain("OPENROUTER_API_KEY");
-    expect(seen.answer).toContain("everyapp ai default");
+    expect(JSON.parse(seen.answer)).toMatchObject({
+      settings: ["OPENROUTER_API_KEY"],
+      setup:
+        "A chat model (OpenRouter) isn't set up on this Gateway: it needs OPENROUTER_API_KEY. An admin runs: pnpm everyapp configure app (or picks another model provider with pnpm everyapp ai default <provider>)",
+      command: "pnpm everyapp configure app",
+    });
     expect(seen.url).toBe("");
   });
 

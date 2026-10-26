@@ -8,6 +8,9 @@ const READY: OAuthClientIntegrationStatus = {
   configured: true,
   ready: true,
   clientId: "client-123",
+  settings: [],
+  setup: null,
+  command: null,
 };
 
 const GOOGLE: OAuthClientIntegrationStatus = {

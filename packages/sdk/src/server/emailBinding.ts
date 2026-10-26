@@ -21,7 +21,7 @@ import {
   type SendEmailMessage,
 } from "../internal/index.js";
 import type { GatewayCallFor } from "./attribution.js";
-import { GatewayRefusalError } from "./integrationFetch.js";
+import { GatewayRefusalError } from "./refusal.js";
 import { sendEmail } from "./sendEmail.js";
 
 export interface GatewayEmailBindingOptions {

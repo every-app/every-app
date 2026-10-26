@@ -101,6 +101,7 @@ export function createGatewayFetch({
         ),
         "or",
       )}) in .dev.vars for direct local development.`,
+      { code: "ai_provider_not_configured" },
     );
   }
 
@@ -127,6 +128,10 @@ export function createGatewayFetch({
     if (!dev) {
       throw new ConfigurationError(
         `Set ${settingsNames(spec)} in .dev.vars to call ${provider} in local development.`,
+        {
+          code: "ai_provider_not_configured",
+          settings: aiProviderSettings(spec),
+        },
       );
     }
     const url = joinProviderUrl(`${spec.origin}${dev.basePath}`, path, search);
@@ -266,6 +271,10 @@ function directProviderPath(
     if (!resolution.configured) {
       throw new ConfigurationError(
         `Set ${resolution.settings.join(" and ")} (or another model provider's key) in .dev.vars to call the default model in local development.`,
+        {
+          code: "ai_default_not_configured",
+          settings: resolution.settings,
+        },
       );
     }
     const route =

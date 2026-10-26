@@ -161,6 +161,9 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
       requested: false,
       configured: false,
       ready: false,
+      settings: [],
+      setup: null,
+      command: null,
     });
   });
 
@@ -207,6 +210,9 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
       clientId: "gw-google-id",
       scopeSets: ["gmail.read"],
       scopes: [GMAIL],
+      settings: [],
+      setup: null,
+      command: null,
     });
     await expect((await googleStatus("seo")).json()).resolves.toMatchObject({
       ready: true,
@@ -230,6 +236,9 @@ describe("OAuth clients for deployed apps (SQLite)", () => {
       configured: true,
       ready: false,
       scopeSets: [],
+      settings: [],
+      setup: null,
+      command: null,
     });
 
     // Not listing the client at all is still the first refusal.

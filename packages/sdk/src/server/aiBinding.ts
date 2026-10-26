@@ -30,7 +30,7 @@ import {
 } from "../internal/index.js";
 import type { GatewayCallFor } from "./attribution.js";
 import { BINDING_ORIGIN, createGatewayFetch } from "./gatewayFetch.js";
-import { GatewayRefusalError, gatewayRefusal } from "./integrationFetch.js";
+import { GatewayRefusalError, gatewayRefusal } from "./refusal.js";
 
 export interface GatewayAiBindingOptions {
   /**

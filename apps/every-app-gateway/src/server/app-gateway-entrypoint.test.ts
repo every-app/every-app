@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mintIdentityJwt } from "@every-app/sdk/internal";
+import { mintIdentityJwt, type AiDefaultChoice } from "@every-app/sdk/internal";
 import {
   InMemoryAppRegistry,
   type AppRegistry,
@@ -91,6 +91,7 @@ function call(
       check: MonthlyCapCheck,
     ) => Promise<void>;
     waitUntil?: (task: Promise<unknown>) => void;
+    aiDefault?: (organizationId: string) => Promise<AiDefaultChoice | null>;
   } = {},
 ) {
   const props = Object.hasOwn(options, "props") ? options.props : PROPS;
@@ -117,6 +118,7 @@ function call(
     waitUntil: options.waitUntil,
     fetchUpstream,
     ...(options.events ? { events: options.events } : {}),
+    ...(options.aiDefault ? { aiDefault: options.aiDefault } : {}),
   });
 }
 
@@ -759,6 +761,108 @@ describe("AppGateway organization attribution for an organization's own app", ()
       expect(response.status).toBe(200);
     }
     expect(organizations.isAttributable).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppGateway AI status (GET /api/ai/<provider>)", () => {
+  const statusOf = async (
+    provider: string,
+    options: Parameters<typeof call>[0] = {},
+  ) => {
+    const fetchUpstream = vi.fn();
+    const response = await call({
+      inbound: new Request(`https://gateway.internal/api/ai/${provider}`),
+      fetchUpstream,
+      aiDefault: async () => null,
+      ...options,
+    });
+    expect(fetchUpstream).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+
+  it("says a listed provider is ready while its key is set", async () => {
+    await expect(statusOf("openai")).resolves.toEqual({
+      provider: "openai",
+      requested: true,
+      configured: true,
+      ready: true,
+      resolved: null,
+      settings: [],
+      setup: null,
+      command: null,
+    });
+  });
+
+  it("names the key and the command while it isn't, without calling the provider", async () => {
+    await expect(
+      statusOf("openai", { env: { OPENAI_API_KEY: " " } }),
+    ).resolves.toEqual({
+      provider: "openai",
+      requested: true,
+      configured: false,
+      ready: false,
+      resolved: null,
+      settings: ["OPENAI_API_KEY"],
+      setup:
+        "OpenAI isn't set up on this Gateway: it needs OPENAI_API_KEY. An admin runs: pnpm everyapp configure chef",
+      command: "pnpm everyapp configure chef",
+    });
+  });
+
+  it("tells an app that doesn't list a provider nothing about its key", async () => {
+    // OpenAI's key is set, and an app that lists only Anthropic isn't told.
+    await expect(
+      statusOf("openai", {
+        registeredApps: [app({ providers: ["anthropic"] })],
+      }),
+    ).resolves.toEqual({
+      provider: "openai",
+      requested: false,
+      configured: false,
+      ready: false,
+      resolved: null,
+      settings: [],
+      setup: null,
+      command: null,
+    });
+  });
+
+  it("answers the default model: what it resolves to, or the key to set", async () => {
+    const chat = app({
+      manifest: validateManifest({ id: "chef", ai: { chat: true } }),
+    });
+    await expect(
+      statusOf("default", {
+        registeredApps: [chat],
+        env: { OPENROUTER_API_KEY: "or-key" },
+      }),
+    ).resolves.toMatchObject({
+      requested: true,
+      ready: true,
+      resolved: { provider: "openrouter", label: "OpenRouter" },
+    });
+    await expect(
+      statusOf("default", {
+        registeredApps: [chat],
+        env: { OPENAI_API_KEY: " " },
+      }),
+    ).resolves.toMatchObject({
+      requested: true,
+      ready: false,
+      resolved: null,
+      settings: ["OPENROUTER_API_KEY"],
+      command: "pnpm everyapp configure chef",
+    });
+  });
+
+  it("names no command to a shared app, whose settings are the platform's", async () => {
+    await expect(
+      statusOf("openai", {
+        registeredApps: [app({ scope: "shared" })],
+        env: { OPENAI_API_KEY: " ", GATEWAY_DEPLOYMENT_MODE: "hosted" },
+      }),
+    ).resolves.toMatchObject({ ready: false, command: null });
   });
 });
 

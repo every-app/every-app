@@ -3,7 +3,7 @@ import { it } from "../../test/inOrganization";
 import { ConfigurationError } from "../internal/index";
 import { AttributionError } from "./attribution";
 import { emit } from "./emit";
-import { GatewayRefusalError } from "./integrationFetch";
+import { GatewayRefusalError } from "./refusal";
 
 afterEach(() => {
   vi.restoreAllMocks();

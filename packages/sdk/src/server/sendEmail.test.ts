@@ -2,7 +2,7 @@ import { afterEach, describe, expect, vi } from "vitest";
 import { it } from "../../test/inOrganization";
 import { ConfigurationError } from "../internal/index";
 import { AttributionError } from "./attribution";
-import { GatewayRefusalError } from "./integrationFetch";
+import { GatewayRefusalError } from "./refusal";
 import { sendEmail } from "./sendEmail";
 
 afterEach(() => {

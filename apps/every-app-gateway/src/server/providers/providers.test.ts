@@ -152,6 +152,7 @@ describe("the key-binding rule", () => {
     await expect(replaced.response.json()).resolves.toMatchObject({
       code: "integration_not_configured",
       message: expect.stringContaining("set for other hosts"),
+      settings: ["NORTHWIND_API_KEY"],
     });
     expect(replaced.upstream).toBeUndefined();
 
@@ -182,6 +183,10 @@ describe("the key-binding rule", () => {
       requested: true,
       configured: false,
       ready: false,
+      settings: ["NORTHWIND_API_KEY"],
+      setup:
+        "Northwind isn't set up on this Gateway: it needs NORTHWIND_API_KEY. The Gateway's operator sets it.",
+      command: null,
     });
 
     const report = await appSettingsReport(
