@@ -305,7 +305,13 @@ once the owner exists (Yes by default; never with `--yes` or `--json`).
 Run it again any time: after inviting someone (so Access lets them in), or
 after a change by hand. It changes only what differs and reports "as it
 should be" otherwise; `everyapp deploy` and `everyapp delete` keep an app's
-public routes in step on their own. An application that also covers another
+public routes in step on their own, and `everyapp update` (and `setup` on a
+live gateway) brings both applications in line with what the new release
+lets through right after the upload (its bypass paths, the sign-in methods;
+never the three settings), as the step `gateway.access`, so a release that
+moves a gateway path never leaves the live bypass list behind. Access being
+on is read from the live applications, so `access off` stays off; a failure
+there is a warning naming `access on`, never a failed update. An application that also covers another
 hostname keeps that destination; one with policies of its own is left
 alone, with a warning. `pnpm everyapp access show` reports the state and
 what `on` would change; `pnpm everyapp access off` removes the three

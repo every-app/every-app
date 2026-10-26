@@ -679,6 +679,10 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
                 : `Cloudflare Access lets ${text(event.data?.["appId"])}'s public routes through`,
           }
         : null,
+    // After a Gateway deploy behind Cloudflare Access: shown only when an
+    // application changed (what this release lets through, its sign-in methods).
+    "gateway.access": (event) =>
+      event.status === "ok" ? { done: "Cloudflare Access brought in step with this Gateway" } : null,
     "app.bind": (event) =>
       event.status === "start"
         ? { spin: `Adding ${text(event.data?.["appId"])} to the Gateway...` }

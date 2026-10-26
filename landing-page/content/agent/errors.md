@@ -2263,6 +2263,12 @@ The other codes these routes answer are documented where the same code is raised
 
 A `warning` event (`{ type: "warning", code, message, step?, data? }`) is something a run went on past. The terminal shows it as a `!` headline with the message's further lines dim and, from `data`, `rerun` (with `rerunNote`), `fix` or `url` after it; `--json` gets the event as is. `QUIET_WARNINGS` in `packages/cli/src/lib/output/events.ts` names the ones the terminal renderer skips without `--verbose`: only `CUSTOM_DOMAIN_OWNER_UNCHECKED`. The `ACCESS_*` warnings come from `access on` (`packages/cli/src/commands/access/index.ts`) and from the Access sync `deploy` and `delete` run afterwards (`syncAppsAccessAfter` in `packages/cli/src/lib/access/sync.ts`), except `ACCESS_IN_FRONT`, which the live wait and `setup` emit; the command is documented at [/docs/agent/access](/docs/agent/access), and the agent-driven Access setup step by step in `packages/cli/skills/everyapp/setup/access.md` (in an app `.claude/skills/everyapp/setup/access.md`).
 
+### ACCESS_APPLICATION_MISSING
+
+After `update` and `setup` on a live self-hosted Gateway, step `gateway.access`: one of the two Access applications is there and the other isn't (deleted in the dashboard), so the Gateway requires an Access login that nothing asks for on those hosts: `Cloudflare Access has no application in front of <host | *.<base>>` / `The Gateway requires an Access login, and nothing there asks for one: run access on to put it back.` `data.hosts`, `data.rerun`: `pnpm everyapp access on`. The reconcile never creates an application (that is `access on`'s job, and it needs people to let in).
+
+Source: `packages/cli/src/lib/access/applications.ts`
+
 ### ACCESS_APP_OUTSIDE_BASE
 
 Step `access.routes` (`access on`; the sync after `deploy` and `delete`): an app whose hostname isn't under the apps' domain gets no Access destination: `<apps> isn't|aren't under the apps' domain, so Access isn't set up for it|them.` `data.apps` (the app ids). Nothing to do short of giving the app a host under the base domain.
@@ -2295,9 +2301,9 @@ Source: `packages/cli/src/commands/access/index.ts`
 
 ### ACCESS_INLINE_POLICIES
 
-`access on`, step `access.update`: the existing Access application has policies of its own (`reusable: false`), so the reusable policy `Every App gateway members` can't be attached and the application is left as it is (outcome `skipped`): `The Access application "<name>" has a policy|policies of its own: <names>` / `It is left as it is: Access takes either application policies or reusable ones, not both, so the policy "Every App gateway members" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.` `data.application` (its id), `data.policies` (their ids).
+`access on` (step `access.update`) and the reconcile after `update` and `setup` (step `gateway.access`): the existing Access application has policies of its own (`reusable: false`), so the reusable policy `Every App gateway members` can't be attached and the application is left as it is (outcome `skipped`): `The Access application "<name>" has a policy|policies of its own: <names>` / `It is left as it is: Access takes either application policies or reusable ones, not both, so the policy "Every App gateway members" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.` `data.application` (its id), `data.policies` (their ids).
 
-Source: `packages/cli/src/commands/access/index.ts`
+Source: `packages/cli/src/lib/access/applications.ts`
 
 ### ACCESS_IN_FRONT
 
@@ -2313,15 +2319,23 @@ Source: `packages/cli/src/commands/access/index.ts`
 
 ### ACCESS_NOT_CHECKED
 
+Two steps raise it. After `update` and `setup` on a live self-hosted Gateway, step `gateway.access` (`keepAccessAfterGatewayDeploy` in `packages/cli/src/lib/access/applications.ts`): the Access applications couldn't be listed for a reason other than missing permissions (a login without them, and an account that never opened Zero Trust, are silent: Access can't be on without them): `Couldn't check Cloudflare Access after the Gateway deploy` / `<first line of the error>` / `If the Gateway is behind Access, the paths it lets through may be out of step with this release until it is updated.`; `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `if the Gateway is behind Access`.
+
 After `deploy` and `delete`, step `app.access` (`syncAppsAccessAfter`): the Access applications couldn't be listed, so whether the Gateway is behind Access, and whether the app's public surface is let through, wasn't checked. A login without the Access permissions (`ACCESS_PERMISSION_MISSING` above) says so only when the app has public routes or `mcp` in its manifest: `This Cloudflare login can't read Cloudflare Access, so <app> wasn't checked against it`; any other failure: `Couldn't check Cloudflare Access for <app>` / `<first line of the error>`; then `If the Gateway is behind Access, <app>'s <public routes | /mcp | public routes and /mcp> need a login there until it is updated.` (on `delete`: `If the Gateway is behind Access, <app>'s host stays listed there until it is updated.`). `data.appId`, `data.rerun`: `pnpm everyapp access on`, `data.rerunNote`: `with a login that can manage Access, if the Gateway is behind it` or `if the Gateway is behind Access`.
 
-Source: `packages/cli/src/lib/access/sync.ts`
+Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/applications.ts`
 
 ### ACCESS_ONE_APPLICATION
 
-`access on`, step `access.update`: one Access application covers both the Gateway host and `*.<base>`: `One Access application covers <gateway host> and *.<base>` / `It is kept and updated. The runbook recommends two, so an app host's Access cookie is never a Gateway login.` No data.
+`access on` (step `access.update`) and the reconcile after `update` and `setup` (step `gateway.access`): one Access application covers both the Gateway host and `*.<base>`: `One Access application covers <gateway host> and *.<base>` / `It is kept and updated. The runbook recommends two, so an app host's Access cookie is never a Gateway login.` No data.
 
-Source: `packages/cli/src/commands/access/index.ts`
+Source: `packages/cli/src/lib/access/applications.ts`
+
+### ACCESS_RECONCILE_FAILED
+
+After `update` and `setup` on a live self-hosted Gateway behind Cloudflare Access, step `gateway.access` (`keepAccessAfterGatewayDeploy` in `packages/cli/src/lib/access/applications.ts`): the applications were found but bringing them in line with this release failed (the lease wait, a refused update); the run doesn't fail for it: `Couldn't bring Cloudflare Access in step with this Gateway` / `<first line of the error>` / `Until it is updated, the paths Access lets through are the previous release's.` `data.rerun`: `pnpm everyapp access on`.
+
+Source: `packages/cli/src/lib/access/applications.ts`
 
 ### ACCESS_ROUTE_NOT_EXPRESSIBLE
 

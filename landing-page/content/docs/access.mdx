@@ -69,7 +69,7 @@ pnpm everyapp access off
 
 ## Good to know
 
-- Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them. The Gateway's `/health` stays reachable too, for an uptime monitor.
+- Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them. The Gateway's `/health` stays reachable too, for an uptime monitor. Updating the Gateway (`pnpm everyapp update`) keeps Access in step with the new version by itself; if that ever fails it says so and names `pnpm everyapp access on`.
 - Sign in with Cloudflare is restricted to the members of your Cloudflare account; `access on` and `show` warn if that restriction is ever turned off in the Zero Trust dashboard (and leave the provider off until it is back on). Any other sign-in method on your Zero Trust team, your company login say, is yours to allow on the two EveryApp applications in the dashboard: `access on` adds only these two, and never removes one.
 - Your Gateway's own sign-in page can also offer Continue with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, with Access on or off. [Sign in with Google and others](/docs/sign-in)
 - An Access sign-in lasts 30 days by default. For a daily code, run `pnpm everyapp access on --session 24h`.

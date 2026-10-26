@@ -34,6 +34,11 @@
  *                doesn't name (lib/gateway/reconcile.ts), or --redeploy. A
  *                Gateway behind the live one is refused (git pull), unless
  *                --allow-downgrade
+ *    access      on a live self-hosted Gateway behind Cloudflare Access
+ *                (told by the live Access applications, never a flag),
+ *                both applications are brought in line with what this
+ *                release lets through (lib/access/applications.ts): a
+ *                warning at worst, never a failed run
  *    owner       a one-time setup link, opened in the browser (never put
  *                into a CI log), and the wait for the claim, read from the
  *                link's own row in D1. In CI the run ends without one, with
@@ -57,6 +62,7 @@ import { version as packageVersion } from "../../../package.json";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { turnAccessOn } from "../access";
 import { applySecretValues } from "../secret";
+import { keepAccessAfterGatewayDeploy } from "@/lib/access/applications";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
 import { roughly } from "@/lib/output/time";
 import {
@@ -401,6 +407,22 @@ export async function installGateway({
     deps,
   });
 
+  // Behind Cloudflare Access, both applications are brought in line with
+  // what this release wants (its own public paths, the sign-in methods)
+  // as soon as it is live: a rollout never leaves the bypass list behind.
+  // Read from the live applications, so `access off` stays off; a
+  // warning at worst, never a failed run. A hosted Gateway ignores Access,
+  // and a Gateway that was just installed can't be behind it yet.
+  const mode = live?.deploymentMode ?? "self_hosted";
+  if (live && mode === "self_hosted") {
+    await keepAccessAfterGatewayDeploy({
+      cf,
+      db: gateway.db,
+      scope: { gatewayHost: target.domain.toLowerCase(), appBaseDomain: target.appBaseDomain.toLowerCase() },
+      out,
+    });
+  }
+
   // Its owner.
   const { owner, created } = await ensureOwner({
     db: gateway.db,
@@ -413,7 +435,6 @@ export async function installGateway({
   // The questions only a person answers, on a self-hosted Gateway; --yes
   // answers No to both. What the Worker holds decides whether each is
   // asked: a token set stays, and Access on stays on.
-  const mode = live?.deploymentMode ?? "self_hosted";
   const asking = deps.interactive && !flags.yes && mode === "self_hosted";
   const secretNames = asking ? await listWorkerSecrets(cf, GATEWAY_WORKER_NAME) : [];
   // Browser installs need a deploy token: asked for once, at a terminal.

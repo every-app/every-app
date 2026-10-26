@@ -30,7 +30,6 @@ import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import chalk from "chalk";
 import {
   applicationUpdateBody,
-  createAccessApplication,
   createAccessOrganization,
   createAccessPolicy,
   createCloudflareIdentityProvider,
@@ -44,7 +43,6 @@ import {
   updateAccessApplication,
   updateAccessPolicyRules,
   type AccessApplication,
-  type AccessApplicationBody,
   type AccessIdentityProvider,
   type AccessOrganization,
   type AccessPolicy,
@@ -55,18 +53,25 @@ import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import {
+  APPS_APPLICATION_NAME,
+  DEFAULT_SESSION,
+  GATEWAY_APPLICATION_NAME,
+  planCounts,
+  POLICY_NAME,
+  reconcileAccessApplications,
+  type ApplicationOutcome,
+} from "@/lib/access/applications";
+import {
   allowedSignInProviders,
   appsDestinations,
   CLOUDFLARE_IDP_TYPE,
   describeSignInMethods,
-  desiredSignIn,
   durationSeconds,
   emailDomainRule,
   emailRule,
   findAccessApplications,
   gatewayDestination,
   managedOAuthOn,
-  MCP_PATHS,
   mergeRules,
   missingSignInProviders,
   ONE_TIME_PIN_IDP_TYPE,
@@ -77,8 +82,6 @@ import {
   splitDestinations,
   unrestrictedCloudflareProviders,
   UNVERIFIED_EMAIL_IDP_TYPES,
-  type AccessPublicDestination,
-  type AccessScope,
 } from "@/lib/access/plan";
 import {
   clearAccessSettingsRecord,
@@ -87,7 +90,7 @@ import {
   writeAccessSettingsRecord,
 } from "@/lib/access/record";
 import { ACCESS_SETTINGS } from "@/lib/access/settings";
-import { emitPlanWarnings, readPublicSurfaces, scopeOf, type PlanLeftovers } from "@/lib/access/sync";
+import { emitPlanWarnings, readPublicSurfaces, scopeOf } from "@/lib/access/sync";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import type { InstallRecord } from "@/lib/gateway/install";
@@ -103,16 +106,10 @@ import { listed, plural } from "@/lib/output/text";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
 
-/** The reusable policy `on` keeps: who may use Every App. */
-export const POLICY_NAME = "Every App gateway members";
-/** The two applications' names (`teardown` finds them by these too, with no Gateway left to say what they cover). */
-export const GATEWAY_APPLICATION_NAME = "Every App gateway";
-export const APPS_APPLICATION_NAME = "Every App apps";
-/** The most Access allows for an application's session: a PIN a month, not a day. */
+/** The names `on` makes and `teardown` finds (lib/access/applications.ts). */
+export { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME };
 /** The optional setting that pins the Gateway to listed identity providers (docs/runbooks/cloudflare-access.md). */
 const IDP_IDS_SETTING = "CLOUDFLARE_ACCESS_IDP_IDS";
-
-const DEFAULT_SESSION = "720h";
 /** Access's default for a team's global session, when unset. */
 const ACCESS_DEFAULT_GLOBAL_SESSION_SECONDS = 24 * 3600;
 const STEP = "access.update";
@@ -277,15 +274,6 @@ function wantedRules(
     checkedDomains.push(value);
   }
   return { rules, emails: checkedEmails, domains: checkedDomains };
-}
-
-/** What one application ended as. */
-interface ApplicationOutcome {
-  application: AccessApplication;
-  /** `skipped`: left as found, with a warning saying why. */
-  outcome: "created" | "updated" | "unchanged" | "skipped";
-  /** The sign-in providers this run allowed on it that it didn't allow before (ids). */
-  signInAdded: string[];
 }
 
 /** What `on` found and did, for the done event. */
@@ -486,68 +474,26 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   // same time waits, and what it deployed is read here, under it): the
   // apps' first, so its AUD exists before the Gateway's settings name it.
   const lease = await acquireLease({ db, id: ACCESS_LEASE_ID, purpose: LeasePurpose.AccessSync, out, step: "gateway.lease" });
-  let apps: ApplicationOutcome;
-  let gateway: ApplicationOutcome;
-  let combined: boolean;
-  let leftovers: PlanLeftovers;
-  let plan: ReturnType<typeof appsDestinations>;
+  let applications: Awaited<ReturnType<typeof reconcileAccessApplications>>;
   try {
-    const found = findAccessApplications(await listAccessApplications(cf), scope);
-    const managedOAuth = managedOAuthOn(found.gateway);
-    plan = appsDestinations(base, await readPublicSurfaces(db), { managedOAuth });
-    combined = found.gateway !== null && found.apps !== null && found.gateway.id === found.apps.id;
-    const foreign: PlanLeftovers["foreign"] = [];
-    const noteForeign = (application: AccessApplication | null) => {
-      if (!application) return;
-      const split = splitDestinations(application.destinations ?? [], scope).foreign;
-      if (split.length > 0) {
-        foreign.push({ application: application.name ?? application.id, uris: split.map((d) => d.uri ?? "(private)") });
-      }
-    };
-    const common = {
+    applications = await reconcileAccessApplications(cf, out, db, {
       scope,
+      found: findAccessApplications(await listAccessApplications(cf), scope),
       policyId: policy.id,
       session,
       sessionGiven: options.session !== undefined,
       allowedIdps: allowedMethods.map((provider) => provider.id),
-    };
-    if (combined) {
-      out.emit({
-        type: "warning",
-        code: "ACCESS_ONE_APPLICATION",
-        step: STEP,
-        message: `One Access application covers ${gatewayHost} and *.${base}\nIt is kept and updated. The runbook recommends two, so an app host's Access cookie is never a Gateway login.`,
-      });
-      noteForeign(found.gateway);
-      const together = await reconcileApplication(cf, out, found.gateway, {
-        ...common,
-        name: found.gateway!.name ?? GATEWAY_APPLICATION_NAME,
-        destinations: [gatewayDestination(gatewayHost, managedOAuth), ...plan.destinations],
-        appLauncherVisible: true,
-      });
-      apps = together;
-      gateway = together;
-    } else {
-      noteForeign(found.apps);
-      noteForeign(found.gateway);
-      apps = await reconcileApplication(cf, out, found.apps, {
-        ...common,
-        name: APPS_APPLICATION_NAME,
-        destinations: plan.destinations,
-        appLauncherVisible: false,
-      });
-      gateway = await reconcileApplication(cf, out, found.gateway, {
-        ...common,
-        name: GATEWAY_APPLICATION_NAME,
-        destinations: [gatewayDestination(gatewayHost, managedOAuth)],
-        appLauncherVisible: true,
-      });
-    }
-    leftovers = { dropped: plan.dropped, outsideBase: plan.outsideBase, foreign };
+      create: true,
+      step: STEP,
+    });
   } finally {
     await lease.release();
   }
-  emitPlanWarnings(out, leftovers);
+  // Created when missing: never null here.
+  const apps = applications.apps!;
+  const gateway = applications.gateway!;
+  const { combined, plan } = applications;
+  emitPlanWarnings(out, applications.leftovers);
 
   // 5. The Gateway's settings, all three in one new version of the Worker.
   // Values can't be read back, so what was written is recorded in the
@@ -621,13 +567,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
     },
     // The plan's destinations: the wildcard, then one per app with public
     // routes or /mcp (under Managed OAuth, with public routes only).
-    {
-      gatewayHost,
-      base,
-      session,
-      appsWithRoutes: plan.destinations.filter((d) => d.overrides.some((o) => !MCP_PATHS.includes(o.path_pattern))).length,
-      appsWithMcp: plan.destinations.filter((d) => d.overrides.some((o) => o.path_pattern === "/mcp")).length,
-    },
+    { gatewayHost, base, session, ...planCounts(plan) },
   );
 }
 
@@ -679,97 +619,6 @@ function askTeamAtTerminal(suggested: string): Promise<string> {
     validate: (value) =>
       TEAM.test(value.trim()) ? null : "Lowercase letters, digits and dashes only.",
   });
-}
-
-/** What an application should be. */
-interface DesiredApplication {
-  scope: AccessScope;
-  name: string;
-  /** Our destinations; the application's others are kept. */
-  destinations: AccessPublicDestination[];
-  policyId: string;
-  session: string;
-  /** `--session` was given: an existing application's session changes too. */
-  sessionGiven: boolean;
-  allowedIdps: string[];
-  appLauncherVisible: boolean;
-}
-
-/**
- * Create the application, or bring the fields this command owns in line
- * (our destinations, our policy among its reusable policies, the cookie
- * settings, the team's sign-in providers among its allowed ones, the
- * session when asked) and keep everything else as found. No difference,
- * no PUT.
- */
-async function reconcileApplication(
-  cf: CfRunner,
-  out: EventSink,
-  existing: AccessApplication | null,
-  desired: DesiredApplication,
-): Promise<ApplicationOutcome> {
-  if (!existing) {
-    out.emit({ type: "progress", step: STEP, message: `Creating the Access application "${desired.name}"` });
-    const signIn = desiredSignIn(null, desired.allowedIdps);
-    const application = await createAccessApplication(cf, {
-      name: desired.name,
-      type: "self_hosted",
-      destinations: desired.destinations,
-      policies: [desired.policyId],
-      session_duration: desired.session,
-      http_only_cookie_attribute: true,
-      enable_binding_cookie: true,
-      ...(signIn.allowedIdps.length > 0 ? { allowed_idps: signIn.allowedIdps } : {}),
-      auto_redirect_to_identity: signIn.autoRedirect,
-      app_launcher_visible: desired.appLauncherVisible,
-    });
-    return { application, outcome: "created", signInAdded: signIn.allowedIdps };
-  }
-  const current = existing.destinations ?? [];
-  const destinations = [...splitDestinations(current, desired.scope).foreign, ...desired.destinations];
-  const found = [...(existing.policies ?? [])].sort((a, b) => (a.precedence ?? 0) - (b.precedence ?? 0));
-  const inline = found.filter((policy) => policy.reusable === false);
-  if (inline.length > 0) {
-    // An application with policies of its own takes no reusable one, and
-    // the API replaces it whole on PUT: it is the dashboard's to manage.
-    out.emit({
-      type: "warning",
-      code: "ACCESS_INLINE_POLICIES",
-      step: STEP,
-      message: `The Access application "${existing.name ?? existing.id}" has ${inline.length === 1 ? "a policy" : "policies"} of its own: ${listed(inline.map((policy) => policy.name ?? policy.id))}\nIt is left as it is: Access takes either application policies or reusable ones, not both, so the policy "${POLICY_NAME}" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.`,
-      data: { application: existing.id, policies: inline.map((policy) => policy.id) },
-    });
-    return { application: existing, outcome: "skipped", signInAdded: [] };
-  }
-  const policyIds = found.map((policy) => policy.id);
-  const policies = policyIds.includes(desired.policyId) ? policyIds : [...policyIds, desired.policyId];
-  // Managed OAuth: the runbook leaves the binding cookie as the operator set it.
-  const binding = managedOAuthOn(existing) ? (existing.enable_binding_cookie ?? false) : true;
-  // The team's sign-in providers join what the application allows already
-  // (an application `on` made before Sign in with Cloudflare allowed the
-  // PIN alone); none is ever taken off.
-  const signIn = desiredSignIn(existing, desired.allowedIdps);
-  const signInAdded = signIn.allowedIdps.filter((id) => !(existing.allowed_idps ?? []).includes(id));
-  const changes: Partial<AccessApplicationBody> = {
-    destinations: destinations as AccessApplicationBody["destinations"],
-    policies,
-    http_only_cookie_attribute: true,
-    enable_binding_cookie: binding,
-    allowed_idps: signIn.allowedIdps,
-    auto_redirect_to_identity: signIn.autoRedirect,
-    ...(desired.sessionGiven ? { session_duration: desired.session } : {}),
-  };
-  const unchanged =
-    sameDestinations(current, destinations) &&
-    policies.join(",") === policyIds.join(",") &&
-    existing.http_only_cookie_attribute === true &&
-    (existing.enable_binding_cookie ?? false) === binding &&
-    signInInSync(existing, desired.allowedIdps) &&
-    (!desired.sessionGiven || existing.session_duration === desired.session);
-  if (unchanged) return { application: existing, outcome: "unchanged", signInAdded: [] };
-  out.emit({ type: "progress", step: STEP, message: `Updating the Access application "${existing.name ?? desired.name}"` });
-  const application = await updateAccessApplication(cf, existing.id, applicationUpdateBody(existing, changes));
-  return { application, outcome: "updated", signInAdded };
 }
 
 /** The done event of `on`: what changed, what was already so, and what to do next. */

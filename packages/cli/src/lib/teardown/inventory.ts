@@ -14,7 +14,7 @@
  * count.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME } from "@/commands/access/index";
+import { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME } from "@/lib/access/applications";
 import { findAccessApplications, type AccessScope } from "@/lib/access/plan";
 import { readAllRecordedResources } from "@/lib/app/ownership";
 import {

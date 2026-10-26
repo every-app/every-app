@@ -20,6 +20,7 @@ import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
+import { turnAccessOn } from "../access";
 import { runGatewayDeploy, runSetup, setupDeps, type SetupDeps, type SetupFlags } from "./runSetup";
 
 const GW = "apps.example.com";
@@ -1137,6 +1138,129 @@ describe("everyapp setup", () => {
     expect(events.some((event) => event.type === "warning" && event.code === "ACCESS_SETUP_SKIPPED")).toBe(false);
     // The name comes before the first write: nothing at Access.
     expect(account.zeroTrust.organization).toBeNull();
+  });
+
+  it("brings both Access applications in line with the release on update, under the Access lease, and never fails the run for it", async () => {
+    await setup({ domain: GW });
+    const sink = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
+    await turnAccessOn({
+      flags: { json: true, gateway: `https://${GW}` },
+      out: sink(),
+      createCf: () => account.cf,
+      team: "acme",
+      interactive: false,
+    });
+    const zt = account.zeroTrust;
+    type Destination = { uri: string; overrides: Array<{ path_pattern: string; behavior: string }> };
+    const application = (uri: string) =>
+      [...zt.applications.values()].find((app) => (app["destinations"] as Destination[]).some((d) => d.uri === uri))!;
+    const overrides = (uri: string) =>
+      (application(uri)["destinations"] as Destination[]).find((d) => d.uri === uri)!.overrides.map((o) => o.path_pattern);
+    const writes = () =>
+      account.cf.calls.filter((call) => call.args[0] === "zero-trust" && call.args.includes("update")).length;
+    const accessSteps = () => events.filter((event) => event.type === "step" && event.step === "gateway.access");
+    expect(overrides(GW)).toContain("/health");
+    const providers = (application(GW)["allowed_idps"] as string[]).length;
+    expect(providers).toBe(2);
+    // Refusals a later part of the test switches on and off (an override can't be taken back).
+    let refuse: { update?: string; list?: string } = {};
+    const zeroTrust = (verb: string) => (args: string[]) =>
+      args[0] === "zero-trust" && args[1] === "access" && args[2] === "applications" && args[3] === verb;
+    account.cf.override((args) => zeroTrust("update")(args) && refuse.update !== undefined, () => ({
+      exitCode: 1,
+      stderr: refuse.update!,
+    }));
+    account.cf.override((args) => zeroTrust("list")(args) && refuse.list !== undefined, () => ({
+      exitCode: 1,
+      stderr: refuse.list!,
+    }));
+
+    // Drift by hand, as a dashboard edit or an older release would leave it:
+    // the Gateway's application lost /health and its sign-in methods, the
+    // apps' wildcard lets everything through.
+    // (Read again each time: an update stores a new object in the fake.)
+    const dropHealth = () => {
+      const destination = (application(GW)["destinations"] as Destination[]).find((d) => d.uri === GW)!;
+      destination.overrides = destination.overrides.filter((o) => o.path_pattern !== "/health");
+    };
+    const gateway = application(GW);
+    dropHealth();
+    gateway["allowed_idps"] = [];
+    const wildcard = (application(`*.${GW}`)["destinations"] as Destination[]).find((d) => d.uri === `*.${GW}`)!;
+    wildcard.overrides = [{ path_pattern: "/*", behavior: "public" }];
+    events = [];
+    account.cf.calls.length = 0;
+
+    // update: the Gateway is up to date, and Access is brought back.
+    const updated = await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(updated.gateway).toBe("up-to-date");
+    expect(overrides(GW)).toContain("/health");
+    expect(application(GW)["allowed_idps"]).toHaveLength(providers);
+    expect(overrides(`*.${GW}`)).toEqual([]);
+    expect(writes()).toBe(2);
+    expect(accessSteps().at(-1)).toMatchObject({
+      status: "ok",
+      message: expect.stringContaining("brought in step"),
+      data: { changed: expect.arrayContaining([gateway["id"]]), missing: [], combined: false },
+    });
+    expect(events.filter((event) => event.type === "warning")).toEqual([]);
+    // The Gateway's settings weren't rewritten: the applications are the same ones.
+    expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(updated.gateway === "up-to-date" ? 2 : 3);
+
+    // Again: nothing to do, nothing written.
+    events = [];
+    account.cf.calls.length = 0;
+    await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(writes()).toBe(0);
+    expect(accessSteps().at(-1)).toMatchObject({ status: "skip", message: "Cloudflare Access already matches this Gateway." });
+
+    // Access refuses the update: a warning with the rerun, and the run ends done.
+    dropHealth();
+    refuse = { update: "\n┌ APIError\n│ [12060] access.api.error.invalid_request\n│ 400 Bad Request · HTTP /accounts/x/access/apps/y\n└\n" };
+    events = [];
+    const refused = await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(refused.gateway).toBe("up-to-date");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "ACCESS_RECONCILE_FAILED",
+        step: "gateway.access",
+        message: expect.stringContaining("Couldn't bring Cloudflare Access in step with this Gateway"),
+        data: { rerun: expect.stringContaining("access on") },
+      }),
+    );
+    expect(accessSteps()).toEqual([]);
+
+    // A login that can't read Access (a CI token): nothing said, nothing touched.
+    refuse = { list: "┌ APIError\n│ [10000] Authentication error\n└\n" };
+    events = [];
+    await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(events.filter((event) => event.type === "warning")).toEqual([]);
+    expect(accessSteps()).toEqual([]);
+    expect(overrides(GW)).not.toContain("/health");
+
+    // Any other refusal to list: said once, as "if", with the rerun.
+    refuse = { list: "┌ APIError\n│ [12060] access.api.error.invalid_request\n│ 400 Bad Request\n└\n" };
+    events = [];
+    await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "ACCESS_NOT_CHECKED",
+        step: "gateway.access",
+        message: expect.stringContaining("Couldn't check Cloudflare Access after the Gateway deploy"),
+      }),
+    );
+    refuse = {};
+
+    // Off (the applications gone): update touches nothing and says nothing.
+    for (const id of [...zt.applications.keys()]) zt.applications.delete(id);
+    events = [];
+    account.cf.calls.length = 0;
+    await runGatewayDeploy({ json: true }, sink(), deps());
+    expect(writes()).toBe(0);
+    expect(accessSteps()).toEqual([]);
+    expect(events.filter((event) => event.type === "warning")).toEqual([]);
   });
 
   it("asks a person at a terminal about browser installs once the Gateway is up, unless --yes", async () => {
