@@ -1876,3 +1876,10 @@ Merged: private-agentic-inbox-everyapp #14, private-open-analytics #17, private-
 - [ ] **RepoLens: who manages.** Owners and admins add, remove, retry a backfill and capture, since all of these spend the shared GitHub token. Members read everything. The dashboard still shows the buttons to members, who get "Only owners and admins can add, remove or capture repositories" when they click. Hide them (a `canManage` flag on `listRepos`) if that reads badly.
 - [ ] **RepoLens: private repositories have no badge.** `/badge/<owner>/<name>.svg` answers 404 `NOT_FOUND`, the same as for an untracked repository, and the page hides **Copy badge**. A repository that turns private keeps a cached badge for up to an hour (`max-age=3600`), and loses it at the next capture.
 - [x] The `every-app/{open-crm,open-analytics,agentic-inbox}` links in `patterns.md`, README and the apps docs stay: Ben creates those public repositories before the flip (coordinator, 2026-10-26).
+
+## Platform shortcuts (2026-10-26)/lane 3 fromMcpTools
+
+Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.ts`):
+
+- [ ] **Risk from annotations:** `readOnlyHint: true` is `read`, `destructiveHint: true` is `destructive`, anything else `write`. MCP's own default would make an unannotated tool destructive (hidden from AI clients). Apps override with `risk(tool)`.
+- [ ] **Non-text result blocks (images, resources) are dropped;** only text blocks and `structuredContent` reach the Gateway. A plain JSON Schema input is described but not validated beyond "an object". Tool names are not renamed: they must already be snake_case.

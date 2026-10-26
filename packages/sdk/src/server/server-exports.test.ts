@@ -20,6 +20,7 @@ it("keeps protocol constants out of /server", () => {
 
 it("exposes the agent tools API and not the old MCP handler", () => {
   expect(typeof server.defineTools).toBe("function");
+  expect(typeof server.fromMcpTools).toBe("function");
   expect(new server.ToolError("x")).toBeInstanceOf(Error);
   // Apps define tools and the gateway speaks MCP; createMcpHandler
   // (deprecated in 0.3.0) is gone.

@@ -78,3 +78,11 @@ export {
   type ToolSet,
 } from "./tools.js";
 export type { ToolRisk } from "../internal/index.js";
+export {
+  fromMcpTools,
+  type FromMcpToolsOptions,
+  type McpToolAnnotationsLike,
+  type McpToolLike,
+  type McpToolResultLike,
+  type McpToolSchemaLike,
+} from "./fromMcpTools.js";
