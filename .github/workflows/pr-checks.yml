@@ -2,19 +2,35 @@ name: PR Checks
 on:
   # Every pull request, not only ones into main: stacked PRs target the PR
   # below them and still need the checks.
+  # The orchestrator's overnight notes are pushed often and change no code.
   pull_request:
+    paths-ignore:
+      - 'docs/overnight/**'
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs/overnight/**'
 # Checks only read the repository; nothing here needs a writable token.
 permissions:
   contents: read
+# A new push to a pull request (or to main) cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+# Fast checks only, three jobs of about a minute or two: types, lint and the
+# unit tests. Nothing here builds the workspace beyond the SDK (the
+# typechecks and tests read the other packages from source). The slow
+# suites (the CLI's fake-account integration tests, the gateway's SQLite
+# tests), the full build, the cf dry run and the built CLI run in
+# integration.yml: on demand, nightly and on main.
 # Node 22.18+ everywhere: the apps' cloudflare.config.ts is loaded by cf and
 # the Cloudflare Vite plugin with Node's built-in TypeScript support.
 jobs:
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,9 +43,9 @@ jobs:
           node-version: '^22.18.0'
           cache: 'pnpm'
       - name: Install all dependencies
-        run: pnpm install --ignore-scripts
-      - name: Build workspace packages
-        run: pnpm -r --no-bail run build
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
       - name: Run type checking
         run: pnpm types:check
       # Better Auth validates the Drizzle schema at init and fails every auth
@@ -38,9 +54,10 @@ jobs:
         run: pnpm -C apps/every-app-gateway auth:check
       - name: Validate SDK relative ESM import extensions
         run: pnpm -C packages/sdk check:esm-relative-imports
-  dependency-audit:
-    name: Dependency Audit
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,83 +68,46 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '^22.18.0'
+          cache: 'pnpm'
       # One lockfile covers every workspace project, the starter included.
       - name: Fail on critical advisories in the lockfile
         run: pnpm audit --audit-level critical
-  prettier-check:
-    name: Prettier Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        # The version is package.json's packageManager.
-        uses: pnpm/action-setup@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      - name: Install all dependencies
-        run: pnpm install --ignore-scripts
-      - name: Run prettier check
-        run: pnpm format:check
-  knip-check:
-    name: Knip Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        # The version is package.json's packageManager.
-        uses: pnpm/action-setup@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      - name: Install all dependencies
-        run: pnpm install --ignore-scripts
-      - name: Build workspace packages
-        run: pnpm -r --no-bail run build
-      - name: Run knip check
-        run: pnpm knip
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        # The version is package.json's packageManager.
-        uses: pnpm/action-setup@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      - name: Install all dependencies
-        run: pnpm install --ignore-scripts
-      - name: Build workspace packages
-        run: pnpm -r --no-bail run build
-      - name: Run tests
-        run: pnpm test
-
-  public-copy-check:
-    name: Public copy dry run
-    runs-on: ubuntu-latest
-    # Builds the public copy of this commit in a temporary directory and runs
-    # its checks (scripts/public-copy.mjs, docs/runbooks/public-copy.md): a
-    # file on the deny list, a secret shape or a private name in the tree
-    # fails here, before the copy is ever made. Nothing is written or pushed.
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-      - name: Prove the checks refuse what they must
+      # Builds the public copy of this commit in a temporary directory and
+      # runs its checks (scripts/public-copy.mjs, docs/runbooks/public-copy.md):
+      # a file on the deny list, a secret shape or a private name in the tree
+      # fails here, before the copy is ever made. Nothing is written or pushed.
+      - name: Prove the public-copy checks refuse what they must
         run: node scripts/public-copy.mjs --self-test
       - name: Dry-run the public copy of this commit
         run: node scripts/public-copy.mjs --commit HEAD --no-fetch
+      - name: Install all dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run prettier check
+        run: pnpm format:check
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
+      - name: Run knip check
+        run: pnpm knip
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        # The version is package.json's packageManager.
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+          cache: 'pnpm'
+      - name: Install all dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
+      # Each package's `test` is its unit project; `test:integration` runs
+      # in integration.yml.
+      - name: Run unit tests
+        run: pnpm test

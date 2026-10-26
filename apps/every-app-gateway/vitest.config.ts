@@ -1,5 +1,7 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import tsConfigPaths from "vite-tsconfig-paths";
+
+const INTEGRATION = ["**/*.sqlite.test.ts", "**/*.e2e.test.ts"];
 
 export default defineConfig({
   plugins: [
@@ -19,5 +21,24 @@ export default defineConfig({
         inline: ["@cloudflare/workers-oauth-provider"],
       },
     },
+    // Two projects. `unit` is what a pull request runs (`pnpm test`).
+    // `integration` is the *.sqlite.test.ts and *.e2e.* files: each test
+    // migrates a fresh SQLite database and drives real services, ~80% of
+    // this package's test time. They run on demand, nightly and on main
+    // (.github/workflows/integration.yml, `pnpm test:integration`).
+    // `vitest run <file>` with no --project still runs a file from either.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          exclude: [...configDefaults.exclude, ...INTEGRATION],
+        },
+      },
+      {
+        extends: true,
+        test: { name: "integration", include: INTEGRATION },
+      },
+    ],
   },
 });

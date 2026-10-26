@@ -28,7 +28,7 @@
  *   pnpm -C packages/cli test:built   (dist/ already built)
  *
  * The new app's `pnpm install` needs the network once;
- * .github/workflows/built-cli.yml runs it on every pull request.
+ * .github/workflows/integration.yml runs it nightly, on main and on demand.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";

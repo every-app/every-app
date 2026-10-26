@@ -21,7 +21,8 @@
     "setup-link": "node scripts/setup-link.mjs",
     "db:studio:local": "drizzle-kit studio",
     "knip": "knip",
-    "test": "vitest run --silent",
+    "test": "vitest run --silent --project unit",
+    "test:integration": "vitest run --silent --project integration",
     "test:watch": "vitest",
     "build:release": "node scripts/build-release.ts"
   },

@@ -2134,3 +2134,11 @@ HELD for Ben (OAuth clients, redirect URIs, reserved setting names). Defaults ta
 - [ ] **Egress:** a dispatched app is still refused every preset's token endpoint, added or not (`outbound.ts`), as it was for the catalog clients.
 - [ ] **An API-key provider's host setting stays hidden** (`SHOPIFY_HOST`, `SUPABASE_HOST`, …): `everyapp secret` treats it like a credential, never shown back. Only the OAuth clients' host settings were plain, and with Mastodon gone there are none (#767 added `OAUTH_CLIENT_HOST_SETTINGS`; this PR deletes it once #767 is in).
 - [ ] **After the flip (low priority, from the provider-add thread, #761):** relabel `google-workspace` as "Google Workspace" and `microsoft-365` as "Microsoft 365", moving "(Gmail, Calendar, Search Console and Analytics)" and "(Outlook mail and calendar)" into their descriptions; drop the parenthetical from scope-set labels ("Google account (who you are)"), since other surfaces wrap labels in parentheses.
+
+## Fast PR checks (2026-10-26)
+
+PR Checks is now three jobs (Type Check, Lint, Unit Tests) that build only the SDK. The slow suites moved to `.github/workflows/integration.yml` (nightly, on main with newer pushes cancelling older runs, and on demand). See docs/TESTING.md "In CI". Defaults taken for Ben:
+
+- [ ] **The gateway's `*.sqlite.test.ts` files left PR checks too**, Access sign-in and sign-in providers included. They are ~80% of the gateway's test time. A regression shows up on main's Integration run, not on the PR. A branch touching auth or the perimeter can run `gh workflow run integration.yml --ref <branch>` first.
+- [ ] **The CLI's split is by import:** a test file that imports `@/test/gatewayRelease` or `@/test/gatewayWorker` is integration (36 files, ~90% of the CLI's test time). Each test there packs and unpacks a release tarball and migrates a fresh D1. Caching the packed release per test file would make most of them fast enough to come back to PRs.
+- [ ] **The landing page production build, `cf build`, the cf dry run and the built CLI run only in Integration.** Typecheck still covers the landing page's code on every PR.
