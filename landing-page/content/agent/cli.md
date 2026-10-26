@@ -426,7 +426,7 @@ with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's ac
   6. Rebinds the Gateway from this checkout when the app is new (upgrading the Gateway too
      when the checkout is newer), then waits for the app's hostname to go live
 
-No Gateway in any account the login sees? At a terminal it offers to install one at
+No Gateway in any account the login sees, and none named? At a terminal it offers to install one at
 apps.<zone> (what pnpm everyapp setup does), then deploys; otherwise it stops with action_required
 install_gateway and the setup command to run. Nothing else asks first. Install and build
 output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the
@@ -864,7 +864,7 @@ A repository without a release is never built from its URL: clone it, then run p
 install in it and this checkout's pnpm everyapp deploy from its directory. Postgres migrations
 need the app's source, so their releases are refused.
 
-No Gateway in any account the login sees? At a terminal it offers to install one at
+No Gateway in any account the login sees, and none named? At a terminal it offers to install one at
 apps.<zone> (what pnpm everyapp setup does, owner link included), then installs the app; otherwise
 it stops with action_required install_gateway and the setup command to run.
 --gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.

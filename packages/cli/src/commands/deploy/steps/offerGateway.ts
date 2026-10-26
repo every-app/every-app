@@ -5,11 +5,17 @@
  * owner link included, and the deploy goes on. Anyone else (--json, CI,
  * piped output) gets `action_required install_gateway`, whose rerun is the
  * setup command; the deploy comes after it.
+ *
+ * Never when a Gateway Worker already runs in an account the login sees:
+ * its database couldn't be read, or was removed, and a second Gateway
+ * beside it (at apps.<its own zone>) is the one thing not to do.
  */
 import chalk from "chalk";
 import { resolveAccount } from "@/lib/cf/account";
 import type { CfWhoami } from "@/lib/cf/schemas";
-import { ActionRequiredError, CancelledError } from "@/lib/errors";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { listWorkers } from "@/lib/cf/workers";
+import { ActionRequiredError, CancelledError, EveryAppError } from "@/lib/errors";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -46,6 +52,7 @@ export async function offerGateway({
 }): Promise<Discovery> {
   const { deps } = offer;
   const accountFlag = offer.accountId ? ["--account-id", offer.accountId] : [];
+  await refuseServingGateway(discovery, deps.createCf);
   if (!deps.interactive) {
     // What setup would pick on its own, when it can tell.
     const host = await suggestedHost(whoami, offer).catch(() => null);
@@ -119,4 +126,39 @@ async function suggestedHost(whoami: CfWhoami, offer: GatewayOffer): Promise<str
 function noGatewayIn(discovery: Discovery): string {
   const names = discovery.probed.map((account) => account.name ?? account.id);
   return names.length === 1 ? `${names[0]} has none yet` : `none of ${names.join(", ")} has one yet`;
+}
+
+/**
+ * GATEWAY_CHECK_FAILED when an account already runs the Gateway Worker
+ * (or its Workers can't be listed, so that can't be told), though no
+ * Gateway database was found there.
+ */
+async function refuseServingGateway(
+  discovery: Discovery,
+  createCf: SetupDeps["createCf"],
+): Promise<void> {
+  for (const account of discovery.probed) {
+    const name = account.name ?? account.id;
+    let hosts: string[] | null;
+    try {
+      const worker = (await listWorkers(createCf(account.id))).find((w) => w.name === GATEWAY_WORKER_NAME);
+      hosts = worker ? (worker.references?.domains ?? []).map((domain) => domain.hostname.toLowerCase()) : null;
+    } catch {
+      throw new EveryAppError(
+        "GATEWAY_CHECK_FAILED",
+        `Couldn't check ${name} for a Gateway\nCloudflare didn't list its Workers, so whether a Gateway already runs there is unknown. Nothing was installed.`,
+        { retryable: true, rerunNote: "in a moment", data: { accounts: discovery.probed, account: account.id } },
+      );
+    }
+    if (hosts === null) continue;
+    throw new EveryAppError(
+      "GATEWAY_CHECK_FAILED",
+      `${name} already runs a Gateway${hosts.length ? ` at ${hosts.join(", ")}` : ""}, but its database couldn't be found\nNothing was installed: a second Gateway beside it is never offered.`,
+      {
+        retryable: true,
+        rerunNote: `in a moment; if it fails again, ${CLI} status --account-id ${account.id} says what is there`,
+        data: { accounts: discovery.probed, account: account.id, hosts },
+      },
+    );
+  }
 }

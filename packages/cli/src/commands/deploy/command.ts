@@ -45,7 +45,7 @@ export const deployCommand = buildCommand({
       "  6. Rebinds the Gateway from this checkout when the app is new (upgrading the Gateway too",
       "     when the checkout is newer), then waits for the app's hostname to go live",
       "",
-      "No Gateway in any account the login sees? At a terminal it offers to install one at",
+      "No Gateway in any account the login sees, and none named? At a terminal it offers to install one at",
       `apps.<zone> (what ${CLI} setup does), then deploys; otherwise it stops with action_required`,
       "install_gateway and the setup command to run. Nothing else asks first. Install and build",
       "output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the",

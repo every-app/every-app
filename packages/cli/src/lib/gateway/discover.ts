@@ -10,9 +10,12 @@
  *                                          uses the one it last used)
  *   _everyapp_install                      URL, base domain, zone
  *
- * An account cf refuses (`auth`) or doesn't know (`not_found`) has no
- * Gateway as far as this login goes: a CI token scoped to one account must
- * not stop the others from being asked.
+ * An account cf refuses (`auth`) or doesn't know (`not_found`) is asked
+ * once more (a 401 from a flaky network looks the same), and then is
+ * `unchecked`, never "no Gateway": a CI token scoped to one account must not
+ * stop the others from being asked, and an account that couldn't be asked
+ * is never offered a second Gateway (`refuseUnchecked`). A network failure
+ * is asked once more too, then stops the command.
  *
  * One Gateway: it is the one. Several: --account-id, CLOUDFLARE_ACCOUNT_ID,
  * the host the command names (--gateway, setup's --domain), or a person at
@@ -47,9 +50,17 @@ export interface FoundGateway {
   install: InstallRecord | null;
 }
 
+/** An account whose Gateway database couldn't be asked for, twice. */
+interface UncheckedAccount extends CloudflareAccount {
+  /** What cf said: it refused (`auth`), or doesn't know the account (`not_found`). */
+  reason: "auth" | "not_found";
+}
+
 export interface Discovery {
   /** Every account asked, in the order cf lists them. */
   probed: CloudflareAccount[];
+  /** The accounts that couldn't be asked: whether they have a Gateway is unknown. */
+  unchecked: UncheckedAccount[];
   /** Every account that has a Gateway. */
   found: FoundGateway[];
   /** The one this command acts on, or null: none, or none in the account asked for. */
@@ -73,7 +84,11 @@ interface DiscoverOptions {
   interactive: boolean;
   /** Asks the person at the terminal which Gateway (tests answer for them). */
   pick?: (found: FoundGateway[], whoami: CfWhoami) => Promise<FoundGateway>;
+  /** How long to wait before asking an account again (tests: 0). */
+  retryDelayMs?: number;
 }
+
+const RETRY_DELAY_MS = 1_000;
 
 export async function discoverGateway({
   whoami,
@@ -83,6 +98,7 @@ export async function discoverGateway({
   hostFlag,
   interactive,
   pick = pickAtTerminal,
+  retryDelayMs = RETRY_DELAY_MS,
 }: DiscoverOptions): Promise<Discovery> {
   const requestedAccountId =
     accountId || process.env["CLOUDFLARE_ACCOUNT_ID"] || undefined;
@@ -95,11 +111,11 @@ export async function discoverGateway({
     requestedAccountId && !listed.some((a) => a.id === requestedAccountId)
       ? [...listed, { id: requestedAccountId, name: null }]
       : listed;
-  const found = (
-    await Promise.all(probed.map((account) => probe(account, createCf)))
-  ).filter((gateway): gateway is FoundGateway => gateway !== null);
+  const answers = await Promise.all(probed.map((account) => probe(account, createCf, retryDelayMs)));
+  const found = answers.filter((answer): answer is FoundGateway => answer !== null && "db" in answer);
+  const unchecked = answers.filter((answer): answer is UncheckedAccount => answer !== null && "reason" in answer);
 
-  const result = { probed, found, ...(requestedAccountId ? { requestedAccountId } : {}) };
+  const result = { probed, found, unchecked, ...(requestedAccountId ? { requestedAccountId } : {}) };
   if (requestedAccountId) {
     return {
       ...result,
@@ -141,23 +157,74 @@ export async function discoverGateway({
   );
 }
 
-/** The account's Gateway, or null when this login finds none there. */
+/**
+ * The account's Gateway; null when this login finds none there; the
+ * account, unchecked, when cf refused or didn't know it twice.
+ */
 async function probe(
   account: CloudflareAccount,
   createCf: (accountId?: string) => CfRunner,
-): Promise<FoundGateway | null> {
+  retryDelayMs: number,
+): Promise<FoundGateway | UncheckedAccount | null> {
   const cf = createCf(account.id);
-  try {
-    const databaseId = await findGatewayDatabase(cf);
-    if (!databaseId) return null;
-    const db = cfD1Database(cf, databaseId);
-    return { account, cf, databaseId, db, install: await readInstall(db) };
-  } catch (error) {
-    if (isCfError(error, "auth") || isCfError(error, "not_found")) {
-      return null;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const databaseId = await findGatewayDatabase(cf);
+      if (!databaseId) return null;
+      const db = cfD1Database(cf, databaseId);
+      return { account, cf, databaseId, db, install: await readInstall(db) };
+    } catch (error) {
+      const reason = isCfError(error, "auth") ? "auth" : isCfError(error, "not_found") ? "not_found" : null;
+      if (!reason && !isNetworkFailure(error)) throw error;
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      if (!reason) throw error;
+      return { ...account, reason };
     }
-    throw error;
   }
+}
+
+/** cf couldn't reach Cloudflare (reset, timeout, DNS), as opposed to an answer. */
+function isNetworkFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /fetch failed|ECONNRESET|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(error.message)
+  );
+}
+
+/**
+ * Before anything is installed because no Gateway was found: refuse when
+ * an account couldn't be asked (GATEWAY_CHECK_FAILED), since it may hold
+ * the Gateway, and a second one would be installed beside it.
+ */
+export function refuseUnchecked(discovery: Discovery, whoami: CfWhoami, host?: string): void {
+  if (discovery.found.length > 0 || discovery.unchecked.length === 0) return;
+  throw checkFailed(discovery, whoami, host);
+}
+
+function checkFailed(discovery: Discovery, whoami: CfWhoami, host?: string): EveryAppError {
+  const names = discovery.unchecked.map((account) => account.name ?? account.id);
+  const answer = discovery.unchecked.every((account) => account.reason === "auth")
+    ? "Cloudflare refused to list its databases"
+    : "Cloudflare answered that it doesn't know the account";
+  const others = discovery.probed.length - discovery.unchecked.length;
+  return new EveryAppError(
+    "GATEWAY_CHECK_FAILED",
+    [
+      names.length === 1
+        ? `Couldn't check ${names[0]} for a Gateway${host ? ` (looking for ${host})` : ""}`
+        : `Couldn't check ${names.length} accounts for a Gateway${host ? ` (looking for ${host})` : ""}: ${names.join(", ")}`,
+      `${answer}, twice.${others > 0 ? ` No Gateway in the ${others} other account${others === 1 ? "" : "s"} this login sees.` : ""} Nothing was changed, and no Gateway is installed while one may already exist.`,
+      ...(whoami.email ? [`Logged in to Cloudflare as ${whoami.email}.`] : []),
+    ].join("\n"),
+    {
+      retryable: true,
+      rerunNote: "in a moment; if it fails again, check this login can read D1 in that account",
+      data: { accounts: discovery.probed, unchecked: discovery.unchecked, ...(host ? { host } : {}) },
+    },
+  );
 }
 
 /**
@@ -168,10 +235,23 @@ async function probe(
 export function requireGateway(
   discovery: Discovery,
   whoami: CfWhoami,
+  /** The Gateway's host, when the command names one (--gateway). */
+  host?: string,
 ): FoundGateway {
   if (discovery.gateway) return discovery.gateway;
   const login = whoami.email ? [`Logged in to Cloudflare as ${whoami.email}.`] : [];
-  const data = { accounts: discovery.probed };
+  const data = { accounts: discovery.probed, ...(host ? { host } : {}) };
+  // Couldn't ask the account the command names, or any with the Gateway: unknown, not "none".
+  const requestedUnchecked = discovery.unchecked.some((account) => account.id === discovery.requestedAccountId);
+  if (requestedUnchecked || (discovery.found.length === 0 && discovery.unchecked.length > 0)) {
+    throw checkFailed(
+      requestedUnchecked
+        ? { ...discovery, unchecked: discovery.unchecked.filter((account) => account.id === discovery.requestedAccountId) }
+        : discovery,
+      whoami,
+      host,
+    );
+  }
   if (discovery.requestedAccountId && discovery.found.length > 0) {
     throw new EveryAppError(
       "GATEWAY_NOT_FOUND",
@@ -193,9 +273,7 @@ export function requireGateway(
   throw new EveryAppError(
     "GATEWAY_NOT_FOUND",
     [
-      accounts.length === 1
-        ? `No Gateway in ${accounts[0]}, the only account this login sees`
-        : `No Gateway in the ${accounts.length} accounts this login sees`,
+      `No Gateway${host ? ` at ${host}` : ""} in ${accounts.length === 1 ? `${accounts[0]}, the only account this login sees` : `the ${accounts.length} accounts this login sees`}`,
       ...(accounts.length === 1 ? [] : [`${accounts.join(", ")}.`]),
       ...login,
       `Or log in to the Gateway's account: ${CLI} login`,

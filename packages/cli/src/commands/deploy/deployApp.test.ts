@@ -2198,6 +2198,52 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(account.deploys).toEqual([]);
   });
 
+  it("never offers a second Gateway: not when one runs already, not when the command names one, not when an account couldn't be asked", async () => {
+    const asked: string[] = [];
+    const offerInstall = {
+      confirm: async (question: string) => {
+        asked.push(question);
+        return true;
+      },
+      setup: setupSeams(),
+    };
+
+    // The Gateway Worker serves everyapp.team, but its database can't be found.
+    account.cf.override(["workers", "list"], (call) => ({
+      stdout: JSON.stringify(
+        call.args.includes("--page") && call.args[call.args.indexOf("--page") + 1] === "1"
+          ? [{ id: "w-1", name: "every-app-gateway", references: { domains: [{ hostname: "everyapp.team" }] } }]
+          : [],
+      ),
+    }));
+    await expect(deploy(TODO, { interactive: true, offerInstall })).rejects.toMatchObject({
+      code: "GATEWAY_CHECK_FAILED",
+      retryable: true,
+      message: expect.stringMatching(/^Acme already runs a Gateway at everyapp\.team, but its database couldn't be found\n/),
+    });
+
+    // --gateway names one, and no account has it: GATEWAY_NOT_FOUND, naming the host.
+    await expect(
+      deploy(TODO, { interactive: true, gateway: "https://everyapp.team", offerInstall }),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+      message: expect.stringMatching(/^No Gateway at everyapp\.team in Acme, the only account this login sees\n/),
+    });
+
+    // cf refuses to list the account's databases, twice: unknown, never "has no Gateway".
+    account.cf.override(["d1", "list"], { exitCode: 1, stderr: "┌ APIError\n│ [10000] Authentication error\n└\n" });
+    const failure = await deploy(TODO, { interactive: true, offerInstall }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: "GATEWAY_CHECK_FAILED",
+      message: expect.stringContaining("Couldn't check Acme for a Gateway\nCloudflare refused to list its databases, twice."),
+    });
+    expect((failure as Error).message).not.toContain("has no Gateway");
+
+    expect(asked).toEqual([]);
+    expect(account.deploys).toEqual([]);
+    expect(account.databases.size).toBe(0);
+  });
+
   it("is GATEWAY_NOT_FOUND for the commands that don't offer to install", async () => {
     await expect(deploy(TODO, { interactive: true })).rejects.toMatchObject({
       code: "GATEWAY_NOT_FOUND",

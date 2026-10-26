@@ -96,7 +96,7 @@ import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from "@/lib/errors";
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
-import { discoverGateway, requireGateway, type Discovery } from "@/lib/gateway/discover";
+import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
@@ -332,8 +332,9 @@ export async function installGateway({
   /** Whether to offer Cloudflare Access once the owner exists (setup, and a deploy that installs a Gateway; not update). */
   offerAccess?: boolean;
 }): Promise<SetupResult> {
-  // With no Gateway, where to install one.
+  // With no Gateway, where to install one; never while an account that may hold it couldn't be asked.
   const found = discovery.gateway;
+  if (!found) refuseUnchecked(discovery, whoami, flags.domain);
   const account =
     found?.account ??
     (await resolveAccount({

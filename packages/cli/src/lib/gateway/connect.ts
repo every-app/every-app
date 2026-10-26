@@ -152,7 +152,12 @@ export async function existingGateway({
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
-  if (discovery.found.length === 0 && discovery.probed.length > 0 && !discovery.requestedAccountId) {
+  if (
+    discovery.found.length === 0 &&
+    discovery.unchecked.length === 0 &&
+    discovery.probed.length > 0 &&
+    !discovery.requestedAccountId
+  ) {
     const accounts = discovery.probed.map((account) => account.name ?? account.id);
     throw new ActionRequiredError(
       "install_gateway",
@@ -195,28 +200,36 @@ export async function connectToGateway({
   createCf?: CreateCf;
   /**
    * No account the login sees has a Gateway (`deploy` offers to install
-   * one): returns the discovery to go on with, or throws.
+   * one): returns the discovery to go on with, or throws. Never called when
+   * the command names a Gateway (--gateway, EVERYAPP_GATEWAY_URL,
+   * --account-id, CLOUDFLARE_ACCOUNT_ID) or an account couldn't be asked:
+   * those fail (GATEWAY_NOT_FOUND, GATEWAY_CHECK_FAILED), so a Gateway that
+   * exists is never installed a second time.
    */
   onNoGateway?: (found: { whoami: CfWhoami; discovery: Discovery }) => Promise<Discovery>;
 }): Promise<GatewayConnection> {
+  const host = gateway ? new URL(gateway).host.toLowerCase() : undefined;
   const loggedIn = await loginAndDiscover({
     createCf,
     accountId,
-    host: gateway ? new URL(gateway).host.toLowerCase() : undefined,
+    host,
     interactive,
     onDeviceLogin: login?.json ? deviceLoginAction(login.out, login.step) : undefined,
   });
   const { whoami } = loggedIn;
   let { discovery } = loggedIn;
+  const named = host !== undefined || discovery.requestedAccountId !== undefined;
   if (
     onNoGateway &&
+    !named &&
     discovery.gateway === null &&
     discovery.found.length === 0 &&
+    discovery.unchecked.length === 0 &&
     discovery.probed.length > 0
   ) {
     discovery = await onNoGateway({ whoami, discovery });
   }
-  const found = requireInstall(requireGateway(discovery, whoami));
+  const found = requireInstall(requireGateway(discovery, whoami, host));
   checkGatewayUrl(found, gateway);
   return {
     cf: found.cf,

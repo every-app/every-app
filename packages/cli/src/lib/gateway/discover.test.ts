@@ -9,7 +9,7 @@ import type { FakeCfResponse } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
 import { connectToGateway } from "./connect";
-import { discoverGateway, requireGateway } from "./discover";
+import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
 
 /** A Cloudflare account, with or without a Gateway in it. */
@@ -84,7 +84,19 @@ function createCf(accountId?: string): CfRunner {
 }
 
 const discover = (options: Partial<Parameters<typeof discoverGateway>[0]> = {}) =>
-  discoverGateway({ whoami: whoami(), createCf, interactive: false, ...options });
+  discoverGateway({ whoami: whoami(), createCf, interactive: false, retryDelayMs: 0, ...options });
+
+/** cf answers `failure` to the first `d1 list`, then as the fake account does. */
+function failOnce(entry: TestAccount, failure: FakeCfResponse): void {
+  let failed = false;
+  entry.cloudflare.cf.override(
+    (args) => args[0] === "d1" && args[1] === "list" && !failed,
+    () => {
+      failed = true;
+      return failure;
+    },
+  );
+}
 
 beforeEach(() => {
   asked = [];
@@ -206,7 +218,7 @@ describe("discoverGateway", () => {
     }
   });
 
-  it("takes an account a token can't read as one without a Gateway", async () => {
+  it("asks an account a token can't read twice, then calls it unchecked, and goes on with the others", async () => {
     // A CI token scoped to acct-2: cf refuses acct-1's databases.
     accounts = await Promise.all([
       account("acct-1", "Personal"),
@@ -214,9 +226,42 @@ describe("discoverGateway", () => {
     ]);
     accounts[0]!.cloudflare.cf.override(["d1", "list"], AUTH_ERROR);
 
-    await expect(discover()).resolves.toMatchObject({
+    const discovery = await discover();
+    expect(discovery).toMatchObject({
       gateway: { account: { id: "acct-2" } },
+      unchecked: [{ id: "acct-1", name: "Personal", reason: "auth" }],
     });
+    expect(asked.filter((id) => id === "acct-1")).toHaveLength(1);
+    expect(accounts[0]!.cloudflare.cf.calls.filter((call) => call.args[1] === "list")).toHaveLength(2);
+  });
+
+  it("asks once more after a refusal or a network failure, and finds the Gateway the second time", async () => {
+    accounts = await Promise.all([account("acct-1", "Acme", "everyapp.team")]);
+    failOnce(accounts[0]!, AUTH_ERROR);
+    await expect(discover()).resolves.toMatchObject({ gateway: { account: { id: "acct-1" } }, unchecked: [] });
+
+    accounts = await Promise.all([account("acct-1", "Acme", "everyapp.team")]);
+    failOnce(accounts[0]!, { exitCode: 1, stderr: "┌ Error\n│ fetch failed: ECONNRESET\n└\n" });
+    await expect(discover()).resolves.toMatchObject({ gateway: { account: { id: "acct-1" } } });
+  });
+
+  it("says it couldn't check, never that there is no Gateway, when the only account couldn't be asked", async () => {
+    accounts = await Promise.all([account("acct-1", "Acme", "everyapp.team")]);
+    accounts[0]!.cloudflare.cf.override(["d1", "list"], AUTH_ERROR);
+
+    const discovery = await discover({ host: "everyapp.team" });
+    expect(discovery.gateway).toBeNull();
+    expect(() => requireGateway(discovery, whoami(), "everyapp.team")).toThrowError(
+      expect.objectContaining({
+        code: "GATEWAY_CHECK_FAILED",
+        retryable: true,
+        message: expect.stringMatching(
+          /^Couldn't check Acme for a Gateway \(looking for everyapp\.team\)\nCloudflare refused to list its databases, twice\./,
+        ),
+        data: expect.objectContaining({ unchecked: [{ id: "acct-1", name: "Acme", reason: "auth" }], host: "everyapp.team" }),
+      }),
+    );
+    expect(() => refuseUnchecked(discovery, whoami())).toThrowError(expect.objectContaining({ code: "GATEWAY_CHECK_FAILED" }));
   });
 
   it("asks an account a token names but cf doesn't list", async () => {
@@ -310,6 +355,41 @@ describe("connectToGateway", () => {
     await expect(connectToGateway({ createCf, interactive: false })).rejects.toMatchObject({
       code: "GATEWAY_NOT_FOUND",
     });
+  });
+
+  it("never offers an install when the command names the Gateway or its account, or an account couldn't be asked", async () => {
+    accounts = await Promise.all([account("acct-1", "Personal")]);
+    const offered: string[] = [];
+    const onNoGateway = async () => {
+      offered.push("install");
+      throw new Error("offered an install");
+    };
+
+    await expect(
+      connectToGateway({ gateway: "https://everyapp.team", createCf, interactive: true, onNoGateway }),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+      message: expect.stringContaining("No Gateway at everyapp.team in Personal"),
+      data: expect.objectContaining({ host: "everyapp.team" }),
+    });
+    await expect(
+      connectToGateway({ accountId: "acct-1", createCf, interactive: true, onNoGateway }),
+    ).rejects.toMatchObject({ code: "GATEWAY_NOT_FOUND" });
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "acct-1");
+    await expect(connectToGateway({ createCf, interactive: true, onNoGateway })).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+    });
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
+
+    accounts[0]!.cloudflare.cf.override(["d1", "list"], AUTH_ERROR);
+    await expect(connectToGateway({ createCf, interactive: true, onNoGateway })).rejects.toMatchObject({
+      code: "GATEWAY_CHECK_FAILED",
+    });
+    expect(offered).toEqual([]);
+
+    // Nothing named, every account asked, none has one: the offer.
+    accounts = await Promise.all([account("acct-1", "Personal")]);
+    await expect(connectToGateway({ createCf, interactive: true, onNoGateway })).rejects.toThrow("offered an install");
   });
 
   it("refuses an install that stopped before its first upload", async () => {
