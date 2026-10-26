@@ -32,7 +32,7 @@ export const installCommand = buildCommand({
       yes: {
         kind: "boolean",
         brief:
-          "Register the providers the app bundles (.everyapp/providers/*.json) without asking, and with no Gateway yet install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
+          "With no Gateway yet, install one at apps.<zone> without asking (never registers the providers the app bundles, cf's questions, or the one before replacing a Worker changed outside everyapp)",
         optional: true,
       },
       json: jsonFlag,

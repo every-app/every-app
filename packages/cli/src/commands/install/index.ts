@@ -40,7 +40,7 @@ export async function install(flags: AppDeployFlags, source: string): Promise<vo
         forceDns: flags["force-dns"],
         enableEmailRouting: flags["enable-email-routing"],
         waitForLive: !flags["no-wait"],
-        yes: flags.yes,
+        registerProviders: flags["register-providers"],
         offerInstall: { yes: flags.yes },
       });
       out.emit({ type: "done", ...deployDone(result) });

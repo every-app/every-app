@@ -67,7 +67,7 @@ export const forceDnsFlag = {
 
 /**
  * What a deploy of an app may take over, with the person's yes: `deploy`
- * and `install` declare all four, and each refusal's `rerun` adds the one
+ * and `install` declare all five, and each refusal's `rerun` adds the one
  * it needs (TAKEOVER_FLAGS in lib/errors.ts).
  */
 export const appTakeoverFlags = {
@@ -90,6 +90,12 @@ export const appTakeoverFlags = {
     kind: "boolean",
     brief:
       "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+    optional: true,
+  },
+  "register-providers": {
+    kind: "boolean",
+    brief:
+      "Register the providers the app bundles, which tell the Gateway where to send their keys (--yes doesn't)",
     optional: true,
   },
 } as const;
@@ -115,5 +121,6 @@ export interface AppDeployFlags extends GatewayCommandFlags {
   "allow-delete-workflows"?: boolean;
   "force-dns"?: boolean;
   "enable-email-routing"?: boolean;
+  "register-providers"?: boolean;
   "no-wait"?: boolean;
 }

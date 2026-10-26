@@ -1,8 +1,8 @@
 /**
  * The provider specs an app bundles (`.everyapp/providers/<id>.json`),
  * registered by `everyapp deploy` after one confirmation, end to end in the
- * fake Cloudflare account: refused under --json without --yes before
- * anything is registered, registered with --yes and then offered to the
+ * fake Cloudflare account: refused under --json without --register-providers before
+ * anything is registered (--yes alone never registers), registered with the flag and offered to the
  * manifest, left alone when the row has the same spec, refused when the
  * row has another spec, warned about for a catalog id, and refused when
  * the file isn't a spec.
@@ -99,7 +99,7 @@ function bundle(name: string, spec: unknown) {
   fs.writeFileSync(path.join(dir, name), typeof spec === "string" ? spec : JSON.stringify(spec));
 }
 
-function deploy(options: { yes?: boolean; json?: boolean; confirm?: (q: string) => Promise<boolean>; manifest?: EveryAppCliManifest } = {}) {
+function deploy(options: { registerProviders?: boolean; json?: boolean; confirm?: (q: string) => Promise<boolean>; manifest?: EveryAppCliManifest } = {}) {
   const manifest = options.manifest ?? SHOP;
   account.apps.set(appDir, manifest);
   events = [];
@@ -108,7 +108,7 @@ function deploy(options: { yes?: boolean; json?: boolean; confirm?: (q: string) 
     manifest,
     out: out(),
     json: options.json ?? true,
-    yes: options.yes,
+    registerProviders: options.registerProviders,
     confirm: options.confirm,
     createCf: () => account.cf,
     installDeps: async () => undefined,
@@ -125,11 +125,12 @@ const steps = (step: string) => events.filter((event) => event["type"] === "step
 const warnings = () => events.filter((event) => event["type"] === "warning");
 
 describe("the providers an app bundles", () => {
-  it("lists them and stops with CONFIRMATION_REQUIRED under --json without --yes, registering nothing", async () => {
+  it("lists them and stops with CONFIRMATION_REQUIRED under --json without --register-providers, registering nothing", async () => {
     bundle("northwind.json", NORTHWIND);
     await expect(deploy()).rejects.toMatchObject({
       code: "CONFIRMATION_REQUIRED",
       authorize: true,
+      rerun: expect.stringContaining("--register-providers"),
       message: expect.stringContaining("shop bundles northwind to register on example.com"),
       data: { providers: [expect.objectContaining({ id: "northwind", hosts: ["api.northwind.io"], settings: ["NORTHWIND_API_KEY"], outcome: "registered" })] },
     });
@@ -138,9 +139,9 @@ describe("the providers an app bundles", () => {
     expect(await findRegisteredApp(registry(), "shop")).toBeNull();
   });
 
-  it("registers them with --yes (or a yes at the terminal), then deploys the app that lists them", async () => {
+  it("registers them with --register-providers (or a yes at the terminal), then deploys the app that lists them", async () => {
     bundle("northwind.json", NORTHWIND);
-    const result = await deploy({ yes: true });
+    const result = await deploy({ registerProviders: true });
     expect(result.live).toBe(true);
     expect(await rows()).toEqual(["northwind"]);
     expect(steps("app.providers").at(-1)?.["message"]).toBe("Registered Northwind (northwind) on example.com.");
@@ -166,7 +167,7 @@ describe("the providers an app bundles", () => {
   it("never overwrites a row with another spec, and says what to do", async () => {
     await addProvider(registry(), { spec: { ...NORTHWIND, hosts: ["api.northwind.dev"] }, deployer: { actor: "ops@example.com", email: "ops@example.com" }, install: INSTALL });
     bundle("northwind.json", NORTHWIND);
-    await expect(deploy({ yes: true })).rejects.toMatchObject({
+    await expect(deploy({ registerProviders: true })).rejects.toMatchObject({
       code: "PROVIDER_SPEC_DIFFERS",
       message: expect.stringContaining("northwind is registered on example.com with another spec than shop bundles (.everyapp/providers/northwind.json)"),
       fix: expect.stringContaining("pnpm everyapp provider add .everyapp/providers/northwind.json --replace"),
@@ -177,7 +178,7 @@ describe("the providers an app bundles", () => {
 
   it("warns about a catalog id and ignores the file; refuses a file that isn't a spec before anything", async () => {
     bundle("dataforseo.json", { ...NORTHWIND, id: "dataforseo", name: "DataForSEO" });
-    const result = await deploy({ yes: true, manifest: { id: "shop", resources: { d1: ["DB"] } } });
+    const result = await deploy({ registerProviders: true, manifest: { id: "shop", resources: { d1: ["DB"] } } });
     expect(result.live).toBe(true);
     expect(warnings().find((w) => w["code"] === "PROVIDER_BUNDLED_BUILTIN")).toMatchObject({
       message: expect.stringContaining("dataforseo.json describes dataforseo, which is built in"),
@@ -186,12 +187,12 @@ describe("the providers an app bundles", () => {
     expect(await rows()).toEqual([]);
 
     bundle("broken.json", "{ not json");
-    await expect(deploy({ yes: true })).rejects.toMatchObject({
+    await expect(deploy({ registerProviders: true })).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
       message: expect.stringContaining("shop bundles a provider spec this Gateway doesn't take: .everyapp/providers/broken.json\nit isn't JSON"),
     });
     fs.writeFileSync(path.join(appDir, ".everyapp/providers/broken.json"), JSON.stringify({ ...NORTHWIND, id: "bad", auth: { kind: "nope" } }));
-    await expect(deploy({ yes: true })).rejects.toMatchObject({
+    await expect(deploy({ registerProviders: true })).rejects.toMatchObject({
       code: "PROVIDER_SPEC_INVALID",
       message: expect.stringMatching(/broken\.json\n.*auth\.kind: must be bearer/),
     });

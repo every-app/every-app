@@ -29,7 +29,7 @@ export async function deploy(flags: AppDeployFlags): Promise<void> {
       forceDns: flags["force-dns"],
       enableEmailRouting: flags["enable-email-routing"],
       waitForLive: !flags["no-wait"],
-      yes: flags.yes,
+      registerProviders: flags["register-providers"],
       offerInstall: { yes: flags.yes },
     });
     // `app.live` said it to a person already (or that it goes live on its

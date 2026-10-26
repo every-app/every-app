@@ -10,8 +10,11 @@
  * add <file> --replace` is the person's own move). A catalog id is left
  * alone with a warning (the catalog wins). The specs to register are
  * printed, hosts and secrets each, and registered after one explicit
- * confirmation: `--yes`, or the person's answer at a terminal; under
- * `--json` without `--yes` the deploy stops with CONFIRMATION_REQUIRED.
+ * confirmation: `--register-providers`, or the person's answer at a
+ * terminal. `--yes` alone doesn't count: a spec decides where the
+ * operator's key goes, so an agent's habitual `--yes` must not approve it.
+ * Unattended without the flag, the deploy stops with CONFIRMATION_REQUIRED
+ * whose rerun adds `--register-providers`.
  */
 import {
   capabilitySettings,
@@ -25,9 +28,9 @@ import { EveryAppError } from "@/lib/errors";
 import { addProvider, gatewayRegistry } from "@/lib/gateway/providers";
 import type { Deployer } from "@/lib/gateway/registry";
 import type { InstallRecord } from "@/lib/gateway/install";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
+import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
 import { listed } from "@/lib/output/text";
 
 /** One spec as the step reports it. */
@@ -50,7 +53,8 @@ interface Options {
   gatewayUrl: string;
   out: EventSink;
   interactive: boolean;
-  yes?: boolean;
+  /** `--register-providers`: the person's yes, given up front. */
+  registerProviders?: boolean;
   confirm?: Confirm;
   now?: number;
 }
@@ -140,16 +144,23 @@ export async function registerBundledProviders(options: Options): Promise<Bundle
     message: `${appId} bundles ${toRegister.length === 1 ? "a provider" : `${toRegister.length} providers`} to register on ${gatewayHost}:\n  ${lines.join("\n  ")}`,
     data: { providers: reports.filter((report) => report.outcome === "registered") },
   });
-  await confirmUnlessYes({
-    yes: options.yes,
-    interactive: options.interactive,
-    confirm: options.confirm,
-    question: `Register ${listed(toRegister.map(({ id }) => id))} on ${gatewayHost}?`,
-    context: lines,
-    unattended: `${appId} bundles ${listed(toRegister.map(({ id }) => id))} to register on ${gatewayHost}\nRegistering a provider gives the Gateway a new host to send a key to, so it takes the person's yes. Nothing was registered.`,
-    cancelled: "Nothing was registered or deployed.",
-    data: { providers: reports.filter((report) => report.outcome === "registered") },
-  });
+  if (!options.registerProviders) {
+    if (!options.interactive) {
+      throw new EveryAppError(
+        "CONFIRMATION_REQUIRED",
+        `${appId} bundles ${listed(toRegister.map(({ id }) => id))} to register on ${gatewayHost}\nRegistering a provider gives the Gateway a new host to send a key to, so it takes the person's yes (--register-providers; --yes doesn't). Nothing was registered.`,
+        {
+          rerun: thisCommand(["--register-providers"]),
+          authorize: true,
+          data: { providers: reports.filter((report) => report.outcome === "registered") },
+        },
+      );
+    }
+    await confirmOrCancel(options.confirm ?? confirmAtTerminal, `Register ${listed(toRegister.map(({ id }) => id))} on ${gatewayHost}?`, {
+      context: lines,
+      cancelled: "Nothing was registered or deployed.",
+    });
+  }
   for (const { spec } of toRegister) {
     await addProvider(db, { spec, deployer: options.deployer, install, now: options.now });
   }

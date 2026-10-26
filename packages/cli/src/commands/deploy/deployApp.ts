@@ -200,11 +200,12 @@ interface DeployAppOptions {
    */
   waitForLive?: boolean;
   /**
-   * `--yes`: register the providers the app bundles (`.everyapp/providers`,
-   * a release's `providers`) without asking; `offerInstall.yes` is the
-   * same flag for the Gateway install.
+   * `--register-providers`: register the providers the app bundles
+   * (`.everyapp/providers`, a release's `providers`) without asking.
+   * `--yes` alone doesn't: a bundled spec names the hosts the operator's
+   * key will go to, so an agent's habitual `--yes` must not approve it.
    */
-  yes?: boolean;
+  registerProviders?: boolean;
   /**
    * With no Gateway in any account the login sees, offer to install one
    * (`deploy`): at a terminal setup's pipeline runs
@@ -354,7 +355,7 @@ async function deploySteps(
     gatewayUrl,
     out,
     interactive,
-    yes: options.yes,
+    registerProviders: options.registerProviders,
     confirm: options.confirm,
   });
   // The manifest against what this Gateway offers: the catalog and the
