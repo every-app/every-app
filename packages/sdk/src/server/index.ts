@@ -62,6 +62,12 @@ export {
   type NodeServerHandlerOptions,
 } from "./nodeServer.js";
 export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
+export { gatewayAiBinding, type GatewayAiBindingOptions } from "./aiBinding.js";
+export {
+  gatewayEmailBinding,
+  type GatewayEmailBindingMessage,
+  type GatewayEmailBindingOptions,
+} from "./emailBinding.js";
 export { listMembers, type ListMembersOptions } from "./listMembers.js";
 export { emit, type EmitOptions } from "./emit.js";
 export type {

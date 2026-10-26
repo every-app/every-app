@@ -33,6 +33,37 @@ const answer = await client.chat.completions.create({
 
 **Local development.** With no Gateway binding and `EVERYAPP_DEV` set, `/api/ai/default/…` resolves on the developer's own `.dev.vars` by the same order below (the first provider whose settings are all set) and the SDK calls that provider directly with the model filled in. With none set: `ConfigurationError`, `Set OPENROUTER_API_KEY (or another model provider's key) in .dev.vars to call the default model in local development.`
 
+## Code written for `env.AI`: `gatewayAiBinding()`
+
+Code that calls Workers AI's binding, `env.AI.run(model, inputs, options)` (upstream code a port keeps, `workers-ai-provider`, the Agents SDK), takes `gatewayAiBinding(env, { for, provider, models })` from `@every-app/sdk/server` in place of `env.AI`. It returns the app's own `Ai` type (the Workers types `cf workers types` generates), so it goes wherever `env.AI` went with no cast, and every call goes through the Gateway: capped, counted and kept to `ai.models` like any provider call. The app lists the provider under `providers` (`workers-ai` by default) and needs no `resources.ai` binding.
+
+```ts
+import { gatewayAiBinding } from "@every-app/sdk/server";
+
+const AI = gatewayAiBinding(env, { for: request });
+const { response } = await AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
+  messages: [{ role: "user", content: "Is this email spam? YES or NO." }],
+  max_tokens: 10,
+});
+// upstream code that reads env.AI unchanged:
+return app.fetch(request, { ...env, AI }, ctx);
+```
+
+`packages/sdk/src/server/aiBinding.ts`. Each `run()` is an OpenAI-compatible call through `createGatewayFetch({ env, for })` on the provider's route (`/api/ai/<provider>` plus the entry's `chat.path` or `embeddings.path`), answered in Workers AI's shapes:
+
+| `run()` with                             | Goes to                                                                                                                                                                                                 | Answers                                                                                                                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `messages` or `prompt` (text generation) | chat completions; `prompt` as one user message, legacy tools (`{ name, description, parameters }`) as OpenAI's, every other input (`max_tokens`, `temperature`, `response_format`, `tools`, …) as it is | `{ response, tool_calls?, usage? }`: `response` the text (an all-digit reply a string), each tool call in both forms Workers AI answers with (`{ name, arguments }`, arguments parsed, and `{ id, type, function }`) |
+| … and `stream: true`                     | the same, streamed                                                                                                                                                                                      | a `ReadableStream` of `data: {"response": "<token>"}` events (tool call deltas and usage alongside), then `data: [DONE]`                                                                                             |
+| `text` (embeddings)                      | embeddings, `{ model, input: text }`                                                                                                                                                                    | `{ shape: [rows, dimensions], data }`                                                                                                                                                                                |
+| `options.returnRawResponse: true`        | as above                                                                                                                                                                                                | the provider's own `Response`, OpenAI-shaped (not Workers AI's)                                                                                                                                                      |
+
+Anything else throws `ConfigurationError` before any call (`<what> isn't available through the Every App gateway; call the provider's routes with createGatewayFetch() instead.`): other tasks (images, audio, `requests` batches), `websocket: true`, and the binding's other methods (`gateway()`, `autorag()`, `aiSearch()`, `websearch()`, `models()`, `toMarkdown()`). `options.gateway` is ignored: whether calls go through Cloudflare AI Gateway is the operator's setting (below). A refusal throws `GatewayRefusalError` with the Gateway's code (`ai_provider_not_configured`, `model_not_allowed`, …), a provider error throws `Error` (`AI (workers-ai) answered 400: …`), and no binding and no dev key throws createGatewayFetch's `ConfigurationError`, all from `run()`: making the binding checks nothing, so one per request costs nothing.
+
+Options: `for` (createGatewayFetch's); `provider`, default `workers-ai` so `@cf/…` ids work as they are, or any `ai` entry with OpenAI-compatible routes (`openrouter`, `openai`, …), or `default` (the operator's model, `ai: { chat: true }`), where an `@cf/…` id is sent as `default`; `models`, a map from the ids the code names to the ids to send (`{ "@cf/meta/llama-3.1-8b-instruct-fast": "meta-llama/llama-3.1-8b-instruct" }` with `provider: "openrouter"`), anything unlisted sent as it is. A provider without the route throws `ConfigurationError` (`anthropic has no OpenAI-compatible embeddings route.`). In local development it reaches the provider with the developer's own key in `.dev.vars` (`WORKERS_AI_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for Workers AI), as createGatewayFetch does.
+
+Why the app's own `Ai` and not a type of the SDK's: `Ai` changes with each Workers types version (`run()`'s overloads, new methods), and the app's `Env` names its own. The declaration says `Ai`, which resolves to the app's version; the object implements `run()` and throws on the rest. The model names `run()` accepts are the app's types', exactly as with a real binding.
+
 ## The route: `/api/ai/default`
 
 The Gateway serves two paths under it, both OpenAI-shaped: `/v1/chat/completions` and `/v1/embeddings`. Each maps onto the resolved provider's own route for it (the entry's `chat` and `embeddings` blocks: OpenRouter's `/api/v1/chat/completions`, Workers AI's `/v1/chat/completions` under the account path, Groq's `/openai/v1/chat/completions`), with every rule of that provider's entry (`store: false` where it applies, the credential headers stripped, the usage tap). Then:
@@ -104,4 +135,4 @@ Because AI Gateway is a proxy with no models of its own: it needs an upstream pr
 
 ## Sources
 
-`packages/sdk/src/internal/aiDefault.ts` (the resolution), `packages/sdk/src/internal/capabilities.ts` and `packages/sdk/src/internal/catalog/inference.ts` (the entries), `packages/sdk/src/server/ai.ts` (`ai()`), `apps/every-app-gateway/src/server/ai-proxy.ts` (the route and AI Gateway), `apps/every-app-gateway/src/server/ai-default.ts` (the cached choice), `apps/every-app-gateway/src/server/ai-default.test.ts` and `apps/every-app-gateway/src/server/ai-provider-pins.test.ts` (the bytes), `packages/cli/skills/everyapp/setup/ai.md` and `packages/cli/skills/everyapp/setup/ai-gateway.md` (the setups), docs/design/2026-10-model-providers.md.
+`packages/sdk/src/internal/aiDefault.ts` (the resolution), `packages/sdk/src/internal/capabilities.ts` and `packages/sdk/src/internal/catalog/inference.ts` (the entries), `packages/sdk/src/server/ai.ts` (`ai()`), `packages/sdk/src/server/aiBinding.ts` (`gatewayAiBinding()`), `apps/every-app-gateway/src/server/ai-proxy.ts` (the route and AI Gateway), `apps/every-app-gateway/src/server/ai-default.ts` (the cached choice), `apps/every-app-gateway/src/server/ai-default.test.ts` and `apps/every-app-gateway/src/server/ai-provider-pins.test.ts` (the bytes), `packages/cli/skills/everyapp/setup/ai.md` and `packages/cli/skills/everyapp/setup/ai-gateway.md` (the setups), docs/design/2026-10-model-providers.md.

@@ -317,6 +317,24 @@ The Gateway answers a refusal as `{ error, code, message }` with the code also i
 
 The mapping from provider codes to refusals is `emailProviderRefusal()` in `packages/sdk/src/internal/email.ts`; Resend's errors are mapped onto the same `E_*` names in `apps/every-app-gateway/src/server/email/providers/resend.ts`.
 
+### Code written for `env.EMAIL`: gatewayEmailBinding()
+
+Code that calls Cloudflare's `send_email` binding, `env.EMAIL.send(message)`, takes `gatewayEmailBinding(env, { for })` from `@every-app/sdk/server` (`packages/sdk/src/server/emailBinding.ts`) in place of `env.EMAIL`. It returns the app's own `SendEmail` type (the Workers types `cf workers types` generates; its `send()` overloads change with the version), so it goes wherever `env.EMAIL` went with no cast, and the app needs no `resources.sendEmail` binding: each `send()` is a `sendEmail()` with the same `for`, through the Gateway's sender rule and budgets, and in local dev the same checks and printing.
+
+```ts
+import { gatewayEmailBinding } from "@every-app/sdk/server";
+
+const EMAIL = gatewayEmailBinding(env, { for: request });
+const { messageId } = await EMAIL.send({
+  from: { email: "support@mail.example.com", name: "Support" },
+  to: "customer@example.net",
+  subject: "Re: your order",
+  text: "It shipped.",
+});
+```
+
+`send()` takes the structured message (`EmailMessageBuilder`, typed in the SDK as `GatewayEmailBindingMessage`) and maps it onto `SendEmailMessage`: `to`, `cc`, `bcc` as bare addresses (a display name on a recipient is dropped), `from` and `replyTo` as `{ address, name? }`, `subject`, `text`, `html`, `headers` as they are, each attachment's `type` as `contentType` and binary `content` as base64 (a string is taken as base64 already, as the binding takes it), an `inline` attachment without a `contentId` sent as an ordinary one. It resolves `{ messageId }` (`""` when the Gateway reports none). A raw MIME `EmailMessage` (`new EmailMessage(from, to, raw)`) throws `GatewayRefusalError` `email_invalid_message` (400) before any call: the Gateway takes structured mail only. Every other failure is `sendEmail()`'s: `GatewayRefusalError` with the codes above, `ConfigurationError` with neither binding nor `everyapp dev`, `AttributionError` from a shared app's Worker without `for`.
+
 ### The sender rule
 
 `senderAllowed(address, patterns)`: a pattern `*@example.com` takes any address on exactly `example.com` (not its subdomains); any other pattern takes that one address; case never matters. The patterns are the app's `apps.email_senders`, passed to the capability as `RegisteredApp.emailSenders` and empty on a hosted Gateway or for an app without the grant (`effectiveSenders()`). A `senders` list left in a manifest snapshot is ignored. A hand-edited column that isn't a JSON array is read as a comma or whitespace list (`parseEmailList()`), so a word there allows no address.

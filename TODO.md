@@ -1909,6 +1909,13 @@ Defaults taken in `fromMcpTools()` (SDK, `packages/sdk/src/server/fromMcpTools.t
 - [ ] **Risk from annotations:** `readOnlyHint: true` is `read`, `destructiveHint: true` is `destructive`, anything else `write`. MCP's own default would make an unannotated tool destructive (hidden from AI clients). Apps override with `risk(tool)`.
 - [ ] **Non-text result blocks (images, resources) are dropped;** only text blocks and `structuredContent` reach the Gateway. A plain JSON Schema input is described but not validated beyond "an object". Tool names are not renamed: they must already be snake_case.
 
+## Platform shortcuts (2026-10-26)/lane 3 binding shims
+
+`gatewayAiBinding(env)` and `gatewayEmailBinding(env)` in `@every-app/sdk/server`. Defaults taken for Ben:
+
+- [ ] **`gatewayAiBinding` goes to `workers-ai` unless told otherwise**, so `@cf/…` ids work as they are. `provider: "default"` sends an `@cf/…` id as `default` (the operator's model). It runs over the OpenAI-compatible routes, because the Gateway keeps Workers AI's native `/run/<model>` closed: text generation, streaming and embeddings only; images, audio, batches and the binding's other methods throw.
+- [ ] **Both return the app's own `Ai`/`SendEmail` type** (declared against the global Workers types), not an SDK type, so they drop in with no cast. `patterns.md` rows 63, 68, 76 and 83 still point at the inbox's `gatewayAi()`/`gatewayEmail()`; that edit waits for the launch-path flip.
+
 ## Platform shortcuts (2026-10-26)/9 create-release
 
 - **skills update** (`pnpm everyapp skills update`, `packages/cli/src/commands/skills`). Defaults taken for Ben:
