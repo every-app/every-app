@@ -15,6 +15,8 @@ Whoever runs the Gateway does this once per provider, as an owner or admin.
 4. At the provider, make an OAuth app and paste that redirect URI. For GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App** (an OAuth App, not a GitHub App). The provider gives you a client id and a client secret.
 5. Back in the dialog, paste the client id and the client secret, and select **Add**.
 
+Each provider's page has its console, the steps, the scopes to allow and the exact redirect URI: [GitHub](/docs/providers/github#connect-accounts), [Google](/docs/providers/google#connect-accounts), [Microsoft 365](/docs/providers/microsoft#connect-accounts), [Slack](/docs/providers/slack#connect-accounts), and [the rest](/docs/providers).
+
 The secret is stored sealed and never shown again. To change it later, select the provider's **⋯** → **Replace client**. From a terminal, the same is:
 
 ```bash

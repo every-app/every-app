@@ -6,13 +6,16 @@ only: Gmail, Google Calendar, Search Console and Google Analytics, whichever
 of the four an app declares. The Gateway completes Google's token endpoint
 with the client; the app builds the authorize URL from the public client
 id, keeps the member's tokens and reads Google's APIs itself. Open CRM (app
-id `crm`) uses it today, for Gmail and Calendar: Settings → Connections →
-Google Workspace (`/settings/connections/google`). OpenSEO still reads
-Search Console and Analytics with its own Google client and moves onto this
-one after launch (TODO.md "OAuth scopes (2026-10-24)", follow-up 2): until
-an app declares those two, nothing here enables them. At the end the person
+id `crm`) uses it for Gmail and Calendar: Settings → Connections →
+Google Workspace (`/settings/connections/google`), through its own
+callback. OpenSEO (app id `openseo`) uses it for Search Console and
+Google Analytics through the Gateway's own flow: it declares the sets
+`identity`, `search-console.read` and `analytics.read`, and each person
+connects under Connected accounts (the redirect URI
+`https://<gateway>/connect/google-workspace/callback`). At the end the person
 has a Cloud project with the APIs behind the declared sets enabled (for
-Open CRM: the Gmail API and the Google Calendar API), a consent screen
+Open CRM: the Gmail API and the Google Calendar API; for OpenSEO: the
+Search Console API and the Analytics Admin and Data APIs), a consent screen
 listing their scopes, a Web application client whose redirect URI is the
 app's callback, and both settings on the Gateway. A Gateway-held token broker for
 organization Google accounts is not built (the direction is in `docs/hosted-vision.md`); the scope sets
@@ -44,9 +47,10 @@ verification follows what is listed: `gmail.readonly` is restricted;
 Google publishes no list, the Data Access page labels each scope once
 added). For the launch that is Open CRM: `gmail.readonly` and
 `calendar.readonly`, with the Gmail API and the Google Calendar API
-enabled. Add `webmasters.readonly` and `analytics.readonly`, and enable the
-Search Console API and the Analytics Admin and Data APIs, only when an app
-declares those sets (OpenSEO will, after launch).
+enabled. For OpenSEO, add `webmasters.readonly` and `analytics.readonly`
+and enable the Search Console API and the Analytics Admin and Data APIs:
+OpenSEO declares those sets. The person's version of these steps is
+https://everyapp.com/docs/providers/google.
 
 An app names its sets in its manifest,
 `"google-workspace": { access: "write", scopes: ["gmail.read", "calendar.read"], why }`
@@ -139,8 +143,9 @@ assessment.
 3. Ask whether a Cloud project or a Web client exists for this already:
    then step 6 adds the redirect URI to it. Never reuse OpenSEO's verified
    client (the design doc's rule). The sets the apps declare decide steps
-   3 and 5: today Open CRM, `gmail.read` and `calendar.read`; Search
-   Console and Analytics only for an app that declares them.
+   3 and 5: Open CRM, `gmail.read` and `calendar.read`; OpenSEO,
+   `search-console.read` and `analytics.read` (with the Gateway's redirect
+   URI `https://<gateway>/connect/google-workspace/callback`, step 6).
 4. Ask whether every member who will connect is in one Google Workspace
    organization. Yes: *Internal*, no verification. No: *External* (step 7).
    A member on a gmail.com account is outside any organization: *External*.

@@ -19,6 +19,7 @@
     "connect-oauth",
     "events",
     "ai",
+    "providers",
     "---Help---",
     "how-it-works",
     "status",

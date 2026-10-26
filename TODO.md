@@ -1586,6 +1586,18 @@ The Hyperdrive lane of the provisioners swath ([docs/design/2026-10-provisioners
 - [ ] **A Gateway reader for an app's datasets** (the SQL API needs an account token the app doesn't hold): an `analytics` capability, or a page in Admin → Usage. None today.
 - [ ] **`everyapp status`'s RESOURCES cell** gains `Analytics Engine` once the first lane's cell is on main.
 
+### Provider docs (2026-10-26)
+
+`/docs/providers`: one page per company, generated from the catalog, the OAuth presets and the sign-in providers by `packages/cli/src/docs/providerPages.ts` (steps in `providerGuides.ts`; drift test `providerPages.test.ts`), plus the hand-written `/docs/providers/custom` and the issue form `.github/ISSUE_TEMPLATE/provider-request.yml`. Defaults the orchestrator took under Ben's standing default; walk any back:
+
+- [ ] **One page per company**, a section for each way to connect (API key, connect accounts, sign in): GitHub's token, `github-oauth` and Sign in with GitHub share `/docs/providers/github`. The other way was one page per catalog entry.
+- [ ] **Hand-written steps for the top ~20** (every provider with a setup skill, the four featured apps' needs, the AI providers, Stripe, GitHub, Linear, PostHog, Postmark, SendGrid, Cloudflare). Every other provider gets generic three-step text (sign in, create a key, copy it) under the catalog's docs URL, its hint, the exact commands, and "Steps for this provider are brief; open an issue to request a full guide".
+- [ ] **Minor providers get full pages** (Kick, Tumblr, Dribbble, NewsAPI, OpenWeather, the social clients): a thin page over a 404, free from the generator.
+- [ ] **The issue form** asks for the provider's name, its API docs, how it authenticates and what you want to do with it, with the label `provider-request` (create the label on the public repo, or the form files issues unlabelled).
+- [ ] **Full guides link to GitHub** (`packages/cli/skills/everyapp/setup/<file>.md` on every-app/every-app main): the setup skills aren't mirrored on the site. Mirroring them under /docs/agent/repo is the alternative.
+- [ ] **Unverified entries** (`verified: false`: Plaid, Serper) say so on their page. Mastodon's console is instance-relative (`/settings/applications` on the host in `MASTODON_URL`); its page says so.
+- [ ] **The social OAuth clients** show as "OAuth client for apps" (the app runs the flow) while they are catalog entries; when lane 5 of Platform shortcuts moves them to presets, `docs:update` turns them into "Connect accounts" sections with no change here.
+
 ## Build
 
 - [x] **CLI redesign**, decided 2026-10-15 and built 2026-10-16 as #284 to #296 (`docs/cli-redesign.md` (deleted 2026-10-24; git history at 5ef30882) §8 has the implementation notes). Originally: calm output and pure `--json`; the registry written through D1 with no deploy API, deploy tokens or `login` (ADR-0003 first); the Gateway built from the checkout and found through the account; dev without files; the flat command tree; one routing mode and one naming scheme; the 3-minute lease and the schema-drift check. First, and in an hour: squash the Gateway's and the apps' migration histories to one generated file each, regenerated rather than appended while nothing live exists. No backwards compatibility: thecomeup.cc is reinstalled, not adopted. **Ended 2026-10-19:** everyapp.team runs on the `0000_lyrical_wild_child` baseline, so Gateway migrations now append; `release-migrations.test.ts` freezes the shipped ones (SHIPPED_MIGRATIONS).
