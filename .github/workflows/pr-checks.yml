@@ -1,4 +1,6 @@
 name: PR Checks
+# Runs in both repositories: the private one, and the public
+# every-app/every-app, where outside contributors open pull requests.
 on:
   # Every pull request, not only ones into main: stacked PRs target the PR
   # below them and still need the checks.

@@ -1,7 +1,9 @@
 name: Integration
 # The slow checks, kept out of pull requests (pr-checks.yml runs types, lint
-# and unit tests): the integration test projects, the full workspace build,
-# the cf dry run and the built CLI. They run nightly, on main (a newer push
+# and unit tests): the integration test projects, then one build job (the full
+# workspace build, the cf dry run and the built CLI). Private repository only
+# (each job's `if`; the public copy can't name it): every-app/every-app
+# mirrors main and doesn't run them. They run nightly, on main (a newer push
 # cancels a run still going, so a burst of merges ends in one full run) and
 # on demand for any branch:
 #
@@ -21,6 +23,7 @@ concurrency:
 jobs:
   integration-tests:
     name: Integration tests (${{ matrix.package }})
+    if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -50,8 +53,9 @@ jobs:
 
   build:
     name: Build every package
+    if: github.repository_owner == 'every-app' && github.repository != 'every-app/every-app'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -65,70 +69,36 @@ jobs:
       - name: Install all dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       # The landing page's production build, the gateway's `cf build`, the
-      # starter's and the CLI's bundles.
+      # starter's and the CLI's bundles. The SDK's dist/ and the CLI's dist/,
+      # which the steps below need, come from here.
       - name: Build workspace packages
+        id: build
         run: pnpm -r run build
-
-  # `cf deploy --prebuilt --dry-run` with the real cf, of the gateway release
-  # (patched as for an install) and the starter template (built with deploy
-  # inputs and checked against the app policy): packages/cli/src/lib/cfDryRun.test.ts.
-  # A dry run reads the Build Output and prints its bindings; it needs no
-  # Cloudflare account, credentials or network, so a cf or Vite plugin bump
-  # that changes the Build Output fails here instead of in a live deploy.
-  cf-dry-run:
-    name: cf deploy --dry-run
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      - name: Install all dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build the SDK
-        run: pnpm -C packages/sdk build
+      # Packs the production Build Output the step above wrote into the
+      # release tarball (--skip-build: no second `cf build`).
       - name: Build the gateway release
-        run: pnpm -C apps/every-app-gateway build:release
-      - name: Dry-run the gateway release and the template
+        run: pnpm -C apps/every-app-gateway build:release -- --skip-build
+      # `cf deploy --prebuilt --dry-run` with the real cf, of the gateway release
+      # (patched as for an install) and the starter template (built with deploy
+      # inputs and checked against the app policy): packages/cli/src/lib/cfDryRun.test.ts.
+      # A dry run reads the Build Output and prints its bindings; it needs no
+      # Cloudflare account, credentials or network, so a cf or Vite plugin bump
+      # that changes the Build Output fails here instead of in a live deploy.
+      - name: cf deploy --dry-run of the gateway release and the template
         run: pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts
         env:
           EVERYAPP_CF_DRY_RUN: '1'
-
-  # The CLI as people run it: bin/everyapp.js over the dist/ tsup built, as a
-  # child process, against a fresh app in a temp directory with no Cloudflare
-  # account (packages/cli/src/bin/builtCli.test.ts). Every other test resolves
-  # the workspace packages from source, so none saw what the bundle does
-  # differently: on 2026-10-24 the built CLI refused every manifest with a
-  # capability that takes no scope sets (the perimeter's manifest schema,
-  # inlined into dist, ran against the CLI's zod 4 instead of the perimeter's
-  # zod 3; #543) while every other check was green. This job runs help for
-  # every route, create, db migrate, dev to its first page, the capability
-  # manifests, release and status (against a fake account) on the built CLI.
-  built-cli:
-    name: everyapp from dist/
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '^22.18.0'
-          cache: 'pnpm'
-      - name: Install all dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build the SDK
-        run: pnpm -C packages/sdk build
-      - name: Build the CLI
-        run: pnpm -C packages/cli build
-      - name: Run the built CLI against a fresh app
+      # The CLI as people run it: bin/everyapp.js over the dist/ tsup built, as a
+      # child process, against a fresh app in a temp directory with no Cloudflare
+      # account (packages/cli/src/bin/builtCli.test.ts). Every other test resolves
+      # the workspace packages from source, so none saw what the bundle does
+      # differently: on 2026-10-24 the built CLI refused every manifest with a
+      # capability that takes no scope sets (the perimeter's manifest schema,
+      # inlined into dist, ran against the CLI's zod 4 instead of the perimeter's
+      # zod 3; #543) while every other check was green. This step runs help for
+      # every route, create, db migrate, dev to its first page, the capability
+      # manifests, release and status (against a fake account) on the built CLI.
+      # It runs when the build passed, even if the dry run failed.
+      - name: everyapp from dist/ against a fresh app
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm -C packages/cli test:built

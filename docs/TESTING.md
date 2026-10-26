@@ -51,7 +51,8 @@ Run a single layer:
 ### In CI
 
 Two workflows. `.github/workflows/pr-checks.yml` (every pull request, and
-pushes to main) is the fast one, six jobs of under two minutes on the
+pushes to main, in both this repository and the public every-app/every-app)
+is the fast one, six jobs of under two minutes on the
 repository's 2-core runners that build nothing but the SDK: Type Check in
 two halves (the gateway and the landing page; the rest) with the gateway's
 `auth:check` and the SDK's `check:esm-relative-imports`, Lint
@@ -62,11 +63,13 @@ gateway; the CLI; the rest), each package's `unit` vitest project with
 in dependency order: each package reads the others from source or from the
 SDK's built `dist/`.
 
-`.github/workflows/integration.yml` is the slow one: nightly, on every push
-to main (a newer push cancels the run still going) and on demand for any
-branch with `gh workflow run integration.yml --ref <branch>`. Run it on a
-branch that touches the CLI's Gateway or deploy pipeline, the gateway's
-auth or its SQL. Its jobs:
+`.github/workflows/integration.yml` is the slow one, run in this private
+repository only: nightly, on every push to main (a newer push cancels the
+run still going) and on demand for any branch with
+`gh workflow run integration.yml --ref <branch>`. Run it on a branch that
+touches the CLI's Gateway or deploy pipeline, the gateway's auth or its SQL.
+Its jobs (the last three are steps of one build job, which installs and
+builds once):
 
 - Integration tests: `pnpm -C packages/cli test:integration` (every test
   file that imports `@/test/gatewayRelease` or `@/test/gatewayWorker`, so
@@ -77,12 +80,13 @@ auth or its SQL. Its jobs:
   projects; `vitest run <file>` with no `--project` runs a file from either.
 - Build every package: `pnpm -r run build`, the landing page's production
   build and the gateway's `cf build` included.
-- cf deploy --dry-run: `pnpm -C apps/every-app-gateway build:release`, then
+- cf deploy --dry-run: `pnpm -C apps/every-app-gateway build:release -- --skip-build`
+(packing the Build Output from the step above), then
 `EVERYAPP_CF_DRY_RUN=1 pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts`
 runs `cf deploy --prebuilt --dry-run` on the gateway release and the starter,
 so a cf or Vite plugin bump that changes the Build Output fails here, not in
 a live deploy.
-- everyapp from dist/ (the built CLI): builds the SDK and the CLI, then `pnpm -C packages/cli test:built` runs
+- everyapp from dist/ (the built CLI): `pnpm -C packages/cli test:built` runs
 `packages/cli/src/bin/builtCli.test.ts`, the CLI as people run it:
 `bin/everyapp.js` over `dist/` as a child process, against a fresh app in a
 temp directory outside the checkout with no Cloudflare account (help for
