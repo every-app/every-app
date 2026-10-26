@@ -1,0 +1,78 @@
+name: Gateway Release
+# Publishes the Gateway release a CLI with no checkout installs
+# (packages/cli/src/lib/gateway, the CLI's Gateway source): every-app-gateway-release.tar.gz
+# on a GitHub Release of this repository, downloaded anonymously from
+# /releases/download/<tag>/ (and /releases/latest/download/ for the newest
+# stable one). A push of a gateway-v<version> tag releases that tag; a
+# manual run releases the tag it is given. The tag's version is the CLI
+# version it is published with (gateway-v0.3.0-rc.4 goes with
+# everyapp@0.3.0-rc.4 on npm): the CLI asks for its own version's release
+# first. A tag with a prerelease suffix is a GitHub prerelease, so
+# /releases/latest stays the newest stable. Needs nothing but the
+# workflow's own token. See .github/RELEASE.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, gateway-v<version> (an existing tag)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'gateway-v*'
+permissions:
+  contents: write
+concurrency:
+  group: gateway-release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Build and publish the Gateway release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          # The release records when the Gateway's sources were last
+          # committed (git log), which a shallow clone can't tell.
+          fetch-depth: 0
+      - name: Setup pnpm
+        # The version is package.json's packageManager.
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+          cache: 'pnpm'
+      - name: Install all dependencies
+        run: pnpm install --ignore-scripts
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
+      - name: Build the Gateway release
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            gateway-v*) version="${TAG#gateway-v}" ;;
+            *) echo "The tag must be gateway-v<version>, not $TAG" >&2; exit 1 ;;
+          esac
+          pnpm -C apps/every-app-gateway build:release -- --version "$version"
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tarball=apps/every-app-gateway/every-app-gateway-release.tar.gz
+          version="${TAG#gateway-v}"
+          prerelease=()
+          case "$version" in *-*) prerelease=(--prerelease) ;; esac
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$tarball" --clobber
+          else
+            gh release create "$TAG" "$tarball" "${prerelease[@]}" \
+              --verify-tag \
+              --title "Gateway $version" \
+              --notes "Every App Gateway $version, built from $GITHUB_SHA for everyapp@$version. Install or update with: npx everyapp@$version setup (or everyapp setup --release https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)."
+          fi

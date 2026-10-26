@@ -8,23 +8,55 @@ never `npx everyapp`.
 
 ## Gateway releases
 
-While publishing is paused, the checkout's Gateway is the only source. Every
-Gateway deploy (`everyapp setup`, `everyapp update`, and the rebind
-an app's `deploy` or `delete` runs) builds the release from
-`apps/every-app-gateway` in the checkout the CLI runs from
-(`packages/cli/src/lib/gateway/checkoutRelease.ts`), kept under the
-checkout's `node_modules/.cache/everyapp/` by the tree hash of its sources.
-A checkout behind the live Gateway is told to `git pull`. The release's
-`release.json` records `minCli`: a CLI older than that refuses it and says
-to update.
+A Gateway deploy (`everyapp setup`, `everyapp update`, and the rebind an
+app's `deploy` or `delete` runs) takes the Gateway from one of three
+places, in this order (the CLI's Gateway source module, beside `packages/cli/src/lib/gateway/release.ts`):
 
-History: until 2026-10-24 the CLI also took a published release
-(`everyapp setup --release <url|file>`, removed in #441, and without a checkout the latest
-release of `GATEWAY_RELEASE_REPO`), published by a Gateway Release workflow
-(`.github/workflows/release.yml`, removed) on `gateway-v*` tags. Nothing used them
-while the CLI runs only from a checkout, so they went with the simplify pass
-(docs/simplify-2026-10-24.md, decision 7); commit `5ef30882` is the last
-main that has them.
+1. `--release <url|path>` on `setup` or `update`: that release. A
+   github.com repository URL means its latest release
+   (`/releases/tag/<tag>`: that one), any other HTTPS URL a tarball to
+   download, anything else a local `every-app-gateway-release.tar.gz`.
+2. A checkout, when everyapp runs from one (`pnpm everyapp`): the release
+   it builds from `apps/every-app-gateway`
+   (`packages/cli/src/lib/gateway/checkoutRelease.ts`), kept under the
+   checkout's `node_modules/.cache/everyapp/` by the tree hash of its
+   sources. A checkout behind the live Gateway is told to `git pull`.
+3. The published release of every-app/every-app for the CLI's own
+   version: the GitHub Release tagged `gateway-v<version>`, or when there
+   is none yet, the newest stable one (`/releases/latest`), said so.
+
+A downloaded release lands in a private temp dir and is checked against
+the SHA-256 its own `release.json` records before anything is deployed;
+its `minCli` refuses a CLI older than the one it was built with.
+
+### Publishing a Gateway release
+
+The Gateway Release workflow (`.github/workflows/gateway-release.yml`)
+builds `every-app-gateway-release.tar.gz` with
+`apps/every-app-gateway/scripts/build-release.ts` and publishes it on a
+GitHub Release of the repository it runs in. It runs on a push of a
+`gateway-v<version>` tag, or by hand with the tag's name. The tag's
+version is the CLI version it goes with: `gateway-v0.3.0-rc.4` is the
+Gateway for `everyapp@0.3.0-rc.4`, and `release.json` says `version:
+0.3.0-rc.4`, with `minCli` and `minSdk` the CLI's and the SDK's versions
+at that commit. A version with a prerelease suffix is published as a
+GitHub prerelease, so `/releases/latest` stays the newest stable one.
+
+The CLI downloads anonymously from `github.com/every-app/every-app`, so
+the release has to be on the public repository: push the tag there.
+Publishing the CLI is therefore three steps, in this order:
+
+1. Publish `@every-app/sdk@<version>`, then `everyapp@<version>` to npm.
+2. Tag the commit they were built from and push the tag to the public
+   repository: `git tag gateway-v<version> && git push <public> gateway-v<version>`.
+   The workflow publishes the release in a few minutes.
+3. Check `npx everyapp@<version> status` from a directory with no
+   checkout: it must name the release.
+
+Keep the Gateway package's version (`apps/every-app-gateway/package.json`)
+on the CLI's, prerelease suffix aside: a checkout's own build reports that
+version, and `checkoutRelease.ts` compares the checkout with the
+`gateway-v<version>` tag to tell an unreleased commit from a release.
 
 ## Turning publishing back on
 
@@ -38,13 +70,7 @@ Pausing removed what only a published CLI needs. Bring back:
   and `scripts/bundle-templates.js` (removed too: the starter, now
   `starter/`, into `packages/cli/templates/`, removed; its `.gitignore`
   shipped as `gitignore`).
-- **A Gateway for a CLI with no checkout:** published Gateway releases
-  (the `setup --release` flag, the latest-release fallback and the Gateway
-  Release workflow, all at `5ef30882`), or a tarball inside the CLI package
-  again. The downgrade guard already orders releases by their newest
-  migration, then when their sources were committed (a release's
-  `release.json` `committedAt`), and `status` compares the checkout's tree
-  hash with the install row's only when there is a checkout.
+- **A Gateway for a CLI with no checkout:** done (Gateway releases, above).
 - **Onboarding:** `everyapp setup` deployed a starter app (`--dir`,
   `--no-starter`), and `create` copied the bundled template, or cloned
   the public repository for it.

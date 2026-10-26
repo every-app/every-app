@@ -1,7 +1,7 @@
 /**
  * Build the gateway release the everyapp CLI ships and deploys.
  *
- *   node scripts/build-release.ts [--skip-build] [--out <tarball>]
+ *   node scripts/build-release.ts [--skip-build] [--out <tarball>] [--version <v>]
  *
  * `cf build` (production) writes the Build Output; this stages only what a
  * deploy needs, with nothing to install:
@@ -14,6 +14,11 @@
  * Build Output that already carries what the deploy patches in per install
  * (resource ids, app bindings, domains). `everyapp setup` checks
  * the sha256 before it patches and uploads the release.
+ *
+ * release.json's `version` is the Gateway package's, or `--version` (the
+ * Gateway Release workflow passes the tag's, gateway-v0.3.0-rc.4 →
+ * 0.3.0-rc.4). Its `minCli` and `minSdk` are the CLI's and the SDK's
+ * versions in this workspace: a release is for the CLI it is built with.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -26,9 +31,7 @@ const GATEWAY_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BUILD_OUTPUT_DIR = ".cloudflare/output";
 const TARBALL_NAME = "every-app-gateway-release.tar.gz";
 const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
-/** The oldest everyapp CLI and SDK that can deploy and talk to this release. */
-const MIN_CLI_VERSION = "0.3.0";
-const MIN_SDK_VERSION = "0.3.0";
+const REPO_ROOT = path.dirname(path.dirname(GATEWAY_DIR));
 /**
  * What the release is built from, from the repository's root: the CLI's
  * GATEWAY_SOURCES (packages/cli/src/lib/gateway/checkoutRelease.ts), whose
@@ -275,6 +278,31 @@ function packageVersion(name: string, fromDir: string): string {
     .version;
 }
 
+/**
+ * The oldest everyapp CLI and SDK that deploy and talk to this release:
+ * the workspace's own at this commit (packages/cli, packages/sdk).
+ */
+export function minimumVersions(root: string): {
+  minCli: string;
+  minSdk: string;
+} {
+  const version = (dir: string) =>
+    (
+      JSON.parse(
+        fs.readFileSync(path.join(root, dir, "package.json"), "utf8"),
+      ) as {
+        version: string;
+      }
+    ).version;
+  return { minCli: version("packages/cli"), minSdk: version("packages/sdk") };
+}
+
+/** The value after `flag` in `args`, if any. */
+function argument(args: string[], flag: string): string | undefined {
+  const at = args.indexOf(flag);
+  return at >= 0 ? args[at + 1] : undefined;
+}
+
 function git(args: string[]): string | null {
   const result = spawnSync("git", args, { cwd: GATEWAY_DIR, encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim() : null;
@@ -295,12 +323,18 @@ function run(command: string, args: string[]): void {
 
 function main(): void {
   const args = process.argv.slice(2);
-  const outIndex = args.indexOf("--out");
   const tarball = path.resolve(
-    outIndex >= 0 && args[outIndex + 1]
-      ? args[outIndex + 1]!
-      : path.join(GATEWAY_DIR, TARBALL_NAME),
+    argument(args, "--out") ?? path.join(GATEWAY_DIR, TARBALL_NAME),
   );
+  const versionArg = argument(args, "--version");
+  if (
+    versionArg !== undefined &&
+    !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(versionArg)
+  ) {
+    throw new ReleaseBuildError(
+      `--version takes an exact version, not ${versionArg}`,
+    );
+  }
 
   const cfDir = packageDir("cf", GATEWAY_DIR);
   if (!args.includes("--skip-build")) {
@@ -329,7 +363,7 @@ function main(): void {
       gatewayDir: GATEWAY_DIR,
       stageDir,
       build: {
-        version: gatewayPackage.version,
+        version: versionArg ?? gatewayPackage.version,
         gitSha: dirty ? `${sha}-dirty` : sha,
         builtAt: new Date().toISOString(),
         ...(committedAt
@@ -338,8 +372,7 @@ function main(): void {
         cfVersion: packageVersion("cf", GATEWAY_DIR),
         pluginVersion: packageVersion("@cloudflare/vite-plugin", GATEWAY_DIR),
         configVersion: packageVersion("@cloudflare/config", cfDir),
-        minCli: MIN_CLI_VERSION,
-        minSdk: MIN_SDK_VERSION,
+        ...minimumVersions(REPO_ROOT),
       },
     });
     fs.rmSync(tarball, { force: true });
