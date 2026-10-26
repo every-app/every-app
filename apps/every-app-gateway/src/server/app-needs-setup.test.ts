@@ -56,9 +56,7 @@ const HTML = { accept: "text/html,application/xhtml+xml,*/*;q=0.8" };
 const refuse = (
   target: RegisteredApp,
   req: Request,
-  publicRoute = false,
-): Promise<Response | null> =>
-  refuseUnreadyApp({ app: target, request: req, publicRoute });
+): Promise<Response | null> => refuseUnreadyApp({ app: target, request: req });
 
 describe("refuseUnreadyApp", () => {
   beforeEach(() => {
@@ -104,11 +102,10 @@ describe("refuseUnreadyApp", () => {
     expect([...location.searchParams]).toEqual([["setup", appId]]);
   });
 
-  it("answers a public route with a 503 that names no setting", async () => {
+  it("answers an API call with a 503 that names no setting", async () => {
     const res = await refuse(
       app(OPENSEO),
-      request("/collect", { headers: HTML }),
-      true,
+      request("/collect", { headers: { accept: "application/json" } }),
     );
 
     expect(res?.status).toBe(503);
@@ -183,7 +180,7 @@ describe("refuseUnreadyApp", () => {
   it("logs a refused app once per row and version, not per request", async () => {
     const log = vi.mocked(console.log);
     await refuse(app(OPENSEO), request("/", { headers: HTML }));
-    await refuse(app(OPENSEO), request("/api", {}), true);
+    await refuse(app(OPENSEO), request("/api", {}));
     await refuse(app(OPENSEO, { versionId: "v2" }), request("/", {}));
 
     const lines = log.mock.calls

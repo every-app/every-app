@@ -1,18 +1,19 @@
 /**
  * The perimeter's setup gate (`GatewayDeps.needsSetup`): an app whose
  * required settings aren't set doesn't open. The app lists already say
- * "Needs setup" and name the one command; this is what a request to the
- * app's own host gets meanwhile, so no one reaches a half-configured app
- * by its URL, and no public route of it serves either (the manifest weighs
- * `required` against its public surface).
+ * "Needs setup" and name the one command; this is what a request to a
+ * private route of the app's own host gets meanwhile, so no one reaches a
+ * half-configured app by its URL. The perimeter never asks for a route the
+ * manifest declares public: those serve, and the app's own code answers
+ * for whatever isn't configured.
  *
- * A person opening the app in a browser (a private HTML GET navigation) is
- * sent to the launcher's setup dialog for it (`?setup=<appId>`), which
- * says what to set and how. Everything else (a public route, an API call,
- * a fetch from a page, any other method) gets a 503 `app_needs_setup`
- * with no `retry-after`, since nothing about time fixes it, and never a
- * setting's name: the dialog and the CLI name them to people who may set
- * them. The answer is uncacheable.
+ * A person opening the app in a browser (an HTML GET navigation) is sent
+ * to the launcher's setup dialog for it (`?setup=<appId>`), which says
+ * what to set and how. Everything else (an API call, a fetch from a page,
+ * any other method) gets a 503 `app_needs_setup` with no `retry-after`,
+ * since nothing about time fixes it, and never a setting's name: the
+ * dialog and the CLI name them to people who may set them. The answer is
+ * uncacheable.
  *
  * Readiness comes from app-setup.ts, cached by row, version and recorded
  * secret names; a refused app is logged once per isolate per row and
@@ -71,7 +72,7 @@ function isHtmlNavigation(request: Request): boolean {
 export async function refuseUnreadyApp(
   input: NeedsSetupInput,
 ): Promise<Response | null> {
-  const { app, request, publicRoute } = input;
+  const { app, request } = input;
   const report = await appSettingsReport({
     // A row from D1 always has its id; the app id stands in for one that
     // doesn't, so the cache still has a key.
@@ -100,7 +101,7 @@ export async function refuseUnreadyApp(
   if (ready) return null;
   logOnce(input);
 
-  if (!publicRoute && isHtmlNavigation(request)) {
+  if (isHtmlNavigation(request)) {
     return withSecurityHeaders(
       new Response(null, {
         status: 302,

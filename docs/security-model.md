@@ -436,9 +436,10 @@ in the gateway's Cloudflare account **is** operator authority.
 
 - Routes are private unless the app manifest explicitly declares them public.
 - An app with a required setting unset (`docs/manifest-settings.md`) doesn't
-  open: a private HTML navigation gets a 302 to
-  `${GATEWAY_URL}/?setup=<appId>`, everything else, public routes included,
-  `503 app_needs_setup`, naming no setting
+  open on its private routes: an HTML navigation gets a 302 to
+  `${GATEWAY_URL}/?setup=<appId>`, everything else `503 app_needs_setup`,
+  naming no setting; its declared public routes are served (the app
+  answers for what isn't configured)
   (`apps/every-app-gateway/src/server/app-needs-setup.ts`;
   docs/threat-model.md B1). Its tools stay out of `/mcp` until an admin runs
   the `secret set` command the app lists show.

@@ -1211,7 +1211,6 @@ describe("the setup gate on both classes of host", () => {
       expect.objectContaining({
         app: ACTIVE_TODO,
         request: expect.any(Request),
-        publicRoute: false,
       }),
     );
     expect(mocks.authenticate).not.toHaveBeenCalled();
@@ -1232,7 +1231,6 @@ describe("the setup gate on both classes of host", () => {
       expect.objectContaining({
         app: DISPATCH_TODO,
         request: expect.any(Request),
-        publicRoute: false,
       }),
     );
     expect(mocks.authenticate).not.toHaveBeenCalled();

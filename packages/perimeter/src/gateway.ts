@@ -79,10 +79,8 @@ export interface McpInterceptInput {
 export interface NeedsSetupInput {
   /** The app, `active` by now. */
   app: RegisteredApp;
-  /** The original request; its body is still unread. */
+  /** The original request, on a private route; its body is still unread. */
   request: Request;
-  /** Whether the manifest declares the request's route public. */
-  publicRoute: boolean;
 }
 
 /** What {@link GatewayDeps.thirdParty} needs: see hostSession.ts. */
@@ -146,13 +144,15 @@ export interface GatewayDeps {
   /**
    * Refuse to open an app that needs setup: a required setting of its
    * manifest (a provider's key, a capability's settings, a secret of the
-   * app's own) isn't set yet. Called for every path once the app is active,
-   * before the reserved paths and authentication, with whether the manifest
-   * declares the route public. A Response is returned as is: the gateway's
-   * answers a private HTML GET navigation with a 302 to the launcher's setup
-   * dialog, and anything else (public routes, API calls, other methods) with
-   * a 503 `app_needs_setup`, never naming a setting. Null opens the app;
-   * omitting the hook gates nothing.
+   * app's own) isn't set yet. Called for every private path once the app
+   * is active, before the reserved paths and authentication; a route the
+   * manifest declares public is served without asking (a webhook or a
+   * badge keeps working while the app waits for its keys, and the app's
+   * own code answers for whatever isn't configured). A Response is
+   * returned as is: the gateway's answers an HTML GET navigation with a
+   * 302 to the launcher's setup dialog, and anything else (API calls, other
+   * methods) with a 503 `app_needs_setup`, never naming a setting. Null
+   * opens the app; omitting the hook gates nothing.
    */
   needsSetup?(input: NeedsSetupInput): Promise<Response | null>;
   /**
@@ -356,15 +356,14 @@ export async function handleGatewayRequest(
     request.method,
     url.pathname,
   );
-  // An app whose required settings aren't set doesn't open, on any path:
-  // its public routes close with it (the manifest weighs `required` against
-  // them), and nothing below reads a credential for it.
-  if (deps.needsSetup) {
-    const refused = await deps.needsSetup({
-      app,
-      request,
-      publicRoute: publicMatch.public,
-    });
+  // An app whose required settings aren't set doesn't open on a private
+  // path, and nothing below reads a credential for it. Its declared public
+  // routes stay up: nobody signs in to them, so the dialog the gate sends
+  // people to would help no one, and a webhook or badge that 503s while an
+  // operator finds a key is a broken integration. The app answers for what
+  // isn't configured there.
+  if (deps.needsSetup && !publicMatch.public) {
+    const refused = await deps.needsSetup({ app, request });
     if (refused) return refused;
   }
   // The tools contract is for the ToolBus over the service binding only (and

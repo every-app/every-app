@@ -2799,7 +2799,6 @@ describe("the event bus (SQLite)", () => {
             secretNames: [],
           },
           request: new Request("https://crm.gateway.example.com/api/todos"),
-          publicRoute: false,
         });
       expect((await gate())?.status).toBe(503);
       await settleBackground();

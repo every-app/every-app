@@ -1535,35 +1535,47 @@ describe("the setup gate", () => {
     expect(needsSetup).toHaveBeenCalledWith({
       app: TODO,
       request: expect.any(Request),
-      publicRoute: false,
     });
     expect(authenticate).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("tells the hook when the manifest declares the route public, and gates it too", async () => {
+  it("serves a declared public route without asking the hook, and asks for everything else", async () => {
     const needsSetup = vi.fn(async (_input: NeedsSetupInput) => refusal());
+    const anonymous = deps({
+      needsSetup,
+      authenticator: {
+        sessionCookieNames: [],
+        authenticate: async () => null,
+        hasAppAccess: async () => false,
+      },
+    });
+    // A webhook or a badge keeps working while the operator finds the key.
     for (const [path, init] of [
       ["/health", {}],
       ["/webhook", { method: "POST", body: "{}" }],
+      ["/blog/hello", { headers: { accept: "text/html" } }],
     ] as const) {
-      const res = await handleGatewayRequest(
-        req(path, init),
-        deps({ needsSetup }),
-      );
-      expect(res.status).toBe(503);
+      const res = await handleGatewayRequest(req(path, init), anonymous);
+      expect(res.status, path).toBe(200);
+      const body = (await res.json()) as { publicMarker: string | null };
+      expect(body.publicMarker).toEqual(expect.any(String));
     }
-    expect(needsSetup.mock.calls.map(([input]) => input.publicRoute)).toEqual([
-      true,
-      true,
-    ]);
+    expect(needsSetup).not.toHaveBeenCalled();
+    // A private path is gated, the method the public row doesn't cover too.
+    const res = await handleGatewayRequest(
+      req("/webhook", { headers: { accept: "text/html" } }),
+      anonymous,
+    );
+    expect(res.status).toBe(503);
+    expect(needsSetup).toHaveBeenCalledOnce();
     // The ToolBus never sees it either: the gate comes before /mcp.
     const interceptMcp = vi.fn();
-    const res = await handleGatewayRequest(
+    const mcp = await handleGatewayRequest(
       req("/mcp", { method: "POST", body: "{}" }),
       deps({ needsSetup, interceptMcp }),
     );
-    expect(res.status).toBe(503);
+    expect(mcp.status).toBe(503);
     expect(interceptMcp).not.toHaveBeenCalled();
   });
 

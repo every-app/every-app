@@ -293,16 +293,19 @@ a closed app sends a browser.
 
 ### What a closed app answers
 
-The perimeter asks the gateway `needsSetup(app, { publicRoute })` after
-the status and activation checks, for every path, public routes included.
+The perimeter asks the gateway `needsSetup({ app, request })` after the
+status and activation checks, for every private path; a route the manifest
+declares public is served without asking, and the app's own code answers
+for what isn't configured (since 2026-10-26: a 503 there broke webhooks
+and badges and protected nothing, as a public route takes no credential).
 The gateway evaluates the app's stored manifest against its own env and
 the app's recorded secret names, cached per row, version and names; a
 change reaches every isolate within the 30 seconds the app's row is
 cached, and a redeploy, a `configure` or a `secret set` makes a new version
 at once. Not
-ready: a private HTML GET navigation is sent (302) to
-`${GATEWAY_URL}/?setup=<appId>`; anything else (a public route, an API
-call, a non-GET) answers `503 { "error": "app_needs_setup", "app": "<id>" }`
+ready: an HTML GET navigation is sent (302) to
+`${GATEWAY_URL}/?setup=<appId>`; anything else (an API call, a non-GET)
+answers `503 { "error": "app_needs_setup", "app": "<id>" }`
 with no `retry-after`. Setting names are never in the body: what the
 gateway holds is the operator's to know, not a visitor's.
 

@@ -388,16 +388,19 @@ and anything on the gateway's own host (B2).
 `apps.secret_names` and the evaluator
 `apps/every-app-gateway/src/server/app-setup.ts`; #396 the gate, merged
 f43859cc): a
-perimeter hook `needsSetup({ app, request, publicRoute })` runs after the
-status checks and before authentication; an app whose required settings
-are unset answers `503 app_needs_setup` naming only the app id (or, for a
-private HTML navigation, a 302 to the gateway's home with `?setup=<app>`),
-public routes included. The invariant, pinned
-(`perimeter.needs-setup-names-no-setting` in the register): no setting
-name or value leaves the perimeter in those responses
-(`apps/every-app-gateway/src/server/app-needs-setup.ts`;
-`app-needs-setup.test.ts :: answers a public route with a 503 that names
-no setting`, and the perimeter's `gateway.test.ts :: the setup gate`). The
+perimeter hook `needsSetup({ app, request })` runs after the
+status checks and before authentication, on private routes; an app whose
+required settings are unset answers `503 app_needs_setup` naming only the
+app id (or, for an HTML navigation, a 302 to the gateway's home with
+`?setup=<app>`). Since 2026-10-26 (platform shortcuts, L7) a route the
+manifest declares public is served without asking: a public route takes
+no credential and the app's own code answers for what isn't configured,
+so the gate protected nothing there and broke webhooks and badges. The
+invariant, pinned (`perimeter.needs-setup-names-no-setting` in the
+register): no setting name or value leaves the perimeter in those
+responses (`apps/every-app-gateway/src/server/app-needs-setup.ts`;
+`app-needs-setup.test.ts :: answers an API call with a 503 that names no
+setting`, and the perimeter's `gateway.test.ts :: the setup gate`). The
 `apps.secret_names` column (#383) holds the names of an app's own secrets, never
 values, written by the CLI and shown to members who can see the app; the
 gateway's `/mcp` leaves a not-ready app's tools out and names the missing
