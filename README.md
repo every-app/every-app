@@ -2,9 +2,7 @@
 
 > Make every app open source
 
-Legacy SaaS tools are bloated, expensive and don't work well with agents.
-
-Now it's clear that, eventually, everything will be open source. Build the projects that make that a reality.
+Replace bloated and expensive SaaS tools with AI-native, open source software.
 
 > The backend for your agents
 
