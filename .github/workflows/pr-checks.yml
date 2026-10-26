@@ -18,9 +18,10 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-# Fast checks only, four jobs of about a minute or two: types, lint and the
-# unit tests in two halves. Nothing here builds the workspace beyond the SDK (the
-# typechecks and tests read the other packages from source). The slow
+# Fast checks only, six jobs of under two minutes on 2-core runners: lint,
+# types in two halves and unit tests in three. Nothing here builds the
+# workspace beyond the SDK (the typechecks and tests read the other packages
+# from source). The slow
 # suites (the CLI's fake-account integration tests, the gateway's SQLite
 # tests), the full build, the cf dry run and the built CLI run in
 # integration.yml: on demand, nightly and on main.
@@ -28,9 +29,19 @@ concurrency:
 # the Cloudflare Vite plugin with Node's built-in TypeScript support.
 jobs:
   type-check:
-    name: Type Check
+    name: Type Check (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Two halves of about equal CPU: tsc over the whole workspace is about
+    # 150 CPU-seconds, more than a minute on one of these 2-core runners.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: gateway
+            filter: --filter every-app-gateway --filter landing-page
+          - part: packages
+            filter: --filter '!every-app-gateway' --filter '!landing-page'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,12 +58,14 @@ jobs:
       - name: Build the SDK
         run: pnpm -C packages/sdk build
       - name: Run type checking
-        run: pnpm types:check
+        run: pnpm -r --no-bail --parallel ${{ matrix.filter }} run types:check
       # Better Auth validates the Drizzle schema at init and fails every auth
       # request on a mismatch, so a stale auth.schema.ts must not merge.
       - name: Check gateway Better Auth schema
+        if: matrix.part == 'gateway'
         run: pnpm -C apps/every-app-gateway auth:check
       - name: Validate SDK relative ESM import extensions
+        if: matrix.part == 'packages'
         run: pnpm -C packages/sdk check:esm-relative-imports
   lint:
     name: Lint
@@ -92,16 +105,20 @@ jobs:
     name: Unit Tests (${{ matrix.part }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Two halves of about equal CPU, each with a runner's four cores to
-    # itself: together on one runner they took nearly four minutes.
+    # The gateway and the CLI each on a runner of their own, the small
+    # packages on a third: sharing a 2-core runner, they took four minutes. --maxWorkers=100% gives
+    # vitest every core (its default leaves one of a private repository's two
+    # idle).
     strategy:
       fail-fast: false
       matrix:
         include:
           - part: gateway
-            run: pnpm -C apps/every-app-gateway test
+            run: pnpm -C apps/every-app-gateway test --maxWorkers=100%
+          - part: cli
+            run: pnpm -C packages/cli test --maxWorkers=100%
           - part: packages
-            run: pnpm -r --no-bail --filter '!every-app-gateway' run test
+            run: pnpm -r --no-bail --parallel --filter '!every-app-gateway' --filter '!everyapp' run test --maxWorkers=100%
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

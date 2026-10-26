@@ -32,6 +32,9 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
+          // Worker threads, not processes: a fifth faster to start and
+          // import, and no unit test here needs a process of its own.
+          pool: "threads",
           exclude: [...configDefaults.exclude, ...INTEGRATION],
         },
       },

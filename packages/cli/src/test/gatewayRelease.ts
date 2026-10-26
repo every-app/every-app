@@ -24,12 +24,7 @@ interface Builder {
   }): { sha256: string };
 }
 
-export async function buildGatewayRelease({
-  version = "0.2.0",
-  builtAt = "2026-10-12T00:00:00.000Z",
-  minCli = "0.3.0",
-  extraMigration,
-}: {
+interface ReleaseOptions {
   version?: string;
   /** Two builds of one version differ by it. */
   builtAt?: string;
@@ -37,7 +32,37 @@ export async function buildGatewayRelease({
   minCli?: string;
   /** Appended after the real migrations, e.g. one that fails. */
   extraMigration?: { file: string; sql: string };
-} = {}): Promise<string> {
+}
+
+/**
+ * Packed releases by their options, for this test file. Packing runs the
+ * builder and spawns `tar`, and most tests start by installing a Gateway,
+ * so each set of options is packed once and every call gets its own copy:
+ * a new file in a new directory, which the caller may change or delete.
+ */
+const packed = new Map<string, Promise<string>>();
+
+export async function buildGatewayRelease(options: ReleaseOptions = {}): Promise<string> {
+  const key = JSON.stringify(options);
+  let tarball = packed.get(key);
+  if (!tarball) {
+    tarball = packGatewayRelease(options);
+    packed.set(key, tarball);
+  }
+  const copy = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "gateway-release-")),
+    "every-app-gateway-release.tar.gz",
+  );
+  fs.copyFileSync(await tarball, copy);
+  return copy;
+}
+
+async function packGatewayRelease({
+  version = "0.2.0",
+  builtAt = "2026-10-12T00:00:00.000Z",
+  minCli = "0.3.0",
+  extraMigration,
+}: ReleaseOptions): Promise<string> {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-release-"));
   const source = path.join(work, "gateway");
   const worker = path.join(source, ".cloudflare/output/v0/workers/default");
