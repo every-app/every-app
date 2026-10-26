@@ -27,3 +27,10 @@ overrides:
   "@types/react": ^19.2.14
   "@types/react-dom": ^19.2.3
   csstype: ^3.2.3
+  # One zod across the workspace: every package and every bundle validates with
+  # the zod its schemas were written and tested against (the built CLI once ran
+  # the perimeter's zod 3 manifest schema under zod 4, #543). The one exception is
+  # the shadcn component CLI's registry client, which asks for zod 3; it is a
+  # gateway devDependency run by hand and never reaches a bundle.
+  zod: ^4.6.7
+  "@shadcn/registry>zod": ^3.25.76

@@ -18,7 +18,7 @@ export enum AppLibraryLayout {
 // Unknown keys (the sort preference of earlier builds) are dropped.
 const preferencesSchema = z.object({
   pinnedIds: z.array(z.string()),
-  layout: z.nativeEnum(AppLibraryLayout),
+  layout: z.enum(AppLibraryLayout),
 });
 
 type LibraryPreferences = z.infer<typeof preferencesSchema>;

@@ -18,8 +18,8 @@ const optionalText = (max: number) =>
     .string()
     .trim()
     .max(max)
-    .optional()
-    .transform((value) => (value ? value : undefined));
+    .transform((value) => (value ? value : undefined))
+    .optional();
 
 const rowId = z.string().uuid("Invalid app ID");
 
