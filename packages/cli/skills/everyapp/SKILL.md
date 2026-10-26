@@ -13,7 +13,9 @@ for the person. The agent docs are yours: https://everyapp.com/llms.txt
 lists every page with a one-line summary; a page is Markdown at its URL
 plus .md (https://everyapp.com/docs/agent/manifest.md); in a checkout they
 are landing-page/content/agent/*.md. Pages: setup (driving setup for a
-person, every handoff), cli (every command and flag), json (the --json
+person, every handoff), apps (the open apps: each one's id, repository,
+install command, every setting and whether it needs R2), cli (every
+command and flag), json (the --json
 protocol), errors (every code and its fix), troubleshooting (by symptom),
 status (the report, every line, and its fixes in order), manifest
 (everyapp.config.ts), identity (headers, token, env, SDK), secrets

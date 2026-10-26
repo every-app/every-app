@@ -1,0 +1,55 @@
+---
+title: OpenAnalytics
+description: Web analytics for your sites. No cookies, no stored IP addresses.
+---
+
+OpenAnalytics is web analytics for your own sites. Add a small tag to a site and see its pages, referrers, campaigns, visitors, events, funnels and goals, with a live view. It sets no cookies and stores no IP addresses; Cloudflare resolves location at the edge. It is a fork of [InsightFlare](https://github.com/RavelloH/InsightFlare) by RavelloH, with its accounts, teams, API keys and email setup replaced by what your Gateway already provides.
+
+## Features
+
+- **No cookies and no stored IP addresses.** Location is resolved at the edge.
+- **A tracker of about 3 KB gzipped**, with custom events, user identification and Web Vitals.
+- **Dashboards** for pages, referrers, campaigns, sessions, visitors, events, funnels, goals, retention, location, devices, browsers and performance, with a live view.
+- **Read-only public share links** for any site.
+- **Scheduled and threshold email notifications**, sent through the Gateway.
+- **Bot filtering**, with a page that shows what was blocked.
+- **MCP tools** for your AI clients, through your Gateway's connector: query reports, manage sites.
+- **Dashboard in English, Chinese (Simplified and Traditional) and Japanese.**
+
+## Install
+
+From your EveryApp folder:
+
+```bash
+pnpm everyapp install https://github.com/every-app/open-analytics
+pnpm everyapp configure analytics
+```
+
+The second command asks for the one key below. Run the first again later to update.
+
+| Setting                            | Held by       | Needed   | Why                                                                                                                                                                           |
+| ---------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAIN_SECRET`                      | OpenAnalytics | Yes      | The root secret for visitor salts and collect tokens; 32 or more random characters, for example `openssl rand -base64 32`. Keep it stable: changing it splits visitor counts. |
+| `EMAIL_FROM` and `EMAIL_FROM_NAME` | Gateway       | Optional | Emails scheduled reports and alerts to members who turned email notifications on. Without it, reports and alerts stay in the app. [Email](/docs/agent/email)                  |
+
+Then open `https://analytics.<your gateway domain>`, create a site, and add its snippet to your website:
+
+```html
+<script
+  defer
+  src="https://analytics.example.com/script.js?siteId=YOUR_SITE_ID"
+></script>
+```
+
+**Public without sign-in:** what visitors and share-link viewers need. The tracker `/script.js` (GET) and the collector `/collect` (POST), the share pages under `/share/**` and `/:locale/share/**` with their data under `/api/public/share/**` and `/api/public/resources/**`, and the built assets and icons. Everything else needs a signed-in member. Once installed, every member of your workspace can open the dashboards.
+
+## What you need
+
+- Nothing beyond your Gateway. No R2, no API key.
+- A sending domain on the Gateway if you want reports and alerts by email.
+
+Page views and events are kept for 396 days by default, hourly totals indefinitely. Change this in System Settings.
+
+## The code
+
+[github.com/every-app/open-analytics](https://github.com/every-app/open-analytics). MIT. Based on InsightFlare, Copyright 2026 RavelloH.

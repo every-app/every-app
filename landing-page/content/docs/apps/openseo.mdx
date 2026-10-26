@@ -1,0 +1,51 @@
+---
+title: OpenSEO
+description: SEO research, rank tracking, site audits and AI visibility for your sites.
+---
+
+OpenSEO is an SEO tool you run yourself. It does keyword research, rank tracking, backlinks, site audits and AI visibility for your sites, with data from DataForSEO that you pay for by use. Its MCP tools and agent skills let Claude Code, Codex, Cursor or ChatGPT work with your SEO data directly. It is the open source alternative to Semrush and Ahrefs, and the app the EveryApp team built first. The hosted version is at [openseo.so](https://openseo.so); this page is about running it behind your own Gateway.
+
+![OpenSEO's keyword research page: a keyword list with volume, CPC and intent, a search trend chart and a SERP analysis](/apps/openseo/keyword-research.webp)
+
+## Features
+
+- **Keyword research.** Ideas, search volume, CPC, difficulty, intent, trends and a SERP analysis for each search.
+- **Rank tracking.** Scheduled checks of your keywords, so you see positions move.
+- **Domain overview and competitor insights.** What a domain ranks for and which pages win.
+- **Backlinks.** The backlink profile of your site or a competitor's.
+- **Site audits.** Crawls a site and lists its issues, page by page. JavaScript rendering when you add a Context.dev key.
+- **AI visibility.** Which questions people ask AI in your market, how ChatGPT answers them and which sites get cited.
+- **Search Console and GA4.** Your own data beside the research, with the Google account you connect in EveryApp.
+- **An agent and MCP tools.** SAM, the chat in the app, and every tool served to your AI clients through your Gateway's MCP connector.
+
+## Install
+
+From your EveryApp folder:
+
+```bash
+pnpm everyapp install https://github.com/every-app/open-seo
+pnpm everyapp configure openseo
+```
+
+The second command asks for each key below, then the optional ones. Run the first again later to update.
+
+| Setting                                                           | Held by | Needed   | Why                                                                                                                                                                      |
+| ----------------------------------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OPENROUTER_API_KEY`                                              | Gateway | Yes      | SAM, prompt suggestions and website research run on it.                                                                                                                  |
+| `DATAFORSEO_API_KEY`                                              | Gateway | Yes      | Keyword, SERP, backlink, local business and AI answer data, including scheduled rank checks. The value is `login:password` from the DataForSEO dashboard, or its base64. |
+| `CONTEXT_API_KEY`                                                 | Gateway | Optional | Renders JavaScript-heavy pages when a site audit asks for it.                                                                                                            |
+| `GOOGLE_WORKSPACE_CLIENT_ID` and `GOOGLE_WORKSPACE_CLIENT_SECRET` | Gateway | Optional | Search Console and GA4 reads for your sites, with the Google account you connect in EveryApp. [Connect an OAuth provider](/docs/connect-oauth)                           |
+| `CRAWLER_ACCESS_SECRET`                                           | OpenSEO | Optional | Encrypts the Shopify crawler-access signatures that audits of protected stores send. Any string of 32 or more characters.                                                |
+| `OPENROUTER_MODEL`                                                | OpenSEO | Optional | Picks the OpenRouter model for SAM, prompt suggestions and website research. The default is `openai/gpt-5.6-luna`.                                                       |
+
+Nothing in OpenSEO is public: every page needs a signed-in member. Once installed, every member of your workspace can open it.
+
+## What you need
+
+- **R2 enabled** on your Cloudflare account, once, before the install. OpenSEO keeps files in an R2 bucket.
+- **A DataForSEO account.** Pay as you go, billed by DataForSEO. The Gateway counts the calls and stops the app at a cap you set. [Usage and caps](/docs/usage)
+- **An OpenRouter key.** The same key serves the other apps that use AI.
+
+## The code
+
+[github.com/every-app/open-seo](https://github.com/every-app/open-seo). MIT. Join the [Discord](https://discord.gg/c9uGs3cFXr) to ask questions.

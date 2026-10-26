@@ -166,8 +166,9 @@ describe("the agent docs", () => {
         }
         const dir = isAgent ? AGENT_DOCS_DIR : userDocs;
         const file = rest === "" ? "index" : rest;
-        const exists = [".md", ".mdx"].some((ext) =>
-          existsSync(fileURLToPath(new URL(`${file}${ext}`, dir))),
+        // A page, or a folder with an index page (/docs/apps is apps/index.mdx).
+        const exists = [`${file}.md`, `${file}.mdx`, `${file}/index.mdx`].some((name) =>
+          existsSync(fileURLToPath(new URL(name, dir))),
         );
         if (!exists) broken.push(`${slug}.md → ${target}`);
       }

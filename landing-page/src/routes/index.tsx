@@ -18,27 +18,29 @@ const openSeoStars = "25k";
 
 /**
  * The four apps, one line each, word for word the lines in the README and the
- * docs home (the orchestrating thread keeps them identical). Only OpenSEO
- * links out: the other three repositories are not public yet (TODO.md,
- * "README and launch copy").
+ * docs home (the orchestrating thread keeps them identical). Each links to
+ * its page under /docs/apps.
  */
-const apps: Array<{ name: string; line: string; href?: string }> = [
+const apps: Array<{ name: string; line: string; href: string }> = [
   {
     name: "OpenSEO",
     line: "SEO research, rank tracking, site audits and AI visibility for your sites.",
-    href: `https://github.com/${openSeoRepo}`,
+    href: "/docs/apps/openseo",
   },
   {
     name: "OpenCRM",
     line: "Companies, contacts and deals, kept up to date by a research agent.",
+    href: "/docs/apps/crm",
   },
   {
     name: "OpenAnalytics",
     line: "Web analytics for your sites. No cookies, no stored IP addresses.",
+    href: "/docs/apps/analytics",
   },
   {
     name: "Agentic Inbox",
     line: "A team inbox with an AI agent that reads, drafts and sends email on your domain.",
+    href: "/docs/apps/agentic-inbox",
   },
 ];
 
@@ -325,18 +327,12 @@ function Home() {
               <ul className="mb-6 space-y-3 text-base text-stone-300">
                 {apps.map((app) => (
                   <li key={app.name}>
-                    {app.href ? (
-                      <a
-                        href={app.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-white underline decoration-stone-600 underline-offset-4 transition-colors hover:decoration-stone-400"
-                      >
-                        {app.name}
-                      </a>
-                    ) : (
-                      <span className="font-medium text-white">{app.name}</span>
-                    )}
+                    <a
+                      href={app.href}
+                      className="font-medium text-white underline decoration-stone-600 underline-offset-4 transition-colors hover:decoration-stone-400"
+                    >
+                      {app.name}
+                    </a>
                     <span className="text-stone-500">: </span>
                     {app.line}
                   </li>

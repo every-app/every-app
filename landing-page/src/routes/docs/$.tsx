@@ -16,7 +16,6 @@ import { docs } from "@/lib/source";
 const movedPages: Record<string, string> = {
   introduction: "",
   quickstart: "gateway",
-  apps: "create-an-app",
   architecture: "how-it-works",
   "build-an-app": "create-an-app",
   "build-your-own-app": "create-an-app",

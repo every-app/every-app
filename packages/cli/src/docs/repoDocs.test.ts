@@ -409,7 +409,10 @@ describe("the user docs link", () => {
           }
           const dir = isAgent ? agentDocs : userDocs;
           const page = rest === "" ? "index" : rest;
-          const exists = [".md", ".mdx"].some((ext) => existsSync(posix.join(dir, `${page}${ext}`)));
+          // A page, or a folder with an index page (/docs/apps is apps/index.mdx).
+          const exists = [`${page}.md`, `${page}.mdx`, `${page}/index.mdx`].some((name) =>
+            existsSync(posix.join(dir, name)),
+          );
           if (!exists) broken.push(`${file}:${line.n} → ${target}`);
         }
       }

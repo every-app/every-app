@@ -1,0 +1,54 @@
+---
+title: OpenCRM
+description: Companies, contacts and deals, kept up to date by a research agent.
+---
+
+OpenCRM keeps your companies, contacts and deals, and a research agent keeps them up to date. Add a company and the agent finds its website, logo, brand data and people. Members can connect Gmail, Google Calendar or Outlook, read only, and their conversations and meetings get filed on the right records. It works as a plain CRM with no keys at all; the agent starts when you add a model key. Ported from [Comp AI's CRM](https://github.com/trycompai/crm) onto Cloudflare Workers.
+
+## Features
+
+- **Companies, contacts, deals, tasks and notes**, with custom fields and saved views.
+- **A research agent.** A profile for every new company and contact, and a brief before a meeting with someone new. Turn **Research automatically** off to research only what you ask for.
+- **Mail and calendar capture.** Members connect Gmail and Google Calendar, or Outlook. The CRM only reads; it never sends, changes or drafts mail.
+- **Website tracking.** A tag on your own site; visitors and form submissions become contacts.
+- **CSV import and export.** Import with research on or off.
+- **Team agents** that post to an approved Slack channel.
+- **MCP tools** for your AI clients, through your Gateway's connector.
+
+## Install
+
+From your EveryApp folder:
+
+```bash
+pnpm everyapp install https://github.com/every-app/open-crm
+pnpm everyapp configure crm
+```
+
+The second command asks for each key below, then the optional ones. Run the first again later to update.
+
+| Setting                                                           | Held by | Needed   | Why                                                                                                                                                                |
+| ----------------------------------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A model provider's key, `OPENROUTER_API_KEY` first                | Gateway | Yes      | The research agent's model, through the Gateway's default model provider. Any one provider's key is enough.                                                        |
+| `OPENROUTER_API_KEY`                                              | Gateway | Optional | Web research through Perplexity's Sonar models and OpenRouter's web search tool. The same key serves as the model key when it is the one you set.                  |
+| `CONTEXT_API_KEY`                                                 | Gateway | Yes      | Company brand data, LinkedIn profiles and website extraction for the research agent.                                                                               |
+| `GOOGLE_WORKSPACE_CLIENT_ID` and `GOOGLE_WORKSPACE_CLIENT_SECRET` | Gateway | Optional | Members connect their Gmail and Google Calendar, read only, so their work conversations and meetings are filed on companies and contacts.                          |
+| `MICROSOFT_365_CLIENT_ID` and `MICROSOFT_365_CLIENT_SECRET`       | Gateway | Optional | Members connect their Outlook mail, read only, so their work conversations are filed on companies and contacts.                                                    |
+| `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET`                       | Gateway | Optional | Connects the workspace's Slack so team agents can post to an approved channel.                                                                                     |
+| `TOKEN_ENCRYPTION_KEY`                                            | OpenCRM | Optional | Needed before anyone connects mail, a calendar or Slack: their tokens are encrypted under it. 32 or more random characters, for example `openssl rand -base64 32`. |
+| `GITHUB_TOKEN`                                                    | OpenCRM | Optional | Raises GitHub's rate limit when the agent matches people to GitHub profiles. Any classic token with no scopes will do.                                             |
+| `AGENT_MODEL`                                                     | OpenCRM | Optional | The model id the agent runs on, as the Gateway's default provider names it. Empty takes the operator's default.                                                    |
+| `ERASURE_SECRET`                                                  | OpenCRM | Optional | Set only while an operator erases an organization: it signs the erasure requests. Unset it afterwards.                                                             |
+
+The OAuth clients are set up on the Gateway, as for any app. [Connect an OAuth provider](/docs/connect-oauth)
+
+**Public without sign-in:** the website tracking routes, `/t/*` (GET) and `/t/e` (POST), which run on your own website for anonymous visitors. `/internal/erase-organization` (POST) answers 404 until `ERASURE_SECRET` is set. Everything else needs a signed-in member. Once installed, every member of your workspace can open it.
+
+## What you need
+
+- **R2 enabled** on your Cloudflare account, once, before the install. The agent copies logos and photos into an R2 bucket so they outlive their source.
+- **A Context.dev key.** Its free plan's 1,000 credits a month buy about 100 logo lookups.
+- **A model key.** Researching a record costs at most about $0.25 of model and Context.dev calls, plus its web searches. Give the OpenRouter key a daily credit limit in OpenRouter's key settings to bound it.
+
+## The code
+
+[github.com/every-app/open-crm](https://github.com/every-app/open-crm). Its `docs/self-hosting.md` covers the agent's costs, website tracking limits, and connecting Google, Microsoft and Slack.
