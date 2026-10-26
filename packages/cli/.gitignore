@@ -25,3 +25,6 @@ jspm_packages/
 
 *.tsbuildinfo
 dist
+
+# The starter template, packed in from ../../starter at build (scripts/bundle-starter.mjs).
+/starter

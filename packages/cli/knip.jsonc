@@ -12,6 +12,8 @@
     "test/shared/*.mjs",
   ],
   "ignore": [
+    // The starter template packed in at build (scripts/bundle-starter.mjs), gitignored.
+    "starter/**",
     // Types for chat-secret.mjs, read by tsc through the src tests' import; knip follows no .mjs import to a .d.mts.
     "test/shared/chat-secret.d.mts",
   ],

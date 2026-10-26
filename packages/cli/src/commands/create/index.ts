@@ -2,8 +2,10 @@
  * `everyapp create [name or path]`: a new app from the starter template,
  * ready for `everyapp dev`, without contacting the Gateway.
  *
- * 1. Copy `starter/` from this checkout: a bare name goes to apps/<name>
- *    inside the checkout, or ./<name> anywhere else (lib/app/starter.ts);
+ * 1. Copy the starter (lib/checkout.ts `templateSource`: this checkout's
+ *    `starter/`, or the installed package's): a bare name goes to
+ *    apps/<name> inside the checkout, or ./<name> anywhere else
+ *    (lib/app/starter.ts; from an installed package, always ./<name>);
  *    a path (../my-app, ~/apps/my-app, /srv/my-app) goes where it says,
  *    named after its last part, as long as that is outside the checkout
  *    or in its apps/ (steps/appId.ts). The copy is named after the app in
@@ -24,7 +26,7 @@ import { applyLocalMigrations } from "@/lib/app/localD1";
 import { linkSkill } from "@/lib/app/skill";
 import { copyStarter, newAppDir, placeOf } from "@/lib/app/starter";
 import { generateWorkerTypes } from "@/lib/app/workerTypes";
-import { checkoutRoot, isInCheckout } from "@/lib/checkout";
+import { isInCheckout, templateSource, type TemplateSource } from "@/lib/checkout";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { directoryExists, fileExists } from "@/lib/file-operations";
@@ -36,6 +38,7 @@ import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { strings, text } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
+import { version as cliVersion } from "../../../package.json";
 import { resolveAppTarget } from "./steps/appId";
 
 interface CreateCommandFlags {
@@ -55,8 +58,8 @@ interface CreateAppOptions {
   appIdArg?: string;
   out: EventSink;
   cwd?: string;
-  /** The checkout the template comes from (tests). */
-  root?: string;
+  /** Where the template and the skills come from (tests). */
+  source?: TemplateSource;
   cf?: CfRunner;
   /** Seams for tests. */
   install?: typeof installDependencies;
@@ -70,13 +73,14 @@ export async function createApp({
   appIdArg,
   out,
   cwd = process.cwd(),
-  root = checkoutRoot(),
+  source = templateSource(),
   cf = createCfRunner(),
   install = installDependencies,
   git = initRepository,
   home,
 }: CreateAppOptions): Promise<void> {
   const verbose = flags.verbose ?? false;
+  const { root } = source;
 
   if (await fileExists(path.join(cwd, "everyapp.config.ts"))) {
     throw new EveryAppError(
@@ -99,7 +103,7 @@ export async function createApp({
   const relative = path.relative(cwd, targetDir);
   const cdTo = target.absolute ? targetDir : relative;
   const shown = target.absolute || relative.startsWith("..") ? cdTo : `./${relative}`;
-  if (target.dir !== null && placeOf(target.dir, root) === "inside") {
+  if (target.dir !== null && root !== null && placeOf(target.dir, root) === "inside") {
     // The two places it can go, said the way the path was given.
     const said = (dir: string) => (target.absolute ? dir : path.relative(cwd, dir));
     throw new EveryAppError(
@@ -125,7 +129,7 @@ export async function createApp({
     // where they are.
     data: { appId, shown, elsewhere: target.dir === null && relative.startsWith("..") },
   });
-  await copyStarter({ root, targetDir, appId });
+  await copyStarter({ source, targetDir, appId, version: cliVersion });
   out.emit({
     type: "step",
     step: "create.copy",
@@ -133,7 +137,7 @@ export async function createApp({
     message: "Copied the starter template",
     data: { appId, dir: targetDir },
   });
-  const skill = await linkSkill({ root, appDir: targetDir });
+  const skill = await linkSkill({ skillsDir: source.skillsDir, appDir: targetDir });
   out.emit({
     type: "step",
     step: "create.skill",

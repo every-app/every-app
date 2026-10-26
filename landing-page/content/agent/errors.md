@@ -234,14 +234,6 @@ Source: `packages/cli/src/lib/app/buildApp.ts`, `packages/cli/src/lib/childLog.t
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts` (`checkCapabilitiesOffered`)
 
-### CHECKOUT_MISSING
-
-everyapp isn't running from a checkout of the EveryApp repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout). Gateway deploys no longer raise it: outside a checkout, `setup`, `update` and the rebind `deploy` and `delete` run take the published Gateway release for this everyapp version (`gatewayReleaseSource` in `lib/gateway/source.ts`; `--release` names another). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the EveryApp repository`, then `This copy is installed in <package dir>, outside any checkout.`
-
-**Fix:** `fix`: `in your checkout, run pnpm everyapp <the same arguments>`. No rerun; not retryable.
-
-Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`, `findCheckoutRoot`), called from `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/status/index.ts`.
-
 ### CLI_TOO_OLD
 
 A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `update` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `install <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).

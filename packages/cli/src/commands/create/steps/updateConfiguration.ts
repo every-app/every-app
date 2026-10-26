@@ -12,23 +12,35 @@ interface UpdatePackageJsonOptions {
  * Name the copied template's package.json after the app. The template
  * takes the SDK and the CLI from this workspace (`workspace:*`), which
  * pnpm links inside the checkout. An app created anywhere else links
- * those packages from the checkout by path instead: nothing is published
- * while we work from the repository.
+ * those packages from the checkout by path; one created by an everyapp
+ * installed from npm (no checkout) pins both at that everyapp's version,
+ * which is the version they are published together under.
  */
 export async function updatePackageJson({
   targetDir,
   appId,
   root,
+  version,
 }: UpdatePackageJsonOptions & {
-  /** The checkout the workspace packages come from. */
-  root: string;
+  /** The checkout the workspace packages come from; null from an installed package. */
+  root: string | null;
+  /** This everyapp's version. */
+  version: string;
 }): Promise<void> {
   const packageJsonPath = path.join(targetDir, "package.json");
   const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
 
   packageJson.name = appId;
 
-  if (!isInCheckout(targetDir, root)) {
+  if (root === null) {
+    for (const section of ["dependencies", "devDependencies"] as const) {
+      const deps = packageJson[section];
+      if (!deps) continue;
+      for (const [depName, spec] of Object.entries(deps)) {
+        if (typeof spec === "string" && spec.startsWith("workspace:")) deps[depName] = version;
+      }
+    }
+  } else if (!isInCheckout(targetDir, root)) {
     // Real paths both ends: pnpm resolves link: from where the app really is.
     const packages = await workspacePackages(await fs.realpath(root));
     const from = await fs.realpath(targetDir);

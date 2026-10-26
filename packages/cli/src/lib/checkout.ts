@@ -1,15 +1,16 @@
 /**
- * The Every App checkout this CLI runs from, if any. Nothing is published
- * to npm while we work from the repository (.github/RELEASE.md), so the
- * starter template and the packages a new app links to come from the
- * checkout the running everyapp was built in, wherever it runs. The
- * Gateway is built from it too (lib/gateway/checkoutRelease.ts); there is
- * no other source while publishing is paused.
+ * The Every App checkout this CLI runs from, if any, and where the
+ * starter template and the shipped skills come from: the checkout when
+ * everyapp runs from one (`pnpm everyapp`: the template as it is in the
+ * tree, and a new app links the workspace packages by path), otherwise
+ * the installed everyapp package (`npx everyapp`: the template packed
+ * with it, and a new app pins the published packages at the CLI's own
+ * version). The Gateway comes from the checkout too, when there is one
+ * (lib/gateway/source.ts).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EveryAppError } from "@/lib/errors";
 
 /**
  * The checkout's root: up from this module, to the directory with the
@@ -28,15 +29,37 @@ export function findCheckoutRoot(moduleUrl: string = import.meta.url): string | 
   }
 }
 
-/** The checkout's root, for what only a checkout has (the starter template). */
+/** The checkout's root, for tests that need the real one. */
 export function checkoutRoot(moduleUrl: string = import.meta.url): string {
   const root = findCheckoutRoot(moduleUrl);
   if (root) return root;
-  throw new EveryAppError(
-    "CHECKOUT_MISSING",
-    `everyapp has to run from a checkout of the EveryApp repository\nThis copy is installed in ${packageDir(path.dirname(fileURLToPath(moduleUrl)))}, outside any checkout.`,
-    { fix: `in your checkout, run pnpm everyapp ${process.argv.slice(2).join(" ")}`.trimEnd() },
-  );
+  throw new Error("everyapp isn't running from a checkout of the EveryApp repository");
+}
+
+/** Where the starter template and the shipped skills come from. */
+export interface TemplateSource {
+  /** The checkout, when everyapp runs from one; null from an installed package. */
+  root: string | null;
+  starterDir: string;
+  skillsDir: string;
+}
+
+/**
+ * The checkout's `starter/` and `packages/cli/skills`, or the installed
+ * package's `starter/` and `skills/` (packages/cli/scripts/bundle-starter.mjs
+ * packs the template into the package at build).
+ */
+export function templateSource(moduleUrl: string = import.meta.url): TemplateSource {
+  const root = findCheckoutRoot(moduleUrl);
+  if (root) {
+    return {
+      root,
+      starterDir: path.join(root, "starter"),
+      skillsDir: path.join(root, "packages", "cli", "skills"),
+    };
+  }
+  const pkg = packageDir(path.dirname(fileURLToPath(moduleUrl)));
+  return { root: null, starterDir: path.join(pkg, "starter"), skillsDir: path.join(pkg, "skills") };
 }
 
 /** The package `dir` is in: the nearest directory up with a package.json. */
@@ -56,8 +79,9 @@ export function realpathOr(file: string): string {
   }
 }
 
-/** Whether `dir` is the checkout's root or somewhere inside it. */
-export function isInCheckout(dir: string, root: string = checkoutRoot()): boolean {
+/** Whether `dir` is the checkout's root or somewhere inside it; never, with no checkout. */
+export function isInCheckout(dir: string, root: string | null): boolean {
+  if (root === null) return false;
   const relative = path.relative(realpathOr(root), realpathOr(dir));
   return (
     relative === "" ||

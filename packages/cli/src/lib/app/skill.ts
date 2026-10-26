@@ -25,22 +25,22 @@ const POINTERS: Readonly<Record<string, string>> = {
     "- To build or change this app, read the build-every-app skill: `.agents/skills/build-every-app/SKILL.md` (patterns in patterns.md beside it).",
 };
 
-/** The skills shipped with the CLI in the checkout at `root`. */
+/** The skills shipped with the CLI in the checkout at `root` (lib/checkout.ts `templateSource` says where else). */
 export function skillsSource(root: string): string {
   return path.join(root, "packages", "cli", "skills");
 }
 
 /**
  * The names of the skills shipped with the CLI: every directory under
- * skills/ with a SKILL.md, the ones with a pointer line first (in its
+ * `skillsDir` with a SKILL.md, the ones with a pointer line first (in its
  * order), then any other by name.
  */
-export async function shippedSkills(root: string): Promise<string[]> {
+export async function shippedSkills(skillsDir: string): Promise<string[]> {
   const found: string[] = [];
-  for (const entry of await fs.readdir(skillsSource(root), { withFileTypes: true })) {
+  for (const entry of await fs.readdir(skillsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     try {
-      await fs.access(path.join(skillsSource(root), entry.name, "SKILL.md"));
+      await fs.access(path.join(skillsDir, entry.name, "SKILL.md"));
       found.push(entry.name);
     } catch {
       // A directory without a SKILL.md isn't a skill.
@@ -60,20 +60,21 @@ function pointer(name: string): string {
 type AgentsMd = "mentions" | "created" | "added";
 
 export async function linkSkill({
-  root,
+  skillsDir,
   appDir,
 }: {
-  root: string;
+  /** Where the shipped skills are (lib/checkout.ts `templateSource`). */
+  skillsDir: string;
   appDir: string;
 }): Promise<{ skills: string[]; paths: string[]; agentsMd: AgentsMd }> {
-  const skills = await shippedSkills(root);
+  const skills = await shippedSkills(skillsDir);
   const paths: string[] = [];
   for (const name of skills) {
     for (const base of SKILL_ROOTS) {
       const relative = `${base}/${name}`;
       const target = path.join(appDir, relative);
       await fs.rm(target, { recursive: true, force: true });
-      await fs.cp(path.join(skillsSource(root), name), target, { recursive: true });
+      await fs.cp(path.join(skillsDir, name), target, { recursive: true });
       paths.push(relative);
     }
   }

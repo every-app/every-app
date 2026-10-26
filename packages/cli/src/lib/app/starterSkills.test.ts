@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkoutRoot } from "@/lib/checkout";
-import { linkSkill } from "./skill";
+import { linkSkill, skillsSource } from "./skill";
 
 const root = checkoutRoot();
 const read = (relative: string) => fs.readFileSync(path.join(root, relative), "utf8");
@@ -26,7 +26,7 @@ let roots: string[];
 beforeAll(async () => {
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-starter-skills-"));
   try {
-    const { paths } = await linkSkill({ root, appDir });
+    const { paths } = await linkSkill({ skillsDir: skillsSource(root), appDir });
     shipped = [...new Set(paths.map((relative) => path.posix.basename(relative)))];
     roots = [...new Set(paths.map((relative) => `${path.posix.dirname(relative)}/`))];
   } finally {

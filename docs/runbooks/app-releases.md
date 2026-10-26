@@ -40,11 +40,13 @@ on `R2_NOT_ENABLED`, the account having never enabled R2).
    (`pnpm pack-for-app`, below). Either way the CLI in the app runs `dev`,
    `db migrate` and `release` on its own (its bundle inlines the SDK, the
    perimeter and the toolbus; its other imports are its declared
-   dependencies). It can't `create`, `setup`, `update`, `deploy` or
-   `install`: those build the Gateway from a checkout and stop with
-   `CHECKOUT_MISSING`. Deploys therefore run from an EveryApp checkout
-   (`pnpm everyapp install <url>` there, or that checkout's CLI from the
-   app's directory: `node ../every-app/packages/cli/bin/everyapp.js deploy`).
+   dependencies). Since the setup-from-release work (2026-10-26) it also
+   runs `create`, `setup`, `update`, `deploy` and `install` with no
+   checkout: the template is packed into the package, and the Gateway
+   comes from the published release for its version
+   (`.github/RELEASE.md`). A checkout's own CLI (`pnpm everyapp` there,
+   or `node ../every-app/packages/cli/bin/everyapp.js deploy` from the
+   app's directory) deploys the checkout's Gateway instead.
 
 2. **A Release workflow.** `release.yml` in the app's `.github/workflows` runs
    `pnpm install --frozen-lockfile` and `pnpm exec everyapp release`, keeps

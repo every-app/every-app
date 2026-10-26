@@ -9,7 +9,8 @@
   "files": [
     "dist",
     "bin",
-    "skills"
+    "skills",
+    "starter"
   ],
   "bin": {
     "everyapp": "./bin/everyapp.js"
@@ -20,7 +21,7 @@
   "scripts": {
     "types:check": "tsc --noEmit",
     "prebuild": "tsc",
-    "build": "tsup --silent",
+    "build": "node scripts/bundle-starter.mjs && tsup --silent",
     "dev": "tsup --watch",
     "install:global": "pnpm run build && npm link --ignore-scripts",
     "knip": "knip",

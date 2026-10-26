@@ -112,7 +112,6 @@ lasts 24 hours.
 | error or symptom | meaning | what to do |
 | --- | --- | --- |
 | `UNSUPPORTED_RUNTIME`, `NODE_TOO_OLD` | Node below 22.18.0, Bun, or a Volta/pnpm pin on an older Node | install Node 22.18.0 or newer (22, 24 or 26), open a new terminal, rerun; raise the pin |
-| `CHECKOUT_MISSING` | `everyapp` ran outside the `every-app` folder (or via `npx`) | `cd every-app`, `pnpm everyapp …` |
 | `cloudflare_login` repeats, `CLOUDFLARE_LOGIN_FAILED` | the device login wasn't approved within 5 minutes (cf's limit), or failed | `pnpm everyapp login --json` again, and hand the link and code over at once; a 403 managed challenge on a server: use `CLOUDFLARE_API_TOKEN` |
 | `CLOUDFLARE_TOKEN_REJECTED` | `CLOUDFLARE_API_TOKEN` is set but mistyped, expired or short of permissions | fix the token (Step 5's list), or `unset CLOUDFLARE_API_TOKEN` and log in |
 | `choose_account` | several accounts (or several Gateways) and no `--account-id` | ask the person; run the chosen `data.choices[].rerun` |

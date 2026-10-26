@@ -165,13 +165,6 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 - Confirm: `pnpm --version` against `packageManager` in the root `package.json`; `env | grep ^CI=`; whether the command line had `--frozen-lockfile`.
 - Fix: `pnpm install` without `--frozen-lockfile` and with `CI` unset (`env -u CI pnpm install`); with an old pnpm, `npm install -g pnpm` first (pnpm 10 then switches to the pinned version by itself). No everyapp code is involved: the launcher never runs when the install fails.
 
-### Not in the checkout
-
-- Symptom: [`CHECKOUT_MISSING`](/docs/agent/errors#checkout_missing): `everyapp has to run from a checkout of the EveryApp repository`, `This copy is installed in <dir>, outside any checkout.`, fix `in your checkout, run pnpm everyapp <args>`.
-- Cause: nothing is published to npm while the repository is the distribution; the starter template, the packages a new app links, and the Gateway build come from the checkout the running everyapp was built in. The checkout root is the directory holding both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`.
-- Confirm: `ls apps/every-app-gateway/scripts/build-release.ts packages/cli/package.json` in the directory the person thinks is the checkout; the error's `This copy is installed in <dir>` names where the running everyapp lives.
-- Fix: `cd` into the `every-app` clone and run `pnpm everyapp …` there. Source: `packages/cli/src/lib/checkout.ts`.
-
 ### Not in the app directory
 
 - Symptom: `everyapp dev`, `deploy`, `db`, `db restore` (and `create`, after it wrote the app): [`MANIFEST_NOT_FOUND`](/docs/agent/errors#manifest_not_found), `No everyapp.config.ts in this directory`, fix `run this from the app's directory` (`loadEveryAppManifest(cwd)`; `dev` loads the manifest the same way, so it says the same). `everyapp email …` without `--manifest`: the same code with fix `run this from the app's directory, or pass --manifest <path>`. `No manifest at <path>` is only what `email --manifest <path>` says when the file named isn't there (the default wording of `loadEveryAppManifestFile`). A directory with a manifest but no Worker config: [`MISSING_CLOUDFLARE_CONFIG`](/docs/agent/errors#missing_cloudflare_config). From `everyapp dev`, only when the manifest has no `dev` command: `No cloudflare.config.ts in this directory`, `EveryApp apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.`, `data.fix` `copy cloudflare.config.ts from starter`. From `everyapp deploy` (not a release deploy): `No cloudflare.config.ts in this app`, `EveryApp apps build their Worker in a cloudflare.config.ts at the app root:` followed by the `defineConfig` / `everyAppWorker({ manifest, entrypoint, ctx })` skeleton to copy and `starter has the full setup (package.json, vite.config.ts).`
@@ -181,10 +174,10 @@ Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in 
 
 ### npx everyapp
 
-- Symptom: a person ran `npx everyapp …` and gets commands that don't exist, a different `--version`, or [`CHECKOUT_MISSING`](/docs/agent/errors#checkout_missing).
-- Cause: npx fetches whatever `everyapp` is on npm, which may be older than what this repository runs (`.github/RELEASE.md` says what is published), and that copy isn't inside a checkout: `create` needs one (`packages/cli/src/lib/checkout.ts`); Gateway deploys don't, they take the published release for that version (`packages/cli/src/lib/gateway/source.ts`).
+- Symptom: a person ran `npx everyapp …` and gets commands that don't exist, or a different `--version`.
+- Cause: npx fetches whatever `everyapp` is on npm, which may be older or newer than the checkout beside them (`.github/RELEASE.md` says what is published). An everyapp installed from npm works without a checkout: `create` copies the template packed into the package and pins `@every-app/sdk` and `everyapp` at its own version (`packages/cli/src/lib/checkout.ts` `templateSource`), and Gateway deploys take the published release for that version (`packages/cli/src/lib/gateway/source.ts`).
 - Confirm: `pnpm everyapp --version` in the checkout against `npx everyapp --version`; `which everyapp` or the shell history shows what was run.
-- Fix: always `pnpm everyapp …` from the `every-app` clone. Compare `pnpm everyapp --version` with what the person ran.
+- Fix: in a checkout, `pnpm everyapp …` runs that checkout's CLI; elsewhere, `npx everyapp@latest …` runs the published one. Compare `--version` with what the person ran.
 
 ### Gateway build or install failed
 

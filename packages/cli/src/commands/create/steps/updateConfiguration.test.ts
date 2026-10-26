@@ -153,7 +153,7 @@ describe("updatePackageJson", () => {
     const targetDir = path.join(root, "apps", "my-new-app");
     await copiedPackageJson(targetDir);
 
-    await updatePackageJson({ targetDir, appId: "my-new-app", root });
+    await updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" });
 
     const packageJson = await readPackageJson(targetDir);
     expect(packageJson.name).toBe("my-new-app");
@@ -168,7 +168,7 @@ describe("updatePackageJson", () => {
     const targetDir = path.join(await tmp(), "my-new-app");
     await copiedPackageJson(targetDir);
 
-    await updatePackageJson({ targetDir, appId: "my-new-app", root });
+    await updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" });
 
     const packageJson = await readPackageJson(targetDir);
     const linked = (spec: string) => {
@@ -194,7 +194,7 @@ describe("updatePackageJson", () => {
     );
 
     await expect(
-      updatePackageJson({ targetDir, appId: "my-new-app", root }),
+      updatePackageJson({ targetDir, appId: "my-new-app", root, version: "0.3.0" }),
     ).rejects.toThrow(/@every-app\/nope/);
   });
 });

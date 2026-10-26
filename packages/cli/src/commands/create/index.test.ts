@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { skillsSource } from "@/lib/app/skill";
 import { starterTemplateDir } from "@/lib/app/starter";
-import { checkoutRoot } from "@/lib/checkout";
+import { checkoutRoot, type TemplateSource } from "@/lib/checkout";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { EveryAppError } from "@/lib/errors";
 import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
@@ -19,6 +19,24 @@ const tmp = () => {
   dirs.push(dir);
   return dir;
 };
+
+/** The template source of a checkout at `root`. */
+const sourceOf = (root: string): TemplateSource => ({
+  root,
+  starterDir: starterTemplateDir(root),
+  skillsDir: skillsSource(root),
+});
+
+/** An installed everyapp package, with the template and skills packed in (scripts/bundle-starter.mjs). */
+function fakePackage(dir: string = tmp()): TemplateSource {
+  fs.cpSync(starterTemplateDir(checkoutRoot()), path.join(dir, "starter"), {
+    recursive: true,
+    filter: (source) => !source.includes("node_modules") && !source.includes(".cloudflare"),
+  });
+  fs.renameSync(path.join(dir, "starter", ".gitignore"), path.join(dir, "starter", "gitignore"));
+  fs.cpSync(skillsSource(checkoutRoot()), path.join(dir, "skills"), { recursive: true });
+  return { root: null, starterDir: path.join(dir, "starter"), skillsDir: path.join(dir, "skills") };
+}
 
 /** A checkout with the real template and the workspace packages it links. */
 function fakeCheckout(root: string = tmp()): string {
@@ -69,7 +87,8 @@ beforeEach(() => {
 afterEach(() => {
   process.env = { ...savedEnv };
   for (const dir of dirs.splice(0)) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    // macOS answers ENOTEMPTY to a recursive rm now and then; retrying is the usual cure.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -93,7 +112,7 @@ describe("everyapp create", () => {
       appIdArg: "my-app",
       out,
       cwd,
-      root,
+      source: sourceOf(root),
       cf,
       install,
     });
@@ -167,7 +186,7 @@ describe("everyapp create", () => {
     let shown = "";
     const human = createHumanSink({ write: (text) => void (shown += text), writeProblem: () => undefined });
 
-    await createApp({ flags: {}, appIdArg: "my-app", out: human, cwd: from, root, cf, install });
+    await createApp({ flags: {}, appIdArg: "my-app", out: human, cwd: from, source: sourceOf(root), cf, install });
 
     const app = path.join(root, "apps", "my-app");
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
@@ -205,7 +224,7 @@ describe("everyapp create", () => {
       appIdArg: "my-app",
       out,
       cwd,
-      root,
+      source: sourceOf(root),
       cf,
       install,
     });
@@ -232,7 +251,7 @@ describe("everyapp create", () => {
     });
 
     await expect(
-      createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install }),
+      createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, source: sourceOf(root), cf, install }),
     ).rejects.toMatchObject({
       code: "INSTALL_FAILED",
       message: [
@@ -260,7 +279,7 @@ describe("everyapp create", () => {
       });
     });
 
-    await createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, root, cf, install, git });
+    await createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, source: sourceOf(root), cf, install, git });
 
     expect(events.filter((event) => event["type"] === "warning")).toEqual([
       expect.objectContaining({
@@ -283,7 +302,7 @@ describe("everyapp create", () => {
         appIdArg,
         out,
         cwd,
-        root,
+        source: sourceOf(root),
         cf,
         install,
       });
@@ -325,7 +344,7 @@ describe("everyapp create", () => {
         appIdArg: "my-app",
         out,
         cwd: from,
-        root,
+        source: sourceOf(root),
         cf,
         install,
       });
@@ -351,7 +370,7 @@ describe("everyapp create", () => {
     const root = fakeCheckout(path.join(outer, "every-app"));
     const { cf, install } = seams();
 
-    await createApp({ flags: { json: true }, appIdArg: "../my-app", out, cwd: root, root, cf, install });
+    await createApp({ flags: { json: true }, appIdArg: "../my-app", out, cwd: root, source: sourceOf(root), cf, install });
 
     const app = path.join(outer, "my-app");
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
@@ -373,6 +392,36 @@ describe("everyapp create", () => {
     expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
   });
 
+  it("from an installed package (no checkout): ./<name> wherever it runs, its own repository, pinned at this everyapp's version", async () => {
+    const source = fakePackage();
+    const cwd = tmp();
+    const { cf, install } = seams();
+
+    await createApp({ flags: { json: true }, appIdArg: "my-app", out, cwd, source, cf, install });
+
+    const app = path.join(cwd, "my-app");
+    expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(app, ".git"))).toBe(true);
+    expect(fs.existsSync(path.join(app, ".gitignore"))).toBe(true);
+    expect(fs.existsSync(path.join(app, "pnpm-workspace.yaml"))).toBe(true);
+    const packageJson = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8"));
+    expect(packageJson.dependencies["@every-app/sdk"]).toMatch(/^\d+\.\d+\.\d+/);
+    expect(packageJson.devDependencies.everyapp).toBe(packageJson.dependencies["@every-app/sdk"]);
+    expect(fs.existsSync(path.join(app, ".agents", "skills", "everyapp", "SKILL.md"))).toBe(true);
+    expect(fs.existsSync(path.join(app, ".claude", "skills", "build-every-app", "SKILL.md"))).toBe(true);
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      data: { appId: "my-app", dir: app, next: [{ command: "cd my-app" }, { command: "pnpm dev" }, { command: "pnpm run deploy" }] },
+    });
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+
+    // A path is fine too; nothing is "inside a checkout" there.
+    events.length = 0;
+    const elsewhere = path.join(tmp(), "team", "other");
+    await createApp({ flags: { json: true }, appIdArg: elsewhere, out, cwd, source, cf, install });
+    expect(fs.existsSync(path.join(elsewhere, ".git"))).toBe(true);
+  });
+
   it("takes an absolute path, or one from ~, and says it whole", async () => {
     const root = fakeCheckout();
     const cwd = tmp();
@@ -380,7 +429,7 @@ describe("everyapp create", () => {
 
     // A parent that isn't there yet is made.
     const absolute = path.join(tmp(), "team", "my-app");
-    await createApp({ flags: { json: true }, appIdArg: absolute, out, cwd, root, cf, install });
+    await createApp({ flags: { json: true }, appIdArg: absolute, out, cwd, source: sourceOf(root), cf, install });
     expect(fs.existsSync(path.join(absolute, "everyapp.config.ts"))).toBe(true);
     expect(fs.existsSync(path.join(absolute, ".git"))).toBe(true);
     expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
@@ -393,7 +442,7 @@ describe("everyapp create", () => {
 
     events.length = 0;
     const home = tmp();
-    await createApp({ flags: { json: true }, appIdArg: "~/apps/my-app", out, cwd, root, cf, install, home });
+    await createApp({ flags: { json: true }, appIdArg: "~/apps/my-app", out, cwd, source: sourceOf(root), cf, install, home });
     const fromHome = path.join(home, "apps", "my-app");
     expect(fs.existsSync(path.join(fromHome, "everyapp.config.ts"))).toBe(true);
     expect(events.at(-1)).toMatchObject({
@@ -408,7 +457,7 @@ describe("everyapp create", () => {
     const { cf, install } = seams();
     const app = path.join(root, "apps", "my-app");
 
-    await createApp({ flags: { json: true }, appIdArg: "apps/my-app", out, cwd: root, root, cf, install });
+    await createApp({ flags: { json: true }, appIdArg: "apps/my-app", out, cwd: root, source: sourceOf(root), cf, install });
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
     expect(fs.existsSync(path.join(app, ".git"))).toBe(false);
     expect(JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).dependencies["@every-app/sdk"]).toBe(
@@ -423,7 +472,7 @@ describe("everyapp create", () => {
     fs.rmSync(app, { recursive: true });
     events.length = 0;
     const from = path.join(root, "packages", "cli");
-    await createApp({ flags: { json: true }, appIdArg: "../../apps/my-app", out, cwd: from, root, cf, install });
+    await createApp({ flags: { json: true }, appIdArg: "../../apps/my-app", out, cwd: from, source: sourceOf(root), cf, install });
     expect(fs.existsSync(path.join(app, "everyapp.config.ts"))).toBe(true);
     expect(events.find((event) => event["step"] === "create.copy" && event["status"] === "start")).toMatchObject({
       data: { shown: "../../apps/my-app", elsewhere: false },
@@ -436,7 +485,7 @@ describe("everyapp create", () => {
     const root = fakeCheckout(path.join(outer, "every-app"));
     const { cf, install } = seams();
     const run = (appIdArg: string, from = root) =>
-      createApp({ flags: { json: true }, appIdArg, out, cwd: from, root, cf, install });
+      createApp({ flags: { json: true }, appIdArg, out, cwd: from, source: sourceOf(root), cf, install });
 
     await expect(run("./my-app")).rejects.toMatchObject({
       code: "APP_DIR_IN_CHECKOUT",

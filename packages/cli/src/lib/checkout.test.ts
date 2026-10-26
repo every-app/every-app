@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { checkoutRoot, findCheckoutRoot, isInCheckout } from "./checkout";
+import { checkoutRoot, findCheckoutRoot, isInCheckout, templateSource } from "./checkout";
 
 describe("the checkout this CLI runs from", () => {
   it("is found up from the CLI's own files", () => {
@@ -12,10 +12,23 @@ describe("the checkout this CLI runs from", () => {
     expect(JSON.parse(fs.readFileSync(path.join(root, "packages", "cli", "package.json"), "utf8")).name).toBe("everyapp");
   });
 
-  it("says so when the CLI isn't in one", () => {
-    const outside = pathToFileURL(path.join(os.tmpdir(), "everyapp", "dist", "index.js")).href;
-    expect(findCheckoutRoot(outside)).toBeNull();
-    expect(() => checkoutRoot(outside)).toThrow(expect.objectContaining({ code: "CHECKOUT_MISSING" }));
+  it("says so when the CLI isn't in one, and takes the template from the installed package then", () => {
+    const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-pkg-"));
+    try {
+      fs.mkdirSync(path.join(pkg, "dist"));
+      fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "everyapp" }));
+      const outside = pathToFileURL(path.join(pkg, "dist", "index.js")).href;
+      expect(findCheckoutRoot(outside)).toBeNull();
+      expect(() => checkoutRoot(outside)).toThrow(/isn't running from a checkout/);
+      // The template and the skills then come from the installed package.
+      expect(templateSource(outside)).toEqual({
+        root: null,
+        starterDir: path.join(pkg, "starter"),
+        skillsDir: path.join(pkg, "skills"),
+      });
+    } finally {
+      fs.rmSync(pkg, { recursive: true, force: true });
+    }
   });
 
   it("holds the directories below its root, and no others", () => {

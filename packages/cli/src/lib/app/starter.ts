@@ -1,9 +1,11 @@
 /**
- * The starter app, `starter/` in the checkout this CLI runs
- * from, and where `everyapp create` puts a copy of it: apps/<id> in the
- * checkout, as a workspace package, when it runs inside the checkout;
- * ./<id> in the current directory anywhere else; or the directory a path
- * argument names, which is one of those two places or is refused.
+ * The starter app, `starter/` in the checkout this CLI runs from or
+ * packed into the installed everyapp package (lib/checkout.ts
+ * `templateSource`), and where `everyapp create` puts a copy of it:
+ * apps/<id> in the checkout, as a workspace package, when it runs inside
+ * the checkout; ./<id> in the current directory anywhere else (always,
+ * from an installed package); or the directory a path argument names,
+ * which is one of those two places or is refused.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -12,8 +14,8 @@ import {
   updatePackageJson,
   updateReadme,
 } from "@/commands/create/steps/updateConfiguration";
-import { isInCheckout, realpathOr } from "@/lib/checkout";
-import { copyDirectory } from "@/lib/file-operations";
+import { isInCheckout, realpathOr, type TemplateSource } from "@/lib/checkout";
+import { copyDirectory, fileExists } from "@/lib/file-operations";
 
 /** Never copied into a new app: local state, build output, installs. */
 const LOCAL_ONLY = [
@@ -47,9 +49,9 @@ export function newAppDir({
 }: {
   appId: string;
   cwd: string;
-  root: string;
+  root: string | null;
 }): string {
-  return isInCheckout(cwd, root)
+  return root !== null && isInCheckout(cwd, root)
     ? path.join(root, "apps", appId)
     : path.join(cwd, appId);
 }
@@ -59,8 +61,8 @@ export function newAppDir({
  * its own repository), directly in its apps/ (where an app inside the
  * checkout belongs), or somewhere else inside it (refused by create).
  */
-export function placeOf(dir: string, root: string): "outside" | "apps" | "inside" {
-  if (!isInCheckout(dir, root)) return "outside";
+export function placeOf(dir: string, root: string | null): "outside" | "apps" | "inside" {
+  if (root === null || !isInCheckout(dir, root)) return "outside";
   const parent = realpathOr(path.dirname(dir));
   return parent === realpathOr(path.join(root, "apps")) ? "apps" : "inside";
 }
@@ -74,22 +76,34 @@ export function placeOf(dir: string, root: string): "outside" | "apps" | "inside
  */
 const STANDALONE_WORKSPACE = "allowBuilds:\n  esbuild: true\n  sharp: true\n  workerd: true\n";
 
+/**
+ * A packed template keeps its .gitignore as `gitignore` (npm would drop
+ * the dotfile from the package); the copy gets the dot back.
+ */
+const PACKED_GITIGNORE = "gitignore";
+
 /** Copy the starter, without local state, to `targetDir` as app `appId`. */
 export async function copyStarter({
-  root,
+  source,
   targetDir,
   appId,
+  version,
 }: {
-  /** The checkout the template and the packages it links come from. */
-  root: string;
+  /** The template, and the checkout the packages are linked from, if any. */
+  source: TemplateSource;
   targetDir: string;
   appId: string;
+  /** This everyapp's version: what an app made from a package pins. */
+  version: string;
 }): Promise<void> {
-  await copyDirectory(starterTemplateDir(root), targetDir, { exclude: LOCAL_ONLY });
+  const { root } = source;
+  await copyDirectory(source.starterDir, targetDir, { exclude: LOCAL_ONLY });
+  const packed = path.join(targetDir, PACKED_GITIGNORE);
+  if (await fileExists(packed)) await fs.rename(packed, path.join(targetDir, ".gitignore"));
   if (!isInCheckout(targetDir, root)) {
     await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
   }
-  await updatePackageJson({ targetDir, appId, root });
+  await updatePackageJson({ targetDir, appId, root, version });
   await updateEveryappManifest({ targetDir, appId });
   await updateReadme({ targetDir, appId });
 }
