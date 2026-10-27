@@ -2,9 +2,9 @@
 
 > Make every SaaS open source
 
-Lots of people are cloning desktop apps, but what about SaaS?
+Lots of people are cloning desktop apps, but what's next for SaaS?
 
-EveryApp is focused on making the next generation of web apps, built for agents.
+EveryApp is focused on making the next generation of web apps, built for agents, beyond "cloning"..
 
 > Get your agent's apps off localhost
 
