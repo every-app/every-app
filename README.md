@@ -14,7 +14,7 @@ EveryApp handles all of that: one command sets up a Gateway in your Cloudflare a
 
 [![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
 
-## Who are you?
+## Who are we?
 
 We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open source alternative to Semrush and Ahrefs (25k stars).
 
