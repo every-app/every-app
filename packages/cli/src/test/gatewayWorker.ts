@@ -30,10 +30,14 @@ export class GatewayWorker {
   /** The gateway's clock, for setup links' expiry. */
   now: () => number = () => Date.now();
 
-  constructor(private readonly account: FakeCloudflare) {}
+  constructor(
+    private readonly account: FakeCloudflare,
+    /** The Gateway's Worker and D1 (a named Gateway's: `every-app-gateway-<name>`). */
+    private readonly gatewayWorker: string = GATEWAY_WORKER,
+  ) {}
 
   private get db() {
-    return this.account.database(GATEWAY_WORKER);
+    return this.account.database(this.gatewayWorker);
   }
 
   /** `fetch`, for the hosts the gateway serves. */
@@ -41,7 +45,7 @@ export class GatewayWorker {
     const url = new URL(input instanceof Request ? input.url : String(input));
     this.requests.push(url.toString());
     const host = url.hostname.toLowerCase();
-    if (this.account.customDomains.get(host) !== GATEWAY_WORKER) {
+    if (this.account.customDomains.get(host) !== this.gatewayWorker) {
       throw failed(`getaddrinfo ENOTFOUND ${host}`);
     }
     if (this.certificatePending.has(host)) {
@@ -62,7 +66,7 @@ export class GatewayWorker {
     if (!app) return new Response("ok", { status: 200 });
     if (
       app["status"] === "binding" &&
-      this.account.gatewayBindings().includes(String(app["worker_name"]))
+      this.account.gatewayBindings(this.gatewayWorker).includes(String(app["worker_name"]))
     ) {
       this.db.sqlite
         .prepare("UPDATE apps SET status = 'active' WHERE id = ? AND status = 'binding'")
@@ -79,7 +83,7 @@ export class GatewayWorker {
    * many went live.
    */
   sweep(): number {
-    const bound = this.account.gatewayBindings();
+    const bound = this.account.gatewayBindings(this.gatewayWorker);
     let activated = 0;
     for (const app of this.db.all("SELECT id, worker_name FROM apps WHERE status = 'binding'")) {
       if (!bound.includes(String(app["worker_name"]))) continue;

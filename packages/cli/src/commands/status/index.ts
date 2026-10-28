@@ -1,4 +1,3 @@
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { storedSecretNames } from "@every-app/perimeter/registry";
 import type { AppSetup, ProviderRegistry } from "@every-app/sdk/internal";
 import { accessDrift, allowedSignInProviders, findAccessApplications } from "@/lib/access/plan";
@@ -41,7 +40,7 @@ import { gatewayRegistry } from "@/lib/gateway/providers";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { readOwnerOrganization } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
-import { existingGateway } from "@/lib/gateway/connect";
+import { existingGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { runCommand } from "@/lib/output/run";
 import { plural } from "@/lib/output/text";
 import { nextStepsFor, type NextStep, type ProviderFact } from "./next";
@@ -59,6 +58,7 @@ import { renderNotInstalled, renderStatus } from "./render";
 
 interface StatusFlags {
   "account-id"?: string;
+  gateway?: string;
   json?: boolean;
   verbose?: boolean;
 }
@@ -91,6 +91,7 @@ export async function status(flags: StatusFlags,
       json: flags.json,
       out,
       accountId: flags["account-id"],
+      gateway: requestedGatewayUrl(flags.gateway),
     });
     const root = findCheckoutRoot();
     await reportStatus({
@@ -154,15 +155,15 @@ export async function reportStatus({
   const accessApplies = install.deploymentMode !== "hosted" && uploaded;
   const [desired, allApps, leases, claimed, serving, emailRoutes, gatewayNames, accessRecord] =
     await Promise.all([
-      readDesiredState(db, workerExistence(cf)),
+      readDesiredState(db, workerExistence(cf), gateway.names),
       listApps(db),
       readLiveLeases(db),
       readOwnerOrganization(db),
-      getWorkerDeployment(cf, GATEWAY_WORKER_NAME),
+      getWorkerDeployment(cf, gateway.names.worker),
       readResourcesOfKind(db, "email-route"),
       // The Gateway Worker's secret names, once: Access, each app's settings
       // and the next steps read them. Nothing to list before the first upload.
-      uploaded ? readOrUnread(() => listGatewaySecretNames(cf)) : null,
+      uploaded ? readOrUnread(() => listGatewaySecretNames(cf, gateway.names)) : null,
       accessApplies ? readOrUnread(() => readAccessSettingsRecord(db)) : null,
     ]);
   const owner = claimed?.owner ?? null;
@@ -204,7 +205,7 @@ export async function reportStatus({
       emailRoutes.length === 0 ? [] : emailRouteProblems(cf, emailRoutes),
     ),
     gatewayRegistry(db, install).then((registry) =>
-      readSettings(cf, db, registered, missingWorkers, gatewayNames, registry),
+      readSettings(cf, gateway.names, db, registered, missingWorkers, gatewayNames, registry),
     ),
     // The install organization's counts, for the next steps; a Gateway
     // from before one of the tables, or cf failing, leaves them unread.
@@ -291,6 +292,7 @@ export async function reportStatus({
   });
   const display = renderStatus({
     install,
+    gatewayWorker: gateway.names.name ? gateway.names.worker : null,
     accountName,
     owner,
     servingRecorded,
@@ -313,6 +315,8 @@ export async function reportStatus({
       deployed: true,
       installed: true,
       gatewayUrl,
+      // A named Gateway says which (the default's output is as it always was).
+      ...(gateway.names.name ? { gatewayName: gateway.names.name, gatewayWorker: gateway.names.worker } : {}),
       accountId: account.id,
       mode: install.deploymentMode,
       release: {
@@ -428,6 +432,7 @@ function summary(gatewayUrl: string, apps: AppState[], problems: Problem[]): str
  */
 async function readSettings(
   cf: FoundGateway["cf"],
+  gatewayOwn: FoundGateway["names"],
   db: FoundGateway["db"],
   apps: RegisteredAppInfo[],
   missingWorkers: Set<string>,
@@ -446,7 +451,7 @@ async function readSettings(
   );
   if (declaring.length === 0) return { setups, unread: null };
   let unread: Unread | null = null;
-  const gateway = gatewayNames ?? (await readOrUnread(() => listGatewaySecretNames(cf)));
+  const gateway = gatewayNames ?? (await readOrUnread(() => listGatewaySecretNames(cf, gatewayOwn)));
   if ("error" in gateway) unread = gateway;
   for (const app of declaring) {
     const own = await readOrUnread(() => listAppSecretNames(cf, app.workerName));

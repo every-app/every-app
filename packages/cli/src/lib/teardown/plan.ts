@@ -9,10 +9,14 @@ import { RESOURCE_LABELS } from "@/lib/app/ownership";
 import { formatFacts } from "@/lib/output/table";
 import { plural } from "@/lib/output/text";
 
-/** Every Worker, database, namespace, bucket, config and index Every App makes is named so. */
+/**
+ * What every name Every App makes starts with, on every Gateway: the search
+ * prefix the listings that take one are given (Workflows, R2, AI Gateways,
+ * Secrets Store). What comes back is then held to one Gateway's names
+ * (`belongsToGateway`, ./inventory.ts): a named Gateway's AI Gateways
+ * (`every-app-gateway-<name>-…`) start with it too.
+ */
 export const EVERY_APP_PREFIX = "every-";
-
-export const isEveryAppName = (name: string): boolean => name.startsWith(EVERY_APP_PREFIX);
 
 /**
  * A record Email Routing keeps on a domain it routes (its MX records and
@@ -43,7 +47,7 @@ interface PlannedWorker {
 export interface PlannedEmailZone {
   zoneId: string;
   zoneName: string;
-  /** Rules that send mail to an `every-*` Worker. */
+  /** Rules that send mail to one of the Gateway's Workers. */
   rules: Array<{ id: string; address: string | null; worker: string }>;
   /** The Worker the catch-all sends mail to, when it is one of ours; it goes back to dropping mail. */
   catchAllWorker: string | null;
@@ -72,6 +76,10 @@ interface PlannedDnsName {
 
 export interface TeardownPlan {
   accountId: string;
+  /** The Gateway torn down: null for the default one, else its name (`--gateway <name>`). */
+  gatewayName: string | null;
+  /** Its Worker's name (`every-app-gateway`, `every-app-gateway-<name>`), deleted last of the Workers. */
+  gatewayWorker: string;
   /** The Gateway's D1, and its install row's host, when the account has one. */
   gateway: { databaseId: string; gatewayHost: string | null } | null;
   /** Apps and helpers first, the Gateway's Worker last. */
@@ -82,7 +90,7 @@ export interface TeardownPlan {
   kv: Array<{ title: string; id: string }>;
   r2: string[];
   hyperdrive: Array<{ name: string; id: string }>;
-  /** Queues named `every-*` (or recorded as an app's). */
+  /** Queues of the Gateway's names (or recorded as an app's). */
   queues: Array<{ name: string; id: string }>;
   /** The consumers that are our Workers, on any queue: detached before the Workers, which Cloudflare won't delete while they consume. */
   queueConsumers: Array<{ queueId: string; queueName: string; consumerId: string; script: string }>;
@@ -257,6 +265,8 @@ export function planSummary(plan: TeardownPlan): string {
 export function planData(plan: TeardownPlan): Record<string, unknown> {
   return {
     accountId: plan.accountId,
+    gatewayName: plan.gatewayName,
+    gatewayWorker: plan.gatewayWorker,
     gateway: plan.gateway,
     counts: planCounts(plan),
     total: planTotal(plan),

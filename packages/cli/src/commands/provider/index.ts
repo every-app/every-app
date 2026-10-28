@@ -15,7 +15,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import {
   CAPABILITIES,
   capabilitySettings,
@@ -422,7 +421,7 @@ export async function addBuiltIn(
   }
   const gateway = await connect(options);
   const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");
-  const gatewayNames = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+  const gatewayNames = await listWorkerSecrets(gateway.cf, gateway.names.worker);
   const settings = [...capabilitySettings(capability)];
   options.out.emit({
     type: "step",
@@ -673,7 +672,7 @@ export async function listProviders(options: ProviderOptions): Promise<void> {
   const gateway = await connect(options);
   const [registry, gatewayNames, apps, uploaded, connections] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
     listApps(gateway.db),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
@@ -813,7 +812,7 @@ export async function showProvider(
   const [registry, apps, gatewayNames, uploaded, connections] = await Promise.all([
     gatewayRegistry(gateway.db, gateway.install),
     listApps(gateway.db),
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
   ]);
@@ -936,7 +935,7 @@ export async function removeRegistered(
     force: flags.force ?? false,
     now: options.now?.(),
   });
-  const gatewayNames = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+  const gatewayNames = await listWorkerSecrets(gateway.cf, gateway.names.worker);
   const settings = removed.settings.map((name) => ({ name, set: gatewayNames.includes(name) }));
   const stays = settings.filter((setting) => setting.set).map((setting) => setting.name);
   const gatewayHost = gateway.gatewayUrl.replace(/^https:\/\//, "");

@@ -1337,7 +1337,7 @@ describe("deploy of an app without helper Workers", () => {
         },
         "cf": [
           "auth whoami",
-          "d1 list --name every-app-gateway --per-page 100",
+          "d1 list --name every-app-gateway --per-page 100 --page 1",
           "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",
           "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
           "workers deployments list --worker every-acme-todo --per-page 10",

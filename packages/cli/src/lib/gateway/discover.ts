@@ -1,8 +1,11 @@
 /**
  * Finding the Gateway, with nothing kept on this machine. A Cloudflare
- * account holds at most one, under fixed resource names (./resources.ts),
- * so every account the login sees is asked for the Gateway's D1 database,
- * all at once, and its install row says where the Gateway serves:
+ * account may hold several Gateways, each under its own names
+ * (./resources.ts, packages/perimeter manifest/gatewayNames.ts: the
+ * default `every-app-gateway`, and `every-app-gateway-<name>` for a named
+ * one), so every account the login sees is asked for its Gateway
+ * databases, all at once, and each install row says where that Gateway
+ * serves:
  *
  *   cf auth whoami                         the accounts this login sees
  *   cf d1 list --name every-app-gateway    per account, with that account's
@@ -17,14 +20,19 @@
  * is never offered a second Gateway (`refuseUnchecked`). A network failure
  * is asked once more too, then stops the command.
  *
- * One Gateway: it is the one. Several: --account-id, CLOUDFLARE_ACCOUNT_ID,
- * the host the command names (--gateway, setup's --domain), or a person at
- * the terminal picks; anyone else is asked to (`choose_account`). None: the
- * caller decides (`setup` installs one; anything else fails, listing the
- * accounts asked). `setup` with several accounts (`anyAccount`) never assumes
- * a Gateway in one is where it goes: unless the account or the host is
- * named, the person picks any account the login can ask.
+ * One Gateway: it is the one. Several (in one account or across accounts):
+ * the Gateway the command names (--gateway, by host or by name; setup's
+ * --domain and --name), --account-id or CLOUDFLARE_ACCOUNT_ID when that
+ * narrows it to one, or a person at the terminal picks; anyone else is
+ * asked to (`choose_account`, one rerun per Gateway), never guessed for. None: the caller decides
+ * (`setup` installs one; anything else fails, listing the accounts asked).
+ * `setup` with several accounts (`anyAccount`) never assumes a Gateway in
+ * one is where it goes: unless the account or the host is named, the
+ * person picks any account the login can ask. `setup` looks for one
+ * Gateway name only (`name`: the default's unless --name says): a named
+ * Gateway beside the default is never mistaken for it.
  */
+import { gatewayNames, type GatewayNames } from "@every-app/perimeter/manifest";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { isCfError, isNetworkDrop } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -33,7 +41,7 @@ import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
 import { choose } from "@/lib/output/prompt";
 import { readInstall, type InstallRecord } from "./install";
-import { findGatewayDatabase } from "./resources";
+import { listGatewayDatabases } from "./resources";
 
 interface CloudflareAccount {
   id: string;
@@ -45,6 +53,8 @@ export interface FoundGateway {
   account: CloudflareAccount;
   /** cf, pinned to the Gateway's account. */
   cf: CfRunner;
+  /** The Gateway's names: its Worker, D1, KV, queue, and what its apps are called. */
+  names: GatewayNames;
   databaseId: string;
   /** The Gateway's D1: its registry, install row, leases and ledgers. */
   db: D1Database;
@@ -63,8 +73,10 @@ export interface Discovery {
   probed: CloudflareAccount[];
   /** The accounts that couldn't be asked: whether they have a Gateway is unknown. */
   unchecked: UncheckedAccount[];
-  /** Every account that has a Gateway. */
+  /** Every Gateway found, in the order cf lists the accounts, the default's first in each. */
   found: FoundGateway[];
+  /** Gateways of other names than `onlyName`, when setup looked for one name only. */
+  others: FoundGateway[];
   /** The one this command acts on, or null: none, or none in the account asked for. */
   gateway: FoundGateway | null;
   /** --account-id, else CLOUDFLARE_ACCOUNT_ID. */
@@ -78,6 +90,18 @@ interface DiscoverOptions {
   accountId?: string;
   /** The Gateway's host, when the command names one: it picks among several. */
   host?: string;
+  /**
+   * The Gateway's name, when the command names one (--gateway <name>): it
+   * picks among several. Null is the default Gateway by name.
+   */
+  name?: string | null;
+  /**
+   * setup: only Gateways of this name count (null: the default's), so a
+   * named Gateway beside the default is never taken for it, and nothing is
+   * installed beside a Gateway of the same name. Others in the account are
+   * `others`, for the messages.
+   */
+  onlyName?: string | null;
   /**
    * The flag that names the Gateway by its host (setup's --domain): the
    * choices among several say it, rather than an account id.
@@ -109,6 +133,8 @@ export async function discoverGateway({
   accountId,
   host,
   hostFlag,
+  name,
+  onlyName,
   anyAccount = false,
   interactive,
   pick = pickAtTerminal,
@@ -127,54 +153,91 @@ export async function discoverGateway({
       ? [...listed, { id: requestedAccountId, name: null }]
       : listed;
   const answers = await Promise.all(probed.map((account) => probe(account, createCf, retryDelayMs)));
-  const found = answers.filter((answer): answer is FoundGateway => answer !== null && "db" in answer);
-  const unchecked = answers.filter((answer): answer is UncheckedAccount => answer !== null && "reason" in answer);
+  const everyFound = answers.flatMap((answer) => (Array.isArray(answer) ? answer : []));
+  const unchecked = answers.filter((answer): answer is UncheckedAccount => !Array.isArray(answer) && answer !== null);
+  const wanted = onlyName === undefined ? null : gatewayNames(onlyName).name;
+  const found = onlyName === undefined ? everyFound : everyFound.filter((g) => g.names.name === wanted);
+  const others = onlyName === undefined ? [] : everyFound.filter((g) => g.names.name !== wanted);
 
-  const result = { probed, found, unchecked, ...(requestedAccountId ? { requestedAccountId } : {}) };
-  if (requestedAccountId) {
-    return {
-      ...result,
-      gateway: found.find((g) => g.account.id === requestedAccountId) ?? null,
-    };
-  }
+  const result = { probed, found, others, unchecked, ...(requestedAccountId ? { requestedAccountId } : {}) };
+  // The command names the Gateway: by host, or by name.
   const atHost = host
     ? found.filter((g) => g.install?.gatewayHost.toLowerCase() === host.toLowerCase())
     : [];
   if (atHost.length === 1) return { ...result, gateway: atHost[0]! };
+  const byName = name === undefined ? [] : found.filter((g) => g.names.name === gatewayNames(name).name);
+  if (requestedAccountId) {
+    const inAccount = (name === undefined ? found : byName).filter((g) => g.account.id === requestedAccountId);
+    if (inAccount.length <= 1) return { ...result, gateway: inAccount[0] ?? null };
+    // Several of them in the account asked for: the person picks, or is told how.
+    if (interactive) return { ...result, gateway: await pick(inAccount, whoami) };
+    throw chooseGateway(inAccount, whoami, hostFlag);
+  }
+  if (name !== undefined) {
+    if (byName.length <= 1) return { ...result, gateway: byName[0] ?? null };
+    if (interactive) return { ...result, gateway: await pick(byName, whoami) };
+    throw chooseGateway(byName, whoami, hostFlag);
+  }
 
   // An account that couldn't be asked may hold a Gateway already: never offered.
   const candidates = probed.filter((a) => !unchecked.some((u) => u.id === a.id));
   if (anyAccount && found.length > 0 && candidates.length > 1) {
     const chosen = await chooseAccount(candidates, found, whoami, interactive, pickAccount);
-    return {
-      ...result,
-      requestedAccountId: chosen.id,
-      gateway: found.find((g) => g.account.id === chosen.id) ?? null,
-    };
+    const inAccount = found.filter((g) => g.account.id === chosen.id);
+    if (inAccount.length > 1) {
+      if (interactive) return { ...result, requestedAccountId: chosen.id, gateway: await pick(inAccount, whoami) };
+      throw chooseGateway(inAccount, whoami, hostFlag);
+    }
+    return { ...result, requestedAccountId: chosen.id, gateway: inAccount[0] ?? null };
   }
   if (found.length <= 1) return { ...result, gateway: found[0] ?? null };
   if (interactive) return { ...result, gateway: await pick(found, whoami) };
-  // One command per Gateway, ready to run: no single rerun fits.
-  throw new ActionRequiredError(
+  throw chooseGateway(found, whoami, hostFlag);
+}
+
+/**
+ * Several Gateways and nothing to pick one by: one command per Gateway,
+ * ready to run (no single rerun fits). By host (the flag the command
+ * names it with, --gateway or setup's --domain) when the Gateway has one,
+ * else by account and name.
+ */
+function chooseGateway(found: FoundGateway[], whoami: CfWhoami, hostFlag?: string): ActionRequiredError {
+  const accounts = new Set(found.map((gateway) => gateway.account.id));
+  return new ActionRequiredError(
     "choose_account",
-    `Choose which Gateway to use\n${whoami.email ?? "This login"} sees a Gateway in ${found.length} Cloudflare accounts. Run one of:`,
+    `Choose which Gateway to use\n${whoami.email ?? "This login"} sees ${
+      accounts.size === found.length
+        ? `a Gateway in ${found.length} Cloudflare accounts`
+        : `${found.length} Gateways in ${accounts.size === 1 ? (found[0]!.account.name ?? found[0]!.account.id) : `${accounts.size} Cloudflare accounts`}`
+    }. Run one of:`,
     undefined,
     {
       rerun: null,
       data: {
         choices: found.map((gateway) => {
           const gatewayHost = gateway.install?.gatewayHost;
-          const byHost = hostFlag && gatewayHost;
+          const account = gateway.account.name ?? gateway.account.id;
+          // setup names a Gateway by its address (--domain): the account alone is the label.
+          const byHost = hostFlag !== undefined && gatewayHost;
+          // Two in one account: the account id alone doesn't pick one; its URL (or name) does.
+          const sameAccount = found.some((other) => other !== gateway && other.account.id === gateway.account.id);
           return {
             accountId: gateway.account.id,
             accountName: gateway.account.name,
+            gatewayName: gateway.names.name,
+            gatewayWorker: gateway.names.worker,
             gatewayUrl: gatewayHost ? `https://${gatewayHost}` : null,
-            label: byHost
-              ? (gateway.account.name ?? gateway.account.id)
-              : [gateway.account.name, gatewayHost].filter(Boolean).join(" · "),
+            label: byHost ? account : [account, gatewayHost ?? gateway.names.worker].join(" · "),
             rerun: byHost
               ? `${thisCommandWithout(hostFlag)} ${hostFlag} ${gatewayHost}`
-              : thisCommand(["--account-id", gateway.account.id]),
+              : sameAccount
+                ? thisCommand([
+                    "--account-id",
+                    gateway.account.id,
+                    "--gateway",
+                    gatewayHost ? `https://${gatewayHost}` : gateway.names.worker,
+                  ])
+                : thisCommand(["--account-id", gateway.account.id]),
           };
         }),
       },
@@ -183,21 +246,25 @@ export async function discoverGateway({
 }
 
 /**
- * The account's Gateway; null when this login finds none there; the
- * account, unchecked, when cf refused or didn't know it twice.
+ * The account's Gateways (an empty list when this login finds none there;
+ * never null); the account, unchecked, when cf refused or didn't know it
+ * twice.
  */
 async function probe(
   account: CloudflareAccount,
   createCf: (accountId?: string) => CfRunner,
   retryDelayMs: number,
-): Promise<FoundGateway | UncheckedAccount | null> {
+): Promise<FoundGateway[] | UncheckedAccount | null> {
   const cf = createCf(account.id);
   for (let attempt = 1; ; attempt += 1) {
     try {
-      const databaseId = await findGatewayDatabase(cf);
-      if (!databaseId) return null;
-      const db = cfD1Database(cf, databaseId);
-      return { account, cf, databaseId, db, install: await readInstall(db) };
+      const databases = await listGatewayDatabases(cf);
+      return await Promise.all(
+        databases.map(async ({ id: databaseId, names }) => {
+          const db = cfD1Database(cf, databaseId);
+          return { account, cf, names, databaseId, db, install: await readInstall(db) };
+        }),
+      );
     } catch (error) {
       const reason = isCfError(error, "auth") ? "auth" : isCfError(error, "not_found") ? "not_found" : null;
       if (!reason && !isNetworkDrop(error)) throw error;
@@ -322,7 +389,8 @@ export function checkGatewayUrl(
 
 function describeGateway(gateway: FoundGateway): string {
   const account = gateway.account.name ?? gateway.account.id;
-  return `${account}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}`;
+  const named = gateway.names.name ? ` (${gateway.names.worker})` : "";
+  return `${account}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}${named}`;
 }
 
 /** `anyAccount`'s choice: the person at the terminal picks, anyone else is asked to (`choose_account`). */
@@ -343,12 +411,14 @@ function chooseAccount(
       rerun: null,
       data: {
         choices: accounts.map((account) => {
-          const gatewayHost = found.find((g) => g.account.id === account.id)?.install?.gatewayHost;
+          const hosts = found
+            .filter((g) => g.account.id === account.id)
+            .map((g) => g.install?.gatewayHost ?? g.names.worker);
           return {
             accountId: account.id,
             accountName: account.name,
-            gatewayUrl: gatewayHost ? `https://${gatewayHost}` : null,
-            label: [account.name ?? account.id, gatewayHost].filter(Boolean).join(" · "),
+            gatewayUrl: hosts[0] && hosts[0].includes(".") ? `https://${hosts[0]}` : null,
+            label: [account.name ?? account.id, ...hosts].join(" · "),
             rerun: thisCommand(["--account-id", account.id]),
           };
         }),
@@ -366,10 +436,12 @@ function pickAccountAtTerminal(
   return choose(
     "Which account should EveryApp go in?",
     accounts.map((account) => {
-      const gatewayHost = found.find((g) => g.account.id === account.id)?.install?.gatewayHost;
+      const hosts = found
+        .filter((g) => g.account.id === account.id)
+        .map((g) => g.install?.gatewayHost ?? g.names.worker);
       return {
         label: account.name ?? account.id,
-        ...(gatewayHost ? { hint: `Gateway at ${gatewayHost}` } : {}),
+        ...(hosts.length > 0 ? { hint: `Gateway at ${hosts.join(", ")}` } : {}),
         value: account,
       };
     }),
@@ -385,14 +457,13 @@ function pickAtTerminal(found: FoundGateway[], whoami: CfWhoami): Promise<FoundG
     "Which Gateway?",
     found.map((gateway) => {
       const account = gateway.account.name ?? gateway.account.id;
+      const hint = gateway.names.name ? `${account} · ${gateway.names.worker}` : account;
       return gateway.install
-        ? { label: gateway.install.gatewayHost, hint: account, value: gateway }
-        : { label: account, value: gateway };
+        ? { label: gateway.install.gatewayHost, hint, value: gateway }
+        : { label: gateway.names.worker, hint: account, value: gateway };
     }),
     {
-      context: [
-        `${whoami.email ?? "This login"} sees a Gateway in ${found.length} Cloudflare accounts`,
-      ],
+      context: [`${whoami.email ?? "This login"} sees ${found.length} Gateways`],
     },
   );
 }

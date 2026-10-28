@@ -116,16 +116,21 @@ function isDispatchNamespace(value: unknown): value is DispatchNamespaceLike {
 }
 
 // Org keys are up to 12 of [a-z0-9] (no hyphen), so `every-<orgKey>-<appId>`
-// splits one way only.
+// splits one way only; a named Gateway's `every-<name>--<orgKey>-<appId>`
+// too (manifest/gatewayNames.ts).
 const ORG_KEY_PATTERN = /^[a-z0-9]{1,12}$/;
+const NAMED_PREFIX = /^every-([a-z0-9]+)--/;
 
 /**
  * Whether the Worker name is the one the registry's naming rule gives this
- * app, `every-<orgKey>-<appId>`: the registry can then never dispatch to a
- * script it didn't name (the gateway's own, another app's).
+ * app, `every-<orgKey>-<appId>` (or `every-<name>--<orgKey>-<appId>` on
+ * a named Gateway): the registry can then never dispatch to a script it
+ * didn't name (the gateway's own, another app's, another Gateway's).
  */
 function isDispatchableWorkerName(app: AppFetcherTarget): boolean {
-  const prefix = "every-";
+  const named = NAMED_PREFIX.exec(app.workerName);
+  const gatewayName = named?.[1] ?? null;
+  const prefix = named ? named[0] : "every-";
   const suffix = `-${app.appId}`;
   if (
     !app.workerName.startsWith(prefix) ||
@@ -143,6 +148,7 @@ function isDispatchableWorkerName(app: AppFetcherTarget): boolean {
     isRegistryWorkerName({
       appId: app.appId,
       orgKey,
+      gatewayName,
       workerName: app.workerName,
     })
   );

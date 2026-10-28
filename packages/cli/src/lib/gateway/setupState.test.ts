@@ -6,6 +6,7 @@
  * refresh after a change of settings, which only looks at the apps the
  * change can move and never fails the command.
  */
+import { DEFAULT_GATEWAY_NAMES } from "@every-app/perimeter/manifest";
 import { appSettings, type SettingsManifestLike } from "@every-app/sdk/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { appSetupFrom } from "@/lib/app/settings";
@@ -147,18 +148,18 @@ describe("refreshSetupStates", () => {
     gatewayNames = ["OPENAI_API_KEY"];
     const listed = () => cf.calls.filter((call) => call.args.join(" ").startsWith("workers secrets list")).length;
 
-    await refreshSetupStates({ cf, db: db(), deployer: BEN }, { gateway: ["EMAIL_FROM"], appRowId: null }, out());
+    await refreshSetupStates({ cf, db: db(), deployer: BEN, names: DEFAULT_GATEWAY_NAMES }, { gateway: ["EMAIL_FROM"], appRowId: null }, out());
     expect(listed()).toBe(0);
     expect(state()).toBeNull();
 
-    await refreshSetupStates({ cf, db: db(), deployer: BEN }, { gateway: ["OPENAI_API_KEY"], appRowId: null }, out());
+    await refreshSetupStates({ cf, db: db(), deployer: BEN, names: DEFAULT_GATEWAY_NAMES }, { gateway: ["OPENAI_API_KEY"], appRowId: null }, out());
     expect(listed()).toBe(1);
     expect(state()).toBe("ready");
 
     gatewayNames = [];
-    await refreshSetupStates({ cf, db: db(), deployer: BEN }, { gateway: [], appRowId: rowId, except: rowId }, out());
+    await refreshSetupStates({ cf, db: db(), deployer: BEN, names: DEFAULT_GATEWAY_NAMES }, { gateway: [], appRowId: rowId, except: rowId }, out());
     expect(state()).toBe("ready");
-    await refreshSetupStates({ cf, db: db(), deployer: BEN }, { gateway: [], appRowId: rowId }, out());
+    await refreshSetupStates({ cf, db: db(), deployer: BEN, names: DEFAULT_GATEWAY_NAMES }, { gateway: [], appRowId: rowId }, out());
     expect(state()).toBe("needs_setup");
     expect(queued().map((event) => event.type)).toEqual(["app.needs_setup"]);
   });
@@ -166,7 +167,7 @@ describe("refreshSetupStates", () => {
   it("never fails the command: a failure is a progress line", async () => {
     await deployed(["TOKEN_ENCRYPTION_KEY"]);
     cf.override(["workers", "secrets", "list"], async () => ({ exitCode: 1, stderr: "┌ Error\n│ boom\n└\n" }));
-    await refreshSetupStates({ cf, db: db(), deployer: BEN }, { gateway: ["OPENAI_API_KEY"], appRowId: null }, out());
+    await refreshSetupStates({ cf, db: db(), deployer: BEN, names: DEFAULT_GATEWAY_NAMES }, { gateway: ["OPENAI_API_KEY"], appRowId: null }, out());
     expect(lines).toEqual([
       expect.objectContaining({ type: "progress", step: "app.setup_state", message: expect.stringContaining("Couldn't record whether the apps are set up") }),
     ]);

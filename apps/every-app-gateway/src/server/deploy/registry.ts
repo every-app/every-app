@@ -135,6 +135,8 @@ interface RegisterDispatchAppInput {
   configuredThirdPartyDomain: string | null;
   /** The gateway's own APP_BASE_DOMAIN (appBaseDomain(env)). */
   appBaseDomain: string | null;
+  /** This Gateway's name (server/gateway-name.ts); null for the default. */
+  gatewayName?: string | null;
   /** The domain apps are named on: thirdPartyDomain(env), null without a valid one. */
   thirdPartyDomain: string | null;
 }
@@ -209,6 +211,7 @@ async function register(
     isInstallOrganization,
     appBaseDomain: domain ?? NO_DOMAIN,
     existingApp,
+    gatewayName: input.gatewayName ?? null,
   });
   const owner = async (
     column: typeof apps.hostname | typeof apps.workerName,
@@ -231,6 +234,7 @@ async function register(
     description: input.description,
     manifest: input.manifest,
     appBaseDomain: domain ?? NO_DOMAIN,
+    gatewayName: input.gatewayName ?? null,
     orgKey,
     existingApp,
     hostnameOwner: domain ? await owner(apps.hostname, names.hostname) : null,

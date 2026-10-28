@@ -21,6 +21,7 @@ import {
 } from "@every-app/perimeter/manifest";
 import type { AppRow } from "@every-app/perimeter/registry";
 import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
+import { gatewayNameOf } from "@/server/gateway-name";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
@@ -147,6 +148,7 @@ export function registerApp(deployer: Deployer, manifest: Manifest) {
     appBaseDomain: appBaseDomain(env),
     // Validated: never one that could share a site with the gateway.
     thirdPartyDomain: thirdPartyDomain(env),
+    gatewayName: gatewayNameOf(env),
   });
 }
 

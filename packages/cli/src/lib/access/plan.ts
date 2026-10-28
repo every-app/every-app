@@ -304,12 +304,35 @@ export function findAccessApplications(
   applications: readonly AccessApplication[],
   { gatewayHost, appBaseDomain }: AccessScope,
 ): { gateway: AccessApplication | null; apps: AccessApplication | null } {
+  // Another Gateway's applications (named "Every App gateway (<name>)",
+  // "Every App apps (<name>)", or the default's without a suffix) are never
+  // this Gateway's, whatever destinations they hold: a stray per-app
+  // destination equal to this Gateway's host must not hand them over.
+  const own = applications.filter((application) => !isAnotherGatewaysApplication(application, gatewayHost));
   return {
-    gateway: applications.find((application) => hasPublicDestination(application, gatewayHost)) ?? null,
-    apps:
-      applications.find((application) => hasPublicDestination(application, appsWildcard(appBaseDomain))) ??
-      null,
+    gateway: own.find((application) => hasPublicDestination(application, gatewayHost)) ?? null,
+    apps: own.find((application) => hasPublicDestination(application, appsWildcard(appBaseDomain))) ?? null,
   };
+}
+
+/** The shape of every Gateway's application names (lib/access/applications.ts `accessApplicationNames`). */
+const GATEWAY_APPLICATION_NAME_PATTERN = /^Every App (gateway|apps)(?: \(([a-z0-9]{1,16})\))?$/;
+
+/**
+ * Whether an application is named as one of Every App's but covers another
+ * Gateway's host as its own: its name's suffix (none for the default) isn't
+ * the one this Gateway's host would carry. Judged by the host alone, since
+ * the default Gateway's application and a named one's cover different
+ * hosts; one whose primary destination is this very host is ours.
+ */
+function isAnotherGatewaysApplication(application: AccessApplication, gatewayHost: string): boolean {
+  const match = GATEWAY_APPLICATION_NAME_PATTERN.exec(application.name ?? "");
+  if (!match) return false;
+  const domain = application["domain"];
+  const primary = typeof domain === "string" ? domain.toLowerCase().replace(/\/.*$/, "") : "";
+  if (!primary) return false;
+  // Ours when its primary destination is this host or the apps' wildcard under it.
+  return primary !== gatewayHost && primary !== appsWildcard(gatewayHost);
 }
 
 /** Whether Access handles OAuth for the application (Managed OAuth). */

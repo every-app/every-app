@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_NAMES } from "@every-app/perimeter/manifest";
 import { describe, expect, it } from "vitest";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { createNdjsonSink } from "@/lib/output/events";
@@ -20,6 +21,7 @@ function run(cf: FakeCf, options: Partial<Parameters<typeof preflightDomains>[0]
   const events: any[] = [];
   const result = preflightDomains({
     cf,
+    names: DEFAULT_GATEWAY_NAMES,
     out: createNdjsonSink((line) => events.push(JSON.parse(line))),
     step: "test",
     zone: ZONE,
@@ -203,6 +205,29 @@ describe("preflightDomains", () => {
     const clear = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
     await expect(run(clear).result).resolves.toEqual(["todo.apps.example.com"]);
     expect(clear.calls.some((call) => call.args[0] === "workers")).toBe(false);
+  });
+
+  it("never takes a hostname another Gateway in the account publishes, even with --force-dns", async () => {
+    const records = { stdout: JSON.stringify([placeholder("todo.apps.example.com")]) };
+    const workers = {
+      stdout: JSON.stringify([
+        { id: "w-2", name: "every-app-gateway", references: { domains: [{ hostname: "apps.example.com" }] } },
+        { id: "w-3", name: "every-app-gateway-demo", references: { domains: [{ hostname: "todo.apps.example.com" }] } },
+      ]),
+    };
+    const cf = () => new FakeCf().on(["dns", "records", "list"], records).on(["workers", "list"], workers);
+    await expect(run(cf()).result).rejects.toMatchObject({ code: "HOST_OWNED_BY_OTHER_GATEWAY" });
+    await expect(run(cf(), { forceDns: true }).result).rejects.toMatchObject({
+      code: "HOST_OWNED_BY_OTHER_GATEWAY",
+      message: expect.stringContaining("todo.apps.example.com is every-app-gateway-demo's"),
+    });
+    // An app Worker of another Gateway counts too.
+    const appOfDemo = new FakeCf().on(["dns", "records", "list"], records).on(["workers", "list"], {
+      stdout: JSON.stringify([
+        { id: "w-4", name: "every-demo--acme-todo", references: { domains: [{ hostname: "todo.apps.example.com" }] } },
+      ]),
+    });
+    await expect(run(appOfDemo, { forceDns: true }).result).rejects.toMatchObject({ code: "HOST_OWNED_BY_OTHER_GATEWAY" });
   });
 
   it("warns that a hostname another Worker serves is replaced when cf can't ask", async () => {

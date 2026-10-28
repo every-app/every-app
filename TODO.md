@@ -2254,3 +2254,28 @@ Follow-ups (not in a lane):
 - [ ] **The server metadata no longer names app hosts** (#862: `protected_resources: [/mcp]`). Recommended: keep; a native app reads the app host's own document, and the list of apps on a gateway is not public information. Alternative: list them, as the library does by default.
 - [x] **The 401 challenge on a hosted third-party host names a metadata URL that 404s** (done at merge: the challenge omits `resource_metadata` on dispatch hosts, pinned in `gateway.test.ts`) (the document is first-party only). Recommended: omit `resource_metadata` from the challenge on dispatch hosts. Cosmetic.
 
+
+## Multi-gateway (2026-10-28)
+
+Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `everyapp setup --name demo` installs `every-app-gateway-demo` beside the default, `--gateway <url|name>` picks one, `teardown --gateway <name>` removes one by its names alone. Ben asked for a staging/demo Gateway in the main account next to everyapp.team and a pre-release check against it (docs/runbooks/pre-release-check.md).
+
+### Decided for Ben
+
+- [ ] **Named Gateways share the Zero Trust team**; only two Access applications and one policy, named "… (<name>)", are new per Gateway.
+- [ ] **A name is 1 to 16 lowercase letters or digits, no hyphen**; `app`, `gateway` and `activate` are refused. Apps keep 31 characters for their id under the 63-character Worker limit.
+- [ ] **A named Gateway's AI Gateway ids go under `every-app-gateway-<name>-…`** (an id may not hold `--`), so an app on a named Gateway has 17 fewer characters for `<orgKey>-<app>-<binding>` there.
+- [ ] **`deploy` with no Gateway anywhere installs the default one**; a named Gateway is only `setup --name`'s.
+- [ ] **`teardown --gateway <name>` skips the test-account allowlist and forbidden list** (its inventory is structurally scoped; the confirmation is the Worker name `every-app-gateway-<name>`); the default teardown and `--all` keep every guard.
+- [ ] **The default teardown no longer scans legacy `every-<app>--<binding>` names** (pre-org-scoped resources the Gateway no longer binds); the ledger still names them.
+
+- [ ] **The staging/demo Gateway is `demo.everyapp.dev`, not `demo.everyapp.team`.** Ben answered "demo.everyapp.team?"; the orchestrator decided .dev on 2026-10-28: production's session cookie covers everyapp.team and would reach demo.everyapp.team, and production's Access application for apps covers `*.everyapp.team`, which would take the demo's host. Nothing overlaps on .dev; the mail records at the everyapp.dev apex stay. Easy to switch if Ben prefers .team.
+- [ ] **AI Gateway ids join the Gateway name and the org key with one hyphen** (`every-app-gateway-demo-<orgKey>-<app>-<binding>`): Cloudflare refuses `--` in an id. No other Gateway can make it (names have no hyphen; the default can't register a Worker under the reserved root); within one Gateway the ledger says whose it is, as today.
+
+### Questions for Ben
+
+- [ ] None open; the domain and the move of the Ridgeline demo were answered on 2026-10-28.
+
+### Review follow-ups (Fable, 2026-10-28)
+
+- [ ] **`names` still defaults to the default Gateway's in `lib/gateway/{resources,apply,reconcile,patchBuildOutput}.ts`** so the existing tests run unchanged; every production caller passes it. Make it required and fix the tests, so a future caller can't silently target production.
+- [ ] **A Gateway named after a legacy app id** (`every-<appId>--<binding>` resources from before org-scoped names, e.g. `every-todo` in Ben's account) would claim those leftovers as its own. Don't name a Gateway `todo`, `llm-chat` or any other old app id; `everyapp teardown --gateway <name> --dry-run` shows what it would take before anything goes.

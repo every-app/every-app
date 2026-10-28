@@ -376,6 +376,8 @@ export interface DeployTarget {
   organizationId: string;
   /** The registry's Worker name, `every-<orgKey>-<appId>`. */
   workerName: string;
+  /** The Gateway's own Worker (server/gateway-name.ts), which the app binds; the default's when absent. */
+  gatewayWorker?: string;
   gatewayUrl: string;
   /** The gateway's JWT_PUBLIC_KEY (SPKI PEM). */
   identityPublicKey: string;
@@ -478,7 +480,7 @@ function userWorkerBindings(
     {
       type: "service",
       name: GATEWAY_BINDING,
-      service: GATEWAY_WORKER_NAME,
+      service: target.gatewayWorker ?? GATEWAY_WORKER_NAME,
       entrypoint: GATEWAY_ENTRYPOINT,
       props: {
         organizationId: target.organizationId,

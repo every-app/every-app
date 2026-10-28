@@ -65,7 +65,7 @@
  * same command again resumes it.
  */
 import { cliVersion as packageVersion } from "@/lib/version";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { gatewayNameProblem, gatewayNames, type GatewayNames } from "@every-app/perimeter/manifest";
 import { turnAccessOn } from "../access";
 import { applySecretValues } from "../secret";
 import { keepAccessAfterGatewayDeploy } from "@/lib/access/applications";
@@ -96,6 +96,7 @@ import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from "@/lib/errors";
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
+import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
@@ -121,6 +122,13 @@ import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
   domain?: string;
+  /**
+   * The Gateway's name, for a second Gateway in the same Cloudflare account
+   * (`every-app-gateway-<name>`, apps `every-<name>--…`); none is the
+   * default Gateway, `every-app-gateway`. Setup looks for a Gateway of this
+   * name only, and installs one of this name when there is none.
+   */
+  name?: string;
   /** The Gateway release to deploy: a GitHub repository or release URL, a tarball's URL, or a file (lib/gateway/source.ts). */
   release?: string;
   "account-id"?: string;
@@ -140,7 +148,10 @@ export interface SetupFlags {
 }
 
 /** `update` takes setup's flags, but those only a new Gateway needs. */
-export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "no-access" | "team">;
+export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "name" | "no-access" | "team"> & {
+  /** The Gateway to update, when the login sees several: its URL or its name. */
+  gateway?: string;
+};
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
@@ -246,13 +257,15 @@ export async function runSetup(
 ): Promise<SetupResult> {
   // Before anything is asked of Cloudflare: a --domain that isn't a hostname.
   const domain = domainFlag(flags.domain);
+  const name = nameFlag(flags.name);
   checkToolchain(out);
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
     host: domain,
     hostFlag: "--domain",
     anyAccount: true,
+    onlyName: name,
   });
-  return installGateway({ whoami, discovery, flags, out, deps });
+  return installGateway({ whoami, discovery, flags, out, deps, names: gatewayNames(name) });
 }
 
 /**
@@ -266,11 +279,28 @@ export async function runGatewayDeploy(
   deps: SetupDeps,
 ): Promise<SetupResult> {
   checkToolchain(out);
-  const { whoami, discovery } = await loginAndDiscover(flags, out, deps);
+  // --gateway: a URL picks by host, a name by name ("" is the default).
+  const requested = requestedGatewayUrl(flags.gateway);
+  const byUrl = requested !== undefined && requested.includes("://");
+  const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
+    host: byUrl ? new URL(requested).host.toLowerCase() : undefined,
+    hostFlag: "--gateway",
+    anyAccount: false,
+    ...(requested !== undefined && !byUrl ? { name: requested || null } : {}),
+  });
   const found = requireGateway(discovery, whoami);
   if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
   // An update asks nothing new of a person: Access is setup's offer.
-  return installGateway({ whoami, discovery, flags, out, deps, offerAccess: false, updateOnly: true });
+  return installGateway({
+    whoami,
+    discovery,
+    flags,
+    out,
+    deps,
+    offerAccess: false,
+    updateOnly: true,
+    names: found.names,
+  });
 }
 
 /** Cloudflare: login, then the Gateway the login's accounts have. */
@@ -278,7 +308,15 @@ async function loginAndDiscover(
   flags: GatewayDeployFlags,
   out: EventSink,
   deps: SetupDeps,
-  bySetup?: { host: string | undefined; hostFlag: string; anyAccount: boolean },
+  bySetup?: {
+    host: string | undefined;
+    hostFlag: string;
+    anyAccount: boolean;
+    /** setup: only Gateways of this name (null: the default's). */
+    onlyName?: string | null;
+    /** update --gateway <name>. */
+    name?: string | null;
+  },
 ): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
   const whoami = await ensureCfAuth({
     cf: deps.createCf(),
@@ -300,6 +338,19 @@ async function loginAndDiscover(
     interactive: deps.interactive,
   });
   return { whoami, discovery };
+}
+
+/** --name, as a Gateway name (null: the default Gateway); one that isn't is refused in the flag's name. */
+function nameFlag(value: string | undefined): string | null {
+  if (value === undefined || value.trim() === "") return null;
+  const name = value.trim().toLowerCase();
+  const problem = gatewayNameProblem(name);
+  if (problem) {
+    throw new EveryAppError("INVALID_GATEWAY_NAME", `--name ${value} isn't a Gateway name\n${problem}.`, {
+      fix: "choose a short lowercase name, such as demo or staging",
+    });
+  }
+  return name;
 }
 
 /** --domain, as a hostname; one that isn't is refused in the flag's name. */
@@ -327,12 +378,19 @@ export async function installGateway({
   deps,
   offerAccess = true,
   updateOnly = false,
+  names,
 }: {
   whoami: CfWhoami;
   discovery: Discovery;
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
+  /**
+   * The Gateway's names: the one found, or for a new install, the ones
+   * --name gives (the default's without it). A found Gateway's names win:
+   * discovery looked for this name only.
+   */
+  names: GatewayNames;
   /** Whether to offer Cloudflare Access once the owner exists (setup, and a deploy that installs a Gateway; not update). */
   offerAccess?: boolean;
   /** `update`: deploy to the Gateway found, never create its resources. */
@@ -352,18 +410,23 @@ export async function installGateway({
   const accountName = account.name ?? account.id;
   const cf = found?.cf ?? deps.createCf(account.id);
   const install = found?.install ?? null;
+  const gatewayNamesHere = found?.names ?? names;
   // An install that stopped before its first upload isn't live yet.
   const live = install?.liveVersionId ? install : null;
   out.emit({
     type: "step",
     step: "setup.account",
     status: "ok",
-    message: `Setting up EveryApp in ${accountName}`,
+    message: gatewayNamesHere.name
+      ? `Setting up EveryApp in ${accountName} as ${gatewayNamesHere.worker}`
+      : `Setting up EveryApp in ${accountName}`,
     data: {
       id: account.id,
       name: account.name,
       email: whoami.email ?? null,
       gateway: live !== null,
+      gatewayName: gatewayNamesHere.name,
+      gatewayWorker: gatewayNamesHere.worker,
     },
   });
 
@@ -389,6 +452,7 @@ export async function installGateway({
   if (newHost) {
     await preflightDomains({
       cf,
+      names: gatewayNamesHere,
       out,
       step: "gateway.domains",
       zone: target.zone,
@@ -419,6 +483,7 @@ export async function installGateway({
     install,
     databaseId: found?.databaseId ?? null,
     updateOnly,
+    names: gatewayNamesHere,
     target,
     source,
     checkedDomains: newHost ? [target.domain] : [],
@@ -439,6 +504,7 @@ export async function installGateway({
       cf,
       db: gateway.db,
       scope: { gatewayHost: target.domain.toLowerCase(), appBaseDomain: target.appBaseDomain.toLowerCase() },
+      names: gatewayNamesHere,
       out,
     });
   }
@@ -458,7 +524,7 @@ export async function installGateway({
   const asking = deps.interactive && !flags.yes && mode === "self_hosted";
   // Access needs the owner (the policy lets them in); --no-access is recorded either way.
   const accessWanted = offerAccess && mode === "self_hosted" && (owner !== null || Boolean(flags["no-access"]));
-  const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, GATEWAY_WORKER_NAME) : [];
+  const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, gatewayNamesHere.worker) : [];
   // Browser installs need a deploy token and the operator's opt-in
   // (BROWSER_APP_INSTALLS=on: the Gateway keeps them off otherwise, since
   // the token is account-wide): asked for once, at a terminal, and written
@@ -771,6 +837,7 @@ async function deployOrRepairGateway({
   install,
   databaseId,
   updateOnly,
+  names,
   target,
   source,
   checkedDomains,
@@ -784,6 +851,7 @@ async function deployOrRepairGateway({
   install: InstallRecord | null;
   databaseId: string | null;
   updateOnly: boolean;
+  names: GatewayNames;
   target: Awaited<ReturnType<typeof gatewayTarget>>;
   source: CandidateRelease;
   checkedDomains: string[];
@@ -801,6 +869,7 @@ async function deployOrRepairGateway({
       accountName,
       install: live!,
       databaseId: databaseId!,
+      names,
       openRelease,
       source,
       flags,
@@ -860,6 +929,7 @@ async function deployOrRepairGateway({
       reason: live ? "upgrade" : "deploy",
       release,
       accountId,
+      names,
       target,
       interactive: deps.interactive,
       ...(updateOnly && databaseId ? { existing: { databaseId } } : {}),
@@ -899,6 +969,7 @@ async function repairGateway({
   accountName,
   install,
   databaseId,
+  names,
   openRelease,
   source,
   flags,
@@ -910,6 +981,7 @@ async function repairGateway({
   accountName: string;
   install: InstallRecord;
   databaseId: string;
+  names: GatewayNames;
   openRelease: () => Promise<GatewayRelease>;
   /** What this run deploys: the release the Gateway runs. */
   source: CandidateRelease;
@@ -921,7 +993,7 @@ async function repairGateway({
   const gatewayUrl = `https://${install.gatewayHost}`;
   const release = install.releaseVersion;
   const name = releaseName(source);
-  const { inSync, desired } = await registryDrift(cf, db, install);
+  const { inSync, desired } = await registryDrift(cf, db, install, names);
   if (inSync && !flags.redeploy) {
     out.emit({
       type: "step",
@@ -977,6 +1049,7 @@ async function repairGateway({
     cf,
     out,
     accountId,
+    names,
     databaseId,
     openRelease,
     interactive: deps.interactive,

@@ -63,7 +63,7 @@
  */
 import path from "node:path";
 import { cliVersion } from "@/lib/version";
-import { manifestTierProblems, validateManifestStrict } from "@every-app/perimeter/manifest";
+import { manifestTierProblems, validateManifestStrict, type GatewayNames } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
 import { capabilityIdsOf, providerIds, type AppSetup, type ProviderRegistry } from "@every-app/sdk/internal";
@@ -315,7 +315,7 @@ async function deploySteps(
   // A Gateway installed on the way comes from where setup takes it (no install row yet).
   const setupGateway = gatewayFor(options.reconcile, null, out, options.verbose);
   out.emit({ type: "step", step: "app.connect", status: "start", message: "Finding your Gateway..." });
-  const { cf, accountId, accountName, databaseId, db: registry, install, gatewayUrl, deployer } =
+  const { cf, accountId, accountName, databaseId, names, db: registry, install, gatewayUrl, deployer } =
     await connectToGateway({
       gateway: options.gateway,
       accountId: options.accountId,
@@ -417,7 +417,7 @@ async function deploySteps(
   // 2. Register: the rules name everything.
   const { plan, organization, hasOwner, deployerGranted } = await registerFromManifest(
     registry,
-    { manifest, install, deployer, accountName },
+    { manifest, install, names, deployer, accountName },
   );
   const hostname = plan.app.hostname!;
   const workerName = plan.app.workerName!;
@@ -465,6 +465,7 @@ async function deploySteps(
   // neither checked nor a reason to redeploy the gateway (said at the end).
   const { outsideBase, newHost } = await preflightAppHost({
     cf,
+    names,
     out,
     install,
     hostname,
@@ -592,6 +593,7 @@ async function deploySteps(
       organizationId: organization.id,
       accountId,
       gatewayUrl,
+      gatewayWorker: names.worker,
       identityPublicKeys: [identityKey],
       resources,
       deletedDurableObjects,
@@ -890,7 +892,7 @@ async function deploySteps(
     // What the app still needs set, once its upload is on record: a
     // warning with the one command, said again under Next; and the state
     // on the app's row, with app.needs_setup or app.ready on a change.
-    const setup = await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next, providers });
+    const setup = await warnIfNeedsSetup({ cf, gateway: names, manifest, appId: manifest.id, secretNames, out, next, providers });
     await recordSetupStateQuietly(registry, { appRowId: plan.app.id, setup, deployer }, out);
   } finally {
     await lease.release();
@@ -901,6 +903,7 @@ async function deploySteps(
     cf,
     db: registry,
     databaseId,
+    names,
     out,
     accountId,
     appId: manifest.id,
@@ -916,7 +919,7 @@ async function deploySteps(
   const wait = !outsideBase && (options.waitForLive ?? true);
   // Behind Cloudflare Access the live wait's probe never reaches the
   // Gateway: the activation queue makes it sweep now, not at its next cron.
-  if (wait) await nudgeActivation(cf);
+  if (wait) await nudgeActivation(cf, names);
   const live = await awaitLive({
     wait,
     db: registry,
@@ -1001,6 +1004,7 @@ async function deploySteps(
  */
 async function warnIfNeedsSetup({
   cf,
+  gateway,
   manifest,
   appId,
   secretNames,
@@ -1009,6 +1013,8 @@ async function warnIfNeedsSetup({
   providers,
 }: {
   cf: CfRunner;
+  /** The Gateway's names: its Worker holds the settings. */
+  gateway: GatewayNames;
   manifest: EveryAppCliManifest;
   appId: string;
   secretNames: string[] | null;
@@ -1021,7 +1027,7 @@ async function warnIfNeedsSetup({
   if (!declaresSettings(manifest, providers)) {
     return appSetupFrom({ manifest, appId, gatewayNames: [], secretNames: [], lookup: providers }).setup;
   }
-  const gatewayNames = await listGatewaySecretNames(cf).catch(() => null);
+  const gatewayNames = await listGatewaySecretNames(cf, gateway).catch(() => null);
   const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames, lookup: providers });
   if (setup.ready || !setup.command) return setup;
   const names = namesToSet(setup);

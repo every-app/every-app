@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   GATEWAY_WORKER_NAME,
   isReservedAppId,
+  isReservedName,
   workerNameFor,
 } from "@every-app/perimeter/manifest";
 import { EveryAppError } from "@/lib/errors";
@@ -40,7 +41,13 @@ function nameProblem(input: string): NameProblem | null {
       fix: `use lowercase letters, digits and dashes${slug ? `, e.g. ${slug}` : ", starting with a letter"}`,
     };
   }
-  if (isReservedAppId(input) || workerNameFor(input) === GATEWAY_WORKER_NAME) {
+  // No app is `app-gateway` on any Gateway, nor anything whose Worker would
+  // start with `every-app-gateway-`: those are the Gateways' own names.
+  if (
+    isReservedAppId(input) ||
+    workerNameFor(input) === GATEWAY_WORKER_NAME ||
+    isReservedName(workerNameFor(input))
+  ) {
     return { headline: `"${input}" is reserved for the platform`, fix: "pick another name", reserved: true };
   }
   return null;

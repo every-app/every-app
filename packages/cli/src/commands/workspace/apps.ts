@@ -108,7 +108,7 @@ export async function listApps(options: WorkspaceOptions): Promise<void> {
   const rows = await workspace.listApps(ws);
   let gatewayNames: string[] | null = null;
   try {
-    gatewayNames = await listGatewaySecretNames(gateway.cf);
+    gatewayNames = await listGatewaySecretNames(gateway.cf, gateway.names);
   } catch (error) {
     out.emit({
       type: "warning",

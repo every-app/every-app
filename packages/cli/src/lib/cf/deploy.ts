@@ -27,7 +27,7 @@
  */
 import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt } from "@/lib/interrupt";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { gatewayNameOf } from "@every-app/perimeter/manifest";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
@@ -296,7 +296,7 @@ const withCapitalThe = (text: string) => text.replace(/^the /, "The ");
 /** The network dropped every try of an upload: run the command again, nothing is lost. */
 function uploadNetworkFailed(error: unknown, { workerName }: CfDeployOptions, tries: number): EveryAppError {
   const cause = errorMessage(error).split("\n")[0] ?? "";
-  const gateway = workerName === GATEWAY_WORKER_NAME;
+  const gateway = gatewayNameOf(workerName) !== null;
   return new EveryAppError(
     "UPLOAD_NETWORK_FAILED",
     `The network dropped while uploading ${gateway ? "the Gateway" : workerName} (${tries} tries)\n${cause}. Whatever this command already did is kept, and running it again carries on from there.`,

@@ -157,6 +157,7 @@ export async function removeApp({
       out,
       accountId: connection.accountId,
       databaseId: connection.databaseId,
+      names: connection.names,
       interactive,
       cliVersion,
       ...reconcile,

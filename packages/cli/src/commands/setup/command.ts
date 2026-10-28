@@ -24,6 +24,14 @@ export const setupCommand = buildCommand({
           "The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)",
         optional: true,
       },
+      name: {
+        kind: "parsed",
+        parse: String,
+        placeholder: "name",
+        brief:
+          "A second Gateway in the same Cloudflare account, by name (1 to 16 lowercase letters or digits): its Worker is every-app-gateway-<name> and its apps every-<name>--…; setup finds or installs that one only. Without it, the Gateway is every-app-gateway, as always",
+        optional: true,
+      },
       release: {
         kind: "parsed",
         parse: String,
@@ -82,7 +90,9 @@ export const setupCommand = buildCommand({
       "long timeout, or run it in the background and watch its output.",
       "",
       "  1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in",
-      "     the login's accounts; with none, picks the account to install it in",
+      "     the login's accounts; with none, picks the account to install it in. A second Gateway",
+      "     in the same account (staging, a demo) is --name <name>: every-app-gateway-<name>, with",
+      "     its own database, queue and apps (every-<name>--…), beside the first, never touching it",
       "  2. Picks where the Gateway lives (--domain, or asked): any hostname under one of the",
       "     account's domains, apps.example.com; apps get one each below it, todo.apps.example.com",
       "  3. Installs the Gateway, or repairs it, and waits for its certificate. Where the Gateway",

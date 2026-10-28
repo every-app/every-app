@@ -6,7 +6,6 @@
  * groups, apps and the read-only trails are in the files beside this one.
  */
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { MAX_ORGANIZATION_NAME_LENGTH, validOrganizationName } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
@@ -225,7 +224,7 @@ export async function showWorkspace(options: WorkspaceOptions): Promise<void> {
   const { gateway, ws, gatewayUrl } = await connect(options);
   const [summary, names] = await Promise.all([
     workspace.summarize(ws),
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
   ]);
   const { organization, owners, counts } = summary;
   const operator = ws.operator;
@@ -433,7 +432,7 @@ export async function removeMember(
     // either one set means Access may let them back in, so the Gateway's
     // own rule (deactivate instead) is applied to the safe side.
     accessMayLetBackIn: async () => {
-      const names = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+      const names = await listWorkerSecrets(gateway.cf, gateway.names.worker);
       return ACCESS_AUTO_JOIN_SETTINGS.some((name) => names.includes(name));
     },
   });

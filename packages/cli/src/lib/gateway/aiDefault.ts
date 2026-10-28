@@ -37,6 +37,7 @@ import {
   type AiModelPatch,
   type AiModelSettings,
 } from "@every-app/sdk/internal";
+import type { GatewayNames } from "@every-app/perimeter/manifest";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listGatewaySecretNames } from "@/lib/app/settings";
@@ -251,8 +252,13 @@ export interface AiReport {
  * models and the Gateway Worker's secret names (a name present counts as set; values
  * are never read). AI Gateway is "on" when its id and the account are set.
  */
-export async function aiReport(cf: CfRunner, ws: Workspace, lookup?: CapabilityLookup): Promise<AiReport> {
-  const [names, stored] = await Promise.all([listGatewaySecretNames(cf), readAi(ws.db, ws.organization.id)]);
+export async function aiReport(
+  cf: CfRunner,
+  gateway: Pick<GatewayNames, "worker">,
+  ws: Workspace,
+  lookup?: CapabilityLookup,
+): Promise<AiReport> {
+  const [names, stored] = await Promise.all([listGatewaySecretNames(cf, gateway), readAi(ws.db, ws.organization.id)]);
   const isSet = (name: string) => names.includes(name);
   const resolution = resolveAiDefault({ ...stored, isSet, ...(lookup ? { lookup } : {}) });
   return { resolution, names, aiGateway: { on: AI_GATEWAY_SETTINGS.every(isSet) } };

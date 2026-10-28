@@ -34,31 +34,34 @@ async function account(
 ): Promise<TestAccount> {
   const cloudflare = new FakeCloudflare();
   const entry = { id, name, cloudflare };
-  if (gatewayHost) {
-    const { uuid } = cloudflare.createDatabase("every-app-gateway");
-    await writeInstall(cfD1Database(cloudflare.cf, uuid), {
-      accountId: id,
-      zoneId: "zone-1",
-      zoneName: "example.com",
-      gatewayHost,
-      appBaseDomain: gatewayHost,
-      oauthKvId: "kv",
-      sourceTreeSha256: null,
-      releaseOrigin: null,
-      releaseGitSha: null,
-      releaseVersion: "0.2.0",
-      releaseSha256: "a".repeat(64),
-      releaseOrder: { schema: 1, committedAt: 1 },
-      liveVersionId: "every-app-gateway-version-1",
-      liveDomains: [gatewayHost],
-      liveAppWorkers: [],
-      updatedAt: 0,
-      updatedBy: null,
-      jwtPublicKey: "-----BEGIN PUBLIC KEY-----",
-      deploymentMode: "self_hosted",
-    });
-  }
+  if (gatewayHost) await addGateway(entry, "every-app-gateway", gatewayHost);
   return entry;
+}
+
+/** A Gateway in the account: its D1 (`every-app-gateway`, or a named one's) and its install row. */
+async function addGateway(entry: TestAccount, database: string, gatewayHost: string): Promise<void> {
+  const { uuid } = entry.cloudflare.createDatabase(database);
+  await writeInstall(cfD1Database(entry.cloudflare.cf, uuid), {
+    accountId: entry.id,
+    zoneId: "zone-1",
+    zoneName: "example.com",
+    gatewayHost,
+    appBaseDomain: gatewayHost,
+    oauthKvId: "kv",
+    sourceTreeSha256: null,
+    releaseOrigin: null,
+    releaseGitSha: null,
+    releaseVersion: "0.2.0",
+    releaseSha256: "a".repeat(64),
+    releaseOrder: { schema: 1, committedAt: 1 },
+    liveVersionId: `${database}-version-1`,
+    liveDomains: [gatewayHost],
+    liveAppWorkers: [],
+    updatedAt: 0,
+    updatedBy: null,
+    jwtPublicKey: "-----BEGIN PUBLIC KEY-----",
+    deploymentMode: "self_hosted",
+  });
 }
 
 const whoami = () => ({
@@ -129,7 +132,7 @@ describe("discoverGateway", () => {
         cloudflare.cf.calls.filter((call) => call.args.slice(0, 2).join(" ") === "d1 list"),
       ).toEqual([
         expect.objectContaining({
-          args: ["d1", "list", "--name", "every-app-gateway", "--per-page", "100"],
+          args: ["d1", "list", "--name", "every-app-gateway", "--per-page", "100", "--page", "1"],
         }),
       ]);
     }
@@ -431,5 +434,89 @@ describe("connectToGateway", () => {
       code: "GATEWAY_NOT_INSTALLED",
       rerun: "pnpm everyapp setup",
     });
+  });
+});
+
+describe("two Gateways in one account", () => {
+  beforeEach(async () => {
+    const acme = await account("acct-1", "Acme", "apps.acme.com");
+    await addGateway(acme, "every-app-gateway-demo", "demo.acme.com");
+    accounts = [acme];
+  });
+
+  it("finds both from one listing, the default's first", async () => {
+    const { found } = await discover({ interactive: true, pick: async (all) => all[0]! });
+    expect(found.map((gateway) => gateway.names.worker)).toEqual(["every-app-gateway", "every-app-gateway-demo"]);
+    expect(found.map((gateway) => gateway.install?.gatewayHost)).toEqual(["apps.acme.com", "demo.acme.com"]);
+  });
+
+  it("needs a choice with nothing to pick by, each rerun naming the account and the Gateway's URL", async () => {
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "status"];
+    try {
+      await expect(discover()).rejects.toMatchObject({
+        name: "ActionRequiredError",
+        action: "choose_account",
+        message: expect.stringMatching(/sees 2 Gateways in Acme\. Run one of:$/),
+        data: {
+          choices: [
+            expect.objectContaining({
+              accountId: "acct-1",
+              gatewayName: null,
+              gatewayWorker: "every-app-gateway",
+              rerun: "pnpm everyapp status --account-id acct-1 --gateway https://apps.acme.com",
+            }),
+            expect.objectContaining({
+              accountId: "acct-1",
+              gatewayName: "demo",
+              gatewayWorker: "every-app-gateway-demo",
+              rerun: "pnpm everyapp status --account-id acct-1 --gateway https://demo.acme.com",
+            }),
+          ],
+        },
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
+  it("picks by name: demo is the named one, null the default", async () => {
+    await expect(discover({ name: "demo" })).resolves.toMatchObject({
+      gateway: { names: { name: "demo", worker: "every-app-gateway-demo" }, install: { gatewayHost: "demo.acme.com" } },
+    });
+    await expect(discover({ name: null })).resolves.toMatchObject({
+      gateway: { names: { name: null, worker: "every-app-gateway" }, install: { gatewayHost: "apps.acme.com" } },
+    });
+  });
+
+  it("picks by host", async () => {
+    await expect(discover({ host: "demo.acme.com" })).resolves.toMatchObject({
+      gateway: { names: { worker: "every-app-gateway-demo" } },
+    });
+    await expect(discover({ host: "apps.acme.com" })).resolves.toMatchObject({
+      gateway: { names: { worker: "every-app-gateway" } },
+    });
+  });
+
+  it("connects by name, bare or as its Worker's", async () => {
+    for (const gateway of ["demo", "every-app-gateway-demo"]) {
+      const connection = await connectToGateway({ gateway, createCf, interactive: false });
+      expect(connection.names.worker).toBe("every-app-gateway-demo");
+      expect(connection.gatewayUrl).toBe("https://demo.acme.com");
+    }
+    const byDefault = await connectToGateway({ gateway: "every-app-gateway", createCf, interactive: false });
+    expect(byDefault.names.worker).toBe("every-app-gateway");
+  });
+});
+
+describe("setup looking for one name only", () => {
+  it("counts a Gateway of another name as one of the others, never as the one", async () => {
+    accounts = [await account("acct-1", "Acme", "apps.acme.com")];
+
+    const discovery = await discover({ onlyName: "demo" });
+
+    expect(discovery.found).toEqual([]);
+    expect(discovery.gateway).toBeNull();
+    expect(discovery.others.map((gateway) => gateway.names.worker)).toEqual(["every-app-gateway"]);
   });
 });

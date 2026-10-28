@@ -20,6 +20,7 @@
  * (that is `on`'s job, and it needs people to let in); a failure is a
  * warning naming `access on`, never a failed update.
  */
+import { DEFAULT_GATEWAY_NAMES, type GatewayNames } from "@every-app/perimeter/manifest";
 import {
   applicationUpdateBody,
   createAccessApplication,
@@ -54,11 +55,38 @@ import {
 } from "./plan";
 import { emitPlanWarnings, readPublicSurfaces, type PlanLeftovers } from "./sync";
 
-/** The reusable policy `on` keeps: who may use Every App. */
-export const POLICY_NAME = "Every App gateway members";
-/** The two applications' names (`teardown` finds them by these too, with no Gateway left to say what they cover). */
-export const GATEWAY_APPLICATION_NAME = "Every App gateway";
-export const APPS_APPLICATION_NAME = "Every App apps";
+/** The names of the Access applications and policy of one Gateway. */
+interface AccessApplicationNames {
+  /** The Gateway host's application. */
+  gateway: string;
+  /** The apps' wildcard application. */
+  apps: string;
+  /** The reusable policy `on` keeps: who may use Every App. */
+  policy: string;
+}
+
+/**
+ * The names `on` gives the two applications and the policy (`teardown`
+ * finds them by these too, with no Gateway left to say what they cover).
+ * The default Gateway keeps the names it always had; a named one's say its
+ * name, so two Gateways in one account never share a policy or take each
+ * other's applications: "Every App gateway (demo)".
+ */
+export function accessApplicationNames(names: Pick<GatewayNames, "name">): AccessApplicationNames {
+  const suffix = names.name ? ` (${names.name})` : "";
+  return {
+    gateway: `Every App gateway${suffix}`,
+    apps: `Every App apps${suffix}`,
+    policy: `Every App gateway members${suffix}`,
+  };
+}
+
+const DEFAULT_ACCESS_NAMES = accessApplicationNames(DEFAULT_GATEWAY_NAMES);
+/** The default Gateway's policy name. */
+export const POLICY_NAME = DEFAULT_ACCESS_NAMES.policy;
+/** The default Gateway's applications' names. */
+export const GATEWAY_APPLICATION_NAME = DEFAULT_ACCESS_NAMES.gateway;
+export const APPS_APPLICATION_NAME = DEFAULT_ACCESS_NAMES.apps;
 /** The most Access allows for an application's session: a PIN a month, not a day. */
 export const DEFAULT_SESSION = "720h";
 
@@ -82,6 +110,8 @@ interface DesiredApplication {
   destinations: AccessPublicDestination[];
   /** The policy to keep among its reusable ones; null leaves its policies as found (no policy to name). */
   policyId: string | null;
+  /** Its name, for the warnings. */
+  policyName: string;
   session: string;
   /** `--session` was given: an existing application's session changes too. */
   sessionGiven: boolean;
@@ -130,7 +160,7 @@ async function reconcileApplication(
       type: "warning",
       code: "ACCESS_INLINE_POLICIES",
       step,
-      message: `The Access application "${existing.name ?? existing.id}" has ${inline.length === 1 ? "a policy" : "policies"} of its own: ${listed(inline.map((policy) => policy.name ?? policy.id))}\nIt is left as it is: Access takes either application policies or reusable ones, not both, so the policy "${POLICY_NAME}" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.`,
+      message: `The Access application "${existing.name ?? existing.id}" has ${inline.length === 1 ? "a policy" : "policies"} of its own: ${listed(inline.map((policy) => policy.name ?? policy.id))}\nIt is left as it is: Access takes either application policies or reusable ones, not both, so the policy "${desired.policyName}" can't be attached and its paths aren't managed here. Make its policies reusable in the dashboard, or manage it there.`,
       data: { application: existing.id, policies: inline.map((policy) => policy.id) },
     });
     return { application: existing, outcome: "skipped", signInAdded: [] };
@@ -196,6 +226,7 @@ export async function reconcileAccessApplications(
   db: D1Database,
   {
     scope,
+    names,
     found,
     policyId,
     session,
@@ -205,6 +236,8 @@ export async function reconcileAccessApplications(
     step,
   }: {
     scope: AccessScope;
+    /** The Gateway's Access names (`accessApplicationNames`). */
+    names: AccessApplicationNames;
     found: FoundApplications;
     policyId: string | null;
     session: string;
@@ -226,7 +259,7 @@ export async function reconcileAccessApplications(
       foreign.push({ application: application.name ?? application.id, uris: split.map((d) => d.uri ?? "(private)") });
     }
   };
-  const common = { scope, policyId, session, sessionGiven, allowedIdps, step };
+  const common = { scope, policyId, policyName: names.policy, session, sessionGiven, allowedIdps, step };
   let apps: ApplicationOutcome | null;
   let gateway: ApplicationOutcome | null;
   if (combined) {
@@ -239,7 +272,7 @@ export async function reconcileAccessApplications(
     noteForeign(found.gateway);
     const together = await reconcileApplication(cf, out, found.gateway, {
       ...common,
-      name: found.gateway!.name ?? GATEWAY_APPLICATION_NAME,
+      name: found.gateway!.name ?? names.gateway,
       destinations: [gatewayDestination(gatewayHost, managedOAuth), ...plan.destinations],
       appLauncherVisible: true,
     });
@@ -252,7 +285,7 @@ export async function reconcileAccessApplications(
       found.apps || create
         ? await reconcileApplication(cf, out, found.apps, {
             ...common,
-            name: APPS_APPLICATION_NAME,
+            name: names.apps,
             destinations: plan.destinations,
             appLauncherVisible: false,
           })
@@ -261,7 +294,7 @@ export async function reconcileAccessApplications(
       found.gateway || create
         ? await reconcileApplication(cf, out, found.gateway, {
             ...common,
-            name: GATEWAY_APPLICATION_NAME,
+            name: names.gateway,
             destinations: [gatewayDestination(gatewayHost, managedOAuth)],
             appLauncherVisible: true,
           })
@@ -297,11 +330,14 @@ export async function keepAccessAfterGatewayDeploy({
   cf,
   db,
   scope,
+  names,
   out,
 }: {
   cf: CfRunner;
   db: D1Database;
   scope: AccessScope;
+  /** The Gateway's names: its applications' and policy's names follow (`accessApplicationNames`). */
+  names: GatewayNames;
   out: EventSink;
 }): Promise<void> {
   const rerun = `${CLI} access on`;
@@ -338,10 +374,12 @@ export async function keepAccessAfterGatewayDeploy({
       if (!found.gateway && !found.apps) return;
       const [providers, policies] = await Promise.all([listAccessIdentityProviders(cf), listAccessPolicies(cf)]);
       await lease.check();
+      const accessNames = accessApplicationNames(names);
       result = await reconcileAccessApplications(cf, out, db, {
         scope,
+        names: accessNames,
         found,
-        policyId: policies.find((policy) => policy.name === POLICY_NAME)?.id ?? null,
+        policyId: policies.find((policy) => policy.name === accessNames.policy)?.id ?? null,
         session: DEFAULT_SESSION,
         sessionGiven: false,
         allowedIdps: allowedSignInProviders(providers).map((provider) => provider.id),

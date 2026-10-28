@@ -15,6 +15,7 @@ import type { RecordedCfCall } from "@/lib/cf/fakeCf";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readApp } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
+import { gatewayNames } from "@every-app/perimeter/manifest";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
@@ -240,6 +241,8 @@ type RunOptions = Partial<Parameters<typeof teardownAccount>[0]> & {
   dryRun?: boolean;
   token?: string | null;
   allowlist?: string;
+  gateway?: string;
+  all?: boolean;
 };
 
 /** Run the teardown as the loop would: a token and the allowlist in the environment, --json. */
@@ -250,6 +253,8 @@ function run({
   token = "loop-token",
   allowlist = ACCOUNT_ID,
   interactive = false,
+  gateway,
+  all,
   ...options
 }: RunOptions = {}) {
   events = [];
@@ -257,7 +262,7 @@ function run({
   vi.stubEnv("CLOUDFLARE_API_TOKEN", token ?? "");
   vi.stubEnv("EVERYAPP_TEST_ACCOUNTS", allowlist);
   return teardownAccount({
-    flags: { "account-id": accountId, confirm, "dry-run": dryRun, json: !interactive },
+    flags: { "account-id": accountId, confirm, "dry-run": dryRun, json: !interactive, gateway, all },
     out: out(),
     createCf: () => account.cf,
     interactive,
@@ -1052,5 +1057,183 @@ describe("teardown review: what it must leave alone", () => {
       expect(Object.values(call.files).join(" ")).toMatch(/^\s*(\{.*"sql":\s*"SELECT|.*SELECT)/s);
       expect(Object.values(call.files).join(" ")).not.toMatch(/\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|REPLACE)\b/i);
     }
+  });
+});
+
+describe("teardown of one Gateway in an account that holds two", () => {
+  const DEMO = gatewayNames("demo");
+  /** Each Gateway's resources, by kind, as the fake account holds them. */
+  const DEFAULT_SET = {
+    workers: [TODO_WORKER, GATEWAY],
+    d1: [TODO_WORKER, `${TODO_WORKER}--archive`, GATEWAY],
+    kv: [`${GATEWAY}-OAUTH_KV`],
+    queues: [`${GATEWAY}-activate`],
+    aiGateway: [`${TODO_WORKER}-ai-gateway`],
+  };
+  const DEMO_SET = {
+    workers: ["every-demo--acme-todo", DEMO.worker],
+    d1: ["every-demo--acme-todo", "every-demo--acme-todo--archive", DEMO.d1],
+    kv: [DEMO.oauthKv],
+    queues: [DEMO.activationQueue],
+    aiGateway: [`${DEMO.aiGatewayPrefix}acme-todo-ai-gateway`],
+  };
+  const sorted = (names: readonly string[]) => [...names].sort();
+  /** What the fake account holds of these kinds. */
+  const held = () => ({
+    workers: sorted([...account.workers.keys()]),
+    d1: dbNames(),
+    kv: kvTitles(),
+    queues: sorted([...account.queues.values()].map((queue) => queue.name)),
+    aiGateway: sorted([...account.aiGateways.keys()]),
+  });
+  const addWorker = (name: string) => account.workers.set(name, { versions: ["v1"], config: { name }, secrets: {} });
+
+  /** The default Gateway (deployed by beforeEach) with an app, and Gateway demo with its own, in one account. */
+  async function twoGateways(): Promise<void> {
+    addWorker(TODO_WORKER);
+    account.createDatabase(TODO_WORKER);
+    account.createDatabase(`${TODO_WORKER}--archive`);
+    account.aiGateways.set(`${TODO_WORKER}-ai-gateway`, { id: `${TODO_WORKER}-ai-gateway`, collect_logs: true, cache_ttl: 0 });
+
+    await ensureGatewayResources(account.cf, DEMO);
+    addWorker(DEMO.worker);
+    addWorker("every-demo--acme-todo");
+    account.createDatabase("every-demo--acme-todo");
+    account.createDatabase("every-demo--acme-todo--archive");
+    const demoAi = `${DEMO.aiGatewayPrefix}acme-todo-ai-gateway`;
+    account.aiGateways.set(demoAi, { id: demoAi, collect_logs: true, cache_ttl: 0 });
+    events = [];
+    account.cf.calls.length = 0;
+  }
+
+  /** A plan's names, kind by kind (the Gateway's Worker and D1 last, as deleted). */
+  function planNames(plan: Record<string, any>) {
+    return {
+      workers: plan["workers"].map((worker: { name: string }) => worker.name),
+      d1: plan["d1"].map((database: { name: string }) => database.name),
+      kv: plan["kv"].map((namespace: { title: string }) => namespace.title),
+      queues: plan["queues"].map((queue: { name: string }) => queue.name),
+      aiGateway: plan["aiGateway"],
+    };
+  }
+
+  function expectPlanOf(plan: Record<string, any>, set: typeof DEFAULT_SET, gatewayWorker: string) {
+    const names = planNames(plan);
+    expect(names.workers.at(-1)).toBe(gatewayWorker);
+    expect(names.d1.at(-1)).toBe(gatewayWorker);
+    expect(sorted(names.workers)).toEqual(sorted(set.workers));
+    expect(sorted(names.d1)).toEqual(sorted(set.d1));
+    expect(names.kv).toEqual(set.kv);
+    expect(names.queues).toEqual(set.queues);
+    expect(names.aiGateway).toEqual(set.aiGateway);
+    for (const kind of ["workflows", "r2", "hyperdrive", "queueConsumers", "vectorize", "secretsStore", "email", "certificates"]) {
+      expect(plan[kind], kind).toEqual([]);
+    }
+  }
+
+  it("--gateway demo plans Gateway demo's resources alone, and the default teardown the default's alone", async () => {
+    await twoGateways();
+
+    await run({ gateway: "demo", dryRun: true });
+    expect(writes()).toEqual([]);
+    const demoPlan = done()!["data"]["plan"];
+    expect(done()!["data"]).toMatchObject({ gateway: "demo", dryRun: true });
+    expect(demoPlan).toMatchObject({ gatewayName: "demo", gatewayWorker: DEMO.worker, gateway: { gatewayHost: null }, access: { applications: [], policy: null }, dns: [] });
+    expectPlanOf(demoPlan, DEMO_SET, DEMO.worker);
+    expect(JSON.stringify(demoPlan)).not.toMatch(/"every-app-gateway"|every-app-gateway-OAUTH_KV|every-app-gateway-activate|every-acme-todo/);
+
+    // Its Worker's name works as --gateway too.
+    await run({ gateway: DEMO.worker, dryRun: true });
+    expectPlanOf(done()!["data"]["plan"], DEMO_SET, DEMO.worker);
+
+    await run({ dryRun: true });
+    const defaultPlan = done()!["data"]["plan"];
+    expect(defaultPlan).toMatchObject({ gatewayName: null, gatewayWorker: GATEWAY });
+    expect(sorted(planNames(defaultPlan).workers)).toEqual(sorted(DEFAULT_SET.workers));
+    expect(sorted(planNames(defaultPlan).d1)).toEqual(sorted(DEFAULT_SET.d1));
+    expect(planNames(defaultPlan)).toMatchObject({ kv: DEFAULT_SET.kv, queues: DEFAULT_SET.queues, aiGateway: DEFAULT_SET.aiGateway });
+    expect(JSON.stringify(defaultPlan)).not.toMatch(/every-app-gateway-demo|every-demo--/);
+  });
+
+  it("tears down Gateway demo, confirmed by its Worker name, and leaves every resource of the default Gateway", async () => {
+    await twoGateways();
+    const before = held();
+
+    // The account id doesn't confirm a named Gateway's teardown; nothing is read.
+    await expect(run({ gateway: "demo", confirm: ACCOUNT_ID })).rejects.toMatchObject({
+      code: "TEARDOWN_CONFIRM_MISMATCH",
+      fix: `pass --confirm ${DEMO.worker}`,
+    });
+    expect(account.cf.calls).toEqual([]);
+    // Unattended without --confirm: the rerun carries the Worker name.
+    await expect(run({ gateway: "demo" })).rejects.toMatchObject({
+      code: "TEARDOWN_CONFIRMATION_REQUIRED",
+      message: expect.stringContaining(`--confirm ${DEMO.worker}`),
+      rerun: expect.stringMatching(new RegExp(` --confirm ${DEMO.worker}$`)),
+    });
+    // At a terminal, the account id typed is refused; the Worker name goes ahead.
+    await expect(run({ gateway: "demo", interactive: true, askConfirmation: async () => ACCOUNT_ID })).rejects.toMatchObject({
+      code: "CANCELLED",
+    });
+    expect(writes()).toEqual([]);
+
+    await run({ gateway: "demo", confirm: ` ${DEMO.worker.toUpperCase()} ` });
+    expect(done()!["data"]["kept"]).toEqual([]);
+    const after = held();
+    for (const kind of Object.keys(DEFAULT_SET) as Array<keyof typeof DEFAULT_SET>) {
+      // Every resource of the default Gateway is still there, and none of demo's.
+      expect(after[kind], kind).toEqual(expect.arrayContaining(DEFAULT_SET[kind]));
+      for (const name of DEMO_SET[kind]) expect(after[kind], kind).not.toContain(name);
+      expect(after[kind], kind).toEqual(sorted(before[kind].filter((name) => !DEMO_SET[kind].includes(name))));
+    }
+    // The default Gateway's database is whole: its install row is still read.
+    await run({ dryRun: true });
+    expect(done()!["data"]["plan"]).toMatchObject({ gateway: { gatewayHost: HOST } });
+  });
+
+  it("lets --gateway demo run on an account off the allowlist (and on the forbidden list), never the default teardown", async () => {
+    await twoGateways();
+    vi.stubEnv("EVERYAPP_FORBIDDEN_ACCOUNTS", ACCOUNT_ID);
+    await run({ gateway: "demo", allowlist: OTHER_ACCOUNT, dryRun: true });
+    expectPlanOf(done()!["data"]["plan"], DEMO_SET, DEMO.worker);
+
+    await expect(run({ allowlist: OTHER_ACCOUNT, dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_ACCOUNT_FORBIDDEN" });
+    vi.stubEnv("EVERYAPP_FORBIDDEN_ACCOUNTS", "");
+    await expect(run({ allowlist: OTHER_ACCOUNT, dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_NOT_ALLOWLISTED" });
+    await expect(run({ all: true, allowlist: OTHER_ACCOUNT, dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_NOT_ALLOWLISTED" });
+    expect(account.cf.calls).toEqual([]);
+
+    // Still a token, and one that lists the account.
+    await expect(run({ gateway: "demo", allowlist: "", token: null, dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_NEEDS_TOKEN" });
+    expect(account.cf.calls).toEqual([]);
+    account.cf.override(["auth", "whoami"], {
+      stdout: JSON.stringify({ authenticated: true, email: null, accounts: [{ id: OTHER_ACCOUNT, name: "Elsewhere" }] }),
+    });
+    await expect(run({ gateway: "demo", allowlist: "", dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_ACCOUNT_NOT_VISIBLE" });
+    expect(account.cf.calls.map((call) => call.args.slice(0, 2))).toEqual([["auth", "whoami"]]);
+  });
+
+  it("refuses an invalid --gateway, and --gateway with --all, before anything is read", async () => {
+    await expect(run({ gateway: "de-mo", dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_INVALID_GATEWAY" });
+    await expect(run({ gateway: "every-app-gateway-de-mo", dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_INVALID_GATEWAY" });
+    await expect(run({ gateway: "demo", all: true, dryRun: true })).rejects.toMatchObject({ code: "TEARDOWN_GATEWAY_AND_ALL" });
+    expect(account.cf.calls).toEqual([]);
+  });
+
+  it("--all tears down every Gateway, the named ones first and the default last", async () => {
+    await twoGateways();
+    await run({ all: true, dryRun: true });
+    const plans = done()!["data"]["plans"];
+    expect(plans.map((plan: { gatewayName: string | null }) => plan.gatewayName)).toEqual(["demo", null]);
+    expectPlanOf(plans[0], DEMO_SET, DEMO.worker);
+    expect(sorted(planNames(plans[1]).workers)).toEqual(sorted(DEFAULT_SET.workers));
+
+    await run({ all: true, confirm: ACCOUNT_ID });
+    expect(done()!["data"]["kept"]).toEqual([]);
+    const after = held();
+    for (const kind of Object.keys(DEFAULT_SET) as Array<keyof typeof DEFAULT_SET>) {
+      for (const name of [...DEFAULT_SET[kind], ...DEMO_SET[kind]]) expect(after[kind], kind).not.toContain(name);
+    }
+    expect(after).toEqual({ workers: [], d1: [], kv: [], queues: [], aiGateway: [] });
   });
 });

@@ -29,7 +29,7 @@
  * (./policy.ts) then checks the installed output against the same target.
  */
 import fs from "node:fs/promises";
-import type { Resources } from "@every-app/perimeter/manifest";
+import { GATEWAY_WORKER_NAME, type Resources } from "@every-app/perimeter/manifest";
 import {
   BUILD_SENTINEL,
   resourceSentinel,
@@ -44,6 +44,13 @@ const MAX_WORKFLOW_NAME_LENGTH = 64;
 
 /** One install of an app: what its build's placeholders become. */
 export interface InstallTarget extends EveryAppDeployTarget {
+  /**
+   * The Gateway's own Worker, which the app's GATEWAY binding names: the
+   * build binds the default `every-app-gateway`; an app on a named Gateway
+   * binds `every-app-gateway-<name>` instead (perimeter
+   * manifest/gatewayNames.ts).
+   */
+  gatewayWorker?: string;
   /**
    * A shared app (first-party, on the hosted gateway): one Worker for every
    * organization, which takes each request's organization from its
@@ -95,6 +102,7 @@ export function installWorkerConfig<T extends Record<string, unknown>>(
   const env = installed.env ?? {};
   for (const [name, binding] of Object.entries(env)) {
     installResource(name, binding, target);
+    installGatewayBinding(binding, target);
   }
   for (const trigger of installed.triggers ?? []) {
     if (trigger["type"] === "queue") installQueueTrigger(trigger, target);
@@ -168,6 +176,18 @@ export async function installAppBuildOutput({
  * binding. A binding of the kind that doesn't hold its placeholder was
  * written by hand in cloudflare.config.ts: it stays for the policy to judge.
  */
+/**
+ * The app's service binding to the Gateway: built as the default Gateway's
+ * Worker, rewritten to this Gateway's when it is a named one, so an app on
+ * `every-app-gateway-demo` never calls `every-app-gateway` next to it.
+ */
+function installGatewayBinding(binding: Binding, target: InstallTarget): void {
+  if (!target.gatewayWorker || target.gatewayWorker === GATEWAY_WORKER_NAME) return;
+  if (binding.type === "worker" && binding["worker"] === GATEWAY_WORKER_NAME) {
+    binding["worker"] = target.gatewayWorker;
+  }
+}
+
 function installResource(
   name: string,
   binding: Binding,

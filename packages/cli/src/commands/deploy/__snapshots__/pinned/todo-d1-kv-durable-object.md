@@ -269,6 +269,10 @@
       "type": "text",
       "value": "example.com"
     },
+    "EVERYAPP_GATEWAY_NAME": {
+      "type": "text",
+      "value": ""
+    },
     "APP__every-acme-todo": {
       "type": "worker",
       "worker": "every-acme-todo"
@@ -507,6 +511,10 @@
     "APP_BASE_DOMAIN": {
       "type": "text",
       "value": "example.com"
+    },
+    "EVERYAPP_GATEWAY_NAME": {
+      "type": "text",
+      "value": ""
     }
   },
   "manifest": {
@@ -526,7 +534,7 @@
 ## cf calls
 
 account json cf auth whoami
-account json cf d1 list --name every-app-gateway --per-page 100
+account json cf d1 list --name every-app-gateway --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -608,7 +616,7 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf auth whoami
-account json cf d1 list --name every-app-gateway --per-page 100
+account json cf d1 list --name every-app-gateway --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
@@ -656,7 +664,7 @@ account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-f
 account json cf zero-trust access applications list --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf auth whoami
-account json cf d1 list --name every-app-gateway --per-page 100
+account json cf d1 list --name every-app-gateway --per-page 100 --page 1
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json
 account json cf d1 query 00000001-0000-4000-8000-000000000000 --body @/fake-cf-files/query.json files=query.json

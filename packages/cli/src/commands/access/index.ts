@@ -26,7 +26,6 @@
  * is queued for the install organization's event subscribers in the batch
  * that records them (lib/gateway/events.ts).
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import chalk from "chalk";
 import {
   applicationUpdateBody,
@@ -53,6 +52,7 @@ import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
 import {
+  accessApplicationNames,
   APPS_APPLICATION_NAME,
   DEFAULT_SESSION,
   GATEWAY_APPLICATION_NAME,
@@ -109,7 +109,7 @@ import { listed, plural } from "@/lib/output/text";
 import { applyGatewaySettings } from "../secret";
 import type { GatewayCommandFlags } from "../flags";
 
-/** The names `on` makes and `teardown` finds (lib/access/applications.ts). */
+/** The default Gateway's names `on` makes and `teardown` finds (lib/access/applications.ts; a named Gateway's: `accessApplicationNames`). */
 export { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME };
 /** The optional setting that pins the Gateway to listed identity providers (docs/runbooks/cloudflare-access.md). */
 const IDP_IDS_SETTING = "CLOUDFLARE_ACCESS_IDP_IDS";
@@ -322,6 +322,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   refuseHosted(install);
   const scope = scopeOf(install);
   const { gatewayHost, appBaseDomain: base } = scope;
+  const accessNames = accessApplicationNames(connection.names);
 
   // Who gets in: every read before the first write. With no team yet there
   // is no policy to read (and an account that never opened Zero Trust
@@ -330,7 +331,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   const rules = [...people.members.map(emailRule), ...people.invited.map(emailRule), ...wanted.rules];
   let organization = await getAccessOrganizationOrNone(cf);
   const existingPolicy = organization
-    ? ((await listAccessPolicies(cf)).find((policy) => policy.name === POLICY_NAME) ?? null)
+    ? ((await listAccessPolicies(cf)).find((policy) => policy.name === accessNames.policy) ?? null)
     : null;
   if (rules.length === 0 && !existingPolicy) {
     throw new EveryAppError(
@@ -458,8 +459,8 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   let added: AccessRule[] = [];
   if (!existingPolicy) {
     const merged = mergeRules([], rules);
-    out.emit({ type: "progress", step: STEP, message: `Creating the Access policy "${POLICY_NAME}"` });
-    policy = await createAccessPolicy(cf, { name: POLICY_NAME, decision: "allow", include: merged.include });
+    out.emit({ type: "progress", step: STEP, message: `Creating the Access policy "${accessNames.policy}"` });
+    policy = await createAccessPolicy(cf, { name: accessNames.policy, decision: "allow", include: merged.include });
     policyCreated = true;
     added = merged.include;
   } else {
@@ -481,6 +482,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   try {
     applications = await reconcileAccessApplications(cf, out, db, {
       scope,
+      names: accessNames,
       found: findAccessApplications(await listAccessApplications(cf), scope),
       policyId: policy.id,
       session,
@@ -503,7 +505,7 @@ export async function turnAccessOn(options: OnOptions): Promise<void> {
   // Gateway's D1, and they are written again when one is missing, when
   // the record doesn't name these applications (one recreated by hand has
   // a new AUD tag, and the old one locks everyone out), or when asked.
-  const names = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
+  const names = await listWorkerSecrets(cf, connection.names.worker);
   const missing = ACCESS_SETTINGS.filter((name) => !names.includes(name));
   const values = { teamDomain, gatewayAud: gateway.application.aud, appsAud: apps.application.aud };
   const record = await readAccessSettingsRecord(db);
@@ -799,7 +801,7 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
   refuseHosted(install);
   const scope = scopeOf(install);
   const { gatewayHost, appBaseDomain: base } = scope;
-  const names = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
+  const names = await listWorkerSecrets(cf, connection.names.worker);
   const held = ACCESS_SETTINGS.filter((name) => names.includes(name));
   const found = findAccessApplications(await listAccessApplications(cf), scope);
   const applications = options.keepApplications
@@ -879,7 +881,7 @@ export async function turnAccessOff(options: AccessOptions & { keepApplications?
     lines.push(chalk.dim(line));
     said.push(line);
   }
-  const note = `Passwords sign people in as before. The Zero Trust team, its identity providers and the policy "${POLICY_NAME}" are left as they were.`;
+  const note = `Passwords sign people in as before. The Zero Trust team, its identity providers and the policy "${accessApplicationNames(connection.names).policy}" are left as they were.`;
   out.emit({
     type: "done",
     message: [...said, note].join(" "),
@@ -906,11 +908,11 @@ export async function showAccess(options: AccessOptions): Promise<void> {
   const { gatewayHost, appBaseDomain: base } = scope;
   const hosted = install.deploymentMode === "hosted";
   const organization = hosted ? null : await getAccessOrganizationOrNone(cf);
-  const names = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
+  const names = await listWorkerSecrets(cf, connection.names.worker);
   const settings = ACCESS_SETTINGS.filter((name) => names.includes(name));
   const record = hosted ? null : await readAccessSettingsRecord(db);
   const policy = organization
-    ? ((await listAccessPolicies(cf)).find((candidate) => candidate.name === POLICY_NAME) ?? null)
+    ? ((await listAccessPolicies(cf)).find((candidate) => candidate.name === accessApplicationNames(connection.names).policy) ?? null)
     : null;
   const providers = organization ? await listAccessIdentityProviders(cf) : [];
   // What `on` would allow on the applications; the team's other providers are listed, never compared.
@@ -998,7 +1000,7 @@ export async function showAccess(options: AccessOptions): Promise<void> {
       label: "Lets in",
       value: policy
         ? `${listed(who)}${notInPolicy.length > 0 ? chalk.yellow(` · not yet: ${listed(notInPolicy)}`) : ""}${chalk.dim(` (policy "${policy.name}")`)}`
-        : chalk.dim(`no policy "${POLICY_NAME}" yet`),
+        : chalk.dim(`no policy "${accessApplicationNames(connection.names).policy}" yet`),
     },
     ...(organization
       ? [

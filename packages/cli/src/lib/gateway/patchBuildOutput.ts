@@ -16,6 +16,8 @@ import { EVERYAPP_OBSERVABILITY } from "@every-app/sdk/cloudflare";
 import {
   APP_BINDING_PREFIX,
   appBindingName,
+  DEFAULT_GATEWAY_NAMES,
+  type GatewayNames,
 } from "@every-app/perimeter/manifest";
 import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
@@ -25,9 +27,14 @@ const GATEWAY_WORKER_DIR = path.join(WORKERS_DIR, DEFAULT_WORKER);
 export const GATEWAY_WORKER_CONFIG = path.join(GATEWAY_WORKER_DIR, "worker.config.json");
 const BUNDLE_DIR = path.join(GATEWAY_WORKER_DIR, "bundle");
 const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
-const GATEWAY_D1_NAME = "every-app-gateway";
 
 interface GatewayPatch {
+  /**
+   * The Gateway's names (manifest/gatewayNames.ts): its Worker, its D1
+   * and its activation queue replace the release's, which are built as
+   * the default's; EVERYAPP_GATEWAY_NAME tells the Worker which it is.
+   */
+  names?: GatewayNames;
   d1Id: string;
   oauthKvId: string;
   release: { version: string; sha256: string };
@@ -80,13 +87,24 @@ export async function patchGatewayBuildOutput(
   const configPath = path.join(releaseDir, GATEWAY_WORKER_CONFIG);
   const config = JSON.parse(await fs.readFile(configPath, "utf8")) as WorkerConfig;
   const env = { ...(config.env ?? {}) };
+  const names = patch.names ?? DEFAULT_GATEWAY_NAMES;
+
+  // The release is built as the default Gateway; a named one takes its own
+  // Worker and queue names, and tells the Worker which it is.
+  config["name"] = names.worker;
+  for (const trigger of config.triggers ?? []) {
+    if (trigger["type"] === "queue" && trigger["name"] === DEFAULT_GATEWAY_NAMES.activationQueue) {
+      trigger["name"] = names.activationQueue;
+    }
+  }
+  env["EVERYAPP_GATEWAY_NAME"] = { type: "text", value: names.name ?? "" };
 
   for (const name of Object.keys(env)) {
     if (name.startsWith(APP_BINDING_PREFIX)) delete env[name];
   }
   // The gateway never used its KV namespace; deploys stop binding it.
   delete env["KV"];
-  env["DB"] = { type: "d1", name: GATEWAY_D1_NAME, id: patch.d1Id };
+  env["DB"] = { type: "d1", name: names.d1, id: patch.d1Id };
   env["OAUTH_KV"] = { type: "kv", id: patch.oauthKvId };
   env["EVERYAPP_RELEASE"] = { type: "json", value: patch.release };
   env["CF_VERSION_METADATA"] = { type: "version-metadata" };

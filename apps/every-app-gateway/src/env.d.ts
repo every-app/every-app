@@ -14,6 +14,12 @@ declare namespace Cloudflare {
     // Cloudflare account this Gateway is deployed in
     CLOUDFLARE_ACCOUNT_ID?: string;
 
+    // This Gateway's name (server/gateway-name.ts): empty or unset for the
+    // default Gateway (`every-app-gateway`); `demo` for a second Gateway in
+    // the same account (`every-app-gateway-demo`, apps `every-demo--…`).
+    // The deploy patches it in; dev leaves it unset.
+    EVERYAPP_GATEWAY_NAME?: string;
+
     // "self_hosted" or "hosted" (`everyapp setup --mode`, set at install):
     // what the gateway does follows from it (server/platform-policy.ts).
     // Anything else, unset included, fails closed: every capability off.

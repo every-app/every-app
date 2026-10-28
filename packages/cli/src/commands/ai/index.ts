@@ -147,7 +147,7 @@ function sourceSentence(report: AiReport): string {
 export async function showDefault(options: AiOptions): Promise<void> {
   const { out } = options;
   const { gateway, ws, registry } = await connect(options);
-  const report = await aiReport(gateway.cf, ws, registry);
+  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
   const { resolution, aiGateway } = report;
   const lines = [
     ...formatFacts([
@@ -171,7 +171,7 @@ export async function showDefault(options: AiOptions): Promise<void> {
 export async function listCandidates(options: AiOptions): Promise<void> {
   const { out } = options;
   const { gateway, ws, registry } = await connect(options);
-  const report = await aiReport(gateway.cf, ws, registry);
+  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
   const { resolution } = report;
   out.emit({
     type: "done",
@@ -190,7 +190,7 @@ export async function chooseDefault(options: AiOptions, argument: string): Promi
   const { gateway, ws, registry } = await connect(options);
   out.emit({ type: "step", step: STEP, status: "start", message: "Setting the default model provider..." });
   const change = await setAiDefault(ws, choice, registry);
-  const report = await aiReport(gateway.cf, ws, registry);
+  const report = await aiReport(gateway.cf, gateway.names, ws, registry);
   const { resolution } = report;
   const says = (value: typeof choice) => (value === null ? "the shipped order" : formatAiDefaultChoice(value));
   out.emit({
@@ -243,7 +243,7 @@ export async function chooseModels(
     ...(chat === undefined ? {} : { chat }),
     ...(embeddings === undefined ? {} : { embeddings }),
   });
-  const report = await aiReport(gateway.cf, ws);
+  const report = await aiReport(gateway.cf, gateway.names, ws);
   const candidate = report.resolution.candidates.find((entry) => entry.id === provider);
   out.emit({
     type: "step",
@@ -302,7 +302,7 @@ export async function turnGatewayOn(options: AiOptions, id = DEFAULT_AI_GATEWAY_
 export async function turnGatewayOff(options: AiOptions): Promise<void> {
   const { out } = options;
   const connection = await connect(options);
-  const report = await aiReport(connection.gateway.cf, connection.ws);
+  const report = await aiReport(connection.gateway.cf, connection.gateway.names, connection.ws);
   if (!report.names.includes("AI_GATEWAY_ID")) {
     out.emit({ type: "done", message: "AI Gateway isn't in front: AI_GATEWAY_ID isn't set. Nothing changed.", data: { on: false, changed: false } });
     return;

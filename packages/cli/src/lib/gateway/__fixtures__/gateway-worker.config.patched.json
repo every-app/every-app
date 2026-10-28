@@ -108,6 +108,10 @@
     "APP__every-todo": {
       "type": "worker",
       "worker": "every-todo"
+    },
+    "EVERYAPP_GATEWAY_NAME": {
+      "type": "text",
+      "value": ""
     }
   },
   "manifest": {

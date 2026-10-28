@@ -17,7 +17,6 @@
  * and warns about what it found, never refuses on it.
  */
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { remoteMcpBlockOf } from "@every-app/perimeter/registry";
 import {
   PROVIDER_APPS,
@@ -362,7 +361,7 @@ export async function addServer(options: McpOptions<AddFlags>, url: string): Pro
   const secret = remoteMcpSecretOf(remote.auth);
   let key: KeyState | null = null;
   if (secret) {
-    let set = (await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME)).includes(secret);
+    let set = (await listWorkerSecrets(gateway.cf, gateway.names.worker)).includes(secret);
     let value = fromEnvValue;
     const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
     if (value === null && !set && interactive) {
@@ -465,7 +464,7 @@ async function refKey(connection: Connection, ref: McpAppRef): Promise<KeyState 
   const { name, remote } = keyOf(ref);
   if (!name) return null;
   const [names, bindings] = await Promise.all([
-    listWorkerSecrets(connection.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(connection.cf, connection.names.worker),
     remote ? readCredentialBindings(connection.db) : Promise.resolve(new Map<string, CredentialBinding>()),
   ]);
   return keyState(name, names, remote, bindings);
@@ -653,7 +652,7 @@ export async function listMcp(options: McpOptions): Promise<void> {
   const gateway = await connect(options);
   const [entries, names, bindings] = await Promise.all([
     listMcpApps(gateway.db),
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
     readCredentialBindings(gateway.db),
   ]);
   const rows = entries.map((entry) => {
@@ -738,7 +737,7 @@ export async function showApp(options: McpOptions, id: string): Promise<void> {
   if (ref.kind === "remote") liveRemote(ref);
   const name = nameOf(ref);
   const [names, bindings] = await Promise.all([
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
     readCredentialBindings(gateway.db),
   ]);
   const { name: keyName, remote } = keyOf(ref);

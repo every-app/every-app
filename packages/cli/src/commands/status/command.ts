@@ -1,5 +1,5 @@
 import { buildCommand } from "@stricli/core";
-import { accountFlag, jsonFlag, verboseFlag } from "../flags";
+import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 export const statusCommand = buildCommand({
   loader: async () => {
@@ -10,6 +10,7 @@ export const statusCommand = buildCommand({
     positional: { kind: "tuple", parameters: [] },
     flags: {
       "account-id": accountFlag,
+      gateway: gatewayFlag,
       json: jsonFlag,
       verbose: verboseFlag,
     },
@@ -21,7 +22,8 @@ export const statusCommand = buildCommand({
       "its URL and release (and whether this checkout builds it), its owner, the apps its registry",
       "lists and whether the live Gateway binds them, each hostname's certificate, any deploy in",
       "progress, and what to run when something is off. With --json, the `done` event's data has",
-      "all of it, `fixes` included: the one state query an agent needs.",
+      "all of it, `fixes` included: the one state query an agent needs. An account with several",
+      "Gateways: --gateway <url|name> says which.",
     ].join("\n"),
   },
 });

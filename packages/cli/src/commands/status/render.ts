@@ -45,6 +45,7 @@ export function renderNotInstalled(accountName: string, problem: Problem): strin
 
 export function renderStatus({
   install,
+  gatewayWorker = null,
   accountName,
   owner,
   servingRecorded,
@@ -60,6 +61,8 @@ export function renderStatus({
   problems,
 }: {
   install: InstallRecord;
+  /** A named Gateway's Worker (`every-app-gateway-demo`), shown on its line; null for the default. */
+  gatewayWorker?: string | null;
   accountName: string;
   owner: GatewayOwner | null;
   /** The Gateway Worker serves the version the install row names. */
@@ -83,7 +86,7 @@ export function renderStatus({
       label: "Gateway",
       // The mode is a secret nothing reads back: the install row has it when
       // the first upload recorded it.
-      value: `${chalk.cyan(`https://${install.gatewayHost}`)}${install.deploymentMode ? chalk.dim(` · ${install.deploymentMode.replace("_", "-")}`) : ""}`,
+      value: `${chalk.cyan(`https://${install.gatewayHost}`)}${gatewayWorker ? chalk.dim(` · ${gatewayWorker}`) : ""}${install.deploymentMode ? chalk.dim(` · ${install.deploymentMode.replace("_", "-")}`) : ""}`,
     },
     { label: "Cloudflare", value: accountName },
     {

@@ -40,7 +40,7 @@
  * rest only what some app reads) and every app's settings.
  */
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME, validateManifest, type Manifest } from "@every-app/perimeter/manifest";
+import { validateManifest, type Manifest } from "@every-app/perimeter/manifest";
 import {
   appSettings,
   appSetupOf,
@@ -290,7 +290,7 @@ function sayWhereKeysGo(
  * found nothing to remove.
  */
 export async function applyGatewaySettings(
-  connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl">,
+  connection: Pick<Awaited<ReturnType<typeof connectToGateway>>, "cf" | "db" | "deployer" | "accountName" | "gatewayUrl" | "names">,
   changes: Readonly<Record<string, string | null>>,
   options: Pick<SecretOptions, "flags" | "out" | "announce">,
 ): Promise<Applied | null> {
@@ -306,6 +306,7 @@ export async function applyGatewaySettings(
     deployer: connection.deployer,
     accountName: connection.accountName,
     gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
+    gatewayWorker: connection.names.worker,
     app: null,
     providers: [],
   };
@@ -324,7 +325,7 @@ export async function applyGatewaySettings(
 export async function applyAppSettings(
   connection: Pick<
     Awaited<ReturnType<typeof connectToGateway>>,
-    "cf" | "db" | "deployer" | "accountName" | "gatewayUrl" | "install"
+    "cf" | "db" | "deployer" | "accountName" | "gatewayUrl" | "install" | "names"
   >,
   target: {
     manifest: SecretsManifest;
@@ -351,6 +352,7 @@ export async function applyAppSettings(
     deployer: connection.deployer,
     accountName: connection.accountName,
     gatewayHost: connection.gatewayUrl.replace(/^https:\/\//, ""),
+    gatewayWorker: connection.names.worker,
     app: route.app && target.app ? { ...route.app, ...target.app } : null,
     providers: held.providers,
   };
@@ -426,9 +428,9 @@ interface ListSecretsOptions extends SecretOptions {
 export async function listSecrets(options: ListSecretsOptions): Promise<void> {
   const { out } = options;
   const local = options.appId ? null : await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
-  const { cf, db, gatewayUrl, install } = await connect(options);
+  const { cf, db, gatewayUrl, install, names: gatewayOwnNames } = await connect(options);
   const [gatewayNames, registry] = await Promise.all([
-    listGatewaySecretNames(cf),
+    listGatewaySecretNames(cf, gatewayOwnNames),
     gatewayRegistry(db, install),
   ]);
   // The catalog's settings, then each registered provider's.
@@ -525,7 +527,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
       ].join("\n"),
       {
         gateway: {
-          workerName: GATEWAY_WORKER_NAME,
+          workerName: gatewayOwnNames.worker,
           names: gatewayNames,
           settable,
           // Each remote MCP app credential name, the apps that declare it, and whether it is set.
@@ -629,7 +631,7 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
         setup,
       },
       gateway: {
-        workerName: GATEWAY_WORKER_NAME,
+        workerName: gatewayOwnNames.worker,
         names: gatewayNames,
         // A registered provider's key counts once it is bound to the row's hosts.
         needed: gatewayNeeds(report.settings, boundGatewayNames(gatewayNames, registry)),
@@ -893,6 +895,8 @@ interface Reached {
   accountName: string | null;
   /** "apps.example.com". */
   gatewayHost: string;
+  /** The Gateway's Worker (`every-app-gateway`, or a named Gateway's). */
+  gatewayWorker: string;
   app: {
     manifest: SecretsManifest;
     names: string[];
@@ -937,7 +941,7 @@ function mayBeProviders(names: readonly string[], manifest: SecretsManifest | nu
 async function heldByGateway(
   names: readonly string[],
   manifest: SecretsManifest | null,
-  connection: Pick<Awaited<ReturnType<typeof connect>>, "cf" | "db" | "install">,
+  connection: Pick<Awaited<ReturnType<typeof connect>>, "cf" | "db" | "install" | "names">,
   action: SecretAction,
 ): Promise<{ names: Set<string>; providers: RegisteredProvider[] }> {
   const unknown = mayBeProviders(names, manifest);
@@ -949,7 +953,7 @@ async function heldByGateway(
   );
   const orphans = unknown.filter((name) => !held.has(name));
   if (action === SecretAction.Unset && orphans.length > 0) {
-    const onGateway = await listGatewaySecretNames(connection.cf);
+    const onGateway = await listGatewaySecretNames(connection.cf, connection.names);
     for (const name of orphans) if (onGateway.includes(name)) held.add(name);
   }
   return { names: held, providers };
@@ -983,6 +987,7 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
     deployer: connected.deployer,
     accountName: connected.accountName,
     gatewayHost: connected.gatewayUrl.replace(/^https:\/\//, ""),
+    gatewayWorker: connected.names.worker,
     app,
     providers,
   });
@@ -1037,9 +1042,9 @@ async function resolve(names: string[], options: SecretOptions, action: SecretAc
 }
 
 /** Whether any Worker the names go to holds one of them. */
-async function holdsAny({ cf, db, route, app }: Reached): Promise<boolean> {
+async function holdsAny({ cf, db, route, app, gatewayWorker }: Reached): Promise<boolean> {
   const workers = [
-    ...(route.gateway.length > 0 ? [{ workerName: GATEWAY_WORKER_NAME, names: route.gateway }] : []),
+    ...(route.gateway.length > 0 ? [{ workerName: gatewayWorker, names: route.gateway }] : []),
     ...(app
       ? (await appWorkerRecords(db, app.workerName)).map((record) => ({ workerName: record.name, names: app.names }))
       : []),
@@ -1084,7 +1089,7 @@ async function apply(
   action: SecretAction,
 ): Promise<Applied | null> {
   const { out } = options;
-  const { cf, db, route, app, deployer } = reached;
+  const { cf, db, route, app, deployer, gatewayWorker } = reached;
   const interactive = canPromptInTerminal(options.flags.json ?? false);
   const pick = (names: readonly string[]) =>
     Object.fromEntries(names.map((name) => [name, changes[name] ?? null]));
@@ -1118,7 +1123,7 @@ async function apply(
           names: route.gateway,
           targets: [
             {
-              workerName: GATEWAY_WORKER_NAME,
+              workerName: gatewayWorker,
               changes: pick(route.gateway),
               recordedVersionIds: [install.liveVersionId],
               record: (versionId) =>
@@ -1290,7 +1295,7 @@ async function apply(
       // Whether each app the change can move opens now, on its row, with
       // app.needs_setup or app.ready on a change (never failing the run).
       await refreshSetupStates(
-        { cf, db, deployer },
+        { cf, db, deployer, names: { worker: gatewayWorker } },
         { gateway: applied.gateway?.names ?? [], appRowId: applied.app && app ? app.rowId : null, except: options.setupRecordedBy },
         out,
       );

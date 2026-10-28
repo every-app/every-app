@@ -834,9 +834,9 @@ export class FakeCloudflare {
       .sort();
   }
 
-  /** The app Workers the live gateway binds. */
-  gatewayBindings(): string[] {
-    const env = this.workers.get("every-app-gateway")?.config["env"] ?? {};
+  /** The app Workers the live gateway binds (a named Gateway's: pass its Worker). */
+  gatewayBindings(gatewayWorker = "every-app-gateway"): string[] {
+    const env = this.workers.get(gatewayWorker)?.config["env"] ?? {};
     return Object.keys(env)
       .filter((name) => name.startsWith(APP_BINDING_PREFIX))
       .map((name) => name.slice(APP_BINDING_PREFIX.length))

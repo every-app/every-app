@@ -17,6 +17,7 @@
  * never announce one transition twice. Nothing here throws to the command:
  * the setting it reports on is set either way.
  */
+import type { GatewayNames } from "@every-app/perimeter/manifest";
 import { DELETED_APP_STATUS, parseSecretNames } from "@every-app/perimeter/registry";
 import { PROVIDER_APP_TIER, type AppSetup, type SettingsManifestLike } from "@every-app/sdk/internal";
 import { appSetupFrom, gatewayNamesRead, listGatewaySecretNames } from "@/lib/app/settings";
@@ -136,12 +137,12 @@ async function readStateRow(db: D1Database, appRowId: string): Promise<StateRow 
  * --verbose and swallowed.
  */
 export async function refreshSetupStates(
-  connection: { cf: CfRunner; db: D1Database; deployer: Deployer },
+  connection: { cf: CfRunner; db: D1Database; deployer: Deployer; names: Pick<GatewayNames, "worker"> },
   changed: { gateway: readonly string[]; appRowId: string | null; except?: string },
   out: EventSink,
 ): Promise<void> {
   try {
-    const { cf, db, deployer } = connection;
+    const { cf, db, deployer, names } = connection;
     if (changed.gateway.length === 0 && changed.appRowId === null) return;
     if (!(await hasEventsTables(db))) return;
     // The event tables came with setup_state, after secret_names: both are there.
@@ -160,7 +161,7 @@ WHERE status NOT IN ('${DELETED_APP_STATUS}', 'pending') AND tier NOT IN ('${PRO
       return moved ? [{ row: toStateRow(row), manifest, secretNames: parseSecretNames(text(row["secret_names"])) }] : [];
     });
     if (apps.length === 0) return;
-    const gatewayNames = await listGatewaySecretNames(cf);
+    const gatewayNames = await listGatewaySecretNames(cf, names);
     for (const app of apps) {
       const { setup } = appSetupFrom({
         manifest: app.manifest,

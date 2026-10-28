@@ -4,6 +4,7 @@
  * builds, deployed through lib/gateway/apply.ts, and the new hostnames'
  * certificates.
  */
+import type { GatewayNames } from "@every-app/perimeter/manifest";
 import { cliVersion } from "@/lib/version";
 import { cfD1Database } from "@/lib/cf/d1";
 import { waitForCertificates } from "@/lib/domains/certWait";
@@ -127,6 +128,8 @@ export async function deployGatewayRelease({
   reason: "deploy" | "upgrade";
   release: GatewayRelease;
   accountId: string;
+  /** The Gateway's names: which Worker, D1, KV and queue this deploy is. */
+  names: GatewayNames;
   target: GatewayTarget;
   interactive: boolean;
   /**
@@ -151,8 +154,10 @@ export async function deployGatewayRelease({
       "probe" | "sleep" | "maxWaitMs"
     >;
   }): Promise<{ result: ApplyGatewayResult; db: D1Database }> {
-  const { certificates, ...applyOptions } = options;
-  const resources = existing ? await existingGatewayResources(cf) : await ensureGatewayResources(cf);
+  const { certificates, names, ...applyOptions } = options;
+  const resources = existing
+    ? await existingGatewayResources(cf, names)
+    : await ensureGatewayResources(cf, names);
   if (!resources || (existing && resources.d1Id !== existing.databaseId)) {
     throw new EveryAppError(
       "GATEWAY_NOT_FOUND",
@@ -179,6 +184,7 @@ export async function deployGatewayRelease({
     reason,
     release,
     accountId,
+    names,
     gatewayHost: target.domain,
     zone: target.zone,
     appBaseDomain: target.appBaseDomain,

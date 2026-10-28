@@ -48,7 +48,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { DEFAULT_GATEWAY_NAMES, type GatewayNames } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
 import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
 import { privateTempDir } from "@/lib/cf/privateDir";
@@ -98,6 +98,8 @@ export interface ApplyGatewayOptions {
   reason: ApplyReason;
   release: GatewayRelease;
   accountId: string;
+  /** The Gateway's names (its Worker above all); the default's when absent. */
+  names?: GatewayNames;
   gatewayHost: string;
   zone: { id: string; name: string };
   /** Where app hosts live; the gateway host. */
@@ -144,6 +146,10 @@ export interface ApplyGatewayResult {
   /** Hostnames this run published for the first time: they wait for certificates. */
   newHosts: string[];
 }
+
+/** The Worker this deploy uploads: the Gateway's own (the default's unless named). */
+const gatewayWorker = (options: Pick<ApplyGatewayOptions, "names">): string =>
+  (options.names ?? DEFAULT_GATEWAY_NAMES).worker;
 
 /** The lease purpose of each reason the Gateway is deployed. */
 const GATEWAY_LEASE_PURPOSES: Readonly<Record<ApplyReason, LeasePurpose>> = {
@@ -290,6 +296,7 @@ class DomainChecks {
   async check(domains: readonly string[]): Promise<void> {
     await preflightDomains({
       cf: this.options.cf,
+      names: this.options.names ?? DEFAULT_GATEWAY_NAMES,
       out: this.options.out,
       step: "gateway.domains",
       zone: this.options.zone,
@@ -331,7 +338,7 @@ export async function applyGateway(
     const ownUpload =
       install !== null &&
       install.liveVersionId === null &&
-      (await workerCustomDomains(cf, GATEWAY_WORKER_NAME)).includes(
+      (await workerCustomDomains(cf, gatewayWorker(options))).includes(
         install.gatewayHost.toLowerCase(),
       );
     if (!install || install.liveVersionId === null) {
@@ -360,7 +367,7 @@ export async function applyGateway(
       // so no app is bound in this check, and only the hosts a migrated
       // registry already lists are checked.
       await withPatchedRelease(options, { appWorkers: [], appHosts: [] }, async () => undefined);
-      const registered = await readDesiredState(db, workerExists).catch(
+      const registered = await readDesiredState(db, workerExists, options.names ?? DEFAULT_GATEWAY_NAMES).catch(
         () => null,
       );
       await domainChecks.check(domainChecks.domainsFor(registered?.appHosts ?? []));
@@ -375,7 +382,7 @@ export async function applyGateway(
       } else {
         await assertReplaceable({
           cf,
-          workerName: GATEWAY_WORKER_NAME,
+          workerName: gatewayWorker(options),
           shownAs: "the Gateway",
           recordedVersionIds: [install?.liveVersionId],
           interactive: options.interactive,
@@ -461,11 +468,11 @@ async function deploy(
 ): Promise<ApplyGatewayResult> {
   const { cf, out, release, db, gatewayHost } = options;
   const firstDeploy =
-    (await getWorkerDeployment(cf, GATEWAY_WORKER_NAME)) === null;
+    (await getWorkerDeployment(cf, gatewayWorker(options))) === null;
   // The row's first upload: no Worker yet, or one the row never recorded
   // (its own, from a run that stopped; or one a person agreed to replace).
   const firstUpload = firstDeploy || recorded.liveVersionId === null;
-  const desired = await readDesiredState(db, workerExists);
+  const desired = await readDesiredState(db, workerExists, options.names ?? DEFAULT_GATEWAY_NAMES);
   for (const row of desired.skipped) {
     out.emit({
       type: "warning",
@@ -561,7 +568,7 @@ function upload(
     cfDeploy({
       cf: options.cf,
       cwd: workdir,
-      workerName: GATEWAY_WORKER_NAME,
+      workerName: gatewayWorker(options),
       accountId: options.accountId,
       message: `everyapp ${options.cliVersion} gateway ${options.release.manifest.version} (${options.reason})`,
       secrets,
@@ -595,6 +602,7 @@ async function withPatchedRelease<T>(
   try {
     await fs.cp(options.release.dir, workdir, { recursive: true });
     await patchGatewayBuildOutput(workdir, {
+      names: options.names ?? DEFAULT_GATEWAY_NAMES,
       d1Id: options.resources.d1Id,
       oauthKvId: options.resources.oauthKvId,
       release: {

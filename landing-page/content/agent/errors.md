@@ -843,9 +843,17 @@ Source: `packages/cli/src/commands/dev/mode.ts`
 
 Source: `packages/cli/src/lib/domains/hostnames.ts`, `packages/cli/src/commands/setup/runSetup.ts`
 
+### INVALID_GATEWAY_NAME
+
+`setup --name <name>` names a Gateway that can't be one: a name is 1 to 16 lowercase letters or digits, no hyphen, and not `activate`, `app` or `gateway` (`gatewayNameProblem()` in `packages/perimeter/src/manifest/gatewayNames.ts`). Raised by `setup` before anything is asked or changed. Message `--name <value> isn't a Gateway name` then the reason.
+
+**Fix:** `data.fix`: `choose a short lowercase name, such as demo or staging`. No rerun, not retryable.
+
+Source: `packages/cli/src/commands/setup/runSetup.ts`
+
 ### INVALID_GATEWAY_URL
 
-`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses (a valid one is normalized: trailing slashes, query and fragment dropped). Raised by every command that reads them (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand)). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
+`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses, or (`--gateway` only) a value with no scheme, dot or slash that isn't a Gateway's name (`demo`, `every-app-gateway-demo`, or `every-app-gateway` for the default): `--gateway must be the Gateway's URL or its name, not "<value>"` then the reason. A valid URL is normalized: trailing slashes, query and fragment dropped. Raised by every command that reads them (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand)). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
 
 **Fix:** for the environment variable, `data.fix`: `set it to https://<value without its scheme>, or unset it`; for the flag, nothing beyond the message. No rerun, not retryable.
 
@@ -1567,7 +1575,7 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 ### TEARDOWN_ACCOUNT_FORBIDDEN
 
-`teardown --account-id <id>` names an account on the forbidden list: `EVERYAPP_FORBIDDEN_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/forbidden-accounts` (`$XDG_CONFIG_HOME/everyapp/forbidden-accounts` when set; one id per line, `#` starts a comment), read together, the same way as the allowlist. No id ships in the CLI: the machine that can reach a live account lists it there (the onboarding loop hands its host's list to the teardown child in `EVERYAPP_FORBIDDEN_ACCOUNTS`). Refused before the allowlist is read and before anything is asked of Cloudflare, whatever the allowlist says; `cf auth whoami` listing a forbidden account is `TEARDOWN_TOKEN_TOO_BROAD`. Headline: `Cloudflare account <id> can never be torn down`, then `It is on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, <file>): a live account, refused by id before any allowlist is read.`; `data.accountId`, `data.file`.
+`teardown --account-id <id>` (the default Gateway's teardown, or `--all`; `--gateway <name>` doesn't read the list) names an account on the forbidden list: `EVERYAPP_FORBIDDEN_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/forbidden-accounts` (`$XDG_CONFIG_HOME/everyapp/forbidden-accounts` when set; one id per line, `#` starts a comment), read together, the same way as the allowlist. No id ships in the CLI: the machine that can reach a live account lists it there (the onboarding loop hands its host's list to the teardown child in `EVERYAPP_FORBIDDEN_ACCOUNTS`). Refused before the allowlist is read and before anything is asked of Cloudflare, whatever the allowlist says; `cf auth whoami` listing a forbidden account is `TEARDOWN_TOKEN_TOO_BROAD`. Headline: `Cloudflare account <id> can never be torn down`, then `It is on the forbidden list (EVERYAPP_FORBIDDEN_ACCOUNTS, <file>): a live account, refused by id before any allowlist is read.`; `data.accountId`, `data.file`.
 
 **Fix:** none offered; no rerun; not retryable. Use a dedicated test account (docs/runbooks/onboarding-loop-test-accounts.md in the checkout).
 
@@ -1583,17 +1591,25 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkTokenScope`).
 
 ### TEARDOWN_CONFIRMATION_REQUIRED
 
-`teardown` without a terminal (`--json`, a pipe, `CI` set) and without `--confirm`: the inventory was read and is in the event, and nothing was deleted. Headline: `Tearing down <id> needs its id typed at a terminal, or --confirm <id>`, then `<the plan's summary> would be deleted for good. Nothing was changed.`; `data.accountId`, `data.plan` (the inventory, as `--dry-run`'s `done.data.plan`). At a terminal the same step asks `Type <id> to delete all of this`, and anything else typed is `CANCELLED` (exit 1).
+`teardown` without a terminal (`--json`, a pipe, `CI` set) and without `--confirm`: the inventory was read and is in the event, and nothing was deleted. Headline: `Tearing down <id> needs its id typed at a terminal, or --confirm <id>`, then `<the plan's summary> would be deleted for good. Nothing was changed.`; `data.accountId`, `data.gateway` (null), `data.all`, `data.plan` (the inventory, as `--dry-run`'s `done.data.plan`; with `--all`, `data.plans`, one per Gateway). With `--gateway <name>` the confirmation is the Gateway's Worker name instead: `Tearing down Gateway <name> needs its Worker name typed at a terminal, or --confirm every-app-gateway-<name>`, then `<summary> would be deleted for good from <id>. Nothing was changed.`, `data.gateway` the name. At a terminal the same step asks `Type <id> to delete all of this` (`Type every-app-gateway-<name> …`), and anything else typed is `CANCELLED` (exit 1).
 
-**Fix:** `rerun`: this command with `--confirm <id>` (`data.authorize: true`: show the plan to the person and run it only when they asked for the deletion; there is no `--yes`); `rerunNote`: `only for a dedicated test account`. Not retryable.
+**Fix:** `rerun`: this command with `--confirm <id>` (`--confirm every-app-gateway-<name>` with `--gateway`; `data.authorize: true`: show the plan to the person and run it only when they asked for the deletion; there is no `--yes`); `rerunNote`: `only for a dedicated test account` (`only to delete Gateway <name> and its apps`). Not retryable.
 
 Source: `packages/cli/src/commands/teardown/index.ts`.
 
 ### TEARDOWN_CONFIRM_MISMATCH
 
-`teardown --confirm <x>` where `<x>` (trimmed, lowercased) isn't `--account-id`. Refused before `cf auth whoami`, so before any read. Headline: `--confirm <x> isn't the account id`, then `It must repeat --account-id <id> exactly. Nothing was read or changed.`; `data.accountId`, `data.confirm`.
+`teardown --confirm <x>` where `<x>` (trimmed, lowercased) isn't `--account-id`, or, with `--gateway <name>`, isn't the Gateway's Worker name `every-app-gateway-<name>` (the account id doesn't confirm a named Gateway's teardown). Refused before `cf auth whoami`, so before any read. Headline: `--confirm <x> isn't the account id`, then `It must repeat --account-id <id> exactly. Nothing was read or changed.` (with `--gateway`: `--confirm <x> isn't Gateway <name>'s Worker name`, then `It must be every-app-gateway-<name> exactly. …`); `data.accountId`, `data.gateway`, `data.confirm`.
 
-**Fix:** `fix`: `pass --confirm <id>`; no rerun; not retryable.
+**Fix:** `fix`: `pass --confirm <id>` (`pass --confirm every-app-gateway-<name>`); no rerun; not retryable.
+
+Source: `packages/cli/src/commands/teardown/index.ts`.
+
+### TEARDOWN_GATEWAY_AND_ALL
+
+`teardown --gateway <name> --all`: one Gateway, or every Gateway in the account, not both. Refused before the guards and before any read. Headline: `--gateway and --all can't go together`, then `--gateway tears down one Gateway; --all tears down every Gateway in the account. Nothing was read or changed.`; `data.gateway`.
+
+**Fix:** `fix`: `pass one of them`; no rerun; not retryable.
 
 Source: `packages/cli/src/commands/teardown/index.ts`.
 
@@ -1603,11 +1619,19 @@ Source: `packages/cli/src/commands/teardown/index.ts`.
 
 **Fix:** `fix`: `pass the test account's id from the dashboard as --account-id`; no rerun; not retryable.
 
-Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
+Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`, `checkGatewayEligible`).
+
+### TEARDOWN_INVALID_GATEWAY
+
+`teardown --gateway <x>` where `<x>` (trimmed, lowercased, `every-app-gateway-` taken off the front) isn't a Gateway's name: 1 to 16 lowercase letters or digits with no hyphen, and not `activate`, `app` or `gateway` (`gatewayNameProblem` in `packages/perimeter/src/manifest/gatewayNames.ts`). `--gateway every-app-gateway` is the default Gateway. Refused before the guards and before any read. Headline: `"<x>" isn't a Gateway's name`, then the problem and `Nothing was read or changed.`; `data.gateway`.
+
+**Fix:** `fix`: `pass the name the Gateway was set up with (setup --name <name>), or its Worker's name every-app-gateway-<name>`; no rerun; not retryable.
+
+Source: `packages/cli/src/lib/teardown/guards.ts` (`gatewayFromFlag`).
 
 ### TEARDOWN_NEEDS_TOKEN
 
-`teardown` with no `CLOUDFLARE_API_TOKEN` in the environment, or when `cf auth whoami` says it authenticated with something else (`authSource` not the environment token: a `cf auth login` session is a person, who sees every account they belong to), so the command runs only under a token scoped to the test account. The first is checked after the allowlist, before `cf auth whoami`; the second right after whoami, before any read of the account. Headline: `teardown needs CLOUDFLARE_API_TOKEN`, or `teardown needs CLOUDFLARE_API_TOKEN, but cf authenticated with <authSource>`, then `A Cloudflare login is a person, who sees every account they belong to; teardown runs only with an API token scoped to the test account (runbook step 5).`; `data.accountId`, and `data.authSource` in the second case. A token Cloudflare rejects (`tokenValid: false`, no accounts) is `CLOUDFLARE_TOKEN_REJECTED` instead.
+`teardown` (`--gateway <name>` too) with no `CLOUDFLARE_API_TOKEN` in the environment, or when `cf auth whoami` says it authenticated with something else (`authSource` not the environment token: a `cf auth login` session is a person, who sees every account they belong to), so the command runs only under a token scoped to the test account. The first is checked after the allowlist, before `cf auth whoami`; the second right after whoami, before any read of the account. Headline: `teardown needs CLOUDFLARE_API_TOKEN`, or `teardown needs CLOUDFLARE_API_TOKEN, but cf authenticated with <authSource>`, then `A Cloudflare login is a person, who sees every account they belong to; teardown runs only with an API token scoped to the test account (runbook step 5).`; `data.accountId`, and `data.authSource` in the second case. A token Cloudflare rejects (`tokenValid: false`, no accounts) is `CLOUDFLARE_TOKEN_REJECTED` instead.
 
 **Fix:** `fix`: `set CLOUDFLARE_API_TOKEN to the test account's token for this one command, and run it again`; no rerun; not retryable.
 
@@ -1615,7 +1639,7 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`).
 
 ### TEARDOWN_NOT_ALLOWLISTED
 
-`teardown --account-id <id>` where `<id>` isn't on the allowlist of dedicated test accounts: `EVERYAPP_TEST_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/test-accounts` (`$XDG_CONFIG_HOME/everyapp/test-accounts` when set; one id per line, `#` starts a comment), read together. Checked before the token and before any read. Headline: `Cloudflare account <id> isn't on the teardown allowlist`, then `teardown deletes everything EveryApp made in an account, so it runs only against accounts listed as dedicated test accounts.`; `data.accountId`, `data.file`.
+`teardown --account-id <id>` (the default Gateway's teardown, or `--all`; never `--gateway <name>`) where `<id>` isn't on the allowlist of dedicated test accounts: `EVERYAPP_TEST_ACCOUNTS` (ids separated by commas or whitespace) and the file `~/.config/everyapp/test-accounts` (`$XDG_CONFIG_HOME/everyapp/test-accounts` when set; one id per line, `#` starts a comment), read together. Checked before the token and before any read. Headline: `Cloudflare account <id> isn't on the teardown allowlist`, then `teardown deletes everything EveryApp made in an account, so it runs only against accounts listed as dedicated test accounts.`; `data.accountId`, `data.file`.
 
 **Fix:** `fix`: `only for a dedicated test account that holds nothing else (docs/runbooks/onboarding-loop-test-accounts.md): set EVERYAPP_TEST_ACCOUNTS=<id> for this one command, or add a line <id> to <file>`; no rerun; not retryable. Never add an account to the list on the person's behalf.
 
@@ -1623,7 +1647,7 @@ Source: `packages/cli/src/lib/teardown/guards.ts` (`checkAccountEligible`, `read
 
 ### TEARDOWN_TOKEN_TOO_BROAD
 
-`teardown`: `cf auth whoami` under `CLOUDFLARE_API_TOKEN` lists an account that isn't on the allowlist, or a forbidden one, so there would be a path from this run to a live account. Checked before any read of the account. Headline: `CLOUDFLARE_API_TOKEN sees <n> account(s) that isn't a test account|aren't test accounts: <name (id), …>`, then `A teardown token must be scoped to the test account alone (Account Resources → Include → that account), so there is no path from here to a live account.`; `data.accountId`, `data.accounts` (the accounts outside the list).
+`teardown` (not `--gateway <name>`, which reads no allowlist): `cf auth whoami` under `CLOUDFLARE_API_TOKEN` lists an account that isn't on the allowlist, or a forbidden one, so there would be a path from this run to a live account. Checked before any read of the account. Headline: `CLOUDFLARE_API_TOKEN sees <n> account(s) that isn't a test account|aren't test accounts: <name (id), …>`, then `A teardown token must be scoped to the test account alone (Account Resources → Include → that account), so there is no path from here to a live account.`; `data.accountId`, `data.accounts` (the accounts outside the list).
 
 **Fix:** `fix`: `mint a token for the test account only (runbook step 5)`; no rerun; not retryable.
 
@@ -2929,6 +2953,14 @@ Registry (409): the app row has no Worker, or no hostname on a tier that needs o
 **Fix:** deploy again.
 
 Source: `packages/perimeter/src/registry/registration.ts`, `apps/every-app-gateway/src/server/deploy/routes.ts`
+
+### HOST_OWNED_BY_OTHER_GATEWAY
+
+A hostname about to be published is a Workers Custom Domain of another Gateway in the same Cloudflare account, or of one of that Gateway's app Workers (`every-app-gateway-<name>`, `every-<name>--…`, or the default `every-app-gateway` and `every-<orgKey>-…` seen from a named Gateway). Refused outright, with or without `--force-dns`: a record may be moved, a production Gateway's address never. Headline: `<host> is <worker>'s` (`; `-joined for several), then `Another Gateway in this account publishes it, so this one can't take it, even with --force-dns.`
+
+**Fix:** `fix`: `use a hostname of this Gateway's own, or remove it from the other Gateway first`; `data.hosts`. Not retryable.
+
+Source: `packages/cli/src/lib/domains/preflight.ts` (`checkDnsRecords`, `hostsOfOtherGateways`).
 
 ### HOSTNAME_TAKEN
 

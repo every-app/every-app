@@ -4,7 +4,7 @@ export const gatewayFlag = {
   kind: "parsed",
   parse: String,
   brief:
-    "The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)",
+    "The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)",
   optional: true,
 } as const;
 

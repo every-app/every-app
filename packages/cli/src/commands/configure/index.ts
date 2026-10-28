@@ -358,7 +358,7 @@ async function findTarget(options: ConfigureOptions): Promise<Target> {
  */
 async function readState(target: Target): Promise<State> {
   const { cf } = target.connection;
-  const gatewayNames = boundGatewayNames(await listGatewaySecretNames(cf), target.registry);
+  const gatewayNames = boundGatewayNames(await listGatewaySecretNames(cf, target.connection.names), target.registry);
   const secretNames = target.deployed ? await listAppSecretNames(cf, target.deployed.workerName) : null;
   const { report, setup } = appSetupFrom({
     manifest: target.manifest,

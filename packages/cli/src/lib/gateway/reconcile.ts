@@ -12,7 +12,7 @@
  * the gateway over HTTPS: the Worker serves the version the row names, and
  * the row's bound Workers and published hostnames are the registry's.
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { DEFAULT_GATEWAY_NAMES, type GatewayNames } from "@every-app/perimeter/manifest";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import type { Confirm } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -39,6 +39,8 @@ interface ReconcileGatewayOptions {
   cf: CfRunner;
   out: EventSink;
   accountId: string;
+  /** The Gateway's names: which Worker this run redeploys (discovery's; the default's only in tests). */
+  names?: GatewayNames;
   /** The gateway's D1 database. */
   databaseId: string;
   /**
@@ -71,12 +73,13 @@ export async function reconcileGateway(
   options: ReconcileGatewayOptions,
 ): Promise<ReconcileResult> {
   const { cf, out, databaseId } = options;
+  const names = options.names ?? DEFAULT_GATEWAY_NAMES;
   const db = cfD1Database(cf, databaseId);
   const install = await readInstall(db);
   if (!install) throw notDeployedByEveryapp();
 
   if (!options.force && !options.stagedSecrets && !options.unsetSecrets) {
-    const { inSync, desired } = await registryDrift(cf, db, install);
+    const { inSync, desired } = await registryDrift(cf, db, install, names);
     if (inSync) {
       out.emit({
         type: "step",
@@ -113,7 +116,7 @@ export async function reconcileGateway(
       let current = (await readInstall(db)) ?? install;
       if (options.unsetSecrets?.length) {
         await lease.check();
-        current = await dropSecrets(cf, db, current, options.unsetSecrets);
+        current = await dropSecrets(cf, db, current, options.unsetSecrets, names);
       }
       const result = await applyGateway({
         cf,
@@ -121,6 +124,7 @@ export async function reconcileGateway(
         reason: "reconcile",
         release,
         accountId: options.accountId,
+        names,
         gatewayHost: current.gatewayHost,
         zone: { id: current.zoneId, name: current.zoneName },
         appBaseDomain: current.appBaseDomain,
@@ -156,15 +160,16 @@ export async function registryDrift(
   cf: CfRunner,
   db: D1Database,
   install: InstallRecord,
+  names: GatewayNames,
 ): Promise<{ inSync: boolean; desired: DesiredState }> {
-  const desired = await readDesiredState(db, workerExistence(cf));
+  const desired = await readDesiredState(db, workerExistence(cf), names);
   const sameWorkers =
     [...install.liveAppWorkers].sort().join("\n") ===
     desired.appWorkers.join("\n");
   if (!sameWorkers || !publishesHosts(install, desired.appHosts)) {
     return { inSync: false, desired };
   }
-  const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
+  const serving = await getWorkerDeployment(cf, names.worker);
   return {
     inSync: Boolean(serving?.versionId) && serving?.versionId === install.liveVersionId,
     desired,
@@ -194,9 +199,10 @@ async function dropSecrets(
   db: D1Database,
   install: InstallRecord,
   names: readonly string[],
+  gateway: GatewayNames,
 ): Promise<InstallRecord> {
-  for (const name of names) await deleteWorkerSecret(cf, GATEWAY_WORKER_NAME, name);
-  const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
+  for (const name of names) await deleteWorkerSecret(cf, gateway.worker, name);
+  const serving = await getWorkerDeployment(cf, gateway.worker);
   if (!serving?.versionId || serving.versionId === install.liveVersionId) return install;
   const updated = { ...install, liveVersionId: serving.versionId, updatedAt: Date.now() };
   await writeInstall(db, updated);

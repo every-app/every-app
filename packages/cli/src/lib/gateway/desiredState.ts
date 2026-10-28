@@ -4,14 +4,14 @@
  * (`disabled`, still bound so turning it on again is instant). `pending`
  * apps are never bound, since their Worker may not exist yet. A row is bound
  * only if its Worker is the one the naming rule gives it
- * (`every-<orgKey>-<appId>`), so the registry can never point the gateway
+ * (`every-<orgKey>-<appId>`; on a named Gateway `every-<name>--<orgKey>-<appId>`), so the registry can never point the gateway
  * at another Worker in the account, and only if
  * that Worker exists: a deploy moves a row to `binding` on the CLI's
  * word, and an `active` row outlives a Worker deleted by hand. Binding a
  * missing Worker fails the whole deploy of the gateway, so one stale row would
  * hold up every app.
  */
-import { isRegistryWorkerName } from "@every-app/perimeter/manifest";
+import { isRegistryWorkerName, type GatewayNames } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
@@ -65,6 +65,8 @@ const EXISTENCE_CHECKS_AT_ONCE = 4;
 export async function readDesiredState(
   db: D1Database,
   workerExists: (workerName: string) => Promise<boolean>,
+  /** The Gateway's names: its apps' Workers are named after it. */
+  names: Pick<GatewayNames, "name">,
 ): Promise<DesiredState> {
   const [rows = []] = await db.run([{ sql: DESIRED_APPS }]);
   const named: BoundApp[] = [];
@@ -80,6 +82,7 @@ export async function readDesiredState(
       appId: app.appId,
       workerName: app.workerName,
       orgKey: typeof row["org_key"] === "string" ? row["org_key"] : null,
+      gatewayName: names.name,
     });
     if (valid) named.push(app);
     else skipped.push({ appId: app.appId, workerName: app.workerName });

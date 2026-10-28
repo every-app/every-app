@@ -180,6 +180,13 @@ export interface AppNamesInput {
   appBaseDomain: string;
   /** The organization's row for this app id, tombstones included. */
   existingApp: Pick<AppRow, "hostname" | "workerName"> | null;
+  /**
+   * The Gateway's name (manifest/gatewayNames.ts; the Worker's
+   * EVERYAPP_GATEWAY_NAME): null or absent for the default Gateway. A named
+   * Gateway's apps are `every-<name>--<orgKey>-<appId>`, so two Gateways in
+   * one Cloudflare account never share a Worker or a resource.
+   */
+  gatewayName?: string | null;
 }
 
 /**
@@ -209,9 +216,10 @@ export function appNames(input: AppNamesInput): {
     });
   }
 
+  const gatewayName = input.gatewayName ?? null;
   const workerName =
     input.existingApp?.workerName ??
-    registryWorkerNameFor({ appId: appSlug, orgKey });
+    registryWorkerNameFor({ appId: appSlug, orgKey, gatewayName });
   const base = input.appBaseDomain.trim().toLowerCase().replace(/\.$/, "");
   const hostname =
     input.existingApp?.hostname ??
@@ -221,7 +229,9 @@ export function appNames(input: AppNamesInput): {
         : hostLabel(`${appSlug}-${orgKey}`, "The app id and organization key")
     }.${base}`;
 
-  if (!isRegistryWorkerName({ appId: appSlug, orgKey, workerName })) {
+  if (
+    !isRegistryWorkerName({ appId: appSlug, orgKey, workerName, gatewayName })
+  ) {
     throw new RegistrationError({
       status: 400,
       code: "INVALID_WORKER_NAME",
@@ -391,6 +401,8 @@ export interface RegistrationInput {
   members: readonly OrganizationMember[];
   /** The member deploying, when the deployer is one. */
   deployerUserId: string | null;
+  /** The Gateway's name (manifest/gatewayNames.ts): null or absent for the default Gateway. */
+  gatewayName?: string | null;
 }
 
 export interface RegistrationPlan {

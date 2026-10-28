@@ -40,6 +40,7 @@ import {
   matchPublicRoute,
   PUBLIC_ASSET_METHODS,
 } from "../publicRoutes";
+import { GATEWAY_ROOT, gatewayNames, RESOURCE_SEPARATOR } from "./gatewayNames";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
 export const PublicRouteSchema = z.object({
@@ -1997,8 +1998,12 @@ export function workerNameFor(appId: string): string {
   return appId.startsWith("every-") ? appId : `every-${appId}`;
 }
 
-/** The gateway's own Worker script name. No app may use or bind it. */
-export const GATEWAY_WORKER_NAME = "every-app-gateway";
+/**
+ * The default Gateway's Worker script name (`gatewayNames(null).worker`);
+ * a named Gateway's is `every-app-gateway-<name>` (./gatewayNames.ts). No
+ * app may use or bind either.
+ */
+export const GATEWAY_WORKER_NAME = GATEWAY_ROOT;
 
 /** Cloudflare's limit on a Worker's name. */
 export const MAX_WORKER_NAME_LENGTH = 63;
@@ -2023,25 +2028,33 @@ export function isReservedName(name: string): boolean {
  * may contain it, so `every-acme-notes--archive` can only ever be app
  * `notes`'s ARCHIVE database, never app `notes-archive`'s own.
  */
-export const RESOURCE_SEPARATOR = "--";
+export { RESOURCE_SEPARATOR } from "./gatewayNames";
 
 interface RegistryNaming {
   appId: string;
   /** The organization's immutable key (`organization_keys.org_key`). */
   orgKey: string | null;
+  /**
+   * The Gateway's name (./gatewayNames.ts): null or absent for the default
+   * Gateway. A named Gateway's apps are `every-<name>--<orgKey>-<appId>`.
+   */
+  gatewayName?: string | null;
 }
 
 /**
  * The Worker name the gateway assigns an app at registration,
- * `every-<orgKey>-<appId>`, so two organizations never share a Worker, D1
- * database or KV namespace.
+ * `every-<orgKey>-<appId>` (on a named Gateway, behind its app prefix:
+ * `every-<name>--<orgKey>-<appId>`), so two organizations never share a
+ * Worker, D1 database or KV namespace, and two Gateways in one account
+ * never do either.
  */
 export function registryWorkerNameFor({
   appId,
   orgKey,
+  gatewayName,
 }: RegistryNaming): string {
   if (!orgKey) throw new Error("An org-scoped Worker name needs an org key.");
-  return `every-${orgKey}-${appId}`;
+  return `${gatewayNames(gatewayName).appPrefix}${orgKey}-${appId}`;
 }
 
 /**
@@ -2153,7 +2166,20 @@ export function isAiGatewayId(id: string): boolean {
  * the resource ledger does, and refuses one it didn't record.
  */
 export function aiGatewayIdFor(workerName: string, binding: string): string {
-  return `${workerName}-${binding.toLowerCase().replaceAll("_", "-")}`;
+  return `${aiGatewayWorkerStem(workerName)}-${binding.toLowerCase().replaceAll("_", "-")}`;
+}
+
+/**
+ * What an app's AI Gateway ids start with: its Worker name, except on a
+ * named Gateway, whose app Workers hold `--` (`every-demo--acme-notes`),
+ * which an id may not: those go under the Gateway's reserved root instead
+ * (`every-app-gateway-demo-acme-notes`), which keeps them apart from every
+ * other Gateway's (./gatewayNames.ts).
+ */
+function aiGatewayWorkerStem(workerName: string): string {
+  const named = /^every-([a-z0-9]+)--(.+)$/.exec(workerName);
+  if (!named) return workerName;
+  return `${gatewayNames(named[1]).aiGatewayPrefix}${named[2]}`;
 }
 
 /**

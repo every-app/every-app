@@ -3,7 +3,7 @@
  * `delete`): the Gateway release their rebind deploys, the rebind itself,
  * the registration from a manifest, and the wait for the app to go live.
  */
-import { appBindingName } from "@every-app/perimeter/manifest";
+import { appBindingName, type GatewayNames } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
@@ -67,11 +67,14 @@ export function registerFromManifest(
   {
     manifest,
     install,
+    names,
     deployer,
     accountName,
   }: {
     manifest: EveryAppCliManifest;
     install: Pick<InstallRecord, "appBaseDomain">;
+    /** The Gateway's names: its apps' Worker names start with its app prefix. */
+    names: GatewayNames;
     deployer: Deployer;
     /** Names the organization created when the gateway has none yet. */
     accountName: string | null;
@@ -83,6 +86,7 @@ export function registerFromManifest(
     description: manifest.description ?? manifest.id,
     manifest,
     appBaseDomain: install.appBaseDomain,
+    gatewayName: names.name,
     deployer,
     organizationName: accountName ?? "",
   });
@@ -101,6 +105,7 @@ export async function bindIfNeeded({
   cf,
   db,
   databaseId,
+  names,
   out,
   accountId,
   appId,
@@ -114,6 +119,8 @@ export async function bindIfNeeded({
   cf: CfRunner;
   db: D1Database;
   databaseId: string;
+  /** The Gateway's names: which Worker the rebind redeploys. */
+  names: GatewayNames;
   out: EventSink;
   accountId: string;
   appId: string;
@@ -142,6 +149,7 @@ export async function bindIfNeeded({
       cf,
       out,
       accountId,
+      names,
       databaseId,
       interactive,
       cliVersion,

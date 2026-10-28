@@ -270,6 +270,24 @@ describe("finding the applications", () => {
     expect(findAccessApplications([other], SCOPE)).toEqual({ gateway: null, apps: null });
   });
 
+  it("never takes another Gateway's own application, whatever stray destination it holds", () => {
+    // A named Gateway's apps application that once got a per-app destination equal to this Gateway's host.
+    const demoApps = application("d", [{ uri: "*.demo.acme.com" }, { uri: "apps.acme.com" }], {
+      name: "Every App apps (demo)",
+      domain: "*.demo.acme.com",
+    });
+    const gateway = application("g", [{ uri: "apps.acme.com" }], { name: "Every App gateway", domain: "apps.acme.com" });
+    expect(findAccessApplications([demoApps, gateway], SCOPE)).toEqual({ gateway, apps: null });
+    // And the default's never counts as a named Gateway's.
+    const defaultApps = application("a", [{ uri: "*.apps.acme.com" }, { uri: "demo.acme.com" }], {
+      name: "Every App apps",
+      domain: "*.apps.acme.com",
+    });
+    expect(
+      findAccessApplications([defaultApps], { gatewayHost: "demo.acme.com", appBaseDomain: "demo.acme.com" }),
+    ).toEqual({ gateway: null, apps: null });
+  });
+
   it("returns one application covering both as both", () => {
     const both = application("b", [{ uri: "apps.acme.com" }, { uri: "*.apps.acme.com" }]);
     expect(findAccessApplications([both], SCOPE)).toEqual({ gateway: both, apps: both });

@@ -17,11 +17,25 @@
  *   4. `cf auth whoami` lists only allowlisted accounts, none forbidden,
  *      and lists the one asked for.
  *
+ * That is the default Gateway's teardown (`teardown`, no `--gateway`) and
+ * `--all`'s, which take everything Every App made in the account. The
+ * teardown of one NAMED Gateway (`teardown --gateway <name>`) is held to
+ * less, because it can run beside a production Gateway in the same
+ * account: its inventory is scoped structurally to that Gateway's names
+ * (`belongsToGateway`, packages/perimeter/src/manifest/gatewayNames.ts),
+ * which gatewayNames.test.ts proves never matches another Gateway's names,
+ * named or default, over every kind of resource. So the forbidden list and
+ * the allowlist aren't read ({@link checkGatewayEligible}); a token is still
+ * needed and must list the account (guard 4 without the allowlist), and the
+ * confirmation is the Gateway's full Worker name (`every-app-gateway-<name>`)
+ * rather than the account id, so what is typed names what goes.
+ *
  * Every code the command raises is here, with a word on each.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { GATEWAY_ROOT, gatewayNameProblem, gatewayNames, type GatewayNames } from "@every-app/perimeter/manifest";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
@@ -43,8 +57,12 @@ export enum TeardownCode {
   AccountNotVisible = "TEARDOWN_ACCOUNT_NOT_VISIBLE",
   /** Without a terminal and without --confirm: the rerun carries `--confirm <id>`, to authorize. */
   ConfirmationRequired = "TEARDOWN_CONFIRMATION_REQUIRED",
-  /** `--confirm` names another id than `--account-id`. */
+  /** `--confirm` names another id than `--account-id` (or, for a named Gateway, another name than its Worker's). */
   ConfirmMismatch = "TEARDOWN_CONFIRM_MISMATCH",
+  /** `--gateway` isn't a Gateway's name: refused before anything is read. */
+  InvalidGateway = "TEARDOWN_INVALID_GATEWAY",
+  /** `--gateway` and `--all` together: one Gateway, or every one, not both. */
+  GatewayAndAll = "TEARDOWN_GATEWAY_AND_ALL",
   /** Warning: an entry of the allowlist or the forbidden list that isn't an account id was ignored. */
   AllowlistIgnored = "TEARDOWN_ALLOWLIST_IGNORED",
   /** Warning: one kind couldn't be listed (a permission, say); it is kept, and the run goes on. */
@@ -209,8 +227,67 @@ export function checkAccountEligible({
 }
 
 /**
+ * The Gateway `--gateway` names: its bare name (`demo`) or its Worker's
+ * (`every-app-gateway-demo`); `every-app-gateway` itself is the default
+ * Gateway's, held to the default's guards. Anything else is refused before
+ * anything is read.
+ */
+export function gatewayFromFlag(given: string): GatewayNames {
+  const value = given.trim().toLowerCase();
+  if (value === GATEWAY_ROOT) return gatewayNames(null);
+  const name = value.startsWith(`${GATEWAY_ROOT}-`) ? value.slice(GATEWAY_ROOT.length + 1) : value;
+  const problem = gatewayNameProblem(name);
+  if (problem) {
+    throw new EveryAppError(
+      TeardownCode.InvalidGateway,
+      `"${given.trim()}" isn't a Gateway's name\n${problem[0]!.toUpperCase()}${problem.slice(1)}. Nothing was read or changed.`,
+      {
+        fix: "pass the name the Gateway was set up with (setup --name <name>), or its Worker's name every-app-gateway-<name>",
+        data: { gateway: given.trim() },
+      },
+    );
+  }
+  return gatewayNames(name);
+}
+
+/**
+ * A named Gateway's teardown, with nothing of Cloudflare read: an account
+ * id, and a token. No forbidden list and no allowlist: the module comment
+ * says why a named Gateway's teardown may run in an account that holds a
+ * production Gateway beside it.
+ */
+export function checkGatewayEligible({
+  accountId: given,
+  names,
+  env = process.env,
+}: {
+  accountId: string;
+  names: GatewayNames;
+  env?: NodeJS.ProcessEnv;
+}): { accountId: string } {
+  const accountId = given.trim().toLowerCase();
+  if (!isAccountId(accountId)) {
+    throw new EveryAppError(
+      TeardownCode.InvalidAccountId,
+      `"${given.trim()}" isn't a Cloudflare account id\nAn account id is 32 hex characters (Compute (Workers) → Overview, or any dashboard URL dash.cloudflare.com/<account id>/...).`,
+      { fix: `pass the id of the account ${names.label} is in as --account-id`, data: { accountId: given.trim() } },
+    );
+  }
+  if (!env["CLOUDFLARE_API_TOKEN"]) {
+    throw new EveryAppError(
+      TeardownCode.NeedsToken,
+      `teardown needs CLOUDFLARE_API_TOKEN\nA Cloudflare login is a person, who sees every account they belong to; teardown runs only with an API token that lists the account.`,
+      { fix: `set CLOUDFLARE_API_TOKEN to a token of that account for this one command, and run it again`, data: { accountId, gateway: names.name } },
+    );
+  }
+  return { accountId };
+}
+
+/**
  * Guard 4, from `cf auth whoami` under the token: every account it lists
  * is allowlisted and none forbidden, and the one asked for is among them.
+ * With `allowlist: null` (a named Gateway's teardown) only the last: the
+ * token is a token, and lists the account.
  */
 export function checkTokenScope({
   accountId,
@@ -219,7 +296,7 @@ export function checkTokenScope({
   whoami,
 }: {
   accountId: string;
-  allowlist: readonly string[];
+  allowlist: readonly string[] | null;
   forbidden: readonly string[];
   whoami: CfWhoami;
 }): void {
@@ -248,7 +325,10 @@ export function checkTokenScope({
     id: account.id.toLowerCase(),
     name: account.name ?? null,
   }));
-  const outside = seen.filter((account) => forbidden.includes(account.id) || !allowlist.includes(account.id));
+  const outside =
+    allowlist === null
+      ? []
+      : seen.filter((account) => forbidden.includes(account.id) || !allowlist.includes(account.id));
   if (outside.length > 0) {
     throw new EveryAppError(
       TeardownCode.TokenTooBroad,

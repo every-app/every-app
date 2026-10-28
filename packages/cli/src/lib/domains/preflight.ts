@@ -22,10 +22,10 @@
  * (--verbose) asks before moving one; otherwise this warns that a hostname
  * with no record may be moved from a Worker without asking.
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { belongsToGateway, gatewayNameOf, type GatewayNames } from "@every-app/perimeter/manifest";
 import { CfError, isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
-import { workerCustomDomains } from "@/lib/cf/workers";
+import { listWorkers, workerCustomDomains } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -42,6 +42,8 @@ const ZONE_CUSTOM_DOMAIN_WARN_AT = 95;
 
 interface DomainPreflightOptions {
   cf: CfRunner;
+  /** The Gateway's names: its Worker's own Custom Domains are no conflict; another Gateway's are never taken, even with --force-dns. */
+  names: GatewayNames;
   out: EventSink;
   step: string;
   zone: Zone;
@@ -114,15 +116,33 @@ export async function preflightDomains(
  * lib/gateway/patchBuildOutput.ts). A login that can't list the Workers
  * learns nothing: the record stands.
  */
-function readGatewayCustomDomains(cf: CfRunner): () => Promise<Set<string>> {
+function readGatewayCustomDomains(cf: CfRunner, gatewayWorker: string): () => Promise<Set<string>> {
   let read: Promise<Set<string>> | undefined;
   return () =>
-    (read ??= workerCustomDomains(cf, GATEWAY_WORKER_NAME)
+    (read ??= workerCustomDomains(cf, gatewayWorker)
       .then((hosts) => new Set(hosts))
       .catch((error: unknown) => {
         if (error instanceof CfError) return new Set<string>();
         throw error;
       }));
+}
+
+/**
+ * Every hostname a Worker of another Gateway in the account (that Gateway
+ * itself, or one of its apps) holds as a Custom Domain, with the Worker's
+ * name: never this Gateway's to take.
+ */
+async function hostsOfOtherGateways(cf: CfRunner, names: GatewayNames): Promise<Map<string, string>> {
+  const hosts = new Map<string, string>();
+  for (const worker of await listWorkers(cf)) {
+    const ours = worker.name === names.worker || belongsToGateway(names, worker.name);
+    const another = gatewayNameOf(worker.name) !== null || worker.name.startsWith("every-");
+    if (ours || !another) continue;
+    for (const domain of worker.references?.domains ?? []) {
+      hosts.set(domain.hostname.toLowerCase(), worker.name);
+    }
+  }
+  return hosts;
 }
 
 /** The records at `host` in the zone, through the Cloudflare API. */
@@ -162,7 +182,7 @@ async function checkDnsRecords(
   const conflicts: Array<{ host: string; records: string }> = [];
   // The hostnames already published on the Gateway, by a run that stopped.
   const own: string[] = [];
-  const ownDomains = readGatewayCustomDomains(cf);
+  const ownDomains = readGatewayCustomDomains(cf, options.names.worker);
   let viaWildcard = false;
   const answering = (records: Array<{ type: string }>) =>
     records.filter((r) => CONFLICTING_TYPES.has(r.type.toUpperCase()));
@@ -197,6 +217,21 @@ async function checkDnsRecords(
     }
   }
   if (conflicts.length === 0) return own;
+  // A hostname another Gateway in this account (or one of its apps)
+  // publishes is refused outright: --force-dns moves a record, never a
+  // production Gateway's address onto this one.
+  const otherGateways = await hostsOfOtherGateways(cf, options.names).catch((error: unknown) => {
+    if (error instanceof CfError) return new Map<string, string>();
+    throw error;
+  });
+  const taken = conflicts.filter((conflict) => otherGateways.has(conflict.host));
+  if (taken.length > 0) {
+    throw new EveryAppError(
+      "HOST_OWNED_BY_OTHER_GATEWAY",
+      `${taken.map((c) => `${c.host} is ${otherGateways.get(c.host)}'s`).join("; ")}\nAnother Gateway in this account publishes ${taken.length === 1 ? "it" : "them"}, so this one can't take ${taken.length === 1 ? "it" : "them"}, even with --force-dns.`,
+      { fix: "use a hostname of this Gateway's own, or remove it from the other Gateway first", data: { hosts: taken.map((c) => c.host) } },
+    );
+  }
   const one = conflicts.length === 1;
   const which = one
     ? `${conflicts[0]!.host} already points somewhere else`
@@ -235,6 +270,7 @@ async function checkDnsRecords(
  */
 export async function preflightAppHost({
   cf,
+  names,
   out,
   install,
   hostname,
@@ -242,6 +278,8 @@ export async function preflightAppHost({
   cfAsks,
 }: {
   cf: CfRunner;
+  /** The Gateway's names. */
+  names: GatewayNames;
   out: EventSink;
   install: Pick<InstallRecord, "appBaseDomain" | "liveDomains" | "zoneId" | "zoneName">;
   hostname: string;
@@ -253,6 +291,7 @@ export async function preflightAppHost({
   if (newHost) {
     await preflightDomains({
       cf,
+      names,
       out,
       step: "app.domain",
       zone: { id: install.zoneId, name: install.zoneName },

@@ -26,6 +26,8 @@ import {
   parseStoredManifest,
   type AppRow,
 } from "@every-app/perimeter/registry";
+import { env } from "cloudflare:workers";
+import { gatewayNamesOf } from "@/server/gateway-name";
 import type { WorkerModule } from "@/server/deploy/cf-rest";
 import type { DeployBundle } from "./bundle";
 import { bundleRefused, DeployError } from "./errors";
@@ -231,6 +233,7 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       appId: app.appSlug,
       organizationId: app.organizationId,
       workerName,
+      gatewayWorker: gatewayNamesOf(env).worker,
       gatewayUrl: input.gatewayUrl,
       identityPublicKey: input.identityPublicKey,
       d1,

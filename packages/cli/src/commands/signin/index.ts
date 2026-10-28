@@ -277,7 +277,7 @@ export async function addProvider(options: SigninOptions<AddFlags>, id: string):
   }
 
   const gateway = await connect(options);
-  const names = new Set(await listGatewaySecretNames(gateway.cf));
+  const names = new Set(await listGatewaySecretNames(gateway.cf, gateway.names));
   const callbackUrl = signInCallbackUrl(gateway.gatewayUrl, provider.id);
   const interactive = options.interactive ?? canPromptInTerminal(flags.json ?? false);
 
@@ -395,7 +395,7 @@ function statesOf(names: readonly string[]) {
 export async function listProviders(options: SigninOptions): Promise<void> {
   const { out } = options;
   const gateway = await connect(options);
-  const rows = statesOf(await listGatewaySecretNames(gateway.cf));
+  const rows = statesOf(await listGatewaySecretNames(gateway.cf, gateway.names));
   const table = formatTable(
     ["PROVIDER", "STATUS", "SETTINGS"],
     rows.map(({ provider, state }) => {
@@ -448,7 +448,7 @@ export async function showProvider(options: SigninOptions, id: string): Promise<
   const { out } = options;
   const provider = providerOf(id);
   const gateway = await connect(options);
-  const held = new Set(await listGatewaySecretNames(gateway.cf));
+  const held = new Set(await listGatewaySecretNames(gateway.cf, gateway.names));
   const state = stateOf(provider, held);
   const status = statusOf(state);
   const callbackUrl = signInCallbackUrl(gateway.gatewayUrl, provider.id);
@@ -512,7 +512,7 @@ export async function removeProvider(options: SigninOptions<RemoveFlags>, id: st
   const { out, flags } = options;
   const provider = providerOf(id);
   const gateway = await connect(options);
-  const held = new Set(await listGatewaySecretNames(gateway.cf));
+  const held = new Set(await listGatewaySecretNames(gateway.cf, gateway.names));
   const toRemove = provider.settings.filter((setting) => held.has(setting.name)).map((setting) => setting.name);
   if (toRemove.length === 0) {
     finish(out, [`${titleOf(provider)} isn't set up; nothing changed.`], { id: provider.id, removed: [] });

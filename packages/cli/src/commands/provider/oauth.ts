@@ -12,7 +12,6 @@
  * `disconnect` deletes the connection and says where to revoke the grant.
  */
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import {
   CAPABILITIES,
   capabilitySettings,
@@ -314,7 +313,7 @@ export async function addOAuth(options: OAuthAddOptions, value: string): Promise
     data: { id, redirectUri, console: capability.console },
   });
   const [gatewayNames, uploaded, connections] = await Promise.all([
-    listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME),
+    listWorkerSecrets(gateway.cf, gateway.names.worker),
     readUploadedClients(gateway.db),
     countConnections(gateway.db),
   ]);

@@ -289,6 +289,12 @@ export interface RegisterInput {
   manifest: unknown;
   /** The install's base domain: apps live one label below it. */
   appBaseDomain: string;
+  /**
+   * The Gateway's name (perimeter manifest/gatewayNames.ts): a named
+   * Gateway's apps are `every-<name>--<orgKey>-<appId>`; null is the
+   * default Gateway's `every-<orgKey>-<appId>`.
+   */
+  gatewayName?: string | null;
   deployer: Deployer;
   /** Names the organization created when the gateway has none yet. */
   organizationName: string;
@@ -366,6 +372,7 @@ async function registerApp(
     isInstallOrganization: true,
     appBaseDomain: input.appBaseDomain,
     existingApp,
+    gatewayName: input.gatewayName ?? null,
   });
   const [hostnameOwners = [], workerNameOwners = []] = await db.run([
     {
@@ -388,6 +395,7 @@ async function registerApp(
     description: input.description,
     manifest: input.manifest,
     appBaseDomain: input.appBaseDomain,
+    gatewayName: input.gatewayName ?? null,
     orgKey,
     existingApp,
     hostnameOwner: toNameOwner(hostnameOwners[0]),

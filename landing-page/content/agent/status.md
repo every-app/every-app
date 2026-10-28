@@ -8,7 +8,7 @@ metaDescription: "Drive everyapp status --json to learn what is left to do on a 
 
 ## The loop
 
-1. `pnpm everyapp status --json` from any directory (`--account-id <id>` when the login sees several accounts, else `choose_account`).
+1. `pnpm everyapp status --json` from any directory (`--account-id <id>` when the login sees several accounts, else `choose_account`; `--gateway <url|name>` when one account holds several Gateways, `setup --name`: the `Gateway` line then shows the named one's Worker, `every-app-gateway-<name>`, and `done.data` has `gatewayName` and `gatewayWorker`).
 2. Read `done.message`: `Gateway https://<host>: <n> apps live, nothing to fix` or `… <m> problems to fix`. Only `error` and `warning` fixes count as problems (`needsFixing` in `problems.ts`).
 3. For each entry of `done.data.fixes` in order: if `run` is a command, run it (with `--json` when it is an `everyapp` command; `note` says what it does); if `run` is `null` and `fix` is words, do what they say; if `severity` is `settling`, wait and run `status` again; if `severity` is `info`, tell the person and move on (an update to take or leave).
 4. Run `status --json` again. Stop when `fixes` has no `error` or `warning` left, and tell the person what is live (`data.apps[]` with `status: "active"` and `bound: true`) and what settles by itself (a certificate, a first visit).

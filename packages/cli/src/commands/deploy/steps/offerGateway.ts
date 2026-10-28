@@ -13,7 +13,7 @@
 import chalk from "chalk";
 import { resolveAccount } from "@/lib/cf/account";
 import type { CfWhoami } from "@/lib/cf/schemas";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { DEFAULT_GATEWAY_NAMES, gatewayNameOf } from "@every-app/perimeter/manifest";
 import { listWorkers } from "@/lib/cf/workers";
 import { ActionRequiredError, CancelledError, EveryAppError } from "@/lib/errors";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
@@ -89,9 +89,11 @@ export async function offerGateway({
       );
     }
   }
+  // A deploy installs the default Gateway; a named one is setup --name's.
   await installGateway({
     whoami,
     discovery,
+    names: DEFAULT_GATEWAY_NAMES,
     flags: {
       domain: host,
       "account-id": account.id,
@@ -129,9 +131,9 @@ function noGatewayIn(discovery: Discovery): string {
 }
 
 /**
- * GATEWAY_CHECK_FAILED when an account already runs the Gateway Worker
- * (or its Workers can't be listed, so that can't be told), though no
- * Gateway database was found there.
+ * GATEWAY_CHECK_FAILED when an account already runs a Gateway Worker (the
+ * default's or a named one's), or its Workers can't be listed, so that
+ * can't be told, though no Gateway database was found there.
  */
 async function refuseServingGateway(
   discovery: Discovery,
@@ -141,7 +143,7 @@ async function refuseServingGateway(
     const name = account.name ?? account.id;
     let hosts: string[] | null;
     try {
-      const worker = (await listWorkers(createCf(account.id))).find((w) => w.name === GATEWAY_WORKER_NAME);
+      const worker = (await listWorkers(createCf(account.id))).find((w) => gatewayNameOf(w.name) !== null);
       hosts = worker ? (worker.references?.domains ?? []).map((domain) => domain.hostname.toLowerCase()) : null;
     } catch {
       throw new EveryAppError(

@@ -277,8 +277,15 @@ export default defineConfig(({ mode }) => {
         // declared here, so whatever it says reaches the policy, which
         // refuses an unknown one); a deployed one has the secret the CLI set
         // at install.
+        // Which Gateway this is, when a Cloudflare account holds several
+        // (src/server/gateway-name.ts): empty for the default
+        // `every-app-gateway`, else the name after `every-app-gateway-`.
+        // The deploy patches it in with the Worker's own name.
         ...(production
-          ? { APP_BASE_DOMAIN: bindings.text<string>(PATCH) }
+          ? {
+              APP_BASE_DOMAIN: bindings.text<string>(PATCH),
+              EVERYAPP_GATEWAY_NAME: bindings.text<string>(PATCH),
+            }
           : devBindings(localSettings(mode ?? "development"))),
       },
     },

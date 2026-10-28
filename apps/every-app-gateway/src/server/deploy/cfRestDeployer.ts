@@ -11,7 +11,8 @@ import {
 } from "@/server/deploy/cf-rest";
 import { DeployError } from "./errors";
 import type { DeployerPort } from "./port";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { env } from "cloudflare:workers";
+import { gatewayNamesOf } from "@/server/gateway-name";
 import type { AppRow } from "@every-app/perimeter/registry";
 import {
   recordBrowserGatewayDeployment,
@@ -271,8 +272,10 @@ export class CfRestDeployer implements DeployerPort {
           await renewGateway();
         };
         await renew();
+        // This Gateway's own Worker (a named Gateway binds apps on its own, never the default's).
+        const gatewayWorker = gatewayNamesOf(env).worker;
         const primary = (await this.cf.scripts.domains(gatewayHost)).find(
-          (domain) => domain.service === GATEWAY_WORKER_NAME,
+          (domain) => domain.service === gatewayWorker,
         );
         if (!primary)
           throw new DeployError(
@@ -281,7 +284,7 @@ export class CfRestDeployer implements DeployerPort {
             "This account has no Custom Domain for the Gateway.",
           );
         const domains = await this.cf.scripts.domains(hostname);
-        if (domains.some((domain) => domain.service !== GATEWAY_WORKER_NAME))
+        if (domains.some((domain) => domain.service !== gatewayWorker))
           throw new DeployError(
             "HOSTNAME_TAKEN",
             409,
@@ -302,7 +305,7 @@ export class CfRestDeployer implements DeployerPort {
             "DNS already answers for this app's hostname. Choose another app id.",
           );
         await renew();
-        const current = await this.cf.scripts.settings(GATEWAY_WORKER_NAME);
+        const current = await this.cf.scripts.settings(gatewayWorker);
         if (!Array.isArray(current.bindings))
           throw new DeployError(
             "DEPLOYER_NOT_CONFIGURED",
@@ -326,7 +329,7 @@ export class CfRestDeployer implements DeployerPort {
           );
         if (!present) {
           await renew();
-          await this.cf.scripts.patchSettings(GATEWAY_WORKER_NAME, {
+          await this.cf.scripts.patchSettings(gatewayWorker, {
             bindings: [
               ...current.bindings.map((binding) => ({
                 type: "inherit" as const,
@@ -340,11 +343,11 @@ export class CfRestDeployer implements DeployerPort {
         if (!domains.length)
           await this.cf.scripts.attachDomain({
             hostname,
-            service: GATEWAY_WORKER_NAME,
+            service: gatewayWorker,
             zone_id: primary.zone_id,
           });
         await renew();
-        const verified = (await this.bindings(GATEWAY_WORKER_NAME)).find(
+        const verified = (await this.bindings(gatewayWorker)).find(
           (binding) => binding.name === bindingName,
         );
         if (verified?.type !== "service" || verified.service !== workerName)
@@ -353,7 +356,7 @@ export class CfRestDeployer implements DeployerPort {
             502,
             "Cloudflare did not retain the app's Gateway binding. Try again.",
           );
-        const versionId = await this.servingVersionId(GATEWAY_WORKER_NAME);
+        const versionId = await this.servingVersionId(gatewayWorker);
         await renew();
         await recordBrowserGatewayDeployment(
           versionId,

@@ -9,6 +9,7 @@
  * pick among several Gateways here; the URL itself always comes from the
  * install row, and one that names another host is refused.
  */
+import { gatewayNameProblem, type GatewayNames } from "@every-app/perimeter/manifest";
 import { deviceLoginAction, ensureCfAuth } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
@@ -34,6 +35,8 @@ interface GatewayConnection {
   /** The account's name, when cf lists it. */
   accountName: string | null;
   databaseId: string;
+  /** The Gateway's names: its Worker, D1, KV, queue, and what its apps are called. */
+  names: GatewayNames;
   /** The Gateway's D1: its registry, install row, leases and ledgers. */
   db: D1Database;
   install: InstallRecord;
@@ -72,11 +75,34 @@ function normalizeGatewayUrl(gatewayUrl: string, source: "--gateway" | "EVERYAPP
   return url.toString().replace(/\/+$/, "");
 }
 
-/** The gateway URL `--gateway` or EVERYAPP_GATEWAY_URL names, if either does. */
+/**
+ * What `--gateway` or EVERYAPP_GATEWAY_URL names, if either does: the
+ * Gateway's URL, or (`--gateway` only) its name, `every-app-gateway-<name>`
+ * or the bare name, when the account holds several (`isGatewayName`).
+ */
 export function requestedGatewayUrl(flag?: string): string | undefined {
-  if (flag) return normalizeGatewayUrl(flag, "--gateway");
+  if (flag) return isGatewayName(flag) ? gatewayNameFrom(flag) : normalizeGatewayUrl(flag, "--gateway");
   const fromEnv = process.env["EVERYAPP_GATEWAY_URL"];
   return fromEnv ? normalizeGatewayUrl(fromEnv, "EVERYAPP_GATEWAY_URL") : undefined;
+}
+
+/** A `--gateway` value that is a name, not a URL: no scheme and no dot. */
+function isGatewayName(value: string): boolean {
+  return !value.includes("://") && !value.includes(".") && !value.includes("/");
+}
+
+/** The name `--gateway` gives: `demo`, `every-app-gateway-demo` or `every-app-gateway` (the default, as ""). */
+function gatewayNameFrom(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  const name = trimmed === "every-app-gateway" ? "" : trimmed.replace(/^every-app-gateway-/, "");
+  const problem = name === "" ? (trimmed === "every-app-gateway" ? null : "a Gateway name is 1 to 16 lowercase letters or digits") : gatewayNameProblem(name);
+  if (problem) {
+    throw new EveryAppError(
+      "INVALID_GATEWAY_URL",
+      `--gateway must be the Gateway's URL or its name, not "${value}"\n${problem}.`,
+    );
+  }
+  return name;
 }
 
 /** How a run without a terminal logs in: see `ensureCfAuth`. */
@@ -91,6 +117,7 @@ async function loginAndDiscover({
   createCf = defaultCreateCf,
   accountId,
   host,
+  name,
   interactive,
   onDeviceLogin,
 }: {
@@ -99,6 +126,8 @@ async function loginAndDiscover({
   accountId?: string;
   /** The host the command names (--gateway, setup's --domain). */
   host?: string;
+  /** The name the command names (--gateway <name>; "" is the default Gateway). */
+  name?: string;
   interactive: boolean;
   onDeviceLogin?: OnDeviceLogin;
 }): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
@@ -112,6 +141,7 @@ async function loginAndDiscover({
     createCf,
     accountId,
     host,
+    ...(name !== undefined ? { name: name || null } : {}),
     interactive,
   });
   return { whoami, discovery };
@@ -144,11 +174,15 @@ export async function existingGateway({
   json,
   out,
   accountId,
+  gateway,
   createCf,
 }: ExistingGatewayOptions): Promise<FoundGateway> {
+  const byUrl = gateway !== undefined && gateway.includes("://");
   const { whoami, discovery } = await loginAndDiscover({
     createCf,
     accountId,
+    host: byUrl ? new URL(gateway).host.toLowerCase() : undefined,
+    name: gateway !== undefined && !byUrl ? gatewayNameFrom(gateway) : undefined,
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
@@ -177,6 +211,8 @@ interface ExistingGatewayOptions {
   out: EventSink;
   /** --account-id */
   accountId?: string;
+  /** What --gateway or EVERYAPP_GATEWAY_URL names (requestedGatewayUrl): a URL or a name. */
+  gateway?: string;
   /** cf per account (tests). */
   createCf?: CreateCf;
 }
@@ -208,17 +244,21 @@ export async function connectToGateway({
    */
   onNoGateway?: (found: { whoami: CfWhoami; discovery: Discovery }) => Promise<Discovery>;
 }): Promise<GatewayConnection> {
-  const host = gateway ? new URL(gateway).host.toLowerCase() : undefined;
+  // --gateway: a URL picks by host, a name by name ("" is the default Gateway).
+  const byUrl = gateway !== undefined && gateway.includes("://");
+  const host = byUrl ? new URL(gateway).host.toLowerCase() : undefined;
+  const name = gateway !== undefined && !byUrl ? gatewayNameFrom(gateway) : undefined;
   const loggedIn = await loginAndDiscover({
     createCf,
     accountId,
     host,
+    name,
     interactive,
     onDeviceLogin: login?.json ? deviceLoginAction(login.out, login.step) : undefined,
   });
   const { whoami } = loggedIn;
   let { discovery } = loggedIn;
-  const named = host !== undefined || discovery.requestedAccountId !== undefined;
+  const named = host !== undefined || name !== undefined || discovery.requestedAccountId !== undefined;
   if (
     onNoGateway &&
     !named &&
@@ -230,12 +270,13 @@ export async function connectToGateway({
     discovery = await onNoGateway({ whoami, discovery });
   }
   const found = requireInstall(requireGateway(discovery, whoami, host));
-  checkGatewayUrl(found, gateway);
+  checkGatewayUrl(found, byUrl ? gateway : undefined);
   return {
     cf: found.cf,
     accountId: found.account.id,
     accountName: found.account.name,
     databaseId: found.databaseId,
+    names: found.names,
     db: found.db,
     install: found.install,
     gatewayUrl: `https://${found.install.gatewayHost}`,

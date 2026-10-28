@@ -15,7 +15,6 @@
  * under --json only in `done.data.secret`, never in a message.
  */
 import { text as readAll } from "node:stream/consumers";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { EVENTS_ALLOW_PRIVATE_TARGETS_SETTING, type EventEmailRecipients } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
@@ -151,7 +150,7 @@ export async function addEvents(options: AddOptions, url?: string): Promise<void
 
   const { gateway, organization } = await connect(options);
   // Names only: whether a setting is there, never its value.
-  const settings = await listWorkerSecrets(gateway.cf, GATEWAY_WORKER_NAME);
+  const settings = await listWorkerSecrets(gateway.cf, gateway.names.worker);
   let target: SubscriptionTarget;
   let secretGenerated = false;
   if (url !== undefined) {

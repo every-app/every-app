@@ -7,7 +7,7 @@
  * the app Worker's secret names (`apps.secret_names`), which the CLI
  * writes after listing them here (`listAppSecretNames`).
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import type { GatewayNames } from "@every-app/perimeter/manifest";
 import {
   appSettings,
   appSetupOf,
@@ -30,9 +30,9 @@ import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { CLI } from "@/lib/output/command";
 import { formatTable } from "@/lib/output/table";
 
-/** The Gateway Worker's secret names: which of its settings are set. */
-export function listGatewaySecretNames(cf: CfRunner): Promise<string[]> {
-  return listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
+/** The Gateway Worker's secret names: which of its settings are set. `names`: the Gateway's (its Worker). */
+export function listGatewaySecretNames(cf: CfRunner, names: Pick<GatewayNames, "worker">): Promise<string[]> {
+  return listWorkerSecrets(cf, names.worker);
 }
 
 /**

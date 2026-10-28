@@ -95,11 +95,17 @@ const ALLOWED_BINDINGS = new Set([
  * resource separator. `every-acme-notes-archive` is app `notes-archive`'s
  * Worker, not one of app `notes`'s resources.
  */
-/** The service binding every app Worker has: the gateway's AppGateway. */
-function isGatewayBinding(name: string, binding: Binding): boolean {
+/**
+ * The service binding every app Worker has: the gateway's AppGateway. It
+ * names the Gateway the app deploys to (`gatewayWorker`, which the install
+ * wrote in), or the default Gateway's Worker, the build's placeholder
+ * (a release bundle, before any install); never another Gateway's.
+ */
+function isGatewayBinding(name: string, binding: Binding, gatewayWorker?: string): boolean {
+  const worker = binding["worker"];
   return (
     name === "EVERY_APP_GATEWAY" &&
-    binding["worker"] === GATEWAY_WORKER_NAME &&
+    (worker === GATEWAY_WORKER_NAME || (gatewayWorker !== undefined && worker === gatewayWorker)) &&
     binding["exportName"] === "AppGateway"
   );
 }
@@ -133,6 +139,7 @@ type PolicyInputs = Pick<
   | "deletedDurableObjects"
   | "helperWorkers"
   | "declared"
+  | "gatewayWorker"
 >;
 
 /** The address fields of a `send-email` binding, as cf's config names them. */
@@ -218,7 +225,8 @@ export function appPolicyProblems(
       env,
       inputs,
       (name, binding) =>
-        isGatewayBinding(name, binding) || helperWorkers.includes(String(binding["worker"])),
+        isGatewayBinding(name, binding, inputs.gatewayWorker) ||
+        helperWorkers.includes(String(binding["worker"])),
     ),
     ...exportProblems(
       config.exports ?? {},
@@ -246,7 +254,9 @@ export function helperPolicyProblems(
   problems.push(
     ...privacyProblems(config),
     ...queueTriggerProblems(config, inputs),
-    ...bindingProblems(config.env ?? {}, inputs, isGatewayBinding),
+    ...bindingProblems(config.env ?? {}, inputs, (name, binding) =>
+      isGatewayBinding(name, binding, inputs.gatewayWorker),
+    ),
     // No tombstones on a helper yet: its classes stay while it does.
     ...exportProblems(config.exports ?? {}, [], inputs.workerName),
   );

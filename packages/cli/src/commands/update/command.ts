@@ -1,6 +1,6 @@
 import { buildCommand } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { accountFlag, forceDnsFlag, jsonFlag, verboseFlag, yesFlag } from "../flags";
+import { accountFlag, forceDnsFlag, gatewayFlag, jsonFlag, verboseFlag, yesFlag } from "../flags";
 
 export const updateCommand = buildCommand({
   loader: async () => {
@@ -11,6 +11,7 @@ export const updateCommand = buildCommand({
     positional: { kind: "tuple", parameters: [] },
     flags: {
       "account-id": accountFlag,
+      gateway: gatewayFlag,
       release: {
         kind: "parsed",
         parse: String,

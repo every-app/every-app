@@ -1,8 +1,11 @@
 /**
- * What Every App created in one Cloudflare account, read and never
- * written: the Gateway's D1 (its install row, `apps` rows and the
- * resources each app recorded), then every kind of resource by name
- * (`every-*`), our Workers' queue consumers, the Access applications and policy, the Email Routing rules
+ * What one Gateway of Every App created in a Cloudflare account, read and
+ * never written: the Gateway's D1 (its install row, `apps` rows and the
+ * resources each app recorded), then every kind of resource by name (the
+ * Gateway's names: `belongsToGateway` in packages/perimeter
+ * manifest/gatewayNames.ts, which never matches another Gateway's, named
+ * or default, so one account may hold several and a teardown of one leaves
+ * the others whole), our Workers' queue consumers, the Access applications and policy, the Email Routing rules
  * that send mail to our Workers, the certificate packs of our hostnames
  * and the Custom Domain records (A, AAAA, CNAME) at exactly those names.
  * A missing Gateway D1 or table is fine: the name scan still runs, so a
@@ -13,8 +16,8 @@
  * it, no warning. Each kind goes out as a `teardown.found` step with its
  * count.
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME } from "@/lib/access/applications";
+import { belongsToGateway, type GatewayNames } from "@every-app/perimeter/manifest";
+import { accessApplicationNames } from "@/lib/access/applications";
 import { findAccessApplications, type AccessScope } from "@/lib/access/plan";
 import { readAllRecordedResources } from "@/lib/app/ownership";
 import {
@@ -58,7 +61,6 @@ import {
   EVERY_APP_PREFIX,
   isCustomDomainRecord,
   isEmailRoutingRecord,
-  isEveryAppName,
   KINDS,
   planCounts,
   planTotal,
@@ -70,12 +72,17 @@ import {
 const STEP = "teardown.inventory";
 
 /** The Gateway's own Worker goes last: it binds the apps' Workers. */
-function workerOrder(a: string, b: string): number {
-  if (a === GATEWAY_WORKER_NAME) return 1;
-  if (b === GATEWAY_WORKER_NAME) return -1;
-  // An app before its helpers (`<app>--<helper>`), which it binds.
-  return a.localeCompare(b);
-}
+const workerOrder =
+  (gatewayWorker: string) =>
+  (a: string, b: string): number => {
+    if (a === gatewayWorker) return 1;
+    if (b === gatewayWorker) return -1;
+    // An app before its helpers (`<app>--<helper>`), which it binds.
+    return a.localeCompare(b);
+  };
+
+/** Who made what a teardown deletes, in its messages: "EveryApp" for the default Gateway, as always; "Gateway demo" for a named one. */
+export const creatorOf = (names: GatewayNames): string => (names.name === null ? "EveryApp" : names.label);
 
 const inZone = (host: string, zone: Zone): boolean =>
   host === zone.name || host.endsWith(`.${zone.name}`);
@@ -83,19 +90,23 @@ const inZone = (host: string, zone: Zone): boolean =>
 export async function inventoryAccount({
   cf,
   accountId,
+  names,
   out,
 }: {
   /** cf pinned to the account. */
   cf: CfRunner;
   accountId: string;
+  /** The Gateway torn down: everything else in the account is someone else's. */
+  names: GatewayNames;
   out: EventSink;
 }): Promise<TeardownPlan> {
+  const creator = creatorOf(names);
   out.emit({
     type: "step",
     step: STEP,
     status: "start",
-    message: `Looking for what EveryApp created in ${accountId}...`,
-    data: { accountId },
+    message: `Looking for what ${creator} created in ${accountId}...`,
+    data: { accountId, gateway: names.name },
   });
   const found = (kind: Kind, count: number, items: unknown) =>
     out.emit({
@@ -144,21 +155,23 @@ export async function inventoryAccount({
   };
 
   // 1. The Gateway's D1: what the registry and the resource ledger name.
-  const databaseId = await read("the Gateway's database", null, () => findGatewayDatabase(cf));
+  const databaseId = await read("the Gateway's database", null, () => findGatewayDatabase(cf, names));
   const db = databaseId ? cfD1Database(cf, databaseId) : null;
   const install = db ? await read("the Gateway's install row", null, () => readInstall(db)) : null;
   const appRows = db ? await read("the Gateway's apps", [], () => listAppRows(db)) : [];
   const recorded = db ? await read("the apps' recorded resources", [], () => readAllRecordedResources(db)) : [];
   const recordedNames = (kind: string) =>
     new Set(recorded.filter((resource) => resource.kind === kind).map((resource) => resource.name));
-  const ours = (kind: string, name: string) => isEveryAppName(name) || recordedNames(kind).has(name);
+  /** This Gateway's by its names' shape, or recorded in its ledger as one of its apps'. */
+  const ownName = (name: string) => belongsToGateway(names, name);
+  const ours = (kind: string, name: string) => ownName(name) || recordedNames(kind).has(name);
   const appWorkerNames = new Set(appRows.flatMap((row) => (row.workerName ? [row.workerName] : [])));
 
   // 2. Workers, with the Custom Domains that reference each.
   const listedWorkers = await read("the Workers", [], () => listWorkers(cf));
   const workers = listedWorkers
     .filter((worker) => ours("worker", worker.name) || appWorkerNames.has(worker.name))
-    .sort((a, b) => workerOrder(a.name, b.name))
+    .sort((a, b) => workerOrder(names.worker)(a.name, b.name))
     .map((worker) => ({
       name: worker.name,
       domains: (worker.references?.domains ?? []).map((domain) => domain.hostname.toLowerCase()).sort(),
@@ -167,7 +180,7 @@ export async function inventoryAccount({
 
   // 3. Workflows run by our Workers (or named like them).
   const workflows = (await read("the Workflows", [], () => listWorkflows(cf, EVERY_APP_PREFIX)))
-    .filter((workflow) => isEveryAppName(workflow.script_name ?? "") || isEveryAppName(workflow.name))
+    .filter((workflow) => ownName(workflow.script_name ?? "") || ownName(workflow.name))
     .map((workflow) => workflow.name)
     .sort();
   found("workflows", workflows.length, workflows);
@@ -197,7 +210,7 @@ export async function inventoryAccount({
   // 6. R2 buckets (never recorded: by name alone; those of the default
   // jurisdiction, the only one cf lists without being told another).
   const r2 = (await read("the R2 buckets", [], () => listR2Buckets(cf, EVERY_APP_PREFIX)))
-    .filter(isEveryAppName)
+    .filter(ownName)
     .sort();
   found("r2", r2.length, r2);
 
@@ -238,7 +251,8 @@ export async function inventoryAccount({
     .filter((name) => ours("vectorize", name))
     .sort();
   found("vectorize", vectorize.length, vectorize);
-  // 7d. AI Gateways, by id (`<worker>-<binding>`: one hyphen, still every-*).
+  // 7d. AI Gateways, by id (`<worker>-<binding>` on the default Gateway,
+  // `every-app-gateway-<name>-…` on a named one: both every-*).
   const aiGateway = (await read("the AI Gateways", [], () => listAiGateways(cf, EVERY_APP_PREFIX)))
     .map((gateway) => gateway.id)
     .filter((id) => ours("ai-gateway", id))
@@ -273,8 +287,11 @@ export async function inventoryAccount({
       : null;
     const applications = await read("the Access applications", [], () => listAccessApplications(cf));
     const covering = scope ? findAccessApplications(applications, scope) : { gateway: null, apps: null };
+    // And by this Gateway's names ("Every App gateway", "Every App gateway
+    // (demo)" for a named one): never another Gateway's.
+    const accessNames = accessApplicationNames(names);
     const named = applications.filter(
-      (application) => application.name === GATEWAY_APPLICATION_NAME || application.name === APPS_APPLICATION_NAME,
+      (application) => application.name === accessNames.gateway || application.name === accessNames.apps,
     );
     const chosen = new Map<string, AccessApplication>();
     for (const application of [covering.gateway, covering.apps, ...named]) {
@@ -284,8 +301,9 @@ export async function inventoryAccount({
       id: application.id,
       name: application.name ?? application.id,
     }));
+    // The allow policy by this Gateway's name for it.
     const policy = (await read("the Access policies", [], () => listAccessPolicies(cf))).find(
-      (candidate) => candidate.name === POLICY_NAME,
+      (candidate) => candidate.name === accessNames.policy,
     );
     access.policy = policy ? { id: policy.id, name: policy.name } : null;
     kept.push(`the Zero Trust team ${organization.auth_domain} and its identity providers`);
@@ -353,9 +371,9 @@ export async function inventoryAccount({
     }));
     if (!routing) continue;
     const { settings, rules, catchAll } = routing;
-    const oursRules = rules.filter((rule) => rule.id !== null && isEveryAppName(ruleWorker(rule) ?? ""));
+    const oursRules = rules.filter((rule) => rule.id !== null && ownName(ruleWorker(rule) ?? ""));
     const catchAllWorker = ruleWorker(catchAll);
-    const catchAllOurs = catchAllWorker !== null && isEveryAppName(catchAllWorker);
+    const catchAllOurs = catchAllWorker !== null && ownName(catchAllWorker);
     if (oursRules.length === 0 && !catchAllOurs) continue;
     const catchAllInert = !catchAll.enabled || catchAll.actions.every((action) => action.type === "drop");
     email.push({
@@ -422,6 +440,8 @@ export async function inventoryAccount({
 
   const plan: TeardownPlan = {
     accountId,
+    gatewayName: names.name,
+    gatewayWorker: names.worker,
     gateway: databaseId ? { databaseId, gatewayHost: install?.gatewayHost ?? null } : null,
     workers,
     workflows,
@@ -444,8 +464,8 @@ export async function inventoryAccount({
     type: "step",
     step: STEP,
     status: "ok",
-    message: `Found ${plural(planTotal(plan), "resource")} of EveryApp's in ${accountId}.`,
-    data: { accountId, counts: planCounts(plan), total: planTotal(plan) },
+    message: `Found ${plural(planTotal(plan), "resource")} of ${creator}'s in ${accountId}.`,
+    data: { accountId, gateway: names.name, counts: planCounts(plan), total: planTotal(plan) },
   });
   return plan;
 }
