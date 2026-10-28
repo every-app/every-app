@@ -2,10 +2,11 @@
 
 The onboarding loop (docs/design/2026-10-onboarding-loop.md) installs EveryApp from nothing, over and over, and wipes everything it made between runs. It needs Cloudflare accounts that hold nothing else. This runbook creates them.
 
-Two rules, decided 2026-10-23:
+Three rules:
 
 1. **A test account belongs to a separate Cloudflare user.** Not an extra account under your own login: a token minted by your user can see every account that user is a member of, and the teardown must have no path to a live account. Your live account (openseo.so, everyapp.team) is never eligible: list its id in `~/.config/everyapp/forbidden-accounts` (one id per line, `#` comments; or `EVERYAPP_FORBIDDEN_ACCOUNTS`), and the teardown, the loop and the live provisioner tests refuse it by id. No id ships in the code.
 2. **A token's value never goes through chat or into the repository.** You create it in the dashboard and put it where the loop reads it yourself (below).
+3. **A live run happens only when Ben asks for that specific run** (decided 2026-10-28). Nothing schedules or repeats the loop or the live tests, and agents stop at "ready for a live check" and ask.
 
 One account is enough to run harnesses one after another. Two let two harnesses run at the same time, each against its own account. The steps are the same for each; do them once per account.
 

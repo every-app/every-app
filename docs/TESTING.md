@@ -516,6 +516,9 @@ share (the claude session, the person's rules, the stubs) is
 
 ### The onboarding loop
 
+The loop and every other live test run only when Ben asks for that specific run.
+Nothing schedules or repeats them, and agents don't start them on their own.
+
 `packages/onboarding-loop` proves the setup prompt on /docs/gateway on a coding
 agent, from a wiped, dedicated test Cloudflare account: `pnpm loop doctor`
 once, then `pnpm loop run --harness claude --account loop-1` (45 to 75

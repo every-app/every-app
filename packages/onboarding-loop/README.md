@@ -17,6 +17,10 @@ writes are in [docs/runbooks/onboarding-loop-test-accounts.md](../../docs/runboo
 
 ## What Ben runs
 
+Only Ben starts a run, or an agent he has asked for that specific run. The loop
+is never scheduled or repeated automatically, and agents never start it on
+their own.
+
 ```
 pnpm loop doctor                                   # once: build the image, check every command line
 pnpm loop accounts                                 # what accounts.json and providers.env hold (names, zones; never a secret)
