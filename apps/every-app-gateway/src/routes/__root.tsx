@@ -21,6 +21,7 @@ import {
 import { TooltipProvider } from "@/client/components/ui/tooltip";
 import { FloatingBuildStamp } from "@/client/components/BuildStamp";
 import { Toaster } from "sonner";
+import { BRAND } from "@/brand";
 
 const PUBLIC_ROUTES = [
   "/setup",
@@ -124,21 +125,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
-        <meta name="apple-mobile-web-app-title" content="EveryApp" />
+        <meta name="apple-mobile-web-app-title" content={BRAND.shortName} />
         <meta
           name="theme-color"
-          content="#121212"
+          content={BRAND.themeColor.dark}
           media="(prefers-color-scheme: dark)"
         />
         <meta
           name="theme-color"
-          content="#f0f0f0"
+          content={BRAND.themeColor.light}
           media="(prefers-color-scheme: light)"
         />
-        <meta
-          name="description"
-          content="Make every app open source. No subscriptions or paywalls. Own your data. Share with the world."
-        />
+        <meta name="description" content={BRAND.description} />
         <link rel="manifest" href="/site.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -155,7 +153,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           href="/favicon-16x16.png"
         />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <title>EveryApp</title>
+        <title>{BRAND.name}</title>
         <HeadContent />
       </head>
       <body>

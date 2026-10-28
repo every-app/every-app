@@ -9,6 +9,7 @@
  * the service's owner-only rule); no answer carries a credential. Drives serveGatewayMcp with resolved callers, as
  * gateway-mcp.sqlite.test.ts does.
  */
+import { BRAND } from "@/brand";
 import {
   afterEach,
   beforeAll,
@@ -1504,7 +1505,7 @@ describe("an admin administering the workspace over /mcp", () => {
       expect(sent).toEqual([
         expect.objectContaining({
           to: "member@example.com",
-          subject: "Reset your EveryApp password",
+          subject: `Reset your ${BRAND.name} password`,
         }),
       ]);
       expect(sent[0]?.text).toMatch(
@@ -2424,7 +2425,7 @@ describe("the events tools over /mcp", () => {
       delivered: true,
       delivery: {
         id: expect.stringMatching(/^dlv_[0-9a-f]{24}$/),
-        event: { type: "ping", summary: "Test event from EveryApp" },
+        event: { type: "ping", summary: `Test event from ${BRAND.name}` },
         subscription: { id: tested, name: "Tested" },
         state: "delivered",
         attempts: 1,

@@ -11,6 +11,7 @@ import {
   type AppSetup,
   type AppSetupSetting,
 } from "@every-app/sdk/internal";
+import { BRAND } from "@/brand";
 
 /** How an operator re-reads the app Worker's secrets after setting one another way. */
 export const STATUS_COMMAND = "pnpm everyapp status";
@@ -76,7 +77,7 @@ interface SetupDialogModel {
   statusHint: boolean;
 }
 
-export const PLATFORM_NOTE = "EveryApp is still setting this up.";
+export const PLATFORM_NOTE = `${BRAND.name} is still setting this up.`;
 const ASK_AN_ADMIN = "Ask an admin to run:";
 const INTRO_CAN_RUN = "Set these before anyone can open it.";
 // The command's heading says who; the intro doesn't say "admin" twice.

@@ -3,6 +3,7 @@
  * apps, "Available to everyone", roles, and deactivation reaching every
  * credential the gateway accepts.
  */
+import { BRAND } from "@/brand";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
@@ -654,7 +655,7 @@ describe("user management (SQLite)", () => {
       expect(mailbox.sent).toEqual([
         expect.objectContaining({
           to: `${member}@example.com`,
-          subject: "Reset your EveryApp password",
+          subject: `Reset your ${BRAND.name} password`,
         }),
       ]);
       expect(mailbox.sent[0]?.text).toMatch(

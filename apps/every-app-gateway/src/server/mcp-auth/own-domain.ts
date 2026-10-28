@@ -14,12 +14,12 @@
  * gateway's host today; it counts on its own so that apps moving to a base
  * domain apart from the gateway stay covered.
  */
+import { BRAND } from "@/brand";
 import { appBaseDomain } from "@/server/app-hosts";
 
 const LOOPBACK_HOST = /^(?:localhost|127(?:\.\d{1,3}){3})$/;
 
-export const ON_PLATFORM_DOMAIN =
-  "This app uses an address on this gateway's own domain, which only EveryApp itself may use.";
+export const ON_PLATFORM_DOMAIN = `This app uses an address on this gateway's own domain, which only ${BRAND.name} itself may use.`;
 
 /**
  * Whether a URL is on one of the platform's domains: the gateway's host

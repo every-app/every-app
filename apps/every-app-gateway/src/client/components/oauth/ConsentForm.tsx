@@ -27,6 +27,7 @@ import {
 import { Spinner } from "@/client/components/ui/spinner";
 import { domainCoversRedirect } from "./clientSite";
 import { useDeliberateAllow } from "./useDeliberateAllow";
+import { BRAND } from "@/brand";
 
 type Context = Extract<ConsentContext, { ok: true }>;
 type ToolState = Context["organizations"][number]["apps"][number]["tools"];
@@ -124,7 +125,7 @@ export function ConsentForm({
           </div>
           <CardTitle className="mt-4 text-xl">
             <h1 className="line-clamp-3 break-words" title={client.name}>
-              Connect {client.name} to EveryApp
+              Connect {client.name} to {BRAND.name}
             </h1>
           </CardTitle>
           {verified ? (

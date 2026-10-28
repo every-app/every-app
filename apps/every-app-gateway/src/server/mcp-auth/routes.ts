@@ -49,6 +49,7 @@ import { onPlatformDomain, tokenRequestClientIds } from "./own-domain";
 import { normalizeClientRegistrationRequest } from "./registration";
 import { allowRegistration } from "./registration-limit";
 import { resolvePatCaller } from "./validate";
+import { BRAND } from "@/brand";
 
 const MCP_PATH = "/mcp";
 /** The header Access adds to every request it lets through. */
@@ -320,7 +321,7 @@ function unavailable(pathname: string): Response {
     return errorPage(
       503,
       "Something went wrong",
-      "EveryApp couldn't finish this just now. Start connecting again from your AI app in a moment.",
+      `${BRAND.name} couldn't finish this just now. Start connecting again from your AI app in a moment.`,
     );
   }
   if (pathname === MCP_PATH) {
@@ -328,7 +329,10 @@ function unavailable(pathname: string): Response {
       {
         jsonrpc: "2.0",
         id: null,
-        error: { code: -32603, message: "EveryApp is unavailable just now." },
+        error: {
+          code: -32603,
+          message: `${BRAND.name} is unavailable just now.`,
+        },
       },
       { status: 503, headers: { "retry-after": "30" } },
     );

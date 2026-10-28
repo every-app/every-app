@@ -5,6 +5,7 @@
  * the inviting organization, the session's starting organization, the
  * invite-only switch, and self-hosted staying as it was.
  */
+import { BRAND } from "@/brand";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
@@ -129,7 +130,7 @@ function mailsTo(email: string, subject?: string): Mail[] {
   );
 }
 
-const VERIFY_SUBJECT = "Verify your EveryApp email";
+const VERIFY_SUBJECT = `Verify your ${BRAND.name} email`;
 
 /** The link in the latest verification mail to this address. */
 function verificationLink(email: string): string {

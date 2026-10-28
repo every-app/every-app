@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
+import { BRAND } from "@/brand";
 
 /**
  * The Every App mark and wordmark with no link, for the pages outside the
@@ -26,7 +27,7 @@ export function BrandMark({
         alt=""
         className={cn("rounded-md", mark)}
       />
-      EveryApp
+      {BRAND.name}
     </span>
   );
 }
