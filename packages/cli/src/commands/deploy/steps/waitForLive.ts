@@ -185,7 +185,7 @@ export async function waitForLive({
         type: "progress",
         step: STEP,
         message: accessInFront
-          ? `Cloudflare Access answers before the Gateway; waiting for the Gateway to make ${appId} live`
+          ? `Waiting for the Gateway to make ${appId} live`
           : answered
             ? `Waiting for ${appId} to go live`
             : `Waiting for the certificate for ${hostname} (usually under 5m)`,

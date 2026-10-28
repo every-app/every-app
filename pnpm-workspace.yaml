@@ -9,6 +9,27 @@ allowBuilds:
   esbuild: true
   sharp: true
   workerd: true
+# The @inquirer release of 2026-10-27, taken before the 7-day release age
+# (checked: same trusted publisher with provenance, no dependency or script
+# changes): @inquirer/password 5.2.5 keeps the space after a secret prompt's
+# question while nothing is typed yet. Only these versions skip the wait.
+minimumReleaseAgeExclude:
+  - "@inquirer/prompts@8.7.5"
+  - "@inquirer/ansi@2.0.10"
+  - "@inquirer/checkbox@5.2.8"
+  - "@inquirer/confirm@6.3.5"
+  - "@inquirer/core@12.0.6"
+  - "@inquirer/editor@5.3.6"
+  - "@inquirer/expand@5.1.8"
+  - "@inquirer/external-editor@3.0.7"
+  - "@inquirer/figures@2.0.10"
+  - "@inquirer/input@5.1.9"
+  - "@inquirer/number@4.2.6"
+  - "@inquirer/password@5.2.5"
+  - "@inquirer/rawlist@5.3.8"
+  - "@inquirer/search@4.3.6"
+  - "@inquirer/select@5.2.8"
+  - "@inquirer/type@4.2.1"
 # Security floors for transitive dependencies, applied to the shared
 # lockfile: jose 6.2.5 fixes JWT claim validation, and seroval 1.6.7 clears the
 # deserialization advisories (CVE-2026-59940, CVE-2026-23736) that TanStack

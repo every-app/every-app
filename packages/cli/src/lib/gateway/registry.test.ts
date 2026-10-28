@@ -752,7 +752,7 @@ describe("the live wait", () => {
       expect.objectContaining({
         type: "progress",
         step: "app.live",
-        message: "Cloudflare Access answers before the Gateway; waiting for the Gateway to make todo live",
+        message: "Waiting for the Gateway to make todo live",
         data: expect.objectContaining({ answered: true, access: true }),
       }),
     );

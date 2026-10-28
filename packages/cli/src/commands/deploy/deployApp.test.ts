@@ -962,7 +962,7 @@ describe("deploy", () => {
       expect.objectContaining({
         type: "progress",
         step: "app.live",
-        message: expect.stringMatching(/^Cloudflare Access answers before the Gateway; waiting for the Gateway/),
+        message: expect.stringMatching(/^Waiting for the Gateway to make todo live$/),
       }),
     );
     expect(events).toContainEqual(
