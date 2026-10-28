@@ -935,6 +935,12 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sy
 
 Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/commands/dev/link.ts`
 
+### LINKED_DEV_HOST_REFUSED
+
+`dev` in linked mode with a `--host` that isn't this machine (`127.0.0.0/8`, `::1`, `localhost`): refused before anything starts, since everyone who reached the port would act as the signed-in owner or admin and spend on the Gateway's providers (stub mode only warns `DEV_EXPOSED` for the same flag). Headline `Linked mode listens on this machine only, not on <host>`. `data.host`, `data.gateway`, `data.fix`: `drop --host, or use 127.0.0.1`.
+
+Source: `packages/cli/src/commands/dev/index.ts`
+
 ### LINKED_DEV_GATEWAY_UNREACHABLE
 
 Linked dev's sign-in (`dev --gateway`, `dev link`, and `dev unlink`'s revocation): the Gateway's `/.well-known/oauth-authorization-server` couldn't be fetched (DNS, a refused connection, no route). Headline `Can't reach the Gateway at <origin>`, then the error. `data.gateway` is the origin. Not retryable; check the URL and the network, then run again.

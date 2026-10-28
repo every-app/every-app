@@ -752,6 +752,14 @@ describe("everyapp dev --gateway (linked dev)", () => {
     }
   });
 
+  it("refuses a --host that isn't this machine in linked mode, before anything starts", async () => {
+    const cf = new DevCf(cwd);
+    await expect(
+      runDev({ mode: "linked", gateway: "https://apps.example.com", host: "0.0.0.0" }, out, { cwd, cf }),
+    ).rejects.toMatchObject({ code: "LINKED_DEV_HOST_REFUSED", data: { host: "0.0.0.0" } });
+    expect(cf.started).toHaveLength(0);
+  });
+
   it("needs a Gateway URL in linked mode", async () => {
     const cf = new DevCf(cwd);
     await expect(runDev({ mode: "linked" }, out, { cwd, cf, env: {} })).rejects.toMatchObject({

@@ -134,6 +134,16 @@ export async function runDev(
   }
 
   const host = flags.host ?? DEFAULT_HOST;
+  // Linked mode: everyone who reaches the port is the signed-in owner or
+  // admin, and their calls bill the workspace through the real Gateway, so
+  // the port stays on this machine (stub mode only warns, DEV_EXPOSED).
+  if (linkedGateway && !isLoopbackHost(host)) {
+    throw new EveryAppError(
+      "LINKED_DEV_HOST_REFUSED",
+      `Linked mode listens on this machine only, not on ${host}\nAnyone who reached that address would act as you and spend on ${linkedGateway}'s providers.`,
+      { data: { host, gateway: linkedGateway, fix: "drop --host, or use 127.0.0.1" } },
+    );
+  }
   const port = flags.port ?? (env["PORT"] ? Number(env["PORT"]) : DEFAULT_PORT);
   await assertPortFree(port, host);
 
@@ -500,6 +510,12 @@ async function waitForAppServer(
       },
     },
   );
+}
+
+/** Whether a `--host` names this machine: `127.0.0.0/8`, `::1`, `localhost`. */
+function isLoopbackHost(host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return name === "localhost" || name === "::1" || /^127(?:\.\d{1,3}){3}$/.test(name);
 }
 
 function isLoopback(address: string): boolean {
