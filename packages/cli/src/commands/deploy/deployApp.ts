@@ -950,12 +950,19 @@ async function deploySteps(
           },
     );
   }
-  // Behind Cloudflare Access, the app's public routes (and its /mcp, where
-  // the manifest sets mcp) are let through as soon as it is live (nothing
+  // Behind Cloudflare Access, the app's public and bearer routes (and its
+  // /mcp, where the manifest sets mcp) are let through as soon as it is live (nothing
   // to do when Access isn't in front).
   await syncAppsAccessAfter(
     { cf, db: registry, install, out },
-    { appId: manifest.id, surface: { publicRoutes: publicRoutes.length > 0, mcp: mcp !== null } },
+    {
+      appId: manifest.id,
+      surface: {
+        publicRoutes: publicRoutes.length > 0,
+        bearerRoutes: (manifest.bearerRoutes?.paths ?? []).length > 0,
+        mcp: mcp !== null,
+      },
+    },
   );
   if (outsideBase) {
     out.emit({

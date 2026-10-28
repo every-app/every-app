@@ -2426,7 +2426,7 @@ Source: `packages/cli/src/lib/access/applications.ts`
 
 ### ACCESS_ROUTE_NOT_EXPRESSIBLE
 
-Step `access.routes` (`access on`; the sync after `deploy` and `delete`): a public route with no Access path equivalent stays behind Access: `A public route stays behind Access: <app> <path>` (or `<n> public routes stay behind Access: …`) / `Access path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.` `data.routes`: `[{ appId, path, reason: "not_expressible" }]`.
+Step `access.routes` (`access on`; the sync after `deploy` and `delete`): a public route with no Access path equivalent stays behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.` `data.routes`: `[{ appId, path, reason: "not_expressible", bearer? }]`.
 
 Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
 
@@ -2450,7 +2450,7 @@ Source: `packages/cli/src/lib/access/sync.ts`
 
 ### ACCESS_TOO_MANY_PUBLIC_ROUTES
 
-Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A public route stays behind Access: <app> <path>` (or `<n> public routes stay behind Access: …`) / `Access lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp). Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many" }]`.
+Step `access.routes`: more public paths on one host than Access takes; the rest stay behind Access: `A route stays behind Access: <app> <path>` (or `<n> routes stay behind Access: …`; a bearer route is named `<app> <path> (bearer)`) / `Access lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp, one for the discovery document where it sets bearerRoutes). Merge routes under one prefix, or keep these behind the login.` `data.routes`: `[{ appId, path, reason: "too_many", bearer? }]`.
 
 Source: `packages/cli/src/lib/access/sync.ts`, `packages/cli/src/lib/access/plan.ts`
 

@@ -461,14 +461,14 @@ From the same audit that writes Admin → Activity (`mcp_tool_calls`): `tool.blo
 
 ### Connections and tokens
 
-| Type                 | v   | Summary                                         | `data`                                                                        |
-| -------------------- | --- | ----------------------------------------------- | ----------------------------------------------------------------------------- |
-| `connection.created` | 1   | "Ada connected Claude (read & write, all apps)" | `{ connection: { id, clientName, clientDomain?, access, appScope }, user }`   |
-| `connection.revoked` | 1   | "Ada's Claude connection was revoked (user)"    | `{ connection: { id, clientName }, user, reason }`                            |
-| `token.created`      | 1   | "Ada created the token ci-deploy"               | `{ id, name, scopes, appId?, expiresAt?, user }`; never the value or its hash |
-| `token.revoked`      | 1   | "Ada revoked the token ci-deploy"               | `{ id, name, user }`                                                          |
+| Type                 | v   | Summary                                                                                                                       | `data`                                                                                  |
+| -------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `connection.created` | 1   | "Ada connected Claude (read & write, all apps)"; a native app: "Ada signed in to OpenZen from OpenZen for Mac"                | `{ connection: { id, clientName, clientDomain?, access, appScope }, user, kind, app? }` |
+| `connection.revoked` | 1   | "Ada's Claude connection was revoked (user)"; a native app: "jo@acme's OpenZen for Mac sign-in to OpenZen was revoked (user)" | `{ connection: { id, clientName }, user, reason, kind, app? }`                          |
+| `token.created`      | 1   | "Ada created the token ci-deploy"                                                                                             | `{ id, name, scopes, appId?, expiresAt?, user }`; never the value or its hash           |
+| `token.revoked`      | 1   | "Ada revoked the token ci-deploy"                                                                                             | `{ id, name, user }`                                                                    |
 
-`connection.revoked`'s `reason`: `user` (the person revoked it), `operator` (`everyapp workspace connections revoke`), `superseded` (a new consent replaced it), `expired` (idle too long), `ended` or `failed` (its grant ended or its authorization failed), `member_removed` or `user_deactivated`. `token.revoked` comes from the person's own Settings → Tokens and from `everyapp workspace tokens revoke`; from the CLI the operator is the `actor` and the token's owner stays `user`, so the log says who revoked whose. The token types are flat: `id` and `name` are the token's, and no key is named `token`, since the credential-key rule (below) refuses that name in every event's `data`, the Gateway's own included.
+`connection.revoked`'s `reason`: `user` (the person revoked it), `operator` (`everyapp workspace connections revoke`), `superseded` (a new consent replaced it), `expired` (idle too long), `ended` or `failed` (its grant ended or its authorization failed), `member_removed`, `user_deactivated`, or `app_removed` (the app was deleted through the Gateway, or, within the hour, deleted or disabled by the CLI). Both events carry `kind`: `mcp` for an AI app, `native` for a native app ([Native apps](/docs/agent/native)), which also carries `app: { id, rowId, name }`. `token.revoked` comes from the person's own Settings → Tokens and from `everyapp workspace tokens revoke`; from the CLI the operator is the `actor` and the token's owner stays `user`, so the log says who revoked whose. The token types are flat: `id` and `name` are the token's, and no key is named `token`, since the credential-key rule (below) refuses that name in every event's `data`, the Gateway's own included.
 
 ### Access
 

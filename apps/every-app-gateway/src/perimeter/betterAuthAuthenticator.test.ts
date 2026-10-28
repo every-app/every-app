@@ -1,16 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegisteredApp } from "@every-app/perimeter";
 
-const { mockMemberFindFirst, mockUserFindFirst, mockOrganizationFindFirst } =
-  vi.hoisted(() => ({
-    mockMemberFindFirst: vi.fn(),
-    mockUserFindFirst: vi.fn(),
-    // isOrganizationActive: the organization's status.
-    mockOrganizationFindFirst: vi.fn(async () => ({ status: "active" })),
-  }));
+const {
+  mockMemberFindFirst,
+  mockUserFindFirst,
+  mockOrganizationFindFirst,
+  mockValidateToken,
+  mockOauthEnabled,
+  mockResolveNativeCaller,
+} = vi.hoisted(() => ({
+  mockMemberFindFirst: vi.fn(),
+  mockUserFindFirst: vi.fn(),
+  // isOrganizationActive: the organization's status.
+  mockOrganizationFindFirst: vi.fn(async () => ({ status: "active" })),
+  // The OAuth server's validateAppHostToken and the native caller's
+  // re-read (server/mcp-auth), native sign-in.
+  mockValidateToken: vi.fn(),
+  mockOauthEnabled: vi.fn(() => true),
+  mockResolveNativeCaller: vi.fn(),
+}));
 
 vi.mock("cloudflare:workers", () => ({
   env: { GATEWAY_URL: "https://gateway.example.com" },
+}));
+
+vi.mock("@/server/mcp-auth/config", () => ({
+  validateAppHostToken: mockValidateToken,
+}));
+
+vi.mock("@/server/mcp-auth/validate", () => ({
+  resolveNativeCaller: mockResolveNativeCaller,
+}));
+
+vi.mock("@/server/oauth-flag", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/oauth-flag")>()),
+  isMcpOauthEnabled: mockOauthEnabled,
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -400,5 +424,167 @@ describe("createProdAuthenticator with shared apps and suspended organizations",
     await expect(
       createProdAuthenticator().hasAppAccess(session!, APP),
     ).resolves.toBe(false);
+  });
+});
+
+describe("createProdAuthenticator with a native token (Sign in with Every App)", () => {
+  /** A token of the gateway's OAuth server, by shape. */
+  const TOKEN = `user-id:${"g".repeat(16)}:${"s".repeat(32)}`;
+  const THIS_HOST = "https://todo.example.com";
+  const PROPS = {
+    v: 1,
+    kind: "native",
+    connectionId: "mcpc_1",
+    userId: "user-id",
+    organizationId: "org-id",
+    appRowId: "app-row-1",
+  };
+  const CALLER = {
+    connectionId: "mcpc_1",
+    userId: "user-id",
+    email: "user@example.com",
+    organizationId: "org-id",
+    organizationName: "Acme",
+    orgRole: "member",
+    appRowId: "app-row-1",
+    clientName: "OpenZen for Mac",
+    clientDomain: null,
+  };
+  /** The server validates a token for exactly its audience. */
+  function validFor(audience: string, props: unknown = PROPS) {
+    mockValidateToken.mockImplementation(
+      async (_env: unknown, resource: string) =>
+        resource === audience
+          ? {
+              props,
+              audience,
+              expiresAt: Date.now() + 3_600_000,
+              scope: ["*"],
+              userId: "user-id",
+              clientId: "client_1",
+            }
+          : null,
+    );
+  }
+  function on(host: string, path = "/api/tasks"): Request {
+    return new Request(`https://${host}${path}`, {
+      headers: { host, authorization: `Bearer ${TOKEN}` },
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearOrgContextCacheForTests();
+    mockOauthEnabled.mockReturnValue(true);
+    mockOrganizationFindFirst.mockResolvedValue({ status: "active" });
+    mockResolveNativeCaller.mockResolvedValue(CALLER);
+    validFor(THIS_HOST);
+  });
+
+  it("validates it for this host and acts as the member, on the api channel, bound to its app", async () => {
+    const session = await createProdAuthenticator().authenticate(
+      on("todo.example.com"),
+    );
+    expect(mockValidateToken).toHaveBeenCalledWith(
+      expect.anything(),
+      THIS_HOST,
+      TOKEN,
+    );
+    expect(mockResolveNativeCaller).toHaveBeenCalledWith(PROPS);
+    expect(session).toEqual({
+      sub: "user-id",
+      email: "user@example.com",
+      orgId: "org-id",
+      orgRole: "member",
+      orgName: "Acme",
+      credential: {
+        kind: "oauth",
+        channel: "api",
+        actor: "oauth:mcpc_1",
+        scopes: ["*"],
+      },
+      credentialAppRowId: "app-row-1",
+      credentialAudience: THIS_HOST,
+    });
+    expect(mockUserPatService.verify).not.toHaveBeenCalled();
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+
+    mockAppRepository.findByAppSlug.mockResolvedValue({
+      id: "app-row-1",
+    } as any);
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockResolvedValue(true);
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, APP),
+    ).resolves.toBe(true);
+  });
+
+  it("refuses it on another host: the audience is one app's origin", async () => {
+    // The server answers null for any other resource (another app host,
+    // the gateway's own /mcp), and the request fails closed, never
+    // anonymous.
+    await expect(
+      createProdAuthenticator().authenticate(on("notes.example.com")),
+    ).resolves.toBeNull();
+    expect(mockValidateToken).toHaveBeenCalledWith(
+      expect.anything(),
+      "https://notes.example.com",
+      TOKEN,
+    );
+    expect(mockResolveNativeCaller).not.toHaveBeenCalled();
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses it on an app whose row or hostname isn't the grant's, even once validated", async () => {
+    const session = await createProdAuthenticator().authenticate(
+      on("todo.example.com"),
+    );
+    // Another row under the same id and organization (belt and braces).
+    mockAppRepository.findByAppSlug.mockResolvedValue({
+      id: "app-row-2",
+    } as any);
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, APP),
+    ).resolves.toBe(false);
+    // The served app's registered hostname isn't the audience.
+    mockAppRepository.findByAppSlug.mockResolvedValue({
+      id: "app-row-1",
+    } as any);
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, {
+        ...APP,
+        hostname: "notes.example.com",
+      }),
+    ).resolves.toBe(false);
+    expect(
+      mockAppAccessRepository.hasAccessByUserAndAppSlug,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the connection no longer stands (revoked, removed, deactivated, suspended, another grant's app)", async () => {
+    // resolveNativeCaller (server/mcp-auth/validate.ts) answers null for
+    // every one of those, and for an /mcp grant's props; the perimeter
+    // never turns that into anonymous access.
+    mockResolveNativeCaller.mockResolvedValue(null);
+    await expect(
+      createProdAuthenticator().authenticate(on("todo.example.com")),
+    ).resolves.toBeNull();
+    expect(mockResolveNativeCaller).toHaveBeenCalledWith(PROPS);
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("opens nothing while OAuth is off, or when the server can't validate", async () => {
+    mockOauthEnabled.mockReturnValue(false);
+    await expect(
+      createProdAuthenticator().authenticate(on("todo.example.com")),
+    ).resolves.toBeNull();
+    expect(mockValidateToken).not.toHaveBeenCalled();
+
+    mockOauthEnabled.mockReturnValue(true);
+    mockValidateToken.mockRejectedValue(new Error("storage unavailable"));
+    await expect(
+      createProdAuthenticator().authenticate(on("todo.example.com")),
+    ).resolves.toBeNull();
+    expect(mockResolveNativeCaller).not.toHaveBeenCalled();
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { listPublicRoutes, publicRoutesOf, storedPublicRoutes, type PublicRouteSummary } from "./publicRoutes";
+import {
+  listPublicRoutes,
+  publicRoutesOf,
+  storedBearerRoutes,
+  storedPublicRoutes,
+  type PublicRouteSummary,
+} from "./publicRoutes";
 
 describe("an app's public routes", () => {
   it("reads a manifest's routes in its order, with GET alone for a route that names no method", () => {
@@ -25,6 +31,17 @@ describe("an app's public routes", () => {
     expect(storedPublicRoutes(JSON.stringify({ id: "todo", public: "/*" }))).toEqual([]);
     expect(storedPublicRoutes("{not json")).toEqual([]);
     expect(storedPublicRoutes(null)).toEqual([]);
+  });
+
+  it("reads a stored manifest's bearer routes, and nothing from one it can't read", () => {
+    expect(storedBearerRoutes(JSON.stringify({ id: "openzen", bearerRoutes: { paths: ["/api/**", 7, "/v1/*"], why: "Mac app" } }))).toEqual([
+      "/api/**",
+      "/v1/*",
+    ]);
+    expect(storedBearerRoutes(JSON.stringify({ id: "todo" }))).toEqual([]);
+    expect(storedBearerRoutes(JSON.stringify({ id: "todo", bearerRoutes: ["/api/**"] }))).toEqual([]);
+    expect(storedBearerRoutes("{not json")).toEqual([]);
+    expect(storedBearerRoutes(null)).toEqual([]);
   });
 
   it("lists them as a person reads them: methods joined with /, the first six, and how many more", () => {

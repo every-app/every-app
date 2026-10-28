@@ -46,6 +46,7 @@ import {
 } from "@every-app/sdk/internal";
 import { builtinToolKind, listBuiltinTools } from "@every-app/toolbus";
 import { commandPaths } from "@/app";
+import { PROTECTED_RESOURCE_METADATA_PATH } from "@/lib/access/plan";
 import { NextCode } from "@/commands/status/next";
 import { cliReference, commandDocs } from "./cliReference";
 import { codeInventory } from "./codes";
@@ -120,6 +121,7 @@ describe("the agent docs", () => {
       "email",
       "events",
       "mcp",
+      "native",
       "deploy",
       "providers",
       "access",
@@ -509,6 +511,10 @@ describe("the command pages", () => {
       "the workspace tools and the member tools (listBuiltinTools in packages/toolbus)",
       BUILTIN_TOOLS.filter((name) => name.startsWith("everyapp_workspace_") || /^everyapp_(my|revoke)_/.test(name)),
     );
+  });
+  it("native.md and access.md document bearer routes and the discovery path Access lets through", () => {
+    expectDocumented("native", "the manifest field and the discovery path", ["bearerRoutes", PROTECTED_RESOURCE_METADATA_PATH, "resource", "client_id", "oauth:<connection id>"]);
+    expectDocumented("access", "the bearer-route bypass", ["bearerRoutes", PROTECTED_RESOURCE_METADATA_PATH, "PROTECTED_RESOURCE_METADATA_PATH"]);
   });
   it("access.md documents every Cloudflare Access setting", () => {
     expectDocumented("access", "the Cloudflare Access settings", SETTABLE_GATEWAY_SETTINGS.filter((name) => name.startsWith("CLOUDFLARE_ACCESS_")));

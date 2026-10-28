@@ -1,5 +1,7 @@
 /**
- * The AI apps a user connected to the gateway's /mcp over OAuth.
+ * The AI apps a user connected to the gateway's /mcp over OAuth, and the
+ * native apps (a desktop or phone client) they signed in to one app host
+ * with (`kind` "native", docs/design/native-sign-in.md).
  *
  * A connection's D1 row is what every /mcp request checks, so revoking it
  * stops the client on its next request. Its grant in the authorization
@@ -29,7 +31,24 @@ type GrantMetadata = {
   organizationId?: unknown;
   /** The connection's created_at, in milliseconds. */
   connectionCreatedAt?: unknown;
+  /** "mcp" | "native"; absent on grants from before native sign-in: MCP. */
+  kind?: unknown;
+  /** The grant's audience; absent on grants from before: /mcp. */
+  resource?: unknown;
 };
+
+type ConnectionKind = "mcp" | "native";
+
+/** What the events say about a connection: its kind, and a native one's app. */
+type ConnectionSubject = {
+  /** "mcp" unless said. */
+  kind?: ConnectionKind;
+  app?: { rowId: string; id: string; name: string } | null;
+};
+
+function grantKind(metadata: GrantMetadata): ConnectionKind {
+  return metadata.kind === "native" ? "native" : "mcp";
+}
 
 type UserGrant = {
   id: string;
@@ -60,7 +79,15 @@ async function announceRevoked(
       organizationId: row.organizationId,
       actor: await actor(),
       ...catalogue.connectionRevoked({
-        connection: { id: row.id, clientName: row.clientName },
+        connection: {
+          id: row.id,
+          clientName: row.clientName,
+          kind: row.kind === "native" ? "native" : "mcp",
+          app:
+            row.kind === "native"
+              ? await McpConnectionRepository.findConnectionApp(row.id)
+              : null,
+        },
         user: await userSubject(row.userId),
         reason,
       }),
@@ -82,6 +109,55 @@ async function expireIdle(cutoff: Date): Promise<number> {
   const expired = await McpConnectionRepository.expireUnusedSince(cutoff);
   await announceRevoked(expired, "expired");
   return expired.length;
+}
+
+/**
+ * Revoke the native connections to an app that was deleted or disabled
+ * (AppService.delete, before the tombstone takes the app out of them), and
+ * their grants after the response. The rows revoked.
+ */
+async function revokeForRemovedApp(appRowId: string): Promise<number> {
+  const revoked = await McpConnectionRepository.revokeNativeForApp(
+    appRowId,
+    "app_removed",
+  );
+  await announceRevoked(revoked, "app_removed");
+  for (const userId of new Set(revoked.map((row) => row.userId))) {
+    const ids = new Set(
+      revoked.filter((row) => row.userId === userId).map((row) => row.id),
+    );
+    revokeGrantsLater(
+      userId,
+      (grant) =>
+        typeof grant.metadata.connectionId === "string" &&
+        ids.has(grant.metadata.connectionId),
+      { app: appRowId, reason: "app_removed" },
+    );
+  }
+  return revoked.length;
+}
+
+/**
+ * Revoke the native connections whose app is no longer an active
+ * first-party host (the hourly maintenance: apps the CLI deleted or
+ * disabled in the registry directly); how many.
+ */
+async function revokeForInactiveApps(): Promise<number> {
+  const revoked = await McpConnectionRepository.revokeNativeForInactiveApps();
+  await announceRevoked(revoked, "app_removed");
+  for (const userId of new Set(revoked.map((row) => row.userId))) {
+    const ids = new Set(
+      revoked.filter((row) => row.userId === userId).map((row) => row.id),
+    );
+    revokeGrantsLater(
+      userId,
+      (grant) =>
+        typeof grant.metadata.connectionId === "string" &&
+        ids.has(grant.metadata.connectionId),
+      { reason: "app_removed" },
+    );
+  }
+  return revoked.length;
 }
 
 /** The user's grants in the authorization server, or null without one. */
@@ -176,6 +252,17 @@ async function listForUser(userId: string) {
   return {
     connections: connections.map((connection) => ({
       id: connection.id,
+      kind: connection.kind as ConnectionKind,
+      /** The grant's audience: the app host's origin for a native row, null on old MCP rows. */
+      resource: connection.resource,
+      // A native connection's one app and its host (the settings page's
+      // "Apps on your devices" table); null for an MCP connection.
+      app: connection.app
+        ? {
+            name: connection.app.name,
+            hostname: connection.app.hostname,
+          }
+        : null,
       organizationName: connection.organizationName,
       clientName: connection.clientName,
       clientDomain: connection.clientDomain,
@@ -249,6 +336,9 @@ function madeBefore(metadata: GrantMetadata, createdAt: Date): boolean {
  */
 async function supersedeEarlier(connection: {
   id: string;
+  /** "mcp" unless said. */
+  kind?: ConnectionKind;
+  resource?: string | null;
   userId: string;
   organizationId: string;
   clientId: string;
@@ -274,6 +364,9 @@ async function supersedeEarlier(connection: {
       (grant) =>
         grant.clientId === connection.clientId &&
         grant.metadata.organizationId === connection.organizationId &&
+        grantKind(grant.metadata) === (connection.kind ?? "mcp") &&
+        (connection.kind !== "native" ||
+          grant.metadata.resource === connection.resource) &&
         grant.metadata.connectionId !== connection.id &&
         madeBefore(grant.metadata, connection.createdAt) &&
         inInstallation(grant.redirectUri),
@@ -359,15 +452,17 @@ async function revokeForDeactivatedUser(userId: string): Promise<void> {
 }
 
 /** `connection.created`, once the consent wrote the row (mcp-auth/authorize.ts). */
-async function announceCreated(connection: {
-  id: string;
-  userId: string;
-  organizationId: string;
-  clientName: string;
-  clientDomain: string | null;
-  access: "read" | "write";
-  appScope: "all" | "selected";
-}): Promise<void> {
+async function announceCreated(
+  connection: {
+    id: string;
+    userId: string;
+    organizationId: string;
+    clientName: string;
+    clientDomain: string | null;
+    access: "read" | "write";
+    appScope: "all" | "selected";
+  } & ConnectionSubject,
+): Promise<void> {
   await emit(async () => ({
     organizationId: connection.organizationId,
     actor: await userActor(connection.userId),
@@ -378,6 +473,8 @@ async function announceCreated(connection: {
         clientDomain: connection.clientDomain,
         access: connection.access,
         appScope: connection.appScope,
+        kind: connection.kind ?? "mcp",
+        app: connection.app ?? null,
       },
       user: await userSubject(connection.userId),
     }),
@@ -392,5 +489,7 @@ export const McpConnectionService = {
   supersedeEarlier,
   revokeForRemovedMember,
   revokeForDeactivatedUser,
+  revokeForRemovedApp,
+  revokeForInactiveApps,
   announceCreated,
 } as const;

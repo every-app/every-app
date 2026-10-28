@@ -854,10 +854,11 @@ the session is the same as after a password.
 ## Connected AI apps (OAuth)
 
 - The gateway is an OAuth 2.1 authorization server
-  (`@cloudflare/workers-oauth-provider` 1.2) for exactly one protected
-  resource, `${GATEWAY_URL}/mcp`, whose metadata names that exact URL.
-  Tokens are bound to it and work nowhere else: an app host refuses them,
-  and never forwards one to an app, even on a public route.
+  (`@cloudflare/workers-oauth-provider` 1.2) for `${GATEWAY_URL}/mcp`,
+  whose metadata names that exact URL, and for each active first-party app
+  host's origin (native apps, next section). Every token is bound to one
+  of them and works nowhere else: an app host refuses an `/mcp` token, and
+  never forwards any Gateway token to an app, even on a public route.
   Every client must use S256 PKCE; redirect URIs must be https or loopback
   http, and neither a client id nor a redirect URI may be on the
   platform's domains (the gateway's host, `APP_BASE_DOMAIN`, or any host
@@ -921,6 +922,34 @@ the session is the same as after a password.
   `@cloudflare/workers-oauth-provider` 1.2.3 has no option for stricter
   rotation. Revoking the connection, removing the member or deactivating
   the user ends it at once, since every refresh re-checks the connection.
+
+## Native apps (Sign in with Every App)
+
+Design: `docs/design/native-sign-in.md`. A native app is an OAuth client
+of the same server whose `resource` is one app host's origin.
+
+- Its token opens that one host, as the member who consented, in one
+  organization, with `*`: the audience is checked on every request, so it
+  is refused at `/mcp` and on every other host, and an `/mcp` token is
+  refused on app hosts. Hosted third-party (dispatch) hosts are not
+  resources.
+- The perimeter re-reads the connection row, membership, role, ban,
+  organization status and app access on every request, as for MCP; a
+  failure is 401 or 403, never an anonymous request. The app receives an
+  ordinary identity with `chan: "api"` and actor `oauth:<connection id>`.
+- Consent names the client (unverified unless it is a metadata document),
+  the app host and the organization; a person who can't open the app
+  can't grant it. Loopback http and https redirects only; private-use
+  schemes stay refused.
+- `bearerRoutes` in the manifest are paths that take a bearer and refuse a
+  cookie on every gateway. Behind Cloudflare Access they, and the
+  Gateway-written `/.well-known/oauth-protected-resource`, are the only
+  app paths let through for native apps, so the bypass carries no browser
+  session. That metadata document is never proxied to the app.
+- Revocation is the MCP connection's: the person (AI connections, "Apps on your devices"),
+  sign-out (RFC 7009), member removal or deactivation, the app deleted or
+  disabled, 30 days idle. Refresh reuse is not detected (the library's
+  limit above).
 
 ## App Verification Contract
 

@@ -4,7 +4,10 @@
  *  - delete `mcp_tool_calls` rows older than MCP_AUDIT_RETENTION_DAYS (90 by
  *    default), up to 20,000 a run;
  *  - mark connections unused for longer than their grants live as expired,
- *    so the list of connections stays honest;
+ *    so the list of connections stays honest, and revoke native
+ *    connections whose app is no longer an active first-party host (the
+ *    CLI deletes and disables apps in the registry directly; their tokens
+ *    were refused as soon as the origin left the resource list);
  *  - delete rate limit counters whose window ended (the client registration
  *    budget's);
  *  - delete usage counters past their retention (daily rows after 13
@@ -151,6 +154,9 @@ export async function runMcpMaintenance(
       new Date(now.getTime() - CONNECTION_IDLE_DAYS * DAY_MS),
     ),
   );
+  const nativeRevoked = await step("native_connections", () =>
+    McpConnectionService.revokeForInactiveApps(),
+  );
   const countersDeleted = await step("rate_limits", () =>
     RateLimitCounterRepository.deleteExpired(now),
   );
@@ -188,6 +194,7 @@ export async function runMcpMaintenance(
       audit_deleted: audit === "failed" ? audit : audit.deleted,
       ...(auditBehind ? { audit_behind: true } : {}),
       connections_expired: connectionsExpired,
+      native_connections_revoked: nativeRevoked,
       rate_limit_counters_deleted: countersDeleted,
       usage_daily_deleted: usage === "failed" ? usage : usage.daily,
       usage_monthly_deleted: usage === "failed" ? usage : usage.monthly,

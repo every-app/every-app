@@ -34,6 +34,7 @@ export {
 export {
   DUPLICATE_SESSION_COOKIE_MESSAGE,
   hasDuplicateSessionCookie,
+  hasSessionCookie,
 } from "./cookies";
 export {
   evaluateCsrf,
@@ -50,6 +51,7 @@ export {
   extractBearerCredential,
   extractEveryAppBearer,
   hasBearerCredential,
+  isGatewayOauthToken,
   prepareOutboundHeaders,
   stripInboundHeaders,
   withSecurityHeaders,
@@ -60,10 +62,13 @@ export {
 export {
   isInternalPath,
   isReservedToolsPath,
+  isProtectedResourceMetadataPath,
   isReservedWellKnownPath,
+  matchBearerRoute,
   matchPublicAsset,
   matchPublicRoute,
   normalizePath,
+  PROTECTED_RESOURCE_METADATA_PATH,
   PUBLIC_ASSET_METHODS,
   type NormalizedPath,
   type PublicMatch,

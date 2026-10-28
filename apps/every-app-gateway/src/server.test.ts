@@ -1016,7 +1016,10 @@ describe("gateway host (control plane)", () => {
     expect(appFetch).toHaveBeenCalledOnce();
   });
 
-  it("never advertises OAuth on app hosts", async () => {
+  it("writes the app host's protected-resource metadata itself, naming the gateway alone", async () => {
+    // "Sign in with Every App" (docs/design/native-sign-in.md §4): the one
+    // discovery document an app host serves, from the registry row, never
+    // the app; the other documents stay 404.
     mocks.findByHostname.mockResolvedValue(TODO);
 
     const metadata = await server.fetch(
@@ -1027,7 +1030,20 @@ describe("gateway host (control plane)", () => {
         },
       ),
     );
-    expect(metadata.status).toBe(404);
+    expect(metadata.status).toBe(200);
+    await expect(metadata.json()).resolves.toEqual({
+      resource: "https://todo.example.com",
+      authorization_servers: [new URL(mocks.env.GATEWAY_URL as string).origin],
+      resource_name: "todo",
+      bearer_methods_supported: ["header"],
+    });
+    const server_metadata = await server.fetch(
+      new Request(
+        "https://todo.example.com/.well-known/oauth-authorization-server",
+        { headers: { host: "todo.example.com" } },
+      ),
+    );
+    expect(server_metadata.status).toBe(404);
 
     mocks.authenticate.mockResolvedValue(null);
     const challenge = await server.fetch(
@@ -1038,7 +1054,7 @@ describe("gateway host (control plane)", () => {
     );
     expect(challenge.status).toBe(401);
     expect(challenge.headers.get("www-authenticate")).toBe(
-      'Bearer realm="every-app"',
+      'Bearer realm="every-app", resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
     );
   });
 });

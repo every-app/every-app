@@ -60,6 +60,32 @@ export type PublicRoute = z.infer<typeof PublicRouteSchema>;
  */
 export const MAX_PUBLIC_ASSETS = 25;
 
+/**
+ * `bearerRoutes: { paths, why }`: the routes a bearer client (a native
+ * app, a script with a personal token) reaches with its token only. `paths`
+ * are globs with `public[].path`'s syntax and safety rules, every method;
+ * `why` the app needs them, shown to the operator as `mcp.why` is. The
+ * perimeter refuses a request carrying its session cookie on one (401),
+ * so the Cloudflare Access bypass `everyapp access on` makes for these
+ * paths opens nothing to a browser. A bearer route is never public, and
+ * never `/mcp`.
+ */
+export const BearerRoutesSchema = z.object({
+  paths: z
+    .array(z.string())
+    .min(1, 'bearerRoutes.paths: list at least one path, such as "/api/**"')
+    .max(
+      MAX_PUBLIC_ASSETS,
+      `bearerRoutes.paths: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/api/**"`,
+    ),
+  why: z
+    .string()
+    .trim()
+    .min(1, "bearerRoutes.why: say why the app's routes take a bearer")
+    .max(200, "bearerRoutes.why: at most 200 characters"),
+});
+export type BearerRoutes = z.infer<typeof BearerRoutesSchema>;
+
 // NOTE: the gateway validates manifests sent by DEPLOYED CLIs, which may be
 // newer than this code. The base schemas here validate every field the perimeter
 // relies on (id, public routes) but deliberately tolerate unknown keys
@@ -944,6 +970,12 @@ export const ManifestSchema = z
         `publicAssets: at most ${MAX_PUBLIC_ASSETS} patterns; use a glob such as "/icons/**"`,
       )
       .optional(),
+    /**
+     * Routes a bearer client reaches with its token only ("Sign in with
+     * Every App", docs/design/native-sign-in.md §7): see
+     * {@link BearerRoutesSchema}. Default: none.
+     */
+    bearerRoutes: BearerRoutesSchema.optional(),
     /** Provider APIs this app may call through the gateway. Default: none. */
     providers: ProvidersSchema.optional(),
     /**
@@ -1449,6 +1481,7 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
     database: DatabaseSchema.strict().optional(),
     limits: WorkerLimitsSchema.strict().optional(),
     mcp: McpSchema.strict().optional(),
+    bearerRoutes: BearerRoutesSchema.strict().optional(),
   }).strict();
 }
 
@@ -1509,11 +1542,50 @@ export function validateManifest(input: unknown): Manifest {
   for (const path of manifest.publicAssets ?? []) {
     assertPublicPathIsSafe(path, PUBLIC_ASSET_LABEL);
   }
+  assertBearerRoutesAreSafe(manifest);
   return manifest;
 }
 
 /** How a `publicAssets` pattern is named in a refusal. */
 const PUBLIC_ASSET_LABEL = "publicAssets: pattern";
+/** How a `bearerRoutes` pattern is named in a refusal. */
+const BEARER_ROUTE_LABEL = "bearerRoutes: pattern";
+
+/**
+ * A `bearerRoutes` pattern obeys the public-route safety rules (absolute,
+ * no catch-all, no encoding, never the internal namespace), is never
+ * `/mcp` nor covers it (the host's `/mcp` is served to MCP clients by its
+ * own rule and must stay behind Access), and is not also a public route
+ * or public asset pattern: a path is served to anyone, or to a bearer
+ * only, never both. Checked at registration and at author time alike, so
+ * a stored row can't widen what the perimeter lets a cookie reach.
+ */
+function assertBearerRoutesAreSafe(manifest: {
+  bearerRoutes?: BearerRoutes;
+  public?: PublicRoute[];
+  publicAssets?: string[];
+}): void {
+  const publicPaths = new Set([
+    ...(manifest.public ?? []).map((route) => route.path),
+    ...(manifest.publicAssets ?? []),
+  ]);
+  for (const path of manifest.bearerRoutes?.paths ?? []) {
+    assertPublicPathIsSafe(path, BEARER_ROUTE_LABEL);
+    const covers =
+      isMcpPath(path) ||
+      matchPublicRoute([{ path, methods: ["GET"] }], "GET", "/mcp").public;
+    if (covers) {
+      throw new ManifestError(
+        `Invalid everyapp.config: bearerRoutes: ${path} can't be a bearer route${isMcpPath(path) ? "" : " (it covers /mcp)"}; /mcp takes MCP clients by its own rule`,
+      );
+    }
+    if (publicPaths.has(path)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: bearerRoutes: ${path} is also public; a path is open to anyone or to a bearer only, not both`,
+      );
+    }
+  }
+}
 
 /**
  * Refuse a `publicAssets` pattern that is `/mcp`, under it, or covers it
@@ -1619,6 +1691,7 @@ export function validateManifestStrict(
     assertPublicPathIsSafe(path, PUBLIC_ASSET_LABEL);
   }
   assertPublicAssetsSkipMcp(manifest);
+  assertBearerRoutesAreSafe(manifest);
   assertHelperWorkersAreDeclared(manifest);
   assertQueuesAreConsistent(manifest);
   assertDatabaseIsConsistent(manifest);

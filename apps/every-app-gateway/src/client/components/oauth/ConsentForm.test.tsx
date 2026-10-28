@@ -22,9 +22,11 @@ const CONTEXT: Context = {
     domain: null,
     redirectUri: "http://localhost:1455/auth/callback",
     redirectHost: "localhost",
+    redirectIsLoopback: true,
   },
   email: "owner@example.com",
   writeRequested: true,
+  grant: { kind: "mcp", resource: "https://gateway.example.com/mcp" },
   organizations: [
     {
       id: "org-acme",
@@ -153,6 +155,7 @@ describe("what the consent form posts", () => {
       app_mode: "all",
       app_ids: [],
       access: "read",
+      resource: "https://gateway.example.com/mcp",
     });
   });
 
@@ -383,6 +386,7 @@ describe("who the page says the client is", () => {
         domain: "claude.ai",
         redirectUri,
         redirectHost: url.hostname,
+        redirectIsLoopback: url.hostname === "localhost",
       },
     };
   };

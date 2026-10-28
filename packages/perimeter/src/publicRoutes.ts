@@ -284,6 +284,45 @@ export function matchPublicRoute(
   return { public: false, reason: "no matching public route" };
 }
 
+/**
+ * Decide whether a request is on a bearer route (`bearerRoutes`): a path
+ * a native client reaches with a bearer token only, matched on every
+ * method with the same canonicalization, glob syntax and internal-namespace
+ * denial as {@link matchPublicRoute}. The gateway refuses its session
+ * cookie there and never serves the path anonymously, whatever `public`
+ * says (the manifest refuses a path listed under both).
+ */
+export function matchBearerRoute(
+  globs: readonly string[] | undefined,
+  method: string,
+  rawPathname: string,
+): PublicMatch {
+  if (!globs || globs.length === 0) {
+    return { public: false, reason: "no bearer routes declared" };
+  }
+  return matchPublicRoute(
+    globs.map((path) => ({ path, methods: [method] })),
+    method,
+    rawPathname,
+  );
+}
+
+/** RFC 9728: where an app host's protected-resource metadata lives. */
+export const PROTECTED_RESOURCE_METADATA_PATH =
+  "/.well-known/oauth-protected-resource";
+
+/**
+ * True for exactly the protected-resource metadata path (RFC 9728 §3 for a
+ * resource whose URL has no path), spelled canonically: the one reserved
+ * discovery document the gateway writes itself on an app host. Any other
+ * spelling, and every other reserved document, stays a 404
+ * ({@link isReservedWellKnownPath}).
+ */
+export function isProtectedResourceMetadataPath(rawPathname: string): boolean {
+  const { canonical, ambiguous } = normalizePath(rawPathname);
+  return !ambiguous && canonical === PROTECTED_RESOURCE_METADATA_PATH;
+}
+
 /** The methods a public asset answers: the Workers asset server's own. */
 export const PUBLIC_ASSET_METHODS = ["GET", "HEAD"] as const;
 

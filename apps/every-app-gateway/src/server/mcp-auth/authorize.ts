@@ -16,7 +16,11 @@
  *    records an `mcp_connections` row (whose id derives from the handle, so
  *    a consent approved twice at once records one) and completes the
  *    authorization with ids-only props; denying redirects with
- *    `access_denied`.
+ *    `access_denied`. The request's `resource` decides the branch: the
+ *    gateway's /mcp records an MCP connection with the person's choice of
+ *    organization, apps and access; an app host's origin records a native
+ *    connection to that one app, scope `*`, in the organization the person
+ *    can open it in (docs/design/native-sign-in.md §6).
  *
  * Responses here carry the control-plane headers (no framing, no-store, no
  * Referer) from the worker entry.
@@ -39,9 +43,12 @@ import {
   describeAuthorizationFailure,
   grantedAccess,
   grantedScopes,
+  nativeGrantFor,
+  nativeGrantedScopes,
+  type ConsentApp,
 } from "./consent";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
-import type { McpGrantProps } from "./validate";
+import type { McpGrantProps, NativeGrantProps } from "./validate";
 
 /** The largest consent form accepted (a few hundred app ids at most). */
 const MAX_DECISION_BODY_BYTES = 64 * 1024;
@@ -213,7 +220,10 @@ export async function handleConsentDecision(
   }
 
   // Everything the user chose is checked before the handle is spent, so a
-  // refused choice can be corrected on the same page.
+  // refused choice can be corrected on the same page. The form says which
+  // resource the page showed; the stored request is checked against it
+  // once the handle is spent, as client_id and redirect_uri are.
+  const resource = decision.resource ?? mcpAuth.resource;
   const organizationId = decision.organization_id ?? "";
   const membership = await OrganizationMembersRepository.findMembershipWithUser(
     user.id,
@@ -233,8 +243,27 @@ export async function handleConsentDecision(
       "That organization is suspended.",
     );
   }
+  let nativeApp: ConsentApp | null = null;
   const selectedApps = [...new Set(decision.app_ids)];
-  if (decision.app_mode === "selected") {
+  if (resource !== mcpAuth.resource) {
+    // A native grant: the one app the resource names, which the person
+    // must be able to open in that organization. The form's app and
+    // access choices count for nothing (`native.full-scope-only`).
+    const grant = await nativeGrantFor(
+      resource,
+      user.id,
+      mcpAuth.resourceScheme,
+    );
+    if (!grant.ok) return errorPage(403, "Can't sign in", grant.message);
+    if (!grant.organizations.some((org) => org.id === organizationId)) {
+      return errorPage(
+        403,
+        "Can't sign in",
+        `You can't open ${grant.app.name} in that organization.`,
+      );
+    }
+    nativeApp = grant.app;
+  } else if (decision.app_mode === "selected") {
     const usable = new Set(
       (await consentChoices(user.id))
         .find((org) => org.id === organizationId)
@@ -260,7 +289,8 @@ export async function handleConsentDecision(
   }
   if (
     approved.request.clientId !== decision.client_id ||
-    approved.request.redirectUri !== decision.redirect_uri
+    approved.request.redirectUri !== decision.redirect_uri ||
+    (approved.request.resource ?? mcpAuth.resource) !== resource
   ) {
     return errorPage(
       400,
@@ -280,11 +310,23 @@ export async function handleConsentDecision(
 
   // The person's choice, capped by what the client asked for: a client that
   // requested mcp:read alone gets a read-only connection whatever was chosen.
-  const access = grantedAccess(decision.access, approved.request.scope);
+  // A native connection is always write, to its one app.
+  const access = nativeApp
+    ? "write"
+    : grantedAccess(decision.access, approved.request.scope);
+  const appScope = nativeApp ? "selected" : decision.app_mode;
+  const appRowIds = nativeApp
+    ? [nativeApp.rowId]
+    : decision.app_mode === "selected"
+      ? selectedApps
+      : [];
+  const kind = nativeApp ? "native" : "mcp";
   const connectionId = await connectionIdFor(decision.handle);
   const createdAt = new Date();
   const created = await McpConnectionRepository.create({
     id: connectionId,
+    kind,
+    resource,
     userId: user.id,
     organizationId,
     clientId: approved.request.clientId,
@@ -292,8 +334,8 @@ export async function handleConsentDecision(
     clientDomain: details.clientDomain ?? null,
     redirectUri: approved.request.redirectUri,
     redirectHost: details.redirectHost,
-    appScope: decision.app_mode,
-    appRowIds: decision.app_mode === "selected" ? selectedApps : [],
+    appScope,
+    appRowIds,
     access,
     createdAt,
   });
@@ -311,27 +353,44 @@ export async function handleConsentDecision(
     clientName: clientDisplayName(details.clientName),
     clientDomain: details.clientDomain ?? null,
     access,
-    appScope: decision.app_mode,
+    appScope,
+    kind,
+    app: nativeApp
+      ? { rowId: nativeApp.rowId, id: nativeApp.slug, name: nativeApp.name }
+      : null,
   });
 
-  const props: McpGrantProps = {
-    v: 1,
-    kind: "oauth",
-    connectionId,
-    userId: user.id,
-    organizationId,
-  };
+  const props: McpGrantProps | NativeGrantProps = nativeApp
+    ? {
+        v: 1,
+        kind: "native",
+        connectionId,
+        userId: user.id,
+        organizationId,
+        appRowId: nativeApp.rowId,
+      }
+    : {
+        v: 1,
+        kind: "oauth",
+        connectionId,
+        userId: user.id,
+        organizationId,
+      };
   let redirectTo: string;
   try {
     ({ redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: user.id,
-      scope: grantedScopes(access, approved.request.scope),
+      scope: nativeApp
+        ? nativeGrantedScopes()
+        : grantedScopes(access, approved.request.scope),
       props,
       metadata: {
         connectionId,
         organizationId,
         connectionCreatedAt: createdAt.getTime(),
+        kind,
+        resource,
       },
       // Replaced below, by installation rather than exact redirect URI.
       revokeExistingGrants: false,
@@ -346,6 +405,8 @@ export async function handleConsentDecision(
   // connection working. Best effort: the code goes out regardless.
   await McpConnectionService.supersedeEarlier({
     id: connectionId,
+    kind,
+    resource,
     userId: user.id,
     organizationId,
     clientId: approved.request.clientId,
@@ -356,12 +417,14 @@ export async function handleConsentDecision(
 
   logEvent("mcp.connection.created", {
     connection: connectionId,
+    kind,
     org: organizationId,
     user_id: user.id,
     client: approved.request.clientId,
     verified_domain: details.clientDomain ?? null,
-    apps: decision.app_mode,
-    access: decision.access,
+    apps: appScope,
+    access,
+    ...(nativeApp ? { app: nativeApp.slug } : {}),
   });
   return redirect(redirectTo, approved.headers);
 }

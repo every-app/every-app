@@ -11,9 +11,10 @@
  * machine endpoints, which check their own credentials, and `/health` for
  * uptime monitors. The wildcard lets nothing through: an app host serves
  * no MCP unless its manifest says so. Access picks the most specific
- * matching destination, so an app with public routes, or with `mcp` in its
- * manifest, gets a destination of its own on its host: the MCP paths where
- * the manifest asks for them, then its public routes.
+ * matching destination, so an app with public routes, bearer routes, or
+ * `mcp` in its manifest gets a destination of its own on its host: the MCP
+ * paths where the manifest asks for them, then its bearer routes and the
+ * discovery document native apps read first, then its public routes.
  *
  * Access path overrides: `*` matches any characters, `/` included; at most
  * one `*` per segment; no implicit subpaths (`/a` is `/a` only); at most 25
@@ -31,6 +32,14 @@ const MAX_OVERRIDES_PER_DESTINATION = 25;
  * app's own server answers there, after the perimeter checked the token).
  */
 export const MCP_PATHS: readonly string[] = ["/mcp", "/mcp/*"];
+
+/**
+ * Where a native app finds the Gateway for an app host
+ * (docs/design/native-sign-in.md, section 12): written by the Gateway
+ * from the registry, never proxied. Let through on hosts with bearer
+ * routes, the only ones a native app can use behind Access.
+ */
+export const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
 /**
  * The Gateway's `/health`: an uptime monitor can't sign in, and the route
@@ -99,32 +108,38 @@ export function accessPathPattern(path: string): string | null {
 const overridesFor = (patterns: readonly string[]): AccessOverride[] =>
   patterns.map((path_pattern) => ({ path_pattern, behavior: "public" }));
 
-/** An app as the plan sees it: its host, its manifest's public routes, and whether the manifest sets `mcp`. */
+/** An app as the plan sees it: its host, its manifest's public and bearer routes, and whether the manifest sets `mcp`. */
 export interface AppPublicSurface {
   appId: string;
   hostname: string;
   publicPaths: readonly string[];
+  /** The manifest's `bearerRoutes.paths`: paths native apps call with a token, which take no cookie. */
+  bearerPaths: readonly string[];
   /** The stored manifest has `mcp: { by, why }`: its host serves `/mcp`, which MCP clients reach with a token. */
   mcp: boolean;
 }
 
 /** Whether an app needs a destination of its own: something on its host is reached without a login. */
-const hasPublicSurface = (app: Pick<AppPublicSurface, "publicPaths" | "mcp">): boolean =>
-  app.publicPaths.length > 0 || app.mcp;
+const hasPublicSurface = (app: Pick<AppPublicSurface, "publicPaths" | "bearerPaths" | "mcp">): boolean =>
+  app.publicPaths.length > 0 || app.bearerPaths.length > 0 || app.mcp;
 
-/** A public route Access won't let through, and why. */
+/** A public or bearer route Access won't let through, and why. */
 export interface DroppedRoute {
   appId: string;
   path: string;
   /** No Access pattern for it, or the destination's 25 overrides are used up. */
   reason: "not_expressible" | "too_many";
+  /** Set on one of the manifest's `bearerRoutes`. */
+  bearer?: true;
 }
 
 /**
  * The destination for an app with a public surface: the MCP paths when its
  * manifest sets `mcp` (unless Managed OAuth makes AI apps use the
- * Gateway's `/mcp` through Access), then its routes in manifest order,
- * each once, up to the limit.
+ * Gateway's `/mcp` through Access), then, when it has bearer routes, the
+ * discovery document and those routes, then its public routes, each in
+ * manifest order, each once, up to the limit. Bearer routes are bypassed
+ * whatever Managed OAuth says: they take a Gateway token and no cookie.
  */
 export function appDestination(
   app: AppPublicSurface,
@@ -134,20 +149,24 @@ export function appDestination(
   dropped: DroppedRoute[];
 } {
   const patterns = app.mcp && !managedOAuth ? [...MCP_PATHS] : [];
+  if (app.bearerPaths.length > 0) patterns.push(PROTECTED_RESOURCE_METADATA_PATH);
   const dropped: DroppedRoute[] = [];
-  for (const path of app.publicPaths) {
+  const add = (path: string, bearer: boolean) => {
+    const marker = bearer ? { bearer: true as const } : {};
     const pattern = accessPathPattern(path);
     if (pattern === null) {
-      dropped.push({ appId: app.appId, path, reason: "not_expressible" });
-      continue;
+      dropped.push({ appId: app.appId, path, reason: "not_expressible", ...marker });
+      return;
     }
-    if (patterns.includes(pattern)) continue;
+    if (patterns.includes(pattern)) return;
     if (patterns.length >= MAX_OVERRIDES_PER_DESTINATION) {
-      dropped.push({ appId: app.appId, path, reason: "too_many" });
-      continue;
+      dropped.push({ appId: app.appId, path, reason: "too_many", ...marker });
+      return;
     }
     patterns.push(pattern);
-  }
+  };
+  for (const path of app.bearerPaths) add(path, true);
+  for (const path of app.publicPaths) add(path, false);
   return {
     destination: { type: "public", uri: app.hostname.toLowerCase(), overrides: overridesFor(patterns) },
     dropped,
@@ -175,8 +194,8 @@ function underBase(hostname: string, base: string): boolean {
 
 /**
  * The apps application's destinations: the wildcard, with nothing let
- * through, then one per app with a public surface (public routes, or
- * `mcp` in its manifest) under the base domain, by host. Apps with neither
+ * through, then one per app with a public surface (public routes, bearer
+ * routes, or `mcp` in its manifest) under the base domain, by host. Apps with neither
  * need none (the wildcard covers them). With Managed OAuth on the Gateway's
  * application, nothing bypasses `/mcp` on app hosts either: AI apps use
  * the Gateway's, through Access, so an app with `mcp` alone gets no

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { PublicError } from "@/server/errors";
-import { getMcpAuth } from "@/server/mcp-auth/config";
+import { refreshMcpAuth } from "@/server/mcp-auth/config";
 import { buildConsentContext } from "@/server/mcp-auth/consent";
 import { isMcpOauthEnabled } from "@/server/oauth-flag";
 import { isUserBanned } from "@/server/user-ban";
@@ -26,7 +26,17 @@ export const getConsentContext = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware])
   .validator((data: unknown) => consentContextSchema.parse(data))
   .handler(async ({ data }) => {
-    const mcpAuth = isMcpOauthEnabled(env) ? getMcpAuth(env) : null;
+    // Built with the app resources the registry has now, as /oauth/authorize
+    // was: this function may run on another isolate than the one that
+    // started the transaction, and a fresh isolate knows no app host until
+    // it reads the registry (a native app's request would be
+    // `invalid_target` here, and the page a dead end).
+    const mcpAuth = isMcpOauthEnabled(env)
+      ? await refreshMcpAuth(
+          env,
+          new URLSearchParams(data.query).get("resource"),
+        )
+      : null;
     if (!mcpAuth) {
       throw new PublicError("OAUTH_DISABLED", "OAuth is not enabled");
     }

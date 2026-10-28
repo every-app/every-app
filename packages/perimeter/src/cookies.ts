@@ -39,6 +39,18 @@ function countCookies(headers: Headers, names: readonly string[]): number {
 }
 
 /**
+ * Whether the request carries the session cookie at all, under any of its
+ * names: what a bearer route refuses (gateway.ts), so an Access bypass for
+ * bearer clients never serves a browser's ambient credential.
+ */
+export function hasSessionCookie(
+  headers: Headers,
+  names: readonly string[],
+): boolean {
+  return names.length > 0 && countCookies(headers, names) > 0;
+}
+
+/**
  * Whether the request carries the session cookie more than once, counting
  * every name it goes by (with or without the `__Secure-` prefix) together.
  */

@@ -139,9 +139,13 @@ export async function removeApp({
     message: `Removing ${appId} from the Gateway...`,
     data: { appId },
   });
-  // Whether Access had public routes or an /mcp of its to take back: read before the row is tombstoned.
+  // Whether Access had public or bearer routes or an /mcp of its to take back: read before the row is tombstoned.
   const surface = (await readPublicSurfaces(registry)).find((candidate) => candidate.appId === appId);
-  const hadSurface = { publicRoutes: (surface?.publicPaths.length ?? 0) > 0, mcp: surface?.mcp ?? false };
+  const hadSurface = {
+    publicRoutes: (surface?.publicPaths.length ?? 0) > 0,
+    bearerRoutes: (surface?.bearerPaths.length ?? 0) > 0,
+    mcp: surface?.mcp ?? false,
+  };
   const deleted = await deleteFromRegistry(registry, appId, connection.deployer, Date.now(), { purge });
   const live = connection.install;
   const stillServed =

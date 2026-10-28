@@ -16,6 +16,7 @@
     "access",
     "sign-in",
     "connect-ai",
+    "native-sign-in",
     "connect-oauth",
     "events",
     "ai",

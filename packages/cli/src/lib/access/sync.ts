@@ -1,6 +1,7 @@
 /**
  * The apps' Access application, kept in step with the registry: which app
- * hosts have a public surface (public routes, or `mcp` in the manifest),
+ * hosts have a public surface (public routes, bearer routes, or `mcp` in
+ * the manifest),
  * and what the application on `*.<base>` lets through on each. `access on`
  * creates and reconciles it; a deploy or a delete calls
  * `syncAppsAccessAfter` so an app's new public routes (and its `/mcp`) are
@@ -14,7 +15,7 @@
  * its own lease, so two deploys finishing together don't each PUT a list
  * without the other's host.
  */
-import { storedMcp, storedPublicRoutes } from "@/lib/app/publicRoutes";
+import { storedBearerRoutes, storedMcp, storedPublicRoutes } from "@/lib/app/publicRoutes";
 import type { D1Database } from "@/lib/cf/d1";
 import {
   applicationUpdateBody,
@@ -47,8 +48,8 @@ const SERVED_STATUSES = ["binding", "active", "disabled"];
 const SYNC_LEASE_WAIT_MS = 60_000;
 
 /**
- * Every served app's host, the public routes of the manifest it was last
- * deployed from and whether that manifest sets `mcp`, by host. A row
+ * Every served app's host, the public and bearer routes of the manifest it
+ * was last deployed from and whether that manifest sets `mcp`, by host. A row
  * without a hostname, or whose manifest won't parse, has no public surface.
  */
 export async function readPublicSurfaces(db: D1Database): Promise<AppPublicSurface[]> {
@@ -63,6 +64,7 @@ ORDER BY hostname`,
     appId: String(row["app_slug"]),
     hostname: String(row["hostname"]),
     publicPaths: storedPublicRoutes(row["manifest"]).map((route) => route.path),
+    bearerPaths: storedBearerRoutes(row["manifest"]),
     mcp: storedMcp(row["manifest"]) !== null,
   }));
 }
@@ -70,13 +72,20 @@ ORDER BY hostname`,
 /** What an app opens without a login, as the sync after a deploy or delete names it. */
 interface PublicSurfaceFlags {
   publicRoutes: boolean;
+  /** The manifest sets `bearerRoutes`: they and the discovery document are let through. */
+  bearerRoutes?: boolean;
   /** The manifest sets `mcp`: its host's `/mcp` is let through (unless Managed OAuth is on). */
   mcp: boolean;
 }
 
-/** "public routes", "/mcp", or "public routes and /mcp": what the app has, for the sync's lines. */
-function surfaceWords({ publicRoutes, mcp }: PublicSurfaceFlags): string {
-  return publicRoutes && mcp ? "public routes and /mcp" : mcp ? "/mcp" : "public routes";
+/** "public routes", "bearer routes and /mcp", ...: what the app has, for the sync's lines. */
+function surfaceWords({ publicRoutes, bearerRoutes = false, mcp }: PublicSurfaceFlags): string {
+  const words = [
+    ...(publicRoutes ? ["public routes"] : []),
+    ...(bearerRoutes ? ["bearer routes"] : []),
+    ...(mcp ? ["/mcp"] : []),
+  ];
+  return words.length > 0 ? listed(words) : "public routes";
 }
 
 /** What the plan leaves out, for the warnings. */
@@ -184,13 +193,14 @@ async function reconcileAppsDestinations({
 export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
   const inexpressible = plan.dropped.filter((route) => route.reason === "not_expressible");
   const overflow = plan.dropped.filter((route) => route.reason === "too_many");
-  const stays = (count: number) => (count === 1 ? "A public route stays" : `${count} public routes stay`);
+  const stays = (count: number) => (count === 1 ? "A route stays" : `${count} routes stay`);
+  const named = (route: DroppedRoute) => `${route.appId} ${route.path}${route.bearer ? " (bearer)" : ""}`;
   if (inexpressible.length > 0) {
     out.emit({
       type: "warning",
       code: "ACCESS_ROUTE_NOT_EXPRESSIBLE",
       step: "access.routes",
-      message: `${stays(inexpressible.length)} behind Access: ${listed(inexpressible.map((route) => `${route.appId} ${route.path}`))}\nAccess path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.`,
+      message: `${stays(inexpressible.length)} behind Access: ${listed(inexpressible.map(named))}\nAccess path patterns take one * per segment, so these have no equivalent. People signed in to Access still reach them.`,
       data: { routes: inexpressible },
     });
   }
@@ -199,7 +209,7 @@ export function emitPlanWarnings(out: EventSink, plan: PlanLeftovers): void {
       type: "warning",
       code: "ACCESS_TOO_MANY_PUBLIC_ROUTES",
       step: "access.routes",
-      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map((route) => `${route.appId} ${route.path}`))}\nAccess lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp). Merge routes under one prefix, or keep these behind the login.`,
+      message: `${stays(overflow.length)} behind Access: ${listed(overflow.map(named))}\nAccess lets through at most 25 paths per host (two of them for /mcp where the manifest sets mcp, one for the discovery document where it sets bearerRoutes). Merge routes under one prefix, or keep these behind the login.`,
       data: { routes: overflow },
     });
   }
@@ -244,7 +254,7 @@ export async function syncAppsAccessAfter(
     applications = await listAccessApplications(cf);
   } catch (error) {
     const permission = error instanceof EveryAppError && error.code === "ACCESS_PERMISSION_MISSING";
-    if (permission && !surface.publicRoutes && !surface.mcp) return;
+    if (permission && !surface.publicRoutes && !surface.bearerRoutes && !surface.mcp) return;
     const until = removing
       ? `If the Gateway is behind Access, ${appId}'s host stays listed there until it is updated.`
       : `If the Gateway is behind Access, ${appId}'s ${what} need a login there until it is updated.`;

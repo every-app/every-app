@@ -286,7 +286,8 @@ reusable policy **Every App gateway members** with every member's and
 pending invitee's email (plus `--email` and `--email-domain`, never removing
 anyone), puts the two applications below in front of the gateway's host and
 `*.<app base domain>` with the bypass paths of the table and each app's
-public routes (and `/mcp` where its manifest sets `mcp`) as path overrides,
+public routes (and `/mcp` where its manifest sets `mcp`, its `bearerRoutes`
+where it sets them) as path overrides,
 and sets the three gateway settings in one new version of the Worker. New
 applications get a 720-hour session (`--session` for another), the HttpOnly
 and binding cookies, and the two sign-in methods the command vouches for
@@ -351,6 +352,7 @@ credentials:
 | `/.well-known/*`                  | gateway                                            | OAuth discovery documents                                               |
 | `/api/auth/callback/apple`        | gateway                                            | Sign in with Apple's cross-site POST return, which only redirects to the same URL as a GET (`docs/runbooks/sign-in-providers.md`) |
 | Each app's public routes          | that app's host                                    | Whatever its `everyapp.config.ts` declares as `public` (not a health check: a monitor sends a personal access token) |
+| Each app's `bearerRoutes`, and `/.well-known/oauth-protected-resource` | that app's host, when its manifest sets `bearerRoutes` | Native apps signed in with "Sign in with Every App" (`docs/design/native-sign-in.md`): a Gateway token for that one host, never a cookie (the Gateway refuses one there). Bypassed under Managed OAuth too, but native sign-in needs Managed OAuth off |
 
 With **Managed OAuth** on the gateway's application ("MCP through Access
 too", below), the MCP and OAuth rows go: the gateway's application bypasses
@@ -414,7 +416,9 @@ routes, add a destination for that app's host to the apps' application, with
 its paths as overrides (for example `{"type": "public", "uri":
 "crm.apps.acme.com", "overrides": [{"path_pattern": "/hooks/*", "behavior":
 "public"}]}`); an app whose manifest sets `mcp: { by, why }` gets one with
-`/mcp` and `/mcp/*` first, then its public routes. `everyapp access on` and
+`/mcp` and `/mcp/*` first; one with `bearerRoutes` gets
+`/.well-known/oauth-protected-resource` and those paths next; then its
+public routes. `everyapp access on` and
 the sync after a deploy compute the same (`packages/cli/src/lib/access/plan.ts`).
 Neither body names `allowed_idps`, so Access allows every identity provider
 of the team, Sign in with Cloudflare and the one-time PIN included, and

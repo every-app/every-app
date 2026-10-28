@@ -76,6 +76,23 @@ export function storedPublicRoutes(stored: unknown): PublicRouteSummary[] {
   }
 }
 
+/**
+ * A stored manifest's `bearerRoutes.paths` (paths native apps and scripts
+ * call with a Gateway token, docs/design/native-sign-in.md), in its order;
+ * none when it sets none or can't be read. Shaped, not validated, like
+ * `storedPublicRoutes`.
+ */
+export function storedBearerRoutes(stored: unknown): string[] {
+  if (typeof stored !== "string") return [];
+  try {
+    const bearer = (JSON.parse(stored) as { bearerRoutes?: unknown } | null)?.bearerRoutes;
+    const routes = (bearer as { paths?: unknown } | null | undefined)?.paths;
+    return Array.isArray(routes) ? routes.filter((path): path is string => typeof path === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 /** A manifest's `mcp` as `deploy --json` and `status --json` carry it. */
 export interface McpSummary {
   /** Who answers `/mcp` on the app's host: the Gateway's ToolBus, or the app's own server. */

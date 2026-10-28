@@ -79,16 +79,25 @@ export const appTools = sqliteTable(
 );
 
 /**
- * One row per consent to an OAuth client (an AI app such as Claude) at the
- * gateway's /mcp. Tokens carry only ids; every /mcp request re-reads this row
- * (and the member's live membership), so revoking it takes effect on the
- * next request, as would narrowing its apps: no new token is needed.
+ * One row per consent to an OAuth client: an AI app such as Claude at the
+ * gateway's /mcp (`kind` "mcp"), or a native app (a desktop or phone
+ * client) signed in to one app host as the member (`kind` "native",
+ * docs/design/native-sign-in.md). Tokens carry only ids; every request
+ * re-reads this row (and the member's live membership), so revoking it
+ * takes effect on the next request, as would narrowing its apps: no new
+ * token is needed.
  */
 export const mcpConnections = sqliteTable(
   "mcp_connections",
   {
     // "mcpc_" + 32 hex characters.
     id: text("id").primaryKey(),
+    // "mcp" (the gateway's /mcp) | "native" (one app host, as the member).
+    kind: text("kind").notNull().default("mcp"),
+    // The grant's audience (RFC 8707): `${GATEWAY_URL}/mcp` for an MCP
+    // connection, the app host's origin (`https://<hostname>`) for a native
+    // one. Null on rows from before the column: an MCP connection.
+    resource: text("resource"),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -103,6 +112,7 @@ export const mcpConnections = sqliteTable(
     redirectUri: text("redirect_uri").notNull(),
     redirectHost: text("redirect_host").notNull(),
     // "all" (every app the user can use, including future ones) | "selected"
+    // (a native connection is always "selected", with its one app).
     appScope: text("app_scope").notNull(),
     // "read" | "write"
     access: text("access").notNull(),
@@ -111,7 +121,8 @@ export const mcpConnections = sqliteTable(
     revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
     revokedBy: text("revoked_by"),
     // "user" | "superseded" | "member_removed" | "user_deactivated" |
-    // "expired" | "ended" (the client revoked its grant) | "failed"
+    // "expired" | "ended" (the client revoked its grant) | "failed" |
+    // "app_removed" (a native connection's app was deleted or disabled)
     revokedReason: text("revoked_reason"),
   },
   (table) => [

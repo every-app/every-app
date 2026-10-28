@@ -24,6 +24,7 @@ import { parseHost, type ParsedHost } from "./host";
 import {
   DUPLICATE_SESSION_COOKIE_MESSAGE,
   hasDuplicateSessionCookie,
+  hasSessionCookie,
 } from "./cookies";
 import {
   UnroutableAppError,
@@ -37,10 +38,13 @@ import {
   type SessionAuthenticator,
 } from "./session";
 import {
+  isProtectedResourceMetadataPath,
   isReservedToolsPath,
   isReservedWellKnownPath,
+  matchBearerRoute,
   matchPublicAsset,
   matchPublicRoute,
+  PROTECTED_RESOURCE_METADATA_PATH,
 } from "./publicRoutes";
 import {
   evaluateCsrf,
@@ -130,6 +134,18 @@ export interface GatewayDeps {
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
   /**
+   * The origin of the OAuth authorization server that issues tokens for
+   * app hosts ("Sign in with Every App", docs/design/native-sign-in.md):
+   * the gateway's own, when it runs one. Set, every active first-party app
+   * host answers RFC 9728 protected-resource metadata at
+   * `/.well-known/oauth-protected-resource`, written here from the
+   * registry row and never proxied, naming this server alone; and the
+   * 401 challenge points a client at it. Unset (OAuth off, a dev gateway
+   * without a Gateway, a third-party host), the path stays a 404 like the
+   * other discovery documents.
+   */
+  authorizationServer?: string;
+  /**
    * Serve `<app-host>/mcp` from the gateway's ToolBus. Called for the exact
    * path `/mcp` once the caller is authenticated and allowed into the app,
    * only when the manifest says `mcp: { by: "gateway" }` and `/mcp` isn't a
@@ -200,20 +216,50 @@ export function unroutableAppResponse(error: UnroutableAppError): Response {
 }
 
 /**
- * App hosts advertise no OAuth (no resource_metadata): the gateway's one
- * OAuth resource is its own `/mcp`, and an app host takes personal access
- * tokens only. A client presenting another token is told where to go.
+ * The origin a native client names as its `resource`: the registry's
+ * hostname (what the authorization server declares, never the Host header
+ * as sent) under the authorization server's scheme (https, or http on a
+ * local Gateway).
  */
-function bearerChallenge(issuer: string, bearerPresented: boolean): string {
-  if (!bearerPresented) return 'Bearer realm="every-app"';
-  const gatewayMcp = `${issuer.replace(/\/$/, "")}/mcp`.replace(/["\\]/g, "");
-  return `Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, or connect ${gatewayMcp}"`;
+function resourceOrigin(
+  authorizationServer: string,
+  app: RegisteredApp,
+): string {
+  return `${new URL(authorizationServer).protocol}//${app.hostname}`;
+}
+
+/**
+ * The 401 challenge of an app host. An app host takes a personal access
+ * token, or, where the gateway runs an OAuth server for app hosts
+ * (`deps.authorizationServer`), a token issued for exactly this host,
+ * found through the protected-resource metadata the challenge names
+ * (RFC 9728 §5.1). A client presenting another token is told where to go.
+ */
+function bearerChallenge(
+  deps: GatewayDeps,
+  app: RegisteredApp,
+  bearerPresented: boolean,
+): string {
+  const quoted = (value: string) => value.replace(/["\\]/g, "");
+  // A third-party (dispatch) host is no OAuth resource: it serves no
+  // metadata document, so the challenge names none.
+  const nativeResource = deps.authorizationServer && !deps.thirdParty;
+  const metadata = nativeResource
+    ? `, resource_metadata="${quoted(resourceOrigin(deps.authorizationServer!, app))}${PROTECTED_RESOURCE_METADATA_PATH}"`
+    : "";
+  if (!bearerPresented) return `Bearer realm="every-app"${metadata}`;
+  const gatewayMcp = quoted(`${deps.issuer.replace(/\/$/, "")}/mcp`);
+  const hint = nativeResource
+    ? `Use a personal access token here, sign in with Every App for this app, or connect ${gatewayMcp}`
+    : `Use a personal access token here, or connect ${gatewayMcp}`;
+  return `Bearer realm="every-app", error="invalid_token", error_description="${hint}"${metadata}`;
 }
 
 function bearerJson(
   status: number,
   body: Record<string, unknown>,
-  issuer: string,
+  deps: GatewayDeps,
+  app: RegisteredApp,
   bearerPresented: boolean,
 ): Response {
   return withSecurityHeaders(
@@ -221,9 +267,39 @@ function bearerJson(
       status,
       headers: {
         "content-type": "application/json",
-        "www-authenticate": bearerChallenge(issuer, bearerPresented),
+        "www-authenticate": bearerChallenge(deps, app, bearerPresented),
       },
     }),
+  );
+}
+
+/**
+ * RFC 9728 protected-resource metadata for an active first-party app host,
+ * written from the registry row: the resource is the host's origin, the
+ * only authorization server the gateway's. Never the app's to answer, so
+ * a public route can't cover it (the reserved-path check runs before any
+ * public route is consulted) and nothing here is proxied.
+ */
+function protectedResourceMetadata(
+  authorizationServer: string,
+  app: RegisteredApp,
+): Response {
+  return withSecurityHeaders(
+    new Response(
+      JSON.stringify({
+        resource: resourceOrigin(authorizationServer, app),
+        authorization_servers: [authorizationServer],
+        resource_name: app.manifest.name ?? app.appId,
+        bearer_methods_supported: ["header"],
+      }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+      },
+    ),
   );
 }
 
@@ -359,18 +435,41 @@ export async function handleGatewayRequest(
     response.headers.set("retry-after", "5");
     return response;
   }
+  // A native client's first request: the metadata that names the
+  // authorization server for this host (GET or HEAD; anything else is the
+  // reserved 404 below). Only where the gateway runs one, and only on a
+  // first-party host: a dispatch-tier host is no OAuth resource.
+  if (
+    deps.authorizationServer &&
+    !deps.thirdParty &&
+    (request.method === "GET" || request.method === "HEAD") &&
+    isProtectedResourceMetadataPath(url.pathname)
+  ) {
+    return protectedResourceMetadata(deps.authorizationServer, app);
+  }
   // Decided once, here: the setup gate needs it before the auth logic does.
-  const publicMatch = matchPublicRoute(
-    app.manifest.public,
+  // A bearer route is served to a bearer alone, so it is never public and
+  // never an asset, whatever else the manifest says of the path (the
+  // manifest refuses a path under both, but a stored row is read here).
+  const bearerMatch = matchBearerRoute(
+    app.manifest.bearerRoutes?.paths,
     request.method,
     url.pathname,
   );
+  const publicMatch = bearerMatch.public
+    ? { public: false, reason: "bearer route" }
+    : matchPublicRoute(app.manifest.public, request.method, url.pathname);
   // A public static file (`publicAssets`): a declared public route on the
   // same path keeps the public route's treatment, so it is only looked up
   // when no route matched.
-  const assetMatch = publicMatch.public
-    ? { public: false }
-    : matchPublicAsset(app.manifest.publicAssets, request.method, url.pathname);
+  const assetMatch =
+    publicMatch.public || bearerMatch.public
+      ? { public: false }
+      : matchPublicAsset(
+          app.manifest.publicAssets,
+          request.method,
+          url.pathname,
+        );
   // An app whose required settings aren't set doesn't open on a private
   // path, and nothing below reads a credential for it. Its declared public
   // routes and public assets stay up: nobody signs in to them, so the
@@ -440,6 +539,41 @@ export async function handleGatewayRequest(
 
   const bearerPresent = hasBearerCredential(request.headers);
   const reservedBearerPresent = hasEveryAppBearer(request.headers);
+
+  // A bearer route (`bearerRoutes`) takes a bearer and nothing else: the
+  // session cookie is refused there before anything reads it, on every
+  // gateway, so the Cloudflare Access bypass these paths get for native
+  // clients never serves a browser's ambient credential; and without a
+  // bearer the answer is the challenge, never a login page and never the
+  // public treatment.
+  if (bearerMatch.public) {
+    if (
+      hasSessionCookie(request.headers, deps.authenticator.sessionCookieNames)
+    ) {
+      logEvent("session.cookie_on_bearer_route", { app: app.appId }, "warn");
+      return bearerJson(
+        401,
+        {
+          error: "unauthenticated",
+          reason: "cookie_on_bearer_route",
+          message:
+            "This route takes a bearer token only; a browser session doesn't open it.",
+        },
+        deps,
+        app,
+        bearerPresent,
+      );
+    }
+    if (!bearerPresent) {
+      return bearerJson(
+        401,
+        { error: "unauthenticated", reason: "bearer_required" },
+        deps,
+        app,
+        false,
+      );
+    }
+  }
 
   // CSRF forgery needs an ambient credential to ride; a cookieless request
   // has none, and denying it here would turn the 401 + WWW-Authenticate
@@ -587,7 +721,8 @@ export async function handleGatewayRequest(
       return bearerJson(
         401,
         { error: "unauthenticated" },
-        deps.issuer,
+        deps,
+        app,
         bearerPresent,
       );
     }
@@ -615,7 +750,8 @@ export async function handleGatewayRequest(
     return bearerJson(
       401,
       { error: "unauthenticated" },
-      deps.issuer,
+      deps,
+      app,
       bearerPresent,
     );
   } else {

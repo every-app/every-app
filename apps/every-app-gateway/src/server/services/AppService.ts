@@ -13,6 +13,7 @@ import { actorFor } from "@/server/events/subjects";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { gatewayProviders } from "@/server/providers";
+import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { appCapabilities } from "./appCapabilities";
 import { listedAppSetup } from "./listedAppSetup";
 
@@ -192,6 +193,10 @@ async function deleteApp(ctx: OrgContext, id: string) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
+  // Native apps signed in to it (docs/design/native-sign-in.md §8): their
+  // rows go first, while the app is still in them, so the events can name
+  // it; the tombstone revokes any left besides.
+  await McpConnectionService.revokeForRemovedApp(existingApp.id);
   await AppRepository.tombstone(existingApp);
   // A tombstone, never a purge: the slug and worker name stay reserved.
   const app = {

@@ -15,6 +15,10 @@ export const CONSENT_FIELDS = {
   appMode: "app_mode",
   appIds: "app_ids",
   access: "access",
+  // The grant's resource (RFC 8707) the page showed: `${issuer}/mcp`, or an
+  // app host's origin for a native app (docs/design/native-sign-in.md §6).
+  // Checked against the stored request, as client_id is.
+  resource: "resource",
 } as const;
 
 const decisionSchema = z.object({
@@ -27,6 +31,7 @@ const decisionSchema = z.object({
   app_ids: z.array(z.string().min(1).max(256)).max(500).default([]),
   // Least privilege when the form says nothing.
   access: z.enum(["write", "read"]).default("read"),
+  resource: z.string().min(1).max(2048).optional(),
 });
 
 export type ConsentDecision = z.infer<typeof decisionSchema>;
@@ -48,6 +53,7 @@ export function parseDecisionForm(form: FormData): ConsentDecision | null {
       .getAll(CONSENT_FIELDS.appIds)
       .filter((field): field is string => typeof field === "string"),
     access: value(CONSENT_FIELDS.access),
+    resource: value(CONSENT_FIELDS.resource),
   });
   return parsed.success ? parsed.data : null;
 }

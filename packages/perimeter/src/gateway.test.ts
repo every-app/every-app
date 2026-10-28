@@ -2694,3 +2694,328 @@ describe("what a proxied response says about its cost", () => {
     );
   });
 });
+
+describe("Sign in with Every App on app hosts", () => {
+  const anonymous: SessionAuthenticator = {
+    sessionCookieNames: ["sess"],
+    authenticate: async () => null,
+    hasAppAccess: async () => false,
+  };
+  /** A token of the gateway's OAuth server, by shape. */
+  const NATIVE_TOKEN = `user_1:${"g".repeat(16)}:${"s".repeat(32)}`;
+  /** The session the authenticator builds for a native grant (design §7). */
+  const NATIVE_SESSION: AuthenticatedSession = {
+    ...SESSION,
+    credential: {
+      kind: "oauth",
+      channel: "api",
+      actor: "oauth:mcpc_1",
+      scopes: ["*"],
+    },
+  };
+  const AUTHORIZATION_SERVER = "https://home.example.com";
+  /** The app with an API its native client reaches. */
+  const TODO_NATIVE: RegisteredApp = {
+    ...TODO,
+    manifest: validateManifest({
+      ...TODO.manifest,
+      name: "Todos",
+      bearerRoutes: {
+        paths: ["/api/**"],
+        why: "The Mac app calls the API with its token.",
+      },
+    }),
+  };
+  function nativeDeps(over: Partial<GatewayDeps> = {}): GatewayDeps {
+    return deps({
+      registry: new InMemoryAppRegistry([TODO_NATIVE]),
+      authorizationServer: AUTHORIZATION_SERVER,
+      ...over,
+    });
+  }
+  function claims(identity: string): Record<string, unknown> {
+    return JSON.parse(
+      Buffer.from(identity.split(".")[1]!, "base64url").toString("utf8"),
+    );
+  }
+
+  it("serves protected-resource metadata from the registry and never proxies it", async () => {
+    const fetcher = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/.well-known/oauth-protected-resource"),
+      nativeDeps({
+        authenticator: anonymous,
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expectSecurityHeaders(res);
+    await expect(res.json()).resolves.toEqual({
+      resource: "https://todo.example.com",
+      authorization_servers: [AUTHORIZATION_SERVER],
+      resource_name: "Todos",
+      bearer_methods_supported: ["header"],
+    });
+    const head = await handleGatewayRequest(
+      req("/.well-known/oauth-protected-resource", { method: "HEAD" }),
+      nativeDeps({ authenticator: anonymous }),
+    );
+    expect(head.status).toBe(200);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("writes the metadata itself even where a public route covers the path", async () => {
+    const fetcher = vi.fn();
+    const covered: RegisteredApp = {
+      ...TODO_NATIVE,
+      manifest: validateManifest({
+        ...TODO_NATIVE.manifest,
+        public: [{ path: "/.well-known/**" }],
+      }),
+    };
+    const res = await handleGatewayRequest(
+      req("/.well-known/oauth-protected-resource"),
+      nativeDeps({
+        registry: new InMemoryAppRegistry([covered]),
+        authenticator: anonymous,
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      authorization_servers: [AUTHORIZATION_SERVER],
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("keeps every other spelling, method and host class a 404", async () => {
+    const fetcher = vi.fn();
+    const cases: [
+      string,
+      RequestInit & { host?: string },
+      Partial<GatewayDeps>,
+    ][] = [
+      ["/.well-known/oauth-protected-resource/mcp", {}, {}],
+      ["/.well-known/oauth-authorization-server", {}, {}],
+      ["/.well-known/oauth-protected-resource", { method: "POST" }, {}],
+      // No authorization server (OAuth off, or a stub dev gateway).
+      [
+        "/.well-known/oauth-protected-resource",
+        {},
+        { authorizationServer: undefined },
+      ],
+      // A third-party host is no resource.
+      [
+        "/.well-known/oauth-protected-resource",
+        {},
+        { thirdParty: { startSession: async () => new Response(null) } },
+      ],
+    ];
+    for (const [path, init, over] of cases) {
+      const res = await handleGatewayRequest(
+        req(path, init),
+        nativeDeps({
+          authenticator: anonymous,
+          fetcherFor: () => ({ fetch: fetcher }),
+          ...over,
+        }),
+      );
+      expect(res.status, path).toBe(404);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("names the metadata in the challenge, so a client finds the authorization server", async () => {
+    const res = await handleGatewayRequest(
+      req("/tasks", { headers: { authorization: `Bearer ${NATIVE_TOKEN}` } }),
+      nativeDeps({ authenticator: anonymous }),
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, sign in with Every App for this app, or connect https://home.example.com/mcp", resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+    );
+    const missing = await handleGatewayRequest(
+      req("/tasks"),
+      nativeDeps({ authenticator: anonymous }),
+    );
+    expect(missing.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app", resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+    );
+    // A third-party host serves no metadata document, so the challenge
+    // names none (the URL would 404).
+    const hosted = await handleGatewayRequest(
+      req("/tasks"),
+      nativeDeps({
+        authenticator: anonymous,
+        thirdParty: { startSession: async () => new Response(null) },
+      }),
+    );
+    expect(hosted.status).toBe(401);
+    expect(hosted.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app"',
+    );
+  });
+
+  it("lets a native token act as the member on the app's routes, on the api channel", async () => {
+    const authenticate = vi.fn(async () => NATIVE_SESSION);
+    for (const path of ["/tasks", "/api/tasks"]) {
+      const res = await handleGatewayRequest(
+        req(path, {
+          method: "POST",
+          headers: { authorization: `Bearer ${NATIVE_TOKEN}` },
+        }),
+        nativeDeps({
+          authenticator: {
+            sessionCookieNames: ["sess"],
+            authenticate,
+            hasAppAccess: async () => true,
+          },
+        }),
+      );
+      expect(res.status, path).toBe(200);
+      const body = (await res.json()) as {
+        identity: string;
+        authorization: string | null;
+      };
+      expect(claims(body.identity)).toMatchObject({
+        sub: "user_1",
+        chan: "api",
+        act: { sub: "oauth:mcpc_1" },
+        scopes: ["*"],
+      });
+      // Consumed by the gateway, never forwarded.
+      expect(body.authorization).toBeNull();
+    }
+  });
+
+  it("fails closed on a token the authenticator refuses, public routes included", async () => {
+    // A native token for another app, a revoked grant, or the gateway's own
+    // /mcp token: the authenticator answers null, and the gateway never
+    // downgrades a reserved bearer to anonymous access.
+    for (const path of ["/tasks", "/health", "/api/tasks"]) {
+      const res = await handleGatewayRequest(
+        req(path, { headers: { authorization: `Bearer ${NATIVE_TOKEN}` } }),
+        nativeDeps({ authenticator: anonymous }),
+      );
+      expect(res.status, path).toBe(401);
+      await expect(res.json()).resolves.toEqual({ error: "unauthenticated" });
+    }
+  });
+
+  it("refuses the session cookie on a bearer route before reading it, Access or not", async () => {
+    const authenticate = vi.fn(async () => SESSION);
+    for (const cookie of [
+      "sess=abc",
+      "other=1; sess=abc",
+      "__Secure-sess=abc",
+    ]) {
+      const res = await handleGatewayRequest(
+        req("/api/tasks", {
+          headers: {
+            cookie,
+            origin: "https://todo.example.com",
+            "sec-fetch-site": "same-origin",
+          },
+        }),
+        nativeDeps({
+          authenticator: {
+            sessionCookieNames: ["sess", "__Secure-sess"],
+            authenticate,
+            hasAppAccess: async () => true,
+          },
+        }),
+      );
+      expect(res.status, cookie).toBe(401);
+      await expect(res.json()).resolves.toMatchObject({
+        error: "unauthenticated",
+        reason: "cookie_on_bearer_route",
+      });
+    }
+    expect(authenticate).not.toHaveBeenCalled();
+    // The same cookie opens an ordinary route.
+    const ordinary = await handleGatewayRequest(
+      req("/tasks", { headers: { cookie: "sess=abc" } }),
+      nativeDeps({
+        authenticator: {
+          sessionCookieNames: ["sess"],
+          authenticate,
+          hasAppAccess: async () => true,
+        },
+      }),
+    );
+    expect(ordinary.status).toBe(200);
+  });
+
+  it("answers a bearer route without a bearer with the challenge, never a login page or the public treatment", async () => {
+    const fetcher = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/api/tasks", { headers: { accept: "text/html" } }),
+      nativeDeps({
+        authenticator: anonymous,
+        loginUrl: "https://home.example.com/sign-in",
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({
+      error: "unauthenticated",
+      reason: "bearer_required",
+    });
+    expect(res.headers.get("www-authenticate")).toContain("resource_metadata=");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("serves a stored row's bearer route to a bearer only, whatever else the row says of the path", async () => {
+    // The manifest refuses a path under both; a row stored before that
+    // rule, or by an older CLI, is read here. Built without validation.
+    const both: RegisteredApp = {
+      ...TODO_NATIVE,
+      manifest: {
+        ...TODO_NATIVE.manifest,
+        public: [{ path: "/api/**", methods: ["GET", "POST"] }],
+        publicAssets: ["/api/**"],
+      },
+    };
+    const fetcher = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/api/tasks"),
+      nativeDeps({
+        registry: new InMemoryAppRegistry([both]),
+        authenticator: anonymous,
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("keeps a narrow token off a bearer route as off any app route", async () => {
+    const narrow: AuthenticatedSession = {
+      ...SESSION,
+      credential: {
+        kind: "oauth",
+        channel: "api",
+        actor: "oauth:grant_1",
+        scopes: ["mcp:read"],
+      },
+    };
+    const res = await handleGatewayRequest(
+      req("/api/tasks", {
+        headers: { authorization: `Bearer ${NATIVE_TOKEN}` },
+      }),
+      nativeDeps({
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate: async () => narrow,
+          hasAppAccess: async () => true,
+        },
+      }),
+    );
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({
+      error: "forbidden",
+      reason: "token_scope",
+    });
+  });
+});

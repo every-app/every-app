@@ -13,11 +13,15 @@ vi.mock("cloudflare:workers", () => ({
 vi.mock("./validate", () => ({
   mcpBearerValidator: () => async () => null,
   // Every connection stands, so a code exchange goes through.
-  resolveOauthCaller: async () => ({ kind: "caller" }),
+  grantStands: async () => true,
+}));
+const resources = vi.hoisted(() => ({ origins: [] as string[] }));
+vi.mock("./resources", () => ({
+  currentAppResources: async () => resources.origins,
 }));
 
 import { createKvFake } from "@/test/kv-fake";
-import { getMcpAuth } from "./config";
+import { getMcpAuth, refreshMcpAuth, resetMcpAuthForTests } from "./config";
 
 function envFor(gatewayUrl: string, extra: Record<string, unknown> = {}) {
   return {
@@ -108,5 +112,22 @@ describe("getMcpAuth", () => {
 
     expect(await issueToken("http://localhost:19124")).toBe(120);
     expect(await issueToken("https://apps.example.com")).toBe(3600);
+  });
+
+  it("keeps /mcp up when an app resource is one the library refuses (a dev gateway's seeded hosts)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    resetMcpAuthForTests();
+    resources.origins = ["http://openseo.apps.example.com"];
+    const env = envFor("http://localhost:19343");
+    const auth = await refreshMcpAuth(env, null);
+    expect(auth?.issuer).toBe("http://localhost:19343");
+    expect(auth?.appResources).toEqual([]);
+    expect(auth?.resource).toBe("http://localhost:19343/mcp");
+
+    resources.origins = ["http://127.0.0.1"];
+    const next = await refreshMcpAuth(env, null);
+    expect(next?.appResources).toEqual(["http://127.0.0.1"]);
+    resources.origins = [];
+    resetMcpAuthForTests();
   });
 });

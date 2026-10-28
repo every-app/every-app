@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   env: {} as Record<string, unknown>,
   getSession: vi.fn(),
   getRequest: vi.fn(),
-  getMcpAuth: vi.fn(),
+  refreshMcpAuth: vi.fn(),
   buildConsentContext: vi.fn(),
 }));
 
@@ -33,7 +33,9 @@ vi.mock("@/auth", () => ({
   auth: { api: { getSession: mocks.getSession } },
 }));
 vi.mock("@/middleware/publicError", () => ({ publicErrorMiddleware: {} }));
-vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: mocks.getMcpAuth }));
+vi.mock("@/server/mcp-auth/config", () => ({
+  refreshMcpAuth: mocks.refreshMcpAuth,
+}));
 vi.mock("@/server/mcp-auth/consent", () => ({
   buildConsentContext: mocks.buildConsentContext,
 }));
@@ -55,7 +57,7 @@ beforeEach(() => {
   mocks.getRequest.mockReturnValue(
     new Request("https://gateway.example.com/_serverFn/abc?evil=1"),
   );
-  mocks.getMcpAuth.mockReturnValue(MCP_AUTH);
+  mocks.refreshMcpAuth.mockResolvedValue(MCP_AUTH);
   mocks.getSession.mockResolvedValue({
     user: { id: "user-1", email: "ada@example.com" },
     session: { activeOrganizationId: "org-1" },
@@ -74,7 +76,7 @@ describe("getConsentContext", () => {
   });
 
   it("refuses when GATEWAY_URL can't be an OAuth issuer", async () => {
-    mocks.getMcpAuth.mockReturnValue(null);
+    mocks.refreshMcpAuth.mockResolvedValue(null);
     await expect(handler({ data: { query: QUERY } })).rejects.toMatchObject({
       code: "OAUTH_DISABLED",
     });
@@ -107,5 +109,19 @@ describe("getConsentContext", () => {
       QUERY,
       { id: "user-1", email: "ada@example.com", activeOrganizationId: "org-1" },
     );
+  });
+
+  it("builds the servers with the resource the page names, so a fresh isolate knows a native app's host", async () => {
+    const native = `${QUERY}&resource=${encodeURIComponent("https://todo.example.com")}`;
+    await expect(handler({ data: { query: native } })).resolves.toEqual({
+      ok: true,
+    });
+    expect(mocks.refreshMcpAuth).toHaveBeenCalledWith(
+      mocks.env,
+      "https://todo.example.com",
+    );
+    // An MCP request names no resource: the build is refreshed all the same.
+    await handler({ data: { query: QUERY } });
+    expect(mocks.refreshMcpAuth).toHaveBeenLastCalledWith(mocks.env, null);
   });
 });

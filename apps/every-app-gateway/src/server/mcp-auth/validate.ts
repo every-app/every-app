@@ -3,6 +3,8 @@
  *
  *  - an OAuth access token this gateway issued (`OAuthAuthorizationServer`),
  *    whose props carry only ids: the connection, user and organization;
+ *    (a native grant's token, whose audience is an app host, never
+ *    validates here: wrong audience, and its props are refused besides);
  *  - a personal access token (`epat_`), recognized by its shape and checked
  *    before the authorization server ever sees it;
  *  - a Cloudflare Access assertion for the gateway's own Access application,
@@ -42,6 +44,43 @@ export type McpGrantProps = {
 };
 
 /**
+ * What a native grant's props hold (docs/design/native-sign-in.md §5): ids
+ * only, and the one app the grant opens. The grant's audience is that
+ * app's origin; the perimeter validates the token for the host it arrives
+ * on and then re-reads the connection with `resolveNativeCaller`.
+ */
+export type NativeGrantProps = {
+  v: 1;
+  kind: "native";
+  /** mcp_connections.id */
+  connectionId: string;
+  userId: string;
+  organizationId: string;
+  /** apps.id, the one app */
+  appRowId: string;
+};
+
+/**
+ * The member behind a valid native token (`resolveNativeCaller`'s answer),
+ * as the perimeter's authenticator builds a session from it: the session a personal token bound to this app
+ * would get, with `credential.kind: "oauth"`, `channel: "api"`,
+ * `actor: "oauth:<connectionId>"` and `scopes: ["*"]`.
+ */
+type NativeCaller = {
+  connectionId: string;
+  userId: string;
+  email: string;
+  organizationId: string;
+  organizationName: string;
+  orgRole: string;
+  /** The one app the grant opens; the perimeter's `boundToAnotherApp`. */
+  appRowId: string;
+  /** The client's own name, verified only when `clientDomain` is set. */
+  clientName: string;
+  clientDomain: string | null;
+};
+
+/**
  * The resolved caller of one `/mcp` request: who they are, how much they may
  * do, and which apps: a connection's chosen apps, a token's one app, or every
  * app the user can use.
@@ -77,6 +116,19 @@ function isGrantProps(value: unknown): value is McpGrantProps {
     typeof props["connectionId"] === "string" &&
     typeof props["userId"] === "string" &&
     typeof props["organizationId"] === "string"
+  );
+}
+
+function isNativeGrantProps(value: unknown): value is NativeGrantProps {
+  if (!value || typeof value !== "object") return false;
+  const props = value as Record<string, unknown>;
+  return (
+    props["v"] === 1 &&
+    props["kind"] === "native" &&
+    typeof props["connectionId"] === "string" &&
+    typeof props["userId"] === "string" &&
+    typeof props["organizationId"] === "string" &&
+    typeof props["appRowId"] === "string"
   );
 }
 
@@ -169,6 +221,7 @@ export async function resolveOauthCaller(
   );
   if (
     !connection ||
+    connection.kind !== "mcp" ||
     connection.userId !== props.userId ||
     connection.organizationId !== props.organizationId
   ) {
@@ -226,10 +279,97 @@ export async function resolveOauthCaller(
 }
 
 /**
+ * The member behind a native grant, or null when it no longer stands
+ * (`native.per-request-recheck`): props of another shape, the connection
+ * revoked or not native, for another user, organization or app than the
+ * props say, its member removed (then it is revoked, as an MCP connection
+ * is) or joined again since the consent, the user banned or deactivated,
+ * or the organization not active. Null fails closed: the request is
+ * refused, never anonymous. Exported for the perimeter's authenticator
+ * (lane b), which validates the token for its host first.
+ */
+export async function resolveNativeCaller(
+  props: unknown,
+  { touch = true }: ResolveCallerOptions = {},
+): Promise<NativeCaller | null> {
+  if (!isNativeGrantProps(props)) return null;
+  const connection =
+    await McpConnectionRepository.findActiveNativeWithMembership(
+      props.connectionId,
+    );
+  if (
+    !connection ||
+    connection.userId !== props.userId ||
+    connection.organizationId !== props.organizationId ||
+    connection.appRowId !== props.appRowId
+  ) {
+    return null;
+  }
+  const role = resolvePrimaryOrganizationRole(connection.role);
+  if (
+    !role ||
+    (connection.memberSince && connection.memberSince > connection.createdAt)
+  ) {
+    background(
+      McpConnectionService.revokeConnection(connection.id, "member_removed"),
+      "mcp.connection.revoke_failed",
+    );
+    return null;
+  }
+  if (isUserBanned(connection)) return null;
+  if (connection.organizationStatus !== "active") return null;
+  if (touch) {
+    background(
+      McpConnectionRepository.touchLastUsed(connection.id),
+      "mcp.connection.touch_failed",
+    );
+  }
+  return {
+    connectionId: connection.id,
+    userId: connection.userId,
+    email: connection.email,
+    organizationId: connection.organizationId,
+    organizationName: connection.organizationName,
+    orgRole: role,
+    appRowId: connection.appRowId,
+    clientName: connection.clientName,
+    clientDomain: connection.clientDomain,
+  };
+}
+
+/**
+ * Whether a grant still stands at a refresh (config.ts
+ * tokenExchangeCallback): by its props' kind, the MCP connection with its
+ * scope, or the native connection, which must also still be the audience's
+ * app (the resource list dropped a deleted app's origin, so a refresh
+ * naming it is `invalid_target` before this; a grant for an app whose row
+ * changed hands is refused here). Throws when D1 can't say.
+ */
+export async function grantStands(
+  props: unknown,
+  scope: string[],
+  audience: string,
+): Promise<boolean> {
+  // A refresh is a use: it keeps the connection from expiring as idle.
+  if (isNativeGrantProps(props)) {
+    const caller = await resolveNativeCaller(props);
+    if (!caller) return false;
+    const app = await McpConnectionRepository.findAppResource(
+      caller.appRowId,
+      new URL(audience).protocol as "https:" | "http:",
+    );
+    return app !== null && app === audience;
+  }
+  const caller = await resolveOauthCaller(props, scope);
+  return caller !== null && caller !== "insufficient_scope";
+}
+
+/**
  * The resource server's token validator: personal tokens by shape first (so
  * one is never handed to the authorization server), then this gateway's own
  * access tokens. A valid token whose connection no longer stands answers
- * `invalid_token`, so the client signs in again.
+ * `invalid_token`, so the client signs in again. A native grant's token is
+ * refused by audience in the library; its props never resolve here anyway.
  */
 export function mcpBearerValidator(
   authorizationServer: OAuthAuthorizationServer<Cloudflare.Env>,

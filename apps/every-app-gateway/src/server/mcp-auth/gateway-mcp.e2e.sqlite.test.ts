@@ -123,10 +123,11 @@ import { createKvFake } from "@/test/kv-fake";
 import { withoutWorkspaceTools } from "@/test/mcp-tools";
 import { deployLiveApp, markAppDeployed, registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
-import { getMcpAuth } from "./config";
+import { getMcpAuth, resetMcpAuthForTests } from "./config";
 import { buildConsentContext, type ConsentContext } from "./consent";
 import { runMcpMaintenance } from "./maintenance";
 import { resetRegistrationLimitsForTests } from "./registration-limit";
+import { resetAppResourcesForTests } from "./resources";
 
 const GATEWAY = "https://gateway.example.com";
 const HOST = "gateway.example.com";
@@ -705,6 +706,8 @@ beforeEach(async () => {
   resetRegistrationLimitsForTests();
   clearCatalogSyncClaimsForTests();
   clearHostnameCacheForTests();
+  resetAppResourcesForTests();
+  resetMcpAuthForTests();
 
   db = await createTestDb();
   hoisted.testDb.current = db;
@@ -799,8 +802,12 @@ describe("discovery", () => {
       token_endpoint: `${GATEWAY}/oauth/token`,
       registration_endpoint: `${GATEWAY}/oauth/register`,
       revocation_endpoint: `${GATEWAY}/oauth/token`,
+      // Never the app hosts, which are resources too (native apps): the
+      // document is public, and would list every app on the gateway
+      // (native-sign-in.e2e.sqlite.test.ts).
       protected_resources: [RESOURCE],
-      scopes_supported: ["mcp:read", "mcp:write", "offline_access"],
+      // `*` is a native grant's scope; never granted to an MCP connection.
+      scopes_supported: ["mcp:read", "mcp:write", "offline_access", "*"],
       response_types_supported: ["code"],
       code_challenge_methods_supported: ["S256"],
       authorization_response_iss_parameter_supported: true,
@@ -1536,6 +1543,7 @@ describe("a CIMD client (claude.ai-style)", () => {
       domain: "claude.ai",
       redirectUri: CLAUDE_REDIRECT,
       redirectHost: "claude.ai",
+      redirectIsLoopback: false,
     });
     // The member was never given the notes app.
     expect(context.organizations[0]!.apps.map((app) => app.slug)).toEqual([

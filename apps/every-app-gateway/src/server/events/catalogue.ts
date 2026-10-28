@@ -755,6 +755,11 @@ export const catalogue = {
     );
   },
 
+  /**
+   * `kind` "mcp" (an AI app at /mcp) or "native" (a native app signed in
+   * to one app host, docs/design/native-sign-in.md); `app` is a native
+   * connection's one app, absent for an MCP connection.
+   */
   connectionCreated(input: {
     connection: {
       id: string;
@@ -762,6 +767,8 @@ export const catalogue = {
       clientDomain?: string | null;
       access: "read" | "write";
       appScope: "all" | "selected";
+      kind?: "mcp" | "native";
+      app?: { rowId: string; id: string; name: string } | null;
     };
     user: EventUser;
   }): BuiltEvent {
@@ -773,21 +780,30 @@ export const catalogue = {
         clientDomain: connection.clientDomain ?? undefined,
         access: connection.access,
         appScope: connection.appScope,
+        kind: connection.kind ?? "mcp",
+        app: connection.app ? app(connection.app) : undefined,
       }),
       user: user(input.user),
     });
   },
 
   connectionRevoked(input: {
-    connection: { id: string; clientName: string };
+    connection: {
+      id: string;
+      clientName: string;
+      kind?: "mcp" | "native";
+      app?: { rowId: string; id: string; name: string } | null;
+    };
     user: EventUser;
     reason: string;
   }): BuiltEvent {
     return built("connection.revoked", {
-      connection: {
+      connection: compact({
         id: input.connection.id,
         clientName: input.connection.clientName,
-      },
+        kind: input.connection.kind ?? "mcp",
+        app: input.connection.app ? app(input.connection.app) : undefined,
+      }),
       user: user(input.user),
       reason: input.reason,
     });
@@ -1352,6 +1368,10 @@ export function summarize(
     }
     case "connection.created": {
       const connection = obj(d.connection);
+      if (connection.kind === "native") {
+        const app = obj(connection.app);
+        return `${actorLabel(actor)} signed in to ${str(app.name) ?? "an app"} from ${str(connection.clientName) ?? "a native app"}`;
+      }
       const access =
         connection.access === "write" ? "read & write" : "read only";
       const scope =
@@ -1360,6 +1380,10 @@ export function summarize(
     }
     case "connection.revoked": {
       const connection = obj(d.connection);
+      if (connection.kind === "native") {
+        const app = obj(connection.app);
+        return `${userLabel(d.user)}'s ${str(connection.clientName) ?? "native app"} sign-in to ${str(app.name) ?? "an app"} was revoked (${str(d.reason) ?? "revoked"})`;
+      }
       return `${userLabel(d.user)}'s ${str(connection.clientName) ?? "AI app"} connection was revoked (${str(d.reason) ?? "revoked"})`;
     }
     case "token.created":

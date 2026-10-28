@@ -5,6 +5,7 @@ import {
   appTools,
   groupAppAccess,
   mcpConnectionApps,
+  mcpConnections,
   orgAppSettings,
   remoteMcpTools,
   userAccessTokens,
@@ -345,6 +346,24 @@ async function tombstone(
         and(
           eq(remoteMcpTools.appRowId, id),
           eq(remoteMcpTools.organizationId, organizationId),
+        ),
+      ),
+    // A native app signed in to it is signed out (AppService.delete
+    // revokes and announces these first; this covers any other caller).
+    db
+      .update(mcpConnections)
+      .set({ revokedAt: now, revokedReason: "app_removed" })
+      .where(
+        and(
+          eq(mcpConnections.kind, "native"),
+          isNull(mcpConnections.revokedAt),
+          inArray(
+            mcpConnections.id,
+            db
+              .select({ id: mcpConnectionApps.connectionId })
+              .from(mcpConnectionApps)
+              .where(eq(mcpConnectionApps.appRowId, id)),
+          ),
         ),
       ),
     // Out of every AI connection that chose it: a later deploy brings the

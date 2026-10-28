@@ -53,6 +53,32 @@ export function isMcpDcrEnabled(runtimeEnv: {
   return switchedOn("MCP_DCR_ENABLED", runtimeEnv.MCP_DCR_ENABLED);
 }
 
+/**
+ * GATEWAY_URL's origin as the OAuth issuer, or null when it can't be one:
+ * OAuth needs https, or http on exactly `localhost` / `127.0.0.1` (not
+ * `*.localhost`) for local testing. The same rule `mcp-auth/config.ts`
+ * builds the server with, kept here (a leaf module) so the perimeter can
+ * name the issuer on app hosts without importing the server's module
+ * graph for every request.
+ */
+export function oauthIssuer(runtimeEnv: {
+  GATEWAY_URL?: string;
+}): string | null {
+  if (!runtimeEnv.GATEWAY_URL) return null;
+  let url: URL;
+  try {
+    url = new URL(runtimeEnv.GATEWAY_URL);
+  } catch {
+    return null;
+  }
+  const loopback =
+    url.hostname === "localhost" || /^127(?:\.\d{1,3}){3}$/.test(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    return null;
+  }
+  return url.origin;
+}
+
 const OAUTH_PATH =
   /^\/(?:oauth(?:\/|$)|\.well-known\/(?:oauth-authorization-server|oauth-protected-resource|openid-configuration)(?:\/|$))/;
 

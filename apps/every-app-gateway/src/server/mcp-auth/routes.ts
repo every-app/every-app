@@ -44,7 +44,7 @@ import {
 import { resolveAccessCaller } from "./access-caller";
 import { errorPage, handleAuthorize, handleConsentDecision } from "./authorize";
 import { payloadTooLarge, readBodyWithLimit, withBody } from "./body";
-import { getMcpAuth, MCP_OAUTH_PATHS, type McpAuth } from "./config";
+import { MCP_OAUTH_PATHS, refreshMcpAuth, type McpAuth } from "./config";
 import { onPlatformDomain, tokenRequestClientIds } from "./own-domain";
 import { normalizeClientRegistrationRequest } from "./registration";
 import { allowRegistration } from "./registration-limit";
@@ -203,11 +203,24 @@ async function serveMcpThroughAccess(
   });
 }
 
+/**
+ * The resource an authorization request names, so the servers can be
+ * rebuilt with a just-deployed app's origin before the request is parsed
+ * (config.ts refreshMcpAuth). The token endpoint's is in its body, read
+ * there.
+ */
+function resourceNamed(request: Request, pathname: string): string | null {
+  if (pathname !== MCP_OAUTH_PATHS.authorize) return null;
+  return new URL(request.url).searchParams.get("resource");
+}
+
 async function dispatch(
   request: Request,
   pathname: string,
 ): Promise<Response | null> {
-  const mcpAuth = isMcpOauthEnabled(env) ? getMcpAuth(env) : null;
+  const mcpAuth = isMcpOauthEnabled(env)
+    ? await refreshMcpAuth(env, resourceNamed(request, pathname))
+    : null;
   if (pathname === MCP_PATH) {
     if (request.method !== "OPTIONS") {
       const served = await serveMcpThroughAccess(request);
@@ -223,7 +236,10 @@ async function dispatch(
     case PROTECTED_RESOURCE_METADATA_PATH:
       return mcpAuth.resourceServer.fetch(request, env, requestContext());
     case AUTHORIZATION_SERVER_METADATA_PATH:
-      return mcpAuth.authorizationServer.fetch(request, env, requestContext());
+      return withoutAppResources(
+        await mcpAuth.authorizationServer.fetch(request, env, requestContext()),
+        mcpAuth,
+      );
     case MCP_OAUTH_PATHS.token:
       return serveTokenEndpoint(request, mcpAuth);
     case MCP_OAUTH_PATHS.registration:
@@ -243,6 +259,33 @@ async function dispatch(
     default:
       return json(404, { error: "not_found" });
   }
+}
+
+/**
+ * The authorization server's metadata without the app hosts: the library
+ * lists every configured resource under `protected_resources`, which would
+ * publish the hostname of every active app on this gateway to anyone (the
+ * document is public, and bypassed behind Access). A native app never
+ * reads it: it finds the gateway from the metadata its own app host
+ * serves (docs/design/native-sign-in.md §4), so only `/mcp` is named, as
+ * before native sign-in.
+ */
+async function withoutAppResources(
+  response: Response,
+  mcpAuth: McpAuth,
+): Promise<Response> {
+  if (response.status !== 200) return response;
+  let metadata: Record<string, unknown>;
+  try {
+    metadata = (await response.clone().json()) as Record<string, unknown>;
+  } catch {
+    return response;
+  }
+  if (!Array.isArray(metadata["protected_resources"])) return response;
+  return new Response(
+    JSON.stringify({ ...metadata, protected_resources: [mcpAuth.resource] }),
+    { status: 200, headers: response.headers },
+  );
 }
 
 /**
@@ -277,13 +320,23 @@ async function serveRegistration(
  */
 async function serveTokenEndpoint(
   request: Request,
-  mcpAuth: McpAuth,
+  initial: McpAuth,
 ): Promise<Response> {
+  let mcpAuth = initial;
   if (request.method !== "POST") {
     return mcpAuth.authorizationServer.fetch(request, env, requestContext());
   }
   const body = await readBodyWithLimit(request, MAX_TOKEN_BODY_BYTES);
   if (!body) return payloadTooLarge("64 KiB");
+  // A refresh naming a just-deployed app's origin: the servers are rebuilt
+  // with it first, so the audience is known (an unknown one is
+  // invalid_target).
+  const named = new URLSearchParams(new TextDecoder().decode(body)).get(
+    "resource",
+  );
+  if (named && !mcpAuth.appResources.includes(named.toLowerCase())) {
+    mcpAuth = (await refreshMcpAuth(env, named)) ?? mcpAuth;
+  }
   if (
     tokenRequestClientIds(request.headers, body).some((clientId) =>
       onPlatformDomain(clientId, mcpAuth.issuer, env),

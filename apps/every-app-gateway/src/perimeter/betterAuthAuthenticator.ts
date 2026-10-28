@@ -15,16 +15,25 @@
  *    any organization, acting under the session's own, with no
  *    user_app_access row.
  *
+ * Three credentials open an app host: the Better Auth session cookie, a
+ * personal access token (`epat_`), and, since "Sign in with Every App"
+ * (docs/design/native-sign-in.md §7), a token the gateway's own OAuth
+ * server issued for exactly this host's origin: validated with that
+ * audience, its connection row re-read on every request, and turned into
+ * the session a personal token bound to that one app would be.
+ *
  * Unlike the dependency-light perimeter package, this adapter is allowed heavy
  * imports (Better Auth, Drizzle) because it is only pulled in by the production
  * worker entry.
  */
+import { env } from "cloudflare:workers";
 import { auth } from "@/auth";
 import { prewarmOuterRingAssertion } from "@/auth/cloudflare-access";
 import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { members, organizations, users } from "@/db/schema";
+import { isMcpOauthEnabled, oauthIssuer } from "@/server/oauth-flag";
 import {
   isOrganizationActive,
   resolveOrgContext,
@@ -39,14 +48,111 @@ import { DEPLOY_SCOPE } from "@/server/user-pat-scopes";
 import {
   extractBearerCredential,
   extractEveryAppBearer,
+  isGatewayOauthToken,
+  logEvent,
   type AuthenticatedSession,
   type RegisteredApp,
   type SessionAuthenticator,
 } from "@every-app/perimeter";
 
 type CredentialBoundSession = AuthenticatedSession & {
+  /** The one app row a personal token or native grant is bound to. */
   credentialAppRowId?: string | null;
+  /**
+   * The origin a native token was validated for (its audience): the host
+   * the request named. `hasAppAccess` holds it to the served app's own,
+   * so the token never acts on a host the row's name doesn't match.
+   */
+  credentialAudience?: string;
 };
+
+/**
+ * The host this request is for, as the perimeter routed it (server.ts
+ * resolves the app from the same header), lowercased and without a
+ * trailing dot. Null for a request naming no host.
+ */
+function requestHost(request: Request): string | null {
+  const header = request.headers.get("host")?.trim().toLowerCase();
+  const host = header || new URL(request.url).host.toLowerCase();
+  return host ? host.replace(/\.$/, "") : null;
+}
+
+/**
+ * The session behind a token of the gateway's OAuth server presented on an
+ * app host: valid for exactly this host's origin (any other audience, the
+ * gateway's own `/mcp` included, is null), a native grant's, and standing
+ * for a connection that still holds (`resolveNativeCaller`: revoked,
+ * another person's, organization's or app's, a member removed since the
+ * grant, deactivated, or a suspended organization: null; the
+ * member-removed case revokes the row on the way, as `/mcp` does). Never
+ * anonymous: the caller fails closed.
+ */
+async function resolveNativeSession(
+  request: Request,
+  token: string,
+): Promise<CredentialBoundSession | null> {
+  const issuer = isMcpOauthEnabled(env) ? oauthIssuer(env) : null;
+  const host = requestHost(request);
+  if (!issuer || !host) return null;
+  // Loaded on the first native token an isolate sees, not with the
+  // perimeter: the OAuth server's module graph (the ToolBus behind it)
+  // costs a page request a database round trip when it is imported
+  // statically (appHostCost.sqlite.test.ts pins the budget).
+  const [
+    { validateAppHostToken },
+    { resolveNativeCaller },
+    { appResourceOrigin },
+  ] = await Promise.all([
+    import("@/server/mcp-auth/config"),
+    import("@/server/mcp-auth/validate"),
+    import("@/server/mcp-auth/resources"),
+  ]);
+  // The audience is the registry hostname under the issuer's scheme, the
+  // form the authorization server declares (McpAuth.resourceScheme).
+  const audience = appResourceOrigin(
+    host,
+    new URL(issuer).protocol as "https:" | "http:",
+  );
+
+  let validated;
+  try {
+    validated = await validateAppHostToken(env, audience, token);
+  } catch (error) {
+    // Storage trouble: the token opens nothing here.
+    logEvent(
+      "native.token_unvalidated",
+      {
+        host,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+    return null;
+  }
+  if (!validated) return null;
+  const caller = await resolveNativeCaller(validated.props);
+  if (!caller) return null;
+
+  return {
+    sub: caller.userId,
+    email: caller.email,
+    orgId: caller.organizationId,
+    orgRole: caller.orgRole,
+    orgName: caller.organizationName,
+    credential: {
+      kind: "oauth",
+      channel: "api",
+      // The prefix MCP tool calls carry on the `mcp` channel: one
+      // connection id names the grant on either channel.
+      actor: `oauth:${caller.connectionId}`,
+      // The one scope rule (session.ts): a native grant is full member
+      // scope on its one app, whatever the client asked for.
+      scopes: ["*"],
+    },
+    credentialAppRowId: caller.appRowId,
+    credentialAudience: audience,
+  };
+}
 
 /** A live membership: the role, and the organization's name for `org_name`. */
 interface LiveMembership {
@@ -94,14 +200,25 @@ export async function resolveLiveOrgRole(
   return (await resolveLiveMembership(userId, organizationId))?.role ?? null;
 }
 
-/** A token bound to one app (`credentialAppRowId`) is used on another. */
+/**
+ * A credential bound to one app (`credentialAppRowId`: an app-bound
+ * personal token, or a native grant) is used on another; or a native token
+ * validated for one host's origin is served on an app whose registered
+ * hostname isn't that host. A browser session is bound to nothing.
+ */
 async function boundToAnotherApp(
   session: AuthenticatedSession,
   app: RegisteredApp,
 ): Promise<boolean> {
-  if (session.credential?.kind !== "pat") return false;
-  const credentialAppRowId = (session as CredentialBoundSession)
-    .credentialAppRowId;
+  if (!session.credential) return false;
+  const { credentialAppRowId, credentialAudience } =
+    session as CredentialBoundSession;
+  if (
+    credentialAudience &&
+    new URL(credentialAudience).host !== app.hostname.toLowerCase()
+  ) {
+    return true;
+  }
   if (!credentialAppRowId) return false;
   const servedApp = await AppRepository.findByAppSlug(
     app.appId,
@@ -169,11 +286,18 @@ export function createProdAuthenticator(
         return session;
       }
 
+      if (bearerCredential && isGatewayOauthToken(bearerCredential)) {
+        // A token of the gateway's OAuth server: good here only when it
+        // was issued for this very host (a native grant). One for the
+        // gateway's own /mcp, or for another host, fails closed, never
+        // anonymous, and is never forwarded to an app.
+        return resolveNativeSession(request, bearerCredential);
+      }
       if (bearerCredential) {
-        // No other bearer is the gateway's to accept on an app host: OAuth
-        // access tokens are for the gateway's own /mcp only. Fail closed.
-        // (On public routes the perimeter forwards other bearers, which
-        // apps own, but never one shaped like the OAuth server's tokens.)
+        // No other bearer is the gateway's to accept on an app host. Fail
+        // closed. (On public routes the perimeter forwards other bearers,
+        // which apps own, but never one shaped like the OAuth server's
+        // tokens.)
         return null;
       }
 

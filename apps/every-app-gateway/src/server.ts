@@ -88,7 +88,11 @@ import {
   guardControlPlaneRequest,
   withControlPlaneHeaders,
 } from "./server/control-plane-guard";
-import { isOauthPath } from "./server/oauth-flag";
+import {
+  isMcpOauthEnabled,
+  isOauthPath,
+  oauthIssuer,
+} from "./server/oauth-flag";
 import { platformPolicy } from "./server/platform-policy";
 import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
 import { OrgAppSettingsRepository } from "./server/repositories/OrgAppSettingsRepository";
@@ -510,6 +514,12 @@ export default {
         authenticator: createProdAuthenticator(platformPolicy(env)),
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
         interceptMcp: interceptAppHostMcp,
+        // "Sign in with Every App": a first-party host names the gateway's
+        // OAuth server in its protected-resource metadata while OAuth is
+        // on (the same switch MCP clients are under; no new one).
+        authorizationServer: isMcpOauthEnabled(env)
+          ? (oauthIssuer(env) ?? undefined)
+          : undefined,
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's

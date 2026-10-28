@@ -2398,7 +2398,11 @@ describe("the event bus (SQLite)", () => {
         expect.objectContaining({
           type: "connection.revoked",
           data: {
-            connection: { id: "mcpc_1", clientName: "Claude Code" },
+            connection: {
+              id: "mcpc_1",
+              clientName: "Claude Code",
+              kind: "mcp",
+            },
             user: {
               id: owner,
               email: "ada@acme.example",
@@ -2712,6 +2716,7 @@ describe("the event bus (SQLite)", () => {
               clientDomain: "claude.ai",
               access: "write",
               appScope: "selected",
+              kind: "mcp",
             },
             user: {
               id: owner,

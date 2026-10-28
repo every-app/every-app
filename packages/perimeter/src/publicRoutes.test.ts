@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   normalizePath,
   isInternalPath,
+  isProtectedResourceMetadataPath,
   isReservedToolsPath,
   isReservedWellKnownPath,
+  matchBearerRoute,
   matchPublicRoute,
+  PROTECTED_RESOURCE_METADATA_PATH,
 } from "./publicRoutes";
 import type { PublicRoute } from "./manifest/manifest";
 
@@ -269,5 +272,61 @@ describe("matchPublicRoute", () => {
       matchPublicRoute(calRoutes, "GET", "/alice/intro/extra").public,
     ).toBe(false);
     expect(matchPublicRoute(calRoutes, "POST", "/alice").public).toBe(false);
+  });
+});
+
+describe("matchBearerRoute", () => {
+  it("matches a declared glob on every method, with the public canonicalization", () => {
+    for (const method of ["GET", "POST", "PUT", "DELETE", "patch"]) {
+      expect(matchBearerRoute(["/api/**"], method, "/api/notes").public).toBe(
+        true,
+      );
+    }
+    expect(matchBearerRoute(["/api/**"], "GET", "/api/../admin").public).toBe(
+      false,
+    );
+    expect(
+      matchBearerRoute(["/api/**"], "GET", "/api/%2e%2e/admin").public,
+    ).toBe(false);
+    expect(matchBearerRoute(["/api/**"], "GET", "/admin").public).toBe(false);
+  });
+
+  it("never matches the internal namespace, and nothing when none is declared", () => {
+    expect(
+      matchBearerRoute(["/**/tools/**"], "POST", "/__everyapp/tools/call")
+        .public,
+    ).toBe(false);
+    expect(matchBearerRoute(undefined, "GET", "/api/notes").public).toBe(false);
+    expect(matchBearerRoute([], "GET", "/api/notes").public).toBe(false);
+  });
+});
+
+describe("isProtectedResourceMetadataPath", () => {
+  it("is exactly the RFC 9728 path, spelled canonically", () => {
+    expect(
+      isProtectedResourceMetadataPath(PROTECTED_RESOURCE_METADATA_PATH),
+    ).toBe(true);
+    expect(
+      isProtectedResourceMetadataPath("/.well-known/oauth-protected-resource/"),
+    ).toBe(true);
+    // Resolved as a public route's path is: plain dot segments canonicalize.
+    expect(
+      isProtectedResourceMetadataPath(
+        "/x/../.well-known/oauth-protected-resource",
+      ),
+    ).toBe(true);
+  });
+
+  it("is no other reserved document, suffixed form or odd spelling", () => {
+    for (const path of [
+      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
+      "/mcp/.well-known/oauth-protected-resource",
+      "/.well-known/OAUTH-PROTECTED-RESOURCE",
+      "/.well-known/%256fauth-protected-resource",
+    ]) {
+      expect(isProtectedResourceMetadataPath(path), path).toBe(false);
+    }
   });
 });

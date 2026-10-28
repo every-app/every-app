@@ -5,8 +5,13 @@
  * request the client sent, parsed again by the library, never from the
  * server-function URL: the client's name, its verified domain when its id is
  * a Client ID Metadata Document, where the tokens will be sent, and what the
- * user can grant: one of their organizations, all of its apps they can use
- * (including future ones) or a chosen few, and read & write or read only.
+ * user can grant. For the gateway's /mcp (`grant.kind` "mcp"): one of their
+ * organizations, all of its apps they can use (including future ones) or a
+ * chosen few, and read & write or read only. For an app host's origin
+ * (`grant.kind` "native", docs/design/native-sign-in.md §6): that one app,
+ * as the member, with everything they can do there, in the organization
+ * the host fixes (or one they choose, for a shared app); no app picker, no
+ * read-only choice.
  *
  * Each app is shown with whether it has tools, read from its snapshot in
  * D1. An app with no snapshot yet (nothing has used its tools; the first
@@ -36,8 +41,9 @@ import {
   RETRY_FAILED_SYNC_MS,
   syncUnsyncedCatalogs,
 } from "@/server/toolbus/catalog-sync";
-import { OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
+import { NATIVE_SCOPE, OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
+import { appResourceHostname, type ResourceScheme } from "./resources";
 
 /**
  * Whether an app has tools to serve: it does, its snapshot says it has
@@ -53,6 +59,22 @@ type ConsentOrganization = {
   apps: { rowId: string; slug: string; name: string; tools: ToolState }[];
 };
 
+/** The app a native grant opens, as the page names it. */
+export type ConsentApp = {
+  rowId: string;
+  slug: string;
+  name: string;
+  hostname: string;
+};
+
+/**
+ * What the grant is for: the gateway's /mcp (an AI app's connection), or
+ * one app host's origin (a native app's sign-in to that app).
+ */
+type ConsentGrant =
+  | { kind: "mcp"; resource: string }
+  | { kind: "native"; resource: string; app: ConsentApp };
+
 export type ConsentContext =
   | {
       ok: true;
@@ -64,15 +86,28 @@ export type ConsentContext =
         domain: string | null;
         redirectUri: string;
         redirectHost: string;
+        /**
+         * The code goes back to an app on this computer (`localhost`,
+         * `127.0.0.0/8`, `::1`), as a native app's does.
+         */
+        redirectIsLoopback: boolean;
       };
       email: string;
+      /**
+       * The organizations the person may grant in. For a native grant,
+       * only those where they can open the app, each listing that one app
+       * (one organization for an organization's app; a shared app on the
+       * hosted tier offers a choice, as the MCP page does).
+       */
       organizations: ConsentOrganization[];
       defaultOrganizationId: string | null;
       /**
        * Whether the client asked for `mcp:write` (or named no scope, which
        * leaves the choice to the server): only then is read & write offered.
+       * Always true for a native grant, whose scope is `*`.
        */
       writeRequested: boolean;
+      grant: ConsentGrant;
     }
   | { ok: false; message: string };
 
@@ -250,16 +285,46 @@ export async function buildConsentContext(
   const oauth = auth.authorizationServer.getOAuthApi(env);
   let details;
   let requestedScopes: string[];
+  let resource: string;
   try {
     const request = await oauth.parseAuthRequest(
       new Request(`${auth.issuer}/oauth/authorize?${params}`),
     );
     requestedScopes = request.scope;
+    resource = request.resource ?? auth.resource;
     details = await oauth.describeConsent(request);
   } catch (error) {
     const message = describeAuthorizationFailure(error);
     if (message) return { ok: false, message };
     throw error;
+  }
+  const client = {
+    id: details.clientId,
+    name: clientDisplayName(details.clientName),
+    domain: details.clientDomain ?? null,
+    redirectUri: details.redirectUri,
+    redirectHost: details.redirectHost,
+    redirectIsLoopback: details.redirectIsLoopback,
+  };
+
+  if (resource !== auth.resource) {
+    const grant = await nativeGrantFor(resource, user.id, auth.resourceScheme);
+    if (!grant.ok) return grant;
+    const defaultOrganizationId =
+      grant.organizations.find((org) => org.id === user.activeOrganizationId)
+        ?.id ??
+      grant.organizations[0]?.id ??
+      null;
+    return {
+      ok: true,
+      handle,
+      client,
+      email: user.email,
+      organizations: grant.organizations,
+      defaultOrganizationId,
+      writeRequested: true,
+      grant: { kind: "native", resource, app: grant.app },
+    };
   }
 
   const organizations = await syncUnknownCatalogs(
@@ -273,18 +338,66 @@ export async function buildConsentContext(
   return {
     ok: true,
     handle,
-    client: {
-      id: details.clientId,
-      name: clientDisplayName(details.clientName),
-      domain: details.clientDomain ?? null,
-      redirectUri: details.redirectUri,
-      redirectHost: details.redirectHost,
-    },
+    client,
     email: user.email,
     organizations,
     defaultOrganizationId,
     writeRequested: writeRequested(requestedScopes),
+    grant: { kind: "mcp", resource },
   };
+}
+
+/**
+ * The app an app resource names, and the organizations the person may
+ * sign a native app into it in: those of their active memberships where
+ * they can open the app (`consentChoices`: a `user_app_access` row or a
+ * group's, or a shared app; never a suspended organization, never a
+ * deactivated member). A person who can't open the app in the browser
+ * can't grant it (`consent.choices-validated-before-spend`), and the page
+ * says so. Null app: the host is not an active first-party app any more
+ * (the resource list is a minute behind the registry at most).
+ */
+export async function nativeGrantFor(
+  resource: string,
+  userId: string,
+  scheme: ResourceScheme,
+): Promise<
+  | { ok: true; app: ConsentApp; organizations: ConsentOrganization[] }
+  | { ok: false; message: string }
+> {
+  const hostname = appResourceHostname(resource, scheme);
+  const row = hostname
+    ? await McpConnectionRepository.findActiveAppByHostname(hostname)
+    : null;
+  if (!row || !row.hostname) {
+    return {
+      ok: false,
+      message:
+        "This app isn't available on EveryApp any more. Sign in again from the app once it is.",
+    };
+  }
+  const app: ConsentApp = {
+    rowId: row.rowId,
+    slug: row.appSlug,
+    name: row.name,
+    hostname: row.hostname,
+  };
+  const organizations = (await consentChoices(userId)).flatMap((org) => {
+    const chosen = org.apps.find((candidate) => candidate.rowId === app.rowId);
+    return chosen ? [{ ...org, apps: [chosen] }] : [];
+  });
+  if (!organizations.length) {
+    return {
+      ok: false,
+      message: `You can't open ${app.name} on EveryApp, so you can't sign an app into it. Ask an owner or admin for access, then sign in again from the app.`,
+    };
+  }
+  return { ok: true, app, organizations };
+}
+
+/** A native grant's scopes: `*`, whatever the client asked (`native.full-scope-only`). */
+export function nativeGrantedScopes(): string[] {
+  return [NATIVE_SCOPE];
 }
 
 /**
