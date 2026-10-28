@@ -76,11 +76,18 @@ export const microsToUsd = (micros: number | null): number | null =>
  * the row can go. Every writer of the row ends its batch with a DELETE on
  * this condition rather than deleting outright.
  */
-export function emptyOrgSettingsSql(columns: { cost: boolean; ai: boolean; models: boolean }): string {
+export function emptyOrgSettingsSql(columns: {
+  cost: boolean;
+  ai: boolean;
+  models: boolean;
+  /** The Gateway has `linked_dev` (migration 0022): a row with it on is not empty. */
+  linkedDev?: boolean;
+}): string {
   return [
     "default_monthly_call_cap IS NULL",
     ...(columns.cost ? ["default_monthly_cost_cap_micros IS NULL"] : []),
     ...(columns.ai ? ["ai_default IS NULL"] : []),
     ...(columns.models ? ["ai_models IS NULL"] : []),
+    ...(columns.linkedDev ? ["linked_dev = 0"] : []),
   ].join(" AND ");
 }

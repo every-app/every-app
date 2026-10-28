@@ -44,6 +44,7 @@ import { listGatewaySecretNames } from "@/lib/app/settings";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import { emptyOrgSettingsSql, hasCostCaps } from "./costCaps";
+import { hasLinkedDev } from "./linkedDev";
 import { operatorActor, queueEventFromCli } from "./events";
 import type { Workspace } from "./workspace";
 
@@ -123,7 +124,7 @@ ON CONFLICT (organization_id) DO UPDATE SET ai_default = ?2, ai_models = ?3, upd
     // A row with no default of any kind needs no row (the dollar cap's
     // column counts on a Gateway that has it).
     {
-      sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: await hasCostCaps(ws.db), ai: true, models: true })}`,
+      sql: `DELETE FROM org_settings WHERE organization_id = ? AND ${emptyOrgSettingsSql({ cost: await hasCostCaps(ws.db), ai: true, models: true, linkedDev: await hasLinkedDev(ws.db) })}`,
       params: [org],
     },
   ];

@@ -37,7 +37,9 @@ type GrantMetadata = {
   resource?: unknown;
 };
 
-type ConnectionKind = "mcp" | "native";
+type ConnectionKind = "mcp" | "native" | "dev";
+/** The kinds bound to one app (`mcp_connection_apps` has their one row). */
+const APP_BOUND: readonly ConnectionKind[] = ["native", "dev"];
 
 /** What the events say about a connection: its kind, and a native one's app. */
 type ConnectionSubject = {
@@ -47,7 +49,9 @@ type ConnectionSubject = {
 };
 
 function grantKind(metadata: GrantMetadata): ConnectionKind {
-  return metadata.kind === "native" ? "native" : "mcp";
+  return metadata.kind === "native" || metadata.kind === "dev"
+    ? metadata.kind
+    : "mcp";
 }
 
 type UserGrant = {
@@ -82,11 +86,12 @@ async function announceRevoked(
         connection: {
           id: row.id,
           clientName: row.clientName,
-          kind: row.kind === "native" ? "native" : "mcp",
-          app:
-            row.kind === "native"
-              ? await McpConnectionRepository.findConnectionApp(row.id)
-              : null,
+          kind: APP_BOUND.includes(row.kind as ConnectionKind)
+            ? (row.kind as ConnectionKind)
+            : "mcp",
+          app: APP_BOUND.includes(row.kind as ConnectionKind)
+            ? await McpConnectionRepository.findConnectionApp(row.id)
+            : null,
         },
         user: await userSubject(row.userId),
         reason,
@@ -365,7 +370,7 @@ async function supersedeEarlier(connection: {
         grant.clientId === connection.clientId &&
         grant.metadata.organizationId === connection.organizationId &&
         grantKind(grant.metadata) === (connection.kind ?? "mcp") &&
-        (connection.kind !== "native" ||
+        (!APP_BOUND.includes(connection.kind ?? "mcp") ||
           grant.metadata.resource === connection.resource) &&
         grant.metadata.connectionId !== connection.id &&
         madeBefore(grant.metadata, connection.createdAt) &&
@@ -481,7 +486,31 @@ async function announceCreated(
   }));
 }
 
+/**
+ * `connection.used`: linked dev's first call of the day through a
+ * connection (server/linked-dev.ts decides when; docs/design/linked-dev.md
+ * §4.3). Never throws.
+ */
+async function announceUsed(connection: {
+  id: string;
+  userId: string;
+  organizationId: string;
+  clientName: string;
+  app: { rowId: string; id: string; name: string };
+}): Promise<void> {
+  await emit(async () => ({
+    organizationId: connection.organizationId,
+    actor: await userActor(connection.userId),
+    ...catalogue.connectionUsed({
+      connection: { id: connection.id, clientName: connection.clientName },
+      app: connection.app,
+      user: await userSubject(connection.userId),
+    }),
+  }));
+}
+
 export const McpConnectionService = {
+  announceUsed,
   listForUser,
   revokeForUser,
   revokeConnection,

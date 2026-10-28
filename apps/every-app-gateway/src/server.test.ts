@@ -806,6 +806,8 @@ describe("gateway host (control plane)", () => {
       ["GET", "/.well-known/jwks.json"],
       ["POST", "/API/AUTH/CALLBACK/APPLE"],
       ["GET", "/Api/Auth/Callback/Apple"],
+      ["GET", "/LINKED-DEV/todo/whoami"],
+      ["POST", "/Linked-Dev/todo/api/ai/openai/v1/responses"],
     ] as const) {
       const response = await server.fetch(
         gatewayRequest(path, {

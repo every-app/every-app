@@ -21,7 +21,11 @@ import {
   attributionFor,
   type GatewayCallFor,
 } from "./attribution.js";
-import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
+import {
+  BINDING_ORIGIN,
+  gatewayBinding,
+  type GatewayServiceBinding,
+} from "./gatewayFetch.js";
 import { GatewayRefusalError, gatewayRefusal } from "./refusal.js";
 
 export interface SendEmailOptions {
@@ -67,9 +71,7 @@ export async function sendEmail({
 }: SendEmailOptions): Promise<SendEmailResult> {
   const target = attributionFor(env, explicitTarget, "sendEmail");
   const values = env as Record<string, unknown>;
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(env);
   if (binding) {
     if (typeof binding.fetch !== "function") {
       throw new ConfigurationError(

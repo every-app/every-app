@@ -92,11 +92,14 @@ export const mcpConnections = sqliteTable(
   {
     // "mcpc_" + 32 hex characters.
     id: text("id").primaryKey(),
-    // "mcp" (the gateway's /mcp) | "native" (one app host, as the member).
+    // "mcp" (the gateway's /mcp) | "native" (one app host, as the member)
+    // | "dev" (`everyapp dev --gateway`: the Gateway's services for one
+    // app, as the member; docs/design/linked-dev.md).
     kind: text("kind").notNull().default("mcp"),
     // The grant's audience (RFC 8707): `${GATEWAY_URL}/mcp` for an MCP
     // connection, the app host's origin (`https://<hostname>`) for a native
-    // one. Null on rows from before the column: an MCP connection.
+    // one, `${GATEWAY_URL}/linked-dev/<app id>` for a dev one. Null on rows
+    // from before the column: an MCP connection.
     resource: text("resource"),
     userId: text("user_id")
       .notNull()

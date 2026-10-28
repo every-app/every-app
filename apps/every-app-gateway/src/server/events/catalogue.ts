@@ -767,7 +767,7 @@ export const catalogue = {
       clientDomain?: string | null;
       access: "read" | "write";
       appScope: "all" | "selected";
-      kind?: "mcp" | "native";
+      kind?: "mcp" | "native" | "dev";
       app?: { rowId: string; id: string; name: string } | null;
     };
     user: EventUser;
@@ -791,7 +791,7 @@ export const catalogue = {
     connection: {
       id: string;
       clientName: string;
-      kind?: "mcp" | "native";
+      kind?: "mcp" | "native" | "dev";
       app?: { rowId: string; id: string; name: string } | null;
     };
     user: EventUser;
@@ -806,6 +806,28 @@ export const catalogue = {
       }),
       user: user(input.user),
       reason: input.reason,
+    });
+  },
+
+  /**
+   * Linked dev's first call of a UTC day through a connection
+   * (docs/design/linked-dev.md §4.3): the audit log's record that
+   * `everyapp dev` on someone's computer spent on this app's providers
+   * today, from which client.
+   */
+  connectionUsed(input: {
+    connection: { id: string; clientName: string };
+    app: EventApp;
+    user: EventUser;
+  }): BuiltEvent {
+    return built("connection.used", {
+      connection: {
+        id: input.connection.id,
+        clientName: input.connection.clientName,
+        kind: "dev",
+      },
+      app: app(input.app),
+      user: user(input.user),
     });
   },
 
@@ -845,6 +867,13 @@ export const catalogue = {
       id: input.id,
       name: input.name,
       user: user(input.user),
+    });
+  },
+
+  /** `everyapp workspace linked-dev on|off` (the CLI queues it; here for the sample and the summary). */
+  linkedDevChanged(input: { linkedDev: "on" | "off" }): BuiltEvent {
+    return built("organization.linked_dev_changed", {
+      linkedDev: input.linkedDev,
     });
   },
 
@@ -1366,8 +1395,16 @@ export function summarize(
       const client = str(obj(d.client).name) ?? userLabel(d.user);
       return `${str(d.tool) ?? "A tool"} failed for ${client}: ${str(d.outcome) ?? "error"}`;
     }
+    case "connection.used": {
+      const connection = obj(d.connection);
+      return `${actorLabel(actor)} used ${appLabel(d.app)}'s providers from ${str(connection.clientName) ?? "everyapp dev"} (linked dev)`;
+    }
     case "connection.created": {
       const connection = obj(d.connection);
+      if (connection.kind === "dev") {
+        const app = obj(connection.app);
+        return `${actorLabel(actor)} linked ${str(connection.clientName) ?? "everyapp dev"} to ${str(app.name) ?? "an app"} (linked dev)`;
+      }
       if (connection.kind === "native") {
         const app = obj(connection.app);
         return `${actorLabel(actor)} signed in to ${str(app.name) ?? "an app"} from ${str(connection.clientName) ?? "a native app"}`;
@@ -1380,6 +1417,10 @@ export function summarize(
     }
     case "connection.revoked": {
       const connection = obj(d.connection);
+      if (connection.kind === "dev") {
+        const app = obj(connection.app);
+        return `${userLabel(d.user)}'s linked dev (${str(connection.clientName) ?? "everyapp dev"}) for ${str(app.name) ?? "an app"} was revoked (${str(d.reason) ?? "revoked"})`;
+      }
       if (connection.kind === "native") {
         const app = obj(connection.app);
         return `${userLabel(d.user)}'s ${str(connection.clientName) ?? "native app"} sign-in to ${str(app.name) ?? "an app"} was revoked (${str(d.reason) ?? "revoked"})`;
@@ -1392,6 +1433,8 @@ export function summarize(
       return `${actorLabel(actor)} revoked the token ${str(d.name) ?? ""}`.trim();
     case "access.changed":
       return `Cloudflare Access was turned ${str(d.access) ?? "off"}`;
+    case "organization.linked_dev_changed":
+      return `Linked dev was turned ${str(d.linkedDev) ?? "off"}`;
     case "signin_provider.added":
       return `${str(d.label) ?? str(d.provider) ?? "A provider"} sign-in was added`;
     case "signin_provider.removed":

@@ -13,6 +13,7 @@ import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { getFreePort } from "./proxy";
 import { handleInterrupt } from "@/lib/interrupt";
 import { runDev } from "./index";
+import type { LinkedSession, LinkedWhoami } from "@/lib/linkedDev";
 import { devVarsHint, emailHint, secretsStoreHint } from "./ready";
 
 const manifest = {
@@ -51,10 +52,47 @@ class DevCf extends FakeCf {
         binding.type === "text" ? [[name, binding.value]] : [],
       ),
     );
+    const linkedUrl = call.env?.["EVERYAPP_LINKED_DEV_URL"];
+    const linkedNonce = call.env?.["EVERYAPP_LINKED_DEV_NONCE"];
     this.app = http.createServer((req, res) => {
       const request = { method: req.method ?? "", url: req.url ?? "", body: "" };
       this.requests.push(request);
       req.on("data", (chunk: Buffer) => (request.body += chunk.toString()));
+      // What the SDK's shim does under linked dev: the binding's request to
+      // the forwarder, with the nonce and the dev identity it was given.
+      if (req.url === "/api/ai" && linkedUrl) {
+        // (Node's http, since the test setup lets fetch reach 127.0.0.1 alone;
+        // the dev Worker's fetch resolves <app>.localhost itself.)
+        const target = new URL(`${linkedUrl}/api/ai/openai/v1/responses?stream=true`);
+        const proxied = http.request(
+          {
+            host: "127.0.0.1",
+            port: Number(target.port),
+            method: "POST",
+            path: target.pathname + target.search,
+            headers: {
+              host: target.host,
+              "x-everyapp-linked-dev": linkedNonce ?? "",
+              "x-everyapp-identity": req.headers["x-everyapp-identity"] as string,
+              "content-type": "application/json",
+            },
+          },
+          (answer) => {
+            let text = "";
+            answer.on("data", (chunk: Buffer) => (text += chunk.toString()));
+            answer.on("end", () => {
+              res.writeHead(answer.statusCode ?? 502, { "content-type": "application/json" });
+              res.end(text);
+            });
+          },
+        );
+        proxied.on("error", (error: Error) => {
+          res.writeHead(502);
+          res.end(error.message);
+        });
+        proxied.end('{"input":"hi"}');
+        return;
+      }
       const headers = new Headers();
       for (const [name, value] of Object.entries(req.headers)) {
         if (typeof value === "string") headers.set(name, value);
@@ -607,5 +645,117 @@ describe("everyapp dev", () => {
     });
     expect(cf.released).toEqual([true]);
     expect(events.at(-1)).toMatchObject({ step: "dev.app", status: "fail" });
+  });
+});
+
+describe("everyapp dev --gateway (linked dev)", () => {
+  const WHO: LinkedWhoami = {
+    user: { id: "u1", email: "ana@acme.com" },
+    organization: { id: "org1", name: "Acme" },
+    role: "owner",
+    app: { id: "todo", rowId: "app1", name: "Todos", hostname: "todo.apps.example.com" },
+    connection: { id: "mcpc_1", clientName: "everyapp dev on box" },
+    hasAccess: true,
+    limits: { perMinute: 120, perDay: 2000 },
+  };
+
+  /** A Gateway's /linked-dev/todo route: echoes what reached it. */
+  async function fakeGateway(): Promise<{ url: string; seen: Array<Record<string, unknown>>; close(): void }> {
+    const seen: Array<Record<string, unknown>> = [];
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      req.on("end", () => {
+        seen.push({ url: req.url, authorization: req.headers["authorization"], identity: req.headers["x-everyapp-identity"], org: req.headers["x-everyapp-org"], body });
+        if (req.url === "/linked-dev/todo/whoami") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(WHO));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ via: "gateway", path: req.url }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    return { url: `http://127.0.0.1:${port}`, seen, close: () => server.close() };
+  }
+
+  it("runs the app as the Gateway's member and forwards the SDK's gateway calls with the token, never the dev identity", async () => {
+    const gateway = await fakeGateway();
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const link = async (options: { gateway: string; appId: string }): Promise<LinkedSession> => ({
+      gateway: options.gateway,
+      appId: options.appId,
+      routeUrl: `${gateway.url}/linked-dev/${options.appId}`,
+      token: async () => "tok-1",
+      invalidate: () => undefined,
+      whoami: async () => {
+        const response = await fetch(`${gateway.url}/linked-dev/${options.appId}/whoami`, {
+          headers: { authorization: "Bearer tok-1" },
+        });
+        return (await response.json()) as LinkedWhoami;
+      },
+    });
+    const running = runDev({ port, gateway: "https://apps.example.com", "skip-migrations": true }, out, {
+      cwd,
+      cf,
+      linked: { link },
+    });
+    try {
+      const ready = await until(() => events.find((event) => event["step"] === "dev.ready"));
+      expect(ready).toMatchObject({ data: { mode: "linked", gateway: "https://apps.example.com" } });
+      expect(events.find((event) => event["step"] === "dev.link" && event["status"] === "ok")).toMatchObject({
+        data: { email: "ana@acme.com", role: "owner", organization: "Acme", appId: "todo" },
+      });
+      // The identity the app gets is the real member, signed with the dev key.
+      const me = await get(port, `todo.localhost:${port}`);
+      expect(me).toEqual({ status: 200, body: JSON.stringify({ email: "ana@acme.com" }) });
+      // The dev Worker got the forwarder and the nonce, and nothing else new.
+      const start = cf.started.find((call) => call.args[0] === "dev")!;
+      expect(start.env?.["EVERYAPP_LINKED_DEV_URL"]).toBe(`http://todo.localhost:${port}/__everyapp/gateway`);
+      expect(start.env?.["EVERYAPP_LINKED_DEV_NONCE"]).toMatch(/^[A-Za-z0-9_-]{32}$/);
+      // A gateway call from the app: through the forwarder to the Gateway's
+      // route, with the bearer and without the dev identity.
+      const answer = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        http
+          .get({ host: "127.0.0.1", port, path: "/api/ai", headers: { host: `todo.localhost:${port}` } }, (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+          })
+          .on("error", reject);
+      });
+      expect(answer).toEqual({
+        status: 200,
+        body: JSON.stringify({ via: "gateway", path: "/linked-dev/todo/api/ai/openai/v1/responses?stream=true" }),
+      });
+      const call = gateway.seen.find((entry) => String(entry["url"]).includes("/api/ai/"))!;
+      expect(call).toMatchObject({ authorization: "Bearer tok-1", identity: undefined, org: undefined, body: '{"input":"hi"}' });
+      // The forwarder is not a page's: a browser-shaped request is refused.
+      const page = await new Promise<number>((resolve, reject) => {
+        const req = http.request(
+          { host: "127.0.0.1", port, path: "/__everyapp/gateway/api/ai/openai/v1/responses", method: "POST", headers: { host: `todo.localhost:${port}`, origin: "https://evil.example" } },
+          (res) => resolve(res.statusCode ?? 0),
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      expect(page).toBe(403);
+      const ready_block = events.find((event) => event["step"] === "dev.app" && event["status"] === "ok")!;
+      expect(stripVTControlCharacters(String(ready_block["message"]))).toContain("as ana@acme.com (owner of Acme) for Todos");
+    } finally {
+      cf.exitApp();
+      await running;
+      gateway.close();
+    }
+  });
+
+  it("needs a Gateway URL in linked mode", async () => {
+    const cf = new DevCf(cwd);
+    await expect(runDev({ mode: "linked" }, out, { cwd, cf, env: {} })).rejects.toMatchObject({
+      code: "LINKED_DEV_GATEWAY_REQUIRED",
+    });
   });
 });

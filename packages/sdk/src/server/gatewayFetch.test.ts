@@ -2,7 +2,7 @@ import { afterEach, describe, expect, vi } from "vitest";
 import { it } from "../../test/inOrganization";
 import { DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { ConfigurationError } from "../internal/index";
-import { createGatewayFetch } from "./gatewayFetch";
+import { createGatewayFetch, gatewayBinding } from "./gatewayFetch";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -18,6 +18,54 @@ function providerRequest(headers?: HeadersInit): Request {
     },
   );
 }
+
+describe("gatewayBinding", () => {
+  it("is the service binding when deployed, and nothing in a plain dev run", () => {
+    const binding = { fetch: vi.fn() };
+    expect(gatewayBinding({ EVERY_APP_GATEWAY: binding })).toBe(binding);
+    expect(gatewayBinding({ EVERYAPP_DEV: "1" })).toBeUndefined();
+    // The linked dev names count only under the dev opt-in.
+    expect(
+      gatewayBinding({
+        EVERYAPP_LINKED_DEV_URL: "http://127.0.0.1:8787/__everyapp/gateway",
+        EVERYAPP_LINKED_DEV_NONCE: "n",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("under linked dev, sends the binding's request to the forwarder with the nonce, path and query kept, never to a provider", async () => {
+    const forwarder = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      Response.json({ via: "forwarder" }),
+    );
+    vi.stubGlobal("fetch", forwarder);
+    const env = {
+      EVERYAPP_DEV: "1",
+      EVERYAPP_LINKED_DEV_URL: "http://127.0.0.1:8787/__everyapp/gateway/",
+      EVERYAPP_LINKED_DEV_NONCE: "run-nonce",
+      // A developer key must not be used once linked: the Gateway's are.
+      OPENAI_API_KEY: "developer-key",
+    };
+    const gatewayFetch = createGatewayFetch({
+      env,
+      for: new Request("https://chef.example.com/api/chat", {
+        headers: { "x-everyapp-identity": "dev-identity" },
+      }),
+    });
+    const response = await gatewayFetch(
+      providerRequest({ authorization: "Bearer app-set" }),
+    );
+    await expect(response.json()).resolves.toEqual({ via: "forwarder" });
+    expect(forwarder).toHaveBeenCalledOnce();
+    const sent = forwarder.mock.calls[0]![0];
+    expect(sent.url).toBe(
+      "http://127.0.0.1:8787/__everyapp/gateway/api/ai/openai/v1/responses?stream=true",
+    );
+    expect(sent.headers.get("x-everyapp-linked-dev")).toBe("run-nonce");
+    expect(sent.headers.get("authorization")).toBeNull();
+    // The identity still travels; the gateway-lite strips it before the real Gateway.
+    expect(sent.headers.get("x-everyapp-identity")).toBe("dev-identity");
+  });
+});
 
 describe("createGatewayFetch", () => {
   it("prefers the binding, strips Authorization, and forwards inbound identity", async () => {

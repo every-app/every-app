@@ -48,6 +48,7 @@ import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
 // The worker keeps its own copy of the name; the SDK's dev fallback reads this one.
 import { DEV_PROVIDERS_ENV } from "../internal/devProviders";
+import { LINKED_DEV_NONCE_ENV, LINKED_DEV_URL_ENV } from "../internal/protocol";
 
 /** The placeholder Worker name every production build has. */
 const BUILT = BUILD_SENTINEL.workerName;
@@ -2669,5 +2670,48 @@ describe("Analytics Engine (resources.analyticsEngine)", () => {
         (binding) => binding.type === "analytics-engine-dataset",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("linked dev", () => {
+  const entrypoint = {};
+  afterEach(() => {
+    delete process.env[LINKED_DEV_URL_ENV];
+    delete process.env[LINKED_DEV_NONCE_ENV];
+  });
+
+  it("hands the dev Worker the forwarder's URL and the run's nonce from the process environment, and nothing in a deploy or a plain run", () => {
+    const manifest = { id: "todo", name: "Todo" } as const;
+    const plain = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+    }).env as Record<string, unknown>;
+    expect(plain[LINKED_DEV_URL_ENV]).toBeUndefined();
+    expect(plain[LINKED_DEV_NONCE_ENV]).toBeUndefined();
+
+    process.env[LINKED_DEV_URL_ENV] =
+      "http://127.0.0.1:8787/__everyapp/gateway";
+    process.env[LINKED_DEV_NONCE_ENV] = "run-nonce";
+    const linked = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+    }).env as Record<string, unknown>;
+    expect(linked[LINKED_DEV_URL_ENV]).toEqual({
+      type: "text",
+      value: "http://127.0.0.1:8787/__everyapp/gateway",
+    });
+    expect(linked[LINKED_DEV_NONCE_ENV]).toEqual({
+      type: "text",
+      value: "run-nonce",
+    });
+    const deployed = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+    }).env as Record<string, unknown>;
+    expect(deployed[LINKED_DEV_URL_ENV]).toBeUndefined();
+    expect(deployed[LINKED_DEV_NONCE_ENV]).toBeUndefined();
   });
 });

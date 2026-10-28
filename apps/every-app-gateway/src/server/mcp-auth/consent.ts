@@ -35,6 +35,7 @@ import {
   type UnsyncedApp,
 } from "@/server/repositories/AppToolRepository";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
+import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
 import {
   INLINE_SYNCS_MAX,
   RETRY_FAILED_MCP_SYNC_MS,
@@ -43,7 +44,11 @@ import {
 } from "@/server/toolbus/catalog-sync";
 import { NATIVE_SCOPE, OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
-import { appResourceHostname, type ResourceScheme } from "./resources";
+import {
+  appResourceHostname,
+  devResourceAppSlug,
+  type ResourceScheme,
+} from "./resources";
 
 /**
  * Whether an app has tools to serve: it does, its snapshot says it has
@@ -73,7 +78,14 @@ export type ConsentApp = {
  */
 type ConsentGrant =
   | { kind: "mcp"; resource: string }
-  | { kind: "native"; resource: string; app: ConsentApp };
+  | { kind: "native"; resource: string; app: ConsentApp }
+  /**
+   * Linked dev (docs/design/linked-dev.md): `everyapp dev --gateway` on
+   * the person's computer using the Gateway's services for one app, as
+   * them. `app` is the one in the default organization; each organization
+   * offered lists its own row of that app.
+   */
+  | { kind: "dev"; resource: string; app: ConsentApp };
 
 export type ConsentContext =
   | {
@@ -308,13 +320,21 @@ export async function buildConsentContext(
   };
 
   if (resource !== auth.resource) {
-    const grant = await nativeGrantFor(resource, user.id, auth.resourceScheme);
+    const devSlug = devResourceAppSlug(resource, auth.issuer);
+    const dev = devSlug
+      ? await devGrantFor(resource, user.id, auth.issuer)
+      : null;
+    const grant =
+      dev ?? (await nativeGrantFor(resource, user.id, auth.resourceScheme));
     if (!grant.ok) return grant;
     const defaultOrganizationId =
       grant.organizations.find((org) => org.id === user.activeOrganizationId)
         ?.id ??
       grant.organizations[0]?.id ??
       null;
+    const app = dev?.ok
+      ? (dev.apps.get(defaultOrganizationId ?? "") ?? dev.app)
+      : grant.app;
     return {
       ok: true,
       handle,
@@ -323,7 +343,7 @@ export async function buildConsentContext(
       organizations: grant.organizations,
       defaultOrganizationId,
       writeRequested: true,
-      grant: { kind: "native", resource, app: grant.app },
+      grant: { kind: devSlug ? "dev" : "native", resource, app },
     };
   }
 
@@ -393,6 +413,66 @@ export async function nativeGrantFor(
     };
   }
   return { ok: true, app, organizations };
+}
+
+/**
+ * The app a linked dev resource names, and the organizations the person
+ * may link dev to it in (docs/design/linked-dev.md §4.1): those of their
+ * active memberships where they are an owner or admin, can open the app,
+ * the organization owns the app (shared apps are out of this version) and
+ * turned linked dev on. One app row per organization (`apps`).
+ */
+export async function devGrantFor(
+  resource: string,
+  userId: string,
+  issuer: string,
+): Promise<
+  | {
+      ok: true;
+      app: ConsentApp;
+      apps: Map<string, ConsentApp>;
+      organizations: ConsentOrganization[];
+    }
+  | { ok: false; message: string }
+> {
+  const slug = devResourceAppSlug(resource, issuer);
+  const rows = slug
+    ? await McpConnectionRepository.findActiveAppsBySlug(slug)
+    : [];
+  if (!rows.length) {
+    return {
+      ok: false,
+      message:
+        "This app isn't on this Gateway (or not live yet). Deploy it, then run everyapp dev again.",
+    };
+  }
+  const apps = new Map<string, ConsentApp>();
+  const organizations: ConsentOrganization[] = [];
+  for (const org of await consentChoices(userId)) {
+    if (org.role !== "owner" && org.role !== "admin") continue;
+    const row = rows.find(
+      (candidate) =>
+        candidate.organizationId === org.id && candidate.scope !== "shared",
+    );
+    const chosen = row && org.apps.find((app) => app.rowId === row.rowId);
+    if (!row || !chosen) continue;
+    if (!(await OrgSettingsRepository.isLinkedDevOn(org.id))) continue;
+    apps.set(org.id, {
+      rowId: row.rowId,
+      slug: row.appSlug,
+      name: row.name,
+      hostname: row.hostname ?? "",
+    });
+    organizations.push({ ...org, apps: [chosen] });
+  }
+  const first = organizations[0] && apps.get(organizations[0].id);
+  if (!first) {
+    return {
+      ok: false,
+      message: `Linked dev is for owners and admins of a workspace that turned it on (everyapp workspace linked-dev on) and who can open ${slug}. Ask an owner, then run everyapp dev again.`,
+    };
+  }
+  return { ok: true, app: first, apps, organizations };
 }
 
 /** A native grant's scopes: `*`, whatever the client asked (`native.full-scope-only`). */

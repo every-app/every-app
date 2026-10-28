@@ -647,8 +647,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   only made for that person (a password or OIDC sign-in as anyone else is
   refused). So a person taken out of the Access policy loses browser access
   when their Access session ends. Access bypasses only machine endpoints
-  (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`, apps'
-  public routes) and Sign in with Apple's cross-site POST return
+  (`/mcp*`, `/oauth/token`, `/oauth/register`, `/linked-dev/*`,
+  `/.well-known/*`, apps' public routes) and Sign in with Apple's cross-site POST return
   (`/api/auth/callback/apple`, which only redirects to the same URL as a
   GET; "Sign-in providers" below), never `/oauth/authorize` or
   the consent pages. Bearer credentials (personal access and OAuth tokens)

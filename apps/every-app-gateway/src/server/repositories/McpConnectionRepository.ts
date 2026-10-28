@@ -26,8 +26,14 @@ import { accessToAppInItsOrganization } from "./effective-access";
 
 type McpConnectionAccess = "read" | "write";
 type McpConnectionAppScope = "all" | "selected";
-/** "mcp": an AI app at the gateway's /mcp; "native": a native app on one app host. */
-type McpConnectionKind = "mcp" | "native";
+/**
+ * "mcp": an AI app at the gateway's /mcp; "native": a native app on one app
+ * host; "dev": `everyapp dev --gateway` using the Gateway's services for
+ * one app (docs/design/linked-dev.md).
+ */
+type McpConnectionKind = "mcp" | "native" | "dev";
+/** The kinds bound to one app: one `mcp_connection_apps` row, and the app's fate is theirs. */
+const APP_BOUND_KINDS: readonly McpConnectionKind[] = ["native", "dev"];
 type RevokedReason =
   | "user"
   | "superseded"
@@ -139,7 +145,7 @@ async function supersedeEarlier(
         eq(mcpConnections.organizationId, connection.organizationId),
         eq(mcpConnections.clientId, connection.clientId),
         eq(mcpConnections.kind, kind),
-        ...(kind === "native"
+        ...(APP_BOUND_KINDS.includes(kind)
           ? [eq(mcpConnections.resource, connection.resource ?? "")]
           : []),
         lt(mcpConnections.createdAt, connection.createdAt),
@@ -219,12 +225,16 @@ async function findActiveWithMembership(id: string) {
 }
 
 /**
- * An active native connection with what every app-host request re-checks
- * (as {@link findActiveWithMembership}), and the one app it opens. Null for
- * an MCP connection, a revoked one, or a native one whose app row was
- * taken out of it (the app deleted: AppRepository.tombstone).
+ * An active app-bound connection (native by default, or dev) with what
+ * every request re-checks (as {@link findActiveWithMembership}), and the
+ * one app it opens. Null for a connection of another kind, a revoked one,
+ * or one whose app row was taken out of it (the app deleted:
+ * AppRepository.tombstone).
  */
-async function findActiveNativeWithMembership(id: string) {
+async function findActiveNativeWithMembership(
+  id: string,
+  kind: "native" | "dev" = "native",
+) {
   const [row] = await db
     .select({
       id: mcpConnections.id,
@@ -234,6 +244,7 @@ async function findActiveNativeWithMembership(id: string) {
       clientDomain: mcpConnections.clientDomain,
       resource: mcpConnections.resource,
       createdAt: mcpConnections.createdAt,
+      lastUsedAt: mcpConnections.lastUsedAt,
       appRowId: mcpConnectionApps.appRowId,
       role: members.role,
       memberSince: members.createdAt,
@@ -263,12 +274,64 @@ async function findActiveNativeWithMembership(id: string) {
     .where(
       and(
         eq(mcpConnections.id, id),
-        eq(mcpConnections.kind, "native"),
+        eq(mcpConnections.kind, kind),
         isNull(mcpConnections.revokedAt),
       ),
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * An active first-party app row by id, with what a dev grant's checks
+ * read (docs/design/linked-dev.md): its slug, organization, scope and
+ * Worker name. Null when gone, inactive or not first-party.
+ */
+async function findActiveAppRow(appRowId: string) {
+  const [row] = await db
+    .select({
+      rowId: apps.id,
+      organizationId: apps.organizationId,
+      appSlug: apps.appSlug,
+      name: apps.name,
+      hostname: apps.hostname,
+      workerName: apps.workerName,
+      scope: apps.scope,
+    })
+    .from(apps)
+    .where(
+      and(
+        eq(apps.id, appRowId),
+        eq(apps.status, "active"),
+        eq(apps.tier, "service_binding"),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * The active first-party apps with `slug` (one per organization at most),
+ * the ones a dev grant's resource may name.
+ */
+async function findActiveAppsBySlug(slug: string) {
+  return db
+    .select({
+      rowId: apps.id,
+      organizationId: apps.organizationId,
+      appSlug: apps.appSlug,
+      name: apps.name,
+      hostname: apps.hostname,
+      scope: apps.scope,
+    })
+    .from(apps)
+    .where(
+      and(
+        eq(apps.appSlug, slug),
+        eq(apps.status, "active"),
+        eq(apps.tier, "service_binding"),
+      ),
+    );
 }
 
 /**
@@ -452,15 +515,14 @@ async function listActiveForUser(userId: string) {
     appNames: connectionApps
       .filter((app) => app.connectionId === connection.id)
       .map((app) => app.name),
-    // A native connection's one app, with its host; null once the app row
-    // left the connection (deleted) or for an MCP connection.
-    app:
-      connection.kind === "native"
-        ? (connectionApps
-            .filter((app) => app.connectionId === connection.id)
-            .map((app) => ({ name: app.name, hostname: app.hostname }))[0] ??
-          null)
-        : null,
+    // An app-bound connection's one app, with its host; null once the app
+    // row left the connection (deleted) or for an MCP connection.
+    app: APP_BOUND_KINDS.includes(connection.kind as McpConnectionKind)
+      ? (connectionApps
+          .filter((app) => app.connectionId === connection.id)
+          .map((app) => ({ name: app.name, hostname: app.hostname }))[0] ??
+        null)
+      : null,
   }));
 }
 
@@ -555,9 +617,9 @@ async function revokeAllForUser(
 }
 
 /**
- * Revoke the active native connections to one app (the app deleted or
- * disabled); the rows revoked. Native rows only: an MCP connection that
- * chose the app among others keeps its other apps.
+ * Revoke the active native and dev connections to one app (the app
+ * deleted or disabled); the rows revoked. App-bound rows only: an MCP
+ * connection that chose the app among others keeps its other apps.
  */
 async function revokeNativeForApp(
   appRowId: string,
@@ -568,7 +630,7 @@ async function revokeNativeForApp(
     .set({ revokedAt: new Date(), revokedReason: reason })
     .where(
       and(
-        eq(mcpConnections.kind, "native"),
+        inArray(mcpConnections.kind, [...APP_BOUND_KINDS]),
         isNull(mcpConnections.revokedAt),
         inArray(
           mcpConnections.id,
@@ -606,7 +668,7 @@ async function revokeNativeForInactiveApps(): Promise<RevokedConnection[]> {
     .set({ revokedAt: new Date(), revokedReason: "app_removed" })
     .where(
       and(
-        eq(mcpConnections.kind, "native"),
+        inArray(mcpConnections.kind, [...APP_BOUND_KINDS]),
         isNull(mcpConnections.revokedAt),
         notInArray(mcpConnections.id, live),
       ),
@@ -641,6 +703,8 @@ export const McpConnectionRepository = {
   listChoicesForUser,
   findActiveWithMembership,
   findActiveNativeWithMembership,
+  findActiveAppRow,
+  findActiveAppsBySlug,
   findConnectionApp,
   findAppResource,
   findActiveAppByHostname,

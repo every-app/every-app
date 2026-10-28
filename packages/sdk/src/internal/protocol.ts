@@ -92,6 +92,21 @@ export const PUBLIC_MARKER_SUB = "public";
 /** `sub` claim of gateway system tokens. */
 export const SYSTEM_TOKEN_SUB = "system";
 
+/**
+ * Linked dev (`everyapp dev --gateway`, docs/design/linked-dev.md): the
+ * dev Worker's env names the gateway-lite's loopback forwarder and the
+ * run's nonce, and the SDK builds a `{ fetch }` in place of the missing
+ * `EVERY_APP_GATEWAY` binding from them. Set by `everyAppWorker()` in a
+ * development build from the process environment `everyapp dev` starts
+ * the app with; never deployed.
+ */
+export const LINKED_DEV_URL_ENV = "EVERYAPP_LINKED_DEV_URL";
+export const LINKED_DEV_NONCE_ENV = "EVERYAPP_LINKED_DEV_NONCE";
+/** The header the forwarder requires, with the run's nonce: no simple cross-origin request can send it. */
+export const LINKED_DEV_HEADER = "x-everyapp-linked-dev";
+/** Where the gateway-lite serves the forwarder, under the app's own host. */
+export const LINKED_DEV_FORWARD_PATH = "/__everyapp/gateway";
+
 export type IdentityChannel = "web" | "api" | "mcp" | "agent";
 export type IdentityTokenType = "user" | "public" | "system";
 /** What a system token may open. One purpose per token. */

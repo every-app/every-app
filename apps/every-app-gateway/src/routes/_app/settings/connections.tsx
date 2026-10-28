@@ -48,7 +48,7 @@ type Connection = Awaited<
 >["connections"][number];
 
 function isNative(connection: Connection): boolean {
-  return connection.kind === "native";
+  return connection.kind === "native" || connection.kind === "dev";
 }
 
 /** The client's name, and its verified domain or where it sends access. */
@@ -162,7 +162,9 @@ function deviceColumns(actions: {
           <>
             <p className="truncate">{connection.app.name}</p>
             <p className="truncate text-xs text-muted-foreground">
-              {connection.app.hostname}
+              {connection.kind === "dev"
+                ? "Linked dev: its providers and services, as you"
+                : connection.app.hostname}
             </p>
           </>
         ) : (
@@ -314,7 +316,7 @@ function ConnectionsPage() {
         <section aria-label="Apps on your devices" className="space-y-3">
           <SectionHeader
             title="Apps on your devices"
-            hint="Desktop and phone apps you signed in to one app with. Each can do there what you can."
+            hint="Desktop and phone apps you signed in to one app with, and everyapp dev linked to an app from your computer. Each can do there what you can."
           />
           <DataTable
             table={devicesTable}

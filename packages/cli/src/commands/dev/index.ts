@@ -7,12 +7,17 @@
  * production. Nothing is written into the app: `everyAppWorker()` hands the
  * dev Worker the dev public key and issuer itself.
  *
- * Two session sources (--mode, or EVERYAPP_DEV_MODE; flag wins):
+ * Three session sources (--mode, or EVERYAPP_DEV_MODE; flag wins):
  *  - stub   (default): a seeded dev user. Zero setup; works on bare localhost.
  *  - mirror: a REAL Better Auth session resolved from a SEPARATELY-running
  *            local gateway (run `pnpm dev` in apps/every-app-gateway first).
  *            The real launcher/login is forwarded to it. Requires a two-label
  *            base host so the session cookie crosses the subdomain boundary.
+ *  - linked: a real Gateway (`--gateway https://…`, docs/design/linked-dev.md):
+ *            the CLI signs in there once (the native sign-in flow, bound to this
+ *            app), you are that owner or admin, and the app's AI, capability,
+ *            email, members and event calls go through that Gateway through a
+ *            loopback forwarder here (./linked.ts). Data stays local.
  *
  * The gateway-lite listens on 127.0.0.1 unless --host says otherwise: the dev
  * keypair is public, so anything that reaches the port gets a dev identity.
@@ -40,6 +45,14 @@ import {
   resolveDevMode,
 } from "./mode";
 import { createRemoteAuthenticator } from "./remoteAuth";
+import {
+  createLinkedForwarder,
+  createLinkedIdentity,
+  newLinkedDevNonce,
+  type LinkedForwarder,
+} from "./linked";
+import { gatewayOrigin, linkGateway, type LinkedSession, type LinkedWhoami } from "@/lib/linkedDev";
+import { LINKED_DEV_FORWARD_PATH, LINKED_DEV_NONCE_ENV, LINKED_DEV_URL_ENV } from "@every-app/sdk/internal";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { PINNED_CF_VERSION, resolveCfBinary } from "@/lib/cf/bin";
@@ -62,6 +75,15 @@ interface DevCommandFlags {
   gateway?: string;
   baseHost?: string;
   "skip-migrations"?: boolean;
+  /** The run has no --json of its own; `dev link --json` hands the sign-in URL to an agent. */
+  json?: boolean;
+}
+
+/** Seams the tests use for linked mode. */
+export interface LinkedDevSeams {
+  /** Signs in (or reads the stored token) and answers the session; `linkGateway` by default. */
+  link?: (options: { gateway: string; appId: string; out: EventSink; json?: boolean }) => Promise<LinkedSession>;
+  fetchImpl?: typeof fetch;
 }
 
 const DEFAULT_GATEWAY_URL = "http://localhost:3000";
@@ -72,7 +94,7 @@ const MIRROR_PROBE_MS = 5000;
 
 export default async function dev(flags: DevCommandFlags,
 ): Promise<void> {
-  const out = eventSink(false);
+  const out = eventSink(flags.json ?? false);
   await runReported(out, () => runDev(flags, out));
 }
 
@@ -87,10 +109,13 @@ export async function runDev(
     cwd = process.cwd(),
     cf = createCfRunner(),
     env = process.env,
-  }: { cwd?: string; cf?: CfRunner; env?: NodeJS.ProcessEnv } = {},
+    linked: linkedSeams = {},
+  }: { cwd?: string; cf?: CfRunner; env?: NodeJS.ProcessEnv; linked?: LinkedDevSeams } = {},
 ): Promise<void> {
-  const mode = resolveDevMode(flags.mode, env[DEV_MODE_ENV]);
-  const gatewayUrl = flags.gateway ?? DEFAULT_GATEWAY_URL;
+  const mode = resolveDevMode(flags.mode, env[DEV_MODE_ENV], flags.gateway);
+  const linkedGateway =
+    mode === DevMode.Linked ? gatewayOrigin(requireLinkedGateway(flags.gateway, env)) : null;
+  const gatewayUrl = linkedGateway ?? flags.gateway ?? DEFAULT_GATEWAY_URL;
   const mirrorBaseHost = flags.baseHost ?? DEFAULT_MIRROR_BASE_HOST;
   if (mode === DevMode.Mirror) checkMirrorBaseHost(mirrorBaseHost);
 
@@ -150,6 +175,41 @@ export async function runDev(
     // guidance rather than producing 401s later.
     if (mode === DevMode.Mirror) await probeGateway(gatewayUrl, out);
 
+    // Linked mode: sign in (or read the stored token) and ask the Gateway
+    // who this is, before anything starts: a refused token stops here.
+    let linked: { session: LinkedSession; who: LinkedWhoami; forwarder: LinkedForwarder; nonce: string } | null =
+      null;
+    if (linkedGateway) {
+      const session = await (linkedSeams.link ?? linkGateway)({
+        gateway: linkedGateway,
+        appId: manifest.id,
+        out,
+        json: flags.json,
+      });
+      const who = await session.whoami();
+      const nonce = newLinkedDevNonce();
+      linked = {
+        session,
+        who,
+        nonce,
+        forwarder: createLinkedForwarder(session, nonce, { fetchImpl: linkedSeams.fetchImpl }),
+      };
+      out.emit({
+        type: "step",
+        step: "dev.link",
+        status: "ok",
+        message: `Linked to ${linkedGateway} as ${who.user.email} (${who.role} of ${who.organization.name}) for ${who.app.name}.`,
+        data: {
+          gateway: linkedGateway,
+          appId: manifest.id,
+          email: who.user.email,
+          role: who.role,
+          organization: who.organization.name,
+          connectionId: who.connection.id,
+        },
+      });
+    }
+
     // The app's typed Env, on a fresh clone. Later config changes regenerate
     // it through the app's own `types:check` script.
     if (cloudflareConfig && !(await hasWorkerTypes(cwd))) {
@@ -191,6 +251,17 @@ export async function runDev(
       cf,
       port: appPort,
       gatewayUrl: launcherUrl,
+      ...(linked
+        ? {
+            // The forwarder under the app's own host on the gateway-lite,
+            // and this run's nonce; `everyAppWorker()` hands both to the
+            // dev Worker, and the SDK's gatewayBinding() builds the shim.
+            env: {
+              [LINKED_DEV_URL_ENV]: `http://${manifest.id}.localhost:${port}${LINKED_DEV_FORWARD_PATH}`,
+              [LINKED_DEV_NONCE_ENV]: linked.nonce,
+            },
+          }
+        : {}),
     });
     const server = http.createServer();
     try {
@@ -213,12 +284,14 @@ export async function runDev(
           ? `http://${manifest.id}.${mirrorBaseHost}:${address.port}`
           : `http://${manifest.id}.localhost:${address.port}`;
       const loginUrl = `http://${mirrorBaseHost}:${address.port}`;
+      const linkedIdentity = linked ? createLinkedIdentity(linked.session, { out }) : null;
       serveGateway(server, {
         manifest,
         mode,
         mirrorBaseHost,
         gatewayUrl: mode === DevMode.Mirror ? new URL(gatewayUrl) : null,
-        authenticator: mirrorAuthenticator(mode, gatewayUrl, loginUrl, out),
+        authenticator: linkedIdentity?.authenticator ?? mirrorAuthenticator(mode, gatewayUrl, loginUrl, out),
+        ...(linked ? { linked: linked.forwarder } : {}),
         appPort,
         appUrl,
         out,
@@ -239,6 +312,16 @@ export async function runDev(
           loginUrl,
           crons: cloudflareConfig?.hasCrons ?? false,
           cwd,
+          ...(linked
+            ? {
+                linked: {
+                  email: linked.who.user.email,
+                  role: linked.who.role,
+                  organization: linked.who.organization.name,
+                  appName: linked.who.app.name,
+                },
+              }
+            : {}),
         }),
         data: { appId: manifest.id },
       });
@@ -254,13 +337,16 @@ export async function runDev(
           host: address.address,
           port: address.port,
           appPort,
+          ...(linkedGateway ? { gateway: linkedGateway } : {}),
         },
       });
-      if (mode === DevMode.Stub && !isLoopback(address.address)) {
+      if (mode !== DevMode.Mirror && !isLoopback(address.address)) {
         out.emit({
           type: "warning",
           code: "DEV_EXPOSED",
-          message: `Listening on ${address.address}: anyone who can reach port ${address.port} gets in as the dev user`,
+          message: linked
+            ? `Listening on ${address.address}: anyone who can reach port ${address.port} acts as ${linked.who.user.email} and spends on ${linked.who.organization.name}'s providers`
+            : `Listening on ${address.address}: anyone who can reach port ${address.port} gets in as the dev user`,
         });
       }
       out.emit({
@@ -283,6 +369,17 @@ export async function runDev(
     unsay();
     forgetInterrupt();
   }
+}
+
+/** Linked mode's Gateway: `--gateway`, else EVERYAPP_GATEWAY_URL; nothing else will do. */
+function requireLinkedGateway(flag: string | undefined, env: NodeJS.ProcessEnv): string {
+  const gateway = flag ?? env["EVERYAPP_GATEWAY_URL"];
+  if (gateway) return gateway;
+  throw new EveryAppError(
+    "LINKED_DEV_GATEWAY_REQUIRED",
+    "--mode linked needs the Gateway's URL\nPass --gateway https://<your gateway>, or set EVERYAPP_GATEWAY_URL.",
+    { data: { fix: "pass --gateway <url>" } },
+  );
 }
 
 /** The app's manifest: MANIFEST_NOT_FOUND without one, as every command says it. */

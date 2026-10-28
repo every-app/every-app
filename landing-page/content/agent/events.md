@@ -391,11 +391,12 @@ The Gateway's pages and its MCP tools emit the `member.*` types, and so do the C
 
 ### Workspace
 
-| Type                   | v   | Summary                                  | `data`                   |
-| ---------------------- | --- | ---------------------------------------- | ------------------------ |
-| `organization.renamed` | 1   | "Ada renamed the workspace to Acme Corp" | `{ name, previousName }` |
+| Type                              | v   | Summary                                  | `data`                         |
+| --------------------------------- | --- | ---------------------------------------- | ------------------------------ |
+| `organization.renamed`            | 1   | "Ada renamed the workspace to Acme Corp" | `{ name, previousName }`       |
+| `organization.linked_dev_changed` | 1   | "Linked dev was turned on"               | `{ linkedDev: "on" \| "off" }` |
 
-From Manage workspace → Rename, `everyapp workspace rename` and the `everyapp_workspace_rename` tool; the slug stays, so the event carries the names only.
+From Manage workspace → Rename, `everyapp workspace rename` and the `everyapp_workspace_rename` tool; the slug stays, so the event carries the names only. `organization.linked_dev_changed` comes from `everyapp workspace linked-dev on|off` (the operator is the actor; queued in the write's own batch, only when the value changed): whether owners and admins may run `everyapp dev --gateway` against this Gateway ([dev](/docs/agent/dev#mode-linked-a-real-gateways-services-as-you)).
 
 ### Apps
 
@@ -467,8 +468,9 @@ From the same audit that writes Admin → Activity (`mcp_tool_calls`): `tool.blo
 | `connection.revoked` | 1   | "Ada's Claude connection was revoked (user)"; a native app: "jo@acme's OpenZen for Mac sign-in to OpenZen was revoked (user)" | `{ connection: { id, clientName }, user, reason, kind, app? }`                          |
 | `token.created`      | 1   | "Ada created the token ci-deploy"                                                                                             | `{ id, name, scopes, appId?, expiresAt?, user }`; never the value or its hash           |
 | `token.revoked`      | 1   | "Ada revoked the token ci-deploy"                                                                                             | `{ id, name, user }`                                                                    |
+| `connection.used`    | 1   | "Ada used Todo's providers from everyapp dev on anas-laptop (linked dev)"                                                     | `{ connection: { id, clientName, kind: "dev" }, app, user }`                            |
 
-`connection.revoked`'s `reason`: `user` (the person revoked it), `operator` (`everyapp workspace connections revoke`), `superseded` (a new consent replaced it), `expired` (idle too long), `ended` or `failed` (its grant ended or its authorization failed), `member_removed`, `user_deactivated`, or `app_removed` (the app was deleted through the Gateway, or, within the hour, deleted or disabled by the CLI). Both events carry `kind`: `mcp` for an AI app, `native` for a native app ([Native apps](/docs/agent/native)), which also carries `app: { id, rowId, name }`. `token.revoked` comes from the person's own Settings → Tokens and from `everyapp workspace tokens revoke`; from the CLI the operator is the `actor` and the token's owner stays `user`, so the log says who revoked whose. The token types are flat: `id` and `name` are the token's, and no key is named `token`, since the credential-key rule (below) refuses that name in every event's `data`, the Gateway's own included.
+`connection.revoked`'s `reason`: `user` (the person revoked it), `operator` (`everyapp workspace connections revoke`), `superseded` (a new consent replaced it), `expired` (idle too long), `ended` or `failed` (its grant ended or its authorization failed), `member_removed`, `user_deactivated`, or `app_removed` (the app was deleted through the Gateway, or, within the hour, deleted or disabled by the CLI). Both events carry `kind`: `mcp` for an AI app, `native` for a native app ([Native apps](/docs/agent/native)), or `dev` for `everyapp dev --gateway` linked to one app ([dev](/docs/agent/dev#mode-linked-a-real-gateways-services-as-you)); the last two also carry `app: { id, rowId, name }`. `connection.used` is linked dev's audit trail: the first call of each UTC day a linked `everyapp dev` makes through the Gateway's providers and services (the person is the actor; the client name is the computer's), decided by a claimed per-day key in `rate_limit_counters`, so one event a day per connection however many isolates serve it. `token.revoked` comes from the person's own Settings → Tokens and from `everyapp workspace tokens revoke`; from the CLI the operator is the `actor` and the token's owner stays `user`, so the log says who revoked whose. The token types are flat: `id` and `name` are the token's, and no key is named `token`, since the credential-key rule (below) refuses that name in every event's `data`, the Gateway's own included.
 
 ### Access
 

@@ -29,16 +29,20 @@ import { useDeliberateAllow } from "./useDeliberateAllow";
 
 type OkContext = Extract<ConsentContext, { ok: true }>;
 
-/** A native app's consent: its grant's resource is one app's host. */
+/**
+ * A native app's consent (its grant's resource is one app's host), or
+ * linked dev's (`everyapp dev --gateway` on the person's computer, the
+ * Gateway's services for one app; docs/design/linked-dev.md).
+ */
 export type NativeConsentContext = OkContext & {
-  grant: Extract<OkContext["grant"], { kind: "native" }>;
+  grant: Extract<OkContext["grant"], { kind: "native" | "dev" }>;
 };
 
-/** Whether the request is a native app's, not an AI app's for /mcp. */
+/** Whether the request is a native app's or linked dev's, not an AI app's for /mcp. */
 export function isNativeConsent(
   context: OkContext,
 ): context is NativeConsentContext {
-  return context.grant.kind === "native";
+  return context.grant.kind === "native" || context.grant.kind === "dev";
 }
 
 /**
@@ -59,6 +63,7 @@ export function NativeConsentForm({
 }) {
   const { client, organizations } = context;
   const { app } = context.grant;
+  const dev = context.grant.kind === "dev";
   const deliberate = useDeliberateAllow();
   const { sentDecision, onSubmit } = useSendOnce();
   const [organizationId, setOrganizationId] = useState(
@@ -108,7 +113,9 @@ export function NativeConsentForm({
           </div>
           <CardTitle className="mt-4 text-xl">
             <h1 className="line-clamp-3 break-words" title={client.name}>
-              {client.name} wants to use {app.name}
+              {dev
+                ? `${client.name} wants to develop ${app.name} as you`
+                : `${client.name} wants to use ${app.name}`}
             </h1>
           </CardTitle>
           {verified ? (
@@ -155,6 +162,25 @@ export function NativeConsentForm({
                 is nothing to allow.
               </AlertDescription>
             </Alert>
+          ) : dev ? (
+            <div className="space-y-2 text-sm">
+              <p>
+                <code>everyapp dev</code> on this computer wants to use{" "}
+                <strong>{app.name}</strong>'s AI, email, providers and members
+                through this Gateway as you
+                {organization ? (
+                  <>
+                    , in <strong>{organization.name}</strong>
+                  </>
+                ) : null}
+                , while you develop it.
+              </p>
+              <p className="text-muted-foreground">
+                Calls bill {organization?.name ?? "the workspace"}'s providers.
+                The app's data stays on your computer. Revoke it any time under
+                Settings → Connections.
+              </p>
+            </div>
           ) : (
             <p className="text-sm">
               It wants to use <strong>{app.name}</strong>{" "}

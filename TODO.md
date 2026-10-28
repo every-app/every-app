@@ -2255,6 +2255,55 @@ Follow-ups (not in a lane):
 - [x] **The 401 challenge on a hosted third-party host names a metadata URL that 404s** (done at merge: the challenge omits `resource_metadata` on dispatch hosts, pinned in `gateway.test.ts`) (the document is first-party only). Recommended: omit `resource_metadata` from the challenge on dispatch hosts. Cosmetic.
 
 
+## Linked dev (feature/linked-dev)
+
+`everyapp dev --gateway https://everyapp.team`: the local app runs as you, and its AI, capability, email, members and event calls go through the real Gateway, authorized by a token from the native sign-in flow bound to one app; no provider key on the laptop, data stays local. Design [docs/design/linked-dev.md](docs/design/linked-dev.md) (2026-10-28). Branch cut from `feature/native-sign-in`; draft PR against that branch, never main; nothing deployed; no live check without Ben's explicit ask for that run.
+
+### Decided for Ben at merge (2026-10-28)
+
+Ben authorized merging linked dev after a clean security review (2026-10-28). Each question below took its recommendation; none weakens the posture. The usage `source` column (question 3) is not built: a follow-up, dev calls count as the app's until then. Merge-day pass: scanner 0/0/0 over 40 files, independent adversarial review recorded in the pull request.
+
+### Questions for Ben
+
+- [x] **Run the live check?** Settled 2026-10-28 (orchestrator 4b2ee96d): there is no second test account (loop-1 is held by the demo), so the deployed check runs inside the pre-release check on the staging Gateway demo.everyapp.dev in Ben's main account, owned by the multi-gateway thread (mcp:7e553fb2, PR #867), after #866 merges. Steps there: `workspace linked-dev on`, OpenZen deployed, `everyapp dev --gateway https://demo.everyapp.dev` in open-notes/web with an empty `.dev.vars`. The local proof stands (design §11). Q2–Q5 go to the merge captain's defaults.
+- [ ] **Refresh tokens for dev, or sign in daily?** Recommended: the same 1 h access + 30 day sliding refresh as native grants, stored 0600 under `~/.config/everyapp`; `everyapp dev unlink` revokes. Alternative: access token only (sign in again every hour; no secret on disk past the hour).
+- [ ] **Usage rows gain `source` (`app` | `dev`)** so Usage can split development spend; the page split is a follow-up. Recommended: yes (a column and a migration). Alternative: count dev calls as production calls and rely on the audit event alone. *Not built (orchestrator ruling 2026-10-28: a follow-up, not a merge blocker): today dev calls count as the app's, told apart by `connection.used` and the `linked_dev.call` log line.*
+- [ ] **Rate limits: 120 calls a minute and 2 000 a day per connection.** Recommended as a start; both live in one constant. Alternative: a per-organization monthly dev cap in dollars, the caps mechanism, later.
+- [ ] **Should linked dev work for shared apps on the hosted tier?** Recommended: not in this version (first-party, organization-owned apps only; a shared app's dev call would need the organization picked at consent). Alternative: allow it with the organization chosen at consent, as MCP consent does.
+
+### Decided for Ben
+
+- [ ] **Built on native sign-in: a third grant kind `dev` on the same OAuth server, resource `${GATEWAY_URL}/linked-dev/<app id>`**, one more resource per active first-party app in `resources.ts`; the token opens the Gateway's services for that app and nothing else (not the app host, not `/mcp`). Alternative: reuse the native grant (its token would also open the production app as the person).
+- [ ] **Owners and admins only, who can open the app, in an organization with the switch on**; re-checked on every call and by `whoami` every minute. Alternative: any member who can open the app (native sign-in's rule).
+- [ ] **Opt-in is an organization setting (`org_settings.linked_dev`, off), toggled by `everyapp workspace linked-dev on|off`** as the operator (a D1 write, like other workspace commands); on a one-team gateway that is "per Gateway". No Manage workspace UI yet. Alternative: a Worker env switch (needs a redeploy to flip).
+- [ ] **The CLI is a dynamically registered public client** (`everyapp dev on <hostname>`); DCR off on the gateway means linked dev can't sign in (`LINKED_DEV_REGISTRATION_OFF`). Alternative: a CIMD on everyapp.com (one client for every CLI install, verified name on consent) later.
+- [ ] **The token lives in the CLI process, never in the Worker.** The Worker's SDK shim calls the gateway-lite's loopback forwarder (`/__everyapp/gateway/*`, custom header + run nonce, browser requests refused), which adds the bearer. Alternative: hand the Worker the token as a dev var (then any code in the app's dependency tree can read it).
+- [ ] **The dev identity JWT and `x-everyapp-org` are stripped before forwarding; the endpoint attributes from the token** through a new trusted-attribution option on `handleAppGatewayRequest`, never `attributeCall`. Alternative: verify the dev key on the Gateway (never).
+- [ ] **No secret-read path of any kind**: the app's `secrets` stay in `.dev.vars`; the ready block names the missing ones as today. Alternative: none.
+- [ ] **`/linked-dev/*` joins the Gateway's Access bypass list** beside `/mcp`, `/oauth/token`, `/oauth/register`, `/.well-known/*` (bearer only, checks its own credential; 401 to every token while the switch is off, 404 only with the OAuth server off). Alternative: require Access off for linked dev.
+- [ ] **Audit: one `connection.used` event per connection per UTC day** (the events table; deduplicated by a claimed key in `rate_limit_counters`, since issuing the token already counts as a use of the row), plus a per-call Worker log line (`linked_dev.call`); the connection appears under Settings → Connections labelled "Linked dev" and is revocable there; the switch itself is `organization.linked_dev_changed`. Alternative: an event per call (noise).
+- [ ] **Mode selection: `--gateway <non-loopback URL>` selects linked mode; `--mode linked` says it explicitly; `--mode mirror` keeps meaning a local Gateway.** Alternative: a new flag.
+- [ ] **Local proof is the Gateway from the checkout on `http://localhost:3000`** (an http issuer on localhost is allowed), with OpenZen registered on it and its `.dev.vars` empty. Alternative: none short of a live run.
+- [ ] **`dev link` and `dev unlink` exist beside `dev --gateway`** (sign in without running; revoke and forget), and `whoami` is a route of its own, never rate-limited. Alternative: the run alone.
+
+### Merge-day review (2026-10-28)
+
+Independent adversarial review (Fable) over the full diff against main: 0 high, 0 medium, 3 low, 4 info; verdict safe to merge. Scanner 0/0/0 over 40 files.
+
+- [ ] **Linked mode with `--host 0.0.0.0` hands the LAN the owner's identity and spend** (every request reaching the gateway-lite port is the signed-in owner, and its calls bill the workspace through the real Gateway; today the run only warns, `DEV_EXPOSED`). Refuse a non-loopback `--host` in linked mode, or take an explicit opt-in flag. Cross-site pages are already refused.
+- [x] **The forwarder followed redirects on the laptop** (a provider's 3xx passed through by the proxy was followed by the CLI, not handed to the app); fixed at merge with `redirect: "manual"`.
+- [x] **Docs said the route is 404 while the switch is off**; it is 401 to every token (404 only with the OAuth server off, as the register row already said). Wording fixed at merge in the design, runbook, agent docs, plan comment and this file.
+- [ ] Info, not fixed: the daily budget multiplies per connection (an owner may register several clients; a per-organization dev cap is the alternative in question 4); counters and `connection.used` fire before route validation; `dev unlink` relies on the library's revocation for the row's `revoked_at` (unverified; the row may linger until idle expiry).
+
+### Follow-ups
+
+- [ ] **Usage `source` column (`app` | `dev`)**: a column and migration on the usage rows, written by the linked dev endpoint, and the Usage page split by it (about half a day). Until then dev spend counts as the app's; `connection.used` and the `linked_dev.call` log line tell it apart.
+- [ ] Manage workspace: the linked dev switch, and the Usage page split by `source`.
+- [ ] An admin revoking a member's linked dev connection (B5's gap for every connection kind).
+- [ ] A device name on the row.
+- [ ] Hosted tier: shared apps and third-party hosts.
+- [ ] The live check (question 1), then `path:line` and test names in the threat-model register.
+
 ## Multi-gateway (2026-10-28)
 
 Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `everyapp setup --name demo` installs `every-app-gateway-demo` beside the default, `--gateway <url|name>` picks one, `teardown --gateway <name>` removes one by its names alone. Ben asked for a staging/demo Gateway in the main account next to everyapp.team and a pre-release check against it (docs/runbooks/pre-release-check.md).

@@ -19,6 +19,7 @@ import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { createDevAppGateway } from "./devAppGateway";
 import { devLauncherHtml } from "./launcherPage";
+import type { LinkedForwarder } from "./linked";
 import { classifyHost, DevMode, isBrowserRequest, isDevHost } from "./mode";
 import {
   handleUpgrade,
@@ -98,6 +99,8 @@ interface GatewayServerOptions {
   /** Mirror mode's separately-run gateway. */
   gatewayUrl: URL | null;
   authenticator?: SessionAuthenticator;
+  /** Linked mode: the forwarder the dev Worker's SDK reaches the real Gateway through. */
+  linked?: LinkedForwarder;
   appPort: number;
   appUrl: string;
   out: EventSink;
@@ -112,6 +115,7 @@ export function serveGateway(
     mirrorBaseHost,
     gatewayUrl,
     authenticator,
+    linked,
     appPort,
     appUrl,
     out,
@@ -151,6 +155,13 @@ export function serveGateway(
         // otherwise read the app as the seeded owner.
         if (!isDevHost(hostHeader, gatewayFetcher ? mirrorBaseHost : undefined)) {
           misdirected(res, hostHeader, `${manifest.id}.localhost`);
+          return;
+        }
+
+        // Linked mode: the SDK's gateway calls, before the perimeter (they
+        // carry the dev Worker's own headers, not a person's session).
+        if (linked && linked.matches(new URL(req.url ?? "/", "http://localhost").pathname)) {
+          await writeWebResponse(res, await linked.handle(toWebRequest(req)));
           return;
         }
 

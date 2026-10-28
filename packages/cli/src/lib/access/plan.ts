@@ -68,6 +68,10 @@ const GATEWAY_BYPASS_PATHS: readonly string[] = [
   ...MCP_PATHS,
   "/oauth/token",
   "/oauth/register",
+  // `everyapp dev --gateway` (docs/design/linked-dev.md): a bearer-only
+  // route that checks its own credential: 401 to every token until an
+  // organization opts in, 404 only with the OAuth server off.
+  "/linked-dev/*",
   "/.well-known/*",
   HEALTH_PATH,
   APPLE_CALLBACK_PATH,

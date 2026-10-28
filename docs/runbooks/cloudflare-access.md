@@ -350,6 +350,7 @@ credentials:
 | `/health`                         | gateway                                            | Uptime monitors: `GET` answers 200 or 503 after a bounded `SELECT 1`, reading no session |
 | `/oauth/token`, `/oauth/register` | gateway                                            | The OAuth server's token, revocation and registration                   |
 | `/.well-known/*`                  | gateway                                            | OAuth discovery documents                                               |
+| `/linked-dev/*`                   | gateway                                            | `everyapp dev --gateway` (linked dev, `docs/design/linked-dev.md`): bearer only, checks its own token; 401 to every token until a workspace opts in (404 with the OAuth server off) |
 | `/api/auth/callback/apple`        | gateway                                            | Sign in with Apple's cross-site POST return, which only redirects to the same URL as a GET (`docs/runbooks/sign-in-providers.md`) |
 | Each app's public routes          | that app's host                                    | Whatever its `everyapp.config.ts` declares as `public` (not a health check: a monitor sends a personal access token) |
 | Each app's `bearerRoutes`, and `/.well-known/oauth-protected-resource` | that app's host, when its manifest sets `bearerRoutes` | Native apps signed in with "Sign in with Every App" (`docs/design/native-sign-in.md`): a Gateway token for that one host, never a cookie (the Gateway refuses one there). Bypassed under Managed OAuth too, but native sign-in needs Managed OAuth off |
@@ -385,6 +386,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/mcp/*", "behavior": "public"},
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
+      {"path_pattern": "/linked-dev/*", "behavior": "public"},
       {"path_pattern": "/.well-known/*", "behavior": "public"},
       {"path_pattern": "/api/auth/callback/apple", "behavior": "public"}
     ]}

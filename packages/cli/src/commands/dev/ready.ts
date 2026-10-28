@@ -31,6 +31,13 @@ interface ReadyBlockOptions {
   /** Mirror mode: the separately-run Gateway, and where to log in through the gateway-lite. */
   gatewayUrl: string;
   loginUrl: string;
+  /** Linked mode: who the Gateway says you are, and for which app. */
+  linked?: {
+    email: string;
+    role: string;
+    organization: string;
+    appName: string;
+  };
   /** cloudflare.config.ts declares crons. */
   crons: boolean;
   /** The app's directory, where its .dev.vars is. */
@@ -47,6 +54,7 @@ export function readyBlock({
   loginUrl,
   crons,
   cwd,
+  linked,
 }: ReadyBlockOptions): string {
   const facts = [
     { label: "App", value: chalk.cyan(appUrl) },
@@ -55,9 +63,25 @@ export function readyBlock({
       value: `${chalk.cyan(`${appUrl}/mcp`)}  ${chalk.dim(
         mode === DevMode.Mirror
           ? "bearer: a personal access token from the local Gateway"
-          : "any bearer token acts as the dev user",
+          : mode === DevMode.Linked
+            ? "any bearer token acts as you"
+            : "any bearer token acts as the dev user",
       )}`,
     },
+    ...(mode === DevMode.Linked && linked
+      ? [
+          {
+            label: "Linked to",
+            value: `${chalk.cyan(gatewayUrl)} ${chalk.dim(`as ${linked.email} (${linked.role} of ${linked.organization}) for ${linked.appName}`)}`,
+          },
+          {
+            label: "Gateway",
+            value: chalk.dim(
+              `AI, email, providers and members go through it: calls bill ${linked.organization}'s providers. Data (D1, KV, R2) is local. Sign out: ${CLI} dev unlink --gateway ${gatewayUrl}`,
+            ),
+          },
+        ]
+      : []),
     ...(mode === DevMode.Mirror
       ? [
           {
@@ -69,12 +93,14 @@ export function readyBlock({
             value: `${gatewayUrl} ${chalk.dim("(real login and launcher)")}`,
           },
         ]
-      : [
-          {
-            label: "Dev user",
-            value: `${DEV_USER.email} ${chalk.dim(`(${DEV_USER.orgRole} of ${DEV_USER.orgId})`)}`,
-          },
-        ]),
+      : mode === DevMode.Linked
+        ? []
+        : [
+            {
+              label: "Dev user",
+              value: `${DEV_USER.email} ${chalk.dim(`(${DEV_USER.orgRole} of ${DEV_USER.orgId})`)}`,
+            },
+          ]),
     // The app's own dev server, for scripts that bring their own identity.
     {
       label: "App port",
@@ -102,7 +128,7 @@ export function readyBlock({
           },
         ]
       : []),
-    ...devVarsHint(manifest, cwd),
+    ...devVarsHint(manifest, cwd, { linked: mode === DevMode.Linked }),
   ];
   return ["", ...formatFacts(facts).map((line) => `  ${line}`), ""].join("\n");
 }
@@ -166,8 +192,13 @@ const DEV_VARS = ".dev.vars";
 export function devVarsHint(
   manifest: SettingsManifestLike,
   cwd: string,
+  { linked = false }: { linked?: boolean } = {},
 ): Fact[] {
-  const settings = devSettings(manifest, devProviderLookup(cwd));
+  // Linked to a Gateway, providers and capabilities are its; only the
+  // app's own secrets are still read from the file.
+  const settings = devSettings(manifest, devProviderLookup(cwd)).filter(
+    (setting) => !linked || setting.kind === "secret",
+  );
   if (settings.length === 0) return [];
   const set = readDevVars(cwd);
   const report = evaluateAppSettings(settings, (_holder, name) =>

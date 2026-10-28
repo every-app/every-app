@@ -24,11 +24,20 @@ describe("resolveDevMode", () => {
   });
   it("names the flag or the env var an unknown value came from", () => {
     expect(() => resolveDevMode("prod", undefined)).toThrow(
-      '--mode must be stub or mirror, not "prod"\nstub signs you in as a seeded dev user; mirror uses real login through a local Gateway.',
+      '--mode must be stub, mirror or linked, not "prod"\nstub signs you in as a seeded dev user; mirror uses real login through a local Gateway; linked uses a real Gateway\'s services as you (--gateway https://…).',
     );
     expect(() => resolveDevMode(undefined, "prod")).toThrow(
-      'EVERYAPP_DEV_MODE must be stub or mirror, not "prod"',
+      'EVERYAPP_DEV_MODE must be stub, mirror or linked, not "prod"',
     );
+  });
+  it("selects linked for a --gateway that isn't this machine, unless a mode is given", () => {
+    expect(resolveDevMode(undefined, undefined, "https://apps.example.com")).toBe("linked");
+    expect(resolveDevMode(undefined, undefined, "http://gateway.lan:3000")).toBe("linked");
+    expect(resolveDevMode(undefined, undefined, "http://localhost:3000")).toBe("stub");
+    expect(resolveDevMode(undefined, undefined, "http://127.0.0.1:3000")).toBe("stub");
+    expect(resolveDevMode("mirror", undefined, "https://apps.example.com")).toBe("mirror");
+    expect(resolveDevMode(undefined, "mirror", "https://apps.example.com")).toBe("mirror");
+    expect(resolveDevMode("linked", undefined, undefined)).toBe("linked");
   });
 });
 

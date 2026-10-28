@@ -38,4 +38,7 @@ export interface EveryAppEnv<M extends EveryAppManifest = EveryAppManifest> {
   EVERYAPP_DEV_PROVIDERS?: string;
   /** Under `everyapp dev`, from `.dev.vars`: the senders standing in for `everyapp email set --sender`. */
   EVERYAPP_EMAIL_SENDERS?: string;
+  /** Under `everyapp dev --gateway` (linked dev): the gateway-lite's forwarder, which the SDK's services call the real Gateway through, and the run's nonce. */
+  EVERYAPP_LINKED_DEV_URL?: string;
+  EVERYAPP_LINKED_DEV_NONCE?: string;
 }

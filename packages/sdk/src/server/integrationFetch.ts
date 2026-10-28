@@ -51,6 +51,7 @@ import {
 import type { SetupInfo } from "./refusal.js";
 import {
   BINDING_ORIGIN,
+  gatewayBinding,
   streamingRequest,
   type GatewayServiceBinding,
 } from "./gatewayFetch.js";
@@ -139,9 +140,7 @@ export function integrationFetch({
   // again per call, where an identity may since have neared its expiry.
   attributionFor(env, explicitTarget, what);
   const values = env as Record<string, unknown>;
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(env);
 
   if (binding && typeof binding.fetch !== "function") {
     throw new ConfigurationError(
@@ -934,9 +933,7 @@ function withSetup<S extends Omit<IntegrationStatus, keyof SetupInfo>>(
   provider: string,
   values: Record<string, unknown>,
 ): S & SetupInfo {
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(values);
   if (binding || !status.requested || status.configured) {
     return {
       ...status,
@@ -980,9 +977,7 @@ async function readIntegrationStatus<P extends CapabilityId | (string & {})>({
     `integrationStatus("${String(provider)}")`,
   );
   const values = env as Record<string, unknown>;
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(env);
   // A provider registered on the gateway is the gateway's to answer for;
   // without one, the catalog, or in local dev the row's spec from
   // `.everyapp/providers/<id>.json`.

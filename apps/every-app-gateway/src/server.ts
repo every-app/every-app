@@ -199,7 +199,8 @@ const ACCESS_BYPASSED_EXACT = [
   APPLE_CALLBACK_PATH,
 ];
 
-const ACCESS_BYPASSED_PREFIXES = ["/mcp/", "/.well-known/"];
+/** `/linked-dev/*` too: bearer-only, checks its own credential (server/linked-dev.ts). */
+const ACCESS_BYPASSED_PREFIXES = ["/mcp/", "/.well-known/", "/linked-dev/"];
 
 function isAccessBypassedPath(pathname: string): boolean {
   const lower = pathname.toLowerCase();
@@ -260,6 +261,13 @@ async function serveGatewayHost(request: Request): Promise<Response> {
     // member's connect and the provider's callback, on the session cookie.
     const { serveConnectRoute } = await import("./server/oauth/flow");
     const served = await serveConnectRoute(request);
+    if (served) return served;
+  }
+  if (pathname.startsWith("/linked-dev/")) {
+    // `everyapp dev --gateway` (server/linked-dev.ts): the Gateway's
+    // services for one app, on a bearer of its own; never a cookie.
+    const { serveLinkedDevRoute } = await import("./server/linked-dev");
+    const served = await serveLinkedDevRoute(request);
     if (served) return served;
   }
   if (pathname === APPLE_CALLBACK_PATH) return serveControlPlane(request, env);

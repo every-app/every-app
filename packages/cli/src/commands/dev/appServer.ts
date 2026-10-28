@@ -17,6 +17,8 @@ interface StartAppDevServerOptions {
   port: number;
   /** The launcher's URL, which the app reads as GATEWAY_URL (`gatewayUrl(env)`). */
   gatewayUrl: string;
+  /** More for the dev server's environment (linked mode: the forwarder's URL and nonce, which `everyAppWorker()` hands the Worker). */
+  env?: Record<string, string>;
 }
 
 /**
@@ -37,6 +39,7 @@ export async function startAppDevServer({
   cf,
   port,
   gatewayUrl,
+  env: extra = {},
 }: StartAppDevServerOptions): Promise<AppDevServer> {
   if (manifest.dev) {
     return spawnLongRunning({
@@ -47,6 +50,7 @@ export async function startAppDevServer({
         ...process.env,
         PORT: String(port),
         [DEV_GATEWAY_URL_ENV]: gatewayUrl,
+        ...extra,
         NODE_OPTIONS: buildNodeOptions(process.env["NODE_OPTIONS"]),
       },
       shell: true,
@@ -59,6 +63,7 @@ export async function startAppDevServer({
     env: {
       PORT: String(port),
       [DEV_GATEWAY_URL_ENV]: gatewayUrl,
+      ...extra,
       ...devRegistryEnv(cwd),
     },
     holdOutput: true,

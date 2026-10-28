@@ -41,6 +41,7 @@ import {
   clientDisplayName,
   consentChoices,
   describeAuthorizationFailure,
+  devGrantFor,
   grantedAccess,
   grantedScopes,
   nativeGrantFor,
@@ -48,7 +49,12 @@ import {
   type ConsentApp,
 } from "./consent";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
-import type { McpGrantProps, NativeGrantProps } from "./validate";
+import { devResourceAppSlug } from "./resources";
+import type {
+  DevGrantProps,
+  McpGrantProps,
+  NativeGrantProps,
+} from "./validate";
 
 /** The largest consent form accepted (a few hundred app ids at most). */
 const MAX_DECISION_BODY_BYTES = 64 * 1024;
@@ -244,16 +250,21 @@ export async function handleConsentDecision(
     );
   }
   let nativeApp: ConsentApp | null = null;
+  // A linked dev grant (docs/design/linked-dev.md): the resource names an
+  // app id under the issuer; owners and admins only, and the organization
+  // must have turned linked dev on (`dev.owner-admin-only`,
+  // `dev.off-by-default`).
+  const devSlug = devResourceAppSlug(resource, mcpAuth.issuer);
   const selectedApps = [...new Set(decision.app_ids)];
   if (resource !== mcpAuth.resource) {
-    // A native grant: the one app the resource names, which the person
-    // must be able to open in that organization. The form's app and
+    // An app-bound grant: the one app the resource names, which the
+    // person must be able to open in that organization. The form's app and
     // access choices count for nothing (`native.full-scope-only`).
-    const grant = await nativeGrantFor(
-      resource,
-      user.id,
-      mcpAuth.resourceScheme,
-    );
+    const dev = devSlug
+      ? await devGrantFor(resource, user.id, mcpAuth.issuer)
+      : null;
+    const grant =
+      dev ?? (await nativeGrantFor(resource, user.id, mcpAuth.resourceScheme));
     if (!grant.ok) return errorPage(403, "Can't sign in", grant.message);
     if (!grant.organizations.some((org) => org.id === organizationId)) {
       return errorPage(
@@ -262,7 +273,14 @@ export async function handleConsentDecision(
         `You can't open ${grant.app.name} in that organization.`,
       );
     }
-    nativeApp = grant.app;
+    nativeApp = dev?.ok ? (dev.apps.get(organizationId) ?? null) : grant.app;
+    if (!nativeApp) {
+      return errorPage(
+        403,
+        "Can't sign in",
+        "That organization doesn't have this app.",
+      );
+    }
   } else if (decision.app_mode === "selected") {
     const usable = new Set(
       (await consentChoices(user.id))
@@ -320,7 +338,7 @@ export async function handleConsentDecision(
     : decision.app_mode === "selected"
       ? selectedApps
       : [];
-  const kind = nativeApp ? "native" : "mcp";
+  const kind = nativeApp ? (devSlug ? "dev" : "native") : "mcp";
   const connectionId = await connectionIdFor(decision.handle);
   const createdAt = new Date();
   const created = await McpConnectionRepository.create({
@@ -360,10 +378,10 @@ export async function handleConsentDecision(
       : null,
   });
 
-  const props: McpGrantProps | NativeGrantProps = nativeApp
+  const props: McpGrantProps | NativeGrantProps | DevGrantProps = nativeApp
     ? {
         v: 1,
-        kind: "native",
+        kind: devSlug ? "dev" : "native",
         connectionId,
         userId: user.id,
         organizationId,

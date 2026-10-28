@@ -271,7 +271,7 @@ describe("access on, from nothing", () => {
     const gateway = application(HOST)!;
     const apps = application(`*.${HOST}`)!;
     expect(gateway["id"]).not.toBe(apps["id"]);
-    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/.well-known/*", "/health", "/api/auth/callback/apple"]);
+    expect(overrides(gateway, HOST)).toEqual(["/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/linked-dev/*", "/.well-known/*", "/health", "/api/auth/callback/apple"]);
     expect(uris(apps)).toEqual([`*.${HOST}`]);
     expect(overrides(apps, `*.${HOST}`)).toEqual([]);
     for (const app of [gateway, apps]) {

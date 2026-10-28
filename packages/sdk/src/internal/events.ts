@@ -64,6 +64,11 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "A pending invitation was cancelled",
   ),
   entry("organization", "organization.renamed", "The workspace was renamed"),
+  entry(
+    "organization",
+    "organization.linked_dev_changed",
+    "Linked dev (everyapp dev against this Gateway) was turned on or off",
+  ),
   entry("app", "app.installed", "An app was installed on the Gateway"),
   entry("app", "app.updated", "An app was redeployed"),
   entry("app", "app.live", "An app went live on the Gateway"),
@@ -109,6 +114,11 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry("tool", "tool.error", "An AI client's tool call failed"),
   entry("connection", "connection.created", "An AI app was connected"),
   entry("connection", "connection.revoked", "An AI app connection was revoked"),
+  entry(
+    "connection",
+    "connection.used",
+    "Linked dev used the Gateway's services (first call of the day)",
+  ),
   entry("token", "token.created", "A personal access token was created"),
   entry("token", "token.revoked", "A personal access token was revoked"),
   entry("access", "access.changed", "Cloudflare Access was turned on or off"),

@@ -36,8 +36,8 @@ import {
 import {
   BINDING_ORIGIN,
   createGatewayFetch,
+  gatewayBinding,
   type CreateGatewayFetchOptions,
-  type GatewayServiceBinding,
 } from "./gatewayFetch.js";
 import type { SetupInfo } from "./refusal.js";
 
@@ -125,9 +125,7 @@ export async function aiStatus({
 }): Promise<AiStatus> {
   const target = attributionFor(env, explicitTarget, "aiStatus");
   const values = env as Record<string, unknown>;
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(env);
   const unavailable: AiStatus = {
     provider,
     requested: false,

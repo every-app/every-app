@@ -32,6 +32,7 @@ import {
   revokeToken,
 } from "./activity";
 import { appAccessCommand, listApps, setCap, setDefaultCap, updateApp } from "./apps";
+import { linkedDevCommand } from "./linkedDev";
 import {
   createGroup,
   deleteGroup,
@@ -1851,5 +1852,54 @@ describe("the event bus: every workspace write is one event, the operator its ac
     ]);
     expect(JSON.stringify(queued())).not.toContain("epat_");
     expect(JSON.stringify(queued())).not.toContain("hash-");
+  });
+});
+
+describe("workspace linked-dev", () => {
+  const linkedDevRows = () => rows("SELECT organization_id, linked_dev, updated_by FROM org_settings");
+  const linkedDevEvents = () =>
+    rows("SELECT data FROM events WHERE type = 'organization.linked_dev_changed'").map((row) =>
+      JSON.parse(String(row["data"])),
+    );
+
+  it("shows off by default, turns on with an event, says so when unchanged, and drops the empty row when turned off", async () => {
+    await linkedDevCommand(opts(), "show");
+    expect(data()).toMatchObject({ linkedDev: false });
+    expect(done()!["message"]).toBe("Linked dev is off for Acme");
+
+    events = [];
+    await linkedDevCommand(opts(), "on");
+    expect(linkedDevRows()).toEqual([{ organization_id: ORG, linked_dev: 1, updated_by: "u-owner" }]);
+    expect(linkedDevEvents()).toEqual([{ linkedDev: "on" }]);
+    expect(data()).toMatchObject({ linkedDev: true, was: false, changed: true });
+    expect(done()!["message"]).toBe("Linked dev is now on for Acme");
+
+    events = [];
+    await linkedDevCommand(opts(), "on");
+    expect(data()).toMatchObject({ linkedDev: true, was: true, changed: false });
+    expect(linkedDevEvents()).toHaveLength(1);
+
+    events = [];
+    await linkedDevCommand(opts(), "show");
+    expect(data()).toMatchObject({ linkedDev: true });
+
+    events = [];
+    await linkedDevCommand(opts(), "off");
+    expect(linkedDevRows()).toEqual([]);
+    expect(linkedDevEvents()).toEqual([{ linkedDev: "on" }, { linkedDev: "off" }]);
+    expect(data()).toMatchObject({ linkedDev: false, was: true, changed: true });
+  });
+
+  it("keeps the row when the default cap lives in it, and the cap write keeps the switch", async () => {
+    await linkedDevCommand(opts(), "on");
+    await setDefaultCap(opts(), 1000);
+    expect(linkedDevRows()).toEqual([{ organization_id: ORG, linked_dev: 1, updated_by: "u-owner" }]);
+    await setDefaultCap(opts(), null);
+    // The switch keeps the row alive even with no cap left.
+    expect(rows("SELECT linked_dev, default_monthly_call_cap FROM org_settings")).toEqual([
+      { linked_dev: 1, default_monthly_call_cap: null },
+    ]);
+    await linkedDevCommand(opts(), "off");
+    expect(linkedDevRows()).toEqual([]);
   });
 });

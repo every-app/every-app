@@ -63,7 +63,7 @@ RUN A GATEWAY
   teardown   Delete everything EveryApp created in a dedicated test Cloudflare account, or one named Gateway
 
 MANAGE THE WORKSPACE
-  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections
+  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -229,7 +229,7 @@ Run everyapp email <command> --help for its flags.
 ### `everyapp workspace`
 
 ```text
-Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections.
+Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev.
 
 Everything Admin → Users, Groups, Apps, Tokens, Usage and Activity do, from the terminal.
 Acts under your Cloudflare login (the operator is root in every organization of the Gateway),
@@ -265,6 +265,7 @@ COMMANDS
   token        Revoke a personal access token
   connections  Every member's AI connections to the organization: which AI app, which apps it may use, read or write
   connection   Revoke an AI connection
+  linked-dev   Let owners and admins run `everyapp dev --gateway` against this Gateway's providers (linked dev), or stop it
 
 EXAMPLES
   $ everyapp workspace rename 'Acme Corp'
@@ -334,14 +335,15 @@ Run the app locally behind a dev Gateway.
 | --- | --- | --- | --- | --- |
 | `--port` | `<value>` | no |  | Gateway port (defaults to $PORT, then 8787) |
 | `--host` | `<value>` | no |  | Address the Gateway listens on (default 127.0.0.1; 0.0.0.0 lets other machines in, each as a dev identity) |
-| `--mode` | `<value>` | no |  | stub (seeded dev user, default) \| mirror (real login through a local Gateway) |
-| `--gateway` | `<value>` | no |  | mirror mode: URL of the separately-run local Gateway (default http://localhost:3000) |
+| `--mode` | `<value>` | no |  | stub (seeded dev user, default) \| mirror (real login through a local Gateway) \| linked (a real Gateway's services as you; --gateway https://… selects it) |
+| `--gateway` | `<value>` | no |  | The Gateway: a real one (https://apps.example.com) links this run to it; a local one (default http://localhost:3000) is mirror mode's |
 | `--base-host` | `<value>` | no |  | mirror mode: two-label base host for cookie scope (default everyapp.localhost) |
 | `--skip-migrations` | switch | no |  | Start without applying local database migrations |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
 
 ```text
 USAGE
-  everyapp dev [--port value] [--host value] [--mode value] [--gateway value] [--base-host value] [--skip-migrations]
+  everyapp dev [--port value] [--host value] [--mode value] [--gateway value] [--base-host value] [--skip-migrations] [--json]
   everyapp dev --help
 
 Runs the app under `cf dev` (or the manifest's dev command) on an internal
@@ -384,21 +386,32 @@ to any address. email() gets no identity.
   everyapp.localhost) so the session cookie crosses the subdomain
   boundary; the CLI prints setup guidance if the host is unusable.
   Also settable via EVERYAPP_DEV_MODE; the flag wins.
+--gateway https://<your gateway> (linked dev): the app runs here as you,
+  and its AI, email, provider, member and event calls go through that
+  Gateway, with no provider key on this computer. The first run signs you
+  in once in the browser (owners and admins, on a workspace that ran
+  `everyapp workspace linked-dev on`); the token lives in
+  ~/.config/everyapp/linked-dev.json, never in the app. Calls bill the
+  workspace's providers. Data (D1, KV, R2) stays local; the app's own
+  secrets still come from .dev.vars. `everyapp dev unlink` signs out.
 
 Ctrl+C stops the app and exits with 130.
 
 FLAGS
      [--port]                                  Gateway port (defaults to $PORT, then 8787)
      [--host]                                  Address the Gateway listens on (default 127.0.0.1; 0.0.0.0 lets other machines in, each as a dev identity)
-     [--mode]                                  stub (seeded dev user, default) | mirror (real login through a local Gateway)
-     [--gateway]                               mirror mode: URL of the separately-run local Gateway (default http://localhost:3000)
+     [--mode]                                  stub (seeded dev user, default) | mirror (real login through a local Gateway) | linked (a real Gateway's services as you; --gateway https://… selects it)
+     [--gateway]                               The Gateway: a real one (https://apps.example.com) links this run to it; a local one (default http://localhost:3000) is mirror mode's
      [--base-host]                             mirror mode: two-label base host for cookie scope (default everyapp.localhost)
      [--skip-migrations/--no-skip-migrations]  Start without applying local database migrations
+     [--json/--no-json]                        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
   -h  --help                                   Print help information and exit
       --                                       All subsequent inputs should be interpreted as arguments
 
 COMMANDS
-  token  Print a dev identity token for scripts that call the app's dev port
+  token   Print a dev identity token for scripts that call the app's dev port
+  link    Sign everyapp dev in to a Gateway for this app (linked dev), without running it
+  unlink  Sign everyapp dev out of a Gateway for this app: revoke the grant there and forget the token
 
 Run everyapp dev <command> --help for its flags.
 ```
@@ -455,6 +468,74 @@ FLAGS
      [--json/--no-json]  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
   -h  --help             Print help information and exit
       --                 All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp dev link`
+
+Sign everyapp dev in to a Gateway for this app (linked dev), without running it.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL (else EVERYAPP_GATEWAY_URL) |
+| `--app` | `<id>` | no |  | The app id (default: everyapp.config.ts's id in this directory) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  everyapp dev link [--gateway value] [--app id] [--json] [--verbose]
+  everyapp dev link --help
+
+Opens the browser at the Gateway's sign-in: approve everyapp dev, and the token for this
+app is kept in ~/.config/everyapp/linked-dev.json (0600). `everyapp dev --gateway <url>`
+does the same on its first run; this is for doing the browser step on its own, or again
+(a new sign-in replaces the earlier one). Owners and admins who can open the app, on a
+workspace with linked dev on (`everyapp workspace linked-dev on`); otherwise the Gateway
+says why (LINKED_DEV_REFUSED, LINKED_DEV_REGISTRATION_OFF, LINKED_DEV_OAUTH_OFF).
+
+Examples:
+  everyapp dev link --gateway https://apps.example.com
+
+FLAGS
+     [--gateway]               The Gateway's URL (else EVERYAPP_GATEWAY_URL)
+     [--app]                   The app id (default: everyapp.config.ts's id in this directory)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp dev unlink`
+
+Sign everyapp dev out of a Gateway for this app: revoke the grant there and forget the token.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL (else EVERYAPP_GATEWAY_URL) |
+| `--app` | `<id>` | no |  | The app id (default: everyapp.config.ts's id in this directory) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  everyapp dev unlink [--gateway value] [--app id] [--json] [--verbose]
+  everyapp dev unlink --help
+
+Revokes the linked dev grant at the Gateway (it also disappears from Settings → Connections
+there) and removes the token from ~/.config/everyapp/linked-dev.json. If the Gateway can't
+be reached the token is still forgotten (warning LINKED_DEV_REVOKE_FAILED): revoke it under
+Settings → Connections.
+
+Examples:
+  everyapp dev unlink --gateway https://apps.example.com
+
+FLAGS
+     [--gateway]               The Gateway's URL (else EVERYAPP_GATEWAY_URL)
+     [--app]                   The app id (default: everyapp.config.ts's id in this directory)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp deploy`
@@ -4347,4 +4428,55 @@ FLAGS
 
 ARGUMENTS
   id  The connection's id (workspace connections lists them)
+```
+
+### `everyapp workspace linked-dev`
+
+Let owners and admins run `everyapp dev --gateway` against this Gateway's providers (linked dev), or stop it.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<on\|off\|show>` | no | Turn linked dev on or off for the organization, or show it (default) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--org` | `<slug>` | no |  | The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug) |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  everyapp workspace linked-dev [--org slug] [--gateway value] [--account-id value] [--json] [--verbose] [<on|off|show>]
+  everyapp workspace linked-dev --help
+
+Linked dev: an owner or admin runs `everyapp dev --gateway <this gateway>` in an app's
+directory, signs in once in the browser, and the app runs on their computer as them with
+its AI, email, provider and member calls going through this Gateway, so no provider key
+is copied to the laptop. Calls bill the organization's providers as the deployed app's
+do (counted, capped, rate-limited per connection, audited: connection.created and a
+connection.used event per day). The app's data stays on the laptop; its own secrets
+stay in .dev.vars. Off by default: a Gateway that didn't turn it on refuses the
+sign-in and the route. Turning it off stops tokens already issued on their next call.
+The organization's owners and admins see and revoke their own links under Settings →
+Connections. Queues organization.linked_dev_changed in the write's own batch.
+Refused on a Gateway from before migration 0022 (GATEWAY_PREDATES_LINKED_DEV): run
+update first.
+
+Examples:
+  everyapp workspace linked-dev on
+  everyapp workspace linked-dev show
+
+FLAGS
+     [--org]                   The organization to act on, by slug, id or name (default: the install organization; a name two organizations share is refused, ORG_AMBIGUOUS: give the slug)
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [on|off|show]  Turn linked dev on or off for the organization, or show it (default)
 ```

@@ -89,6 +89,38 @@ async function setAiSettings(
   await dropEmptyRow(organizationId);
 }
 
+/**
+ * Whether linked dev is on for the organization (docs/design/linked-dev.md):
+ * owners and admins may sign `everyapp dev --gateway` in to its apps. Off
+ * without a row.
+ */
+async function isLinkedDevOn(organizationId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ linkedDev: orgSettings.linkedDev })
+    .from(orgSettings)
+    .where(eq(orgSettings.organizationId, organizationId))
+    .limit(1);
+  return row?.linkedDev ?? false;
+}
+
+/** Turn linked dev on or off; the row goes when nothing else is left in it. */
+async function setLinkedDev(input: {
+  organizationId: string;
+  on: boolean;
+  updatedBy: string;
+}): Promise<void> {
+  const { organizationId, on, updatedBy } = input;
+  const updatedAt = new Date();
+  await db
+    .insert(orgSettings)
+    .values({ organizationId, linkedDev: on, updatedAt, updatedBy })
+    .onConflictDoUpdate({
+      target: orgSettings.organizationId,
+      set: { linkedDev: on, updatedAt, updatedBy },
+    });
+  await dropEmptyRow(organizationId);
+}
+
 /** No default of any kind needs no row. */
 async function dropEmptyRow(organizationId: string): Promise<void> {
   const [row] = await db
@@ -97,6 +129,7 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
       costCap: orgSettings.defaultMonthlyCostCapMicros,
       aiDefault: orgSettings.aiDefault,
       aiModels: orgSettings.aiModels,
+      linkedDev: orgSettings.linkedDev,
     })
     .from(orgSettings)
     .where(eq(orgSettings.organizationId, organizationId))
@@ -106,7 +139,8 @@ async function dropEmptyRow(organizationId: string): Promise<void> {
     row.cap === null &&
     row.costCap === null &&
     row.aiDefault === null &&
-    row.aiModels === null
+    row.aiModels === null &&
+    !row.linkedDev
   ) {
     await db
       .delete(orgSettings)
@@ -119,4 +153,6 @@ export const OrgSettingsRepository = {
   setDefaultMonthlyCaps,
   getAiSettings,
   setAiSettings,
+  isLinkedDevOn,
+  setLinkedDev,
 } as const;

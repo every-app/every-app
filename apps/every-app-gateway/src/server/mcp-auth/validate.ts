@@ -29,6 +29,8 @@ import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
+import { OrgSettingsRepository } from "@/server/repositories/OrgSettingsRepository";
+import { devResource } from "./resources";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { isUserBanned } from "@/server/user-ban";
@@ -57,6 +59,22 @@ export type NativeGrantProps = {
   userId: string;
   organizationId: string;
   /** apps.id, the one app */
+  appRowId: string;
+};
+
+/**
+ * What a linked dev grant's props hold (docs/design/linked-dev.md §4.1):
+ * the same ids as a native grant's, under its own kind. The grant's
+ * audience is `${issuer}/linked-dev/<app id>`; the endpoint validates the
+ * token for that resource and then re-reads the connection with
+ * `resolveDevCaller`.
+ */
+export type DevGrantProps = {
+  v: 1;
+  kind: "dev";
+  connectionId: string;
+  userId: string;
+  organizationId: string;
   appRowId: string;
 };
 
@@ -117,6 +135,26 @@ function isGrantProps(value: unknown): value is McpGrantProps {
     typeof props["userId"] === "string" &&
     typeof props["organizationId"] === "string"
   );
+}
+
+function isAppBoundGrantProps(
+  value: unknown,
+  kind: "native" | "dev",
+): value is NativeGrantProps | DevGrantProps {
+  if (!value || typeof value !== "object") return false;
+  const props = value as Record<string, unknown>;
+  return (
+    props["v"] === 1 &&
+    props["kind"] === kind &&
+    typeof props["connectionId"] === "string" &&
+    typeof props["userId"] === "string" &&
+    typeof props["organizationId"] === "string" &&
+    typeof props["appRowId"] === "string"
+  );
+}
+
+function isDevGrantProps(value: unknown): value is DevGrantProps {
+  return isAppBoundGrantProps(value, "dev");
 }
 
 function isNativeGrantProps(value: unknown): value is NativeGrantProps {
@@ -293,9 +331,44 @@ export async function resolveNativeCaller(
   { touch = true }: ResolveCallerOptions = {},
 ): Promise<NativeCaller | null> {
   if (!isNativeGrantProps(props)) return null;
+  const caller = await resolveAppBoundCaller(props, "native", touch);
+  if (!caller) return null;
+  const { lastUsedAt: _lastUsedAt, ...native } = caller;
+  return native;
+}
+
+/**
+ * The owner or admin behind a linked dev grant (docs/design/linked-dev.md
+ * §4.3), or null when it no longer stands: everything
+ * {@link resolveNativeCaller} checks, and besides that the member's live
+ * role is owner or admin (`dev.owner-admin-only`: a member demoted since
+ * the consent is refused on the next call) and the organization still has
+ * linked dev on (`dev.off-by-default`). App access is the endpoint's to
+ * check with the app row. Null fails closed.
+ */
+export async function resolveDevCaller(
+  props: unknown,
+  { touch = true }: ResolveCallerOptions = {},
+): Promise<(NativeCaller & { lastUsedAt: Date | null }) | null> {
+  if (!isDevGrantProps(props)) return null;
+  const caller = await resolveAppBoundCaller(props, "dev", touch);
+  if (!caller) return null;
+  if (caller.orgRole !== "owner" && caller.orgRole !== "admin") return null;
+  if (!(await OrgSettingsRepository.isLinkedDevOn(caller.organizationId))) {
+    return null;
+  }
+  return caller;
+}
+
+async function resolveAppBoundCaller(
+  props: NativeGrantProps | DevGrantProps,
+  kind: "native" | "dev",
+  touch: boolean,
+): Promise<(NativeCaller & { lastUsedAt: Date | null }) | null> {
   const connection =
     await McpConnectionRepository.findActiveNativeWithMembership(
       props.connectionId,
+      kind,
     );
   if (
     !connection ||
@@ -334,13 +407,15 @@ export async function resolveNativeCaller(
     appRowId: connection.appRowId,
     clientName: connection.clientName,
     clientDomain: connection.clientDomain,
+    lastUsedAt: connection.lastUsedAt,
   };
 }
 
 /**
  * Whether a grant still stands at a refresh (config.ts
  * tokenExchangeCallback): by its props' kind, the MCP connection with its
- * scope, or the native connection, which must also still be the audience's
+ * scope, the dev connection (its owner or admin, the switch, the app still
+ * active and the audience's), or the native connection, which must also still be the audience's
  * app (the resource list dropped a deleted app's origin, so a refresh
  * naming it is `invalid_target` before this; a grant for an app whose row
  * changed hands is refused here). Throws when D1 can't say.
@@ -351,6 +426,16 @@ export async function grantStands(
   audience: string,
 ): Promise<boolean> {
   // A refresh is a use: it keeps the connection from expiring as idle.
+  if (isDevGrantProps(props)) {
+    const caller = await resolveDevCaller(props);
+    if (!caller) return false;
+    const app = await McpConnectionRepository.findActiveAppRow(caller.appRowId);
+    return (
+      app !== null &&
+      app.organizationId === caller.organizationId &&
+      devResource(new URL(audience).origin, app.appSlug) === audience
+    );
+  }
   if (isNativeGrantProps(props)) {
     const caller = await resolveNativeCaller(props);
     if (!caller) return false;

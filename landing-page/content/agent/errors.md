@@ -699,6 +699,14 @@ Source: `packages/cli/src/lib/gateway/costCaps.ts` (`requireCostCaps`).
 
 Source: `packages/cli/src/lib/gateway/workspace.ts` (`requireDefaultCaps`).
 
+### GATEWAY_PREDATES_LINKED_DEV
+
+`workspace linked-dev on|off|show` against a Gateway whose D1 predates migration `0022_linked_dev` (2026-10-28): `org_settings` has no `linked_dev` column (`hasLinkedDev`, one `PRAGMA table_info` per run). Raised after connecting, before anything is written. Headline: `The Gateway predates linked dev`, then `Its database has no linked dev switch until the Gateway is updated to a release that has it.`
+
+**Fix:** `rerun`: `pnpm everyapp update` (`rerunNote` `then run this again`). Not retryable.
+
+Source: `packages/cli/src/lib/gateway/linkedDev.ts` (`requireLinkedDev`).
+
 ### GATEWAY_URL_MISMATCH
 
 `--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `install`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`, `mcp` (every subcommand), `events` but `events types`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
@@ -918,6 +926,44 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/commands/appG
 **Fix:** `retryable: true`: `data.rerun` is this same command. No `data.fix`.
 
 Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sync.ts`
+
+### LINKED_DEV_GATEWAY_REQUIRED
+
+(`INVALID_GATEWAY_URL` covers a `--gateway` that isn't a URL, and in linked mode one that isn't https, or http on this machine: `--gateway must be https (http only on this machine: localhost or 127.0.0.1), not "<url>"`.)
+
+`dev --mode linked`, `dev link` and `dev unlink` without a Gateway: no `--gateway` and no `EVERYAPP_GATEWAY_URL`. Headline `--mode linked needs the Gateway's URL` (`dev`) or `Which Gateway?` (`dev link|unlink`), then `Pass --gateway https://<your gateway>, or set EVERYAPP_GATEWAY_URL.` `data.fix`: `pass --gateway <url>`.
+
+Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/commands/dev/link.ts`
+
+### LINKED_DEV_GATEWAY_UNREACHABLE
+
+Linked dev's sign-in (`dev --gateway`, `dev link`, and `dev unlink`'s revocation): the Gateway's `/.well-known/oauth-authorization-server` couldn't be fetched (DNS, a refused connection, no route). Headline `Can't reach the Gateway at <origin>`, then the error. `data.gateway` is the origin. Not retryable; check the URL and the network, then run again.
+
+Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`discover`)
+
+### LINKED_DEV_OAUTH_OFF
+
+Linked dev's sign-in: the Gateway answered its authorization-server metadata with an error, without an `issuer`, or with an issuer other than its own origin, so `everyapp dev` can't be its OAuth client. Usually `MCP_OAUTH_ENABLED` is off on that Gateway (`docs/runbooks/mcp-oauth.md`), or the URL isn't an Every App Gateway. Headline `<origin> offers no sign-in for everyapp dev` (or `… names another issuer`), with the status. `data.gateway`, `data.status` or `data.issuer`.
+
+Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`discover`)
+
+### LINKED_DEV_REFUSED
+
+The Gateway refused `everyapp dev`'s token for this app. As an error (`dev --gateway` before the app starts, `dev link`): `GET /linked-dev/<app>/whoami` answered `401` (the connection was revoked under Settings → Connections, you are no longer an owner or admin, or the workspace turned linked dev off: the stored token is forgotten, so the next run signs in again), or `403` with the Gateway's `error` and `message` (`app_unavailable`: the app isn't live for your workspace any more; `app_access_revoked`: you can't open the app any more). As a warning while the app runs (`dev.session`, once per reason, step `dev.link`): the same refusal on the minute's re-read; the local app then answers `401` to the browser and the forwarder hands the Gateway's refusal to the app until you run `pnpm everyapp dev --gateway <url>` again. `data.gateway`, `data.appId`, `data.status`, `data.error`.
+
+Source: `packages/cli/src/lib/linkedDev/index.ts` (`whoami`), `packages/cli/src/commands/dev/linked.ts`
+
+### LINKED_DEV_REGISTRATION_OFF
+
+Linked dev's first sign-in to a Gateway: its metadata names no `registration_endpoint`, so the CLI can't register itself as a client (the operator set `MCP_DCR_ENABLED=false`; [mcp](/docs/agent/mcp#switches)). Headline `<origin> doesn't register clients, so everyapp dev can't sign in there`. A client id registered before the switch went off keeps working (the CLI reuses the one it has for that Gateway). `data.gateway`.
+
+Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`registerClient`)
+
+### LINKED_DEV_SIGNIN_FAILED
+
+Linked dev's sign-in didn't end in a token: the Gateway refused the registration (`data.status`), the browser came back with an OAuth error (`data.error`: `access_denied` when you chose "Don't allow", or what the Gateway's consent refused: only owners and admins who can open the app, on a workspace with linked dev on, may link), nothing came back within 10 minutes (`data.timeout: true`), the code exchange failed, or a refresh was refused (`data.error: "invalid_grant"`: the grant was revoked, you lost the role, or linked dev was turned off; the stored token is forgotten). The headline says which. Run `pnpm everyapp dev --gateway <url>` (or `dev link`) again once the cause is fixed.
+
+Source: `packages/cli/src/lib/linkedDev/oauth.ts` (`authorize`, `exchange`), `packages/cli/src/lib/linkedDev/index.ts`
 
 ### MANIFEST_NOT_FOUND
 
@@ -2611,6 +2657,12 @@ Source: `packages/cli/src/lib/gateway/lease.ts`
 `db migrate` and `dev`: the app has `.wrangler/state` (where Wrangler kept local data) and no `.cloudflare/state` yet: `Local data now lives in .cloudflare/state` / `Rows in the old .wrangler/state database weren't copied over.` Informational.
 
 Source: `packages/cli/src/commands/localMigrations.ts`, `packages/cli/src/lib/app/localD1.ts`
+
+### LINKED_DEV_REVOKE_FAILED
+
+`dev unlink`: the token was forgotten locally, but the Gateway couldn't be told to revoke the grant (unreachable, OAuth off, or the revocation refused). The grant stands until it is revoked under Settings → Connections on the Gateway ("Apps on your devices") or lapses after 30 idle days. `data.gateway`, `data.appId`.
+
+Source: `packages/cli/src/lib/linkedDev/index.ts` (`unlinkGateway`)
 
 ### LOCAL_DNS_STALE
 

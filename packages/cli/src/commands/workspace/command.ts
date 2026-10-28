@@ -807,6 +807,54 @@ const connectionRoutes = buildRouteMap({
   docs: { brief: "Revoke an AI connection" },
 });
 
+export type LinkedDevSetting = "on" | "off" | "show";
+
+/** The command line's `on|off|show`, in any case. */
+export function parseLinkedDevSetting(value: string): LinkedDevSetting {
+  const setting = value.trim().toLowerCase();
+  if (setting === "on" || setting === "off" || setting === "show") return setting;
+  throw new Error("Use on, off or show.");
+}
+
+const linkedDevCommand = buildCommand({
+  loader: async () => (await import("./linkedDev")).linkedDev,
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          placeholder: "on|off|show",
+          brief: "Turn linked dev on or off for the organization, or show it (default)",
+          parse: parseLinkedDevSetting,
+          optional: true,
+        },
+      ],
+    },
+    flags: workspaceFlags,
+  },
+  docs: {
+    brief: "Let owners and admins run `everyapp dev --gateway` against this Gateway's providers (linked dev), or stop it",
+    fullDescription: [
+      "Linked dev: an owner or admin runs `everyapp dev --gateway <this gateway>` in an app's",
+      "directory, signs in once in the browser, and the app runs on their computer as them with",
+      "its AI, email, provider and member calls going through this Gateway, so no provider key",
+      "is copied to the laptop. Calls bill the organization's providers as the deployed app's",
+      "do (counted, capped, rate-limited per connection, audited: connection.created and a",
+      "connection.used event per day). The app's data stays on the laptop; its own secrets",
+      "stay in .dev.vars. Off by default: a Gateway that didn't turn it on refuses the",
+      "sign-in and the route. Turning it off stops tokens already issued on their next call.",
+      "The organization's owners and admins see and revoke their own links under Settings →",
+      "Connections. Queues organization.linked_dev_changed in the write's own batch.",
+      "Refused on a Gateway from before migration 0022 (GATEWAY_PREDATES_LINKED_DEV): run",
+      "update first.",
+      "",
+      "Examples:",
+      `  ${CLI} workspace linked-dev on`,
+      `  ${CLI} workspace linked-dev show`,
+    ].join("\n"),
+  },
+});
+
 const renameCommand = buildCommand({
   loader: async () => {
     const { rename } = await import(".");
@@ -912,8 +960,9 @@ export const workspaceRoutes = buildRouteMap({
     token: tokenRoutes,
     connections: connectionsCommand,
     connection: connectionRoutes,
+    "linked-dev": linkedDevCommand,
   },
   docs: {
-    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens and AI connections",
+    brief: "Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev",
   },
 });

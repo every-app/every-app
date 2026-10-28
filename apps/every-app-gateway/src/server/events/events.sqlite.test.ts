@@ -1284,6 +1284,14 @@ describe("the event bus (SQLite)", () => {
         user,
         reason: "user",
       }),
+      "organization.linked_dev_changed": catalogue.linkedDevChanged({
+        linkedDev: "on",
+      }),
+      "connection.used": catalogue.connectionUsed({
+        connection: { id: "conn-2", clientName: "everyapp dev on a-laptop" },
+        app: { id: "todo", rowId: "app-1", name: "Todo" },
+        user,
+      }),
       "token.created": catalogue.tokenCreated({
         id: "t1",
         name: "ci-deploy",

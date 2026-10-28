@@ -1,13 +1,18 @@
 /**
  * Dev-mode resolution and host validation for `everyapp dev`.
  *
- * Two modes (the founder's "control plane vs. stub" knob):
+ * Three modes:
  *  - stub   (default): seeded dev user, in-memory registry, minimal launcher.
  *             Zero setup; works on bare `localhost:8787`.
  *  - mirror: real Better Auth session resolved from a SEPARATELY-running local
  *             gateway, real launcher/login forwarded to it. Requires a
  *             two-label base host so the session cookie crosses the
  *             gateway->app subdomain boundary.
+ *  - linked: the real Gateway (`--gateway https://…`, docs/design/linked-dev.md):
+ *             you are the owner or admin whose token the CLI holds, and the
+ *             app's AI, capability, email, members and event calls go through
+ *             that Gateway; data stays local. `--gateway` with a URL that isn't
+ *             this machine selects it.
  */
 import net from "node:net";
 import { EveryAppError } from "@/lib/errors";
@@ -16,26 +21,43 @@ import { replaceFlag } from "./rerun";
 export enum DevMode {
   Stub = "stub",
   Mirror = "mirror",
+  Linked = "linked",
 }
 
 export const DEV_MODE_ENV = "EVERYAPP_DEV_MODE";
 export const DEFAULT_MIRROR_BASE_HOST = "everyapp.localhost";
 
-/** Flag wins over env; env over the `stub` default. Unknown values throw. */
+/**
+ * Flag wins over env; env over the `stub` default, except that `--gateway`
+ * naming a Gateway that isn't this machine (an https URL, or http on a
+ * name other than localhost) selects `linked` when no mode is given.
+ * Unknown values throw.
+ */
 export function resolveDevMode(
   flag: string | undefined,
   env: string | undefined,
+  gateway?: string,
 ): DevMode {
-  const raw = flag ?? env ?? DevMode.Stub;
+  const raw = flag ?? env ?? (gateway && !isLoopbackGatewayUrl(gateway) ? DevMode.Linked : DevMode.Stub);
   const mode = Object.values(DevMode).find((value) => value === raw.toLowerCase());
   if (mode) return mode;
   throw new EveryAppError(
     "INVALID_DEV_MODE",
     [
-      `${flag === undefined ? DEV_MODE_ENV : "--mode"} must be stub or mirror, not "${raw}"`,
-      "stub signs you in as a seeded dev user; mirror uses real login through a local Gateway.",
+      `${flag === undefined ? DEV_MODE_ENV : "--mode"} must be stub, mirror or linked, not "${raw}"`,
+      "stub signs you in as a seeded dev user; mirror uses real login through a local Gateway; linked uses a real Gateway's services as you (--gateway https://…).",
     ].join("\n"),
   );
+}
+
+/** Whether a Gateway URL names this machine (`localhost`, `127.0.0.1`, `::1`): mirror's local Gateway, not a linked one. */
+function isLoopbackGatewayUrl(gateway: string): boolean {
+  try {
+    const { hostname } = new URL(gateway);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
 }
 
 /**

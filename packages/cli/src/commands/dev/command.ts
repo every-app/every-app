@@ -1,6 +1,6 @@
 import { buildCommand, buildRouteMap, numberParser } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
-import { jsonFlag } from "../flags";
+import { jsonFlag, verboseFlag } from "../flags";
 import {
   DEV_TOKEN_ROLES,
   parseAppId,
@@ -30,14 +30,14 @@ const runCommand = buildCommand({
         kind: "parsed",
         parse: String,
         brief:
-          "stub (seeded dev user, default) | mirror (real login through a local Gateway)",
+          "stub (seeded dev user, default) | mirror (real login through a local Gateway) | linked (a real Gateway's services as you; --gateway https://… selects it)",
         optional: true,
       },
       gateway: {
         kind: "parsed",
         parse: String,
         brief:
-          "mirror mode: URL of the separately-run local Gateway (default http://localhost:3000)",
+          "The Gateway: a real one (https://apps.example.com) links this run to it; a local one (default http://localhost:3000) is mirror mode's",
         optional: true,
       },
       baseHost: {
@@ -52,6 +52,7 @@ const runCommand = buildCommand({
         brief: "Start without applying local database migrations",
         optional: true,
       },
+      json: jsonFlag,
     },
   },
   docs: {
@@ -97,6 +98,14 @@ const runCommand = buildCommand({
       "  everyapp.localhost) so the session cookie crosses the subdomain",
       "  boundary; the CLI prints setup guidance if the host is unusable.",
       "  Also settable via EVERYAPP_DEV_MODE; the flag wins.",
+      "--gateway https://<your gateway> (linked dev): the app runs here as you,",
+      "  and its AI, email, provider, member and event calls go through that",
+      "  Gateway, with no provider key on this computer. The first run signs you",
+      "  in once in the browser (owners and admins, on a workspace that ran",
+      "  `everyapp workspace linked-dev on`); the token lives in",
+      "  ~/.config/everyapp/linked-dev.json, never in the app. Calls bill the",
+      "  workspace's providers. Data (D1, KV, R2) stays local; the app's own",
+      "  secrets still come from .dev.vars. `everyapp dev unlink` signs out.",
       "",
       "Ctrl+C stops the app and exits with 130.",
     ].join("\n"),
@@ -176,12 +185,67 @@ const tokenCommand = buildCommand({
   },
 });
 
+const linkFlags = {
+  gateway: {
+    kind: "parsed",
+    parse: String,
+    brief: "The Gateway's URL (else EVERYAPP_GATEWAY_URL)",
+    optional: true,
+  },
+  app: {
+    kind: "parsed",
+    parse: parseAppId,
+    placeholder: "id",
+    brief: "The app id (default: everyapp.config.ts's id in this directory)",
+    optional: true,
+  },
+  json: jsonFlag,
+  verbose: verboseFlag,
+} as const;
+
+const linkCommand = buildCommand({
+  loader: async () => (await import("./link")).link,
+  parameters: { positional: { kind: "tuple", parameters: [] }, flags: linkFlags },
+  docs: {
+    brief: "Sign everyapp dev in to a Gateway for this app (linked dev), without running it",
+    fullDescription: [
+      "Opens the browser at the Gateway's sign-in: approve everyapp dev, and the token for this",
+      "app is kept in ~/.config/everyapp/linked-dev.json (0600). `everyapp dev --gateway <url>`",
+      "does the same on its first run; this is for doing the browser step on its own, or again",
+      "(a new sign-in replaces the earlier one). Owners and admins who can open the app, on a",
+      "workspace with linked dev on (`everyapp workspace linked-dev on`); otherwise the Gateway",
+      "says why (LINKED_DEV_REFUSED, LINKED_DEV_REGISTRATION_OFF, LINKED_DEV_OAUTH_OFF).",
+      "",
+      "Examples:",
+      `  ${CLI} dev link --gateway https://apps.example.com`,
+    ].join("\n"),
+  },
+});
+
+const unlinkCommand = buildCommand({
+  loader: async () => (await import("./link")).unlink,
+  parameters: { positional: { kind: "tuple", parameters: [] }, flags: linkFlags },
+  docs: {
+    brief: "Sign everyapp dev out of a Gateway for this app: revoke the grant there and forget the token",
+    fullDescription: [
+      "Revokes the linked dev grant at the Gateway (it also disappears from Settings → Connections",
+      "there) and removes the token from ~/.config/everyapp/linked-dev.json. If the Gateway can't",
+      "be reached the token is still forgotten (warning LINKED_DEV_REVOKE_FAILED): revoke it under",
+      "Settings → Connections.",
+      "",
+      "Examples:",
+      `  ${CLI} dev unlink --gateway https://apps.example.com`,
+    ].join("\n"),
+  },
+});
+
 /**
  * `everyapp dev` runs the app (the default command, so its flags work as
- * before); `everyapp dev token` mints a dev identity for scripts.
+ * before); `everyapp dev token` mints a dev identity for scripts; `dev link`
+ * and `dev unlink` sign in to and out of a Gateway for linked dev.
  */
 export const devRoutes = buildRouteMap({
-  routes: { run: runCommand, token: tokenCommand },
+  routes: { run: runCommand, token: tokenCommand, link: linkCommand, unlink: unlinkCommand },
   defaultCommand: "run",
   docs: {
     brief: "Run the app locally behind a dev Gateway",

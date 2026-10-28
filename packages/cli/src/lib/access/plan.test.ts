@@ -213,6 +213,7 @@ describe("gatewayDestination", () => {
       "/mcp/*",
       "/oauth/token",
       "/oauth/register",
+      "/linked-dev/*",
       "/.well-known/*",
       "/health",
       "/api/auth/callback/apple",

@@ -698,6 +698,9 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
     EVERYAPP_DEV_CAPABILITIES: TextBinding;
     /** The specs in `.everyapp/providers/*.json`, when the app has any: providers registered on a gateway, for integrationFetch()'s dev fallback. */
     EVERYAPP_DEV_PROVIDERS?: TextBinding;
+    /** Under `everyapp dev --gateway` (linked dev): the gateway-lite's forwarder and the run's nonce, which the SDK's services call the real Gateway through. */
+    EVERYAPP_LINKED_DEV_URL?: TextBinding;
+    EVERYAPP_LINKED_DEV_NONCE?: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
     /** The stub dev gateway's organization (`dev-org`), so `withOrganization(env.EVERY_APP_ORG_ID, …)` works in development as deployed. */
@@ -863,6 +866,9 @@ function devCapabilities(manifest: EveryAppWorkerManifest): TextBinding {
  * kept in step by a test, since this file may not import ../internal).
  */
 const DEV_PROVIDERS_ENV = "EVERYAPP_DEV_PROVIDERS";
+/** Linked dev's env names (`LINKED_DEV_URL_ENV`, `LINKED_DEV_NONCE_ENV` in ../internal/protocol.ts; copies, kept in step by the same test). */
+const LINKED_DEV_URL_ENV = "EVERYAPP_LINKED_DEV_URL";
+const LINKED_DEV_NONCE_ENV = "EVERYAPP_LINKED_DEV_NONCE";
 
 /** One `.everyapp/providers/<id>.json` as the binding carries it. */
 interface DevProviderFile {
@@ -898,6 +904,22 @@ function devProviderFiles(root: string | undefined): DevProviderFile[] {
     }
     return { file: `.everyapp/providers/${name}`, spec };
   });
+}
+
+/**
+ * Linked dev (`everyapp dev --gateway`, docs/design/linked-dev.md): the
+ * gateway-lite starts the app's dev server with the forwarder's loopback
+ * URL and the run's nonce in the process environment; the dev Worker gets
+ * both as text, and the SDK's `gatewayBinding()` builds the shim from
+ * them in place of the missing service binding. Absent in every other
+ * run, and never in a deploy.
+ */
+function addLinkedDev(env: Record<string, EveryAppBinding>): void {
+  const url = process.env[LINKED_DEV_URL_ENV]?.trim();
+  const nonce = process.env[LINKED_DEV_NONCE_ENV];
+  if (!url || !nonce) return;
+  env[LINKED_DEV_URL_ENV] = { type: "text", value: url };
+  env[LINKED_DEV_NONCE_ENV] = { type: "text", value: nonce };
 }
 
 /** EVERYAPP_DEV_PROVIDERS, when the app has any spec files. */
@@ -1035,6 +1057,7 @@ export function everyAppWorker<
     // so `everyapp dev --mode mirror`'s real organizations still open.
     env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);
+    addLinkedDev(env);
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
@@ -1195,6 +1218,7 @@ export function everyAppAuxiliaryWorker<
     env["GATEWAY_URL"] = devGatewayUrl();
     env["EVERY_APP_ORG_ID"] = { type: "text", value: DEV_ORG_ID };
     addDevProviders(env, options.root);
+    addLinkedDev(env);
   }
   addAiBindings(env, manifest, deploy);
   addBrowserBindings(env, manifest);

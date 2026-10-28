@@ -68,8 +68,9 @@ export interface McpAuth {
   resourceScheme: ResourceScheme;
   /**
    * The app resources this build knows: the origin of every active
-   * first-party app host when the list was read (sorted). A token for an
-   * origin not here is refused; `refreshMcpAuth` re-reads the list.
+   * first-party app host, and the linked dev resource of every app whose
+   * organization opted in, when the list was read. A token for a resource
+   * not here is refused; `refreshMcpAuth` re-reads the list.
    */
   appResources: readonly string[];
   /** Whether clients may register dynamically (/oauth/register). */
@@ -315,7 +316,7 @@ export async function refreshMcpAuth(
   const issuer = canonicalIssuer(env.GATEWAY_URL);
   if (!issuer) return getMcpAuth(env);
   const scheme = new URL(issuer).protocol as ResourceScheme;
-  const origins = await currentAppResources(scheme, { needed });
+  const origins = await currentAppResources(scheme, { needed, issuer });
   if (
     origins.length !== builtAppResources.length ||
     origins.some((origin, index) => origin !== builtAppResources[index])
@@ -350,6 +351,24 @@ export async function mcpAuthForResource(
  * then resolved with `resolveNativeCaller` (validate.ts).
  */
 export async function validateAppHostToken(
+  env: Cloudflare.Env,
+  resource: string,
+  token: string,
+): Promise<ValidatedAccessToken | null> {
+  const mcpAuth = await mcpAuthForResource(env, resource);
+  if (!mcpAuth || !mcpAuth.appResources.includes(resource)) return null;
+  return mcpAuth.authorizationServer.validateToken(resource, token, env);
+}
+
+/**
+ * Validate a bearer presented at `/linked-dev/<app id>/…` for that app's
+ * linked dev resource (docs/design/linked-dev.md): null for a token of
+ * another audience (an app host's, `/mcp`), expired or unknown, for an
+ * app whose organization didn't turn linked dev on (the resource isn't
+ * listed), and when OAuth is off. The props of a validated token are then
+ * resolved with `resolveDevCaller` (validate.ts).
+ */
+export async function validateLinkedDevToken(
   env: Cloudflare.Env,
   resource: string,
   token: string,

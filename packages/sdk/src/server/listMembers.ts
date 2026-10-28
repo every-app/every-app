@@ -10,7 +10,11 @@ import {
   type GatewayCallFor,
 } from "./attribution.js";
 import { getEveryAppUser } from "./everyApp.js";
-import { BINDING_ORIGIN, type GatewayServiceBinding } from "./gatewayFetch.js";
+import {
+  BINDING_ORIGIN,
+  gatewayBinding,
+  type GatewayServiceBinding,
+} from "./gatewayFetch.js";
 import { GatewayRefusalError, gatewayRefusal } from "./refusal.js";
 
 export interface ListMembersOptions {
@@ -48,9 +52,7 @@ export async function listMembers({
 }: ListMembersOptions): Promise<ListMembersResult> {
   const target = attributionFor(env, explicitTarget, "listMembers");
   const values = env as Record<string, unknown>;
-  const binding = values["EVERY_APP_GATEWAY"] as
-    | GatewayServiceBinding
-    | undefined;
+  const binding = gatewayBinding(env);
   if (binding) {
     if (typeof binding.fetch !== "function") {
       throw new ConfigurationError(

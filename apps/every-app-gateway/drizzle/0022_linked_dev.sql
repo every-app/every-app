@@ -1,0 +1,1 @@
+ALTER TABLE `org_settings` ADD `linked_dev` integer DEFAULT false NOT NULL;

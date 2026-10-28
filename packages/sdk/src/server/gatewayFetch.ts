@@ -6,8 +6,12 @@ import {
   authorizationOf,
   ConfigurationError,
   DEV_AI_PROVIDERS,
+  DEV_ENV,
   devAiProvider,
   joinProviderUrl,
+  LINKED_DEV_HEADER,
+  LINKED_DEV_NONCE_ENV,
+  LINKED_DEV_URL_ENV,
   resolveAiDefault,
   type DevAiProviderSpec,
 } from "../internal/index.js";
@@ -22,6 +26,57 @@ const AI_PROXY_PREFIX = "/api/ai/";
 
 export interface GatewayServiceBinding {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+}
+
+/**
+ * The Gateway the SDK's services call: the `EVERY_APP_GATEWAY` service
+ * binding when deployed; under `everyapp dev --gateway` (linked dev,
+ * docs/design/linked-dev.md) a `{ fetch }` that sends the same requests to
+ * the gateway-lite's loopback forwarder, which adds the person's token and
+ * forwards them to the real Gateway's `/linked-dev/<app>` route. Undefined
+ * with neither (stub and mirror modes: the `.dev.vars` fallbacks). A value
+ * under the binding's name that isn't one is answered as before by each
+ * caller (`ConfigurationError`).
+ */
+export function gatewayBinding(env: object): GatewayServiceBinding | undefined {
+  const values = env as Record<string, unknown>;
+  const binding = values["EVERY_APP_GATEWAY"];
+  if (binding) return binding as GatewayServiceBinding;
+  if (!values[DEV_ENV]) return undefined;
+  const url = values[LINKED_DEV_URL_ENV];
+  const nonce = values[LINKED_DEV_NONCE_ENV];
+  if (typeof url !== "string" || !url.trim() || typeof nonce !== "string") {
+    return undefined;
+  }
+  return linkedDevBinding(url.trim(), nonce);
+}
+
+/**
+ * The linked dev shim: a request to the binding's origin goes to the
+ * forwarder's URL with the same path and query, the run's nonce on it. The
+ * forwarder answers as the Gateway did, refusals included; nothing here
+ * falls back to a local key.
+ */
+export function linkedDevBinding(
+  forwarderUrl: string,
+  nonce: string,
+): GatewayServiceBinding {
+  const base = forwarderUrl.replace(/\/+$/, "");
+  return {
+    fetch(input, init) {
+      const outbound = new Request(input, init);
+      const url = new URL(outbound.url);
+      const headers = new Headers(outbound.headers);
+      headers.set(LINKED_DEV_HEADER, nonce);
+      return fetch(
+        streamingRequest(
+          `${base}${url.pathname}${url.search}`,
+          outbound,
+          headers,
+        ),
+      );
+    },
+  };
 }
 
 /** The env names createGatewayFetch reads. */
@@ -84,7 +139,7 @@ export function createGatewayFetch({
   // Checked now, so a call nobody's fails where the fetch is made; and
   // again per call, where an identity may since have neared its expiry.
   attributionFor(env, explicitTarget, "createGatewayFetch");
-  const binding = env.EVERY_APP_GATEWAY;
+  const binding = gatewayBinding(env);
   const devProviders = env.EVERYAPP_DEV ? localProviders(env) : {};
 
   if (binding && typeof binding.fetch !== "function") {

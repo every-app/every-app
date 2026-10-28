@@ -207,7 +207,7 @@ describe("help", () => {
     expect(groupHelp(["dev"])).toBeNull();
     const help = groupHelp(["dev", "--help"])!;
     expect(help).toContain(`${CLI} dev [--port value]`);
-    expect(help).toMatch(/\n {2}token {2}Print a dev identity token/);
+    expect(help).toMatch(/\n {2}token +Print a dev identity token/);
     expect(commandPaths()).toEqual(expect.arrayContaining(["dev", "dev token"]));
     expect(commandPaths()).not.toContain("dev run");
     expect((await parse("dev", "token", "--role", "guest")).problems[0]).toMatchObject({

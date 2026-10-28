@@ -147,6 +147,14 @@ interface HandleAppGatewayRequestOptions {
     appRowId: string,
     check: MonthlyCapCheck,
   ) => Promise<void>;
+  /**
+   * Linked dev (server/linked-dev.ts, docs/design/linked-dev.md §4.3): the
+   * caller already resolved from its token, so no identity or
+   * organization header is read (`dev.identity-never-forwarded`: a dev
+   * identity JWT must never be verified here). The organization is the
+   * token's, the user the owner or admin behind it.
+   */
+  trusted?: { organizationId: string; user: EveryAppUser };
 }
 
 type AppGatewayErrorCode =
@@ -243,6 +251,7 @@ export async function handleAppGatewayRequest({
   oauth = loadOAuthProxyDeps,
   aiDefault = readAiDefaultSettings,
   onCap = noteCapCheckLater,
+  trusted,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
@@ -382,6 +391,7 @@ export async function handleAppGatewayRequest({
         props,
         env,
         organizations,
+        trusted,
       );
       const deps = await (events ?? loadAppEmitDeps)();
       return handleAppEmit({ request, app, organizationId, user }, deps);
@@ -423,6 +433,7 @@ export async function handleAppGatewayRequest({
                       props,
                       env,
                       organizations,
+                      trusted,
                     );
                     return { organizationId, user };
                   } catch {
@@ -439,6 +450,7 @@ export async function handleAppGatewayRequest({
             props,
             env,
             organizations,
+            trusted,
           );
           if (providerCall) await enforceCap(organizationId);
           attributed = { organizationId, orgSource, user };
@@ -502,7 +514,14 @@ export async function handleAppGatewayRequest({
       // default resolves on the organization's choice when the request
       // says whose it is, else on the order alone.
       const organizationId = allowed
-        ? await attributeCall(request, app, props, env, organizations).then(
+        ? await attributeCall(
+            request,
+            app,
+            props,
+            env,
+            organizations,
+            trusted,
+          ).then(
             (attribution) => attribution.organizationId,
             () => null,
           )
@@ -547,6 +566,7 @@ export async function handleAppGatewayRequest({
       props,
       env,
       organizations,
+      trusted,
     );
     await enforceCap(organizationId);
     attributed = { organizationId, orgSource, user };
@@ -747,7 +767,7 @@ interface Attribution {
    * organization's own app), the forwarded identity, or the shared app's
    * `x-everyapp-org` for background work.
    */
-  orgSource: "props" | "jwt" | "header";
+  orgSource: "props" | "jwt" | "header" | "dev";
   user: EveryAppUser | null;
 }
 
@@ -769,7 +789,23 @@ async function attributeCall(
   props: AppCallerProps,
   env: AppGatewayEnv,
   organizations: OrganizationDirectory,
+  trusted?: { organizationId: string; user: EveryAppUser },
 ): Promise<Attribution> {
+  // Linked dev: attributed by its token, never by a header (the route
+  // strips them, and a dev identity JWT verifies against no key here).
+  if (trusted) {
+    if (trusted.organizationId !== props.organizationId) {
+      throw orgMismatch(
+        props,
+        "the linked dev token's organization isn't the app's",
+      );
+    }
+    return {
+      organizationId: trusted.organizationId,
+      orgSource: "dev",
+      user: trusted.user,
+    };
+  }
   const asserted = request.headers.get(ORG_HEADER)?.trim() || null;
   if (app.scope !== "shared") {
     if (asserted !== null && asserted !== props.organizationId) {
