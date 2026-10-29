@@ -42,6 +42,7 @@ import {
 } from "./consent";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
 import type { McpGrantProps } from "./validate";
+import { BRAND } from "@/brand";
 
 /** The largest consent form accepted (a few hundred app ids at most). */
 const MAX_DECISION_BODY_BYTES = 64 * 1024;
@@ -112,7 +113,7 @@ export async function handleAuthorize(
     return errorPage(
       400,
       CANT_CONNECT,
-      "This app didn't use PKCE (S256), which EveryApp requires.",
+      `This app didn't use PKCE (S256), which ${BRAND.name} requires.`,
     );
   }
   if (onPlatformDomain(authRequest.redirectUri, mcpAuth.issuer, env)) {

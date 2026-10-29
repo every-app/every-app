@@ -5,6 +5,8 @@
  * markup into someone else's inbox, or a line break into a subject.
  */
 
+import { BRAND } from "@/brand";
+
 type Email = { subject: string; text: string; html: string };
 
 const HTML_ESCAPES: Record<string, string> = {
@@ -37,7 +39,7 @@ function link(url: string, label: string): string {
 
 export function verificationEmail(url: string): Email {
   return {
-    subject: "Verify your EveryApp email",
+    subject: `Verify your ${BRAND.name} email`,
     text: `Use this link to verify your email address: ${url}`,
     html: `<p>Use this link to verify your email address:</p><p>${link(url, url)}</p>`,
   };
@@ -45,7 +47,7 @@ export function verificationEmail(url: string): Email {
 
 export function passwordResetEmail(url: string): Email {
   return {
-    subject: "Reset your EveryApp password",
+    subject: `Reset your ${BRAND.name} password`,
     text: `Use this link to reset your password: ${url}`,
     html: `<p>Use this link to reset your password:</p><p>${link(url, url)}</p>`,
   };

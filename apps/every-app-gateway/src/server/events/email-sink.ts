@@ -19,6 +19,7 @@ import { OrganizationMembersRepository } from "@/server/repositories/Organizatio
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 import { adminPathFor, eventEmailFields } from "./catalogue";
 import type { SinkResult } from "./sink-result";
+import { BRAND } from "@/brand";
 
 /** The gateway's mail as the sink uses it; tests pass a fake. */
 export interface EventMailer {
@@ -100,7 +101,7 @@ export async function sendEventEmail(
     summary: input.summary,
     fields: eventEmailFields(input.type, input.data),
     url: `${input.gatewayUrl}${path}`,
-    pageLabel: PAGE_LABELS[path] ?? "Open EveryApp",
+    pageLabel: PAGE_LABELS[path] ?? `Open ${BRAND.name}`,
   });
   const hashes = new Map<string, string>();
   for (const recipient of recipients) {

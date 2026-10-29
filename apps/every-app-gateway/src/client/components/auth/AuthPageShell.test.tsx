@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { AuthCard, NoEmailResetNotice } from "./AuthPageShell";
+import { BRAND } from "@/brand";
 
 function render(element: React.ReactElement) {
   const host = document.createElement("div");
@@ -23,7 +24,7 @@ describe("the product lockup on signed-out pages", () => {
     );
     const image = host.querySelector("img");
     expect(image?.getAttribute("src")).toBe("/android-chrome-192x192.png");
-    expect(image?.parentElement?.textContent).toBe("EveryApp");
+    expect(image?.parentElement?.textContent).toBe(BRAND.name);
     expect(host.querySelector("a")).toBeNull();
     expect(host.querySelector("h1")?.textContent).toBe("Sign in");
   });
@@ -33,7 +34,7 @@ describe("the product lockup on signed-out pages", () => {
     expect(host.querySelector("img")?.getAttribute("src")).toBe(
       "/android-chrome-192x192.png",
     );
-    expect(host.textContent).toContain("EveryApp");
+    expect(host.textContent).toContain(BRAND.name);
     expect(host.querySelector("a")).toBeNull();
   });
 });

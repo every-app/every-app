@@ -6,6 +6,7 @@ import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { BRAND } from "./src/brand";
 
 // Build stamp shown in the bottom-right badge so a deployed gateway can be
 // matched to a commit. "*" = built from a dirty working tree.
@@ -80,8 +81,8 @@ export default defineConfig(({ isPreview }) => ({
         enabled: false,
       },
       manifest: {
-        name: "EveryApp",
-        short_name: "EveryApp",
+        name: BRAND.name,
+        short_name: BRAND.shortName,
         description: "Embedded apps platform",
         theme_color: "#ffffff",
         background_color: "#ffffff",

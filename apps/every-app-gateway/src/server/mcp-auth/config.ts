@@ -30,6 +30,7 @@ import {
   resolveOauthCaller,
   type McpCaller,
 } from "./validate";
+import { BRAND } from "@/brand";
 
 export const OFFLINE_ACCESS_SCOPE = "offline_access";
 const AUTHORIZE_PATH = "/oauth/authorize";
@@ -177,7 +178,7 @@ function build(
     resourceMetadata: {
       resource,
       authorization_servers: [issuer],
-      resource_name: "EveryApp",
+      resource_name: BRAND.name,
     },
     // Advertised in the 401 challenge and the protected-resource metadata,
     // not enforced (the validator below takes a token with either): clients

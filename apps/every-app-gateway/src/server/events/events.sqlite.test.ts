@@ -6,6 +6,7 @@
  * once. The names are what docs/threat-model-invariants.md cites for
  * docs/design/2026-10-events-out.md section 12.
  */
+import { BRAND } from "@/brand";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
@@ -401,7 +402,7 @@ describe("the event bus (SQLite)", () => {
         lastStatusCode: 200,
         event: expect.objectContaining({
           type: "ping",
-          summary: "Test event from EveryApp",
+          summary: `Test event from ${BRAND.name}`,
         }),
       });
       expect(await deliveriesOf(other.subscription.id)).toHaveLength(0);
@@ -1562,7 +1563,7 @@ describe("the event bus (SQLite)", () => {
       expect(samples["provider.connection_expired"]!.dedupeKey).toBe(
         "provider.connection_expired:conn_1",
       );
-      expect(line("ping")).toBe("Test event from EveryApp");
+      expect(line("ping")).toBe(`Test event from ${BRAND.name}`);
       expect(line("member.invitation_cancelled")).toBe(
         "Ada cancelled the invitation for jo@acme.example",
       );

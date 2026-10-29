@@ -11,6 +11,7 @@
  * protections, the per-request re-checks, personal tokens, the kill switch
  * and the hourly housekeeping.
  */
+import { BRAND } from "@/brand";
 import {
   afterEach,
   beforeAll,
@@ -817,7 +818,7 @@ describe("discovery", () => {
       authorization_servers: [GATEWAY],
       scopes_supported: ["mcp:read", "mcp:write"],
       bearer_methods_supported: ["header"],
-      resource_name: "EveryApp",
+      resource_name: BRAND.name,
     });
     // The origin's own metadata describes no resource here.
     expect((await send("/.well-known/oauth-protected-resource")).status).toBe(

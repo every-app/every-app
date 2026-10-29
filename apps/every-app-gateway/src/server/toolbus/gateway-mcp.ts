@@ -84,6 +84,7 @@ import {
   syncUnsyncedCatalogs,
 } from "./catalog-sync";
 import { registersProviders, servedApp, toolBusHttp } from "./runtime";
+import { BRAND } from "@/brand";
 
 /**
  * Browser origins allowed to call the gateway's /mcp besides its own:
@@ -156,7 +157,7 @@ export function listingChoice(request: Request): Listing | undefined {
 function refusalMessage(reason: RefusedCaller["reason"]): string | null {
   switch (reason) {
     case "not_connected":
-      return `No EveryApp account is connected to this Cloudflare Access identity. Open ${env.GATEWAY_URL?.trim() || "the gateway"} in your browser, sign in once, then connect again.`;
+      return `No ${BRAND.name} account is connected to this Cloudflare Access identity. Open ${env.GATEWAY_URL?.trim() || "the gateway"} in your browser, sign in once, then connect again.`;
     case "account_deactivated":
       return "This account has been deactivated.";
     case "organization_unresolved":
