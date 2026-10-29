@@ -104,40 +104,56 @@ function closeButtons() {
   );
 }
 
-it("mounts with the unmet setting, its link, the command and the optional section", () => {
+it("gives an admin the steps: the unmet setting and its link, the command, and the optional section", () => {
   const text = render(true);
-  expect(text).toContain("OpenSEO needs setup");
-  expect(text).toContain("Set these before anyone can open it.");
+  expect(text).toContain("Set up OpenSEO");
+  expect(text).toContain("Get 1 key");
   expect(text).toContain("DataForSEO");
   expect(text).toContain("DATAFORSEO_API_KEY");
   expect(text).toContain("Keyword data.");
-  expect(text).toContain("Get it at app.dataforseo.com/api-access");
+  expect(text).toContain("Run this in a terminal");
   expect(text).toContain("pnpm everyapp configure openseo");
-  // One line under the command: what it asks, then what follows.
-  expect(text).toContain(
-    "It asks for each setting above, then offers the optional ones. Run it in a terminal, then come back here: the app opens.",
-  );
+  expect(text).toContain("Come back here: OpenSEO opens on its own");
   expect(text).not.toContain("Ask an admin to run:");
-  expect(text).toContain("Optional (1)");
+  expect(text).toContain("Add later · 1 optional");
   // Gateway settings are read live: nothing for `status` to re-read.
   expect(text).not.toContain("pnpm everyapp status");
   const link = document.body.querySelector<HTMLAnchorElement>(
     'a[href="https://app.dataforseo.com/api-access"]',
   );
+  expect(link?.textContent).toContain("Get key");
   expect(link?.target).toBe("_blank");
   // One way to close, in the footer, like every other dialog.
   expect(closeButtons()).toHaveLength(1);
 });
 
+it("ticks off a setting that is already set", () => {
+  // DataForSEO set, the app's own secret still to go.
+  const dataforseo = { ...SETUP.settings[0]!, set: true, blocking: false };
+  const text = render(true, {
+    ...SETUP_OWN_SECRET,
+    settings: [dataforseo, ...SETUP_OWN_SECRET.settings],
+  });
+  expect(text).toContain("DataForSEOSet");
+  // A set row says nothing more about getting it.
+  expect(text).not.toContain("Keyword data.");
+  expect(
+    document.body.querySelector(
+      'a[href="https://app.dataforseo.com/api-access"]',
+    ),
+  ).toBeNull();
+});
+
 it("tells a member to ask an admin", () => {
   const text = render(false);
-  expect(text).toContain("It opens once these are set.");
+  expect(text).toContain("OpenSEO needs setup");
+  expect(text).toContain("DataForSEO");
   expect(text).toContain("Ask an admin to run:");
   expect(text).toContain("pnpm everyapp configure openseo");
-  expect(text).toContain("It asks for each setting above");
-  expect(text).not.toContain("Run it in a terminal");
-  expect(text).not.toContain("Optional (");
+  expect(text).not.toContain("Run this in a terminal");
+  expect(text).not.toContain("optional");
   expect(text).not.toContain("pnpm everyapp status");
+  expect(document.body.querySelector("a")).toBeNull();
 });
 
 it("names an app's own secret once and says status re-reads the Worker", () => {

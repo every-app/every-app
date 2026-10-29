@@ -9,7 +9,7 @@ import {
   evaluateAppSettings,
   type SettingsManifestLike,
 } from "@every-app/sdk/internal";
-import { PLATFORM_NOTE, setupDialogModel } from "./appSetup";
+import { SetupAction, setupDialogModel } from "./appSetup";
 
 const OPENSEO: SettingsManifestLike & { id: string } = {
   id: "openseo",
@@ -55,14 +55,31 @@ function setupOf(
 }
 
 describe("setupDialogModel", () => {
-  it("lists each unmet setting with its names, why and where to get it, then the one command", () => {
+  it("gives whoever runs it the steps: what is needed, ticked off when set, and the one command", () => {
     const model = setupDialogModel(setupOf(OPENSEO, ["OPENROUTER_API_KEY"]), {
       name: "OpenSEO",
       canRun: true,
     });
-    expect(model.title).toBe("OpenSEO needs setup");
-    expect(model.intro).toBe("Set these before anyone can open it.");
-    expect(model.unmet).toEqual([
+    expect(model.action).toEqual({
+      kind: SetupAction.Run,
+      command: "pnpm everyapp configure openseo",
+    });
+    expect(model.title).toBe("Set up OpenSEO");
+    // What is left to get; OpenRouter is already set.
+    expect(model.gather).toBe("Get 1 key");
+    expect(model.needed).toEqual([
+      {
+        id: "openrouter",
+        label: "OpenRouter",
+        names: ["OPENROUTER_API_KEY"],
+        why: null,
+        takes: null,
+        docs: {
+          href: "https://openrouter.ai/settings/keys",
+          host: "openrouter.ai",
+        },
+        done: true,
+      },
       {
         id: "dataforseo",
         label: "DataForSEO",
@@ -71,28 +88,22 @@ describe("setupDialogModel", () => {
         takes: null,
         docs: {
           href: "https://app.dataforseo.com/api-access",
-          label: "app.dataforseo.com/api-access",
+          host: "app.dataforseo.com",
         },
+        done: false,
       },
     ]);
     expect(model.anyOf).toEqual([]);
-    expect(model.command).toEqual({
-      heading: null,
-      command: "pnpm everyapp configure openseo",
-      configures: true,
-      // What follows, for whoever runs it: the dialog closes on its own.
-      next: "Run it in a terminal, then come back here: the app opens.",
-    });
-    expect(model.platformNote).toBeNull();
     // What the admin could also set, for the feature that uses it.
     expect(model.optional.map((row) => [row.label, row.why])).toEqual([
       ["Context.dev", "JS rendering in audits."],
     ]);
+    expect(model.optionalSummary).toBe("Context.dev");
     // Every setting here is the Gateway's, read live: nothing to re-read.
     expect(model.statusHint).toBe(false);
   });
 
-  it("says what one of the app's plain settings takes", () => {
+  it("counts what is still unset, and says what one of the app's plain settings takes", () => {
     const model = setupDialogModel(
       setupOf(
         {
@@ -110,7 +121,8 @@ describe("setupDialogModel", () => {
       ),
       { name: "Mission Control", canRun: true },
     );
-    expect(model.unmet.map((row) => [row.label, row.takes])).toEqual([
+    expect(model.gather).toBe("Have 2 settings ready");
+    expect(model.needed.map((row) => [row.label, row.takes])).toEqual([
       ["POSTHOG_HOST", "an http or https URL"],
       ["REGION", "us or eu"],
     ]);
@@ -121,17 +133,15 @@ describe("setupDialogModel", () => {
       name: "Research Desk",
       canRun: true,
     });
-    expect(admin.unmet).toEqual([
-      {
-        id: "MAIN_SECRET",
-        label: "MAIN_SECRET",
-        names: [],
-        why: "Signs share links.",
-        takes: null,
-        docs: null,
-      },
-    ]);
-    expect(admin.command?.command).toBe("pnpm everyapp configure research");
+    expect(admin.needed.find((row) => !row.done)).toEqual({
+      id: "MAIN_SECRET",
+      label: "MAIN_SECRET",
+      names: [],
+      why: "Signs share links.",
+      takes: null,
+      docs: null,
+      done: false,
+    });
     expect(admin.optional.map((row) => row.label)).toEqual(["WEBHOOK_SECRET"]);
     expect(admin.statusHint).toBe(true);
     // A member can't run status: no hint.
@@ -146,51 +156,50 @@ describe("setupDialogModel", () => {
       name: "Research Desk",
       canRun: true,
     });
-    expect(gatewayOnly.unmet.map((row) => row.label)).toEqual(["OpenRouter"]);
+    expect(gatewayOnly.needed.map((row) => [row.label, row.done])).toEqual([
+      ["OpenRouter", false],
+      ["MAIN_SECRET", true],
+    ]);
     expect(gatewayOnly.optional.map((row) => row.label)).toEqual([
       "WEBHOOK_SECRET",
     ]);
     expect(gatewayOnly.statusHint).toBe(false);
   });
 
-  it("tells a member to ask an admin, and keeps the optional settings for whoever can set them", () => {
+  it("tells a member to ask an admin, with nothing to get and no optional settings", () => {
     const model = setupDialogModel(setupOf(OPENSEO, ["OPENROUTER_API_KEY"]), {
       name: "OpenSEO",
       canRun: false,
     });
-    expect(model.intro).toBe("It opens once these are set.");
-    expect(model.unmet.map((row) => row.label)).toEqual(["DataForSEO"]);
-    expect(model.command).toEqual({
-      heading: "Ask an admin to run:",
+    expect(model.action).toEqual({
+      kind: SetupAction.AskAdmin,
       command: "pnpm everyapp configure openseo",
-      configures: true,
-      // "Run it" would address the admin, not this reader.
-      next: null,
     });
+    expect(model.title).toBe("OpenSEO needs setup");
+    expect(model.needed.map((row) => [row.label, row.done])).toEqual([
+      ["OpenRouter", true],
+      ["DataForSEO", false],
+    ]);
+    // Where a key comes from is for whoever sets it.
+    expect(model.needed.every((row) => row.docs === null)).toBe(true);
     expect(model.optional).toEqual([]);
   });
 
-  it("says one member of an any-of group is enough, with the same one command", () => {
+  it("says one member of an any-of group is enough, and counts the group once", () => {
     const none = setupDialogModel(setupOf(INBOX, []), {
       name: "Inbox",
       canRun: true,
     });
-    expect(none.unmet.map((row) => row.label)).toEqual([
+    expect(none.needed.map((row) => row.label)).toEqual([
       "OpenRouter",
       "Workers AI",
     ]);
+    expect(none.gather).toBe("Get 1 key");
     expect(none.anyOf).toEqual([
       "One of these is enough: OpenRouter, Workers AI",
     ]);
-    expect(none.command).toEqual({
-      heading: null,
-      command: "pnpm everyapp configure inbox",
-      configures: true,
-      next: "Run it in a terminal, then come back here: the app opens.",
-    });
 
-    // A provider app's command sets its key by name: nothing to explain,
-    // and no line under it for the next step either.
+    // A provider app's command sets its key by name, in the same steps.
     const provider = setupDialogModel(
       {
         ...setupOf(INBOX, []),
@@ -198,22 +207,44 @@ describe("setupDialogModel", () => {
       },
       { name: "DataForSEO", canRun: true },
     );
-    expect(provider.command).toEqual({
-      heading: null,
+    expect(provider.action).toEqual({
+      kind: SetupAction.Run,
       command: "pnpm everyapp secret set DATAFORSEO_API_KEY",
-      configures: false,
-      next: null,
     });
 
-    // One set: the other is something the admin could still set.
+    // One set meets the group: it is ticked off, and the other no longer
+    // counts as needed.
     const one = setupDialogModel(setupOf(INBOX, ["OPENROUTER_API_KEY"]), {
       name: "Inbox",
       canRun: true,
     });
-    expect(one.unmet).toEqual([]);
+    expect(one.needed.map((row) => [row.label, row.done])).toEqual([
+      ["OpenRouter", true],
+    ]);
     expect(one.anyOf).toEqual([]);
-    expect(one.command).toBeNull();
-    expect(one.optional.map((row) => row.label)).toEqual(["Workers AI"]);
+  });
+
+  it("names the first optional settings in the folded line", () => {
+    const model = setupDialogModel(
+      setupOf(
+        {
+          id: "crm",
+          capabilities: {
+            context: { access: "read" },
+            "google-workspace": { access: "write", optional: true },
+            "microsoft-365": { access: "write", optional: true },
+            slack: { access: "write", optional: true },
+          },
+          secrets: [
+            { name: "GITHUB_TOKEN", optional: true },
+            { name: "ERASURE_SECRET", optional: true },
+          ],
+        },
+        [],
+      ),
+      { name: "OpenCRM", canRun: true },
+    );
+    expect(model.optionalSummary).toBe("Google, Microsoft 365, Slack, +2 more");
   });
 
   it("says the platform is on it when nobody here can run the command", () => {
@@ -221,22 +252,15 @@ describe("setupDialogModel", () => {
       setupOf(OPENSEO, ["OPENROUTER_API_KEY"], false),
       { name: "OpenSEO", canRun: true },
     );
-    expect(model.unmet.map((row) => row.label)).toEqual(["DataForSEO"]);
-    expect(model.command).toBeNull();
-    expect(model.platformNote).toBe(PLATFORM_NOTE);
-  });
-
-  it("leaves out the optional settings too for a shared app of another organization", () => {
-    // How Admin → Apps and the launcher show a read-only shared app: the
-    // platform sets its settings, the optional ones included, so the
-    // reader sees what keeps it closed and who is on it, nothing to do.
-    const model = setupDialogModel(
-      setupOf(OPENSEO, ["OPENROUTER_API_KEY"], false),
-      { name: "OpenSEO", canRun: false },
-    );
-    expect(model.unmet.map((row) => row.label)).toEqual(["DataForSEO"]);
-    expect(model.command).toBeNull();
-    expect(model.platformNote).toBe(PLATFORM_NOTE);
+    expect(model.action).toEqual({ kind: SetupAction.Platform });
+    expect(model.title).toBe("OpenSEO needs setup");
+    expect(model.needed.map((row) => row.label)).toEqual([
+      "OpenRouter",
+      "DataForSEO",
+    ]);
+    // Nothing for this reader to set, the optional settings included.
+    expect(model.needed.every((row) => row.docs === null)).toBe(true);
     expect(model.optional).toEqual([]);
+    expect(model.statusHint).toBe(false);
   });
 });
