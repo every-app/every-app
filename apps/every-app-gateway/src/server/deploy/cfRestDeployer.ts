@@ -9,16 +9,15 @@ import {
   isCloudflareNotFound,
   type CloudflareRest,
 } from "@/server/deploy/cf-rest";
-import { DeployError } from "./errors";
-import type { DeployerPort } from "./port";
-import { env } from "cloudflare:workers";
 import { gatewayNamesOf } from "@/server/gateway-name";
 import type { AppRow } from "@every-app/perimeter/registry";
+import { env } from "cloudflare:workers";
 import {
   recordBrowserGatewayDeployment,
   withInstallLease,
 } from "./browser-install";
-import { claimBrowserWorker, recordBrowserWorkerVersion } from "./ledger";
+import { DeployError } from "./errors";
+import type { DeployerPort } from "./port";
 
 interface DeployerEnv {
   CF_DEPLOY_TOKEN?: string;
@@ -31,7 +30,6 @@ export class CfRestDeployer implements DeployerPort {
     private readonly cf: CloudflareRest,
     private readonly namespace: string | null,
     private readonly lease?: () => Promise<void>,
-    private readonly app?: AppRow,
   ) {}
 
   /** `fetch`: tests pass the fake Cloudflare's API. */
@@ -76,8 +74,8 @@ export class CfRestDeployer implements DeployerPort {
     );
   }
 
-  usingLease(lease: () => Promise<void>, app: AppRow) {
-    return new CfRestDeployer(this.cf, this.namespace, lease, app);
+  usingLease(lease: () => Promise<void>) {
+    return new CfRestDeployer(this.cf, this.namespace, lease);
   }
 
   async createDatabase(name: string): Promise<string> {
@@ -100,60 +98,9 @@ export class CfRestDeployer implements DeployerPort {
 
   async scriptMigrationTag(workerName: string) {
     await this.lease?.();
-    if (this.namespace === null) {
-      if (this.app?.status === "active" || this.app?.status === "disabled") {
-        throw new DeployError(
-          "APP_ALREADY_INSTALLED",
-          409,
-          "This app is already installed. Open it from your Gateway; use the CLI to update it.",
-        );
-      }
-      let exists = true;
-      try {
-        await this.cf.scripts.settings(workerName);
-      } catch (error) {
-        if (!isCloudflareNotFound(error)) throw error;
-        exists = false;
-      }
-      await this.lease?.();
-      const recordedVersion = await claimBrowserWorker(workerName, exists);
-      if (!exists) return undefined;
-      const script = (await this.cf.scripts.list()).find(
-        (item) => item.id === workerName,
-      );
-      if (!script)
-        throw new DeployError(
-          "WORKER_OWNED",
-          409,
-          "Cloudflare did not list the existing Worker's ownership. Nothing was uploaded.",
-        );
-      const app = this.app;
-      if (
-        !app ||
-        !script.tags?.includes(`org-${app.organizationId}`) ||
-        !script.tags.includes(`app-${app.appSlug}`)
-      )
-        throw new DeployError(
-          "WORKER_OWNED",
-          409,
-          "A Worker with this name already exists outside this browser installer. Use the CLI to manage it.",
-        );
-      if (
-        (recordedVersion || app.versionId) &&
-        ![recordedVersion, app.versionId].includes(
-          await this.servingVersionId(workerName),
-        )
-      )
-        throw new DeployError(
-          "WORKER_CHANGED",
-          409,
-          "This Worker changed outside the browser installer. Use the CLI to reconcile it.",
-        );
-      return script.migration_tag ?? null;
-    }
     try {
       const details = await this.cf.dispatchScripts.get(
-        this.namespace,
+        this.dispatchNamespace(),
         workerName,
       );
       return details.script.migration_tag ?? null;
@@ -168,9 +115,11 @@ export class CfRestDeployer implements DeployerPort {
     files: Parameters<DeployerPort["uploadAssets"]>[1],
   ): Promise<string> {
     await this.lease?.();
-    if (this.namespace === null)
-      return this.cf.workerAssets.upload(workerName, files);
-    return this.cf.dispatchAssets.upload(this.namespace, workerName, files);
+    return this.cf.dispatchAssets.upload(
+      this.dispatchNamespace(),
+      workerName,
+      files,
+    );
   }
 
   async upload(
@@ -178,23 +127,19 @@ export class CfRestDeployer implements DeployerPort {
     upload: Parameters<DeployerPort["upload"]>[1],
   ): Promise<{ versionId: string }> {
     await this.lease?.();
-    if (this.namespace === null) {
-      await this.cf.scripts.upload(workerName, upload);
-      // Account-script etags hash the content; the CLI records deployment UUIDs.
-      const versionId = await this.servingVersionId(workerName);
-      await this.lease?.();
-      await recordBrowserWorkerVersion(workerName, versionId);
-      await this.lease?.();
-      await this.cf.scripts.disableSubdomain(workerName);
-      return { versionId };
-    }
     const script = await this.cf.dispatchScripts.upload(
-      this.namespace,
+      this.dispatchNamespace(),
       workerName,
       upload,
     );
     // A namespaced upload deploys at once; its etag names the version.
     return { versionId: script.etag ?? script.id };
+  }
+
+  private dispatchNamespace(): string {
+    if (this.namespace === null)
+      throw new Error("Hosted deploy operations need a dispatch namespace.");
+    return this.namespace;
   }
 
   /** Account Workers and the CLI identify a live version through deployments. */
@@ -224,19 +169,22 @@ export class CfRestDeployer implements DeployerPort {
         );
       return bindings;
     }
-    return this.cf.dispatchScripts.bindings(this.namespace, workerName);
+    return this.cf.dispatchScripts.bindings(
+      this.dispatchNamespace(),
+      workerName,
+    );
   }
 
   async deleteScript(workerName: string): Promise<void> {
     await this.lease?.();
     try {
-      if (this.namespace === null) {
-        await this.cf.scripts.delete(workerName);
-        return;
-      }
-      await this.cf.dispatchScripts.delete(this.namespace, workerName, {
-        force: true,
-      });
+      await this.cf.dispatchScripts.delete(
+        this.dispatchNamespace(),
+        workerName,
+        {
+          force: true,
+        },
+      );
     } catch (error) {
       if (!isCloudflareNotFound(error)) throw error;
     }

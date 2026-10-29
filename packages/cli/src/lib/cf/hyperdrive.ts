@@ -1,3 +1,4 @@
+export { cachesAs } from "@every-app/perimeter/install";
 /**
  * Hyperdrive configs, by exact name. The origin's password goes to cf only
  * in a request body file (a private temp file, `--body @<file>`), never on
@@ -16,7 +17,7 @@ import {
 } from "./schemas";
 
 /** The manifest's `resources.hyperdrive[].caching`. */
-export type HyperdriveCaching = "off" | "default";
+type HyperdriveCaching = "off" | "default";
 
 const PAGE_SIZE = 20;
 const MAX_PAGES = 10;
@@ -80,12 +81,7 @@ export async function createHyperdrive(
           ...(caching === "off" ? { caching: { disabled: true } } : {}),
         },
       },
-      args: (files) => [
-        "hyperdrive",
-        "create",
-        "--body",
-        `@${files["hyperdrive.json"]!}`,
-      ],
+      args: (files) => ["hyperdrive", "create", "--body", `@${files["hyperdrive.json"]!}`],
     },
     HyperdriveConfigOutput,
   );
@@ -113,13 +109,7 @@ export async function updateHyperdrive(
     {
       plane: "account",
       files: { "hyperdrive.json": body },
-      args: (files) => [
-        "hyperdrive",
-        "update",
-        id,
-        "--body",
-        `@${files["hyperdrive.json"]!}`,
-      ],
+      args: (files) => ["hyperdrive", "update", id, "--body", `@${files["hyperdrive.json"]!}`],
     },
     HyperdriveConfigOutput,
   );
@@ -135,26 +125,4 @@ export async function deleteHyperdrive(cf: CfRunner, id: string): Promise<void> 
     mode: "json",
     args: ["hyperdrive", "delete", id, "--force"],
   });
-}
-
-/** Whether a config's query caching is as the manifest says. */
-export function cachesAs(
-  config: HyperdriveConfig,
-  caching: HyperdriveCaching,
-): boolean {
-  return (config.caching?.disabled === true) === (caching === "off");
-}
-
-/** Whether a config connects to `origin` (all but the password, which it never shows). */
-export function connectsTo(
-  config: HyperdriveConfig,
-  origin: HyperdriveOrigin,
-): boolean {
-  const current = config.origin;
-  return (
-    current?.host === origin.host &&
-    (current.port ?? null) === origin.port &&
-    current.database === origin.database &&
-    current.user === origin.user
-  );
 }

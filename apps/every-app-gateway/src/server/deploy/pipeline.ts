@@ -17,6 +17,9 @@
  *   5. record the version in the registry (`pending` → `binding`; the
  *      gateway activates it on the first request through the namespace).
  */
+import type { WorkerModule } from "@/server/deploy/cf-rest";
+import { gatewayNamesOf } from "@/server/gateway-name";
+import { gatewayProviders } from "@/server/providers";
 import {
   bundleModuleType,
   resourceNameFor,
@@ -27,21 +30,18 @@ import {
   type AppRow,
 } from "@every-app/perimeter/registry";
 import { env } from "cloudflare:workers";
-import { gatewayNamesOf } from "@/server/gateway-name";
-import type { WorkerModule } from "@/server/deploy/cf-rest";
 import type { DeployBundle } from "./bundle";
 import { bundleRefused, DeployError } from "./errors";
 import { ensureAppDatabase } from "./ledger";
 import {
   bindingMismatches,
-  bundleProblems,
   buildUserWorkerMetadata,
+  bundleProblems,
   durableObjectMigrations,
   type ThirdPartyLimits,
 } from "./metadata";
 import type { DeployerPort } from "./port";
 import { recordDispatchDeployed } from "./registry";
-import { gatewayProviders } from "@/server/providers";
 
 interface DeployInput {
   /** The app's registry row, registered for this deploy. */
@@ -120,7 +120,7 @@ function statementsOf(sql: string): string[] {
  * its record in `d1_migrations` (the table `cf d1 migrations apply` keeps,
  * so either tool can carry on) in one transaction. Their names.
  */
-async function migrate(
+export async function migrateAppDatabase(
   deployer: DeployerPort,
   databaseId: string,
   migrations: DeployBundle["migrations"],
@@ -247,7 +247,11 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
   // 3. Migrated only now, when nothing but Cloudflare can stop the upload;
   // then the Worker.
   if (migrationBinding !== undefined) {
-    await migrate(deployer, d1[migrationBinding]!.id, bundle.migrations);
+    await migrateAppDatabase(
+      deployer,
+      d1[migrationBinding]!.id,
+      bundle.migrations,
+    );
   }
   const { versionId } = await deployer.upload(workerName, {
     metadata,

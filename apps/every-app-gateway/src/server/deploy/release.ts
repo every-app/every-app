@@ -8,15 +8,15 @@
  * `hashFiles`), and makes of it the DeployBundle a multipart upload makes
  * (./bundle.ts), so the pipeline can't tell the two apart.
  */
+import type { DeployJobSource } from "@/server/repositories/DeployJobRepository";
 import {
   bundleModuleType,
   HOSTED_DEPLOY_PROTOCOL,
 } from "@every-app/perimeter/manifest";
-import type { DeployJobSource } from "@/server/repositories/DeployJobRepository";
+import { OSS_NEW_RELEASE_URL } from "../../schemas/app-install";
 import { parseStamp, type DeployBundle } from "./bundle";
 import { bundleRefused, DeployError } from "./errors";
 import { readTar, TarError } from "./tar";
-import { OSS_NEW_RELEASE_URL } from "../../schemas/app-install";
 
 const APP_RELEASE_ASSET = "everyapp-release.tar.gz";
 
@@ -34,6 +34,7 @@ interface AppRelease {
   appId: string;
   bundle: DeployBundle;
   source: DeployJobSource;
+  sha256: string;
 }
 
 interface ReleaseManifest {
@@ -164,6 +165,7 @@ const byName = (a: { name: string }, b: { name: string }) =>
  */
 export async function bundleFromRelease(
   files: ReadonlyMap<string, Uint8Array>,
+  selfHosted = false,
 ): Promise<{ release: ReleaseManifest; bundle: DeployBundle }> {
   const unexpected = new Set(
     [...files.keys()]
@@ -191,7 +193,7 @@ export async function bundleFromRelease(
       .map((path) => path.slice(WORKERS.length).split("/")[0]!)
       .filter((worker) => worker !== "default"),
   );
-  if (helpers.size > 0) {
+  if (!selfHosted && helpers.size > 0) {
     throw bundleRefused([
       `its Build Output has helper Workers (${[...helpers].join(", ")}), which third-party apps can't have`,
     ]);
@@ -249,6 +251,22 @@ export async function bundleFromRelease(
           sql: new TextDecoder().decode(content),
         });
       }
+    }
+  }
+  if (selfHosted) {
+    bundle.releaseFiles = files;
+    bundle.helpers = new Map();
+    for (const helper of helpers) {
+      // Parse each auxiliary directory with the same bounded module/asset reader.
+      const tree = new Map<string, Uint8Array>();
+      const prefix = `${WORKERS}${helper}/`;
+      for (const [path, bytes] of files) {
+        if (!path.startsWith(WORKERS)) tree.set(path, bytes);
+        else if (path.startsWith(prefix))
+          tree.set(`${DEFAULT_WORKER}${path.slice(prefix.length)}`, bytes);
+      }
+      // Integrity was checked over the original tree above, not this view.
+      bundle.helpers.set(helper, workerBundle(tree, bundle));
     }
   }
   bundle.migrations.sort(byName);
@@ -386,15 +404,19 @@ async function download(
 }
 
 /** The repository's latest release, checked and ready to deploy. */
-export async function fetchAppRelease(repo: {
-  owner: string;
-  repo: string;
-  repoUrl: string;
-}): Promise<AppRelease> {
+export async function fetchAppRelease(
+  repo: {
+    owner: string;
+    repo: string;
+    repoUrl: string;
+  },
+  selfHosted = false,
+): Promise<AppRelease> {
   const { body, tag } = await download(repo.owner, repo.repo);
-  const { release, bundle } = await unpackRelease(body);
+  const { release, bundle, sha256 } = await unpackRelease(body, selfHosted);
   return {
     appId: release.appId,
+    sha256,
     bundle,
     source: {
       repoUrl: repo.repoUrl,
@@ -406,7 +428,10 @@ export async function fetchAppRelease(repo: {
 }
 
 /** Only oss.new's immutable, public release endpoint; no credentials or redirects. */
-export async function fetchReleaseUrl(raw: unknown): Promise<AppRelease> {
+export async function fetchReleaseUrl(
+  raw: unknown,
+  selfHosted = false,
+): Promise<AppRelease> {
   if (typeof raw !== "string" || !OSS_NEW_RELEASE_URL.test(raw.trim()))
     throw new DeployError(
       "INVALID_RELEASE_URL",
@@ -431,9 +456,13 @@ export async function fetchReleaseUrl(raw: unknown): Promise<AppRelease> {
     await response.body.cancel();
     throw tooLarge("compressed");
   }
-  const { release, bundle } = await unpackRelease(response.body);
+  const { release, bundle, sha256 } = await unpackRelease(
+    response.body,
+    selfHosted,
+  );
   return {
     appId: release.appId,
+    sha256,
     bundle,
     source: {
       repoUrl: url,
@@ -444,15 +473,68 @@ export async function fetchReleaseUrl(raw: unknown): Promise<AppRelease> {
   };
 }
 
-async function unpackRelease(body: ReadableStream<Uint8Array>) {
+async function unpackRelease(
+  body: ReadableStream<Uint8Array>,
+  selfHosted: boolean,
+) {
   let files: Map<string, Uint8Array>;
+  const archive = await gunzip(body);
   try {
-    files = readTar(await gunzip(body), { maxFiles: MAX_FILES });
+    files = readTar(archive, { maxFiles: MAX_FILES });
   } catch (error) {
     if (error instanceof TarError) {
       throw invalid(`The release isn't a readable archive: ${error.message}.`);
     }
     throw error;
   }
-  return bundleFromRelease(files);
+  return {
+    ...(await bundleFromRelease(files, selfHosted)),
+    // The release's integrity digest excludes release.json. Approval must
+    // also cover that manifest and its providers, not just built modules.
+    sha256: hex(
+      await crypto.subtle.digest("SHA-256", archive as Uint8Array<ArrayBuffer>),
+    ),
+  };
+}
+
+function workerBundle(
+  files: ReadonlyMap<string, Uint8Array>,
+  parent: DeployBundle,
+): DeployBundle {
+  const bytes = files.get(`${DEFAULT_WORKER}worker.config.json`);
+  if (!bytes) throw invalid("A helper Worker has no worker.config.json.");
+  let worker: unknown;
+  try {
+    worker = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw invalid("A helper Worker's config is not JSON.");
+  }
+  if (!worker || typeof worker !== "object" || Array.isArray(worker))
+    throw invalid("A helper Worker's config is invalid.");
+  const bundle: DeployBundle = {
+    manifest: parent.manifest,
+    stamp: parent.stamp,
+    worker: worker as Record<string, unknown>,
+    modules: new Map(),
+    assets: new Map(),
+    migrations: [],
+  };
+  const declared =
+    (
+      bundle.worker as {
+        manifest?: { modules?: Record<string, { type?: string }> };
+      }
+    ).manifest?.modules ?? {};
+  for (const [path, content] of files) {
+    if (path.startsWith(`${DEFAULT_WORKER}bundle/`)) {
+      const name = path.slice(`${DEFAULT_WORKER}bundle/`.length);
+      if (bundleModuleType(name, declared[name]?.type))
+        bundle.modules.set(name, content);
+    } else if (path.startsWith(`${DEFAULT_WORKER}assets/`))
+      bundle.assets.set(
+        `/${path.slice(`${DEFAULT_WORKER}assets/`.length)}`,
+        content,
+      );
+  }
+  return bundle;
 }

@@ -6,59 +6,18 @@
  * keep only what callers read. These calls run live: OpenMail's
  * inbound addresses on everyapp.team are routed through them.
  */
-import { z } from "zod";
 import { CfError, isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 
-/** `cf email-routing settings get`: whether the zone routes mail. */
-const EmailRoutingSettingsOutput = z.looseObject({
-  enabled: z.boolean(),
-  name: z.string().nullish(),
-  /** "ready", "unconfigured", "misconfigured", "misconfigured/locked" or "unlocked". */
-  status: z.string().nullish(),
-});
-export type EmailRoutingSettings = z.infer<typeof EmailRoutingSettingsOutput>;
-
-const RuleMatcher = z.looseObject({
-  type: z.string(),
-  field: z.string().nullish(),
-  value: z.string().nullish(),
-});
-
-const RuleAction = z.looseObject({
-  type: z.string(),
-  value: z.array(z.string()).nullish(),
-});
-
-/** A routing rule, or the zone's catch-all: `id` (or the older `tag`). */
-const EmailRoutingRuleOutput = z
-  .looseObject({
-    id: z.string().nullish(),
-    tag: z.string().nullish(),
-    name: z.string().nullish(),
-    enabled: z.boolean().nullish(),
-    matchers: z.array(RuleMatcher).nullish(),
-    actions: z.array(RuleAction).nullish(),
-  })
-  .transform((rule) => ({
-    id: rule.id ?? rule.tag ?? null,
-    name: rule.name ?? null,
-    enabled: rule.enabled ?? true,
-    matchers: rule.matchers ?? [],
-    actions: rule.actions ?? [],
-  }));
-export type EmailRoutingRule = z.infer<typeof EmailRoutingRuleOutput>;
-
-const EmailRoutingRuleListOutput = z.array(EmailRoutingRuleOutput);
-
-/** What a rule or catch-all is set to. */
-export interface EmailRoutingRuleBody {
-  name: string;
-  enabled: boolean;
-  matchers: Array<{ type: "literal"; field: "to"; value: string } | { type: "all" }>;
-  actions: Array<{ type: "worker" | "drop"; value?: string[] }>;
-}
-
+import {
+  EmailRoutingRuleListOutput,
+  EmailRoutingRuleOutput,
+  EmailRoutingSettingsOutput,
+  type EmailRoutingRule,
+  type EmailRoutingRuleBody,
+  type EmailRoutingSettings,
+} from "@every-app/perimeter/install";
+export { ruleAddress, ruleWorker, type EmailRoutingRuleBody } from "@every-app/perimeter/install";
 const PAGE_SIZE = 50;
 const MAX_PAGES = 10;
 
@@ -176,15 +135,7 @@ export async function createEmailRoutingRule(
     {
       plane: "account",
       files: { "rule.json": rule },
-      args: (files) => [
-        "email-routing",
-        "rules",
-        "create",
-        "-z",
-        zoneId,
-        "--body",
-        `@${files["rule.json"]!}`,
-      ],
+      args: (files) => ["email-routing", "rules", "create", "-z", zoneId, "--body", `@${files["rule.json"]!}`],
     },
     EmailRoutingRuleOutput,
   );
@@ -212,16 +163,7 @@ export async function updateEmailRoutingRule(
     plane: "account",
     mode: "json",
     files: { "rule.json": rule },
-    args: (files) => [
-      "email-routing",
-      "rules",
-      "update",
-      ruleId,
-      "-z",
-      zoneId,
-      "--body",
-      `@${files["rule.json"]!}`,
-    ],
+    args: (files) => ["email-routing", "rules", "update", ruleId, "-z", zoneId, "--body", `@${files["rule.json"]!}`],
   });
 }
 
@@ -279,19 +221,4 @@ export async function updateEmailRoutingCatchAll(
       `@${files["catch-all.json"]!}`,
     ],
   });
-}
-
-/** The Worker a rule sends mail to, when it sends mail to one. */
-export function ruleWorker(rule: Pick<EmailRoutingRule, "actions">): string | null {
-  const action = rule.actions.find((candidate) => candidate.type === "worker");
-  return action?.value?.[0] ?? null;
-}
-
-/** The address a rule's literal `to` matcher takes, in lowercase. */
-export function ruleAddress(rule: Pick<EmailRoutingRule, "matchers">): string | null {
-  const matcher = rule.matchers.find(
-    (candidate) =>
-      candidate.type === "literal" && (candidate.field ?? "to") === "to",
-  );
-  return matcher?.value ? matcher.value.toLowerCase() : null;
 }

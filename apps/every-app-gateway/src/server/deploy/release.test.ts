@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
 import { gzip, packRelease, releaseFiles, tar } from "@/test/app-release";
+import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseDeployUpload } from "./bundle";
 import { DeployError } from "./errors";
 import { bundleFromRelease, fetchAppRelease, parseRepoUrl } from "./release";
@@ -213,6 +213,23 @@ describe("bundleFromRelease", () => {
 });
 
 describe("fetchAppRelease", () => {
+  it("binds approval to release metadata as well as the built files", async () => {
+    const original = files();
+    stubGitHub(packRelease(original));
+    const before = await fetchAppRelease(repo);
+    const changed = new Map(original);
+    const metadata = JSON.parse(
+      new TextDecoder().decode(changed.get("release.json")),
+    );
+    metadata.manifest.name = "Changed app";
+    changed.set(
+      "release.json",
+      new TextEncoder().encode(JSON.stringify(metadata)),
+    );
+    stubGitHub(packRelease(changed));
+    const after = await fetchAppRelease(repo);
+    expect(before.sha256).not.toBe(after.sha256);
+  });
   it("downloads the latest release, following GitHub's redirects to its tag", async () => {
     const seen = stubGitHub(packRelease(files()));
     const release = await fetchAppRelease(repo);

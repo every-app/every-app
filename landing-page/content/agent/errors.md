@@ -2346,29 +2346,13 @@ Status 404: `No such deploy.`: `GET /api/v1/orgs/{orgId}/deploys/{id}` with a jo
 
 Source: `apps/every-app-gateway/src/server/deploy/run.ts`
 
-### WORKER_OWNED
-
-Status 409. From the Gateway's resource ledger (`ledger.ts`): the Worker isn't recorded as this app's (`This Worker is not recorded as this app's. Use the CLI to reconcile it.`) or its ownership claim is missing (`The Worker's ownership claim is missing. Use the CLI to reconcile it.`). From a self-hosted browser install (`cfRestDeployer.ts`), before anything is uploaded: Cloudflare's Worker list doesn't include the existing Worker (`Cloudflare did not list the existing Worker's ownership. Nothing was uploaded.`), or it lacks the `org-<organization id>` and `app-<app slug>` tags the installer writes (`A Worker with this name already exists outside this browser installer. Use the CLI to manage it.`).
-
-**Fix:** reconcile or manage the Worker with the CLI (`pnpm everyapp deploy` from the app's directory).
-
-Source: `apps/every-app-gateway/src/server/deploy/ledger.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
-
-### APP_ALREADY_INSTALLED
-
-Status 409, self-hosted browser install only (`cfRestDeployer.ts`, when the pipeline asks for the app Worker's migration tag): the app's row is already `active` or `disabled`: `This app is already installed. Open it from your Gateway; use the CLI to update it.` The browser installer installs; updates are the CLI's.
-
-**Fix:** `pnpm everyapp deploy` from the app's directory.
-
-Source: `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
-
 ### WORKER_CHANGED
 
-Status 409, self-hosted browser install only: the Worker exists with the installer's tags, but the version serving traffic is neither the one the browser ledger recorded (`claimBrowserWorker`) nor the row's `versionId`: `This Worker changed outside the browser installer. Use the CLI to reconcile it.`
+Self-hosted browser install job: the serving Worker version differs from the version in the shared ownership ledger, or the Worker has a gradual deployment. The installer refuses replacement before uploading.
 
-**Fix:** `pnpm everyapp deploy` from the app's directory.
+**Fix:** inspect the existing deployment. Confirm replacement on the approval page only when intended; reconcile a gradual deployment with the CLI first.
 
-Source: `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### BINDING_OWNED
 
@@ -2393,6 +2377,102 @@ Status 400, browser install: `releaseUrl` isn't `https://oss.new/apps/<key>`: `U
 **Fix:** paste the release's oss.new URL.
 
 Source: `apps/every-app-gateway/src/server/deploy/release.ts`
+
+### RELEASE_CHANGED
+
+Status 409, browser approval: the downloaded archive differs from the reviewed fingerprint, including its release metadata. Nothing is registered or provisioned.
+
+**Fix:** review the release again before approving installation.
+
+Source: `apps/every-app-gateway/src/server/deploy/install.ts`
+
+### CONFIGURATION_REQUIRED
+
+Status 422, self-hosted browser approval: a required Hyperdrive origin URL or Secrets Store value was omitted.
+
+**Fix:** fill in the required configuration on the approval page and submit again.
+
+Source: `apps/every-app-gateway/src/server/deploy/install.ts`
+
+### ACCESS_NOT_CONFIGURED
+
+Self-hosted browser install job: Access is enabled, but its apps application could not be found.
+
+**Fix:** run `pnpm everyapp access on` to reconcile Access, then retry installation.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
+
+### ACCESS_ROUTES_UNSUPPORTED
+
+Self-hosted browser install job: Access cannot expose all public or bearer route patterns declared by this app, or the app is outside the configured app base domain.
+
+**Fix:** adjust the app's route patterns or hostname configuration and publish a corrected release.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
+
+### EMAIL_ROUTES_TOO_MANY
+
+Self-hosted browser install job: the installer reached its Email Routing listing limit before reading every rule, so it cannot safely reconcile ownership.
+
+**Fix:** reduce the domain's rule count or manage the installation with the CLI.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted-email.ts`
+
+### INVALID_BINDING
+
+Self-hosted browser install job: a built binding has no supported Cloudflare upload representation.
+
+**Fix:** rebuild the app with a supported SDK and declared resource bindings; publish a corrected release.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted-metadata.ts`
+
+### RESOURCE_LIST_TOO_LARGE
+
+Self-hosted browser install job: the account resource listing exceeded its page limit. The installer refuses to reuse resources whose ownership it could not verify.
+
+**Fix:** reduce the account's resource count or manage the installation with the CLI.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted-resources.ts`
+
+### CLOUDFLARE_PERMISSION_REQUIRED
+
+Self-hosted browser install job: Cloudflare answered HTTP 403 to an account API operation. The job names the operation without retaining the API response body or submitted credentials.
+
+**Fix:** give the Gateway's deploy token permission to manage the app's resources, following the [browser installation permission guide](/docs/agent/deploy#browser-installs), then retry.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
+
+### CLOUDFLARE_API_ERROR
+
+Self-hosted browser install job: another Cloudflare API operation failed. The job reports the operation and HTTP status without retaining its response body.
+
+**Fix:** check the account configuration and Cloudflare's status, then retry. Previously recorded resources are reused.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
+
+### DEPLOYMENT_VERSION_MISSING
+
+Self-hosted browser install job: Cloudflare did not return a serving version after upload, so the installer could not record that deployment as its own.
+
+**Fix:** inspect the Worker's serving deployment before retrying; replacement may require explicit confirmation.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
+
+### RESTORE_POINT_MISSING
+
+Self-hosted browser install job: a database update needs a restore point, but Cloudflare returned no bookmark. No pending migration was applied.
+
+**Fix:** check D1 Time Travel availability and retry before applying the update.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
+
+### QUEUE_MISSING
+
+Self-hosted browser install job: a queue needed by a consumer was absent from Cloudflare's listing after resource provisioning.
+
+**Fix:** retry when the provisioned queue is visible; check whether it was deleted outside EveryApp.
+
+Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### RELEASE_FETCH_FAILED
 

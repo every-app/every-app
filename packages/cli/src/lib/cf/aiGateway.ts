@@ -1,3 +1,4 @@
+import { aiGatewaySettings, aiGatewayUpdate } from "@every-app/perimeter/install";
 /**
  * Cloudflare AI Gateways, by id. An app's own (`resources.aiGateway`,
  * lib/app/resources.ts) and the Gateway's account-level one (the Model
@@ -19,8 +20,8 @@
  * lowercase letters and digits joined by single hyphens, at most 64
  * characters (`isAiGatewayId`): `[7001] not valid ID format` otherwise.
  */
-import { aiGatewayUrl } from "@every-app/sdk/cloudflare";
 import { isAiGatewayId } from "@every-app/perimeter/manifest";
+import { aiGatewayUrl } from "@every-app/sdk/cloudflare";
 import { isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 import {
@@ -57,49 +58,6 @@ interface AiGatewaySettings {
   /** Seconds a response stays cached; 0 (nothing cached) unless set. */
   cacheTtl?: number;
 }
-
-/** What a gateway's settings are when the manifest leaves them out. */
-export function aiGatewaySettings(settings: AiGatewaySettings): Required<AiGatewaySettings> {
-  return {
-    collectLogs: settings.collectLogs ?? true,
-    cacheTtl: settings.cacheTtl ?? 0,
-  };
-}
-
-/** Whether `gateway` logs and caches as `settings` say. */
-export function hasAiGatewaySettings(gateway: AiGatewayRecord, settings: AiGatewaySettings): boolean {
-  const wanted = aiGatewaySettings(settings);
-  return (
-    (gateway.collect_logs ?? false) === wanted.collectLogs &&
-    (gateway.cache_ttl ?? 0) === wanted.cacheTtl
-  );
-}
-
-/**
- * The settings an update sends back as they were: Cloudflare's update is a
- * PUT, so a setting left out could go back to its default. Every one the
- * gateway reads back and the update takes (cf schema ai-gateway gateways
- * update), when it has a value.
- */
-const KEPT_ON_UPDATE = [
-  "authentication",
-  "byok_only",
-  "cache_invalidate_on_update",
-  "log_classification",
-  "log_management",
-  "log_management_strategy",
-  "logpush",
-  "logpush_public_key",
-  "rate_limiting_interval",
-  "rate_limiting_limit",
-  "rate_limiting_technique",
-  "retry_backoff",
-  "retry_delay",
-  "retry_max_attempts",
-  "store_id",
-  "workers_ai_billing_mode",
-  "zdr",
-] as const;
 
 function assertId(id: string): void {
   if (!isValidAiGatewayId(id)) {
@@ -150,13 +108,7 @@ export async function createAiGateway(
           authentication: false,
         },
       },
-      args: (files) => [
-        "ai-gateway",
-        "gateways",
-        "create",
-        "--body",
-        `@${files["ai-gateway.json"]!}`,
-      ],
+      args: (files) => ["ai-gateway", "gateways", "create", "--body", `@${files["ai-gateway.json"]!}`],
     },
     AiGatewayOutput,
   );
@@ -195,35 +147,14 @@ export async function updateAiGateway(
   gateway: AiGatewayRecord,
   settings: AiGatewaySettings,
 ): Promise<AiGatewayRecord> {
-  const kept = Object.fromEntries(
-    KEPT_ON_UPDATE.flatMap((field) =>
-      gateway[field] === undefined || gateway[field] === null ? [] : [[field, gateway[field]]],
-    ),
-  );
-  const wanted = aiGatewaySettings(settings);
   return runCfJson(
     cf,
     {
       plane: "account",
       files: {
-        "ai-gateway.json": {
-          // Cloudflare requires these on every update.
-          cache_invalidate_on_update: false,
-          rate_limiting_interval: 0,
-          rate_limiting_limit: 0,
-          ...kept,
-          collect_logs: wanted.collectLogs,
-          cache_ttl: wanted.cacheTtl,
-        },
+        "ai-gateway.json": aiGatewayUpdate(gateway, settings),
       },
-      args: (files) => [
-        "ai-gateway",
-        "gateways",
-        "update",
-        gateway.id,
-        "--body",
-        `@${files["ai-gateway.json"]!}`,
-      ],
+      args: (files) => ["ai-gateway", "gateways", "update", gateway.id, "--body", `@${files["ai-gateway.json"]!}`],
     },
     AiGatewayOutput,
   );

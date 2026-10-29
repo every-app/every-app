@@ -20,6 +20,56 @@ interface AppInstallContext {
   defaultOrganizationId: string | null;
 }
 
+interface InstallReleaseReview {
+  sha256: string;
+  appId: string;
+  installed: { name: string; status: string } | null;
+  name: string;
+  version: string;
+  resources: Record<string, unknown>;
+  providers: Array<{
+    id: string;
+    name: string;
+    hosts: string[];
+    settings: string[];
+  }>;
+  fields: Array<{
+    name: string;
+    label: string;
+    secret: boolean;
+    optional: boolean;
+    default?: string;
+  }>;
+}
+
+export async function reviewAppInstall(input: {
+  sourceUrl: string;
+  organizationId: string;
+}): Promise<InstallReleaseReview> {
+  return (
+    await answer<{ release: InstallReleaseReview }>(
+      await installRequest(input, { review: true }),
+    )
+  ).release;
+}
+
+function installRequest(
+  input: { sourceUrl: string; organizationId: string },
+  options: Record<string, unknown> = {},
+): Promise<Response> {
+  return fetch("/api/admin/apps/install", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      organizationId: input.organizationId,
+      ...options,
+      ...(input.sourceUrl.startsWith("https://github.com/")
+        ? { repoUrl: input.sourceUrl }
+        : { releaseUrl: input.sourceUrl }),
+    }),
+  });
+}
+
 /** A refusal, with the route's code (`NO_RELEASE`, `INVALID_REPO_URL`, ...). */
 export class AppInstallError extends Error {
   constructor(
@@ -72,20 +122,25 @@ export function useAppInstallContext() {
 export async function startAppInstall({
   sourceUrl,
   organizationId,
+  sha256,
+  configuration,
 }: {
   sourceUrl: string;
   organizationId: string;
+  sha256?: string;
+  configuration?: {
+    values: Record<string, string>;
+    allowDeleteDurableObjectData?: boolean;
+    allowDeleteWorkflows?: boolean;
+    replaceChangedWorkers?: boolean;
+    registerProviders?: boolean;
+    enableEmailRouting?: boolean;
+  };
 }): Promise<InstallJob> {
-  const response = await fetch("/api/admin/apps/install", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      organizationId,
-      ...(sourceUrl.startsWith("https://github.com/")
-        ? { repoUrl: sourceUrl }
-        : { releaseUrl: sourceUrl }),
-    }),
-  });
+  const response = await installRequest(
+    { sourceUrl, organizationId },
+    { sha256, configuration },
+  );
   return (await answer<{ job: InstallJob }>(response)).job;
 }
 

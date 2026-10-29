@@ -2136,9 +2136,9 @@ describe("delete", () => {
       expect.objectContaining({ type: "warning", code: "RESOURCES_KEPT", message: expect.stringContaining("empty it first") }),
     );
 
-    // There before its first deploy (not the app's to delete): bound, never recorded, kept and said.
+    // There before its first deploy: refused, never bound or recorded, kept on purge.
     account.buckets.set("every-acme-notes", { objects: 0 });
-    await deployOther(withBucket("notes"));
+    await expect(deployOther(withBucket("notes"))).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
     await expect(readOwnedResources(registry(), "every-acme-notes")).resolves.not.toContainEqual(
       expect.objectContaining({ kind: "r2" }),
     );

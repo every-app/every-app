@@ -19,6 +19,10 @@
     "./dev": {
       "types": "./src/dev/index.ts",
       "default": "./src/dev/index.ts"
+    },
+    "./install": {
+      "types": "./src/install/index.ts",
+      "default": "./src/install/index.ts"
     }
   },
   "scripts": {
@@ -29,6 +33,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudflare/config": "0.24.1",
     "@every-app/sdk": "workspace:*",
     "zod": "^4.2.0"
   },

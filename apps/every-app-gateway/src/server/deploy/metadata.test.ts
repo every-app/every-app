@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
+import {
+  appPolicyProblems,
+  installWorkerConfig,
+  validateWorkerBuildOutput,
+  type BuiltWorkerConfig,
+  type InstallTarget,
+} from "@every-app/perimeter/install";
+import { selfHostedMetadata } from "./self-hosted-metadata";
 import {
   bindingMismatches,
   buildUserWorkerMetadata,
@@ -48,6 +57,71 @@ const TARGET: DeployTarget = {
   limits: LIMITS,
   durableObjects: { liveClasses: [], migrationTag: null },
 };
+
+describe("selfHostedMetadata", () => {
+  it("preserves the SDK's class exports and Analytics Engine dataset names", () => {
+    const manifest = {
+      id: "notes",
+      resources: {
+        durableObjects: [{ name: "SYNC", className: "SyncDO" }],
+        workflows: [{ name: "RUN", className: "RunWorkflow" }],
+        analyticsEngine: [{ name: "EVENTS" }],
+      },
+    };
+    const target: InstallTarget = {
+      workerName: TARGET.workerName,
+      organizationId: TARGET.organizationId,
+      accountId: "a".repeat(32),
+      gatewayUrl: TARGET.gatewayUrl,
+      identityPublicKeys: [TARGET.identityPublicKey],
+      resources: { d1: {}, kv: {}, r2: {} },
+      declared: manifest.resources,
+    };
+    vi.stubEnv("EVERYAPP_BUILD", "1");
+    try {
+      const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+      });
+      // The installer receives serialized Build Output, not SDK objects.
+      const built: BuiltWorkerConfig = JSON.parse(
+        JSON.stringify({
+          ...worker,
+          manifest: { type: "partial", mainModule: "index.js", modules: {} },
+        }),
+      );
+      const installed = installWorkerConfig(built, target);
+      validateWorkerBuildOutput(installed);
+      expect(appPolicyProblems(installed, target)).toEqual([]);
+      expect(
+        selfHostedMetadata(installed, target, manifest, {}).bindings,
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            type: "durable_object_namespace",
+            name: "SYNC",
+            class_name: "SyncDO",
+          },
+          {
+            type: "workflow",
+            name: "RUN",
+            workflow_name: "every-acme-notes--run",
+            class_name: "RunWorkflow",
+            script_name: TARGET.workerName,
+          },
+          {
+            type: "analytics_engine",
+            name: "EVENTS",
+            dataset: "every-acme-notes--events",
+          },
+        ]),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
 
 describe("bundleProblems", () => {
   it("lets an everyAppWorker() build, placeholders and all, through", () => {

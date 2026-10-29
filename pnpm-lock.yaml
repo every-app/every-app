@@ -369,6 +369,9 @@ importers:
 
   packages/perimeter:
     dependencies:
+      '@cloudflare/config':
+        specifier: 0.24.1
+        version: 0.24.1
       '@every-app/sdk':
         specifier: workspace:*
         version: link:../sdk

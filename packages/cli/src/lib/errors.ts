@@ -19,6 +19,7 @@
  */
 import { thisCommand } from "@/lib/output/command";
 import type { RequiredAction } from "@/lib/output/events";
+import { InstallationError } from "@every-app/perimeter/install";
 
 /** Codes the reporting itself gives, rather than one place that raised them. */
 export enum ReportCode {
@@ -61,6 +62,9 @@ interface NextStep {
 
 /** An expected failure, with a stable code for scripts and a message for people. */
 export class EveryAppError extends Error {
+  static fromInstallation(error: unknown): unknown {
+    return error instanceof InstallationError ? new EveryAppError(error.code, error.message, error.options) : error;
+  }
   readonly code: string;
   readonly retryable: boolean;
   readonly fix?: string;

@@ -8,8 +8,8 @@
  * the command owns changed. Checked against cf@1.0.0-beta.14 and a live
  * account on 2026-10-23, except where a comment says otherwise.
  */
-import { z } from "zod";
 import { EveryAppError } from "@/lib/errors";
+import { z } from "zod";
 import { CfError, isCfError } from "./errors";
 import { listAll, runCfJson, type CfRunner } from "./runner";
 
@@ -85,15 +85,17 @@ export function createAccessOrganization(
   cf: CfRunner,
   body: { name: string; auth_domain: string; session_duration: string },
 ): Promise<AccessOrganization> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": body },
-      args: (files) => ["zero-trust", "organization", "create", "--body", `@${files["body.json"]!}`],
-    },
-    OrganizationOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": body },
+        args: (files) => ["zero-trust", "organization", "create", "--body", `@${files["body.json"]!}`],
+      },
+      OrganizationOutput,
+    ),
+  );
 }
 
 /**
@@ -120,15 +122,17 @@ export function setAccessOrganizationSession(
     ...(organization.mfa_config ? { mfa_config: organization.mfa_config } : {}),
     session_duration: sessionDuration,
   };
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": body },
-      args: (files) => ["zero-trust", "organization", "update", "--body", `@${files["body.json"]!}`],
-    },
-    OrganizationOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": body },
+        args: (files) => ["zero-trust", "organization", "update", "--body", `@${files["body.json"]!}`],
+      },
+      OrganizationOutput,
+    ),
+  );
 }
 
 // --- Identity providers -----------------------------------------------------
@@ -154,15 +158,19 @@ export function listAccessIdentityProviders(cf: CfRunner): Promise<AccessIdentit
 
 /** The one-time PIN provider: a code emailed to the address the person types. */
 export function createOneTimePinProvider(cf: CfRunner): Promise<AccessIdentityProvider> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": { name: "One-time PIN", type: "onetimepin", config: {} } },
-      args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
-    },
-    IdentityProviderOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: {
+          "body.json": { name: "One-time PIN", type: "onetimepin", config: {} },
+        },
+        args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
+      },
+      IdentityProviderOutput,
+    ),
+  );
 }
 
 /**
@@ -176,15 +184,23 @@ export function createOneTimePinProvider(cf: CfRunner): Promise<AccessIdentityPr
  * documented one, checked live the same day.
  */
 export function createCloudflareIdentityProvider(cf: CfRunner): Promise<AccessIdentityProvider> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": { name: "Cloudflare", type: "cloudflare", config: { restrict_to_account_members: true } } },
-      args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
-    },
-    IdentityProviderOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: {
+          "body.json": {
+            name: "Cloudflare",
+            type: "cloudflare",
+            config: { restrict_to_account_members: true },
+          },
+        },
+        args: (files) => ["zero-trust", "identity-providers", "create", "--body", `@${files["body.json"]!}`],
+      },
+      IdentityProviderOutput,
+    ),
+  );
 }
 
 // --- Reusable policies ------------------------------------------------------
@@ -211,15 +227,17 @@ export function createAccessPolicy(
   cf: CfRunner,
   body: { name: string; decision: "allow"; include: AccessRule[] },
 ): Promise<AccessPolicy> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": { ...body, exclude: [], require: [] } },
-      args: (files) => ["zero-trust", "access", "policies", "create", "--body", `@${files["body.json"]!}`],
-    },
-    PolicyOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": { ...body, exclude: [], require: [] } },
+        args: (files) => ["zero-trust", "access", "policies", "create", "--body", `@${files["body.json"]!}`],
+      },
+      PolicyOutput,
+    ),
+  );
 }
 
 /**
@@ -261,35 +279,31 @@ export function updateAccessPolicyRules(
   body["include"] = include;
   body["exclude"] = policy.exclude ?? [];
   body["require"] = policy.require ?? [];
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": body },
-      args: (files) => [
-        "zero-trust",
-        "access",
-        "policies",
-        "update",
-        policy.id,
-        "--body",
-        `@${files["body.json"]!}`,
-      ],
-    },
-    PolicyOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": body },
+        args: (files) => ["zero-trust", "access", "policies", "update", policy.id, "--body", `@${files["body.json"]!}`],
+      },
+      PolicyOutput,
+    ),
+  );
 }
 
 // --- Applications -----------------------------------------------------------
 
-const OverrideOutput = z.looseObject({ path_pattern: z.string(), behavior: z.string() });
+const OverrideOutput = z.looseObject({
+  path_pattern: z.string(),
+  behavior: z.string(),
+});
 
 const DestinationOutput = z.looseObject({
   type: z.string().nullish(),
   uri: z.string().nullish(),
   overrides: z.array(OverrideOutput).nullish(),
 });
-export type AccessDestinationOutput = z.infer<typeof DestinationOutput>;
 
 /** A policy as an application lists it: the reusable policy's id, in precedence order. */
 const PolicyRefOutput = z.looseObject({
@@ -348,19 +362,18 @@ export interface AccessApplicationBody {
   app_launcher_visible?: boolean;
 }
 
-export function createAccessApplication(
-  cf: CfRunner,
-  body: AccessApplicationBody,
-): Promise<AccessApplication> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": body },
-      args: (files) => ["zero-trust", "access", "applications", "create", "--body", `@${files["body.json"]!}`],
-    },
-    ApplicationOutput,
-  ));
+export function createAccessApplication(cf: CfRunner, body: AccessApplicationBody): Promise<AccessApplication> {
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": body },
+        args: (files) => ["zero-trust", "access", "applications", "create", "--body", `@${files["body.json"]!}`],
+      },
+      ApplicationOutput,
+    ),
+  );
 }
 
 /**
@@ -368,55 +381,24 @@ export function createAccessApplication(
  * its identity and timestamps, the deprecated domain fields `destinations`
  * replaced, and `policies`, sent again as ids.
  */
-const READ_ONLY_FIELDS = new Set([
-  "id",
-  "uid",
-  "aud",
-  "created_at",
-  "updated_at",
-  "domain",
-  "self_hosted_domains",
-  "policies",
-  "scim_config",
-]);
-
-/** The application as read, as a PUT body, with `changes` applied. */
-export function applicationUpdateBody(
-  application: AccessApplication,
-  changes: Partial<AccessApplicationBody>,
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(application)) {
-    if (!READ_ONLY_FIELDS.has(key)) body[key] = value;
-  }
-  body["policies"] = [...(application.policies ?? [])]
-    .sort((a, b) => (a.precedence ?? 0) - (b.precedence ?? 0))
-    .map((policy) => policy.id);
-  return { ...body, ...changes };
-}
+export { applicationUpdateBody } from "@every-app/perimeter/install";
 
 export function updateAccessApplication(
   cf: CfRunner,
   id: string,
   body: Record<string, unknown>,
 ): Promise<AccessApplication> {
-  return access(runCfJson(
-    cf,
-    {
-      plane: "account",
-      files: { "body.json": body },
-      args: (files) => [
-        "zero-trust",
-        "access",
-        "applications",
-        "update",
-        id,
-        "--body",
-        `@${files["body.json"]!}`,
-      ],
-    },
-    ApplicationOutput,
-  ));
+  return access(
+    runCfJson(
+      cf,
+      {
+        plane: "account",
+        files: { "body.json": body },
+        args: (files) => ["zero-trust", "access", "applications", "update", id, "--body", `@${files["body.json"]!}`],
+      },
+      ApplicationOutput,
+    ),
+  );
 }
 
 /** Delete an application; `--force` answers cf's confirmation. False when it was gone already. */

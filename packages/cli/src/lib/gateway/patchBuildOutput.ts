@@ -9,24 +9,23 @@
  * a host left out is removed), and APP_BASE_DOMAIN tells the gateway where
  * apps live.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { OutputWorkerSchema } from "@cloudflare/config";
-import { EVERYAPP_OBSERVABILITY } from "@every-app/sdk/cloudflare";
+import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { EveryAppError } from "@/lib/errors";
+import { validateWorkerBuildOutput } from "@every-app/perimeter/install";
 import {
   APP_BINDING_PREFIX,
   appBindingName,
   DEFAULT_GATEWAY_NAMES,
   type GatewayNames,
 } from "@every-app/perimeter/manifest";
-import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
-import { isOneLabelBelow } from "@/lib/domains/hostnames";
-import { EveryAppError } from "@/lib/errors";
+import { EVERYAPP_OBSERVABILITY } from "@every-app/sdk/cloudflare";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const GATEWAY_WORKER_DIR = path.join(WORKERS_DIR, DEFAULT_WORKER);
 export const GATEWAY_WORKER_CONFIG = path.join(GATEWAY_WORKER_DIR, "worker.config.json");
 const BUNDLE_DIR = path.join(GATEWAY_WORKER_DIR, "bundle");
-const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
 
 interface GatewayPatch {
   /**
@@ -80,10 +79,7 @@ type WorkerConfig = Record<string, unknown> & {
  * Patch the Build Output in `releaseDir` (a private copy of the release)
  * in place, and return the patched config.
  */
-export async function patchGatewayBuildOutput(
-  releaseDir: string,
-  patch: GatewayPatch,
-): Promise<WorkerConfig> {
+export async function patchGatewayBuildOutput(releaseDir: string, patch: GatewayPatch): Promise<WorkerConfig> {
   const configPath = path.join(releaseDir, GATEWAY_WORKER_CONFIG);
   const config = JSON.parse(await fs.readFile(configPath, "utf8")) as WorkerConfig;
   const env = { ...(config.env ?? {}) };
@@ -168,26 +164,10 @@ export function validateWorkerConfig(
   config: unknown,
   { requireDomain = false }: { requireDomain?: boolean } = {},
 ): void {
-  const parsed = OutputWorkerSchema.safeParse(config);
-  if (!parsed.success) {
-    throw new EveryAppError(
-      "INVALID_BUILD_OUTPUT",
-      `The patched Worker config isn't valid Build Output: ${parsed.error.issues
-        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-        .join("; ")}`,
-    );
-  }
-  if (JSON.stringify(config).includes(PATCH_PLACEHOLDER)) {
-    throw new EveryAppError(
-      "INVALID_BUILD_OUTPUT",
-      "The Worker config still has a deploy-time placeholder.",
-    );
-  }
-  if (requireDomain && !parsed.data.domains?.length) {
-    throw new EveryAppError(
-      "INVALID_BUILD_OUTPUT",
-      "The gateway has no domain to deploy to.",
-    );
+  try {
+    validateWorkerBuildOutput(config, { requireDomain });
+  } catch (error) {
+    throw EveryAppError.fromInstallation(error);
   }
 }
 

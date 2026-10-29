@@ -61,6 +61,7 @@
  * the gateway. The gateway takes the app's agent tools itself, on first use
  * and whenever the app's version changes.
  */
+import { checkDurableObjects as sharedCheckDurableObjects } from "@every-app/perimeter/install";
 import path from "node:path";
 import { cliVersion } from "@/lib/version";
 import { manifestTierProblems, validateManifestStrict, type GatewayNames } from "@every-app/perimeter/manifest";
@@ -101,7 +102,6 @@ import { mcpOf, publicRoutesOf, type McpSummary, type PublicRouteSummary } from 
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import {
   readOwnedResources,
-  recordOwnedResource,
   recordUploadedVersion,
   RESOURCE_LABELS,
 } from "@/lib/app/ownership";
@@ -614,9 +614,7 @@ async function deploySteps(
       cwd: root,
       inputs: target,
     });
-    for (const bucket of await ensureR2Buckets({ cf, names: r2Buckets, appId: manifest.id, out })) {
-      await recordOwnedResource(registry, workerName, { kind: "r2", binding: bucket, name: bucket, resourceId: bucket });
-    }
+    await ensureR2Buckets({ ...ownership, cf, names: r2Buckets, appId: manifest.id, out });
     for (const worker of [
       { workerName, names: workflows },
       ...helpers.map((helper) => ({
@@ -1111,46 +1109,12 @@ function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
 }
 
 /** Durable Object classes the last deploy had and this one drops. */
-function checkDurableObjects(
-  plan: RegistrationPlan,
-  manifest: EveryAppCliManifest,
-  allowDelete: boolean,
-): string[] {
-  const current = new Map(
-    (manifest.resources?.durableObjects ?? []).map((d) => [d.className, d.worker]),
-  );
-  for (const durableObject of plan.previousManifest?.resources?.durableObjects ?? []) {
-    const className = String(durableObject.className);
-    const before = durableObject.worker ? String(durableObject.worker) : undefined;
-    // Cloudflare moves a class's data between Workers only by a transfer,
-    // which the deploy never makes; and a helper Worker gets no tombstones.
-    if (current.has(className) && current.get(className) !== before) {
-      throw new EveryAppError(
-        "DURABLE_OBJECT_MOVED",
-        `${className} can't move to another Worker\nA Durable Object's data can't follow it.`,
-        { fix: "give the class a new name in everyapp.config.ts" },
-      );
-    }
-    if (!current.has(className) && before) {
-      // Its own code: --allow-delete-durable-object-data doesn't cover it.
-      throw new EveryAppError(
-        "HELPER_DURABLE_OBJECT_REMOVED",
-        `The helper Worker ${before} still defines ${className}\nRemoving a helper Worker's Durable Object class isn't supported yet.`,
-        { fix: `keep declaring ${className} in everyapp.config.ts` },
-      );
-    }
+function checkDurableObjects(...args: Parameters<typeof sharedCheckDurableObjects>): string[] {
+  try {
+    return sharedCheckDurableObjects(...args);
+  } catch (error) {
+    throw EveryAppError.fromInstallation(error);
   }
-  const removed = (plan.previousManifest?.resources?.durableObjects ?? [])
-    .map((d) => String(d.className))
-    .filter((className) => !current.has(className));
-  if (removed.length > 0 && !allowDelete) {
-    const one = removed.length === 1;
-    throw new EveryAppError(
-      "DURABLE_OBJECT_REMOVED",
-      `Deploying would delete ${one ? `${removed[0]}'s data` : `the data of ${removed.join(", ")}`} for good\neveryapp.config.ts no longer declares the Durable Object class${one ? "" : "es"} ${removed.join(", ")}.`,
-    );
-  }
-  return removed;
 }
 
 /**

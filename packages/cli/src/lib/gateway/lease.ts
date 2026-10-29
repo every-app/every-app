@@ -28,8 +28,6 @@
  * it in place), `ok` once the other run finished, a `LEASE_HEARTBEAT`
  * warning when a renewal fails.
  */
-import { randomBytes } from "node:crypto";
-import os from "node:os";
 import { loggedInAs } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
 import { CfTimeoutError } from "@/lib/cf/errors";
@@ -39,6 +37,8 @@ import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { capitalize, textOrNull } from "@/lib/output/text";
 import { roughly } from "@/lib/output/time";
+import { randomBytes } from "node:crypto";
+import os from "node:os";
 
 /** What a lease's holder is doing. */
 export enum LeasePurpose {
@@ -248,13 +248,13 @@ export async function readLease(
 }
 
 /** Every deploy running now (an expired lease is a deploy that died). */
-export async function readLiveLeases(
-  db: D1Database,
-  now = Date.now(),
-): Promise<LeaseHolder[]> {
+export async function readLiveLeases(db: D1Database, now = Date.now()): Promise<LeaseHolder[]> {
   await leaseTable(db);
   const [rows = []] = await db.run([
-    { sql: `${SELECT_LEASES} WHERE expires_at > ? ORDER BY acquired_at`, params: [now] },
+    {
+      sql: `${SELECT_LEASES} WHERE expires_at > ? ORDER BY acquired_at`,
+      params: [now],
+    },
   ]);
   return rows.map(toHolder);
 }
@@ -450,13 +450,13 @@ export async function acquireLease({
 }
 
 /** The Gateway's deploy lease (and its database's restore-point target). */
-export const GATEWAY_LEASE_ID = "gateway";
+const GATEWAY_LEASE_ID = "gateway";
 
 /** The lease the Access applications are reconciled under: `access on`, and the sync after a deploy or delete. */
 export const ACCESS_LEASE_ID = "access";
 
 /** An app's deploy lease (and its database's restore-point target). */
-export function appLeaseId(workerName: string): string {
+function appLeaseId(workerName: string): string {
   return `app:${workerName}`;
 }
 
@@ -477,7 +477,12 @@ export function acquireAppLease(
 
 /** Take the Gateway's deploy lease, saying who has it while waiting (step `gateway.lease`). */
 export function acquireGatewayLease(
-  options: { db: D1Database; out: EventSink; leaseWaitMs?: number; sleep?: (ms: number) => Promise<void> },
+  options: {
+    db: D1Database;
+    out: EventSink;
+    leaseWaitMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  },
   purpose: LeasePurpose,
 ): Promise<Lease> {
   return acquireLease({

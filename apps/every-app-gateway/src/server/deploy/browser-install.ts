@@ -1,6 +1,6 @@
-import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { platformPolicy } from "@/server/platform-policy";
+import { sql } from "drizzle-orm";
 import { DeployError } from "./errors";
 
 interface BrowserInstallEnv {
@@ -10,13 +10,6 @@ interface BrowserInstallEnv {
   CLOUDFLARE_ACCOUNT_ID?: string;
   APP_BASE_DOMAIN?: string;
 }
-
-// Deliberately the existing deployer's subset: D1, own DOs, static assets.
-export const BROWSER_INSTALL_LIMITS = {
-  cpuMs: 5_000,
-  subrequests: 200,
-  durableObjectClasses: 2,
-};
 
 /**
  * Off unless the operator set BROWSER_APP_INSTALLS to exactly `on`

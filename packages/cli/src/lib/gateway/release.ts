@@ -5,14 +5,16 @@
  * its SHA-256 before using it. The same tarball format carries app
  * releases (lib/app/release.ts), which `everyapp install <url>` downloads.
  */
+import { privateTempDir } from "@/lib/cf/privateDir";
+import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
+import { compareVersions } from "@every-app/perimeter/install";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { privateTempDir } from "@/lib/cf/privateDir";
-import { EveryAppError } from "@/lib/errors";
-import { isNotFoundError } from "@/lib/file-operations";
+export { compareVersions } from "@every-app/perimeter/install";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 /**
@@ -268,11 +270,7 @@ function isBundlePath(value: unknown): boolean {
  * disk when it uploads, so `../../.ssh/id_ed25519` would go up with the
  * Worker's code.
  */
-async function refuseModulesOutsideBundles(
-  dir: string,
-  tarball: string,
-  kindName: string,
-): Promise<void> {
+async function refuseModulesOutsideBundles(dir: string, tarball: string, kindName: string): Promise<void> {
   const workers = path.join(dir, ".cloudflare", "output", "v0", "workers");
   let names: string[];
   try {
@@ -291,8 +289,11 @@ async function refuseModulesOutsideBundles(
       if (isNotFoundError(error)) continue;
       throw error;
     }
-    const manifest = (config as { manifest?: { mainModule?: unknown; modules?: unknown } } | null)
-      ?.manifest;
+    const manifest = (
+      config as {
+        manifest?: { mainModule?: unknown; modules?: unknown };
+      } | null
+    )?.manifest;
     const listed = [
       manifest?.mainModule,
       ...Object.keys(
@@ -346,10 +347,7 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
       (entry) => !RELEASE_ENTRIES[kind].has(entry),
     );
     if (unexpected.length > 0) {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} holds more than ${names.a}: ${unexpected.join(", ")}.`,
-      );
+      throw new EveryAppError("RELEASE_INVALID", `${tarball} holds more than ${names.a}: ${unexpected.join(", ")}.`);
     }
     const parsed = schema.safeParse(json);
     if (!parsed.success) {
@@ -360,17 +358,13 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
     }
     const manifest = parsed.data;
     if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
-      throw new EveryAppError(
-        "RELEASE_UNSUPPORTED",
-        `${names.the} ${manifest.version} needs a newer everyapp`,
-        {
+      throw new EveryAppError("RELEASE_UNSUPPORTED", `${names.the} ${manifest.version} needs a newer everyapp`, {
           fix: "update everyapp (in a checkout: git pull), then run this again",
           data: {
             buildOutputVersion: manifest.buildOutputVersion,
             supported: SUPPORTED_BUILD_OUTPUT,
           },
-        },
-      );
+        });
     }
     const actual = await hashReleaseTree(dir);
     if (actual !== manifest.sha256) {
@@ -384,10 +378,7 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
   } catch (error) {
     await cleanup();
     if (error instanceof SyntaxError || isNotFoundError(error)) {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} isn't ${names.a}: ${(error as Error).message}`,
-      );
+      throw new EveryAppError("RELEASE_INVALID", `${tarball} isn't ${names.a}: ${(error as Error).message}`);
     }
     throw error;
   }
@@ -484,20 +475,4 @@ export function newestMigration(
 /** Negative when `a` is the older release. */
 export function compareReleaseOrder(a: ReleaseOrder, b: ReleaseOrder): number {
   return a.schema - b.schema || a.committedAt - b.committedAt;
-}
-
-/** Compare dotted versions, prerelease suffixes ignored. */
-export function compareVersions(a: string, b: string): number {
-  const parts = (version: string) =>
-    version
-      .replace(/^v/, "")
-      .split("-")[0]!
-      .split(".")
-      .map((part) => Number.parseInt(part, 10) || 0);
-  const [left, right] = [parts(a), parts(b)];
-  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
-    const difference = (left[i] ?? 0) - (right[i] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
 }

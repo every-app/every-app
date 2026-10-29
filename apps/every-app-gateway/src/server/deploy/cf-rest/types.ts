@@ -59,6 +59,23 @@ export type WorkerBinding =
   | { type: "hyperdrive"; name: string; id: string }
   | { type: "assets"; name: string }
   | { type: "ai"; name: string }
+  | { type: "browser" | "images"; name: string }
+  | { type: "queue"; name: string; queue_name: string }
+  | { type: "vectorize"; name: string; index_name: string }
+  | { type: "analytics_engine"; name: string; dataset: string }
+  | {
+      type: "secrets_store_secret";
+      name: string;
+      store_id: string;
+      secret_name: string;
+    }
+  | {
+      type: "send_email";
+      name: string;
+      allowed_sender_addresses?: string[];
+      destination_address?: string;
+      allowed_destination_addresses?: string[];
+    }
   | { type: "version_metadata"; name: string }
   /** Keep the binding of this name from the script's latest version. */
   | { type: "inherit"; name: string; old_name?: string; version_id?: string };
@@ -76,10 +93,20 @@ export interface WorkerLimits {
 export interface WorkerObservability {
   enabled: boolean;
   head_sampling_rate?: number | null;
+  redact_query_string?: boolean;
+  issues?: { enabled?: boolean };
+  traces?: {
+    enabled?: boolean;
+    persist?: boolean;
+    head_sampling_rate?: number;
+    destinations?: string[];
+  };
   logs?: {
     enabled: boolean;
     invocation_logs: boolean;
     head_sampling_rate?: number | null;
+    persist?: boolean;
+    destinations?: string[];
   } | null;
 }
 
@@ -124,7 +151,14 @@ export interface WorkerMetadata {
   assets?: { jwt?: string; config?: WorkerAssetsConfig };
   keep_assets?: boolean;
   migrations?: WorkerMigrations;
-  placement?: { mode: "smart" };
+  placement?: {
+    mode: "off" | "smart" | "targeted";
+    hint?: string;
+    region?: string;
+    host?: string;
+    hostname?: string;
+  };
+  cache_options?: { enabled: boolean; cross_version_cache?: boolean };
   tail_consumers?: TailConsumer[];
   logpush?: boolean;
   usage_model?: "standard";

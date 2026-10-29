@@ -36,6 +36,10 @@ export interface DeployBundle {
   assets: Map<string, Uint8Array>;
   /** Migration files in the order they apply (by name). */
   migrations: Array<{ name: string; sql: string }>;
+  /** Auxiliary Build Output Workers of a self-hosted release, by directory. */
+  helpers?: Map<string, DeployBundle>;
+  /** Release tree retained only for schema/toolchain checks, never executed. */
+  releaseFiles?: ReadonlyMap<string, Uint8Array>;
 }
 
 const invalid = (message: string) =>

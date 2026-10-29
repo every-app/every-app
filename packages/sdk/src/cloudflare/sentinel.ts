@@ -29,6 +29,20 @@ export const BUILD_SENTINEL = Object.freeze({
     "-----BEGIN PUBLIC KEY-----\nEVERYAPPHOSTEDDEPLOYSENTINEL\n-----END PUBLIC KEY-----\n",
 });
 
+/** Runtime-independent resource names used by both release installers. */
+export function helperWorkerName(appWorker: string, helper: string): string {
+  const name = `${appWorker}--${helper}`;
+  if (name.length > 63)
+    throw new Error(
+      `Helper Worker ${name} is longer than Cloudflare's 63 characters; shorten its name in everyapp.config.ts.`,
+    );
+  return name;
+}
+
+export function workflowNameFor(workerName: string, binding: string): string {
+  return `${workerName}--${binding.toLowerCase().replaceAll("_", "-")}`;
+}
+
 /**
  * A manifest binding's placeholder: a D1 database's name and id, an R2
  * bucket's, queue's or Vectorize index's name, a KV namespace's, Hyperdrive

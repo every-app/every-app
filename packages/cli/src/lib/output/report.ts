@@ -1,4 +1,3 @@
-import { ManifestError } from "@every-app/perimeter/manifest";
 import { CfError, CfOutputError, CfTimeoutError, isCfError } from "@/lib/cf/errors";
 import {
   ActionRequiredError,
@@ -6,6 +5,7 @@ import {
   ReportCode,
   rollbackFor,
 } from "@/lib/errors";
+import { ManifestError } from "@every-app/perimeter/manifest";
 import { thisCommand } from "./command";
 import type { EventSink, RequiredAction } from "./events";
 
@@ -38,17 +38,12 @@ const NETWORK_CODES = new Set([
  * carries its stack (`data.stack`, shown with --verbose), and suggests
  * --verbose to see it.
  */
-export function reportFailure(
-  out: EventSink,
-  error: unknown,
-  step?: string,
-): void {
+export function reportFailure(out: EventSink, error: unknown, step?: string): void {
   const rollback = rollbackFor(error);
+  error = EveryAppError.fromInstallation(error);
   // Each event says how to roll back a database this run migrated, if one was.
   const withRollback = (message: string) =>
-    rollback
-      ? `${message}\nThe database stays migrated. To roll it back: ${rollback.restoreCommand}`
-      : message;
+    rollback ? `${message}\nThe database stays migrated. To roll it back: ${rollback.restoreCommand}` : message;
   const rollbackData = rollback ? { rollbackCommand: rollback.rollbackCommand } : {};
   const at = step ? { step } : {};
   const requireAction = (
@@ -133,9 +128,12 @@ export function reportFailure(
  * say it: an account whose email isn't verified yet (API code 10034) can't
  * create anything until it is, and then the same command runs.
  */
-function knownFailure(
-  error: unknown,
-): { code: string; message: string; retryable: boolean; data?: Record<string, unknown> } | null {
+function knownFailure(error: unknown): {
+  code: string;
+  message: string;
+  retryable: boolean;
+  data?: Record<string, unknown>;
+} | null {
   if (!(error instanceof Error)) return null;
   if (isCfError(error, "email_unverified")) {
     return {
@@ -147,7 +145,11 @@ function knownFailure(
     };
   }
   if (error instanceof CfError) {
-    return { code: `CF_${error.kind.toUpperCase()}`, message: error.message, retryable: false };
+    return {
+      code: `CF_${error.kind.toUpperCase()}`,
+      message: error.message,
+      retryable: false,
+    };
   }
   if (error instanceof CfTimeoutError) {
     return { code: "CF_TIMEOUT", message: error.message, retryable: true };
@@ -169,7 +171,12 @@ function knownFailure(
   if (error instanceof TypeError && error.message === "fetch failed") {
     return { code: ReportCode.Network, message: "The network failed\nfetch failed", retryable: true };
   }
-  if (code) return { code: ReportCode.System, message: error.message, retryable: false };
+  if (code)
+    return {
+      code: ReportCode.System,
+      message: error.message,
+      retryable: false,
+    };
   return null;
 }
 

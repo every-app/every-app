@@ -1,3 +1,4 @@
+export { describeVectorizeShape, hasVectorizeShape } from "@every-app/perimeter/install";
 /**
  * Vectorize indexes through `cf vectorize`, by name: an index has no other
  * id. Its shape (dimensions and metric, or a preset of Cloudflare's) is
@@ -15,9 +16,7 @@ import {
 } from "./schemas";
 
 /** What an index is made with: dimensions and a metric, or a preset. */
-export type VectorizeShape =
-  | { dimensions: number; metric: string }
-  | { preset: string };
+export type VectorizeShape = { dimensions: number; metric: string } | { preset: string };
 
 /**
  * The index with this name, or null when the account has none (or has
@@ -50,22 +49,13 @@ export function listVectorizeIndexes(cf: CfRunner): Promise<VectorizeIndex[]> {
 }
 
 /** Create an index; fails (`already_exists`) when the name is taken. */
-export async function createVectorizeIndex(
-  cf: CfRunner,
-  name: string,
-  shape: VectorizeShape,
-): Promise<VectorizeIndex> {
+export async function createVectorizeIndex(cf: CfRunner, name: string, shape: VectorizeShape): Promise<VectorizeIndex> {
   return runCfJson(
     cf,
     {
       plane: "account",
       files: { "vectorize.json": { name, config: shape } },
-      args: (files) => [
-        "vectorize",
-        "create",
-        "--body",
-        `@${files["vectorize.json"]!}`,
-      ],
+      args: (files) => ["vectorize", "create", "--body", `@${files["vectorize.json"]!}`],
     },
     VectorizeIndexOutput,
   );
@@ -85,31 +75,4 @@ export async function deleteVectorizeIndex(
     mode: "json",
     args: ["vectorize", "delete", name, "--force"],
   });
-}
-
-/**
- * Whether an index has the shape the manifest declares: the same
- * dimensions and metric, or, for a preset, that preset (Cloudflare picks a
- * preset's dimensions and metric, and reports them with it).
- */
-export function hasVectorizeShape(
-  index: VectorizeIndex,
-  shape: VectorizeShape,
-): boolean {
-  const config = index.config ?? {};
-  return "preset" in shape
-    ? config.preset === shape.preset
-    : config.dimensions === shape.dimensions && config.metric === shape.metric;
-}
-
-/** An index's shape in words: `768 dimensions, cosine` or `the preset @cf/…`. */
-export function describeVectorizeShape(
-  shape:
-    | VectorizeShape
-    | { dimensions?: number | null; metric?: string | null; preset?: string | null },
-): string {
-  if ("preset" in shape && shape.preset) return `the preset ${shape.preset}`;
-  const dimensions = "dimensions" in shape ? shape.dimensions : undefined;
-  const metric = "metric" in shape ? shape.metric : undefined;
-  return `${dimensions ?? "?"} dimensions, ${metric ?? "no metric"}`;
 }

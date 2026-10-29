@@ -28,8 +28,6 @@
  * Session-authenticated, so these are control-plane routes
  * (src/routes/api/admin/), behind its CSRF guard.
  */
-import { env } from "cloudflare:workers";
-import { logEvent } from "@every-app/perimeter";
 import { auth } from "@/auth";
 import { resolveLiveOrgRole } from "@/perimeter/betterAuthAuthenticator";
 import {
@@ -37,15 +35,20 @@ import {
   resolveOrgContext,
 } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
-import { isUserBanned } from "@/server/user-ban";
+import { gatewayProviders } from "@/server/providers";
+import { AppRepository } from "@/server/repositories/AppRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
-import { bundleRefused, DeployError } from "./errors";
-import { fetchAppRelease, fetchReleaseUrl, parseRepoUrl } from "./release";
+import { isUserBanned } from "@/server/user-ban";
+import { logEvent } from "@every-app/perimeter";
+import { InstallationError } from "@every-app/perimeter/install";
+import { env } from "cloudflare:workers";
 import {
   installOrganizationId,
   selfHostedInstallEnabled,
 } from "./browser-install";
+import { bundleRefused, DeployError } from "./errors";
 import { bundleProblems } from "./metadata";
+import { fetchAppRelease, fetchReleaseUrl, parseRepoUrl } from "./release";
 import {
   deployerSettings,
   deployLimits,
@@ -56,7 +59,12 @@ import {
   registerApp,
   startDeploy,
 } from "./run";
-import { gatewayProviders } from "@/server/providers";
+import {
+  parseInstallConfiguration,
+  reviewInstallationFields,
+  selfHostedBundleProblems,
+} from "./self-hosted";
+import { planBundledProviders } from "./self-hosted-providers";
 
 interface InstallCaller {
   userId: string;
@@ -199,6 +207,8 @@ async function serve(work: () => Promise<Response>): Promise<Response> {
     return await work();
   } catch (error) {
     if (error instanceof DeployError) return failure(error);
+    if (error instanceof InstallationError)
+      return json({ error: error.code, message: error.message }, 422);
     console.error("app install error:", error);
     return json(
       { error: "INTERNAL_ERROR", message: "The install failed." },
@@ -270,10 +280,21 @@ export function serveInstall(request: Request): Promise<Response> {
       repoUrl?: unknown;
       releaseUrl?: unknown;
       organizationId?: unknown;
+      review?: unknown;
+      sha256?: unknown;
+      configuration?: unknown;
     };
     try {
-      body = (await request.json()) as typeof body;
-    } catch {
+      const text = await request.text();
+      if (text.length > 128 * 1024)
+        throw new DeployError(
+          "INVALID_REQUEST",
+          413,
+          "The installation request is too large.",
+        );
+      body = JSON.parse(text) as typeof body;
+    } catch (error) {
+      if (error instanceof DeployError) throw error;
       throw new DeployError(
         "INVALID_REQUEST",
         400,
@@ -281,7 +302,7 @@ export function serveInstall(request: Request): Promise<Response> {
       );
     }
     const caller = await authenticateAdmin(session, body?.organizationId, {
-      fresh: true,
+      fresh: body?.review !== true,
     });
     assertAvailable();
     // Nothing is downloaded for a gateway that couldn't deploy it.
@@ -292,11 +313,21 @@ export function serveInstall(request: Request): Promise<Response> {
         400,
         "Send one repoUrl or releaseUrl.",
       );
+    const selfHosted = platformPolicy(env).mode === "self_hosted";
     const release =
       body?.releaseUrl !== undefined
-        ? await fetchReleaseUrl(body.releaseUrl)
-        : await fetchAppRelease(parseRepoUrl(body?.repoUrl));
-    const lookup = await gatewayProviders();
+        ? await fetchReleaseUrl(body.releaseUrl, selfHosted)
+        : await fetchAppRelease(parseRepoUrl(body?.repoUrl), selfHosted);
+    if (body?.sha256 !== undefined && body.sha256 !== release.sha256)
+      throw new DeployError(
+        "RELEASE_CHANGED",
+        409,
+        "The release changed. Review it again before installing.",
+      );
+    const bundled = selfHosted
+      ? await planBundledProviders(release.bundle)
+      : null;
+    const lookup = bundled?.lookup ?? (await gatewayProviders());
     const manifest = parseManifest(
       release.bundle.manifest,
       release.appId,
@@ -304,14 +335,58 @@ export function serveInstall(request: Request): Promise<Response> {
     );
     // Refused before the app is registered: a release that can't go
     // leaves no row behind. startDeploy checks again.
-    const problems = bundleProblems(
-      release.bundle.worker,
-      manifest,
-      deployLimits(),
-      release.bundle.assets.size > 0,
-      lookup,
-    );
+    const problems = selfHosted
+      ? selfHostedBundleProblems(release.bundle, manifest)
+      : bundleProblems(
+          release.bundle.worker,
+          manifest,
+          deployLimits(),
+          release.bundle.assets.size > 0,
+          lookup,
+        );
     if (problems.length > 0) throw bundleRefused(problems);
+    const fields = selfHosted
+      ? await reviewInstallationFields(manifest, caller.organizationId)
+      : [];
+    if (body?.review === true) {
+      const installed = await AppRepository.findByAppSlug(
+        manifest.id,
+        caller.organizationId,
+      );
+      return json({
+        release: {
+          sha256: release.sha256,
+          appId: manifest.id,
+          name: manifest.name ?? manifest.id,
+          version: release.source.version,
+          installed:
+            installed && installed.status !== "deleted"
+              ? { name: installed.name, status: installed.status }
+              : null,
+          resources: manifest.resources ?? {},
+          fields,
+          providers: bundled?.reports ?? [],
+        },
+      });
+    }
+    const configuration = selfHosted
+      ? parseInstallConfiguration(body?.configuration, manifest)
+      : undefined;
+    if (
+      fields.some(
+        (field) => !field.optional && !configuration?.values?.[field.name],
+      )
+    )
+      throw new InstallationError(
+        "CONFIGURATION_REQUIRED",
+        "Enter the release's required configuration before installing.",
+      );
+    if (bundled?.reports.length && !configuration?.registerProviders)
+      throw new InstallationError(
+        "CONFIRMATION_REQUIRED",
+        "Confirm the bundled providers and their destination hosts before installing.",
+      );
+    await bundled?.register(caller.email);
     // Registered as the deploy API's POST /apps registers it, then deployed.
     const plan = await registerApp(caller, manifest);
     logEvent("app_install.started", {
@@ -332,6 +407,8 @@ export function serveInstall(request: Request): Promise<Response> {
       actor: caller.email,
       source: release.source,
       via: "browser",
+      configuration,
+      previousManifest: plan.previousManifest,
     });
     return jobAnswer(caller.organizationId, jobId, 202);
   });

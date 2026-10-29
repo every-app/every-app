@@ -8,10 +8,13 @@ import { DEV_ISSUER, DEV_ORG_ID, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
 // cloudflare.config.ts imports from the Worker).
 import { DEV_GATEWAY_KEYS } from "./catalogSettings.generated.js";
 import {
+  helperWorkerName,
   sentinelDeployTarget,
+  workflowNameFor,
   type AiGatewayValue,
   type EveryAppDeployTarget,
 } from "./sentinel.js";
+export { helperWorkerName, workflowNameFor } from "./sentinel.js";
 
 /** A Durable Object or Workflow class, and the helper Worker defining it. */
 interface ClassResource {
@@ -984,7 +987,6 @@ const LOCAL_SECRETS_STORE_ID = "local";
 /** Cloudflare's limit on a Vectorize index's name. */
 const MAX_VECTORIZE_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
-const MAX_WORKER_NAME_LENGTH = 63;
 /**
  * Where a developer puts a local Postgres URL for a Hyperdrive binding
  * (`.dev.vars` or `.env`), the variable wrangler reads for the same.
@@ -1248,21 +1250,6 @@ export function everyAppAuxiliaryWorker<
     env,
     exports,
   };
-}
-
-/**
- * A helper Worker's name: `<app worker>--<name>`, within Cloudflare's
- * limit. New app ids can't contain `--`, so it is never another app's
- * Worker name.
- */
-export function helperWorkerName(appWorker: string, helper: string): string {
-  const name = `${appWorker}--${helper}`;
-  if (name.length > MAX_WORKER_NAME_LENGTH) {
-    throw new Error(
-      `Helper Worker ${name} is longer than Cloudflare's ${MAX_WORKER_NAME_LENGTH} characters; shorten its name in everyapp.config.ts.`,
-    );
-  }
-  return name;
 }
 
 /** The placeholder target (in production) and the app Worker's name. */
@@ -1933,16 +1920,6 @@ function observability(): EveryAppObservability {
     traces: { ...EVERYAPP_OBSERVABILITY.traces },
     issues: { ...EVERYAPP_OBSERVABILITY.issues },
   };
-}
-
-/**
- * The Workflow a binding defines, named after the app's Worker:
- * `every-acme-seo` and `RANK_CHECK` → `every-acme-seo--rank-check`.
- * Workflow names are unique in the account, and new app ids can't contain
- * `--`, so one app's Workflow is never named like another app's.
- */
-export function workflowNameFor(workerName: string, binding: string): string {
-  return `${workerName}--${binding.toLowerCase().replaceAll("_", "-")}`;
 }
 
 /**

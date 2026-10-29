@@ -1,3 +1,4 @@
+export { chooseSecretsStore } from "@every-app/perimeter/install";
 /**
  * Cloudflare Secrets Store through `cf secrets-store`: the account's
  * stores, and the secrets in one by exact name. A secret's value goes to cf
@@ -16,24 +17,12 @@ import {
   type SecretsStoreSecret,
 } from "./schemas";
 
-/** The store a deploy uses when the account has several. */
-const PREFERRED_STORE_NAME = "everyapp";
-
 /** Every Secrets Store in the account. */
 export function listSecretsStores(cf: CfRunner): Promise<SecretsStore[]> {
   return listAll(cf, ["secrets-store", "stores", "list"], SecretsStoreListOutput, {
     perPage: 100,
     maxPages: 10,
   });
-}
-
-/**
- * The store a deploy puts the app's secrets in: the account's only one;
- * with several, the one named `everyapp`, else the first Cloudflare lists;
- * null when the account has none.
- */
-export function chooseSecretsStore(stores: readonly SecretsStore[]): SecretsStore | null {
-  return stores.find((store) => store.name === PREFERRED_STORE_NAME) ?? stores[0] ?? null;
 }
 
 /**
@@ -70,12 +59,7 @@ export async function findStoreSecret(
  * Create a secret Workers may bind (scope `workers`); fails
  * (`already_exists`) when the store has one of the name. Returns its id.
  */
-export async function createStoreSecret(
-  cf: CfRunner,
-  storeId: string,
-  name: string,
-  value: string,
-): Promise<string> {
+export async function createStoreSecret(cf: CfRunner, storeId: string, name: string, value: string): Promise<string> {
   const created = await runCfJson(
     cf,
     {
@@ -83,14 +67,7 @@ export async function createStoreSecret(
       files: {
         "secret.json": [{ name, value, scopes: ["workers"], comment: "Created by everyapp deploy" }],
       },
-      args: (files) => [
-        "secrets-store",
-        "secrets",
-        "create",
-        storeId,
-        "--body",
-        `@${files["secret.json"]!}`,
-      ],
+      args: (files) => ["secrets-store", "secrets", "create", storeId, "--body", `@${files["secret.json"]!}`],
     },
     SecretsStoreSecretListOutput,
   );

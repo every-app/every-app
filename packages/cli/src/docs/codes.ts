@@ -18,6 +18,9 @@ const SRC = fileURLToPath(new URL("..", import.meta.url));
 const GATEWAY_DEPLOY = fileURLToPath(
   new URL("../../../../apps/every-app-gateway/src/server/deploy", import.meta.url),
 );
+const SHARED_INSTALL = fileURLToPath(
+  new URL("../../../perimeter/src/install", import.meta.url),
+);
 
 function sourceFiles(root: string): string[] {
   const files: string[] = [];
@@ -52,6 +55,20 @@ function collect(
   }
 }
 
+/** Literal and conditional codes in the first argument of an error constructor. */
+function collectThrownCodes(files: string[], into: Map<string, Set<string>>, root: string): void {
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const call of text.matchAll(/(?:new (?:EveryAppError|InstallationError|DeployError)|unauthorized)\(\s*([^,]+),/g)) {
+      for (const literal of call[1]!.matchAll(/"([A-Z][A-Z_0-9]+)"/g)) {
+        const sites = into.get(literal[1]!) ?? new Set<string>();
+        sites.add(path.relative(root, file).split(path.sep).join("/"));
+        into.set(literal[1]!, sites);
+      }
+    }
+  }
+}
+
 interface CodeInventory {
   /** `new EveryAppError("CODE"`, the literal fallbacks (`?? "CODE"`) and codes passed as an option (`code: "CODE"`). */
   errors: Map<string, Set<string>>;
@@ -75,7 +92,7 @@ function cfKinds(): string[] {
 export function codeInventory(): CodeInventory {
   const files = sourceFiles(SRC);
   const errors = new Map<string, Set<string>>();
-  collect(files, /new EveryAppError\(\s*"([A-Z][A-Z_0-9]+)"/g, errors, SRC);
+  collectThrownCodes([...files, ...sourceFiles(SHARED_INSTALL)], errors, SRC);
   collect(files, /\?\? "([A-Z]+_[A-Z_0-9]+)"/g, errors, SRC);
   // A code passed as an option to the helper that raises it (`runLogged(…,
   // { code: "GATEWAY_BUILD_FAILED" })` in lib/gateway/checkoutRelease.ts). The
@@ -108,12 +125,7 @@ export function codeInventory(): CodeInventory {
   }
   const hostedApi = new Map<string, Set<string>>();
   const gateway = sourceFiles(GATEWAY_DEPLOY);
-  collect(
-    gateway,
-    /(?:new DeployError|unauthorized)\(\s*"([A-Z][A-Z_0-9]+)"/g,
-    hostedApi,
-    GATEWAY_DEPLOY,
-  );
+  collectThrownCodes(gateway, hostedApi, GATEWAY_DEPLOY);
   collect(gateway, /(?:code|error): "([A-Z][A-Z_0-9]+)"/g, hostedApi, GATEWAY_DEPLOY);
   return {
     errors,

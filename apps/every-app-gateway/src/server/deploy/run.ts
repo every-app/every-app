@@ -12,41 +12,46 @@
  * new version `app.updated`; a registration whose first deploy fails
  * announces nothing.
  */
-import { env, waitUntil } from "cloudflare:workers";
-import { logEvent } from "@every-app/perimeter";
-import {
-  ManifestError,
-  validateManifest,
-  type Manifest,
-} from "@every-app/perimeter/manifest";
-import type { AppRow } from "@every-app/perimeter/registry";
 import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
-import { gatewayNameOf } from "@/server/gateway-name";
 import { emit } from "@/server/events/bus";
 import { catalogue } from "@/server/events/catalogue";
 import { userActor } from "@/server/events/subjects";
+import { gatewayNameOf } from "@/server/gateway-name";
 import { platformPolicy } from "@/server/platform-policy";
+import { gatewayProviders } from "@/server/providers";
 import { AppRepository } from "@/server/repositories/AppRepository";
-import { scheduleCatalogResync } from "@/server/toolbus/catalog-sync";
 import {
   DeployJobRepository,
   type DeployJob,
   type DeployJobSource,
 } from "@/server/repositories/DeployJobRepository";
+import { scheduleCatalogResync } from "@/server/toolbus/catalog-sync";
+import { logEvent } from "@every-app/perimeter";
+import { InstallationError } from "@every-app/perimeter/install";
+import {
+  ManifestError,
+  validateManifest,
+  validateManifestStrict,
+  type Manifest,
+} from "@every-app/perimeter/manifest";
+import type { AppRow } from "@every-app/perimeter/registry";
+import type { CapabilityLookup } from "@every-app/sdk/internal";
+import { env, waitUntil } from "cloudflare:workers";
+import { withInstallLease } from "./browser-install";
 import type { DeployBundle } from "./bundle";
 import { CfRestDeployer } from "./cfRestDeployer";
 import { bundleRefused, DeployError } from "./errors";
 import { bundleProblems, manifestProblems } from "./metadata";
 import { runDeploy } from "./pipeline";
 import { registerDispatchApp, toAppRow } from "./registry";
-import { BROWSER_INSTALL_LIMITS, withInstallLease } from "./browser-install";
-import type { CapabilityLookup } from "@every-app/sdk/internal";
-import { gatewayProviders } from "@/server/providers";
+import {
+  runSelfHostedInstall,
+  selfHostedBundleProblems,
+  type BrowserInstallConfiguration,
+} from "./self-hosted";
 
 export function deployLimits() {
-  return platformPolicy(env).mode === "self_hosted"
-    ? BROWSER_INSTALL_LIMITS
-    : platformPolicy(env).thirdPartyLimits;
+  return platformPolicy(env).thirdPartyLimits;
 }
 
 const INLINE_WAIT_MS = 20_000;
@@ -107,7 +112,10 @@ export function parseManifest(
 ): Manifest {
   let manifest: Manifest;
   try {
-    manifest = validateManifest(raw);
+    manifest =
+      platformPolicy(env).mode === "self_hosted"
+        ? validateManifestStrict(raw, { capabilities: lookup })
+        : validateManifest(raw);
   } catch (error) {
     throw new DeployError(
       "INVALID_MANIFEST",
@@ -122,7 +130,10 @@ export function parseManifest(
       `manifest.id "${manifest.id}" does not match the app id "${appId}".`,
     );
   }
-  const problems = manifestProblems(manifest, deployLimits(), lookup);
+  const problems =
+    platformPolicy(env).mode === "self_hosted"
+      ? []
+      : manifestProblems(manifest, deployLimits(), lookup);
   if (problems.length > 0) throw bundleRefused(problems);
   return manifest;
 }
@@ -177,7 +188,7 @@ type JobOutcome = Parameters<typeof DeployJobRepository.finish>[1];
  * caller's: once per error, by whoever is last to see it.
  */
 function failedOutcome(error: unknown): JobOutcome {
-  if (error instanceof DeployError) {
+  if (error instanceof DeployError || error instanceof InstallationError) {
     return { status: "failed", code: error.code, message: error.message };
   }
   return {
@@ -230,6 +241,8 @@ interface StartDeployInput extends Deployer {
   source?: DeployJobSource;
   /** How the deploy came in, for the event: a deploy key or the browser. */
   via: "cli" | "browser";
+  configuration?: BrowserInstallConfiguration;
+  previousManifest?: Manifest | null;
 }
 
 /**
@@ -280,15 +293,17 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
   // Refused before anything is registered, created or queued; the
   // pipeline checks again before it uploads.
   const limits = deployLimits();
-  const problems = bundleProblems(
-    bundle.worker,
-    manifest,
-    limits,
-    bundle.assets.size > 0,
-    await gatewayProviders(),
-  );
-  if (problems.length > 0) throw bundleRefused(problems);
   const selfHosted = platformPolicy(env).mode === "self_hosted";
+  const problems = selfHosted
+    ? selfHostedBundleProblems(bundle, manifest)
+    : bundleProblems(
+        bundle.worker,
+        manifest,
+        limits,
+        bundle.assets.size > 0,
+        await gatewayProviders(),
+      );
+  if (problems.length > 0) throw bundleRefused(problems);
   const deployer = selfHosted
     ? CfRestDeployer.fromSelfHostedEnv(env)
     : CfRestDeployer.fromEnv(env);
@@ -348,12 +363,18 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
             "This app changed before installation started. Try again.",
           );
         const current = toAppRow(row);
-        const deployed = await execute(
-          deployer.usingLease(renew, current),
-          current,
-        );
-        await deployer.publishBoundApp(deployed, gatewayUrl, renew);
-        return deployed;
+        return runSelfHostedInstall({
+          app: current,
+          manifest,
+          bundle,
+          gatewayUrl,
+          identityPublicKey,
+          deployer: deployer.usingLease(renew),
+          renew,
+          actor: input.actor,
+          configuration: input.configuration,
+          previousManifest: input.previousManifest,
+        });
       })
     : execute(deployer);
   const run = deploy.then(
@@ -377,13 +398,22 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
     },
     (error: unknown) => {
       // Only the job records this error; the request answers with the job.
-      if (!(error instanceof DeployError)) {
+      if (
+        !(error instanceof DeployError) &&
+        !(error instanceof InstallationError)
+      ) {
         console.error("deploy failed:", error);
       }
       return finishJob(job.id, failedOutcome(error), fields);
     },
   );
   waitUntil(run);
+  // The request owns a self-hosted install for its whole lifetime: a
+  // multi-resource install must not be cut off by waitUntil's 30s tail.
+  if (selfHosted) {
+    await run;
+    return job.id;
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
     run,
