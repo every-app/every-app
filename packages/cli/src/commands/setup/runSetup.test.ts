@@ -1530,5 +1530,10 @@ describe("everyapp setup", () => {
     expect(second.exitCode).toBe(0);
     expect(asked).toBe(1);
     expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CF_DEPLOY_TOKEN");
+
+    // `update` asks nothing new, even at a terminal with no token set.
+    const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+    await runGatewayDeploy({ json: false }, out, deps({ interactive: true, prompts }));
+    expect(asked).toBe(1);
   });
 });

@@ -466,26 +466,30 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       const theirs = account ? `${account}'s Gateway` : "the Gateway";
       if (event.status === "start") {
         const host = text(data["gatewayUrl"])?.replace(/^https:\/\//, "");
+        // The line, then the spinner's label between its steps (the
+        // Cloudflare checks before the database and the upload have none).
+        const said = (line: string, spin: string): Shown[] => [{ line }, { spin }];
         switch (data["change"]) {
           case GatewayChange.Install: {
             // How long until the owner link, so nobody gives up on it.
             const minutes = expectedMinutes(data["expectedMinutes"]);
-            return {
-              line: `Installing the Gateway at ${host} (${name})${
+            return said(
+              `Installing the Gateway at ${host} (${name})${
                 minutes
                   ? chalk.dim(` (usually ${minutes.min}–${minutes.max} minutes, then the owner link)`)
                   : ""
               }`,
-            };
+              "Installing...",
+            );
           }
           case GatewayChange.Resume:
-            return { line: `Resuming the Gateway install at ${host} (${name})` };
+            return said(`Resuming the Gateway install at ${host} (${name})`, "Installing...");
           case GatewayChange.Upgrade:
-            return { line: `Upgrading ${theirs} to ${name}` };
+            return said(`Upgrading ${theirs} to ${name}`, "Upgrading...");
           case GatewayChange.Repair:
-            return { line: `Repairing ${theirs} (${name})` };
+            return said(`Repairing ${theirs} (${name})`, "Repairing...");
           case GatewayChange.Redeploy:
-            return { line: `Redeploying ${theirs} (${name})` };
+            return said(`Redeploying ${theirs} (${name})`, "Redeploying...");
           default:
             return null;
         }

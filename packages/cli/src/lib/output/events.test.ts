@@ -965,6 +965,29 @@ describe("createHumanSink", () => {
     expect(sink.exitCode).toBe(2);
   });
 
+  it("labels a Gateway upgrade's spinner between its steps, never a bare timer", () => {
+    let now = 0;
+    const { sink, stdout } = human({ terminal: true, columns: () => 120, now: () => now });
+    sink.emit({
+      type: "step",
+      step: "setup.gateway",
+      status: "start",
+      data: { change: "upgrade", account: "Ben Senescu", releaseName: "commit 981c72da" },
+    });
+    sink.emit({
+      type: "step",
+      step: "gateway.release",
+      status: "start",
+      message: "Building the Gateway from this checkout (usually 1–2m)",
+    });
+    now += 18_000;
+    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.4.0", cached: false } });
+    // The Cloudflare checks before the database have no step of their own.
+    expect(stdout().split("\r\x1b[2K").at(-1)).toBe("Upgrading... · 18s ⠋");
+    sink.emit({ type: "step", step: "setup.gateway", status: "ok", data: { release: "0.4.0" } });
+    sink.emit({ type: "done" });
+  });
+
   it("draws a spinner at a terminal while a step runs, and makes way for a prompt", () => {
     const { sink, stdout } = human({ terminal: true, columns: () => 120 });
     sink.emit({

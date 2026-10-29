@@ -291,14 +291,12 @@ export async function runGatewayDeploy(
   });
   const found = requireGateway(discovery, whoami);
   if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
-  // An update asks nothing new of a person: Access is setup's offer.
   return installGateway({
     whoami,
     discovery,
     flags,
     out,
     deps,
-    offerAccess: false,
     updateOnly: true,
     names: found.names,
   });
@@ -377,7 +375,6 @@ export async function installGateway({
   flags,
   out,
   deps,
-  offerAccess = true,
   updateOnly = false,
   names,
 }: {
@@ -392,9 +389,11 @@ export async function installGateway({
    * discovery looked for this name only.
    */
   names: GatewayNames;
-  /** Whether to offer Cloudflare Access once the owner exists (setup, and a deploy that installs a Gateway; not update). */
-  offerAccess?: boolean;
-  /** `update`: deploy to the Gateway found, never create its resources. */
+  /**
+   * `update`: deploy to the Gateway found, never create its resources,
+   * and ask nothing new of a person (Access and Gateway app installs are
+   * setup's offers, and an installing deploy's).
+   */
   updateOnly?: boolean;
 }): Promise<SetupResult> {
   // With no Gateway, where to install one; never while an account that may hold it couldn't be asked.
@@ -519,12 +518,13 @@ export async function installGateway({
     deps,
   });
 
-  // The questions only a person answers, on a self-hosted Gateway; --yes
-  // answers No to the deploy-token one. What the Worker holds decides
-  // whether each is asked: a token set stays, and Access on stays on.
-  const asking = deps.interactive && !flags.yes && mode === "self_hosted";
+  // The questions only a person answers, on a self-hosted Gateway, and
+  // never on an update; --yes answers No to the deploy-token one. What the
+  // Worker holds decides whether each is asked: a token set stays, and
+  // Access on stays on.
+  const asking = deps.interactive && !flags.yes && mode === "self_hosted" && !updateOnly;
   // Access needs the owner (the policy lets them in); --no-access is recorded either way.
-  const accessWanted = offerAccess && mode === "self_hosted" && (owner !== null || Boolean(flags["no-access"]));
+  const accessWanted = !updateOnly && mode === "self_hosted" && (owner !== null || Boolean(flags["no-access"]));
   const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, gatewayNamesHere.worker) : [];
   // Gateway app installs need a deploy token and the operator's opt-in
   // (BROWSER_APP_INSTALLS=on: the Gateway keeps them off otherwise, since
