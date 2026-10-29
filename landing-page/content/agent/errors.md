@@ -1,6 +1,6 @@
 ---
 title: Error codes
-description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors), the codes the Gateway's deploy API and browser install answer, every warning, and every problem status reports, each with what it means and how to fix it.
+description: Every code an everyapp command can end with (errors, the reporter's and cf's, argument errors), the codes the Gateway's deploy API and Gateway app install answer, every warning, and every problem status reports, each with what it means and how to fix it.
 metaDescription: "Every code an everyapp command or the Gateway's deploy API can end with, every warning and status problem, what each means and how to fix it."
 ---
 
@@ -317,6 +317,14 @@ Source: `packages/cli/src/lib/app/deploySecrets.ts` (`parseOriginUrl`), called f
 **Fix:** `rerun`: this same command, `rerunNote`: `to deploy again`. `retryable: false`; no takeover.
 
 Source: `packages/cli/src/lib/cf/deploy.ts` (`cfDeploy`), called from `packages/cli/src/commands/deploy/deployApp.ts` and `packages/cli/src/lib/gateway/apply.ts`.
+
+### DEPLOY_TOKEN_HOSTED
+
+`deploy-token add` and `deploy-token remove` against a Gateway whose install row records `deploymentMode: "hosted"`: a hosted Gateway's `CF_DEPLOY_TOKEN` deploys every workspace's apps into its dispatch namespace, so it is never this command's to replace or remove. Checked right after connecting, before the Worker's settings are read. Headline: `This Gateway's deploy token can't be changed here`, then `A hosted Gateway's token deploys every workspace's apps.`
+
+**Fix:** none offered; no rerun; not retryable.
+
+Source: `packages/cli/src/commands/deployToken/index.ts` (`connect`).
 
 ### DEV_PORT_IN_USE
 
@@ -2130,17 +2138,17 @@ Exit 252 from the argument parser: any other exception stricli raised while rout
 
 Source: `packages/cli/src/argumentErrors.ts`, `packages/cli/src/lib/childLog.ts`
 
-## Codes the Gateway's deploy API and the browser install answer
+## Codes the Gateway's deploy API and the Gateway app install answer
 
-The Gateway's deploy API (`apps/every-app-gateway/src/server/deploy/routes.ts`: `GET /api/v1/deploy-key`, `POST /api/v1/orgs/{orgId}/apps`, `POST /api/v1/orgs/{orgId}/apps/{appId}/deploys` and `GET /api/v1/orgs/{orgId}/deploys/{id}`, called with a deploy key as `authorization: Bearer <token>`) and the browser install (Admin → Apps → Install app: `POST /api/admin/apps/install`, `GET /api/admin/deploys/{id}`, with a session) raise the codes in this section. No everyapp command calls either, so none of them arrives on an `error` event. Each route answers a refusal as JSON `{ "error": "<code>", "message": "<sentence>" }` with the code's HTTP status (`DeployError` in `apps/every-app-gateway/src/server/deploy/errors.ts`; anything else thrown is `INTERNAL_ERROR`, 500).
+The Gateway's deploy API (`apps/every-app-gateway/src/server/deploy/routes.ts`: `GET /api/v1/deploy-key`, `POST /api/v1/orgs/{orgId}/apps`, `POST /api/v1/orgs/{orgId}/apps/{appId}/deploys` and `GET /api/v1/orgs/{orgId}/deploys/{id}`, called with a deploy key as `authorization: Bearer <token>`) and the Gateway app install (Admin → Apps → Install app: `POST /api/admin/apps/install`, `GET /api/admin/deploys/{id}`, with a session) raise the codes in this section. No everyapp command calls either, so none of them arrives on an `error` event. Each route answers a refusal as JSON `{ "error": "<code>", "message": "<sentence>" }` with the code's HTTP status (`DeployError` in `apps/every-app-gateway/src/server/deploy/errors.ts`; anything else thrown is `INTERNAL_ERROR`, 500).
 
-A deploy runs as a job (`{ id, status: "running" | "succeeded" | "failed", error: { code, message } | null, app }`): the POST answers once it finished or after 20 s (`INLINE_WAIT_MS` in `run.ts`), and `GET /api/v1/orgs/{orgId}/deploys/{id}` reads it after that. A job that ends `failed` carries its code in `error.code`. The browser install deploys through the same pipeline and answers the same codes. On a self-hosted Gateway the browser install deploys with the Cloudflare REST API (`cfRestDeployer.ts` with no dispatch namespace); the codes below marked "self-hosted browser install" come from there.
+A deploy runs as a job (`{ id, status: "running" | "succeeded" | "failed", error: { code, message } | null, app }`): the POST answers once it finished or after 20 s (`INLINE_WAIT_MS` in `run.ts`), and `GET /api/v1/orgs/{orgId}/deploys/{id}` reads it after that. A job that ends `failed` carries its code in `error.code`. The Gateway app install deploys through the same pipeline and answers the same codes. On a self-hosted Gateway the Gateway app install deploys with the Cloudflare REST API (`cfRestDeployer.ts` with no dispatch namespace); the codes below marked "self-hosted Gateway app install" come from there.
 
 ### BUNDLE_REFUSED
 
 Status 422. `The app can't be deployed as a third-party app:` followed by every problem as a ` -` line. The manifest is checked at registration (`manifestProblems`), the Build Output before the job starts and again before the upload (`bundleProblems`), and the pipeline adds its own. What is refused:
 
-- Manifest (`manifestProblems`, `apps/every-app-gateway/src/server/deploy/metadata.ts`): helper Workers (`workers`); Workflows; KV namespaces (`use D1`); R2 or Hyperdrive (`which the browser deployer can't provision; use the CLI`); Email sending bindings (`resources.sendEmail`; `send through the Gateway's email capability`); migrations with a `dialect` other than `sqlite` or an `engine` other than `drizzle` (`browser installs support D1 SQL migrations only`); `secrets`; `email.inbound`; a Durable Object class that names a helper Worker; more Durable Object classes than the policy's limit (`thirdPartyLimits.durableObjectClasses`; 2 for self-hosted browser installs).
+- Manifest (`manifestProblems`, `apps/every-app-gateway/src/server/deploy/metadata.ts`): helper Workers (`workers`); Workflows; KV namespaces (`use D1`); R2 or Hyperdrive (`which the Gateway's app installer can't provision; use the CLI`); Email sending bindings (`resources.sendEmail`; `send through the Gateway's email capability`); migrations with a `dialect` other than `sqlite` or an `engine` other than `drizzle` (`Gateway app installs support D1 SQL migrations only`); `secrets`; `email.inbound`; a Durable Object class that names a helper Worker; more Durable Object classes than the policy's limit (`thirdPartyLimits.durableObjectClasses`; 2 for self-hosted Gateway app installs).
 - Worker config (`bundleProblems`): a Worker name other than the tenant-neutral build's sentinel (`a deploy through the gateway uploads the tenant-neutral build, uninstalled (everyapp deploy --gateway)`); any `worker.config.json` key outside `name`, `compatibilityDate`, `compatibilityFlags`, `workersDev`, `previewUrls`, `observability`, `env`, `exports`, `manifest`, `assets`, `triggers`; `workersDev` or `previewUrls` not `false`; any `triggers`; no compatibility date; compatibility flags that aren't a list (`its compatibility flags aren't a list`); a compatibility flag outside `nodejs_compat`, `nodejs_compat_v2`, `nodejs_als`, `global_fetch_strictly_public`; no main module; `assets` keys outside `htmlHandling`, `notFoundHandling`, `runWorkerFirst`; `EVERYAPP_DEV` set.
 - Bindings: the platform's text bindings (`EVERYAPP_APP_ID`, `EVERYAPP_AUDIENCE`, `EVERYAPP_IDENTITY_PUBLIC_KEYS`, `EVERYAPP_IDENTITY_ISSUER`) not of type `text`, or `EVERYAPP_APP_ID` not the manifest's id; `GATEWAY_URL` and `EVERY_APP_ORG_ID` not declared as `secret`; a `worker` binding other than `EVERY_APP_GATEWAY` to `every-app-gateway`'s `AppGateway` export; a `d1` binding the manifest doesn't declare; a `durable-object` binding to another Worker or to an undeclared class; an `assets` binding with no assets uploaded; any `secret`. A `version-metadata` binding (`CF_VERSION_METADATA`) is accepted; any other binding type (service bindings other than the Gateway's, dispatch namespaces, KV, R2, Hyperdrive, rate limits, secrets store, mTLS, Workers AI, email, queues, variables) is refused. Exports that aren't `worker` or a declared Durable Object class, or whose `state` isn't `created`.
 - Pipeline (`pipeline.ts`): no ES module at the Worker's main module; `migrations.binding` not one of its D1 databases; dropping a Durable Object class the live Worker has (`which deletes its data; third-party deploys never do`); a live migration tag the deployer didn't write (not `everyapp-v<n>`). A GitHub or oss.new release whose Build Output has helper Workers (`release.ts`).
@@ -2154,7 +2162,7 @@ Source: `apps/every-app-gateway/src/server/deploy/errors.ts`, `apps/every-app-ga
 
 Status 502, a job error. After the upload the pipeline reads the Worker's bindings back; any difference from what it sent (names, each field, a Durable Object class on another Worker) deletes the Worker: `Cloudflare lists other bindings for <worker> than the deployer sent (<names>), so the Worker was deleted. Deploy again; if it happens again, the gateway's operators need to look.`
 
-On a self-hosted browser install (`cfRestDeployer.ts`) the same code, also 502, means the read-back itself failed, and nothing is deleted: `Cloudflare did not return the Worker's bindings.` (the Worker's settings came back without a bindings list) or `Cloudflare did not retain the app's Gateway binding. Try again.` (the Gateway's `APP__<worker>` service binding wasn't there after the publish).
+On a self-hosted Gateway app install (`cfRestDeployer.ts`) the same code, also 502, means the read-back itself failed, and nothing is deleted: `Cloudflare did not return the Worker's bindings.` (the Worker's settings came back without a bindings list) or `Cloudflare did not retain the app's Gateway binding. Try again.` (the Gateway's `APP__<worker>` service binding wasn't there after the publish).
 
 **Fix:** deploy again.
 
@@ -2172,7 +2180,7 @@ Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gatew
 
 ### INVALID_REPO_URL
 
-Status 400, browser install only (`POST /api/admin/apps/install` with `repoUrl`): the value isn't `https://github.com/<owner>/<repo>` (an optional `.git` and trailing `/` are accepted): `Paste a GitHub repository URL: https://github.com/<owner>/<repo>.`
+Status 400, Gateway app install only (`POST /api/admin/apps/install` with `repoUrl`): the value isn't `https://github.com/<owner>/<repo>` (an optional `.git` and trailing `/` are accepted): `Paste a GitHub repository URL: https://github.com/<owner>/<repo>.`
 
 **Fix:** paste the repository's URL.
 
@@ -2180,7 +2188,7 @@ Source: `apps/every-app-gateway/src/server/deploy/release.ts`, `apps/every-app-g
 
 ### APP_INSTALL_FORBIDDEN
 
-Status 403, browser install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.` On a self-hosted Gateway any organization but the install organization is refused too (the oldest with an owner), the only one whose owners and admins may spend the account-wide `CF_DEPLOY_TOKEN`, or when no organization has an owner yet: `On a self-hosted Gateway only the install organization's owners and admins install apps.` `GET /api/admin/apps/install` answers it when the signed-in person owns or administers no organization the install accepts (by the person, not the session's active workspace); the install and the job poll check the workspace they name, and a refusal of another organization is logged as `app_install.refused` (warn).
+Status 403, Gateway app install: the session's live role in the chosen organization isn't `owner` or `admin`: `Only the organization's owners and admins install apps.` On a self-hosted Gateway any organization but the install organization is refused too (the oldest with an owner), the only one whose owners and admins may spend the account-wide `CF_DEPLOY_TOKEN`, or when no organization has an owner yet: `On a self-hosted Gateway only the install organization's owners and admins install apps.` `GET /api/admin/apps/install` answers it when the signed-in person owns or administers no organization the install accepts (by the person, not the session's active workspace); the install and the job poll check the workspace they name, and a refusal of another organization is logged as `app_install.refused` (warn).
 
 **Fix:** ask an owner (an owner or admin on a hosted Gateway); on a self-hosted Gateway, an owner of the install organization, or deploy with `pnpm everyapp install <url>` from the terminal.
 
@@ -2188,19 +2196,27 @@ Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
 ### APP_INSTALL_REAUTH_REQUIRED
 
-Status 403, browser install on a self-hosted Gateway: the session was signed in more than 10 minutes ago (`FRESH_SESSION_MS`), so it may not spend the account-wide deploy token: `Sign in again to install apps: an install needs a session signed in within the last 10 minutes.` A warn line `app_install.refused` with `reason: "stale_session"` names the organization and the user. Polling a job (`GET /api/admin/deploys/<id>`) has no such rule.
+Status 403, Gateway app install on a self-hosted Gateway: the session was signed in more than 10 minutes ago (`FRESH_SESSION_MS`), so it may not spend the account-wide deploy token: `Sign in again to install apps: an install needs a session signed in within the last 10 minutes.` A warn line `app_install.refused` with `reason: "stale_session"` names the organization and the user. Polling a job (`GET /api/admin/deploys/<id>`) has no such rule.
 
 **Fix:** sign out and in again, then install.
 
 Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
+### APP_INSTALL_SIGN_IN_REQUIRED
+
+Status 401, Gateway app install: the request carries no session, or the session's user is banned: `Sign in again to install apps.` The install page shows it with a **Sign in again** button (which signs out, forgets the cached session and returns through sign-in) and keeps its main button disabled until the form changes.
+
+**Fix:** sign in again, then install.
+
+Source: `apps/every-app-gateway/src/server/deploy/install.ts`
+
 ### APP_INSTALL_NOT_AVAILABLE
 
-Status 404, browser install: neither the hosted launch gate (`THIRD_PARTY_DEPLOYS` exactly `on`) nor self-hosted installs (`GATEWAY_DEPLOYMENT_MODE` `self_hosted`, `BROWSER_APP_INSTALLS` exactly `on`, `CF_DEPLOY_TOKEN` set, a 32-hex `CLOUDFLARE_ACCOUNT_ID`, `APP_BASE_DOMAIN` set) are on: `Browser installation is not enabled on this Gateway. Its owner can configure the browser deployer, or deploy with the everyapp CLI.`
+Status 404, Gateway app install: neither the hosted launch gate (`THIRD_PARTY_DEPLOYS` exactly `on`) nor self-hosted installs (`GATEWAY_DEPLOYMENT_MODE` `self_hosted`, `BROWSER_APP_INSTALLS` exactly `on`, `CF_DEPLOY_TOKEN` set, a 32-hex `CLOUDFLARE_ACCOUNT_ID`, `APP_BASE_DOMAIN` set) are on: `This Gateway doesn't have a deployment token configured. It can be added with everyapp deploy-token add, or deploy with the everyapp CLI.`
 
-**Fix:** configure the browser deployer (`setup` offers it), or deploy with the CLI.
+**Fix:** turn on Gateway app installs (`everyapp deploy-token add`), or deploy with the CLI.
 
-Source: `apps/every-app-gateway/src/server/deploy/install.ts`, `apps/every-app-gateway/src/server/deploy/browser-install.ts`
+Source: `apps/every-app-gateway/src/server/deploy/install.ts`, `apps/every-app-gateway/src/server/deploy/gateway-app-installs.ts`
 
 ### DEPLOYER_NOT_CONFIGURED
 
@@ -2208,7 +2224,7 @@ Status 503 (502 for a Cloudflare answer the deployer can't use): the Gateway lac
 
 **Fix:** the Gateway's operator sets the named setting.
 
-Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`, `apps/every-app-gateway/src/server/deploy/registry.ts`, `apps/every-app-gateway/src/server/deploy/browser-install.ts`
+Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`, `apps/every-app-gateway/src/server/deploy/registry.ts`, `apps/every-app-gateway/src/server/deploy/gateway-app-installs.ts`
 
 ### DEPLOY_FORBIDDEN
 
@@ -2220,11 +2236,11 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 ### DEPLOY_IN_PROGRESS
 
-Status 409: another job of the same app is running (and not past its deadline): `Another deploy of <app> is running; wait for it, then deploy again.`; or, for a self-hosted browser install, the install lease `app:<worker>` (shared with the CLI's lease table) is held: `Another install or CLI operation is running. Try again when it finishes.`
+Status 409: another job of the same app is running (and not past its deadline): `Another deploy of <app> is running; wait for it, then deploy again.`; or, for a self-hosted Gateway app install, the install lease `app:<worker>` (shared with the CLI's lease table) is held: `Another install or CLI operation is running. Try again when it finishes.`
 
 **Fix:** wait, then deploy again.
 
-Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/browser-install.ts`
+Source: `apps/every-app-gateway/src/server/deploy/run.ts`, `apps/every-app-gateway/src/server/deploy/gateway-app-installs.ts`
 
 ### DEPLOY_KEY_APP_MISMATCH
 
@@ -2244,7 +2260,7 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 ### INTERNAL_ERROR
 
-Status 500: the route threw something other than a `DeployError`: `The deploy API failed.` (deploy API) or `The install failed.` (browser install). Also a `PublicError` code on the control plane.
+Status 500: the route threw something other than a `DeployError`: `The deploy API failed.` (deploy API) or `The install failed.` (Gateway app install). Also a `PublicError` code on the control plane.
 
 **Fix:** try again.
 
@@ -2252,7 +2268,7 @@ Source: `apps/every-app-gateway/src/server/deploy/routes.ts`, `apps/every-app-ga
 
 ### ORGANIZATION_SUSPENDED
 
-Status 403: the deploy key's organization, or the browser install's, isn't active: `The organization is suspended.` Also a `GatewayError` code on the control plane (`This organization is suspended.`).
+Status 403: the deploy key's organization, or the Gateway app install's, isn't active: `The organization is suspended.` Also a `GatewayError` code on the control plane (`This organization is suspended.`).
 
 **Fix:** none for the caller.
 
@@ -2260,7 +2276,7 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`, `apps/every-app-gate
 
 ### PROTOCOL_TOO_OLD
 
-Status 426: the upload's stamp carries a `protocol` below `MIN_HOSTED_DEPLOY_PROTOCOL` (1; a browser install stamps the release it fetched with `HOSTED_DEPLOY_PROTOCOL`, 1, in `release.ts`): `This CLI packages deploy protocol <n>; the gateway reads <min> or later. Update everyapp and deploy again.`
+Status 426: the upload's stamp carries a `protocol` below `MIN_HOSTED_DEPLOY_PROTOCOL` (1; a Gateway app install stamps the release it fetched with `HOSTED_DEPLOY_PROTOCOL`, 1, in `release.ts`): `This CLI packages deploy protocol <n>; the gateway reads <min> or later. Update everyapp and deploy again.`
 
 **Fix:** update everyapp (`git pull` in the checkout), deploy again.
 
@@ -2268,7 +2284,7 @@ Source: `apps/every-app-gateway/src/server/deploy/bundle.ts`, `apps/every-app-ga
 
 ### HTTP_nnn
 
-The pattern `HTTP_<status>` (`HTTP_502` from a proxy) is what a client gives a deploy API answer that has no JSON `error` in it. Every refusal of the deploy API and the browser install carries one (`DeployError`, the codes in this section), and no everyapp command reads the API's answers, so no everyapp command ends with a code of this pattern.
+The pattern `HTTP_<status>` (`HTTP_502` from a proxy) is what a client gives a deploy API answer that has no JSON `error` in it. Every refusal of the deploy API and the Gateway app install carries one (`DeployError`, the codes in this section), and no everyapp command reads the API's answers, so no everyapp command ends with a code of this pattern.
 
 **Fix:** none.
 
@@ -2300,9 +2316,9 @@ Source: `apps/every-app-gateway/src/server/deploy/auth.ts`
 
 ### UNAUTHORIZED
 
-Status 401, browser install: no session or a banned user (`Sign in again.`), or no membership in the chosen organization (`Organization membership required.`).
+Status 401, Gateway app install: no membership in the chosen organization (`Organization membership required.`). A request with no session answers `APP_INSTALL_SIGN_IN_REQUIRED` instead.
 
-**Fix:** sign in; join the organization.
+**Fix:** join the organization.
 
 Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
@@ -2316,7 +2332,7 @@ Source: `apps/every-app-gateway/src/server/deploy/routes.ts`
 
 ### INVALID_REQUEST
 
-Status 400: the body isn't what the route takes. Deploy API: `Send JSON: { appId, manifest }.`, `appId is required.`; browser install: `Send JSON with one repoUrl or releaseUrl.`, `Send one repoUrl or releaseUrl.`, `Choose a valid workspace.`
+Status 400: the body isn't what the route takes. Deploy API: `Send JSON: { appId, manifest }.`, `appId is required.`; Gateway app install: `Send JSON with one repoUrl or releaseUrl.`, `Send one repoUrl or releaseUrl.`, `Choose a valid workspace.`
 
 **Fix:** send the body the route asks for.
 
@@ -2348,7 +2364,7 @@ Source: `apps/every-app-gateway/src/server/deploy/run.ts`
 
 ### WORKER_CHANGED
 
-Self-hosted browser install job: the serving Worker version differs from the version in the shared ownership ledger, or the Worker has a gradual deployment. The installer refuses replacement before uploading.
+Self-hosted Gateway app install job: the serving Worker version differs from the version in the shared ownership ledger, or the Worker has a gradual deployment. The installer refuses replacement before uploading.
 
 **Fix:** inspect the existing deployment. Confirm replacement on the approval page only when intended; reconcile a gradual deployment with the CLI first.
 
@@ -2356,7 +2372,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### BINDING_OWNED
 
-Status 409, self-hosted browser install only, at the publish: the Gateway Worker already has a binding named `APP__<worker>` that isn't a service binding to that Worker's default entrypoint: `The Gateway already uses this app binding for something else.`
+Status 409, self-hosted Gateway app install only, at the publish: the Gateway Worker already has a binding named `APP__<worker>` that isn't a service binding to that Worker's default entrypoint: `The Gateway already uses this app binding for something else.`
 
 **Fix:** none in the browser; `pnpm everyapp setup` rebinds the Gateway from the registry.
 
@@ -2372,7 +2388,7 @@ Source: `apps/every-app-gateway/src/server/deploy/registry.ts`
 
 ### INVALID_RELEASE_URL
 
-Status 400, browser install: `releaseUrl` isn't `https://oss.new/apps/<key>`: `Use an oss.new release URL: https://oss.new/apps/<key>.`
+Status 400, Gateway app install: `releaseUrl` isn't `https://oss.new/apps/<key>`: `Use an oss.new release URL: https://oss.new/apps/<key>.`
 
 **Fix:** paste the release's oss.new URL.
 
@@ -2396,7 +2412,7 @@ Source: `apps/every-app-gateway/src/server/deploy/install.ts`
 
 ### ACCESS_NOT_CONFIGURED
 
-Self-hosted browser install job: Access is enabled, but its apps application could not be found.
+Self-hosted Gateway app install job: Access is enabled, but its apps application could not be found.
 
 **Fix:** run `pnpm everyapp access on` to reconcile Access, then retry installation.
 
@@ -2404,7 +2420,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
 
 ### ACCESS_ROUTES_UNSUPPORTED
 
-Self-hosted browser install job: Access cannot expose all public or bearer route patterns declared by this app, or the app is outside the configured app base domain.
+Self-hosted Gateway app install job: Access cannot expose all public or bearer route patterns declared by this app, or the app is outside the configured app base domain.
 
 **Fix:** adjust the app's route patterns or hostname configuration and publish a corrected release.
 
@@ -2412,7 +2428,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted-access.ts`
 
 ### EMAIL_ROUTES_TOO_MANY
 
-Self-hosted browser install job: the installer reached its Email Routing listing limit before reading every rule, so it cannot safely reconcile ownership.
+Self-hosted Gateway app install job: the installer reached its Email Routing listing limit before reading every rule, so it cannot safely reconcile ownership.
 
 **Fix:** reduce the domain's rule count or manage the installation with the CLI.
 
@@ -2420,7 +2436,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted-email.ts`
 
 ### INVALID_BINDING
 
-Self-hosted browser install job: a built binding has no supported Cloudflare upload representation.
+Self-hosted Gateway app install job: a built binding has no supported Cloudflare upload representation.
 
 **Fix:** rebuild the app with a supported SDK and declared resource bindings; publish a corrected release.
 
@@ -2428,7 +2444,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted-metadata.ts`
 
 ### RESOURCE_LIST_TOO_LARGE
 
-Self-hosted browser install job: the account resource listing exceeded its page limit. The installer refuses to reuse resources whose ownership it could not verify.
+Self-hosted Gateway app install job: the account resource listing exceeded its page limit. The installer refuses to reuse resources whose ownership it could not verify.
 
 **Fix:** reduce the account's resource count or manage the installation with the CLI.
 
@@ -2436,15 +2452,15 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted-resources.ts`
 
 ### CLOUDFLARE_PERMISSION_REQUIRED
 
-Self-hosted browser install job: Cloudflare answered HTTP 403 to an account API operation. The job names the operation without retaining the API response body or submitted credentials.
+Self-hosted Gateway app install job: Cloudflare answered HTTP 403 to an account API operation. The job names the operation without retaining the API response body or submitted credentials.
 
-**Fix:** give the Gateway's deploy token permission to manage the app's resources, following the [browser installation permission guide](/docs/agent/deploy#browser-installs), then retry.
+**Fix:** give the Gateway's deploy token permission to manage the app's resources, following the [Gateway app installs permission guide](/docs/agent/deploy#gateway-app-installs), then retry.
 
 Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### CLOUDFLARE_API_ERROR
 
-Self-hosted browser install job: another Cloudflare API operation failed. The job reports the operation and HTTP status without retaining its response body.
+Self-hosted Gateway app install job: another Cloudflare API operation failed. The job reports the operation and HTTP status without retaining its response body.
 
 **Fix:** check the account configuration and Cloudflare's status, then retry. Previously recorded resources are reused.
 
@@ -2452,7 +2468,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### DEPLOYMENT_VERSION_MISSING
 
-Self-hosted browser install job: Cloudflare did not return a serving version after upload, so the installer could not record that deployment as its own.
+Self-hosted Gateway app install job: Cloudflare did not return a serving version after upload, so the installer could not record that deployment as its own.
 
 **Fix:** inspect the Worker's serving deployment before retrying; replacement may require explicit confirmation.
 
@@ -2460,7 +2476,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### RESTORE_POINT_MISSING
 
-Self-hosted browser install job: a database update needs a restore point, but Cloudflare returned no bookmark. No pending migration was applied.
+Self-hosted Gateway app install job: a database update needs a restore point, but Cloudflare returned no bookmark. No pending migration was applied.
 
 **Fix:** check D1 Time Travel availability and retry before applying the update.
 
@@ -2468,7 +2484,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### QUEUE_MISSING
 
-Self-hosted browser install job: a queue needed by a consumer was absent from Cloudflare's listing after resource provisioning.
+Self-hosted Gateway app install job: a queue needed by a consumer was absent from Cloudflare's listing after resource provisioning.
 
 **Fix:** retry when the provisioned queue is visible; check whether it was deleted outside EveryApp.
 
@@ -2476,7 +2492,7 @@ Source: `apps/every-app-gateway/src/server/deploy/self-hosted.ts`
 
 ### RELEASE_FETCH_FAILED
 
-Status 502, browser install: GitHub or oss.new unreachable, redirected off https, too many redirects, or a non-2xx answer; the message says which.
+Status 502, Gateway app install: GitHub or oss.new unreachable, redirected off https, too many redirects, or a non-2xx answer; the message says which.
 
 **Fix:** try again; check the repository's latest release has `everyapp-release.tar.gz`.
 
@@ -2491,15 +2507,15 @@ The other codes these routes answer are documented where the same code is raised
 | `APP_NOT_REGISTERED`  | 404/409 | Deploying an app id that isn't registered (or is deleted) for the organization; a job for an app row with no Worker name (409). Below, under [Codes raised with a dynamic value](#codes-raised-with-a-dynamic-value).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `MIGRATION_FAILED`    | 422     | Job: a migration's statements failed: `Migration <name> failed: <error>. Nothing was uploaded; the version that is serving keeps running.` Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `APP_NOT_FOUND`       | 404     | Job: the app's registry row is gone; also a registry refusal for a deleted app. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `APP_CHANGING`        | 409     | Job: the registry row changed while the deploy recorded its upload; self-hosted browser install: the row changed before the lease was taken. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `APP_CHANGING`        | 409     | Job: the registry row changed while the deploy recorded its upload; self-hosted Gateway app install: the row changed before the lease was taken. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `RESOURCE_OWNED`      | 409     | Ledger: the D1 database's name is recorded as another app's. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `RESOURCE_REPLACED`   | 409     | Ledger: the recorded database was deleted and another created under its name. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `LEASE_LOST`          | 409     | Self-hosted browser install: the install lease couldn't be renewed. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `LEASE_LOST`          | 409     | Self-hosted Gateway app install: the install lease couldn't be renewed. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `ORG_KEY_UNAVAILABLE` | 409     | Every candidate key for the organization's slug is taken. Below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `RELEASE_INVALID`     | 422     | Browser install: the archive isn't gzip or tar, has entries beyond `.cloudflare`, `migrations` and `release.json`, or `release.json` / `worker.config.json` is missing or malformed. The CLI's own code of the same name is above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `RELEASE_UNSUPPORTED` | 422     | Browser install: `release.json` `schema` isn't 1, `kind` isn't `app`, or `buildOutputVersion` isn't `v0`. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `RELEASE_TOO_LARGE`   | 413     | Browser install: over 100 MB compressed or unpacked. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `NO_RELEASE`          | 404     | Browser install: the repository's latest release has no `everyapp-release.tar.gz`. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `RELEASE_INVALID`     | 422     | Gateway app install: the archive isn't gzip or tar, has entries beyond `.cloudflare`, `migrations` and `release.json`, or `release.json` / `worker.config.json` is missing or malformed. The CLI's own code of the same name is above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `RELEASE_UNSUPPORTED` | 422     | Gateway app install: `release.json` `schema` isn't 1, `kind` isn't `app`, or `buildOutputVersion` isn't `v0`. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `RELEASE_TOO_LARGE`   | 413     | Gateway app install: over 100 MB compressed or unpacked. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `NO_RELEASE`          | 404     | Gateway app install: the repository's latest release has no `everyapp-release.tar.gz`. Documented above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Registry rules        | 400–409 | `RegistrationError` codes (`packages/perimeter/src/registry/registration.ts`) pass through unchanged: `INVALID_APP_HOSTNAME`, `RESERVED_APP_ID`, `INVALID_APP_ID`, `INVALID_WORKER_NAME`, `INVALID_MANIFEST`, `RESOURCE_NAME_CONFLICT` (400); `SHARED_APP_NOT_PLATFORM` (403); `APP_SCOPE_MISMATCH`, `HOSTNAME_TAKEN`, `WORKER_NAME_TAKEN` (409); `APP_TIER_MISMATCH` (400 or 409); `PROVIDER_APP_UNKNOWN` (400, from `mcp on`); `REMOTE_MCP_INVALID`, `REMOTE_MCP_URL_REFUSED` (400) and `REMOTE_MCP_EXISTS`, `REMOTE_MCP_SECRET_TAKEN` (409), from adding a remote MCP server. Each except `INVALID_APP_ID`, `INVALID_MANIFEST`, `WORKER_NAME_TAKEN`, `PROVIDER_APP_UNKNOWN` and `REMOTE_MCP_INVALID` (documented above) is described under [Codes raised with a dynamic value](#codes-raised-with-a-dynamic-value). |
 
 ## Warnings
@@ -3104,7 +3120,7 @@ Source: `packages/cli/src/lib/domains/preflight.ts` (`checkDnsRecords`, `hostsOf
 
 Registry (409): the hostname the rules give the app is registered to another app on this Gateway: `The hostname "<hostname>" is already registered to another app on this gateway.`
 
-On a self-hosted browser install (`cfRestDeployer.ts`, 409) the same code comes from two Cloudflare-side checks at the publish, not the registry: a Custom Domain on a Worker other than the Gateway's holds the hostname (`Another Worker owns the app's hostname.`), or a DNS record already answers for it (`DNS already answers for this app's hostname. Choose another app id.`).
+On a self-hosted Gateway app install (`cfRestDeployer.ts`, 409) the same code comes from two Cloudflare-side checks at the publish, not the registry: a Custom Domain on a Worker other than the Gateway's holds the hostname (`Another Worker owns the app's hostname.`), or a DNS record already answers for it (`DNS already answers for this app's hostname. Choose another app id.`).
 
 **Fix:** choose another app id, or free the name.
 
@@ -3217,7 +3233,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `apps/every-app-gateway/src/server/deploy/registry.ts`
 `apps/every-app-gateway/src/server/deploy/ledger.ts`
 `apps/every-app-gateway/src/server/deploy/metadata.ts`
-`apps/every-app-gateway/src/server/deploy/browser-install.ts`
+`apps/every-app-gateway/src/server/deploy/gateway-app-installs.ts`
 `apps/every-app-gateway/src/server/deploy/cfRestDeployer.ts`
 `apps/every-app-gateway/src/server/repositories/DeployJobRepository.ts`
 `apps/every-app-gateway/src/server/platform-policy.ts`

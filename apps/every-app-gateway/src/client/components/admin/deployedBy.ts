@@ -1,7 +1,7 @@
 /**
  * Who deployed an app, in plain words. The registry records an actor
  * (`apps.deployed_by_actor`): the Cloudflare login's email from the CLI, or
- * the installer's from the browser install; `api-token:<account id>` from
+ * the installer's from the Gateway app install; `api-token:<account id>` from
  * the CLI under CLOUDFLARE_API_TOKEN (CI); `deploy-key:<token id>` from the
  * hosted deploy API. An id names nothing to a person, so the two machine
  * actors say what deployed; an email reads as is.

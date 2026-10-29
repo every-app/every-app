@@ -380,7 +380,7 @@ in the gateway's Cloudflare account **is** operator authority.
   ledger and the owner setup link with `cf d1 query`, under the operator's
   own Cloudflare login or API token. The gateway issues no deploy
   credential and serves no deploy API; the one deploy path on the public
-  Worker is the browser install (`POST /api/admin/apps/install`, #371):
+  Worker is the Gateway app install (`POST /api/admin/apps/install`, #371):
   once the operator has given the gateway a `CF_DEPLOY_TOKEN` and
   `CLOUDFLARE_ACCOUNT_ID` (`everyapp setup` asks; default off) and
   `BROWSER_APP_INSTALLS` isn't `off`, a signed-in owner or admin of the
@@ -390,7 +390,7 @@ in the gateway's Cloudflare account **is** operator authority.
   owner) can have the gateway download
   a public GitHub or oss.new release and upload it as an account Worker
   with that token, under the same release intake and policy subset as the
-  hosted install (docs/runbooks/browser-app-install.md). That makes an
+  hosted install (docs/runbooks/gateway-app-installs.md). That makes an
   admin session plus the gateway's token a second deploy authority;
   docs/threat-model.md B7 records it, and the token's account-wide reach,
   as open.
@@ -419,7 +419,7 @@ in the gateway's Cloudflare account **is** operator authority.
 - Every CLI deploy records its actor on the app row (`deployed_by_actor`,
   with `deployed_at`): the Cloudflare login's email, or `api-token:<account
   id>` in CI. Admin → Apps shows it; there is no deploy event log for them.
-  A browser install is a `deploy_jobs` row with the admin's email.
+  A Gateway app install is a `deploy_jobs` row with the admin's email.
 - Revocation is Cloudflare's alone. Removing, banning or deactivating a
   gateway member doesn't stop them deploying while they still hold the
   Cloudflare login or an API token for the account. Any Cloudflare API
@@ -1218,7 +1218,7 @@ GitHub.
   Admin → Apps: `POST /api/admin/apps/install` with a session, a
   control-plane route behind its CSRF guard, behind the same launch gate
   on a hosted gateway (`APP_INSTALL_NOT_AVAILABLE` otherwise); on a
-  self-hosted gateway the same route is the browser install described
+  self-hosted gateway the same route is the Gateway app install described
   under "Operator Authority", available once the operator configured its
   deployer. It also accepts an immutable oss.new release URL
   (`https://oss.new/apps/<64 hex>`, no redirects, a 15-second timeout). The gateway downloads `https://github.com/<owner>/<repo>/releases/latest/download/everyapp-release.tar.gz`
@@ -1237,7 +1237,7 @@ GitHub.
   commit it came from (`deploy_jobs.source`).
 - The Cloudflare token (`CF_DEPLOY_TOKEN`) is a secret of the gateway: the
   hosted one (Workers for Platforms and D1 edit) and a self-hosted one whose
-  operator turned the browser install on ("Operator Authority"). Whoever
+  operator turned the Gateway app install on ("Operator Authority"). Whoever
   reads the gateway's secrets can deploy with it.
 
 ## Response Contract
@@ -1265,6 +1265,6 @@ GitHub.
 - The CLI's deploys happen outside the gateway, so it logs none of them: who
   uploaded an app's live version is on its row (`deployed_by_actor`,
   `deployed_at`, `version_id`), the Cloudflare login's email or
-  `api-token:<account id>`. A browser install is the gateway's own job:
+  `api-token:<account id>`. A Gateway app install is the gateway's own job:
   `app_install.started`, then `deploy_api.deploy_succeeded` or
   `deploy_api.deploy_failed`, and a `deploy_jobs` row.

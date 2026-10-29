@@ -38,15 +38,15 @@
       "use": "ran-secret-set"
     },
     {
-      "name": "browser-installs",
+      "name": "gateway-app-installs",
       "once": true,
-      "when": "browser (?:app )?installs?[^\\n]{0,120}\\?",
-      "reply": "Yes, I want browser installs. Tell me exactly what to do."
+      "when": "(?:[Gg]ateway app installs?|install apps)[^\\n]{0,120}\\?",
+      "reply": "Yes, I want my Gateway to install apps. Tell me exactly what to do."
     },
     {
       "name": "not-access-today",
       "when": "(?:cloudflare access|zero trust|access on\\b|\\b(?:set(?:ting)? up|turn(?:ing)? on|enable|configure|put) [^\\n]{0,30}\\baccess\\b|\\baccess\\b[^\\n]{0,80}\\b(?:in front|team|turn(?:ed)? on|set (?:it )?up|next|now))[^\\n]{0,160}\\?",
-      "reply": "Not today. Leave Cloudflare Access for another day; I only want the Gateway and browser installs now."
+      "reply": "Not today. Leave Cloudflare Access for another day; I only want the Gateway and Gateway app installs now."
     },
     {
       "use": "check-result"

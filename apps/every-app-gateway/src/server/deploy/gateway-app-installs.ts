@@ -3,7 +3,7 @@ import { platformPolicy } from "@/server/platform-policy";
 import { sql } from "drizzle-orm";
 import { DeployError } from "./errors";
 
-interface BrowserInstallEnv {
+interface GatewayAppInstallsEnv {
   GATEWAY_DEPLOYMENT_MODE?: string;
   BROWSER_APP_INSTALLS?: string;
   CF_DEPLOY_TOKEN?: string;
@@ -17,7 +17,7 @@ interface BrowserInstallEnv {
  * in): the token is account-wide, so spending it from a browser is a
  * choice, never a side effect of having stored the token.
  */
-export function selfHostedInstallEnabled(env: BrowserInstallEnv): boolean {
+export function selfHostedInstallEnabled(env: GatewayAppInstallsEnv): boolean {
   return (
     platformPolicy(env).mode === "self_hosted" &&
     env.BROWSER_APP_INSTALLS === "on" &&
@@ -35,7 +35,7 @@ export function selfHostedInstallEnabled(env: BrowserInstallEnv): boolean {
  * owner. It gets the bare `<appId>.<base>` hostname, and on a self-hosted
  * Gateway it is the only organization whose owners and admins may spend the
  * account-wide CF_DEPLOY_TOKEN from the browser. Null before the Gateway
- * has an owner, so a browser install fails closed then.
+ * has an owner, so a Gateway app install fails closed then.
  */
 export async function installOrganizationId(): Promise<string | null> {
   const rows = (await db.all(
@@ -45,7 +45,7 @@ export async function installOrganizationId(): Promise<string | null> {
 }
 
 /** Keep CLI reconciliation aware of the Gateway settings this install published. */
-export async function recordBrowserGatewayDeployment(
+export async function recordInstallerGatewayDeployment(
   versionId: string,
   workerName: string,
   hostname: string,

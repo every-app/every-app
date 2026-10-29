@@ -110,7 +110,7 @@ What an attacker would want, roughly in the order it would hurt.
 
 | Id | Asset | Where it lives | Who may touch it |
 |---|---|---|---|
-| A1 | The Cloudflare account and its credentials (the operator's login, `CLOUDFLARE_API_TOKEN` in CI, the browser-install token) | Cloudflare; the operator's machine; the Gateway's secrets when browser installs are on | The operator |
+| A1 | The Cloudflare account and its credentials (the operator's login, `CLOUDFLARE_API_TOKEN` in CI, the Gateway's deploy token) | Cloudflare; the operator's machine; the Gateway's secrets when Gateway app installs are on | The operator |
 | A2 | The Gateway's signing material: `JWT_PRIVATE_KEY` (identity tokens), `BETTER_AUTH_SECRET` (sessions, host sessions through HKDF, the setup and invitation hashes) | Worker secrets | Nobody reads them; the Gateway uses them |
 | A3 | Provider keys and OAuth client secrets the operator configured (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `WORKERS_AI_API_TOKEN`, `DATAFORSEO_*`, `CONTEXT_API_KEY`, `SLACK_CLIENT_SECRET`, …, `EMAIL_REST_API_TOKEN`, `RESEND_API_KEY`), the keys of the API providers registered on this Gateway (`everyapp provider add`: settings named after the provider, `STRIPE_API_KEY`), and since 2026-10-25 the OAuth clients pasted in Manage workspace → Providers and the tokens of every connected account (`docs/design/2026-10-oauth-providers.md`) | Worker secrets; a registered provider's spec (no value) in the Gateway's D1 (`providers`); a pasted client's secret and every connection's access and refresh tokens sealed in D1 (`oauth_clients`, `provider_connections`: AES-256-GCM under a key derived from `BETTER_AUTH_SECRET`) | Apps use them only through the Gateway's proxies, never hold them; a registered provider's key is read only for the hosts it was set for; a pasted client only while its row still has the endpoints it was pasted for; a person's token only on a call the app's declared scope sets cover |
 | A4 | Each app's data: its D1 databases, KV, R2, Durable Objects, Postgres through Hyperdrive | The app's own bindings | That app's Worker, for members with access |
@@ -283,7 +283,7 @@ the Gateway as a caller, in both shapes.
 | B4 | App Worker → Gateway | the AI proxy, capabilities, email, members | `apps/every-app-gateway/src/server/app-gateway-entrypoint.ts`, `ai-proxy.ts`, `capabilities/` |
 | B5 | AI client → `/mcp` | OAuth tokens, personal tokens, consent, tool policy | `apps/every-app-gateway/src/server/mcp-auth/`, `src/server/toolbus/` |
 | B6 | Cloudflare Access ↔ Gateway | assertions, the outer ring, OIDC, membership rules | `apps/every-app-gateway/src/auth/cloudflare-access/` |
-| B7 | Operator → Cloudflare | the CLI's deploys and registry writes; the browser install | `packages/cli/src/lib/app/policy.ts`, `packages/perimeter/src/registry/`, `apps/every-app-gateway/src/server/deploy/install.ts` |
+| B7 | Operator → Cloudflare | the CLI's deploys and registry writes; the Gateway app install | `packages/cli/src/lib/app/policy.ts`, `packages/perimeter/src/registry/`, `apps/every-app-gateway/src/server/deploy/install.ts` |
 | B8 | The hosted tier | deploy keys, the dispatch namespace, egress, third-party hosts | `apps/every-app-gateway/src/server/deploy/`, `outbound.ts`, `host-session.ts` |
 | B9 | Gateway → subscriber | signed webhook deliveries, event mail to owners and admins, an app's own events | `apps/every-app-gateway/src/server/events/`, `src/serverFunctions/events.ts`, `packages/sdk/src/internal/events.ts` |
 | B10 | Sign-in provider → Gateway | the OAuth/OIDC code flow with Google, Microsoft, GitHub, Apple, Cloudflare or an OIDC issuer; membership rules | `apps/every-app-gateway/src/auth/sign-in-providers/`, `packages/sdk/src/internal/signInProviders.ts` |
@@ -1132,7 +1132,7 @@ the operator's Cloudflare login or an API token: they build the app,
 check the Build Output against the policy, provision resources, upload
 Workers, write the registry and the owner setup link in the Gateway's D1,
 and reconcile the Gateway's bindings. Since #371 (2026-10-23) there is a
-second path: the browser install, where the Gateway itself downloads a
+second path: the Gateway app install, where the Gateway itself downloads a
 public release and uploads it with a `CF_DEPLOY_TOKEN` it holds.
 `everyapp teardown --account-id <id>` is the one command that deletes
 everything EveryApp made in an account: it runs only against an id on the
@@ -1150,7 +1150,7 @@ the downgrade guard, releases; since 2026-10-26 `source.ts` and
 from a published GitHub Release of every-app/every-app instead of a
 checkout's build) and, for the browser path,
 `apps/every-app-gateway/src/server/deploy/install.ts` and
-`browser-install.ts`.
+`gateway-app-installs.ts`.
 
 **What it stops.** A built Worker that is reachable without the Gateway
 (a route, `workers.dev`, a preview URL, a domain), that binds something it
@@ -1214,8 +1214,8 @@ racing.
 | `rebind.live-release-never-silent-upgrade` | The rebind an app's `deploy` or `delete` runs redeploys the live Gateway's own release, had again from the install row's recorded origin (`release_origin`, `release_git_sha`): its GitHub tag, URL or file, or this checkout's build cache for the row's tree hash; a fetched asset whose sha256 isn't the row's is warned (`GATEWAY_RELEASE_DIFFERS`) and ordered by the downgrade guard. When it can't be had again, the rebind deploys what `setup` would and says so before `gateway.upgrade` names the change, by version or by source; it never downgrades. | `packages/cli/src/lib/gateway/liveRelease.ts`; `packages/cli/src/commands/appGateway.ts` (gatewayFor, bindIfNeeded); `packages/cli/src/lib/gateway/install.ts` (release_origin) | `liveRelease.test.ts` :: from its GitHub release by tag, whatever this CLI's version; :: warns when the tag's asset isn't the live bytes any more; :: from a checkout's build cache, by the row's tree hash; without that build, this checkout's own Gateway, said so; :: a checkout-built Gateway, from an everyapp with no checkout: the published release, said so |
 | `release.pack-ships-no-local-state` | `release` refuses to pack `.env*`, `.dev.vars*`, `*.pem`, `.cloudflare/state`, `.wrangler`, `.everyapp` or a non-production build. | `packages/cli/src/lib/app/release.ts:124-141` | `packages/cli/src/commands/install/release.test.ts` :: refuses local state, a build that isn't production's, and Prisma migrations |
 | `gateway.no-deploy-api-on-self-host` | The HTTP deploy API (`/api/v1/*`) is served only when `thirdPartyDeploys` holds, which is false in `self_hosted` and invalid modes. | `apps/every-app-gateway/src/server.ts:151-157` | `platform-policy.test.ts` :: opens third-party deploys only on a hosted gateway whose gate is on |
-| `install.admin-live-gate-before-download` | A browser install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
-| `browser-install.policy-subset-and-intake` | A browser-installed release must be a tenant-neutral build with only the allowed keys, no `workers.dev`, no triggers, no `EVERYAPP_DEV`, bindings from the allowlist (D1, own Durable Objects, assets); helpers, Workflows, KV, R2, Hyperdrive, secrets and crons are refused before anything is provisioned. | `apps/every-app-gateway/src/server/deploy/metadata.ts:119-312` | `metadata.test.ts` :: refuses helper Workers, Workflows, KV, secrets and too many Durable Object classes (partial on self-host, see gaps) |
+| `install.admin-live-gate-before-download` | A Gateway app install needs a Better Auth session of a non-banned user who is, live, an owner or admin of the chosen active organization, behind the control-plane CSRF guard; availability is checked before any download. | `apps/every-app-gateway/src/server/deploy/install.ts:50-104` | `install-api.sqlite.test.ts` :: refuses a member, a signed-out caller and a suspended organization |
+| `browser-install.policy-subset-and-intake` | A release the Gateway installed must be a tenant-neutral build with only the allowed keys, no `workers.dev`, no triggers, no `EVERYAPP_DEV`, bindings from the allowlist (D1, own Durable Objects, assets); helpers, Workflows, KV, R2, Hyperdrive, secrets and crons are refused before anything is provisioned. | `apps/every-app-gateway/src/server/deploy/metadata.ts:119-312` | `metadata.test.ts` :: refuses helper Workers, Workflows, KV, secrets and too many Durable Object classes (partial on self-host, see gaps) |
 
 **Not this boundary's job.** Keeping the operator's Cloudflare login
 safe, or revoking it (Cloudflare's). What a trusted release's code does
@@ -1225,7 +1225,7 @@ intent).
 
 **Gaps.**
 
-- *The browser install is a deploy path on the public Worker, open to
+- *The Gateway app install is a deploy path on the public Worker, open to
   every organization owner and admin, untested on self-host* (high, medium
   fix). `docs/security-model.md` "Operator Authority" records it as the
   second deploy authority; ADR-0003 predates #371. Once `CF_DEPLOY_TOKEN`,
@@ -1275,7 +1275,7 @@ intent).
 - *The Secrets Store dev store is unseeded* (low, dev only): `everyapp dev` doesn't put `.dev.vars` values into Miniflare's local store, so `env.<BINDING>.get()` throws until the documented seed script runs; nothing reaches an account.
 
 **Docs to fix.** ADR-0003: a note that #371 added a gateway-served deploy
-path. `docs/runbooks/browser-app-install.md`: "on by default" is true only
+path. `docs/runbooks/gateway-app-installs.md`: "on by default" is true only
 once the token exists; interactive setup defaults to No.
 
 - **What anchors trust in a downloaded Gateway release.** `release.json`'s
@@ -1350,10 +1350,10 @@ or sent to the app in a `Referer`.
 unless marked)
 
 - *Any organization's owner or admin can deploy public code into the
-  operator's account through the browser install, by default* (medium,
+  operator's account through the Gateway app install, by default* (medium,
   **self-hosted too**, small fix): the install accepts any organization the
   user administers, not only the install organization. See B7.
-- *The browser install on self-host has no test* (high, **self-hosted
+- *The Gateway app install on self-host has no test* (high, **self-hosted
   too**): see B7.
 - *`connect()` from a dispatched Worker is unverified* (medium). Outbound
   Workers intercept `fetch()`; whether `cloudflare:sockets` connections
@@ -1372,7 +1372,7 @@ unless marked)
 - *`PROVIDER_HOSTS` is a hand-kept list* (low): a provider added later
   stays reachable from dispatched code until someone adds it.
 - *The GitHub release download in the gateway has no timeout* (low,
-  self-hosted too through the browser install).
+  self-hosted too through the Gateway app install).
 - *An app-bound deploy key can read any deploy job of its organization*
   (info).
 - *The egress allowlist ignores ports, and no manifest `egress` list
@@ -1554,7 +1554,7 @@ register under the boundary named.
 | Password reset link | 1 hour, single use | At the reset | Use, expiry | An admin-minted link survives that admin's deactivation (listed) |
 | Deploy key (hosted) | 30 days | Live per request: owner/admin role, membership, organization status | Revoke, removal, deactivation | A deploy job already started: it runs to its 5-minute deadline under `waitUntil` |
 | Cloudflare Access assertion / session | Assertion with 60 s skew; the Access session as the application sets it (`everyapp access on` sets 720 h) | A session counts only with an assertion on that request; JWKS cached 10 minutes | Access's own logout, the application's session end, deactivation here | Taking someone out of the Access policy (the gateway never reads the policy; their Access session runs to its end); bearer credentials, which never pass through Access |
-| `CF_DEPLOY_TOKEN` (browser installs) | No expiry | Never by the gateway | Revoking it at Cloudflare, `BROWSER_APP_INSTALLS=off`, `secret unset` | Anything in the Gateway's own tables |
+| `CF_DEPLOY_TOKEN` (Gateway app installs) | No expiry | Never by the gateway | Revoking it at Cloudflare, `BROWSER_APP_INSTALLS=off`, `secret unset` | Anything in the Gateway's own tables |
 | Organization suspension | Until lifted | Honoured within 30 s per isolate everywhere | Nothing in the code sets it yet (the platform's lever) | |
 | Registry row (a disabled or deleted app, its senders) | Until changed | 30 s per isolate (5 s on a miss) | The CLI's writes, Admin → Apps | |
 
@@ -1661,7 +1661,7 @@ means it is on main (every boundary fix from this pass merged on
 
 **Self-hosted, before Monday if possible**
 
-1. **The browser install lets any organization owner or admin deploy into
+1. **The Gateway app install lets any organization owner or admin deploy into
    the operator's account** (B7, high; narrowed in #722, merged;
    `install.self-hosted-default-on`,
    `gateway.nothing-public-registers-or-deploys-on-self-host`). Once

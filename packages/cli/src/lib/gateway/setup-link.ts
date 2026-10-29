@@ -230,7 +230,8 @@ export function maySetupLinkBeShown({
   return terminal || relayed;
 }
 
-export async function openInBrowser(url: string): Promise<void> {
+/** Open `url` in the person's browser; false when there is no opener to run it (the caller prints the link). */
+export async function openInBrowser(url: string): Promise<boolean> {
   const [command, args] =
     process.platform === "darwin"
       ? ["open", [url]]
@@ -239,7 +240,9 @@ export async function openInBrowser(url: string): Promise<void> {
         : ["xdg-open", [url]];
   try {
     await execa(command, args, { stdio: "ignore" });
+    return true;
   } catch {
     // Printing the link is enough; a missing opener is not an error.
+    return false;
   }
 }

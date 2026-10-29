@@ -15,7 +15,7 @@ import {
 } from "@every-app/perimeter/install";
 import { env } from "cloudflare:workers";
 import { sql } from "drizzle-orm";
-import { withInstallLease } from "./browser-install";
+import { withInstallLease } from "./gateway-app-installs";
 import { CloudflareTransport } from "./cf-rest/client";
 import { DeployError } from "./errors";
 import { accountList, accountRequest } from "./self-hosted-resources";

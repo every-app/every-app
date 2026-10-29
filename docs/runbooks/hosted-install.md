@@ -302,7 +302,7 @@ sender.
 
 With the gate shut the route answers `APP_INSTALL_NOT_AVAILABLE`. A
 self-hosted Gateway has the same installer, on by default once
-`CF_DEPLOY_TOKEN` is set: `docs/runbooks/browser-app-install.md`.
+`CF_DEPLOY_TOKEN` is set: `docs/runbooks/gateway-app-installs.md`.
 
 ## Checks
 

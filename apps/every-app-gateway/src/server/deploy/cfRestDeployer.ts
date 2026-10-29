@@ -13,9 +13,9 @@ import { gatewayNamesOf } from "@/server/gateway-name";
 import type { AppRow } from "@every-app/perimeter/registry";
 import { env } from "cloudflare:workers";
 import {
-  recordBrowserGatewayDeployment,
+  recordInstallerGatewayDeployment,
   withInstallLease,
-} from "./browser-install";
+} from "./gateway-app-installs";
 import { DeployError } from "./errors";
 import type { DeployerPort } from "./port";
 
@@ -306,7 +306,7 @@ export class CfRestDeployer implements DeployerPort {
           );
         const versionId = await this.servingVersionId(gatewayWorker);
         await renew();
-        await recordBrowserGatewayDeployment(
+        await recordInstallerGatewayDeployment(
           versionId,
           workerName,
           hostname,

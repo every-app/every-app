@@ -1,4 +1,4 @@
-/** The self-hosted Worker policy, shared by CLI and browser installations. */
+/** The self-hosted Worker policy, shared by CLI and Gateway app installs. */
 import {
   analyticsDatasetFor,
   GATEWAY_WORKER_NAME,

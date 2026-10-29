@@ -56,7 +56,7 @@ interface LinkOptions {
   /** Tests: the store, fetch, and the browser. */
   store?: LinkedDevStore;
   fetchImpl?: typeof fetch;
-  openBrowser?: (url: string) => Promise<void>;
+  openBrowser?: (url: string) => Promise<unknown>;
   /** Under --json (an agent reads the events) the browser isn't opened: the URL is in the `dev.link` progress event for the agent to hand on. */
   json?: boolean;
   /** Sign in again even with a stored token. */

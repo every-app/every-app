@@ -94,7 +94,7 @@ async function answer<T>(response: Response): Promise<T> {
   return body;
 }
 
-/** Whether this Gateway has an enabled browser deployer. */
+/** Whether this Gateway installs apps itself. */
 export function useAppInstallAvailable(enabled: boolean) {
   return useQuery({
     queryKey: ["admin", "app-install"],
@@ -110,9 +110,11 @@ export function useAppInstallAvailable(enabled: boolean) {
 }
 
 /** Workspaces the signed-in user can install into, with their active one preferred. */
-export function useAppInstallContext() {
+/** `enabled`: false until this page load's session check has answered. */
+export function useAppInstallContext(enabled: boolean) {
   return useQuery({
     queryKey: ["admin", "app-install", "context"],
+    enabled,
     queryFn: async () =>
       answer<AppInstallContext>(await fetch("/api/admin/apps/install/context")),
     staleTime: 0,

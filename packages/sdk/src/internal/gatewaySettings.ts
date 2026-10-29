@@ -93,7 +93,7 @@ export const GATEWAY_OWN_SETTINGS = [
   // gate, THIRD_PARTY_DEPLOYS, is never set from here: it is opened by
   // hand once the launch checks pass (docs/runbooks/hosted-install.md).
   "CF_DEPLOY_TOKEN",
-  // Self-hosted browser installs are on by default; "off" opts out.
+  // Self-hosted Gateway app installs: off unless exactly "on" (everyapp deploy-token add).
   "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",

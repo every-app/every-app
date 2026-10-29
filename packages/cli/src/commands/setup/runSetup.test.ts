@@ -77,7 +77,7 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     source: () => releaseSource(tarball),
     interactive: false,
     prompts: {
-      browserDeploymentToken: async () => null,
+      deployToken: async () => null,
       accessInFront: async () => false,
       pickZone: async () => {
         throw new Error("asked a person");
@@ -1125,7 +1125,7 @@ describe("everyapp setup", () => {
       {
         interactive: true,
         prompts: {
-          browserDeploymentToken: async () => null,
+          deployToken: async () => null,
           accessInFront: async () => false,
           pickZone: async () => {
             throw new Error("asked for a zone");
@@ -1157,7 +1157,7 @@ describe("everyapp setup", () => {
     const contexts: Array<{ owner: string; cloudflareEmail: string | null }> = [];
     let answer = false;
     const prompts: SetupDeps["prompts"] = {
-      browserDeploymentToken: async () => null,
+      deployToken: async () => null,
       accessInFront: async (context) => {
         contexts.push(context);
         return answer;
@@ -1352,7 +1352,7 @@ describe("everyapp setup", () => {
 
   it("ends the run when Ctrl-C answers the team name inside the Access offer, as at every other setup prompt", async () => {
     const prompts: SetupDeps["prompts"] = {
-      browserDeploymentToken: async () => null,
+      deployToken: async () => null,
       accessInFront: async () => true,
       pickZone: async () => {
         throw new Error("asked for a zone");
@@ -1502,10 +1502,10 @@ describe("everyapp setup", () => {
     expect(events.filter((event) => event.type === "warning")).toEqual([]);
   });
 
-  it("asks a person at a terminal about browser installs once the Gateway is up, unless --yes", async () => {
+  it("asks a person at a terminal about Gateway app installs once the Gateway is up, unless --yes", async () => {
     let asked = 0;
     const prompts: SetupDeps["prompts"] = {
-      browserDeploymentToken: async () => {
+      deployToken: async () => {
         asked += 1;
         return null;
       },

@@ -314,7 +314,7 @@ async function addOrganization(id: string, name: string): Promise<void> {
   });
 }
 
-/** Self-hosted with the deployer configured: the browser install's gate is open. */
+/** Self-hosted with the deployer configured: the Gateway app install's gate is open. */
 function selfHosted(): void {
   for (const hosted of [
     "THIRD_PARTY_DEPLOYS",
@@ -749,7 +749,7 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
   });
 });
 
-describe("self-hosted browser installs (the gate and the install organization)", () => {
+describe("self-hosted Gateway app installs (the gate and the install organization)", () => {
   const beta = "org-beta";
 
   beforeEach(async () => {

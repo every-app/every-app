@@ -4,7 +4,7 @@ import {
   serveInstallAvailability,
 } from "@/server/deploy/install";
 
-/** Browser installation from a public repository or oss.new release. */
+/** Gateway app install from a public repository or oss.new release. */
 export const Route = createFileRoute("/api/admin/apps/install")({
   server: {
     handlers: {

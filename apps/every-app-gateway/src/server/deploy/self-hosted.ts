@@ -58,7 +58,7 @@ import {
   provisionAppResources,
 } from "./self-hosted-resources";
 
-export interface BrowserInstallConfiguration {
+export interface AppInstallConfiguration {
   values?: Record<string, string>;
   allowDeleteDurableObjectData?: boolean;
   allowDeleteWorkflows?: boolean;
@@ -134,7 +134,7 @@ export async function reviewInstallationFields(
 export function parseInstallConfiguration(
   raw: unknown,
   manifest: Manifest,
-): BrowserInstallConfiguration {
+): AppInstallConfiguration {
   if (raw === undefined) return {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new DeployError(
@@ -322,7 +322,7 @@ async function installSelfHosted(input: {
   deployer: CfRestDeployer;
   renew: () => Promise<void>;
   actor: string;
-  configuration?: BrowserInstallConfiguration;
+  configuration?: AppInstallConfiguration;
   previousManifest?: Manifest | null;
 }): Promise<AppRow> {
   const { app, manifest, bundle, renew, configuration = {} } = input;

@@ -2172,7 +2172,7 @@ describe("deploy with no Gateway in the account yet", () => {
   /** setup's own seams, as `deploy` hands them on when it installs one. */
   const setupSeams = (opened: string[] = []) => ({
     prompts: {
-      browserDeploymentToken: async () => null,
+      deployToken: async () => null,
       accessInFront: async () => false,
       pickZone: async (): Promise<string> => {
         throw new Error("asked which zone");
@@ -2266,7 +2266,7 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
   });
 
-  it("with --yes installs without a question, browser installs included, then deploys behind Access", async () => {
+  it("with --yes installs without a question, Gateway app installs included, then deploys behind Access", async () => {
     const asked: string[] = [];
     const setup = setupSeams();
 
@@ -2282,8 +2282,8 @@ describe("deploy with no Gateway in the account yet", () => {
           ...setup,
           prompts: {
             ...setup.prompts,
-            browserDeploymentToken: async () => {
-              asked.push("Configure browser app installs?");
+            deployToken: async () => {
+              asked.push("Let your Gateway install apps?");
               return null;
             },
           },

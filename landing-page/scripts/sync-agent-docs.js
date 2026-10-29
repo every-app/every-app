@@ -121,10 +121,10 @@ const DOCUMENTS = [
       "Operator runbook: rotate the Gateway's identity signing key pair in a maintenance window; apps answer 401 until they are redeployed with the new public key.",
   },
   {
-    from: "docs/runbooks/browser-app-install.md",
-    to: "runbooks/browser-app-install",
+    from: "docs/runbooks/gateway-app-installs.md",
+    to: "runbooks/gateway-app-installs",
     description:
-      "Operator runbook: let the Gateway install saved app releases from the browser (the deploy token setup asks for during setup).",
+      "Operator runbook: Gateway app installs, where the Gateway installs app releases itself with its own deploy token (everyapp deploy-token add).",
   },
   {
     from: "docs/runbooks/hosted-install.md",

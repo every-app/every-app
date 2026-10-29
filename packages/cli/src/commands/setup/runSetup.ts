@@ -44,7 +44,7 @@
  *                link's own row in D1. In CI the run ends without one, with
  *                a warning: apps deploy without an owner
  *    browser     at a terminal, optionally store a Cloudflare deploy token
- *                for browser installs (No by default, and with --yes;
+ *                for Gateway app installs (No by default, and with --yes;
  *                existing tokens stay)
  *    access      once the owner exists, Cloudflare Access in front of the
  *                Gateway, by default: at a terminal it is asked (Yes by
@@ -97,6 +97,7 @@ import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
+import { askDeployToken } from "@/lib/gateway/deployToken";
 import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
@@ -117,7 +118,7 @@ import {
 } from "@/lib/gateway/setup-link";
 import { CLI, thisCommand } from "@/lib/output/command";
 import { stepInsteadOfDone, type EventSink } from "@/lib/output/events";
-import { askSecret, askText, choose, confirmAtTerminal, confirmYesAtTerminal } from "@/lib/output/prompt";
+import { askText, choose, confirmAtTerminal, confirmYesAtTerminal } from "@/lib/output/prompt";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
@@ -138,7 +139,7 @@ export interface SetupFlags {
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
-  /** Skip everyapp's own confirmations: the browser-install question is a No, and Access goes on without asking. */
+  /** Skip everyapp's own confirmations: the deploy-token question is a No, and Access goes on without asking. */
   yes?: boolean;
   /** Leave Cloudflare Access off (the default is on once the owner exists); remembered, and warned about. */
   "no-access"?: boolean;
@@ -155,7 +156,7 @@ export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "name" | "no-access
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
- * there is no --domain, optional browser-deployment credentials, and
+ * there is no --domain, the optional deploy token, and
  * whether Cloudflare Access goes in front.
  */
 interface SetupPrompts {
@@ -163,8 +164,8 @@ interface SetupPrompts {
   pickZone(zones: string[]): Promise<string>;
   /** The Gateway's address, under one of `zones`. */
   gatewayAddress(zones: string[]): Promise<string>;
-  /** Yes/No, then a hidden token; null when the person skips. */
-  browserDeploymentToken(): Promise<string | null>;
+  /** Yes/No, then a hidden token made for this Gateway (lib/gateway/deployToken.ts); null when the person skips. */
+  deployToken(target: Parameters<typeof askDeployToken>[0]): Promise<string | null>;
   /**
    * "Put Cloudflare Access in front of your Gateway?", Yes by default.
    * `owner` is the Gateway account Access must know the person by;
@@ -184,7 +185,7 @@ export interface SetupDeps {
   /** A person is at this terminal, and this isn't a --json run. */
   interactive: boolean;
   prompts: SetupPrompts;
-  openBrowser: (url: string) => Promise<void>;
+  openBrowser: (url: string) => Promise<unknown>;
   cliVersion: string;
   /** The Zero Trust team's name, when Access is offered and the account has no team yet (tests answer; else `access on`'s prompt). */
   askTeam?: (suggested: string) => Promise<string>;
@@ -519,18 +520,22 @@ export async function installGateway({
   });
 
   // The questions only a person answers, on a self-hosted Gateway; --yes
-  // answers No to the browser-install one. What the Worker holds decides
+  // answers No to the deploy-token one. What the Worker holds decides
   // whether each is asked: a token set stays, and Access on stays on.
   const asking = deps.interactive && !flags.yes && mode === "self_hosted";
   // Access needs the owner (the policy lets them in); --no-access is recorded either way.
   const accessWanted = offerAccess && mode === "self_hosted" && (owner !== null || Boolean(flags["no-access"]));
   const secretNames = asking || accessWanted ? await listWorkerSecrets(cf, gatewayNamesHere.worker) : [];
-  // Browser installs need a deploy token and the operator's opt-in
+  // Gateway app installs need a deploy token and the operator's opt-in
   // (BROWSER_APP_INSTALLS=on: the Gateway keeps them off otherwise, since
   // the token is account-wide): asked for once, at a terminal, and written
   // together.
   if (asking && !secretNames.includes("CF_DEPLOY_TOKEN")) {
-    const token = await deps.prompts.browserDeploymentToken();
+    const token = await deps.prompts.deployToken({
+      gatewayHost: target.domain,
+      account: accountName,
+      zone: target.zone.name,
+    });
     if (token !== null) {
       await applySecretValues({
         flags: { json: flags.json, "account-id": account.id, gateway: gatewayUrl },
@@ -1262,28 +1267,13 @@ const terminalPrompts: SetupPrompts = {
           ]
         : []),
     ]),
-  browserDeploymentToken: async () => {
-    const configure = await confirmAtTerminal("Configure browser app installs?", [
-      "Install apps on this Gateway through your browser, without running deployment commands.",
-      "Owners and admins, from a session signed in within the last 10 minutes; off until you say yes here",
-      `(or set BROWSER_APP_INSTALLS=on; turn off any time: ${CLI} secret set BROWSER_APP_INSTALLS).`,
+  deployToken: async (target) => {
+    const configure = await confirmAtTerminal("Let your Gateway install apps?", [
+      "Your Gateway gets its own Cloudflare token and installs an app when an owner or admin approves it,",
+      `for example from a Deploy to EveryApp button. Later: ${CLI} deploy-token add (or remove).`,
     ]);
     if (!configure) return null;
-    return (await askSecret("Cloudflare API token", {
-      context: [
-        "1. Open https://dash.cloudflare.com/profile/api-tokens",
-        "   Select Create Token, then Custom token > Get started.",
-        "2. Add permissions:",
-        "   Account > Workers Scripts > Edit; Account > D1 > Edit; Zone > DNS > Read.",
-        "   Add Edit permissions for the app resources you use: KV, R2, Queues, Workflows,",
-        "   Hyperdrive, Vectorize, AI Gateway, Secrets Store, or Email Routing.",
-        "   With Cloudflare Access enabled, add Account > Access: Apps and Policies > Edit.",
-        "   Permission guide: https://everyapp.com/docs/agent/deploy#browser-installs",
-        "   Limit account resources to this account and zone resources to the Gateway's zone.",
-        "3. Continue to summary, create the token, then paste it below (input is hidden).",
-        "The token is stored as a secret on your Gateway.",
-      ],
-    })).trim();
+    return askDeployToken(target);
   },
   pickZone: (zones: string[]) =>
     choose(

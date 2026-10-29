@@ -147,12 +147,12 @@ export function manifestProblems(
     manifest.resources?.hyperdrive?.length
   ) {
     problems.push(
-      "it declares R2 or Hyperdrive, which the browser deployer can't provision; use the CLI",
+      "it declares R2 or Hyperdrive, which the Gateway's app installer can't provision; use the CLI",
     );
   }
   if (manifest.resources?.queues?.length) {
     problems.push(
-      "it declares Queues, which the browser deployer can't provision; use the CLI",
+      "it declares Queues, which the Gateway's app installer can't provision; use the CLI",
     );
   }
   // Cloudflare's own email sending would send from the platform's account,
@@ -168,7 +168,7 @@ export function manifestProblems(
     (manifest.migrations?.engine && manifest.migrations.engine !== "drizzle")
   ) {
     problems.push(
-      "its migrations require a source checkout; browser installs support D1 SQL migrations only",
+      "its migrations require a source checkout; Gateway app installs support D1 SQL migrations only",
     );
   }
   if (manifest.secrets?.length) {

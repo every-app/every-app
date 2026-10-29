@@ -164,7 +164,7 @@ function isTeamDomain(value: string): boolean {
 /**
  * What each plain Gateway setting takes, keyed by name, as the Gateway
  * reads it (apps/every-app-gateway/src: cloudflare-access/config.ts,
- * oauth-flag.ts, platform-policy.ts, deploy/browser-install.ts,
+ * oauth-flag.ts, platform-policy.ts, deploy/gateway-app-installs.ts,
  * mcp-auth/maintenance.ts, toolbus/gateway-mcp.ts, ai-proxy.ts,
  * server/app-hosts.ts, server/events/target.ts). A name left out is a plain setting that takes
  * anything.
@@ -250,7 +250,7 @@ const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], Pl
     check: oneOf(["true", "false"]),
   },
   BROWSER_APP_INSTALLS: {
-    takes: "on or off, in lowercase; on turns browser app installs on (they are off until then), off turns them off",
+    takes: "on or off, in lowercase; on lets the Gateway install apps itself (off until then), off stops it",
     check: oneOf(["on", "off"], { exact: true }),
   },
   EVENTS_ALLOW_PRIVATE_TARGETS: {

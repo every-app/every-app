@@ -98,7 +98,7 @@ export async function offerGateway({
       domain: host,
       "account-id": account.id,
       "force-dns": offer.forceDns,
-      // setup's own questions take the deploy's --yes too (browser installs: No).
+      // setup's own questions take the deploy's --yes too (Gateway app installs: No).
       yes: offer.yes,
       verbose: offer.verbose,
     },

@@ -19,7 +19,7 @@ what is still open.
       "private to you" means owners and admins only; with Access it narrows to you.
 - [ ] **`deploy --yes` installs a Gateway at `apps.<zone>` without asking**,
       `--no-wait` skips the live wait, the inline install waits for the owner.
-- [ ] **The browser install is a second deploy authority.** With `CF_DEPLOY_TOKEN`
+- [ ] **The Gateway app install is a second deploy authority.** With `CF_DEPLOY_TOKEN`
       set, an owner or admin can have the Gateway install a public release
       (`BROWSER_APP_INSTALLS`); see docs/threat-model.md.
 - [ ] **npm.** Publishing is paused: `pnpm everyapp` from this checkout, never

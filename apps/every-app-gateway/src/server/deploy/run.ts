@@ -1,6 +1,6 @@
 /**
  * What every way into the deploy pipeline shares: the deploy API's routes
- * (./routes.ts, deploy keys) and browser installation (./install.ts, a
+ * (./routes.ts, deploy keys) and Gateway app installs (./install.ts, a
  * session, hosted or self-hosted). Each authenticates its caller
  * and gets the bundle its own way; from there a deploy shares the manifest
  * policy, registration, one job at a time per app, and the
@@ -37,7 +37,7 @@ import {
 import type { AppRow } from "@every-app/perimeter/registry";
 import type { CapabilityLookup } from "@every-app/sdk/internal";
 import { env, waitUntil } from "cloudflare:workers";
-import { withInstallLease } from "./browser-install";
+import { withInstallLease } from "./gateway-app-installs";
 import type { DeployBundle } from "./bundle";
 import { CfRestDeployer } from "./cfRestDeployer";
 import { bundleRefused, DeployError } from "./errors";
@@ -47,7 +47,7 @@ import { registerDispatchApp, toAppRow } from "./registry";
 import {
   runSelfHostedInstall,
   selfHostedBundleProblems,
-  type BrowserInstallConfiguration,
+  type AppInstallConfiguration,
 } from "./self-hosted";
 
 export function deployLimits() {
@@ -241,7 +241,7 @@ interface StartDeployInput extends Deployer {
   source?: DeployJobSource;
   /** How the deploy came in, for the event: a deploy key or the browser. */
   via: "cli" | "browser";
-  configuration?: BrowserInstallConfiguration;
+  configuration?: AppInstallConfiguration;
   previousManifest?: Manifest | null;
 }
 

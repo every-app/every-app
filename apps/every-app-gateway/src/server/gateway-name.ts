@@ -4,7 +4,7 @@
  * (empty for the default Gateway, `every-app-gateway`; `demo` for
  * `every-app-gateway-demo`), and everything here that names an
  * account-wide resource (an app's Worker at registration, the Gateway's
- * own Worker in a browser install) takes it from here, never from a
+ * own Worker in a Gateway app install) takes it from here, never from a
  * constant. Dev, with nothing set, is the default Gateway.
  */
 import {

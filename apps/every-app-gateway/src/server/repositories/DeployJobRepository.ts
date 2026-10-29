@@ -12,7 +12,7 @@ const DEPLOY_JOB_DEADLINE_MS = 5 * 60 * 1000;
 
 type DeployJobStatus = "running" | "succeeded" | "failed";
 
-/** The public repository or immutable release a browser install deploys. */
+/** The public repository or immutable release a Gateway app install deploys. */
 export interface DeployJobSource {
   repoUrl: string;
   /** The release's tag, as GitHub's redirect named it. */

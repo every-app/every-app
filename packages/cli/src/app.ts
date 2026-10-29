@@ -23,6 +23,7 @@ import { createCommand } from "./commands/create/command";
 import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
+import { deployTokenRoutes } from "./commands/deployToken/command";
 import { devRoutes } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
 import { eventsRoutes } from "./commands/events/command";
@@ -56,6 +57,7 @@ const routes = buildRouteMap({
     setup: setupCommand,
     update: updateCommand,
     install: installCommand,
+    "deploy-token": deployTokenRoutes,
     configure: configureCommand,
     status: statusCommand,
     delete: deleteCommand,
@@ -115,6 +117,7 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "setup",
       "update",
       "install",
+      "deploy-token",
       "configure",
       "status",
       "delete",
@@ -148,6 +151,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     "events deliveries --dead",
   ],
   access: ["access on", "access on --email-domain example.com", "access off"],
+  "deploy-token": ["deploy-token add", "deploy-token add --gateway https://apps.example.com", "deploy-token remove"],
   signin: [
     "signin list",
     "signin show google",

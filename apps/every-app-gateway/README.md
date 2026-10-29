@@ -31,5 +31,5 @@ pnpm auth:generate          # regenerate src/db/auth.schema.ts after an auth con
 - [Security model](../../docs/security-model.md)
 - [Capabilities the gateway holds](../../docs/capabilities.md)
 - [Runbooks](../../docs/runbooks/): Cloudflare Access, email sending, the MCP
-  connector and its OAuth server, key rotation, browser app installs
+  connector and its OAuth server, key rotation, Gateway app installs
 - [Testing](../../docs/TESTING.md)

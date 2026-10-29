@@ -113,7 +113,7 @@ remote MCP server in an app of your own to put it behind the Gateway: add it
 Snapshot: the Gateway stores each app's catalog in D1 with the app version it
 came from, taken when the app is activated (the first deploy: the CLI waits
 for the app to go live, so the catalog exists before anyone connects), when a
-deploy through the Gateway (a browser install) finishes a new version, on the first app-host request each
+deploy through the Gateway (a Gateway app install) finishes a new version, on the first app-host request each
 isolate sees after a self-hosted redeploy, when `/mcp` or the consent page
 finds a missing or outdated snapshot (synced within the request, 3 s budget),
 and when a call reports a drifted `catalogHash` or `unknown_tool`. The CLI's

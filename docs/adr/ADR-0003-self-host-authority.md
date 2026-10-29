@@ -39,7 +39,7 @@ is not built, and its deploy API is disabled by `GATEWAY_DEPLOYMENT_MODE`.
 
    Since #371 the Gateway also installs a published release from the
    browser (`POST /api/admin/apps/install`, with the account token
-   `CF_DEPLOY_TOKEN`; `docs/runbooks/browser-app-install.md`), since
+   `CF_DEPLOY_TOKEN`; `docs/runbooks/gateway-app-installs.md`), since
    2026-10-24 only for the install organization's owners and admins (the
    token is the account's; `deploy.browser-install-install-org-only` in
    `docs/threat-model-invariants.md`). Whether that second deploy

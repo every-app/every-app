@@ -66,7 +66,7 @@ function AppsPage() {
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const isAdmin =
     activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
-  // Hosted deployer or a configured self-hosted browser deployer.
+  // Hosted deployer or a self-hosted Gateway with app installs on.
   const { data: canInstall } = useAppInstallAvailable(isAdmin);
   // Each dialog renders only while its app is set. The setters are stable, so
   // the table's columns are too.

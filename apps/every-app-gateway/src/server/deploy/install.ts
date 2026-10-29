@@ -1,5 +1,5 @@
 /**
- * Browser installation (Admin → Apps → Install app): an owner or admin
+ * Gateway app installs (Admin → Apps → Install app): an owner or admin
  * supplies a public GitHub repository or immutable oss.new release URL,
  * and the Gateway deploys the validated release
  * (./release.ts) through the deploy API's pipeline (./run.ts), registered
@@ -10,7 +10,7 @@
  *   POST /api/admin/apps/install        repoUrl OR releaseUrl, organizationId
  *   GET  /api/admin/deploys/{id}        a deploy job, as the page polls it
  *
- * Hosted deploys retain their launch gate. Self-hosted browser installs are
+ * Hosted deploys retain their launch gate. Self-hosted Gateway app installs are
  * off until the operator sets BROWSER_APP_INSTALLS=on beside the deploy
  * credentials (setup does both when the person opts in). On a self-hosted
  * Gateway the token is the account's, so only the install organization's
@@ -45,7 +45,7 @@ import { env } from "cloudflare:workers";
 import {
   installOrganizationId,
   selfHostedInstallEnabled,
-} from "./browser-install";
+} from "./gateway-app-installs";
 import { bundleRefused, DeployError } from "./errors";
 import { bundleProblems } from "./metadata";
 import { fetchAppRelease, fetchReleaseUrl, parseRepoUrl } from "./release";
@@ -83,7 +83,11 @@ const REAUTH_REQUIRED =
 async function authenticateSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user?.id || isUserBanned(session.user)) {
-    throw new DeployError("UNAUTHORIZED", 401, "Sign in again.");
+    throw new DeployError(
+      "APP_INSTALL_SIGN_IN_REQUIRED",
+      401,
+      "Sign in again to install apps.",
+    );
   }
   return session;
 }
@@ -197,7 +201,7 @@ function assertAvailable(): void {
     throw new DeployError(
       "APP_INSTALL_NOT_AVAILABLE",
       404,
-      "Browser installation is not enabled on this Gateway. Its owner can configure the browser deployer, or deploy with the everyapp CLI.",
+      "This Gateway doesn't have a deployment token configured. It can be added with everyapp deploy-token add, or deploy with the everyapp CLI.",
     );
   }
 }

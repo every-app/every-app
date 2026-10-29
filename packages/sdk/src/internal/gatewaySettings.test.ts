@@ -156,7 +156,7 @@ describe("plain and hosted-only settings", () => {
       true,
     );
     expect(isHostedOnlyGatewaySetting("THIRD_PARTY_DOMAIN")).toBe(true);
-    // The browser deployer's token serves self-hosted installs too.
+    // The deploy token serves the self-hosted Gateway's app installs too.
     expect(isHostedOnlyGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
   });
 });

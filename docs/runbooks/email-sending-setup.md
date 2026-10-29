@@ -251,7 +251,7 @@ only link.
   of an app that declares inbound with no address yet
   prints one line naming `everyapp email set --inbound`.
 
-The browser installer (Admin → Apps → Install app) and the hosted deploy API
+The Gateway's app installer (Admin → Apps → Install app) and the hosted deploy API
 refuse `email: { inbound: true }`: an app that receives mail deploys from the
 CLI (`everyapp deploy`, or `everyapp install` from a release).
 

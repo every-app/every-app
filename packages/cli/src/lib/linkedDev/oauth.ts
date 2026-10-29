@@ -184,7 +184,7 @@ interface AuthorizeOptions {
   clientId: string;
   resource: string;
   /** Opens the system browser at the URL; the URL is also handed to `onUrl`. */
-  openBrowser: (url: string) => Promise<void>;
+  openBrowser: (url: string) => Promise<unknown>;
   /** Told the URL once, for the terminal (and a run without a browser). */
   onUrl: (url: string) => void;
   fetchImpl?: typeof fetch;

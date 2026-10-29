@@ -13,7 +13,7 @@ interface WorkerDomain {
   zone_id: string;
 }
 
-/** Account Workers used by the self-hosted browser installer. */
+/** Account Workers used by the self-hosted Gateway's app installer. */
 export function scripts(transport: CloudflareTransport) {
   const path = (script: string, ...parts: string[]) =>
     transport.accountPath("workers", "scripts", script, ...parts);

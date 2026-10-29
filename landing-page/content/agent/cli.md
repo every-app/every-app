@@ -37,33 +37,34 @@ USAGE
   everyapp <command> [flags]
 
 BUILD AN APP
-  create     Create a new app from the starter template
-  dev        Run the app locally behind a dev Gateway
-  deploy     Deploy the app in this directory
-  release    Pack the app in this directory as a release others can install
-  db         Migrate, query and restore an app's D1 database
-  skills     Keep the agent skills in an app up to date with the CLI
+  create        Create a new app from the starter template
+  dev           Run the app locally behind a dev Gateway
+  deploy        Deploy the app in this directory
+  release       Pack the app in this directory as a release others can install
+  db            Migrate, query and restore an app's D1 database
+  skills        Keep the agent skills in an app up to date with the CLI
 
 RUN A GATEWAY
-  login      Log in to Cloudflare
-  setup      Install or repair the Gateway
-  update     Update the Gateway to a newer release
-  install    Install an app someone published, from GitHub or a release file
-  configure  Set up an app: asks for each setting it needs, required ones first, then the optional ones
-  status     Show the Gateway, its apps and anything to fix
-  delete     Remove an app from the Gateway
-  access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
-  signin     Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
-  secret     Set, remove and list secrets and Gateway settings
-  provider   Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to
-  ai         The default model provider apps get when they ask for one, and AI Gateway in front
-  mcp        Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
-  email      Manage the addresses an app sends as and receives at
-  events     Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
-  teardown   Delete everything EveryApp created in a dedicated test Cloudflare account, or one named Gateway
+  login         Log in to Cloudflare
+  setup         Install or repair the Gateway
+  update        Update the Gateway to a newer release
+  install       Install an app someone published, from GitHub or a release file
+  deploy-token  Give the Gateway its own Cloudflare token, so it installs apps itself, or take it off
+  configure     Set up an app: asks for each setting it needs, required ones first, then the optional ones
+  status        Show the Gateway, its apps and anything to fix
+  delete        Remove an app from the Gateway
+  access        Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  signin        Let people sign in with Google, Microsoft, GitHub, Apple, Cloudflare or your SSO, beside passwords
+  secret        Set, remove and list secrets and Gateway settings
+  provider      Register API providers for apps to call with the Gateway's key, and OAuth providers people connect their accounts to
+  ai            The default model provider apps get when they ask for one, and AI Gateway in front
+  mcp           Offer MCP servers to members' AI clients as MCP apps, with the Gateway holding each one's key
+  email         Manage the addresses an app sends as and receives at
+  events        Send the Gateway's events to Slack, Zapier, n8n or your own endpoint (signed), or by email
+  teardown      Delete everything EveryApp created in a dedicated test Cloudflare account, or one named Gateway
 
 MANAGE THE WORKSPACE
-  workspace  Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev
+  workspace     Manage the workspace from the terminal: members, invitations, groups, app access, caps, usage, activity, the audit log, tokens, AI connections and linked dev
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -1076,6 +1077,80 @@ FLAGS
 
 ARGUMENTS
   source  The app release to install: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz
+```
+
+### `everyapp deploy-token add`
+
+Give the Gateway its own Cloudflare token, so it installs apps itself.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  everyapp deploy-token add [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp deploy-token add --help
+
+Says what to pick, then opens Cloudflare's page for a new account API token when you press
+Enter (No prints its link), its name and every permission the installer uses filled in
+(Workers Scripts, D1, Workers KV, R2, Queues, Hyperdrive, Vectorize, AI Gateway, Secrets
+Store, Access apps, Email Routing Rules and Zone Settings edit; DNS and Zone read). Create it
+and paste it at the hidden prompt: it is stored on the Gateway as CF_DEPLOY_TOKEN, with
+BROWSER_APP_INSTALLS=on. Owners and admins then install apps from Admin → Apps → Install app,
+or a Deploy to EveryApp button, without running deployment commands.
+
+A Gateway that has a token keeps it: run again, this only turns installs back on.
+To replace the token: everyapp deploy-token remove, then add.
+
+Examples:
+  everyapp deploy-token add
+  everyapp deploy-token add --gateway https://apps.example.com
+
+FLAGS
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+```
+
+### `everyapp deploy-token remove`
+
+Take the Gateway's Cloudflare token off it, so it no longer installs apps itself.
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--yes` | switch | no |  | Remove the token without asking |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  everyapp deploy-token remove [--yes] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp deploy-token remove --help
+
+Removes CF_DEPLOY_TOKEN and BROWSER_APP_INSTALLS from the Gateway in one change. The apps
+it installed keep running. The token works until you delete it in Cloudflare (Manage
+account → Account API tokens). Asks first.
+
+Example:
+  everyapp deploy-token remove
+
+FLAGS
+  -y [--yes/--no-yes]          Remove the token without asking
+     [--gateway]               The Gateway's URL, or its name when the account holds several (every-app-gateway-<name>, or <name>; every-app-gateway is the first one), checked against the Gateways in your Cloudflare account (default: EVERYAPP_GATEWAY_URL; one Gateway in all your accounts needs neither)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
 ```
 
 ### `everyapp configure`

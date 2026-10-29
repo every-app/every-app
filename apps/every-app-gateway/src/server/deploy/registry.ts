@@ -30,7 +30,7 @@ import {
   organizations,
   userAppAccess,
 } from "@/db/schema";
-import { installOrganizationId } from "./browser-install";
+import { installOrganizationId } from "./gateway-app-installs";
 import { DeployError } from "./errors";
 
 type StoredApp = typeof apps.$inferSelect;
