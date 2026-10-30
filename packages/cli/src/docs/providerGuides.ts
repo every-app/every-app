@@ -71,6 +71,7 @@ export const CATEGORY_OF: Readonly<Record<string, ProviderCategory>> = {
   notion: "work",
   atlassian: "work",
   zoom: "work",
+  granola: "work",
   dropbox: "work",
   airtable: "work",
   hubspot: "work",
@@ -269,6 +270,15 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Enter a name, your Gateway's address as the homepage, and the redirect URI above as the **Authorization callback URL**.",
       "Select **Register application**, then **Generate a new client secret**.",
       "Copy the **Client ID** and the client secret. The secret is shown once.",
+    ],
+  },
+  granola: {
+    blurb:
+      "Your meeting notes, summaries and transcripts, read only. Needs a Business or Enterprise plan. Granola's MCP server signs in with OAuth, which the Gateway can't do yet, so the Gateway uses its API key instead.",
+    key: [
+      "In the Granola desktop app, open **Settings → Connectors → API keys** and select **Create new key**. On Enterprise, an admin may need to turn on **API access for members** first.",
+      "Pick the note scopes: **Personal notes** (yours and those shared with you) or **Public notes** (the whole workspace's). Admins can make a workspace key instead, under **Workspace API keys**: it never expires.",
+      "Copy the key (`grn_…`). It's shown once.",
     ],
   },
   linear: {

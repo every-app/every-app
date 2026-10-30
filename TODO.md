@@ -2328,3 +2328,19 @@ Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `ever
 
 - [ ] **`names` still defaults to the default Gateway's in `lib/gateway/{resources,apply,reconcile,patchBuildOutput}.ts`** so the existing tests run unchanged; every production caller passes it. Make it required and fix the tests, so a future caller can't silently target production.
 - [ ] **A Gateway named after a legacy app id** (`every-<appId>--<binding>` resources from before org-scoped names, e.g. `every-todo` in Ben's account) would claim those leftovers as its own. Don't name a Gateway `todo`, `llm-chat` or any other old app id; `everyapp teardown --gateway <name> --dry-run` shows what it would take before anything goes.
+
+## Granola provider (2026-10-30)
+
+`granola` is a built-in API-key provider (`GRANOLA_API_KEY`, bearer, `public-api.granola.ai`, read only), checked against docs.granola.ai and its OpenAPI spec. Its hosted MCP server (`https://mcp.granola.ai/mcp`) is OAuth with dynamic client registration and no API keys, which `mcp add --auth oauth` records but doesn't serve yet.
+
+### Decided for Ben
+
+- [ ] **The REST API key, not the MCP server.** It works today; it needs a Business or Enterprise plan (Basic users can only use the MCP server).
+- [ ] **Read only, with `audit`, `webhook-endpoints` and `legal-holds` refused.** POST is a read method so search works (`POST /v1/notes/search`); refusing those paths leaves search the only POST. Webhook endpoints would let an app send every note to a URL of its choosing.
+- [ ] **`data: "account"`**: one key reads the key holder's notes (or the workspace's), so a hosted Gateway won't serve it until keys are per organization.
+- [ ] **Category "CRM, docs and work tools"** on /docs/providers.
+
+### Questions for Ben
+
+- [ ] **Agents get nothing yet.** A catalog entry lets apps call Granola; it gives an agent no tools. Two ways: (a) a curated MCP app like DataForSEO (Gateway tools over the API key, `everyapp mcp on granola`), or (b) serve OAuth for `mcp add --auth oauth`, which would bring Granola's own MCP tools (and works on Basic). (b) touches the perimeter and identity: hold for review. Which first?
+- [ ] **A personal key reads one person's notes for every member who can open the app.** Fine for a solo Gateway; for a team, a workspace key with Public notes only is the safer advice. Say so on the page, or leave it to the scope step?

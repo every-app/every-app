@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 60 providers: 48 API-key, 9 AI, 3 OAuth clients.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -37,6 +37,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`twilio`](#twilio) | Twilio | API key | `TWILIO_API_SECRET`, `TWILIO_API_KEY` |  |
 | [`intercom`](#intercom) | Intercom | API key | `INTERCOM_API_TOKEN` |  |
 | [`crisp`](#crisp) | Crisp | API key | `CRISP_API_KEY`, `CRISP_API_IDENTIFIER` |  |
+| [`granola`](#granola) | Granola | API key | `GRANOLA_API_KEY` |  |
 | [`linear`](#linear) | Linear | API key | `LINEAR_API_KEY` |  |
 | [`github`](#github) | GitHub | API key | `GITHUB_API_TOKEN` |  |
 | [`gitlab`](#gitlab) | GitLab | API key | `GITLAB_API_TOKEN` |  |
@@ -370,6 +371,23 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** 10000 a day. The website token's daily quota.
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set CRISP_API_KEY CRISP_API_IDENTIFIER`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** none beyond this section
+
+### granola
+
+**Granola** (`api_key`): Meeting notes: list, search and read notes with their AI summaries, transcripts, folders and spaces.
+
+- **Settings:** `GRANOLA_API_KEY`
+- **What the key is:** An API key (grn_...) from the Granola desktop app's Settings > Connectors > API keys, on a Business or Enterprise plan; the Gateway sends it as a bearer token. It reads only the notes its scopes allow. A personal or workspace API key (grn_...), with only the note scopes the apps need.
+- **Where the key comes from:** https://docs.granola.ai/help-center/sharing/integrations/granola-api
+- **API reference:** https://docs.granola.ai/introduction
+- **How it is sent:** `Authorization: Bearer <GRANOLA_API_KEY>`, to `public-api.granola.ai` only, over https
+- **What apps may do:** access `read`; GET, POST on any grant; account-wide paths refused: `audit`, `webhook-endpoints`, `legal-holds`; data `account` (served on a self-hosted Gateway only)
+- **Smoke request:** `GET https://public-api.granola.ai/v1/notes?page_size=1`, expecting 200; free
+- **Cost:** not recorded
+- **Rate:** 5 a second. Bursts of 25 requests in 5 seconds; per user or per workspace, by the key's scope.
+- **Verified:** 2026-10-30, docs
+- **Set it:** `pnpm everyapp secret set GRANOLA_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
 ### linear

@@ -276,6 +276,50 @@ export const COMMS = {
     },
     tags: ["support", "chat", "messaging"],
   },
+  // Added 2026-10-30 from docs.granola.ai and its OpenAPI spec. Granola's
+  // hosted MCP server (mcp.granola.ai/mcp) is OAuth only, which the Gateway
+  // can't sign in to yet; this is its API-key REST API.
+  granola: {
+    mode: "api_key",
+    label: "Granola",
+    description:
+      "Meeting notes: list, search and read notes with their AI summaries, transcripts, folders and spaces.",
+    auth: { kind: "bearer", secret: "GRANOLA_API_KEY" },
+    docs: "https://docs.granola.ai/help-center/sharing/integrations/granola-api",
+    api: "https://docs.granola.ai/introduction",
+    hosts: ["public-api.granola.ai"],
+    data: "account",
+    access: ["read"],
+    // Searching notes is a POST that reads; with the paths below refused,
+    // it is the only POST an app can reach.
+    readMethods: ["GET", "POST"],
+    // Workspace administration: the audit log, webhook endpoints (which
+    // would send every note to a URL of the app's choosing) and legal holds.
+    accountWidePaths: [["audit"], ["webhook-endpoints"], ["legal-holds"]],
+    hint: "An API key (grn_...) from the Granola desktop app's Settings > Connectors > API keys, on a Business or Enterprise plan; the Gateway sends it as a bearer token. It reads only the notes its scopes allow.",
+    secrets: [
+      {
+        name: "GRANOLA_API_KEY",
+        hint: "A personal or workspace API key (grn_...), with only the note scopes the apps need.",
+      },
+    ],
+    rate: {
+      perSecond: 5,
+      note: "Bursts of 25 requests in 5 seconds; per user or per workspace, by the key's scope.",
+    },
+    smoke: {
+      method: "GET",
+      path: "/v1/notes?page_size=1",
+      expect: [200],
+      free: true,
+    },
+    example: "summarize what we decided in this week's customer calls",
+    verified: {
+      on: "2026-10-30",
+      how: "docs",
+    },
+    tags: ["meetings", "notes", "transcripts"],
+  },
   linear: {
     mode: "api_key",
     label: "Linear",

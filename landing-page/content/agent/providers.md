@@ -515,7 +515,7 @@ Generated from `CAPABILITIES` by `pnpm -C packages/cli docs:update`; a test fail
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
+The built-in catalog has 60 providers: 48 API-key, 9 AI, 3 OAuth clients.
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -536,6 +536,7 @@ The built-in catalog has 59 providers: 47 API-key, 9 AI, 3 OAuth clients.
 | `twilio` | Twilio | `api_key` | `TWILIO_API_SECRET`, `TWILIO_API_KEY` | `api.twilio.com` | `Authorization: Basic base64(<TWILIO_API_KEY>:<TWILIO_API_SECRET>)` | https://www.twilio.com/docs/iam/api-keys/keys-in-console; API reference https://www.twilio.com/docs/usage/requests-to-twilio | none recorded | 2026-10-25, docs |
 | `intercom` | Intercom | `api_key` | `INTERCOM_API_TOKEN` | `api.intercom.io`, `api.eu.intercom.io`, `api.au.intercom.io` | `Authorization: Bearer <INTERCOM_API_TOKEN>` | https://app.intercom.com/a/apps/_/developer-hub; API reference https://developers.intercom.com/docs/build-an-integration/learn-more/rest-apis | `GET https://api.intercom.io/me`, expecting 200; free. Returns the admin behind the token; account-wide, so run it from a terminal. | 2026-10-25, docs |
 | `crisp` | Crisp | `api_key` | `CRISP_API_KEY`, `CRISP_API_IDENTIFIER` | `api.crisp.chat` | `Authorization: Basic base64(<CRISP_API_IDENTIFIER>:<CRISP_API_KEY>)` | https://docs.crisp.chat/guides/rest-api/authentication/website-token/; API reference https://docs.crisp.chat/references/rest-api/v1/ | none recorded | 2026-10-25, docs |
+| `granola` | Granola | `api_key` | `GRANOLA_API_KEY` | `public-api.granola.ai` | `Authorization: Bearer <GRANOLA_API_KEY>` | https://docs.granola.ai/help-center/sharing/integrations/granola-api; API reference https://docs.granola.ai/introduction | `GET https://public-api.granola.ai/v1/notes?page_size=1`, expecting 200; free | 2026-10-30, docs |
 | `linear` | Linear | `api_key` | `LINEAR_API_KEY` | `api.linear.app` | `Authorization: <LINEAR_API_KEY>` | https://linear.app/settings/account/security; API reference https://linear.app/developers/graphql | none recorded | 2026-10-25, docs |
 | `github` | GitHub | `api_key` | `GITHUB_API_TOKEN` | `api.github.com` | `Authorization: Bearer <GITHUB_API_TOKEN>` | https://github.com/settings/personal-access-tokens/new; API reference https://docs.github.com/en/rest | `GET https://api.github.com/user`, expecting 200; free. Returns the token's owner; 401 means the token is wrong. | 2026-10-25, docs |
 | `gitlab` | GitLab | `api_key` | `GITLAB_API_TOKEN` | `gitlab.com` | `PRIVATE-TOKEN: <GITLAB_API_TOKEN>` | https://gitlab.com/-/user_settings/personal_access_tokens; API reference https://docs.gitlab.com/api/rest/ | `GET https://gitlab.com/api/v4/personal_access_tokens/self`, expecting 200; free. Describes a personal access token itself (401 when it is wrong or revoked); account-wide, so run it from a terminal. | 2026-10-25, docs |
@@ -615,6 +616,7 @@ Each company the Gateway supports has a page in the user docs, under [/docs/prov
 | [twilio](/docs/providers/twilio) | `twilio` | `TWILIO_API_SECRET`, `TWILIO_API_KEY` | `secret set TWILIO_API_SECRET TWILIO_API_KEY` | https://www.twilio.com/docs/iam/api-keys/keys-in-console |
 | [intercom](/docs/providers/intercom) | `intercom` | `INTERCOM_API_TOKEN` | `secret set INTERCOM_API_TOKEN` | https://app.intercom.com/a/apps/_/developer-hub |
 | [crisp](/docs/providers/crisp) | `crisp` | `CRISP_API_KEY`, `CRISP_API_IDENTIFIER` | `secret set CRISP_API_KEY CRISP_API_IDENTIFIER` | https://docs.crisp.chat/guides/rest-api/authentication/website-token/ |
+| [granola](/docs/providers/granola) | `granola` | `GRANOLA_API_KEY` | `secret set GRANOLA_API_KEY` | https://docs.granola.ai/help-center/sharing/integrations/granola-api |
 | [linear](/docs/providers/linear) | `linear`, `linear-oauth (preset)` | `LINEAR_API_KEY`, `LINEAR_OAUTH_CLIENT_ID`, `LINEAR_OAUTH_CLIENT_SECRET` | `secret set LINEAR_API_KEY`, `provider add --oauth linear-oauth` | https://linear.app/settings/account/security |
 | [github](/docs/providers/github) | `github`, `github-oauth (preset)`, `github (sign-in)` | `GITHUB_API_TOKEN`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | `secret set GITHUB_API_TOKEN`, `provider add --oauth github-oauth`, `signin add github` | https://github.com/settings/personal-access-tokens/new |
 | [gitlab](/docs/providers/gitlab) | `gitlab`, `gitlab-oauth (preset)` | `GITLAB_API_TOKEN`, `GITLAB_OAUTH_CLIENT_ID`, `GITLAB_OAUTH_CLIENT_SECRET` | `secret set GITLAB_API_TOKEN`, `provider add --oauth gitlab-oauth` | https://gitlab.com/-/user_settings/personal_access_tokens |

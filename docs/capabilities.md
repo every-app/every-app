@@ -162,6 +162,7 @@ own (`pnpm everyapp provider list`):
 | `twilio` | Twilio | `TWILIO_API_SECRET`, `TWILIO_API_KEY` | `api.twilio.com` | `Authorization: Basic base64(<TWILIO_API_KEY>:<TWILIO_API_SECRET>)` | `write` | ; with `access: "write"` also POST |
 | `intercom` | Intercom | `INTERCOM_API_TOKEN` | `api.intercom.io`, `api.eu.intercom.io`, `api.au.intercom.io` | `Authorization: Bearer <INTERCOM_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
 | `crisp` | Crisp | `CRISP_API_KEY`, `CRISP_API_IDENTIFIER` | `api.crisp.chat` | `Authorization: Basic base64(<CRISP_API_IDENTIFIER>:<CRISP_API_KEY>)` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
+| `granola` | Granola | `GRANOLA_API_KEY` | `public-api.granola.ai` | `Authorization: Bearer <GRANOLA_API_KEY>` | `read` | GET, POST |
 | `linear` | Linear | `LINEAR_API_KEY` | `api.linear.app` | `Authorization: <LINEAR_API_KEY>` | `write` | ; with `access: "write"` also POST |
 | `github` | GitHub | `GITHUB_API_TOKEN` | `api.github.com` | `Authorization: Bearer <GITHUB_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
 | `gitlab` | GitLab | `GITLAB_API_TOKEN` | `gitlab.com` | `PRIVATE-TOKEN: <GITLAB_API_TOKEN>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
