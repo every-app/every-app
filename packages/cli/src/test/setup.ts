@@ -1,7 +1,7 @@
 /**
  * Every test file runs with its own empty HOME, so no test reads or writes
  * the real `~/.everyapp` (the private directories cf runs in), and no test
- * leaves signal handlers behind for the next. No
+ * leaves signal handlers behind for the next, or a Gateway pick. No
  * test reaches the network either: fetch, and undici's fetch the HTTPS
  * probes use, answer only local addresses unless a test stubs them (the
  * DNS-over-HTTPS lookups and certificate waits of a deploy take seams
@@ -9,12 +9,16 @@
  */
 import fs from "node:fs";
 import { afterAll, afterEach, vi } from "vitest";
+import { resetGatewayPicksForTests } from "@/lib/gateway/pick";
 import { resetInterruptsForTests } from "@/lib/interrupt";
 import { makeTestHome } from "./home";
 
 const home = makeTestHome();
 process.env["HOME"] = home;
-afterEach(() => resetInterruptsForTests());
+afterEach(() => {
+  resetInterruptsForTests();
+  resetGatewayPicksForTests();
+});
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);

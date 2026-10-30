@@ -119,6 +119,7 @@ async function loginAndDiscover({
   host,
   name,
   interactive,
+  alwaysAsk,
   onDeviceLogin,
 }: {
   createCf?: CreateCf;
@@ -129,6 +130,8 @@ async function loginAndDiscover({
   /** The name the command names (--gateway <name>; "" is the default Gateway). */
   name?: string;
   interactive: boolean;
+  /** The checkout's remembered Gateway is only preselected (discover.ts `alwaysAsk`). */
+  alwaysAsk?: boolean;
   onDeviceLogin?: OnDeviceLogin;
 }): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
   const whoami = await ensureCfAuth({
@@ -143,6 +146,7 @@ async function loginAndDiscover({
     host,
     ...(name !== undefined ? { name: name || null } : {}),
     interactive,
+    ...(alwaysAsk ? { alwaysAsk } : {}),
   });
   return { whoami, discovery };
 }
@@ -222,6 +226,7 @@ export async function connectToGateway({
   gateway,
   accountId,
   interactive,
+  alwaysAsk,
   createCf = defaultCreateCf,
   onNoGateway,
   login,
@@ -231,6 +236,12 @@ export async function connectToGateway({
   /** --account-id */
   accountId?: string;
   interactive: boolean;
+  /**
+   * Destroys or replaces something (`delete`, `db restore`): with several
+   * Gateways, the person is asked even when the checkout remembers one,
+   * which is preselected.
+   */
+  alwaysAsk?: boolean;
   /** Under --json (`json`), cf's device login goes to the agent on `step`. */
   login?: { json?: boolean; out: EventSink; step: string };
   createCf?: CreateCf;
@@ -254,6 +265,7 @@ export async function connectToGateway({
     host,
     name,
     interactive,
+    alwaysAsk,
     onDeviceLogin: login?.json ? deviceLoginAction(login.out, login.step) : undefined,
   });
   const { whoami } = loggedIn;

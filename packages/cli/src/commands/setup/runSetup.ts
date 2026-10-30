@@ -257,6 +257,8 @@ export async function runSetup(
     hostFlag: "--domain",
     anyAccount: true,
     onlyName: name,
+    // Installs or replaces a Gateway: the checkout's remembered one is only preselected.
+    alwaysAsk: true,
   });
   return installGateway({ whoami, discovery, flags, out, deps, names: gatewayNames(name) });
 }
@@ -307,6 +309,8 @@ async function loginAndDiscover(
     onlyName?: string | null;
     /** update --gateway <name>. */
     name?: string | null;
+    /** The checkout's remembered Gateway is only preselected (discover.ts). */
+    alwaysAsk?: boolean;
   },
 ): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
   const whoami = await ensureCfAuth({

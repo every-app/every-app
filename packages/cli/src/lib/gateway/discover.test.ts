@@ -3,6 +3,7 @@
  * sees is asked for the Gateway's database, each with its own cf pinned to
  * it, and the install row says where the Gateway serves.
  */
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import type { FakeCfResponse } from "@/lib/cf/fakeCf";
@@ -11,6 +12,7 @@ import { FakeCloudflare } from "@/test/fakeCloudflare";
 import { connectToGateway } from "./connect";
 import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
+import { forgetThisRunsPickForTests } from "./pick";
 
 /** A Cloudflare account, with or without a Gateway in it. */
 interface TestAccount {
@@ -496,6 +498,66 @@ describe("two Gateways in one account", () => {
     await expect(discover({ host: "apps.acme.com" })).resolves.toMatchObject({
       gateway: { names: { worker: "every-app-gateway" } },
     });
+  });
+
+  it("asks once a run: a second discovery in the same command takes the first pick", async () => {
+    const pick = vi.fn(async (all: Array<{ names: { worker: string } }>) => all[1]!);
+    const first = await discover({ interactive: true, pick: pick as never });
+    const second = await discover({ interactive: true, pick: pick as never });
+    expect(pick).toHaveBeenCalledOnce();
+    expect(first.gateway?.names.worker).toBe("every-app-gateway-demo");
+    expect(second.gateway?.names.worker).toBe("every-app-gateway-demo");
+  });
+
+  it("remembers the pick for the checkout: the next command at a terminal says so instead of asking", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await discover({ interactive: true, pick: async (all) => all[1]! });
+      forgetThisRunsPickForTests();
+      const pick = vi.fn(async (all: Array<unknown>) => all[0]!);
+
+      const next = await discover({ interactive: true, pick: pick as never });
+
+      expect(pick).not.toHaveBeenCalled();
+      expect(next.gateway?.names.worker).toBe("every-app-gateway-demo");
+      expect(stripVTControlCharacters(String(stderr.mock.calls.at(-1)?.[0]))).toBe(
+        "Using demo.acme.com (pick another with --gateway)\n",
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("only preselects the remembered pick for a command that asks anyway (delete, db restore, setup)", async () => {
+    await discover({ interactive: true, pick: async (all) => all[1]! });
+    forgetThisRunsPickForTests();
+    const pick = vi.fn(async (all: Array<unknown>, _whoami: unknown, _initial?: unknown) => all[0]!);
+
+    const chosen = await discover({ interactive: true, alwaysAsk: true, pick: pick as never });
+
+    expect(pick).toHaveBeenCalledOnce();
+    expect(pick.mock.calls[0]![2]).toMatchObject({ names: { worker: "every-app-gateway-demo" } });
+    expect(chosen.gateway?.names.worker).toBe("every-app-gateway");
+  });
+
+  it("never lets the remembered pick answer for --json or an unattended run", async () => {
+    await discover({ interactive: true, pick: async (all) => all[1]! });
+    forgetThisRunsPickForTests();
+    await expect(discover()).rejects.toMatchObject({ action: "choose_account" });
+  });
+
+  it("remembers a Gateway named with --gateway at a terminal", async () => {
+    await discover({ interactive: true, name: "demo" });
+    forgetThisRunsPickForTests();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const pick = vi.fn();
+      const next = await discover({ interactive: true, pick: pick as never });
+      expect(pick).not.toHaveBeenCalled();
+      expect(next.gateway?.names.worker).toBe("every-app-gateway-demo");
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   it("connects by name, bare or as its Worker's", async () => {

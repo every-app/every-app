@@ -92,11 +92,11 @@ interface Choice<T> {
   value: T;
 }
 
-/** Pick one of `choices`; the answer echoes the label. */
+/** Pick one of `choices`, `initial` (one of their values) preselected; the answer echoes the label. */
 export function choose<T>(
   question: string,
   choices: ReadonlyArray<Choice<T>>,
-  asked: Asked = {},
+  asked: Asked & { initial?: T } = {},
 ): Promise<T> {
   const width = Math.max(...choices.map((choice) => choice.label.length));
   return ask(asked, (streams) =>
@@ -108,6 +108,7 @@ export function choose<T>(
           short: choice.label,
           value: choice.value,
         })),
+        ...(asked.initial !== undefined ? { default: asked.initial } : {}),
         theme,
       },
       streams,

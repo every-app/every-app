@@ -123,6 +123,7 @@ export async function removeApp({
     gateway,
     accountId,
     interactive,
+    alwaysAsk: true,
     login: { json, out, step: "app.login" },
     createCf,
   });

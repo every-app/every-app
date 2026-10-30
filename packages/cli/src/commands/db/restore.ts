@@ -88,6 +88,7 @@ export async function restoreDatabase({
     gateway: requestedGatewayUrl(),
     accountId,
     interactive,
+    alwaysAsk: true,
     login: { json, out, step: "db.login" },
     createCf,
   });

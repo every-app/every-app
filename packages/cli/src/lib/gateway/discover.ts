@@ -1,5 +1,6 @@
 /**
- * Finding the Gateway, with nothing kept on this machine. A Cloudflare
+ * Finding the Gateway, with nothing kept on this machine but which one a
+ * person picked (./pick.ts). A Cloudflare
  * account may hold several Gateways, each under its own names
  * (./resources.ts, packages/perimeter manifest/gatewayNames.ts: the
  * default `every-app-gateway`, and `every-app-gateway-<name>` for a named
@@ -26,6 +27,10 @@
  * narrows it to one, or a person at the terminal picks; anyone else is
  * asked to (`choose_account`, one rerun per Gateway), never guessed for. None: the caller decides
  * (`setup` installs one; anything else fails, listing the accounts asked).
+ * A person's pick holds for the rest of the run, and is remembered for the
+ * checkout (./pick.ts): a later command there at a terminal takes it with a
+ * dim line, unless it asks anyway (`alwaysAsk`). --json and unattended runs
+ * never read it, so they still need --gateway when there are several.
  * `setup` with several accounts (`anyAccount`) never assumes a Gateway in
  * one is where it goes: unless the account or the host is named, the
  * person picks any account the login can ask. `setup` looks for one
@@ -39,9 +44,11 @@ import type { CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
-import { choose } from "@/lib/output/prompt";
+import { choose, tellPerson } from "@/lib/output/prompt";
+import chalk from "chalk";
 import { readInstall, type InstallRecord } from "./install";
 import { listGatewayDatabases } from "./resources";
+import { checkoutPick, pickedAmong, rememberPick, thisRunsPick } from "./pick";
 
 interface CloudflareAccount {
   id: string;
@@ -113,8 +120,13 @@ interface DiscoverOptions {
    */
   anyAccount?: boolean;
   interactive: boolean;
-  /** Asks the person at the terminal which Gateway (tests answer for them). */
-  pick?: (found: FoundGateway[], whoami: CfWhoami) => Promise<FoundGateway>;
+  /**
+   * The checkout's remembered Gateway is only preselected, never taken
+   * without asking: commands that destroy or replace something.
+   */
+  alwaysAsk?: boolean;
+  /** Asks the person at the terminal which Gateway, `initial` preselected (tests answer for them). */
+  pick?: (found: FoundGateway[], whoami: CfWhoami, initial?: FoundGateway) => Promise<FoundGateway>;
   /** Asks the person at the terminal which account, for `anyAccount` (tests answer for them). */
   pickAccount?: (
     accounts: CloudflareAccount[],
@@ -127,7 +139,17 @@ interface DiscoverOptions {
 
 const RETRY_DELAY_MS = 1_000;
 
-export async function discoverGateway({
+export async function discoverGateway(options: DiscoverOptions): Promise<Discovery> {
+  const discovery = await discover(options);
+  // Named by --gateway among several, at a terminal: the checkout's pick from now on.
+  const named = options.host !== undefined || options.name !== undefined;
+  if (options.interactive && named && discovery.gateway && discovery.found.length > 1) {
+    await rememberPick(discovery.gateway);
+  }
+  return discovery;
+}
+
+async function discover({
   whoami,
   createCf,
   accountId,
@@ -137,10 +159,13 @@ export async function discoverGateway({
   onlyName,
   anyAccount = false,
   interactive,
-  pick = pickAtTerminal,
+  alwaysAsk = false,
+  pick: askPerson = pickAtTerminal,
   pickAccount = pickAccountAtTerminal,
   retryDelayMs = RETRY_DELAY_MS,
 }: DiscoverOptions): Promise<Discovery> {
+  const pick = (candidates: FoundGateway[], whoami: CfWhoami) =>
+    pickOnce(candidates, whoami, { alwaysAsk, askPerson });
   const requestedAccountId =
     accountId || process.env["CLOUDFLARE_ACCOUNT_ID"] || undefined;
   const listed: CloudflareAccount[] = (whoami.accounts ?? []).map((account) => ({
@@ -451,8 +476,8 @@ function pickAccountAtTerminal(
   );
 }
 
-/** Ask the person at the terminal which Gateway, by its address; its account dim beside it. */
-function pickAtTerminal(found: FoundGateway[], whoami: CfWhoami): Promise<FoundGateway> {
+/** Ask the person at the terminal which Gateway, by its address; its account dim beside it; `initial` preselected. */
+function pickAtTerminal(found: FoundGateway[], whoami: CfWhoami, initial?: FoundGateway): Promise<FoundGateway> {
   return choose(
     "Which Gateway?",
     found.map((gateway) => {
@@ -464,6 +489,36 @@ function pickAtTerminal(found: FoundGateway[], whoami: CfWhoami): Promise<FoundG
     }),
     {
       context: [`${whoami.email ?? "This login"} sees ${found.length} Gateways`],
+      ...(initial ? { initial } : {}),
     },
   );
+}
+
+/**
+ * A person picks among `candidates` once a run: this run's pick again
+ * without asking; else the checkout's, with a dim line (`alwaysAsk`: only
+ * preselected); else asked. The answer is this run's pick and the
+ * checkout's.
+ */
+async function pickOnce(
+  candidates: FoundGateway[],
+  whoami: CfWhoami,
+  { alwaysAsk, askPerson }: { alwaysAsk: boolean; askPerson: NonNullable<DiscoverOptions["pick"]> },
+): Promise<FoundGateway> {
+  const again = pickedAmong(candidates, thisRunsPick());
+  if (again) return again;
+  const remembered = pickedAmong(candidates, await checkoutPick());
+  if (remembered && !alwaysAsk) {
+    tellPerson(chalk.dim(`Using ${gatewayLabel(remembered)} (pick another with --gateway)`));
+    await rememberPick(remembered);
+    return remembered;
+  }
+  const chosen = await askPerson(candidates, whoami, remembered ?? undefined);
+  await rememberPick(chosen);
+  return chosen;
+}
+
+/** A Gateway as a person knows it: its host, else its Worker. */
+function gatewayLabel(gateway: FoundGateway): string {
+  return gateway.install?.gatewayHost ?? gateway.names.worker;
 }

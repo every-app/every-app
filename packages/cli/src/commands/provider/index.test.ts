@@ -21,7 +21,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
-import { readInstall } from "@/lib/gateway/install";
+import { readInstall, writeInstall } from "@/lib/gateway/install";
 import { register } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -42,6 +42,22 @@ import {
 import { addOAuth, disconnectProvider, listPresets, listProviderConnections } from "./oauth";
 
 const GATEWAY = "every-app-gateway";
+
+// A person at a terminal for the tests that set `terminal.on`: every
+// "Which Gateway?" counted, answered with the first choice.
+const terminal = vi.hoisted(() => ({ on: false, picks: 0 }));
+vi.mock("@/lib/output/prompt", async (importOriginal) => {
+  const prompt = await importOriginal<typeof import("@/lib/output/prompt")>();
+  return {
+    ...prompt,
+    canPromptInTerminal: (json: boolean) => (terminal.on ? !json : prompt.canPromptInTerminal(json)),
+    choose: async <T,>(question: string, choices: ReadonlyArray<{ value: T }>, asked?: object) => {
+      if (!terminal.on) return prompt.choose(question, choices as never, asked);
+      if (question === "Which Gateway?") terminal.picks += 1;
+      return choices[0]!.value;
+    },
+  };
+});
 
 const NORTHWIND = {
   id: "northwind",
@@ -101,6 +117,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  terminal.on = false;
+  terminal.picks = 0;
   await release.cleanup();
   vi.unstubAllEnvs();
   fs.rmSync(home, { recursive: true, force: true });
@@ -1107,6 +1125,21 @@ describe("provider add, one step: the key or client asked for in the same run", 
     const second = await human(run("google-workspace", { interactive: true, ask: again.ask }));
     expect(again.asked).toEqual([]);
     expect(second).toContain("Its client is set: people connect at https://example.com/connect/google-workspace. Apps can list google-workspace.");
+  });
+
+  it("asks which Gateway once when the account has two, though the key's step opens the Gateway again", async () => {
+    // A second, named Gateway beside the default (multi-gateway, #867).
+    const install = (await readInstall(db()))!;
+    const demo = account.createDatabase("every-app-gateway-demo");
+    await writeInstall(cfD1Database(account.cf, demo.uuid), { ...install, gatewayHost: "demo.example.com" });
+    terminal.on = true;
+    const { asked, ask } = asker({ GRANOLA_API_KEY: "grn-shh" });
+
+    await human(run("granola", { interactive: true, ask }));
+
+    expect(terminal.picks).toBe(1);
+    expect(asked).toEqual(["GRANOLA_API_KEY"]);
+    expect(gatewayWorker().secrets["GRANOLA_API_KEY"]).toBe("grn-shh");
   });
 
   it("Enter on nothing sets nothing and names the one command next, exiting cleanly", async () => {
