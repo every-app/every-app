@@ -4,8 +4,11 @@ import { isPathArgument, resolveAppTarget, resolvePathArgument } from "./appId";
 
 const cwd = "/work/every-app";
 const home = "/home/sam";
-const resolve = (given: string | undefined, options: { interactive?: boolean; yes?: boolean } = {}) =>
+const resolve = (given: string | undefined, options: Partial<Parameters<typeof resolveAppTarget>[1]> = {}) =>
   resolveAppTarget(given, { interactive: false, yes: false, cwd, home, ...options });
+
+/** The same on Windows, whatever this machine is. */
+const windows = { cwd: "C:\\work\\every-app", home: "C:\\Users\\sam", paths: path.win32 };
 
 describe("a name or a path", () => {
   it("is a path when it has a slash or starts with ., ~ or /", () => {
@@ -24,6 +27,14 @@ describe("a name or a path", () => {
     expect(resolvePathArgument("~", { cwd, home })).toBe("/home/sam");
     expect(resolvePathArgument("~/apps/my-app", { cwd, home })).toBe("/home/sam/apps/my-app");
     expect(resolvePathArgument("/srv/my-app", { cwd, home })).toBe("/srv/my-app");
+  });
+
+  it("takes a backslash as a separator on Windows only", () => {
+    for (const given of ["apps\\my-app", "my-app\\", "..\\my-app", "~\\my-app", "C:\\srv\\my-app", "apps/my-app"]) {
+      expect(isPathArgument(given, path.win32), given).toBe(true);
+    }
+    expect(isPathArgument("my-app", path.win32)).toBe(false);
+    expect(isPathArgument("apps\\my-app", path.posix)).toBe(false);
   });
 });
 
@@ -44,6 +55,21 @@ describe("resolveAppTarget", () => {
   it("says an absolute path, and one from ~, is shown whole", async () => {
     await expect(resolve("/srv/apps/my-app")).resolves.toEqual({ appId: "my-app", dir: "/srv/apps/my-app", absolute: true });
     await expect(resolve("~/my-app")).resolves.toEqual({ appId: "my-app", dir: "/home/sam/my-app", absolute: true });
+  });
+
+  it("does the same with Windows paths, ~\\ being the home directory", async () => {
+    await expect(resolve("apps\\my-app", windows)).resolves.toEqual({
+      appId: "my-app",
+      dir: "C:\\work\\every-app\\apps\\my-app",
+      absolute: false,
+    });
+    await expect(resolve("my-app\\", windows)).resolves.toEqual({
+      appId: "my-app",
+      dir: "C:\\work\\every-app\\my-app",
+      absolute: false,
+    });
+    await expect(resolve("~\\my-app", windows)).resolves.toEqual({ appId: "my-app", dir: "C:\\Users\\sam\\my-app", absolute: true });
+    await expect(resolve("C:\\srv\\my-app", windows)).resolves.toEqual({ appId: "my-app", dir: "C:\\srv\\my-app", absolute: true });
   });
 
   it("refuses a path whose last part isn't a valid app name, saying which part", async () => {

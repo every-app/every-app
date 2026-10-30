@@ -78,17 +78,29 @@ interface AppTarget {
 }
 
 /**
- * Whether `given` names a directory rather than an app: it has a slash, or
- * starts with `.`, `~` or `/`. A name has none of these.
+ * Whether `given` names a directory rather than an app: it has a slash (or,
+ * on Windows, a backslash), or starts with `.`, `~` or `/`. A name has none
+ * of these. `paths` is this platform's `path`; tests pass `path.win32`.
  */
-export function isPathArgument(given: string): boolean {
-  return given.includes("/") || given.startsWith(".") || given.startsWith("~") || path.isAbsolute(given);
+export function isPathArgument(given: string, paths: path.PlatformPath = path): boolean {
+  return (
+    given.includes("/") ||
+    given.includes(paths.sep) ||
+    given.startsWith(".") ||
+    given.startsWith("~") ||
+    paths.isAbsolute(given)
+  );
 }
 
 /** `given` as an absolute directory: `~` is the home directory, a relative path is from `cwd`. */
-export function resolvePathArgument(given: string, { cwd, home }: { cwd: string; home: string }): string {
-  if (given === "~" || given.startsWith("~/")) return path.resolve(home, given.slice(2));
-  return path.resolve(cwd, given);
+export function resolvePathArgument(
+  given: string,
+  { cwd, home, paths = path }: { cwd: string; home: string; paths?: path.PlatformPath },
+): string {
+  if (given === "~" || given.startsWith("~/") || given.startsWith(`~${paths.sep}`)) {
+    return paths.resolve(home, given.slice(2));
+  }
+  return paths.resolve(cwd, given);
 }
 
 /**
@@ -104,11 +116,12 @@ export async function resolveAppTarget(
     yes,
     cwd,
     home = os.homedir(),
-  }: { interactive: boolean; yes: boolean; cwd: string; home?: string },
+    paths = path,
+  }: { interactive: boolean; yes: boolean; cwd: string; home?: string; paths?: path.PlatformPath },
 ): Promise<AppTarget> {
-  if (given !== undefined && isPathArgument(given)) {
-    const dir = resolvePathArgument(given, { cwd, home });
-    const appId = path.basename(dir);
+  if (given !== undefined && isPathArgument(given, paths)) {
+    const dir = resolvePathArgument(given, { cwd, home, paths });
+    const appId = paths.basename(dir);
     const problem = nameProblem(appId);
     if (problem) {
       throw new EveryAppError(
@@ -117,7 +130,7 @@ export async function resolveAppTarget(
         { fix: problem.fix },
       );
     }
-    return { appId, dir, absolute: path.isAbsolute(given) || given.startsWith("~") };
+    return { appId, dir, absolute: paths.isAbsolute(given) || given.startsWith("~") };
   }
   if (given !== undefined) {
     const problem = nameProblem(given);
