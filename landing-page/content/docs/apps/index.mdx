@@ -16,10 +16,9 @@ Each app is open source and runs behind your Gateway, in your own Cloudflare acc
 
 ```bash
 everyapp install https://github.com/every-app/open-crm
-everyapp configure crm
 ```
 
-The first command puts the app at `<app>.<your gateway domain>`. The second asks for the keys it needs. Until the required ones are set, the app shows **Needs setup** and won't open. Run the install command again to update; your data stays.
+It puts the app at `<app>.<your gateway domain>`, then asks for the keys it needs. Until the required ones are set, the app shows **Needs setup** and won't open. Skipped that step, or changing a key later? `everyapp configure crm` asks again. Run the install command again to update; your data stays.
 
 Keys several apps use, like `OPENROUTER_API_KEY`, are set once on the Gateway and shared.
 

@@ -15,16 +15,15 @@ You get dashboards for pages, referrers, campaigns, sessions, funnels, goals, re
 
 ```bash
 everyapp install https://github.com/every-app/open-analytics
-everyapp configure analytics
 ```
 
-`configure` asks for one key:
+Then it asks for one key:
 
 - `MAIN_SECRET` (required): 32 or more random characters, for example from `openssl rand -base64 32`. Don't change it later, or visitor counts split.
 
 Email reports also need the Gateway's email sender ([Email](/docs/agent/email)). Without it, reports stay in the app.
 
-Run the install command again to update.
+Run the install command again to update. `everyapp configure analytics` changes a key later.
 
 ## Add it to your site
 

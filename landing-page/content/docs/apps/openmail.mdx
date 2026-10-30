@@ -17,10 +17,9 @@ You need a domain on Cloudflare with Email Sending turned on. Enable R2 in your 
 
 ```bash
 everyapp install https://github.com/every-app/open-mail
-everyapp configure openmail
 ```
 
-`configure` asks for:
+Then it asks for:
 
 - A model key (required). `OPENROUTER_API_KEY` is the one to pick.
 - The Gateway's email sender, `EMAIL_FROM` and `EMAIL_FROM_NAME` (required).
@@ -35,7 +34,7 @@ A catch-all like `*@example.com` works only on the domain itself; for a subdomai
 
 Open `https://openmail.<your gateway domain>` as an owner or admin and create a mailbox. Every member of your workspace can open it.
 
-Run the install command again to update.
+Run the install command again to update. `everyapp configure openmail` changes a key later.
 
 ## Use it from your agent
 

@@ -17,10 +17,9 @@ Enable R2 in your Cloudflare dashboard first (R2 Object Storage, then Get starte
 
 ```bash
 everyapp install https://github.com/every-app/open-seo
-everyapp configure openseo
 ```
 
-`configure` asks for:
+Then it asks for:
 
 - `OPENROUTER_API_KEY` (required): SAM and website research run on it.
 - `DATAFORSEO_API_KEY` (required): `login:password` from your DataForSEO dashboard.
@@ -28,7 +27,7 @@ everyapp configure openseo
 
 DataForSEO bills per call. Set a cap so the Gateway stops the app before you overspend: [Usage and caps](/docs/usage).
 
-Run the install command again to update. Every member of your workspace can open it.
+Run the install command again to update. `everyapp configure openseo` changes a key later. Every member of your workspace can open it.
 
 ## Use it from your agent
 

@@ -17,10 +17,9 @@ Enable R2 in your Cloudflare dashboard first (R2 Object Storage, then Get starte
 
 ```bash
 everyapp install https://github.com/every-app/open-crm
-everyapp configure crm
 ```
 
-`configure` asks for:
+Then it asks for:
 
 - A model key (required). `OPENROUTER_API_KEY` is the one to pick; it also turns on web research.
 - `CONTEXT_API_KEY` (required): company data, LinkedIn profiles and website extraction.
@@ -28,7 +27,7 @@ everyapp configure crm
 
 Researching a record costs at most about $0.25 in model and Context.dev calls, plus web searches.
 
-Run the install command again to update. Every member of your workspace can open it.
+Run the install command again to update. `everyapp configure crm` changes a key later. Every member of your workspace can open it.
 
 ## Use it from your agent
 

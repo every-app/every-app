@@ -479,7 +479,7 @@ function providersIndexPage(companies: readonly Company[]): string {
     "",
     bash("everyapp provider add openrouter"),
     "",
-    "Installing an app? `everyapp configure <app>` asks for every key it needs. Not listed below? [Add any API yourself](/docs/providers/custom).",
+    "Installing an app? The install asks for every key it needs. Not listed below? [Add any API yourself](/docs/providers/custom).",
     "",
   ];
   for (const category of CATEGORIES) {
