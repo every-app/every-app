@@ -297,19 +297,18 @@ Security: the Gateway signs people in and passes identity to the app in a
          (https://everyapp.com/docs/agent/repo/threat-model).
 
 Only a person can: approve the Cloudflare login, open the owner link, pick
-a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
-setup optionally offers Gateway app installs: a Yes/No prompt (default No),
-then the token steps, Open Cloudflare in your browser? and a hidden paste prompt. Never ask for its value in chat.
-Later, the person runs everyapp deploy-token add at a terminal (it opens
-Cloudflare's filled-in token page on Enter; they paste the token); deploy-token remove undoes it.
-It then puts Cloudflare Access in front by default (asked at a terminal,
+a workers.dev subdomain, pay for Workers Paid, buy a domain. Setup never
+offers Gateway app installs (off by default); don't suggest them. Only when
+the person asks, they run everyapp deploy-token add at a terminal themselves
+(never ask for the token in chat); deploy-token remove undoes it.
+Setup puts Cloudflare Access in front by default (asked at a terminal,
 Yes by default; the team name asked for when the account has none); under
 --json or --yes it goes on without a question, and an account with no Zero
 Trust team stops on ACCESS_TEAM_REQUIRED: ask the person for the name (it
 is permanent), then rerun setup with --team <name>. Only --no-access, a No,
 or an earlier access off leaves it off (remembered; the warning
 ACCESS_SETUP_SKIPPED says it isn't recommended). Never add --no-access
-unless the person says so. --yes answers No to Gateway app installs.
+unless the person says so.
 Handing off: stop, tell the person in one or two lines what to do (the
 action's url and code, what to click, what to come back with), and resume
 with data.rerun when they say it is done. Two more only a person can do:

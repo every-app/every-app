@@ -77,7 +77,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     source: () => releaseSource(tarball),
     interactive: false,
     prompts: {
-      deployToken: async () => null,
       accessInFront: async () => false,
       pickZone: async () => {
         throw new Error("asked a person");
@@ -1125,7 +1124,6 @@ describe("everyapp setup", () => {
       {
         interactive: true,
         prompts: {
-          deployToken: async () => null,
           accessInFront: async () => false,
           pickZone: async () => {
             throw new Error("asked for a zone");
@@ -1157,7 +1155,6 @@ describe("everyapp setup", () => {
     const contexts: Array<{ owner: string; cloudflareEmail: string | null }> = [];
     let answer = false;
     const prompts: SetupDeps["prompts"] = {
-      deployToken: async () => null,
       accessInFront: async (context) => {
         contexts.push(context);
         return answer;
@@ -1352,7 +1349,6 @@ describe("everyapp setup", () => {
 
   it("ends the run when Ctrl-C answers the team name inside the Access offer, as at every other setup prompt", async () => {
     const prompts: SetupDeps["prompts"] = {
-      deployToken: async () => null,
       accessInFront: async () => true,
       pickZone: async () => {
         throw new Error("asked for a zone");
@@ -1502,13 +1498,8 @@ describe("everyapp setup", () => {
     expect(events.filter((event) => event.type === "warning")).toEqual([]);
   });
 
-  it("asks a person at a terminal about Gateway app installs once the Gateway is up, unless --yes", async () => {
-    let asked = 0;
+  it("never offers Gateway app installs, at a terminal or on an update", async () => {
     const prompts: SetupDeps["prompts"] = {
-      deployToken: async () => {
-        asked += 1;
-        return null;
-      },
       accessInFront: async () => false,
       pickZone: async () => {
         throw new Error("asked for a zone");
@@ -1518,22 +1509,16 @@ describe("everyapp setup", () => {
       },
     };
 
-    // --yes answers everyapp's own question with a No, and nothing else changes.
-    const first = await setup({ json: false, domain: GW, yes: true, "no-access": true }, { interactive: true, prompts });
+    const first = await setup({ json: false, domain: GW }, { interactive: true, prompts });
     expect(first.exitCode).toBe(0);
     expect(first.result).toMatchObject({ gateway: "installed", ownerCreated: true });
-    expect(asked).toBe(0);
-    expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CF_DEPLOY_TOKEN");
+    const secrets = () => account.workers.get("every-app-gateway")!.secrets;
+    expect(secrets()).not.toHaveProperty("CF_DEPLOY_TOKEN");
+    expect(secrets()).not.toHaveProperty("BROWSER_APP_INSTALLS");
 
-    // Without it, the question is asked (and declined here).
-    const second = await setup({ json: false, domain: GW }, { interactive: true, prompts });
-    expect(second.exitCode).toBe(0);
-    expect(asked).toBe(1);
-    expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CF_DEPLOY_TOKEN");
-
-    // `update` asks nothing new, even at a terminal with no token set.
     const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
     await runGatewayDeploy({ json: false }, out, deps({ interactive: true, prompts }));
-    expect(asked).toBe(1);
+    expect(secrets()).not.toHaveProperty("CF_DEPLOY_TOKEN");
+    expect(secrets()).not.toHaveProperty("BROWSER_APP_INSTALLS");
   });
 });

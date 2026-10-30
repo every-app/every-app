@@ -2172,7 +2172,6 @@ describe("deploy with no Gateway in the account yet", () => {
   /** setup's own seams, as `deploy` hands them on when it installs one. */
   const setupSeams = (opened: string[] = []) => ({
     prompts: {
-      deployToken: async () => null,
       accessInFront: async () => false,
       pickZone: async (): Promise<string> => {
         throw new Error("asked which zone");
@@ -2266,7 +2265,7 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(result).toMatchObject({ liveUrl: "https://todo.apps.example.com", live: true });
   });
 
-  it("with --yes installs without a question, Gateway app installs included, then deploys behind Access", async () => {
+  it("with --yes installs without a question, then deploys behind Access", async () => {
     const asked: string[] = [];
     const setup = setupSeams();
 
@@ -2280,13 +2279,6 @@ describe("deploy with no Gateway in the account yet", () => {
         },
         setup: {
           ...setup,
-          prompts: {
-            ...setup.prompts,
-            deployToken: async () => {
-              asked.push("Let your Gateway install apps?");
-              return null;
-            },
-          },
           // --yes skips setup's questions, not the Zero Trust team's name:
           // the account has none, and a person at the terminal picks it.
           askTeam: async (suggested) => {
