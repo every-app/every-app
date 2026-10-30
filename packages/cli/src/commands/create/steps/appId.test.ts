@@ -39,6 +39,8 @@ describe("a name or a path", () => {
     expect(resolvePathArgument("apps\\my-app", { cwd, home })).toBe(path.resolve(cwd, "apps/my-app"));
     expect(resolvePathArgument("./my-app/", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
     expect(resolvePathArgument(".\\my-app\\", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
+    expect(resolvePathArgument("my-app/", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
+    expect(resolvePathArgument("my-app\\", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
     expect(resolvePathArgument("~", { cwd, home })).toBe(path.resolve(home));
     expect(resolvePathArgument("~/apps/my-app", { cwd, home })).toBe(path.resolve(home, "apps/my-app"));
     expect(resolvePathArgument("~\\apps\\my-app", { cwd, home })).toBe(path.resolve(home, "apps/my-app"));
@@ -66,6 +68,24 @@ describe("resolveAppTarget", () => {
     await expect(resolve("apps\\my-app")).resolves.toEqual({
       appId: "my-app",
       dir: path.resolve(cwd, "apps/my-app"),
+      absolute: false,
+    });
+  });
+
+  it("treats a name with a trailing slash or backslash as a path, stripped to its name", async () => {
+    expect(isPathArgument("my-app/")).toBe(true);
+    expect(resolvePathArgument("my-app/", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
+    await expect(resolve("my-app/")).resolves.toEqual({
+      appId: "my-app",
+      dir: path.resolve(cwd, "my-app"),
+      absolute: false,
+    });
+
+    expect(isPathArgument("my-app\\")).toBe(true);
+    expect(resolvePathArgument("my-app\\", { cwd, home })).toBe(path.resolve(cwd, "my-app"));
+    await expect(resolve("my-app\\")).resolves.toEqual({
+      appId: "my-app",
+      dir: path.resolve(cwd, "my-app"),
       absolute: false,
     });
   });
