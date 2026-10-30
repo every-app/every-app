@@ -4,7 +4,7 @@
 
 Lots of people are cloning desktop apps, but what about SaaS?
 
-EveryApp is focused on making the next generation of web apps, built for agents.
+EveryApp is focused on what's after "cloning" by making the next generation of web apps, built for agents.
 
 > Get your agent's apps off localhost
 
@@ -14,7 +14,7 @@ EveryApp handles all of that: one command sets up a Gateway in your Cloudflare a
 
 [![EveryApp app launcher, OpenSEO, and secure Gateway demo](docs/assets/everyapp-demo.gif)](https://youtu.be/krDediTp0MI)
 
-## Who are you?
+## Who are we?
 
 We're the team behind [OpenSEO](https://github.com/every-app/open-seo), the open source alternative to Semrush and Ahrefs (25k stars).
 
