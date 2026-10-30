@@ -2324,6 +2324,12 @@ Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `ever
 
 - [ ] None open; the domain and the move of the Ridgeline demo were answered on 2026-10-28.
 
+- [ ] **setup's owner poll can hit a Cloudflare D1 429** (seen 2026-10-28 02:31Z on the demo Gateway, 30 s into the 15-minute wait: `CF_UNKNOWN [7429] … 429 Too Many Requests` on the D1 query endpoint; the link stays valid). Back off and retry a 429 in the owner wait instead of failing the run.
+- [ ] **`email set --enable-email-routing` on a zone apex calls the subdomain endpoint** (`cf email-routing enable -z <zone> --name <apex>` → `[2007] Invalid Input: must be a subdomains of <zone>`, seen 2026-10-29 on everyapp.cc; `EMAIL_ROUTES_PARTIAL` after the addresses were saved). For the apex call `cf email-routing enable -z <zone>` without `--name` (done by hand for the demo), then the rerun succeeds. `lib/cf/emailRouting.ts` `enableEmailRouting`.
+- [ ] **A packed CLI can't deploy an app to a Gateway installed from a checkout** (`GATEWAY_RELEASE_UNAVAILABLE`: the rebind re-fetches the live release from where the install row says it came). Expected for checkout installs; the pre-release runbook updates the Gateway from a tarball first. Consider letting `deploy` take `--release` for the rebind.
+- [ ] **`workspace invite` refuses the operator until their Gateway account is verified** (`WORKSPACE_NOT_A_MEMBER` "no account on this Gateway (a verified one)") for an owner who signed up through Cloudflare Access: `users.email_verified` stayed 0. Set it on an Access-verified sign-up, or let the operator invite when their email matches a member.
+- [ ] **Demo mail lives on everyapp.cc** (decided with the orchestrator 2026-10-29): Email Sending and Email Routing on that empty zone, mailboxes outreach@ and four fictional prospects; everyapp.dev's apex MX (Proton) untouched. The Gateway's EMAIL_FROM is noreply@everyapp.cc "Ridgeline Digital". The demo client is the fictional Bramblewood Coffee (bramblewoodcoffee.com, unregistered on 2026-10-30), renamed from a real roaster's name at Ben's request.
+
 ### Review follow-ups (Fable, 2026-10-28)
 
 - [ ] **`names` still defaults to the default Gateway's in `lib/gateway/{resources,apply,reconcile,patchBuildOutput}.ts`** so the existing tests run unchanged; every production caller passes it. Make it required and fix the tests, so a future caller can't silently target production.

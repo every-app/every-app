@@ -30,7 +30,7 @@ Before a release goes public (`pnpm publish:rc`, the public push, a Gateway rele
 
    No `npm publish`.
 
-2. **Update the staging Gateway** to the release: `everyapp update --gateway demo` (from the checkout: its build; from the packed CLI: `--release` the built tarball). Then `everyapp status --gateway demo --json` is green.
+2. **Update the staging Gateway** to the release from a release tarball, with the packed CLI: `pnpm -C apps/every-app-gateway build:release` at the release commit, then `everyapp update --gateway demo --release <that tarball>`. Not from the checkout's build: an app `deploy` from a packed CLI re-fetches the live release where the install row says it came from, and a release that came from a checkout can't be fetched outside one (`GATEWAY_RELEASE_UNAVAILABLE`); a tarball (or the published GitHub tag) can. Then `everyapp status --gateway demo --json` is green.
 3. **Create and deploy an app**: `everyapp create /tmp/ea-prerelease/check-app`, `cd` there, `everyapp deploy --gateway demo --json`, open `https://check-app.demo.everyapp.team` behind Access, then `everyapp delete check-app --gateway demo`.
 4. **Linked dev** (once #866 is in): `everyapp dev --gateway https://demo.everyapp.team` from the app, sign in through the staging Gateway, the local app serves.
 5. **Sign in with Every App** from the OpenZen Mac app (`~/workspaces/open-notes`) against `https://demo.everyapp.team`, behind Access.
@@ -38,6 +38,6 @@ Before a release goes public (`pnpm publish:rc`, the public push, a Gateway rele
 
 ## Runs
 
-| Date | Release | Gateway | create + deploy | linked dev | native sign-in | Notes |
-| ---- | ------- | ------- | --------------- | ---------- | -------------- | ----- |
-|      |         |         |                 |            |                |       |
+| Date       | Release                         | Gateway                              | create + deploy                                   | linked dev                                           | native sign-in | Notes |
+| ---------- | ------------------------------- | ------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | -------------- | ----- |
+| 2026-10-30 | 0.3.0 packed from main 592ba0b62 | update --release OK (version a49679ae) | OK: check-app live behind Access, then deleted | on for the workspace; the run itself needs a browser | not run (needs the Mac app) | first run; found the --release rule above; the demo Gateway was installed from the checkout on 2026-10-28 |
