@@ -78,16 +78,24 @@ interface AppTarget {
 }
 
 /**
- * Whether `given` names a directory rather than an app: it has a slash, or
- * starts with `.`, `~` or `/`. A name has none of these.
+ * Whether `given` names a directory rather than an app: it has a slash (POSIX
+ * or Windows), or starts with `.`, `~` or `/`. A name has none of these.
  */
 export function isPathArgument(given: string): boolean {
-  return given.includes("/") || given.startsWith(".") || given.startsWith("~") || path.isAbsolute(given);
+  return (
+    given.includes("/") ||
+    given.includes("\\") ||
+    given.startsWith(".") ||
+    given.startsWith("~") ||
+    path.isAbsolute(given)
+  );
 }
 
 /** `given` as an absolute directory: `~` is the home directory, a relative path is from `cwd`. */
 export function resolvePathArgument(given: string, { cwd, home }: { cwd: string; home: string }): string {
-  if (given === "~" || given.startsWith("~/")) return path.resolve(home, given.slice(2));
+  if (given === "~" || given.startsWith("~/") || given.startsWith("~\\")) {
+    return path.resolve(home, given.slice(given === "~" ? 1 : 2));
+  }
   return path.resolve(cwd, given);
 }
 
