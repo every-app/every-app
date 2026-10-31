@@ -93,7 +93,14 @@ import { ActionRequiredError, CancelledError, errorMessage, EveryAppError } from
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
-import { discoverGateway, refuseUnchecked, requireGateway, type Discovery } from "@/lib/gateway/discover";
+import {
+  checkGatewayUrl,
+  discoverGateway,
+  refuseUnchecked,
+  requireGateway,
+  type Discovery,
+  type FoundGateway,
+} from "@/lib/gateway/discover";
 import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
@@ -277,13 +284,17 @@ export async function runGatewayDeploy(
   // --gateway: a URL picks by host, a name by name ("" is the default).
   const requested = requestedGatewayUrl(flags.gateway);
   const byUrl = requested !== undefined && requested.includes("://");
+  const host = byUrl ? new URL(requested).host.toLowerCase() : undefined;
   const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
-    host: byUrl ? new URL(requested).host.toLowerCase() : undefined,
+    host,
     hostFlag: "--gateway",
     anyAccount: false,
     ...(requested !== undefined && !byUrl ? { name: requested || null } : {}),
   });
-  const found = requireGateway(discovery, whoami);
+  const found = requireGateway(discovery, whoami, host);
+  if (found.install) {
+    checkGatewayUrl(found as FoundGateway & { install: InstallRecord }, byUrl ? requested : undefined);
+  }
   if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
   return installGateway({
     whoami,

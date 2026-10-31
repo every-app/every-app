@@ -9,7 +9,7 @@ import { cfD1Database } from "@/lib/cf/d1";
 import type { FakeCfResponse } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
-import { connectToGateway } from "./connect";
+import { connectToGateway, existingGateway } from "./connect";
 import { discoverGateway, refuseUnchecked, requireGateway } from "./discover";
 import { writeInstall } from "./install";
 import { forgetThisRunsPickForTests } from "./pick";
@@ -188,6 +188,37 @@ describe("discoverGateway", () => {
     vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "acct-2");
     await expect(discover()).resolves.toMatchObject({
       gateway: { account: { id: "acct-2" } },
+    });
+  });
+
+  it("returns null gateway and does not invoke picker when requested host matches no Gateway among several accounts", async () => {
+    accounts = await Promise.all([
+      account("acct-1", "Personal", "apps.me.dev"),
+      account("acct-2", "Acme", "apps.acme.com"),
+    ]);
+    const pick = vi.fn();
+
+    const { gateway } = await discover({
+      interactive: true,
+      host: "nonexistent.acme.com",
+      pick: pick as never,
+    });
+
+    expect(pick).not.toHaveBeenCalled();
+    expect(gateway).toBeNull();
+  });
+
+  it("produces GATEWAY_NOT_FOUND when requested host matches no Gateway in a non-interactive multi-Gateway account", async () => {
+    accounts = await Promise.all([
+      account("acct-1", "Personal", "apps.me.dev"),
+      account("acct-2", "Acme", "apps.acme.com"),
+    ]);
+
+    await expect(
+      connectToGateway({ gateway: "https://nonexistent.acme.com", createCf, interactive: false }),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_NOT_FOUND",
+      message: expect.stringContaining("No Gateway at nonexistent.acme.com in the 2 accounts this login sees"),
     });
   });
 
@@ -381,6 +412,28 @@ describe("connectToGateway", () => {
     await expect(
       connectToGateway({ gateway: "https://apps.acme.com", createCf, interactive: false }),
     ).resolves.toMatchObject({ accountId: "acct-2" });
+  });
+
+  it("refuses a --gateway that isn't the Gateway it finds in existingGateway", async () => {
+    accounts = await Promise.all([account("acct-2", "Acme", "apps.acme.com")]);
+
+    await expect(
+      existingGateway({
+        gateway: "https://apps.other.dev",
+        out: { emit: () => undefined } as never,
+        createCf,
+      }),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_URL_MISMATCH",
+      message: expect.stringContaining("The Gateway here is apps.acme.com, not apps.other.dev\n"),
+    });
+    await expect(
+      existingGateway({
+        gateway: "https://apps.acme.com",
+        out: { emit: () => undefined } as never,
+        createCf,
+      }),
+    ).resolves.toMatchObject({ account: { id: "acct-2" } });
   });
 
   it("fails with GATEWAY_NOT_FOUND when no account has one", async () => {
