@@ -2370,3 +2370,12 @@ every-app/every-app#10, the small half: one `everyapp-theme` cookie (`system|lig
 ### Follow-up: the full shared theme
 
 - [ ] **One theme per install: fonts, colours, radii, chart colours, light and dark.** Design note: the Gateway stores a small token set (CSS custom properties for each mode, plus a chart palette) per organization, edited on an Admin page and kept across `everyapp update`. It serves them as `GET <gateway>/theme.css`, public and cacheable with an ETag. Each app links that stylesheet after its own, and maps its design tokens (shadcn variables, Kumo, Tailwind theme) to the shared names; charts read `--chart-1..n`. Meaningful colours stay the app's (the local SEO map's green, amber and red pins). Open: which token names (shadcn's set is the likely common ground), whether apps can opt out, and how `everyapp dev` serves it.
+
+## Release 0.3.0-rc.9 (2026-10-31)
+
+Published to npm by Ben from ccef5a5b9 (`@every-app/sdk` and `everyapp`, latest and next). The pre-release check on demo passed (docs/runbooks/pre-release-check.md). gateway-v0.3.0-rc.9 is on the public repo. Public pushes: every-app ccef5a5b9, open-crm e8342db (release v0.1.0-20261031-e8342db), open-analytics 03c8b34c (release v0.7.1-20261031-03c8b34). everyapp.team runs Gateway 0.3.0-rc.9 with both apps reinstalled. OpenSEO and OpenMail were not pushed.
+
+- [ ] **R2 buckets made before #871 are unrecorded on everyapp.team: openseo, agentic-inbox and postiz.** Their next install adopts them (#886, "Adopted R2 bucket …"), once that install runs a CLI with #886 (from a checkout now, rc.10 once published). With rc.9's CLI the install stops at `RESOURCE_NAME_TAKEN`, as OpenCRM's did. OpenCRM's bucket was adopted on 2026-10-31 by the checkout CLI at 607519c5a.
+- [ ] **The pre-release check can't see this kind of regression.** demo's apps were all installed recently. Consider keeping one app on demo that was installed by an older release, and redeploying it during the check.
+- [ ] **rc.10** carries #886 and #885 (consent preselects read & write). After Ben publishes it: tag gateway-v0.3.0-rc.10, then update the Gateway on demo (`--gateway demo --release`) and on everyapp.team.
+
