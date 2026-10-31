@@ -4,7 +4,7 @@ import { FakeCloudflare } from "@/test/fakeCloudflare";
 import { createSqliteD1 } from "@/test/sqliteD1";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ensureR2Buckets } from "./buckets";
-import { recordOwnedResource } from "./ownership";
+import { readOwnedResources, recordOwnedResource, recordUploadedVersion } from "./ownership";
 
 let account: FakeCloudflare;
 let events: Array<Parameters<EventSink["emit"]>[0]>;
@@ -70,6 +70,82 @@ describe("ensureR2Buckets", () => {
     });
     expect(account.buckets.get("every-acme-crm")).toEqual({ objects: 3 });
     expect(account.cf.calls.filter((call) => call.args[0] === "r2" && call.args[2] === "create")).toHaveLength(0);
+  });
+
+  describe("a bucket an earlier deploy made before buckets were recorded", () => {
+    const recordWorker = async ({ uploaded = true } = {}) => {
+      await recordOwnedResource(gatewayDb, "every-acme-crm", {
+        kind: "worker",
+        binding: "",
+        name: "every-acme-crm",
+        resourceId: "every-acme-crm",
+      });
+      if (uploaded) await recordUploadedVersion(gatewayDb, "every-acme-crm", "v-1");
+    };
+    const r2Creates = () => account.cf.calls.filter((call) => call.args[0] === "r2" && call.args[2] === "create");
+
+    it("is adopted when it has the app's name and the app's Worker is recorded, and says so", async () => {
+      await recordWorker();
+      account.buckets.set("every-acme-crm", { objects: 3 });
+      expect(await ensure(["every-acme-crm"])).toEqual([]);
+      expect(account.buckets.get("every-acme-crm")).toEqual({ objects: 3 });
+      expect(r2Creates()).toHaveLength(0);
+      expect(await readOwnedResources(gatewayDb, "every-acme-crm")).toContainEqual(
+        expect.objectContaining({ kind: "r2", binding: "every-acme-crm", name: "every-acme-crm", resourceId: "every-acme-crm" }),
+      );
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: "progress",
+          step: "app.build",
+          message: expect.stringContaining('Adopted R2 bucket "every-acme-crm"'),
+        }),
+      ]);
+      // Recorded now: the next deploy uses it without adopting again.
+      events = [];
+      await ensure(["every-acme-crm"]);
+      expect(events).toEqual([]);
+    });
+
+    it("is refused when another app records it", async () => {
+      await recordWorker();
+      account.buckets.set("every-acme-crm", { objects: 3 });
+      await recordOwnedResource(gatewayDb, "every-acme-other", {
+        kind: "r2",
+        binding: "FILES",
+        name: "every-acme-crm",
+        resourceId: "every-acme-crm",
+      });
+      await expect(ensure(["every-acme-crm"])).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
+      expect(r2Creates()).toHaveLength(0);
+    });
+
+    it("is refused when its name isn't exactly the app's assigned bucket name", async () => {
+      await recordWorker();
+      account.buckets.set("every-acme-crm--cache", { objects: 3 });
+      await expect(ensure(["every-acme-crm--cache"])).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
+      expect(await readOwnedResources(gatewayDb, "every-acme-crm")).not.toContainEqual(
+        expect.objectContaining({ kind: "r2" }),
+      );
+    });
+
+    it("is refused when the app's Worker isn't recorded on this Gateway", async () => {
+      account.buckets.set("every-acme-crm", { objects: 3 });
+      await expect(ensure(["every-acme-crm"])).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
+    });
+
+    it("is refused on a first deploy, which has claimed the Worker but uploaded nothing yet", async () => {
+      await recordWorker({ uploaded: false });
+      account.buckets.set("every-acme-crm", { objects: 3 });
+      await expect(ensure(["every-acme-crm"])).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
+    });
+  });
+
+  it("creates and records the bucket on a fresh install, adopting nothing", async () => {
+    expect(await ensure(["every-acme-crm"])).toEqual(["every-acme-crm"]);
+    expect(await readOwnedResources(gatewayDb, "every-acme-crm")).toEqual([
+      expect.objectContaining({ kind: "r2", name: "every-acme-crm", resourceId: "every-acme-crm" }),
+    ]);
+    expect(events).toEqual([expect.objectContaining({ message: 'Created R2 bucket "every-acme-crm".' })]);
   });
 
   it("does nothing with no buckets to bind", async () => {
