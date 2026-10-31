@@ -182,10 +182,11 @@ export async function existingGateway({
   createCf,
 }: ExistingGatewayOptions): Promise<FoundGateway> {
   const byUrl = gateway !== undefined && gateway.includes("://");
+  const host = byUrl ? new URL(gateway).host.toLowerCase() : undefined;
   const { whoami, discovery } = await loginAndDiscover({
     createCf,
     accountId,
-    host: byUrl ? new URL(gateway).host.toLowerCase() : undefined,
+    host,
     name: gateway !== undefined && !byUrl ? gatewayNameFrom(gateway) : undefined,
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
@@ -207,7 +208,11 @@ export async function existingGateway({
       { rerun: `${CLI} setup`, rerunNote: "installs one", data: { accounts: discovery.probed } },
     );
   }
-  return requireGateway(discovery, whoami);
+  const found = requireGateway(discovery, whoami, host);
+  if (found.install) {
+    checkGatewayUrl(found as FoundGateway & { install: InstallRecord }, byUrl ? gateway : undefined);
+  }
+  return found;
 }
 
 interface ExistingGatewayOptions {

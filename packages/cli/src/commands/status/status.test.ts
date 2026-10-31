@@ -1281,6 +1281,21 @@ describe("everyapp status", () => {
       rerun: "pnpm everyapp setup",
     });
   });
+
+  it("existingGateway rejects an explicit --gateway that doesn't match the installed Gateway URL", async () => {
+    events = [];
+    await expect(
+      existingGateway({
+        gateway: "https://apps.other.dev",
+        out: out(),
+        createCf: () => account.cf,
+      }),
+    ).rejects.toMatchObject({
+      code: "GATEWAY_URL_MISMATCH",
+      message: expect.stringContaining("The Gateway here is example.com, not apps.other.dev"),
+    });
+    expect(events).toEqual([]);
+  });
 });
 
 /** A gateway install in another fake account; `failUpload` stops it at cf deploy. */

@@ -1521,4 +1521,173 @@ describe("everyapp setup", () => {
     expect(secrets()).not.toHaveProperty("CF_DEPLOY_TOKEN");
     expect(secrets()).not.toHaveProperty("BROWSER_APP_INSTALLS");
   });
+
+  describe("runGatewayDeploy --gateway validation", () => {
+    it("refuses an explicit --gateway that doesn't match the installed Gateway URL", async () => {
+      const installed = await setup({ domain: GW });
+      expect(installed.exitCode).toBe(0);
+
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      await expect(
+        runGatewayDeploy(
+          { json: true, gateway: "https://apps.other.dev" },
+          out,
+          deps({
+            openRelease: () => openRelease(newer),
+            source: () => releaseSource(newer),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "GATEWAY_URL_MISMATCH",
+        message: expect.stringContaining(`The Gateway here is ${GW}, not apps.other.dev`),
+      });
+    });
+
+    it("performs no deployment and leaves worker versions unchanged when a mismatch occurs", async () => {
+      const installed = await setup({ domain: GW });
+      expect(installed.exitCode).toBe(0);
+
+      const versionsBefore = account.workers.get("every-app-gateway")!.versions.length;
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      await expect(
+        runGatewayDeploy(
+          { json: true, gateway: "https://apps.other.dev" },
+          out,
+          deps({
+            openRelease: () => openRelease(newer),
+            source: () => releaseSource(newer),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "GATEWAY_URL_MISMATCH",
+        message: expect.stringContaining(`The Gateway here is ${GW}, not apps.other.dev`),
+      });
+
+      // Confirm no deployment or mutation side effects: worker version count remains unchanged
+      expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(versionsBefore);
+    });
+
+    it("updates successfully when given a valid explicit Gateway URL matching the installed Gateway", async () => {
+      await setup({ domain: GW });
+      const versionsBefore = account.workers.get("every-app-gateway")!.versions.length;
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      const result = await runGatewayDeploy(
+        { json: true, gateway: `https://${GW}` },
+        out,
+        deps({
+          openRelease: () => openRelease(newer),
+          source: () => releaseSource(newer),
+        }),
+      );
+
+      expect(result).toMatchObject({ gateway: "upgraded" });
+      expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(versionsBefore + 1);
+    });
+
+    it("updates successfully when no explicit Gateway URL is supplied", async () => {
+      await setup({ domain: GW });
+      const versionsBefore = account.workers.get("every-app-gateway")!.versions.length;
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      const result = await runGatewayDeploy(
+        { json: true },
+        out,
+        deps({
+          openRelease: () => openRelease(newer),
+          source: () => releaseSource(newer),
+        }),
+      );
+
+      expect(result).toMatchObject({ gateway: "upgraded" });
+      expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(versionsBefore + 1);
+    });
+
+    it("updates successfully when explicitly selecting the default Gateway with gateway: ''", async () => {
+      await setup({ domain: GW });
+      const versionsBefore = account.workers.get("every-app-gateway")!.versions.length;
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      const result = await runGatewayDeploy(
+        { json: true, gateway: "" },
+        out,
+        deps({
+          openRelease: () => openRelease(newer),
+          source: () => releaseSource(newer),
+        }),
+      );
+
+      expect(result).toMatchObject({ gateway: "upgraded" });
+      expect(account.workers.get("every-app-gateway")!.versions).toHaveLength(versionsBefore + 1);
+    });
+
+    it("refuses an explicit --gateway mismatch with GATEWAY_URL_MISMATCH even when the install stopped before its first upload", async () => {
+      await setup({ domain: GW });
+      // Install row exists, but live_version_id is null (stopped before upload)
+      account.database("every-app-gateway").sqlite.exec("UPDATE _everyapp_install SET live_version_id = NULL");
+
+      events = [];
+      const out: EventSink = createNdjsonSink((line) => events.push(JSON.parse(line)));
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-31T00:00:00.000Z" });
+
+      // Explicit URL mismatch must produce GATEWAY_URL_MISMATCH, not GATEWAY_NOT_INSTALLED
+      await expect(
+        runGatewayDeploy(
+          { json: true, gateway: "https://apps.other.dev" },
+          out,
+          deps({
+            openRelease: () => openRelease(newer),
+            source: () => releaseSource(newer),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "GATEWAY_URL_MISMATCH",
+        message: expect.stringContaining(`The Gateway here is ${GW}, not apps.other.dev`),
+      });
+
+      // When the URL matches, it preserves notDeployedByEveryapp() (GATEWAY_NOT_INSTALLED)
+      await expect(
+        runGatewayDeploy(
+          { json: true, gateway: `https://${GW}` },
+          out,
+          deps({
+            openRelease: () => openRelease(newer),
+            source: () => releaseSource(newer),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "GATEWAY_NOT_INSTALLED",
+      });
+
+      // When there is no install record at all, notDeployedByEveryapp() is preserved
+      account.database("every-app-gateway").sqlite.exec("DROP TABLE _everyapp_install");
+      await expect(
+        runGatewayDeploy(
+          { json: true, gateway: "https://apps.other.dev" },
+          out,
+          deps({
+            openRelease: () => openRelease(newer),
+            source: () => releaseSource(newer),
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: "GATEWAY_NOT_INSTALLED",
+      });
+    });
+  });
 });

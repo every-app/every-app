@@ -190,6 +190,13 @@ async function discover({
     ? found.filter((g) => g.install?.gatewayHost.toLowerCase() === host.toLowerCase())
     : [];
   if (atHost.length === 1) return { ...result, gateway: atHost[0]! };
+  if (host !== undefined && found.length > 1) {
+    if (atHost.length > 1) {
+      if (interactive) return { ...result, gateway: await pick(atHost, whoami) };
+      throw chooseGateway(atHost, whoami, hostFlag);
+    }
+    return { ...result, gateway: null };
+  }
   const byName = name === undefined ? [] : found.filter((g) => g.names.name === gatewayNames(name).name);
   if (requestedAccountId) {
     const inAccount = (name === undefined ? found : byName).filter((g) => g.account.id === requestedAccountId);
