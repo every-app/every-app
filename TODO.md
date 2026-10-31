@@ -2353,7 +2353,7 @@ Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `ever
 
 ## Shared light/dark (2026-10-31)
 
-every-app/every-app#10, the small half: one `everyapp-theme` cookie (`system|light|dark`) on the Gateway's hostname, set from the page's script, read before each app's own localStorage and by every no-flash script. Launcher and starter in this repo; OpenCRM #20 and OpenAnalytics #20 merged; OpenSEO #1121 open. Convention in `build-every-app/patterns.md`.
+every-app/every-app#10, the small half: one `everyapp-theme` cookie (`system|light|dark`) on the Gateway's hostname, set from the page's script, read before each app's own localStorage and by every no-flash script. Launcher and starter in this repo; OpenCRM #20, OpenAnalytics #20 and OpenSEO #1121 merged. Convention in `build-every-app/patterns.md`.
 
 ### Decided for Ben
 
@@ -2364,8 +2364,8 @@ every-app/every-app#10, the small half: one `everyapp-theme` cookie (`system|lig
 
 ### Questions for Ben
 
-- [ ] **OpenSEO #1121 waits for your merge.** every-app/private-open-seo#1121.
-- [ ] **OpenMail has no theme.** It is always light: Kumo sets light, and nothing sets `data-mode="dark"`. Add dark mode that reads the cookie, then localStorage, then the OS? Kumo already has dark colours; someone has to look over the screens.
+- [x] **OpenSEO #1121 waits for your merge.** Ben approved 2026-10-31; merged as fb4dffb9b.
+- [ ] **OpenMail has no theme.** Ben 2026-10-31: skip for now, later work. It is always light: Kumo sets light, and nothing sets `data-mode="dark"`. Add dark mode that reads the cookie, then localStorage, then the OS? Kumo already has dark colours; someone has to look over the screens.
 
 ### Follow-up: the full shared theme
 
