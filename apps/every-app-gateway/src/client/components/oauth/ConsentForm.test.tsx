@@ -154,7 +154,7 @@ describe("what the consent form posts", () => {
       organization_id: "org-acme",
       app_mode: "all",
       app_ids: [],
-      access: "read",
+      access: "write",
       resource: "https://gateway.example.com/mcp",
     });
   });

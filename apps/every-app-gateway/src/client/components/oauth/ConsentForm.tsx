@@ -256,7 +256,6 @@ export function ConsentForm({
                         type="radio"
                         name={CONSENT_FIELDS.access}
                         value="read"
-                        defaultChecked
                       >
                         Read only
                       </Choice>
@@ -264,6 +263,7 @@ export function ConsentForm({
                         type="radio"
                         name={CONSENT_FIELDS.access}
                         value="write"
+                        defaultChecked
                       >
                         Read &amp; write
                       </Choice>

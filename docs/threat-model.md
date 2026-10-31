@@ -1853,7 +1853,8 @@ means it is on main (every boundary fix from this pass merged on
     grant is now requested ∩ supported ∩ approved, the connection row
     records the capped access, the page offers read & write only to a
     client that asked for `mcp:write` (or named no scope) and preselects
-    read only; the challenge and the resource metadata name both scopes so
+    read & write (read only until 2026-10-31, when Ben chose the agent's
+    usual need over the extra click; the person still picks); the challenge and the resource metadata name both scopes so
     a client that follows them can be offered both. The 2026-10-25 scan's
     finding 12.
 30. **Proxy-forwarding headers reach apps as the client sent them** (B1,
