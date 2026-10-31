@@ -2379,3 +2379,17 @@ Published to npm by Ben from ccef5a5b9 (`@every-app/sdk` and `everyapp`, latest 
 - [ ] **The pre-release check can't see this kind of regression.** demo's apps were all installed recently. Consider keeping one app on demo that was installed by an older release, and redeploying it during the check.
 - [ ] **rc.10** carries #886 and #885 (consent preselects read & write). After Ben publishes it: tag gateway-v0.3.0-rc.10, then update the Gateway on demo (`--gateway demo --release`) and on everyapp.team.
 
+
+## OAuth provider gaps from OpenMail's Gmail POC (2026-10-31)
+
+Found by the OpenMail thread (87d1c22f) building "Gmail as a provider" on SDK/CLI 0.3.0-rc.9; code refs in private-open-mail `docs/GMAIL.md` and `TODO.md` (branch feat/gmail-provider).
+
+### Questions for Ben
+
+- [ ] **Background work on one member's connection.** Background work (`for: { background: true }`) only gets the organization's connection, so OpenMail can't draft as mail arrives in a person's own Gmail while nobody has it open. Proposed shape if wanted: a per-app, per-person opt-in recorded on the connection (granted on a Gateway page, revocable under Connected accounts), background calls naming `userId`, every call checking member live + app access + opt-in + scope sets, its own event; held for Ben (identity/consent). Until then OpenMail syncs only while the person is active.
+
+### Follow-ups
+
+- [ ] **Optional scope sets on a manifest entry.** `heldTokenCallAllowed` refuses every call (reads too) on a connection missing any declared set (`integration_not_connected` + reconnect), so an app can't offer an opt-in set (OpenMail's `gmail.send` for full send) without forcing everyone to grant it. Proposed: `optionalScopes: [...]`, never counted as missing, unlocking its routes only on a connection that holds it.
+- [ ] **PUT and DELETE in a set's `routes`.** `scopeRouteAllows` takes GET/HEAD and `posts` patterns only, so Gmail `drafts.update` (PUT) and `drafts.delete` (DELETE) are refused; OpenMail creates a new draft and trashes the old one instead.
+- [ ] **`everyapp dev` refuses overlay scope-set names** (`devScopeSets` → `integration_scopes_undeclared`, still on rc.9), so an app using a custom set can't run locally against real Google with `<PREFIX>_ACCESS_TOKEN`.
