@@ -2350,3 +2350,23 @@ Several Gateways in one Cloudflare account (docs/design/multi-gateway.md): `ever
 
 - [ ] **Agents get nothing yet.** A catalog entry lets apps call Granola; it gives an agent no tools. Two ways: (a) a curated MCP app like DataForSEO (Gateway tools over the API key, `everyapp mcp on granola`), or (b) serve OAuth for `mcp add --auth oauth`, which would bring Granola's own MCP tools (and works on Basic). (b) touches the perimeter and identity: hold for review. Which first?
 - [ ] **A personal key reads one person's notes for every member who can open the app.** Fine for a solo Gateway; for a team, a workspace key with Public notes only is the safer advice. Say so on the page, or leave it to the scope step?
+
+## Shared light/dark (2026-10-31)
+
+every-app/every-app#10, the small half: one `everyapp-theme` cookie (`system|light|dark`) on the Gateway's hostname, set from the page's script, read before each app's own localStorage and by every no-flash script. Launcher and starter in this repo; OpenCRM #20 and OpenAnalytics #20 merged; OpenSEO #1121 open. Convention in `build-every-app/patterns.md`.
+
+### Decided for Ben
+
+- [ ] **The launcher takes its own hostname as the cookie domain.** A deployed Gateway serves the launcher on GATEWAY_URL's host only, so it is the same host. Apps get it from `GATEWAY_URL` through the server.
+- [ ] **`localhost` gets a host-only cookie** (no Domain): browsers differ on `Domain=localhost`, and the cookie reaches every port anyway. Mirror mode's `everyapp.localhost` takes the Domain.
+- [ ] **An app on a custom hostname keeps its own localStorage.** A cookie can't reach a host outside the Gateway's domain.
+- [ ] **Each app keeps its own copy of the helpers, not an SDK export.** The apps pin published SDK tarballs. Move it into the SDK (`@every-app/sdk/theme`) at the next publish, and switch the apps over.
+
+### Questions for Ben
+
+- [ ] **OpenSEO #1121 waits for your merge.** every-app/private-open-seo#1121.
+- [ ] **OpenMail has no theme.** It is always light: Kumo sets light, and nothing sets `data-mode="dark"`. Add dark mode that reads the cookie, then localStorage, then the OS? Kumo already has dark colours; someone has to look over the screens.
+
+### Follow-up: the full shared theme
+
+- [ ] **One theme per install: fonts, colours, radii, chart colours, light and dark.** Design note: the Gateway stores a small token set (CSS custom properties for each mode, plus a chart palette) per organization, edited on an Admin page and kept across `everyapp update`. It serves them as `GET <gateway>/theme.css`, public and cacheable with an ETag. Each app links that stylesheet after its own, and maps its design tokens (shadcn variables, Kumo, Tailwind theme) to the shared names; charts read `--chart-1..n`. Meaningful colours stay the app's (the local SEO map's green, amber and red pins). Open: which token names (shadcn's set is the likely common ground), whether apps can opt out, and how `everyapp dev` serves it.

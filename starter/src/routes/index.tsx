@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { Fragment, useState, type ReactNode } from "react";
+import { type ThemePreference, useThemePreference } from "@/lib/theme";
 import { getHome } from "@/serverFunctions/home";
 import {
   createTodo,
@@ -42,12 +43,15 @@ function Home() {
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <header className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold">{name}</h1>
-        <a
-          href={launcher}
-          className="text-sm text-blue-700 underline dark:text-blue-400"
-        >
-          All apps
-        </a>
+        <div className="flex items-baseline gap-4">
+          <ThemePicker gatewayUrl={launcher} />
+          <a
+            href={launcher}
+            className="text-sm text-blue-700 underline dark:text-blue-400"
+          >
+            All apps
+          </a>
+        </div>
       </header>
 
       <section className={card}>
@@ -200,6 +204,23 @@ function Home() {
         )}
       </section>
     </main>
+  );
+}
+
+/** Light, dark or system; the pick carries to the launcher and every app. */
+function ThemePicker({ gatewayUrl }: { gatewayUrl: string }) {
+  const [pick, setPick] = useThemePreference(gatewayUrl);
+  return (
+    <select
+      value={pick}
+      onChange={(event) => setPick(event.target.value as ThemePreference)}
+      aria-label="Theme"
+      className="rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+    >
+      <option value="system">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
   );
 }
 

@@ -1,5 +1,6 @@
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { themeInitScript } from "@/lib/theme";
 import appCss from "@/styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -21,8 +22,10 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Sets the theme before the first paint: dark never flashes light. */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <HeadContent />
       </head>
       <body className="min-h-screen bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">

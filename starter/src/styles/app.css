@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* dark: follows the theme pick (src/lib/theme.ts), not only the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 html {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }

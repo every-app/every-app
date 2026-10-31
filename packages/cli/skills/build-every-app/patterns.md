@@ -127,6 +127,7 @@ Every app says, inside itself, what the Gateway hasn't got yet, from the `settin
 | Pattern | What it is | Where | Copy this |
 | --- | --- | --- | --- |
 | App-host session cookies | The Gateway strips every `Cookie` header before a request reaches the app and refuses requests whose cookies repeat its own session cookie's name, so an app can never read back a cookie it set; `everyApp()` drops any `Set-Cookie` the app's framework adds (a WebSocket upgrade passes through) and warns | `packages/sdk/src/server/everyApp.ts` (`withoutCookies`) | Nothing: keep preferences in the browser (`localStorage`), and delete any `withoutCookies()` of the app's own |
+| Light, dark or system | One pick for the launcher and every app: the `everyapp-theme` cookie (`system`, `light` or `dark`), set from the page's script on the Gateway's hostname (from `gatewayUrl(env)`) when the app is on it or under it, plus the app's own `localStorage`; read the cookie first, in the no-flash script too | `starter/src/lib/theme.ts` | `useThemePreference(gatewayUrl)`, `themeInitScript` |
 | Security headers the app sets itself | `frame-ancestors 'self'`, an `img-src` of only what the app shows, a per-response nonce for inline scripts, on HTML documents without a policy of their own. OpenAnalytics sets one static policy on every page instead (`withPageHeaders` in `open-analytics/src/server.ts`: `frame-ancestors 'none'`, no nonce) | `open-crm/src/server.ts` | `APP_CSP` |
 
 ## Tests
