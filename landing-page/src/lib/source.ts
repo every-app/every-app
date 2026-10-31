@@ -60,6 +60,34 @@ export const agentSource = loader({
   baseUrl: "/docs/agent",
 });
 
+// The blog: one Markdown file per post in content/blogs, served at
+// /blogs/<file name>. `date` (YYYY-MM-DD) orders the index; `draft: true`
+// keeps a post out of the index, the sitemap and the built site, and shows
+// it only under `vite dev` (isBlogPostVisible).
+export const blog = defineDocs({
+  dir: "content/blogs",
+  docs: {
+    schema: pageSchema.extend({
+      author: z.string(),
+      date: z.iso.date(),
+      draft: z.boolean().optional(),
+      metaTitle: z.string().optional(),
+      metaDescription: z.string().optional(),
+    }),
+    async: true,
+  },
+});
+
+export const blogSource = loader({
+  source: blog.toFumadocsSource(),
+  baseUrl: "/blogs",
+});
+
+/** A draft post is served only by the dev server, never by a build. */
+export function isBlogPostVisible(post: { draft?: boolean }): boolean {
+  return !post.draft || import.meta.env.DEV;
+}
+
 const getDocsUrl = createGetUrl("/docs");
 const getAgentUrl = createGetUrl("/docs/agent");
 

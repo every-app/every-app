@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,12 +16,19 @@ const __dirname = dirname(__filename);
 const DIST_DIR = join(__dirname, "../dist/client");
 const DOCS_CONTENT_DIR = join(__dirname, "../content/docs");
 const AGENT_CONTENT_DIR = join(__dirname, "../content/agent");
+const BLOG_CONTENT_DIR = join(__dirname, "../content/blogs");
 
 const DEFAULT_SITE_URL = "https://everyapp.com";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
-const STATIC_PATHS = new Set(["/", "/privacy", "/docs", "/docs/agent"]);
+const STATIC_PATHS = new Set([
+  "/",
+  "/privacy",
+  "/docs",
+  "/docs/agent",
+  "/blogs",
+]);
 
 function walkMarkdownFiles(directory) {
   if (!existsSync(directory)) return [];
@@ -64,8 +77,17 @@ function toCanonicalUrl(path) {
   return `${SITE_URL}${path.replace(/\/+$/, "")}`;
 }
 
+// A blog post with `draft: true` in its frontmatter isn't built.
+function isDraft(filePath) {
+  const frontmatter = readFileSync(filePath, "utf8").match(
+    /^---\n([\s\S]*?)\n---/,
+  );
+  return /^draft:\s*true\s*$/m.test(frontmatter?.[1] ?? "");
+}
+
 function addContentPaths(urlPaths, basePath, contentDir) {
   for (const filePath of walkMarkdownFiles(contentDir)) {
+    if (isDraft(filePath)) continue;
     const slugs = toSlugs(contentDir, filePath);
     if (slugs.length === 0) continue;
     urlPaths.add(joinPath(basePath, slugs));
@@ -81,6 +103,7 @@ function main() {
 
   addContentPaths(urlPaths, "/docs", DOCS_CONTENT_DIR);
   addContentPaths(urlPaths, "/docs/agent", AGENT_CONTENT_DIR);
+  addContentPaths(urlPaths, "/blogs", BLOG_CONTENT_DIR);
 
   const urls = Array.from(urlPaths)
     .map((path) => toCanonicalUrl(path))

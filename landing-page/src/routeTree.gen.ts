@@ -15,6 +15,8 @@ import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
+import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
+import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
 import { Route as DocsAgentSplatRouteImport } from './routes/docs/agent/$'
@@ -50,6 +52,16 @@ const ApiSearchRoute = ApiSearchRouteImport.update({
   path: '/api/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BlogsIndexRoute = BlogsIndexRouteImport.update({
+  id: '/blogs/',
+  path: '/blogs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlogsSplatRoute = BlogsSplatRouteImport.update({
+  id: '/blogs/$',
+  path: '/blogs/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
   id: '/docs/$',
   path: '/docs/$',
@@ -79,8 +91,10 @@ export interface FileRoutesByFullPath {
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
+  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
+  '/blogs/': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -91,8 +105,10 @@ export interface FileRoutesByTo {
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
+  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
+  '/blogs': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -104,8 +120,10 @@ export interface FileRoutesById {
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
+  '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
+  '/blogs/': typeof BlogsIndexRoute
   '/docs/agent/$': typeof DocsAgentSplatRoute
   '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -118,8 +136,10 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/privacy'
     | '/api/search'
+    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
+    | '/blogs/'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   fileRoutesByTo: FileRoutesByTo
@@ -130,8 +150,10 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/privacy'
     | '/api/search'
+    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
+    | '/blogs'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   id:
@@ -142,8 +164,10 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/privacy'
     | '/api/search'
+    | '/blogs/$'
     | '/docs/$'
     | '/docs/{$}.md'
+    | '/blogs/'
     | '/docs/agent/$'
     | '/docs/agent/{$}.md'
   fileRoutesById: FileRoutesById
@@ -155,8 +179,10 @@ export interface RootRouteChildren {
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   PrivacyRoute: typeof PrivacyRoute
   ApiSearchRoute: typeof ApiSearchRoute
+  BlogsSplatRoute: typeof BlogsSplatRoute
   DocsSplatRoute: typeof DocsSplatRoute
   DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
+  BlogsIndexRoute: typeof BlogsIndexRoute
   DocsAgentSplatRoute: typeof DocsAgentSplatRoute
   DocsAgentChar123Char125DotmdRoute: typeof DocsAgentChar123Char125DotmdRoute
 }
@@ -205,6 +231,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/blogs/': {
+      id: '/blogs/'
+      path: '/blogs'
+      fullPath: '/blogs/'
+      preLoaderRoute: typeof BlogsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blogs/$': {
+      id: '/blogs/$'
+      path: '/blogs/$'
+      fullPath: '/blogs/$'
+      preLoaderRoute: typeof BlogsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$': {
       id: '/docs/$'
       path: '/docs/$'
@@ -243,8 +283,10 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsDottxtRoute: LlmsDottxtRoute,
   PrivacyRoute: PrivacyRoute,
   ApiSearchRoute: ApiSearchRoute,
+  BlogsSplatRoute: BlogsSplatRoute,
   DocsSplatRoute: DocsSplatRoute,
   DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
+  BlogsIndexRoute: BlogsIndexRoute,
   DocsAgentSplatRoute: DocsAgentSplatRoute,
   DocsAgentChar123Char125DotmdRoute: DocsAgentChar123Char125DotmdRoute,
 }
