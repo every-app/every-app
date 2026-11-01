@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "every-app-landing-page",
+  "compatibility_date": "2026-02-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "assets": {
+    "directory": "./dist/client",
+    "html_handling": "drop-trailing-slash",
+    // The agent docs' Markdown (public/docs/agent) is read through it: src/lib/agent-docs.ts.
+    "binding": "ASSETS",
+  },
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "everyapp.com",
+      "custom_domain": true,
+    },
+  ],
+}

@@ -1,0 +1,151 @@
+---
+title: Get notified when something happens
+description: Send Gateway events (someone joins, an app nears its cap, an AI call is blocked) to Slack, Zapier, n8n, your own code, or your admins by email.
+---
+
+Your Gateway can tell other tools when something happens: someone joins, an app is installed, an app nears its monthly cap, an AI assistant's call is blocked. Pick the events and a web address, and the Gateway sends each one there, signed.
+
+## Add a webhook
+
+Open **Manage workspace** at the bottom of the sidebar, then **Events**, and select **Add subscription**. Choose **Webhook**, paste the address, tick the events (or **Everything**), and save. Or:
+
+```bash
+everyapp events add https://hooks.example.com/everyapp --events 'cap.*,member.*'
+```
+
+The address must be public `https://`. `cap.*` means every cap event; leave `--events` out to send everything. The signing secret is shown once: copy it if your receiver will [check the signature](#check-the-signature). Send a test with **Send test** in the row's menu, or `everyapp events test <id>`.
+
+## Post to Slack
+
+In Slack's Workflow Builder (paid plans), start a workflow **From a webhook**, add a text variable `summary`, add a **Send a message to a channel** step with `{{summary}}`, publish, and add Slack's webhook address here. Each event arrives as one line, like "crm is at 80% of its monthly cap (800 of 1,000)".
+
+A classic Slack incoming webhook (`https://hooks.slack.com/services/...`) won't work directly. Put Zapier, n8n or Make in between and post the `summary` field.
+
+## Email alerts
+
+Once you set a cap in [Usage](/docs/usage), owners and admins get an email at 80% of it and at the cap. It shows as **Cap alerts** under **Events**; switch it off there.
+
+To email other events, choose **Email** in **Add subscription**, or:
+
+```bash
+everyapp events add --email admins --events 'member.*'
+```
+
+`admins` mails owners and admins; `owners` mails owners only. Your Gateway needs to [send email](/docs/people#send-email).
+
+## Check the signature
+
+Each delivery has an `X-EveryApp-Signature` header like `t=1761383703,v1=5f0c…`. Compute an HMAC-SHA256 of the timestamp, a dot and the raw body with the subscription's secret, compare it with `v1`, and refuse timestamps more than five minutes off. In Node.js:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verifyEveryApp(
+  secret,
+  header,
+  rawBody,
+  now = Date.now() / 1000,
+) {
+  let timestamp = null;
+  const signatures = [];
+  for (const part of (header ?? "").split(",")) {
+    const [key, value = ""] = part.trim().split("=", 2);
+    if (key === "t" && /^\d+$/.test(value)) timestamp = Number(value);
+    if (key === "v1") signatures.push(Buffer.from(value, "hex"));
+  }
+  if (timestamp === null || signatures.length === 0) return false;
+  if (Math.abs(now - timestamp) > 300) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest();
+  return signatures.some(
+    (given) =>
+      given.length === expected.length && timingSafeEqual(given, expected),
+  );
+}
+```
+
+Python and Go versions are in the [Events reference](/docs/agent/events#the-signature).
+
+Answer with any 2xx within 10 seconds. The same event can arrive twice; skip an `id` you've already seen.
+
+## When the receiver is down
+
+A failed delivery is retried six times over about 35 hours, then marked **Dead**. Open the subscription's **Deliveries** to see each try, fix the receiver, and select **Redeliver**. Or:
+
+```bash
+everyapp events deliveries --dead
+everyapp events redeliver <delivery id>
+```
+
+## The events
+
+| Event                             | When                                                                |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `member.invited`                  | Someone was invited to the workspace                                |
+| `member.joined`                   | Someone joined the workspace                                        |
+| `member.role_changed`             | A member's role changed                                             |
+| `member.deactivated`              | A member was deactivated                                            |
+| `member.reactivated`              | A member was reactivated                                            |
+| `member.removed`                  | A member was removed                                                |
+| `member.password_reset`           | A member reset their password                                       |
+| `member.invitation_cancelled`     | A pending invitation was cancelled                                  |
+| `organization.renamed`            | The workspace was renamed                                           |
+| `organization.linked_dev_changed` | Linked dev (everyapp dev against this Gateway) was turned on or off |
+| `app.installed`                   | An app was installed on the Gateway                                 |
+| `app.updated`                     | An app was redeployed                                               |
+| `app.live`                        | An app went live on the Gateway                                     |
+| `app.removed`                     | An app was removed from the Gateway                                 |
+| `app.needs_setup`                 | An app needs a setting before it opens                              |
+| `app.ready`                       | An app has every setting it needs                                   |
+| `app.paused_cap`                  | An app is paused: its monthly cap is reached                        |
+| `app.tools_changed`               | An app's AI tools changed                                           |
+| `app.renamed`                     | An app's name or description changed                                |
+| `app.settings_changed`            | An app's settings were set or unset (names only)                    |
+| `app.access_changed`              | Who can open an app changed                                         |
+| `app.email_changed`               | An app's email senders or inbound changed                           |
+| `cap.warning`                     | An app is at 80% of its monthly cap                                 |
+| `cap.reached`                     | An app reached its monthly cap                                      |
+| `cap.raised`                      | An app's monthly cap was raised or removed                          |
+| `cap.changed`                     | An app's monthly cap was set or lowered                             |
+| `group.created`                   | A group was created                                                 |
+| `group.updated`                   | A group was renamed or described                                    |
+| `group.removed`                   | A group was removed                                                 |
+| `group.members_changed`           | A group's members changed                                           |
+| `group.apps_changed`              | The apps a group opens changed                                      |
+| `tool.blocked`                    | An AI client's tool call was blocked                                |
+| `tool.error`                      | An AI client's tool call failed                                     |
+| `connection.created`              | An AI app was connected                                             |
+| `connection.revoked`              | An AI app connection was revoked                                    |
+| `connection.used`                 | Linked dev used the Gateway's services (first call of the day)      |
+| `token.created`                   | A personal access token was created                                 |
+| `token.revoked`                   | A personal access token was revoked                                 |
+| `access.changed`                  | Cloudflare Access was turned on or off                              |
+| `signin_provider.added`           | A sign-in provider (Continue with Google, …) was turned on          |
+| `signin_provider.removed`         | A sign-in provider was turned off                                   |
+| `mcp_app.added`                   | An MCP app was added                                                |
+| `mcp_app.removed`                 | An MCP app was removed                                              |
+| `mcp_app.enabled`                 | An MCP app is being served again                                    |
+| `mcp_app.disabled`                | An MCP app stopped being served                                     |
+| `mcp_app.updated`                 | An MCP app's risk default, name or description changed              |
+| `mcp_app.tool_changed`            | One tool of an MCP app was overridden                               |
+| `provider.added`                  | An API provider was registered                                      |
+| `provider.removed`                | An API provider was removed                                         |
+| `provider.updated`                | A provider's spec or OAuth client was replaced                      |
+| `provider.connected`              | Someone connected an account at an OAuth provider                   |
+| `provider.disconnected`           | An OAuth provider account was disconnected                          |
+| `provider.connection_expired`     | An OAuth connection needs reconnecting                              |
+| `subscription.created`            | An event subscription was added                                     |
+| `subscription.updated`            | An event subscription was changed, paused or resumed                |
+| `subscription.removed`            | An event subscription was removed                                   |
+| `subscription.redelivered`        | A delivery was queued again by hand                                 |
+| `ai.default_changed`              | The default model provider changed                                  |
+| `ai.model_changed`                | A provider's default model changed                                  |
+| `ping`                            | A test event, sent to one subscription on request                   |
+
+Apps can send their own events too, named `app.<app id>.<name>`, like `app.crm.invoice.paid`. To get every event one app sends, subscribe to `app.crm.*`.
+
+An event never holds a password, a token, an invitation or reset link, what an AI assistant sent to a tool or got back, or the text of an email.
+
+For the full reference, with every field of every event, give your coding agent [Events](/docs/agent/events).

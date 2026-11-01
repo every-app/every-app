@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* Code blocks lay their lines out as flex items, which collapses blank ones. */
+pre .line {
+  min-height: 1lh;
+}
+
+.landing-reveal {
+  opacity: 0;
+  animation: landing-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes landing-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-reveal {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+details.faq {
+  border: 1px solid rgba(41, 37, 36, 0.85);
+  border-radius: 0.75rem;
+  background: rgba(15, 14, 14, 0.62);
+  margin: 0.8rem 0;
+  overflow: hidden;
+}
+
+details.faq > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.9rem 1rem;
+  font-weight: 600;
+  color: #fafaf9;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+details.faq > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.faq > summary::before {
+  content: ">";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.8rem;
+  color: #a8a29e;
+  transform-origin: center;
+  transition: transform 140ms ease;
+}
+
+details.faq[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+details.faq > summary > * {
+  margin: 0;
+}
+
+details.faq > summary a {
+  pointer-events: none;
+  color: inherit;
+  text-decoration: none;
+}
+
+details.faq > summary img[alt="Link to section"] {
+  display: none;
+}
+
+details.faq[open] > summary {
+  border-bottom: 1px solid rgba(41, 37, 36, 0.8);
+}
+
+.faq-content {
+  padding: 1rem;
+}
+
+.prompt-block {
+  margin-top: 1rem;
+  border: 1px solid rgba(68, 64, 60, 0.8);
+  border-radius: 0.6rem;
+  background: rgba(10, 10, 10, 0.7);
+  padding: 0.9rem;
+}

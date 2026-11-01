@@ -1,0 +1,44 @@
+---
+title: Usage and caps
+description: See what your apps spend on AI and data providers, cap them per month, and get an email when a cap is near.
+---
+
+Apps that use AI or a data provider like DataForSEO make those calls through your Gateway, and the Gateway counts them per app. Open **Manage workspace** at the bottom of the sidebar, then **Usage** (owners and admins).
+
+## What is counted
+
+- **Provider calls**: every call the Gateway made for an app this month, to AI providers and to services like DataForSEO.
+- **Provider cost**: dollars, where the provider reports a price (OpenRouter and DataForSEO do; OpenAI and Workers AI don't).
+
+Your provider still bills you directly; their invoice is the real bill. Calls an app makes with its own key, outside the Gateway, aren't counted.
+
+## Cap an app
+
+In the **Monthly cap** column, select **Set cap** and enter calls, dollars, or both. Or:
+
+```bash
+everyapp workspace app cap <app> 1000
+everyapp workspace app cap <app> --usd 20
+```
+
+`off` removes a cap. Caps reset each calendar month (UTC). A dollar cap only counts providers that report a price, so pair it with a call cap if an app also uses OpenAI or Workers AI.
+
+When an app reaches a cap, its AI and provider calls stop until next month or until you select **Raise**. The app still opens and shows its data. A burst of calls can run slightly past the cap.
+
+## A default for every app
+
+**Default monthly cap**, above the table, caps every app without its own cap, including apps you add later:
+
+```bash
+everyapp workspace cap default 1000 --usd 20
+```
+
+To exempt one app, select **Edit** in its row and choose **No cap**.
+
+## Cap alerts
+
+Once you set a cap, owners and admins get an email at 80% and at the cap (your Gateway needs to [send email](/docs/people#send-email)). Turn it off, or send the same alerts to a webhook, under **Manage workspace → Events**. [Events](/docs/events#email-alerts)
+
+## Audit log
+
+**Manage workspace → Activity → Audit** shows who did what, newest first: invites, installs, caps, connected AI apps, Access changes and more. It's kept for 90 days and never holds a secret. From a terminal, run `everyapp workspace audit`.

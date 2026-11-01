@@ -1,0 +1,373 @@
+{
+  "v": 1,
+  "runId": "2026-10-26T11:24-claude-opus55-dacece",
+  "retryOf": null,
+  "startedAt": "2026-10-26T11:24:58.451Z",
+  "durationS": 793,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "claude",
+    "version": "2.1.309",
+    "model": {
+      "requested": "claude-opus-5-5",
+      "resolved": "claude-opus-5-5"
+    },
+    "mode": "defaults",
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "truncated",
+    "exitCodes": true,
+    "cost": "harness",
+    "resume": "native"
+  },
+  "cliCommit": "df0fed7e1640",
+  "checkoutCommit": "df0fed7e1640",
+  "promptVariant": "public",
+  "promptSha": "8e73bee94bb9",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate",
+    "claude_consent_seeded"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-26T11:49:11.348Z",
+      "durationS": 10
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-26T11:49:24.876Z",
+      "durationS": 69
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-26T11:49:27.626Z",
+      "durationS": 57
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-26T11:51:02.964Z",
+      "durationS": 8
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-26T11:51:14.468Z",
+      "durationS": 66
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-26T11:24:58.454Z",
+      "durationS": 1304
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-26T11:46:45.043Z",
+      "durationS": 53
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-26T11:47:43.188Z",
+      "durationS": 615
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-26T11:58:02.369Z",
+      "durationS": 31
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-26T11:58:36.068Z",
+      "durationS": 79
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 68671,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_SETUP_SKIPPED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "../hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 7922,
+      "warnings": [
+        "GIT_FAILED"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 65914,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "install",
+        "<url>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 111743,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "APP_NEEDS_SETUP"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "install",
+        "<url>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 75439,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "APP_NEEDS_SETUP"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "install",
+        "<url>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 68940,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "APP_NEEDS_SETUP"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "install",
+        "<url>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 61705,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "APP_NEEDS_SETUP"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 1,
+      "linkSurfacedToPerson": false
+    },
+    "app": {
+      "by": "harness",
+      "id": "../hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "early_adopter_question",
+      "domain_question",
+      "claim_owner",
+      "create_app",
+      "four_apps_question"
+    ],
+    "exercised": [
+      "early_adopter_question",
+      "claim_owner",
+      "four_apps_question"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "create_app": "not a question: the harness ran create",
+      "domain_question": "not asked: the harness ran setup"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "early_adopter_question",
+      "expected": true
+    },
+    {
+      "trigger": "turn_end_without_done",
+      "expected": false
+    },
+    {
+      "trigger": "four_apps_question",
+      "expected": true
+    }
+  ],
+  "interventions": [
+    {
+      "source": "loop",
+      "kind": "nudge"
+    }
+  ],
+  "interventionNeeded": true,
+  "hesitations": [
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "EveryApp is in early development so expect some rough edges. Here's a link with more details about giving feedback: <url> Do you still want to get set up or would yo",
+      "triage": "unknown"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "tool output cut at 1927 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "tool output cut at 1903 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "Node 22.23.4 and pnpm 10.34.5 are both installed. One change from your steps: we're inside the EveryApp repo, and its instructions say to run `pnpm everyapp` from here instead of the npm package. The ",
+      "triage": "prompt"
+    },
+    {
+      "kind": "asked_user",
+      "excerpt": "Which domain should I use?",
+      "triage": "prompt"
+    },
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "The Gateway is live at <url> and your owner account (<email>) is claimed. **hello** is deployed at **<url> Its first git commit in `/",
+      "triage": "unknown"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    },
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    },
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "fail",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": true
+  },
+  "verdict": {
+    "value": "fail-onboarding",
+    "reasonCode": "false_done",
+    "falseDone": true,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": 0.714,
+    "source": "harness",
+    "tokens": {
+      "input": 34,
+      "output": 4593,
+      "cacheRead": 420775,
+      "cacheWrite": 31232
+    },
+    "model": "claude-opus-5-5"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 7,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

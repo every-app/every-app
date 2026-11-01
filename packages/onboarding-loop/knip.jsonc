@@ -1,0 +1,5 @@
+{
+  // `pnpm loop` (package.json's `loop` script, tsx src/cli.ts) is the one
+  // entry Knip finds on its own; every export must be reached from it or a test.
+  "project": ["src/**/*.ts"],
+}

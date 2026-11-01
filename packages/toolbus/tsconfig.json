@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src/**/*.ts", "conformance/**/*.ts", "claude-code/**/*.ts"],
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "target": "ES2022",
+    "types": ["@cloudflare/workers-types/2023-07-01", "node"]
+  }
+}

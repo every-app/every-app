@@ -1,0 +1,23 @@
+opencodetmp/
+# Root-level extracted-gateway artifact only — an unanchored gateway/ would
+# also swallow new files under packages/cli/src/{lib,commands}/gateway.
+/gateway/
+node_modules/
+dist/
+.claude/settings.local.json
+**/.output/
+**/.tanstack/
+**/.env*
+.wrangler
+.dev.vars*
+*.db
+*.db-wal
+*.db-shm
+**/.pnpm-store/
+.env
+
+# Copies of the onboarding loop's secret files, which live in ~/.config/everyapp/onboarding-loop and
+# never belong in a checkout: a stray copy of accounts.json got committed once (#488, removed in #496).
+accounts.json
+providers.env
+providers.json

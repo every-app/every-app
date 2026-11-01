@@ -1,0 +1,236 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T10:20-script-none-c58fad",
+  "retryOf": null,
+  "startedAt": "2026-10-24T10:20:31.471Z",
+  "durationS": 268,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "script",
+    "version": "bash",
+    "model": {
+      "requested": null,
+      "resolved": null
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "full",
+    "exitCodes": true,
+    "cost": "none",
+    "resume": "none"
+  },
+  "cliCommit": "e41110c7c10c",
+  "checkoutCommit": "e41110c7c10c",
+  "promptVariant": "checkout-present",
+  "promptSha": "e4216a2423a5",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-24T10:21:34.547Z",
+      "durationS": 9
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T10:21:43.885Z",
+      "durationS": 51
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T10:21:46.457Z",
+      "durationS": 41
+    },
+    {
+      "name": "setup.owner",
+      "startedAt": "2026-10-24T10:22:28.993Z",
+      "durationS": 6
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T10:22:35.781Z",
+      "durationS": 11
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T10:22:47.534Z",
+      "durationS": 78
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-24T10:20:31.474Z",
+      "durationS": 26
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T10:21:01.226Z",
+      "durationS": 22
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T10:21:34.519Z",
+      "durationS": 151
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T10:24:09.854Z",
+      "durationS": 24
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T10:24:35.487Z",
+      "durationS": 50
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 51333,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 11229,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 78208,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 1,
+      "linkSurfacedToPerson": false
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "domain_question": "not reached",
+      "create_app": "not reached"
+    }
+  },
+  "scriptedUserTurns": [],
+  "interventions": [],
+  "interventionNeeded": false,
+  "hesitations": [],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "perimeter-only",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass",
+    "reasonCode": null,
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": null,
+    "source": "none",
+    "tokens": {},
+    "model": null
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 4,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

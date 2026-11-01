@@ -1,0 +1,265 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+  "retryOf": null,
+  "startedAt": "2026-10-24T20:40:08.759Z",
+  "durationS": 322,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "codex",
+    "version": "0.163.0",
+    "model": {
+      "requested": "gpt-6.1-sol",
+      "resolved": "gpt-6.1-sol"
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "full",
+    "exitCodes": true,
+    "cost": "tokens_x_list",
+    "resume": "native"
+  },
+  "cliCommit": "6b142b18da98",
+  "checkoutCommit": "6b142b18da98",
+  "promptVariant": "checkout-present",
+  "promptSha": "217d257562ca",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-24T20:40:40.596Z",
+      "durationS": 4
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T20:41:00.164Z",
+      "durationS": 72
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T20:41:03.103Z",
+      "durationS": 46
+    },
+    {
+      "name": "setup.owner",
+      "startedAt": "2026-10-24T20:41:50.455Z",
+      "durationS": 21
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T20:42:13.996Z",
+      "durationS": 12
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T20:42:27.525Z",
+      "durationS": 92
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T20:40:11.449Z",
+      "durationS": 21
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T20:40:35.414Z",
+      "durationS": 213
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T20:44:11.525Z",
+      "durationS": 24
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T20:44:38.098Z",
+      "durationS": 53
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 71743,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 11538,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 92466,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "status",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 3931,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 0,
+      "linkSurfacedToPerson": true
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "domain_question",
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "create_app": "not a question: the harness ran create"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "domain_question",
+      "expected": true
+    }
+  ],
+  "interventions": [],
+  "interventionNeeded": false,
+  "hesitations": [
+    {
+      "kind": "blocked_for_question",
+      "excerpt": "BLOCKED: waiting for your domain. Which domain should I use for `apps.<your domain>`?",
+      "triage": "prompt"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass",
+    "reasonCode": null,
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": null,
+    "source": "tokens_x_list",
+    "tokens": {
+      "input": 1191060,
+      "output": 2163,
+      "cacheRead": 1104682,
+      "cacheWrite": 86279
+    },
+    "model": "gpt-6.1-sol"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 47,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

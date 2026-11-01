@@ -1,0 +1,42 @@
+---
+title: Cloudflare resources your app can use
+description: Databases, files, queues, AI, a headless browser and more. Declare them in everyapp.config.ts and the deploy makes them in your Cloudflare account.
+---
+
+Your app runs in your own Cloudflare account, so it can use what Cloudflare offers. List what it needs under `resources` in its `everyapp.config.ts`, and `everyapp deploy` creates each one and connects it to the app. Your coding agent has the full reference: [everyapp.config.ts](/docs/agent/manifest) and [Example patterns](/docs/agent/patterns).
+
+## What you can declare
+
+| What               | Field                         | What it is for                                                                 | Cost                                                              |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Database           | `d1`                          | The app's own SQL database (SQLite). The starter has one.                      | Included in Workers Paid up to a free allowance                   |
+| Key-value store    | `kv`                          | Settings and small values read on every request                                | Included up to a free allowance                                   |
+| Files              | `r2`                          | Uploads, exports, images the app stores                                        | Free until something is stored; turn R2 on once in your dashboard |
+| Postgres           | `hyperdrive`                  | Your own Postgres (Neon, Supabase, any URL) reached quickly from the app       | Cloudflare's part is included; the database is yours to pay       |
+| Background objects | `durableObjects`, `workflows` | Long-running jobs, per-user state, multi-step work with retries                | Included up to a free allowance                                   |
+| Queues             | `queues`                      | Jobs the app sends now and works through later, in order and with retries      | Workers Paid                                                      |
+| Search by meaning  | `vectorize`                   | An index for finding similar text or images (embeddings, RAG)                  | Included up to a free allowance                                   |
+| AI models          | `ai`                          | Run Cloudflare's models directly from the app (`env.AI`)                       | Workers Paid, billed by use after a free daily allowance          |
+| AI Gateway         | `aiGateway`                   | A log, cache and rate limit in front of the AI calls an app makes              | Free                                                              |
+| Headless browser   | `browser`                     | Screenshots, PDFs, crawling a page as a browser sees it                        | Workers Paid, billed by browser time                              |
+| Images             | `images`                      | Resize, crop and convert images on the fly                                     | Included up to a free allowance, then by use                      |
+| Analytics          | `analyticsEngine`             | Counters and events the app writes and you query later                         | Included                                                          |
+| Email sending      | `sendEmail`                   | Send mail with Cloudflare's own binding, from an address on a domain you route | Free (Email Routing on the domain)                                |
+| Secrets Store      | `secretsStore`                | A key the app reads from Cloudflare's store rather than from its own settings  | Free; make a store once in your dashboard                         |
+
+`everyapp status` lists what each app has, and `everyapp delete <app> --purge` deletes it.
+
+## One-time steps that are yours
+
+- **Workers Paid** ($5 a month) is already needed for the Gateway ([Set up Cloudflare](/docs/cloudflare)). AI, Browser Rendering and Queues bill by use on top.
+- **R2**: if a deploy stops with `R2_NOT_ENABLED`, open R2 Object Storage in your dashboard once and choose Get started.
+- **Secrets Store**: if a deploy stops with `SECRETS_STORE_MISSING`, create a store once in your dashboard (Secrets Store → Create store).
+- **Email sending**: the domain the app sends from must be set up for Email Sending, the same step as the Gateway's sender. [Send email](/docs/people#send-email)
+
+## Postgres
+
+To use Postgres instead of the built-in database, get a database URL from any host (Neon, Supabase, PlanetScale, your own server). Put it in the app's `.everyapp/secrets.env` as `POSTGRES_DATABASE_URL=postgres://...`, and have the app declare `resources: { hyperdrive: [{ name: "HYPERDRIVE" }] }` with `database: { provider: "postgres" }`. The deploy connects it and runs the app's migrations. With Neon or Supabase, use the direct URL, not the pooled one.
+
+## On your computer
+
+`everyapp dev` runs the app with local stand-ins for most resources; email is written to a file instead of sent. AI models and search by meaning have no local version: turn `remoteBindings` on in the app's `vite.config.ts` and run `cf auth login` to use your Cloudflare account's.

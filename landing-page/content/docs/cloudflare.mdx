@@ -1,0 +1,31 @@
+---
+title: Set up Cloudflare
+description: Create a Cloudflare account and turn on Workers Paid. About 5 minutes.
+---
+
+EveryApp runs in your own Cloudflare account, and Cloudflare bills you directly. Already have an account? Use it.
+
+<Steps>
+<Step>
+
+### Create an account
+
+Sign up at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up), then verify your email. You need a verified email to buy a domain.
+
+</Step>
+<Step>
+
+### Turn on Workers Paid
+
+Open [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans), choose the **Paid** plan ($5 a month) and enter your card. On the free plan, Cloudflare pauses your databases for the rest of the day once they hit a daily limit, and every app stops with them.
+
+</Step>
+</Steps>
+
+## What EveryApp adds to your account
+
+The Gateway adds one Worker, one D1 database and one KV store, all named `every-app-gateway`, plus a DNS record for its address. Each app adds its own Worker (named `every-...`), its databases and its address. Cloudflare Access and email add only what you turn on.
+
+EveryApp never touches your other Workers, DNS records or websites.
+
+Next: [Get a domain](/docs/domain).

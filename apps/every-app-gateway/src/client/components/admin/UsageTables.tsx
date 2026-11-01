@@ -1,0 +1,558 @@
+import { useMemo, type ReactNode } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { Badge } from "@/client/components/ui/badge";
+import { Button } from "@/client/components/ui/button";
+import { Progress } from "@/client/components/ui/progress";
+import {
+  formatCapProgress,
+  formatCostCap,
+  formatCostCapProgress,
+  formatCostMicros,
+  formatCount,
+  usageTargetLabel,
+} from "@/client/lib/usage";
+import type {
+  UsageAppRow,
+  UsageMemberRow,
+  UsageModelRow,
+  UsageTargetRow,
+  UsageTotals,
+} from "@/types/usage";
+
+interface UsageTableProps<TRow> {
+  rows: TRow[];
+  /** The first load: skeleton rows under the headers. */
+  isLoading: boolean;
+  /** A load failure, shown above the rows (or in their place). */
+  error?: ReactNode;
+}
+
+const NUMERIC = "text-right tabular-nums";
+
+function Count({ value }: { value: number }) {
+  return (
+    <span className={value === 0 ? "text-muted-foreground" : undefined}>
+      {formatCount(value)}
+    </span>
+  );
+}
+
+function Failures({ value }: { value: number }) {
+  if (value === 0) return <span className="text-muted-foreground">0</span>;
+  return <span className="text-destructive">{formatCount(value)}</span>;
+}
+
+function Cost({ micros }: { micros: number }) {
+  return (
+    <span className={micros === 0 ? "text-muted-foreground" : undefined}>
+      {formatCostMicros(micros)}
+    </span>
+  );
+}
+
+/** The provider columns every table shares: calls, failures, tokens, cost. */
+function providerColumns<TRow extends UsageTotals>(): ColumnDef<TRow>[] {
+  return [
+    {
+      accessorKey: "calls",
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Provider calls" />
+      ),
+      meta: {
+        label: "Provider calls",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => <Count value={row.original.calls} />,
+    },
+    {
+      accessorKey: "failures",
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Failures" />
+      ),
+      meta: {
+        label: "Failures",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => <Failures value={row.original.failures} />,
+    },
+    {
+      accessorKey: "inputTokens",
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Tokens in" />
+      ),
+      meta: {
+        label: "Tokens in",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => <Count value={row.original.inputTokens} />,
+    },
+    {
+      accessorKey: "outputTokens",
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Tokens out" />
+      ),
+      meta: {
+        label: "Tokens out",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => <Count value={row.original.outputTokens} />,
+    },
+    {
+      accessorKey: "costMicros",
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Provider cost" />
+      ),
+      meta: {
+        label: "Provider cost",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => <Cost micros={row.original.costMicros} />,
+    },
+  ];
+}
+
+function toolCallsColumn<
+  TRow extends { toolCalls: number },
+>(): ColumnDef<TRow> {
+  return {
+    accessorKey: "toolCalls",
+    header: ({ column }) => (
+      <SortableHeader column={column} label="Agent tool calls" />
+    ),
+    meta: {
+      label: "Agent tool calls",
+      headerClassName: NUMERIC,
+      cellClassName: NUMERIC,
+    },
+    cell: ({ row }) => <Count value={row.original.toolCalls} />,
+  };
+}
+
+/** One cap that binds the app, as its cell shows it. */
+interface CapLine {
+  kind: "calls" | "cost";
+  cap: number;
+  used: number;
+  fromDefault: boolean;
+  /** "1,000" or "$20.00": the cap alone. */
+  capText: string;
+  /** "240 of 1,000" or "$4.20 of $20.00". */
+  progress: string;
+}
+
+/** The caps that bind the app, the call cap first. */
+function capLines(row: UsageAppRow): CapLine[] {
+  const lines: CapLine[] = [];
+  if (row.effectiveMonthlyCallCap !== null) {
+    const cap = row.effectiveMonthlyCallCap;
+    lines.push({
+      kind: "calls",
+      cap,
+      used: row.calls,
+      fromDefault: row.capSource === "default",
+      capText: formatCount(cap),
+      progress: formatCapProgress(row.calls, cap),
+    });
+  }
+  if (row.effectiveMonthlyCostCapMicros !== null) {
+    const cap = row.effectiveMonthlyCostCapMicros;
+    lines.push({
+      kind: "cost",
+      cap,
+      used: row.costMicros,
+      fromDefault: row.costCapSource === "default",
+      capText: formatCostCap(cap),
+      progress: formatCostCapProgress(row.costMicros, cap),
+    });
+  }
+  return lines;
+}
+
+/** What the Paused badge says paused the app. */
+const PAUSED_BY = { calls: "Paused by calls", cost: "Paused by dollars" };
+
+/**
+ * The caps that bind the app this month and how far into each the app
+ * is, or the caps alone for a past month (the counts are the current
+ * month's): a call cap as a number, a dollar cap in dollars, each on its
+ * own line, the workspace default's with " · default"; "No cap" for an
+ * app told to ignore the defaults, "Unlimited" when nothing binds. A
+ * paused app's line for the cap that paused it reads "Paused by calls ·
+ * 1,000 of 1,000" (or "Paused by dollars · $20.00 of $20.00") in red with
+ * a red bar, and its button is Raise. The button opens the cap dialog. An
+ * app the organization can no longer call (deleted) has no cap and no
+ * button.
+ */
+function MonthlyCapCell({
+  row,
+  isCurrentMonth,
+  hasDefault,
+  onSetCap,
+}: {
+  row: UsageAppRow;
+  isCurrentMonth: boolean;
+  hasDefault: boolean;
+  onSetCap: (row: UsageAppRow) => void;
+}) {
+  if (!row.callable) return null;
+  const lines = capLines(row);
+  // The visible label and the verb a screen reader hears before "monthly
+  // cap": "Set cap" reads as "Set monthly cap for Notes".
+  const button = (label: string, verb = label) => (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="-mr-2"
+      aria-label={`${verb} monthly cap for ${row.name ?? row.appRowId}`}
+      onClick={() => onSetCap(row)}
+    >
+      {label}
+    </Button>
+  );
+  if (lines.length === 0) {
+    // A "no cap" row only means something against a default; without one
+    // it reads as the unlimited it is.
+    const noCap = row.capUnlimited && hasDefault;
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-muted-foreground">
+          {noCap ? "No cap" : "Unlimited"}
+        </span>
+        {button(noCap ? "Edit" : "Set cap", noCap ? "Edit" : "Set")}
+      </div>
+    );
+  }
+  const source = (line: CapLine) => (line.fromDefault ? " · default" : "");
+  if (!isCurrentMonth) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <div className="flex flex-col items-end">
+          {lines.map((line) => (
+            <span key={line.kind}>
+              {line.capText}
+              {source(line)}
+            </span>
+          ))}
+        </div>
+        {button("Edit")}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-col items-end gap-1">
+        {lines.map((line) => {
+          const paused = row.pausedBy === line.kind;
+          return (
+            <div key={line.kind} className="flex flex-col items-end gap-1">
+              <span className={paused ? "text-destructive" : undefined}>
+                {paused
+                  ? `${PAUSED_BY[line.kind]} · ${line.progress}`
+                  : `${line.progress}${source(line)}`}
+              </span>
+              <Progress
+                value={Math.min(line.used, line.cap)}
+                max={line.cap}
+                aria-label={`${row.name ?? row.appRowId}: ${line.progress} ${line.kind === "cost" ? "of provider-reported cost" : "provider calls"} this month`}
+                className="w-28"
+                indicatorClassName={paused ? "bg-destructive" : undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {button(row.paused ? "Raise" : "Edit")}
+    </div>
+  );
+}
+
+interface AppColumnOptions {
+  /** The month shown is the current UTC month: progress toward the cap applies. */
+  isCurrentMonth: boolean;
+  /** The organization has a default cap: an app's "no cap" means something. */
+  hasDefault: boolean;
+  /** Opens the cap dialog for the row's app. */
+  onSetCap: (row: UsageAppRow) => void;
+}
+
+// TanStack Table renders each `cell` as a component, and columns rebuilt
+// on every render would remount them: the member and provider columns are
+// module-level arrays, and the app columns are memoized on their options.
+function buildAppColumns({
+  isCurrentMonth,
+  hasDefault,
+  onSetCap,
+}: AppColumnOptions): ColumnDef<UsageAppRow>[] {
+  return [
+    ...appNameColumns,
+    ...providerColumns<UsageAppRow>(),
+    toolCallsColumn<UsageAppRow>(),
+    {
+      id: "monthlyCap",
+      accessorFn: (row) =>
+        row.effectiveMonthlyCallCap ?? Number.POSITIVE_INFINITY,
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Monthly cap" />
+      ),
+      meta: {
+        label: "Monthly cap",
+        headerClassName: NUMERIC,
+        cellClassName: NUMERIC,
+      },
+      cell: ({ row }) => (
+        <MonthlyCapCell
+          row={row.original}
+          isCurrentMonth={isCurrentMonth}
+          hasDefault={hasDefault}
+          onSetCap={onSetCap}
+        />
+      ),
+    },
+  ];
+}
+
+const appNameColumns: ColumnDef<UsageAppRow>[] = [
+  {
+    id: "app",
+    accessorFn: (row) => row.name ?? row.appRowId,
+    header: ({ column }) => <SortableHeader column={column} label="App" />,
+    meta: { label: "App", cellClassName: "max-w-[280px]" },
+    cell: ({ row }) =>
+      row.original.name ? (
+        <>
+          <p
+            className={
+              row.original.callable
+                ? "truncate font-medium"
+                : "truncate font-medium text-muted-foreground"
+            }
+          >
+            {row.original.name}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {row.original.callable
+              ? row.original.appSlug
+              : // Its tombstone keeps the name: the app itself was deleted.
+                [row.original.appSlug, "deleted"].filter(Boolean).join(", ")}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="truncate font-medium text-muted-foreground">
+            Removed app
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {row.original.appRowId}
+          </p>
+        </>
+      ),
+  },
+];
+
+const memberColumns: ColumnDef<UsageMemberRow>[] = [
+  {
+    id: "member",
+    accessorFn: (row) => row.name || row.email || row.userId || "",
+    header: ({ column }) => <SortableHeader column={column} label="Member" />,
+    meta: { label: "Member", cellClassName: "max-w-[280px]" },
+    cell: ({ row }) => {
+      const { userId, name, email } = row.original;
+      // The apps' own calls: background work, or an identity that didn't verify.
+      if (userId === "") {
+        return (
+          <>
+            <p className="truncate font-medium">Background</p>
+            <p className="truncate text-xs text-muted-foreground">
+              Calls the apps made on their own
+            </p>
+          </>
+        );
+      }
+      // No longer a member of this organization (or no longer a user):
+      // by id, never by the profile they keep elsewhere.
+      if (!name && !email) {
+        return (
+          <>
+            <p className="truncate font-medium text-muted-foreground">
+              Former member
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{userId}</p>
+          </>
+        );
+      }
+      return (
+        <>
+          <p className="truncate font-medium">{name || email}</p>
+          {name && name !== email ? (
+            <p className="truncate text-xs text-muted-foreground">{email}</p>
+          ) : null}
+        </>
+      );
+    },
+  },
+  ...providerColumns<UsageMemberRow>(),
+  toolCallsColumn<UsageMemberRow>(),
+];
+
+const KIND_LABELS: Record<string, string> = {
+  ai: "AI provider",
+  capability: "Capability",
+};
+
+const targetColumns: ColumnDef<UsageTargetRow>[] = [
+  {
+    id: "target",
+    accessorFn: (row) => `${row.kind} ${row.target}`,
+    header: ({ column }) => <SortableHeader column={column} label="Provider" />,
+    meta: { label: "Provider" },
+    // The registry's name, as the setup dialog and Admin → Apps say it;
+    // the id under it is what the manifest and `secret set` use.
+    cell: ({ row }) => {
+      const { kind, target } = row.original;
+      const label = usageTargetLabel(kind, target);
+      return (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{label}</span>
+            <Badge variant={kind === "ai" ? "info" : "secondary"}>
+              {KIND_LABELS[kind] ?? kind}
+            </Badge>
+          </div>
+          {label !== target ? (
+            <p className="truncate text-xs text-muted-foreground">{target}</p>
+          ) : null}
+        </>
+      );
+    },
+  },
+  ...providerColumns<UsageTargetRow>(),
+];
+
+const modelColumns: ColumnDef<UsageModelRow>[] = [
+  {
+    id: "model",
+    accessorFn: (row) => `${row.model} ${row.provider}`,
+    header: ({ column }) => <SortableHeader column={column} label="Model" />,
+    meta: { label: "Model", cellClassName: "max-w-[320px]" },
+    cell: ({ row }) => (
+      <>
+        <p className="truncate font-medium">{row.original.model}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {usageTargetLabel("ai", row.original.provider)}
+        </p>
+      </>
+    ),
+  },
+  ...providerColumns<UsageModelRow>(),
+];
+
+export function UsageByAppTable({
+  rows,
+  isLoading,
+  error,
+  isCurrentMonth,
+  hasDefault,
+  onSetCap,
+}: UsageTableProps<UsageAppRow> & AppColumnOptions) {
+  const columns = useMemo(
+    () => buildAppColumns({ isCurrentMonth, hasDefault, onSetCap }),
+    [isCurrentMonth, hasDefault, onSetCap],
+  );
+  const table = useDataTable({
+    data: rows,
+    columns,
+    getRowId: (row) => row.appRowId,
+    withSorting: true,
+  });
+  return (
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No apps",
+        description:
+          "Apps this organization can call are listed here, with what they spent in the month.",
+      }}
+    />
+  );
+}
+
+export function UsageByMemberTable({
+  rows,
+  isLoading,
+  error,
+}: UsageTableProps<UsageMemberRow>) {
+  const table = useDataTable({
+    data: rows,
+    columns: memberColumns,
+    getRowId: (row) => row.userId || "background",
+    withSorting: true,
+  });
+  return (
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No member usage this month",
+        description: "Nobody made a provider call or an agent tool call.",
+      }}
+    />
+  );
+}
+
+export function UsageByTargetTable({
+  rows,
+  isLoading,
+  error,
+}: UsageTableProps<UsageTargetRow>) {
+  const table = useDataTable({
+    data: rows,
+    columns: targetColumns,
+    getRowId: (row) => `${row.kind}:${row.target}`,
+    withSorting: true,
+  });
+  return (
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No provider calls this month",
+        description: "No AI provider or capability was called.",
+      }}
+    />
+  );
+}
+
+export function UsageByModelTable({
+  rows,
+  isLoading,
+  error,
+}: UsageTableProps<UsageModelRow>) {
+  const table = useDataTable({
+    data: rows,
+    columns: modelColumns,
+    getRowId: (row) => `${row.provider}:${row.model}`,
+    withSorting: true,
+  });
+  return (
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No model calls this month",
+        description: "No AI provider was called.",
+      }}
+    />
+  );
+}

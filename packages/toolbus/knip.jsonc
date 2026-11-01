@@ -1,0 +1,8 @@
+{
+  // Entries come from package.json exports; consumers bundle the source.
+  "project": ["src/**/*.ts"],
+  "ignoreDependencies": [
+    // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/sdk",
+  ],
+}

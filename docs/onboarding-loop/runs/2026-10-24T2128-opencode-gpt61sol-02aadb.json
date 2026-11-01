@@ -1,0 +1,315 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+  "retryOf": null,
+  "startedAt": "2026-10-24T21:28:14.957Z",
+  "durationS": 333,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "opencode",
+    "version": "2.1.3",
+    "model": {
+      "requested": "openai/gpt-6.1-sol",
+      "resolved": "openai/gpt-6.1-sol"
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "truncated",
+    "exitCodes": true,
+    "cost": "harness",
+    "resume": "native"
+  },
+  "cliCommit": "6b142b18da98",
+  "checkoutCommit": "6b142b18da98",
+  "promptVariant": "checkout-present",
+  "promptSha": "217d257562ca",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-24T22:04:42.784Z",
+      "durationS": 0
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T22:04:49.131Z",
+      "durationS": 0
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T22:04:52.447Z",
+      "durationS": 50
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T22:06:09.034Z",
+      "durationS": 4
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T22:06:14.618Z",
+      "durationS": 16
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T22:06:35.099Z",
+      "durationS": 91
+    },
+    {
+      "name": "preflight.lock_wait",
+      "startedAt": "2026-10-24T21:28:14.961Z",
+      "durationS": 345
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-24T21:34:00.000Z",
+      "durationS": 1798
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T22:04:02.506Z",
+      "durationS": 23
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T22:04:29.738Z",
+      "durationS": 218
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T22:08:12.848Z",
+      "durationS": 26
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T22:08:40.270Z",
+      "durationS": 51
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": null,
+      "ms": null,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 3890,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 15673,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 91332,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 1
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 1,
+      "linkSurfacedToPerson": true
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "domain_question",
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "create_app": "not a question: the harness ran create"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "domain_question",
+      "expected": true
+    },
+    {
+      "trigger": "turn_end_without_done",
+      "expected": false
+    }
+  ],
+  "interventions": [
+    {
+      "source": "loop",
+      "kind": "nudge"
+    }
+  ],
+  "interventionNeeded": true,
+  "hesitations": [
+    {
+      "kind": "asked_user",
+      "excerpt": "",
+      "triage": "prompt"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "read output cut at 50146 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "blocked_for_question",
+      "excerpt": "BLOCKED: waiting for your domain.",
+      "triage": "prompt"
+    },
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "Open [your owner setup link](<url>). Enter your name, email, and a password of at least 8 characters, then click **Create owner account**. The l",
+      "triage": "unknown"
+    },
+    {
+      "kind": "repeated_command",
+      "excerpt": "setup --domain apps.<zone> --json",
+      "triage": "cli"
+    },
+    {
+      "kind": "background_killed",
+      "excerpt": "everyapp setup (pid 533) vanished with no exit line: the harness killed its background task",
+      "triage": "harness"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    },
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass-with-intervention",
+    "reasonCode": "nudge",
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": 0.0797,
+    "source": "harness",
+    "tokens": {
+      "input": 36,
+      "output": 686,
+      "cacheRead": 215650,
+      "cacheWrite": 20202
+    },
+    "model": "openai/gpt-6.1-sol"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 7,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

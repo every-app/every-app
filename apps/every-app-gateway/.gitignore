@@ -1,0 +1,26 @@
+node_modules
+package-lock.json
+yarn.lock
+.dev.vars*
+.DS_Store
+.cache
+.env
+.env.local
+.env.production
+.vercel
+# cf build output, generated types and local dev state
+.cloudflare/
+.output
+.nitro
+/build/
+/api/
+/server/build
+/public/build# Sentry Config File
+.env.sentry-build-plugin
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+.tanstack
+/release-package/
+*.tar.gz

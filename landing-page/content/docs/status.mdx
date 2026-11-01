@@ -1,0 +1,62 @@
+---
+title: Check your setup with everyapp status
+description: One command shows your Gateway, your apps and what is left to do, with the command for each.
+---
+
+Run it after setup, after a deploy or install, or when something doesn't open. It changes nothing.
+
+```bash
+everyapp status
+```
+
+Under the report, each thing left to do gets a block ending in **Run:** and the command that fixes it. Run that, then `everyapp status` again, until the last line says **nothing to fix**.
+
+## What it looks like
+
+```text
+Gateway     https://apps.yourcompany.com · self-hosted
+Cloudflare  Your Name's Account
+Owner       none yet
+Access      off
+Release     0.3.0
+TLS         waiting for my-app.apps.yourcompany.com · usually a few minutes
+
+APP     STATUS                     URL                                  DEPLOYED BY          PUBLIC
+crm     ! needs setup              https://crm.apps.yourcompany.com     you@yourcompany.com  4 routes
+my-app  ○ waiting for certificate  https://my-app.apps.yourcompany.com  you@yourcompany.com  1 route
+
+APP  SETTING             WHERE    STATUS
+crm  OPENROUTER_API_KEY  Gateway  ! not set
+crm  CONTEXT_API_KEY     Gateway  ! not set
+
+! No owner yet, so nobody can sign in
+  Apps still deploy. Setup prints a one-time link that creates the owner account.
+  Run: everyapp setup
+! crm needs setup
+  OpenRouter: The research agent's model and its web research.
+  Get it at https://openrouter.ai/settings/keys
+  Run: everyapp configure crm
+```
+
+When nothing is broken, a **Next:** block may suggest what to do now, like turning on Cloudflare Access or inviting people.
+
+## What to do for each state
+
+| You see                                                  | Do this                                                                                 |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **✓ live**                                               | Nothing. People you gave access can open it.                                            |
+| **○ live on first visit**, **○ waiting for certificate** | Nothing. Open it, or wait a few minutes.                                                |
+| **! needs setup**                                        | `everyapp configure <app>`. It asks for each missing key and says where to get it.      |
+| **! never deployed**                                     | Deploy again from the app's folder, or `everyapp delete <app>`.                         |
+| **! not bound**                                          | `everyapp setup`.                                                                       |
+| **✗ Worker missing**, **✗ can't be bound**               | The app's Worker was deleted or renamed in Cloudflare. Deploy again, or delete the app. |
+| **switched off**                                         | An admin turned it off on the Gateway's Admin page.                                     |
+| **Owner none yet**                                       | `everyapp setup`, then open the link it prints.                                         |
+| **Access off**                                           | `everyapp access on` before you invite anyone. [Cloudflare Access](/docs/access)        |
+| **Access on · drift**                                    | `everyapp access on` puts it right.                                                     |
+| **Changed outside everyapp**                             | `everyapp setup` puts the right Gateway back, asking first.                             |
+| **Couldn't check** or **Couldn't list**                  | Cloudflare didn't answer. Run it again. [Troubleshooting](/docs/troubleshooting)        |
+
+If you have several Cloudflare accounts, add `--account-id <id>`. With no Gateway yet, `status` says so and prints the setup command. [Set up your Gateway](/docs/gateway)
+
+Every line, every block and the `--json` output for coding agents are in [everyapp status for agents](/docs/agent/status).

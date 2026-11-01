@@ -1,0 +1,30 @@
+name: Release
+# `everyapp release --publish` packs the app and publishes everyapp-release.tar.gz
+# on a GitHub release, which `everyapp install https://github.com/<owner>/<repo>`
+# installs: v<version> on a push to the default branch, the tag on a v* tag, a
+# draft on a manual run, nothing on a pull request (the build is the check).
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: release-${{ github.ref }}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "^22.18.0", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec everyapp release --publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with: { name: everyapp-release, path: everyapp-release.tar.gz }

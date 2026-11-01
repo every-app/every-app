@@ -1,0 +1,441 @@
+===== root
+Deploy and run EveryApp apps on your own Cloudflare account.
+
+USAGE
+  everyapp <command> [flags]
+
+BUILD AN APP
+  create   Create a new app from the starter template
+  dev      Run the app locally behind a dev Gateway
+  deploy   Deploy the app in this directory
+  release  Pack the app in this directory as a release others can install
+  db       Migrate, query and restore an app's D1 database
+
+RUN A GATEWAY
+  login    Log in to Cloudflare
+  setup    Install or repair the Gateway
+  update   Update the Gateway to this checkout (after git pull)
+  install  Install an app someone published, from GitHub or a release file
+  status   Show the Gateway, its apps and anything to fix
+  delete   Remove an app from the Gateway
+  access   Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  secret   Set, remove and list secrets and Gateway settings
+  email    Manage the addresses an app sends as and receives at
+
+FLAGS
+  -h, --help      Show help for everyapp or a command
+  -v, --version   Show everyapp's version
+      --no-color  Print without colors (also NO_COLOR=1)
+
+EXAMPLES
+  $ everyapp setup --domain apps.example.com
+  $ everyapp create todo
+  $ everyapp deploy
+  $ everyapp install https://github.com/<owner>/<repo>
+
+Run everyapp <command> --help for a command's flags.
+===== login
+USAGE
+  everyapp login [--json] [--verbose]
+  everyapp login --help
+
+Log in to Cloudflare
+
+At a terminal, Cloudflare's own login runs (open its link and enter the code). Piped, or
+with --json, the link and code are printed and the run waits for the login to be approved.
+Already logged in, it says as whom. Unattended runs can set CLOUDFLARE_API_TOKEN and
+CLOUDFLARE_ACCOUNT_ID instead.
+
+FLAGS
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+===== setup
+USAGE
+  everyapp setup [--domain value] [--account-id value] [--force-dns] [--yes] [--json] [--verbose]
+  everyapp setup --help
+
+One command from an empty Cloudflare account (Workers Paid) to a working Gateway and its
+owner, and the one to run when something is off. Run it again any time: it picks up where it
+stopped, and does nothing once everything is there. After a git pull, everyapp update takes
+the newer Gateway from this checkout (setup does that too, on its way).
+
+  1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in
+     the login's accounts; with none, picks the account to install it in
+  2. Picks where the Gateway lives (--domain, or asked): any hostname under one of the
+     account's domains, apps.example.com; apps get one each below it, todo.apps.example.com
+  3. Installs the Gateway from this checkout (apps/every-app-gateway), or repairs it, and
+     waits for its certificate
+  4. Opens a one-time link to create the owner account and waits up to 15 minutes for it;
+     in CI there is no link, and the run ends with a warning to run setup at a terminal
+
+The flags people use: --domain, --account-id, and --yes for a script (it answers setup's own
+questions; never cf's). With --json each step is an NDJSON event; a run that stops on
+something only a person can do exits 2 with action_required.
+Then: everyapp create ../my-app, cd into it, everyapp dev, everyapp deploy.
+More: https://everyapp.com/docs/gateway
+
+FLAGS
+     [--domain]                    Where the Gateway lives: any hostname under one of the account's domains, e.g. apps.example.com (asked at a terminal; remembered after that)
+     [--account-id]                The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)
+     [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+  -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+     [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]      Show every step and progress line, and stream the Gateway's build output to stderr
+  -h  --help                       Print help information and exit
+      --                           All subsequent inputs should be interpreted as arguments
+===== update
+USAGE
+  everyapp update [--account-id value] [--force-dns] [--yes] [--json] [--verbose]
+  everyapp update --help
+
+Deploys the Gateway built from this checkout (apps/every-app-gateway) over the one your
+Cloudflare login finds, where it is, keeping its data, users and apps. It never installs a
+Gateway: with none, it stops and says to run everyapp setup.
+
+  1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in
+     the login's accounts (--account-id when there is one in more than one)
+  2. Upgrades it (migrations first, with a restore point). When it runs this checkout's
+     Gateway already, binds and publishes every registered app if the live Gateway doesn't,
+     and otherwise says it is up to date. A Gateway newer than this checkout is refused
+     (git pull)
+
+The release is named by its version when this checkout's Gateway is that version's release
+(the gateway-v<version> tag), and by the checkout's commit otherwise.
+With --json, each step is an NDJSON event.
+
+FLAGS
+     [--account-id]                The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--force-dns/--no-force-dns]  Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)
+  -y [--yes/--no-yes]              Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+     [--json/--no-json]            Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]      Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                       Print help information and exit
+      --                           All subsequent inputs should be interpreted as arguments
+===== install
+USAGE
+  everyapp install [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--no-wait] [--yes] [--json] [--verbose] <source>
+  everyapp install --help
+
+Installs an app release on your Gateway with no checkout of the app, as everyapp deploy
+would from the app's directory, with nothing to build: <source> is a GitHub repository URL
+(the everyapp-release.tar.gz on its latest release; …/releases/tag/<tag> for that one), a
+tarball's HTTPS URL, or a downloaded everyapp-release.tar.gz. The release holds the app's
+tenant-neutral Build Output, migrations and manifest, checked against its SHA-256. Run it
+again later to update the app. Its secrets come from .everyapp/secrets.env in this directory.
+
+A repository without a release is never built from its URL: clone it, then run
+pnpm install && everyapp deploy in it. Postgres migrations need the app's source, so their
+releases are refused.
+
+No Gateway in any account the login sees? At a terminal it offers to install one at
+apps.<zone> (what everyapp setup does, owner link included), then installs the app; otherwise
+it stops with action_required install_gateway and the setup command to run.
+--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.
+With --json, each step is an NDJSON event.
+
+FLAGS
+     [--gateway]                                                                 The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]                                                              The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--allow-delete-durable-object-data/--no-allow-delete-durable-object-data]  Deploy even though Durable Object classes were removed, deleting their data
+     [--allow-delete-workflows/--no-allow-delete-workflows]                      Deploy even though Workflows were removed, deleting them and their instances
+     [--force-dns/--no-force-dns]                                                Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
+     [--enable-email-routing/--no-enable-email-routing]                          Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+     [--no-wait/--no-no-wait]                                                    Don't wait for the app to go live (a new hostname's certificate included); it goes live on its first visit
+  -y [--yes/--no-yes]                                                            With no Gateway yet, install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+     [--json/--no-json]                                                          Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]                                                    Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                                                                     Print help information and exit
+      --                                                                         All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  source  The app release to install: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz
+===== release
+USAGE
+  everyapp release [--out file] [--json] [--verbose]
+  everyapp release --help
+
+Builds the app in this directory as a deploy would (tenant-neutral), checks its Build Output
+against the app policy and its migrations against its schema, and packs the release
+(default ./everyapp-release.tar.gz) without deploying it: no Gateway and no Cloudflare login,
+so it runs in CI. Attach the tarball to a GitHub release of the app's repository, and
+everyapp install <repository url> installs it on any Gateway.
+With --json, each step is an NDJSON event; done carries the tarball's path and SHA-256.
+
+FLAGS
+     [--out]                   Where to write the release (default: ./everyapp-release.tar.gz)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+===== deploy
+USAGE
+  everyapp deploy [--gateway value] [--account-id value] [--allow-delete-durable-object-data] [--allow-delete-workflows] [--force-dns] [--enable-email-routing] [--no-wait] [--yes] [--json] [--verbose]
+  everyapp deploy --help
+
+Deploys the app in this directory as a private Cloudflare Worker defined by cloudflare.config.ts,
+with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:
+  1. Registers the app in the Gateway's database, which names its Worker, resources and hostname
+  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts
+  3. Installs dependencies and builds (cf build, or the manifest's build command), then checks
+     the built Worker against the app policy and the drizzle migrations against the schema
+  4. Bookmarks the production D1 database, then applies its migrations
+  5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email
+     Routing rules for its inbound addresses (turning routing on for a domain asks first)
+  6. Rebinds the Gateway from this checkout when the app is new (upgrading the Gateway too
+     when the checkout is newer), then waits for the app's hostname to go live
+
+No Gateway in any account the login sees? At a terminal it offers to install one at
+apps.<zone> (what everyapp setup does), then deploys; otherwise it stops with action_required
+install_gateway and the setup command to run. Nothing else asks first. Install and build
+output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the
+Gateway already serves never touches the Gateway.
+
+Someone else's published app: everyapp install <url>. To publish this one: everyapp release.
+--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.
+With --json, each step is an NDJSON event.
+
+FLAGS
+     [--gateway]                                                                 The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]                                                              The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--allow-delete-durable-object-data/--no-allow-delete-durable-object-data]  Deploy even though Durable Object classes were removed, deleting their data
+     [--allow-delete-workflows/--no-allow-delete-workflows]                      Deploy even though Workflows were removed, deleting them and their instances
+     [--force-dns/--no-force-dns]                                                Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)
+     [--enable-email-routing/--no-enable-email-routing]                          Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)
+     [--no-wait/--no-no-wait]                                                    Don't wait for the app to go live (a new hostname's certificate included); it goes live on its first visit
+  -y [--yes/--no-yes]                                                            With no Gateway yet, install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)
+     [--json/--no-json]                                                          Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]                                                    Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                                                                     Print help information and exit
+      --                                                                         All subsequent inputs should be interpreted as arguments
+===== secret
+Set, remove and list secrets and Gateway settings.
+
+USAGE
+  everyapp secret <command> [flags]
+
+COMMANDS
+  set    Set secrets on your app or your Gateway
+  unset  Remove secrets from your app or your Gateway
+  list   List what an app needs set and what is: its own secrets and the Gateway's settings
+
+EXAMPLES
+  $ everyapp secret set GITHUB_TOKEN
+  $ everyapp secret set GITHUB_TOKEN --from-env GH_TOKEN
+  $ everyapp secret set MAIN_SECRET --app analytics
+  $ everyapp secret list crm
+
+Run everyapp secret <command> --help for its flags.
+===== email
+Manage the addresses an app sends as and receives at.
+
+Invites, and apps that don't set their own senders, send as the Gateway's sender.
+Set it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
+
+USAGE
+  everyapp email <command> [flags]
+
+COMMANDS
+  show   Show the app's senders and inbound addresses
+  set    Set senders or inbound addresses, without a deploy
+  unset  Clear senders or inbound addresses, without a deploy
+
+EXAMPLES
+  $ everyapp email show
+  $ everyapp email set --sender '*@mail.example.com'
+  $ everyapp email unset inbound
+
+Run everyapp email <command> --help for its flags.
+===== status
+USAGE
+  everyapp status [--account-id value] [--json] [--verbose]
+  everyapp status --help
+
+One screen, all of it from the Gateway's D1 database and cf, nothing asked of the Gateway:
+its URL and release (and whether this checkout builds it), its owner, the apps its registry
+lists and whether the live Gateway binds them, each hostname's certificate, any deploy in
+progress, and what to run when something is off. With --json, the `done` event's data has
+all of it, `fixes` included: the one state query an agent needs.
+
+FLAGS
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+===== secret set
+USAGE
+  everyapp secret set [--from-env VAR] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  everyapp secret set --help
+
+Gateway settings (AI provider keys, EMAIL_FROM, sign-in clients) go to the Gateway, from any
+directory. Other names go to the app in this directory, or with --app <id> to that app from
+anywhere; the app's everyapp.config.ts must list them under secrets. Values come from a
+hidden prompt, --from-env or stdin, never the command line. Changes are live at once; no
+deploy needed.
+
+Examples:
+  everyapp secret set OPENAI_API_KEY
+  everyapp secret set GITHUB_TOKEN --from-env GITHUB_TOKEN
+  echo "$STRIPE_KEY" | everyapp secret set STRIPE_KEY
+  everyapp secret set MAIN_SECRET --app analytics
+
+See what an app needs and what is set: everyapp secret list [<app>]
+
+FLAGS
+     [--from-env]              Read the value from this environment variable
+     [--app]                   The app whose secret this is (default: the app in this directory)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show which Worker each secret goes to and its new version
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  name...  Secret or Gateway setting
+===== secret list
+USAGE
+  everyapp secret list [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
+  everyapp secret list --help
+
+For one app (the app in this directory, or <app> from anywhere): every setting its manifest
+declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one
+secret set command that opens the app when something required is missing. Elsewhere with no
+app named: the Gateway's names and who set them, then every app's settings. Names only, never
+values.
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print the result as an NDJSON event
+     [--verbose/--no-verbose]  Also list the names everyapp sets itself
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [app]  An app id (default: the app in this directory; elsewhere, every app)
+===== secret unset
+USAGE
+  everyapp secret unset [--yes] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  everyapp secret unset --help
+
+Names go where `secret set` sends them (--app <id> names the app from anywhere). Asks before
+removing; the change is live at once.
+
+Example:
+  everyapp secret unset GITHUB_TOKEN
+
+FLAGS
+  -y [--yes/--no-yes]          Remove without asking
+     [--app]                   The app whose secret this is (default: the app in this directory)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout (never asks)
+     [--verbose/--no-verbose]  Show which Worker each secret is removed from
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  name...  Secret or Gateway setting
+===== email set
+USAGE
+  everyapp email set [--sender pattern]... [--inbound address]... [--enable-email-routing] [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp email set --help
+
+Each flag replaces its whole list; a list you don't name is kept. The Gateway
+picks up a change within 30 seconds, without a deploy. Addresses set before
+the app's first upload are routed by its next deploy.
+
+Requirements:
+  --sender   everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending
+  --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS
+
+Examples:
+  everyapp email set --sender '*@mail.example.com'
+  everyapp email set --inbound reports@mail.example.com
+  everyapp email set --inbound '*@example.com' --enable-email-routing
+
+FLAGS
+     [--sender]...                                       Address the app may send as: '*@<domain>' or one address (repeat, up to 20)
+     [--inbound]...                                      Address whose mail goes to the app: '*@<apex>' or one address (repeat, up to 50)
+     [--enable-email-routing/--no-enable-email-routing]  Turn on Email Routing for inbound domains without asking
+     [--manifest]                                        Path to everyapp.config.ts, if it isn't in this directory
+     [--gateway]                                         The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]                                      The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]                                  Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]                            Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                                             Print help information and exit
+      --                                                 All subsequent inputs should be interpreted as arguments
+===== email show
+USAGE
+  everyapp email show [--manifest path] [--gateway value] [--account-id value] [--json] [--verbose]
+  everyapp email show --help
+
+Lists the app's senders and inbound addresses on the Gateway, and whether each
+inbound address is routed.
+
+Examples:
+  everyapp email show
+  everyapp email show --manifest ../analytics/everyapp.config.ts
+
+FLAGS
+     [--manifest]              Path to everyapp.config.ts, if it isn't in this directory
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+===== db query
+USAGE
+  everyapp db query [--local] [--file path] [--binding name] [--gateway value] [--account-id value] [--yes] [--json] [--verbose] [<sql>]
+  everyapp db query --help
+
+Run SQL against the app's D1 database
+
+Runs against the production database unless --local is set; SQL that changes it is
+confirmed first (--yes skips that). Rows print as a table; use --json for machine output.
+
+EXAMPLES
+  $ everyapp db query "select * from todos limit 5"
+  $ everyapp db query --local "select count(*) from events"
+  $ everyapp db query --file scripts/backfill.sql
+
+FLAGS
+     [--local/--no-local]      Query the local database `everyapp dev` uses
+     [--file]                  Read the SQL from a file (- for stdin)
+     [--binding]               D1 binding to query (default: the migrations binding, or the first)
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--yes/--no-yes]          Run SQL that changes the production database without asking
+     [--json/--no-json]        Print rows as NDJSON instead of a table
+     [--verbose/--no-verbose]  Show every step
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [sql]  SQL to run
+===== delete
+USAGE
+  everyapp delete [--gateway value] [--account-id value] [--purge] [--yes] [--json] [--verbose] [<id>]
+  everyapp delete --help
+
+Deletes the app in the Gateway's D1 database (its name stays reserved to your organization) and
+removes its Gateway binding and hostname, with a redeploy of the Gateway from this checkout.
+The app's Worker and data are kept unless --purge, which deletes them for good.
+Asks first at a terminal; elsewhere it needs --yes.
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--purge/--no-purge]      Also delete the app's Worker and helper Workers, D1 databases, KV namespaces, Workflows and Email Routing routes
+  -y [--yes/--no-yes]          Delete without asking (with --purge too, without typing the app id)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [id]  App id (default: the app in this directory)

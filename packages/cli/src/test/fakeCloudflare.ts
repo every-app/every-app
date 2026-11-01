@@ -1,0 +1,2156 @@
+/**
+ * A Cloudflare account for end-to-end tests of the deploy plane, behind
+ * FakeCf: D1 databases are real SQLite (queries and `migrations apply` run
+ * against them), KV namespaces exist by title, `cf deploy --prebuilt` reads
+ * the Build Output it would upload and validates it with @cloudflare/config,
+ * and `cf build` builds an app's tenant-neutral Worker config with the SDK's
+ * real everyAppWorker(), in the environment the build is given. Zones hold DNS records, a
+ * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
+ * whole list, taken from other Workers, each with its own certificate pack
+ * that outlives it, listing the zone apex, the hostname and its wildcard,
+ * and its placeholder DNS record, `AAAA 100::`, which goes with the
+ * domain) and creates or takes over the Workflows the Worker
+ * defines. An account without a workers.dev subdomain (`workersDevSubdomain`)
+ * stops a deploy once the version and its Custom Domains are live, as cf
+ * did on a fresh account on 2026-10-24. Hyperdrive configs keep their origin, password apart, as the
+ * API does (it never returns one). Each zone has Email Routing: its
+ * settings, rules and catch-all (`emailRouting`), enabled on a domain by
+ * adding Cloudflare's MX records there, with rules that may send mail only
+ * to a Worker that exists. R2 buckets exist by name, each with a count of
+ * objects (a bucket with any is refused on delete, as R2 does). Queues
+ * exist by id with their consumers, which a deploy publishes from the
+ * Worker's `queue` triggers once its version is live; `--no-provision`
+ * refuses a producer to a missing queue (without it cf creates the queue),
+ * a missing dead-letter queue is created all the same, a Worker that
+ * consumes a queue can't be deleted and a queue a Worker binds can't be
+ * either (all as seen live on 2026-10-24). Vectorize indexes exist by name
+ * with their config, and a deploy binding one that doesn't exist is refused
+ * before anything is uploaded, as cf's is. AI Gateways exist by id with
+ * their settings, created and updated (a PUT: what an update leaves out
+ * goes back to its default) from a body file, refusing an id Cloudflare
+ * refuses, as cf 1.0.0-beta.14 showed live on 2026-10-24.
+ * `api.fetch` is the account's REST API, for the hosted
+ * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
+ * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
+ * or sent.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { OutputWorkerSchema } from "@cloudflare/config";
+import {
+  everyAppAuxiliaryWorker,
+  everyAppWorker,
+} from "@every-app/sdk/cloudflare";
+import { APP_BINDING_PREFIX } from "@every-app/perimeter/manifest";
+import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
+import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
+import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "./sqliteD1";
+import { FakeCloudflareApi, type FakeDispatchNamespace } from "./fakeCloudflareApi";
+
+export const ACCOUNT_ID = "0123456789abcdef0123456789abcd01";
+
+interface DeployedWorker {
+  versions: string[];
+  /** The worker.config.json of the live version. */
+  config: Record<string, any>;
+  secrets: Record<string, string>;
+}
+
+interface RecordedDeploy {
+  workerName: string;
+  config: Record<string, any>;
+  secrets: Record<string, string> | null;
+  args: string[];
+  mode: RecordedCfCall["mode"];
+}
+
+interface FakeZone {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface FakeDnsRecord {
+  zoneId: string;
+  name: string;
+  type: string;
+  content: string;
+  /** Given when first listed, so a delete finds the record. */
+  id?: string;
+}
+
+interface FakeCertificatePack {
+  id: string;
+  zoneId: string;
+  hosts: string[];
+  /** "advanced" (a Custom Domain's) unless a test adds the zone's Universal SSL pack. */
+  type?: string;
+  /**
+   * "active" unless a test puts the pack on its way out ("pending_deletion")
+   * or stuck ("deletion_timed_out"); as cf does, the list shows only active
+   * packs unless asked for `--status all`.
+   */
+  status?: string;
+}
+
+interface FakeWorkflow {
+  scriptName: string;
+  className: string;
+  instances: Map<string, { status: string; params?: unknown }>;
+}
+
+/** A queue's consumer: the Worker, its settings as the API keeps them, its dead-letter queue. */
+interface FakeQueueConsumer {
+  script: string;
+  settings: Record<string, number | null>;
+  deadLetterQueue?: string;
+}
+
+interface FakeQueue {
+  name: string;
+  /** By consumer id. */
+  consumers: Map<string, FakeQueueConsumer>;
+}
+
+interface FakeHyperdrive {
+  name: string;
+  origin: {
+    scheme: string;
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+  };
+  /** Kept apart: `list` never shows it, like Cloudflare's API. */
+  password: string;
+  /** As the API keeps it: absent until a body sets it (Cloudflare caches by default). */
+  caching?: { disabled?: boolean };
+}
+
+/** A Vectorize index as the API keeps it: its shape, fixed at creation. */
+interface FakeVectorizeIndex {
+  config: { dimensions: number; metric: string; preset?: string };
+  created_on: string;
+}
+
+/**
+ * What Cloudflare makes an index from each preset: the model's dimensions,
+ * and cosine.
+ */
+const VECTORIZE_PRESET_SHAPES: Record<string, { dimensions: number; metric: string }> = {
+  "@cf/baai/bge-small-en-v1.5": { dimensions: 384, metric: "cosine" },
+  "@cf/baai/bge-base-en-v1.5": { dimensions: 768, metric: "cosine" },
+  "@cf/baai/bge-large-en-v1.5": { dimensions: 1024, metric: "cosine" },
+  "openai/text-embedding-ada-002": { dimensions: 1536, metric: "cosine" },
+  "cohere/embed-multilingual-v2.0": { dimensions: 768, metric: "cosine" },
+};
+
+/** A routing rule or a zone's catch-all, as Email Routing keeps it. */
+/** A Secrets Store secret, with the value Cloudflare never returns. */
+interface FakeStoreSecret {
+  name: string;
+  value: string;
+  scopes: string[];
+}
+
+interface FakeEmailRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  matchers: Array<{ type: string; field?: string; value?: string }>;
+  actions: Array<{ type: string; value?: string[] }>;
+}
+
+/** A zone's Email Routing. */
+interface FakeEmailRouting {
+  enabled: boolean;
+  rules: Map<string, FakeEmailRule>;
+  catchAll: FakeEmailRule;
+}
+
+/** The account's Zero Trust organization, identity providers, reusable policies and Access applications. */
+interface FakeZeroTrust {
+  organization: Record<string, unknown> | null;
+  identityProviders: Map<string, Record<string, unknown>>;
+  policies: Map<string, Record<string, unknown>>;
+  applications: Map<string, Record<string, unknown>>;
+}
+
+/**
+ * What the Access API refuses in an organization PUT although GET returns
+ * it (`access.api.error.invalid_org_config`, seen live on 2026-10-23).
+ */
+const ORGANIZATION_READ_ONLY = new Set([
+  "is_ui_read_only",
+  "login_design",
+  "strict_service_token_auth",
+  "service_token_inactivity",
+  "disable_end_user_app_creation",
+  "created_at",
+  "updated_at",
+]);
+
+/** A Cloudflare API refusal, as cf 1.0.0-beta.14 prints it: the code, the message, the status and the path. */
+function apiError(code: number, message: string, status: string, path: string): FakeCfResponse {
+  return {
+    exitCode: 1,
+    stderr: `\n┌ APIError\n│ [${code}] ${message}\n│ ${status} · HTTP /accounts/${ACCOUNT_ID}/${path}\n└\n`,
+  };
+}
+
+/** An Access API refusal. */
+function accessApiError(code: number, message: string, status: string, path: string): FakeCfResponse {
+  return apiError(code, message, status, `access/${path}`);
+}
+
+/**
+ * What a new AI Gateway has besides what its create says (as
+ * `cf ai-gateway gateways get` printed a new one on loop-1, 2026-10-25),
+ * and what an update (a PUT) puts back for a setting it leaves out.
+ */
+const AI_GATEWAY_DEFAULTS: Record<string, unknown> = {
+  collect_logs: true,
+  cache_ttl: 0,
+  authentication: false,
+  rate_limiting_interval: 0,
+  rate_limiting_limit: 0,
+  rate_limiting_technique: null,
+  log_management: 10_000_000,
+  log_management_strategy: "DELETE_OLDEST",
+  logpush_public_key: null,
+  cache_invalidate_on_update: false,
+  logpush: false,
+  wholesale: true,
+  byok_only: false,
+  fedramp_level: null,
+  fedramp_mode: null,
+  zdr: false,
+  log_classification: false,
+  internal: false,
+  store_id: "",
+  is_default: false,
+  workers_ai_billing_mode: "postpaid",
+  retry_max_attempts: null,
+  retry_delay: null,
+  retry_backoff: null,
+};
+
+/** What an AI Gateway's create or update can't set. */
+const AI_GATEWAY_READ_ONLY = new Set([
+  "id",
+  "created_at",
+  "modified_at",
+  "wholesale",
+  "internal",
+  "is_default",
+  "fedramp_level",
+  "fedramp_mode",
+]);
+
+/** The MX records Email Routing adds (and locks) on a domain it routes. */
+const EMAIL_ROUTING_MX = [
+  "route1.mx.cloudflare.net",
+  "route2.mx.cloudflare.net",
+  "route3.mx.cloudflare.net",
+];
+
+/**
+ * An app's cloudflare.config.ts as `cf build` evaluates it in production:
+ * its Worker and its helper Workers (the Vite plugin's auxiliaryWorkers),
+ * built with the SDK from the manifest and the app root.
+ */
+export type FakeAppConfig = (options: {
+  manifest: EveryAppCliManifest;
+  root: string;
+}) => {
+  worker: Record<string, any>;
+  auxiliaryWorkers?: Record<string, any>[];
+};
+
+/** An app whose cloudflare.config.ts is everyAppWorker() and its helpers, as they are. */
+const plainAppConfig: FakeAppConfig = ({ manifest, root }) => ({
+  worker: everyAppWorker({
+    manifest,
+    entrypoint: "./src/entry.worker.ts",
+    ctx: { mode: "production" },
+    root,
+  }),
+  auxiliaryWorkers: (manifest.workers ?? []).map((helper) =>
+    everyAppAuxiliaryWorker({
+      manifest,
+      worker: helper.name,
+      entrypoint: `./src/${helper.name}.ts`,
+      ctx: { mode: "production" },
+      root,
+    }),
+  ),
+});
+
+/** What each `cf workflows instances <action>` makes of an instance. */
+const INSTANCE_STATUS: Record<string, string> = {
+  pause: "paused",
+  resume: "running",
+  terminate: "terminated",
+  restart: "queued",
+};
+
+const WORKERS_OUTPUT = ".cloudflare/output/v0/workers";
+const WORKER_CONFIG = `${WORKERS_OUTPUT}/default/worker.config.json`;
+
+function cfError(message: string): FakeCfResponse {
+  return { exitCode: 1, stderr: `┌ Error\n│ ${message}\n└\n` };
+}
+
+/**
+ * cf 1.0.0-beta.14's strict-mode abort at the upload: on stdout, with no
+ * box on stderr, and exit 1.
+ */
+const STRICT_ABORT: FakeCfResponse = {
+  exitCode: 1,
+  stdout:
+    "Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n",
+};
+
+/** A missing Workflow, as cf 1.0.0-beta.14 prints the API's answer. */
+function workflowNotFound(path: string): FakeCfResponse {
+  return {
+    exitCode: 1,
+    stderr: `\n┌ APIError\n│ [10200] workflows.api.error.workflow.not_found\n│ 404 Not Found · HTTP /accounts/${ACCOUNT_ID}/workflows/${path}\n└\n`,
+  };
+}
+
+/**
+ * What cf answers (exit 1) when the version went live but its Custom
+ * Domains didn't: at a terminal, a person declined to move one from another
+ * Worker, and cf skips the whole list (cf 1.0.0-beta.14's own wording).
+ */
+export function customDomainsSkipped(
+  workerName: string,
+  domains: readonly string[],
+): FakeCfResponse {
+  const skipped =
+    domains.length === 1
+      ? `Publishing to Custom Domain "${domains[0]}" was skipped, fix conflict and try again`
+      : `Publishing to ${domains.length} Custom Domains was skipped, fix conflicts and try again`;
+  return {
+    exitCode: 1,
+    stderr: [
+      "┌ Error",
+      `│ Trigger configuration for "${workerName}" was only partially updated:`,
+      "│",
+      "│   Custom domains:",
+      `│     - ${skipped}`,
+      "│",
+      "│ Successful trigger changes were not rolled back.",
+      "└",
+      "",
+    ].join("\n"),
+  };
+}
+
+/** The DNS record Cloudflare keeps at a Workers Custom Domain (listed as such, proxied). */
+const PLACEHOLDER_RECORD = { type: "AAAA", content: "100::" } as const;
+
+const isPlaceholderRecord = (record: FakeDnsRecord) =>
+  record.type === PLACEHOLDER_RECORD.type && record.content === PLACEHOLDER_RECORD.content;
+
+/** cf's refusal on an account that hasn't registered its workers.dev subdomain. */
+function workersDevSubdomainMissing(): FakeCfResponse {
+  return cfError(
+    `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`,
+  );
+}
+
+/**
+ * What cf does with a destructive command it can't confirm: without
+ * `--force` and a terminal it declines, says so, and exits 0.
+ */
+function unconfirmed(call: RecordedCfCall, warning: string): FakeCfResponse | null {
+  if (call.args.includes("--force")) return null;
+  return {
+    stderr: `? ${warning} Continue?\n  (non-interactive; pass --force to confirm)\nAborted.\n`,
+  };
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+export class FakeCloudflare {
+  readonly accountId = ACCOUNT_ID;
+  readonly cf = new FakeCf();
+  readonly databases = new Map<string, { name: string; db: SqliteD1 }>();
+  readonly namespaces = new Map<string, { title: string }>();
+  readonly workers = new Map<string, DeployedWorker>();
+  /** Workflows by name: `cf deploy` creates or takes over a Worker's own. */
+  readonly workflows = new Map<string, FakeWorkflow>();
+  /** Hyperdrive configs by id. */
+  readonly hyperdrive = new Map<string, FakeHyperdrive>();
+  /** R2 buckets by name, each with how many objects it holds. */
+  readonly buckets = new Map<string, { objects: number }>();
+  /**
+   * Secrets Store stores by id, each with its secrets by id. None to begin
+   * with, as on an account whose dashboard never opened Secrets Store
+   * (cf can't make one): {@link addSecretsStore}.
+   */
+  readonly secretsStores = new Map<string, { name: string; secrets: Map<string, FakeStoreSecret> }>();
+  /** Queues by id. */
+  readonly queues = new Map<string, FakeQueue>();
+  /**
+   * Workers whose bundle exports no `queue()` handler: their upload goes
+   * live, then cf stops publishing their consumers (code 11001, seen live).
+   */
+  readonly queueHandlerMissing = new Set<string>();
+  /** Vectorize indexes by name. */
+  readonly vectorizeIndexes = new Map<string, FakeVectorizeIndex>();
+  /** AI Gateways by id, as `cf ai-gateway gateways get` prints each. */
+  readonly aiGateways = new Map<string, Record<string, unknown>>();
+  readonly deploys: RecordedDeploy[] = [];
+  /** `cf d1 time-travel restore`s, in order (the data isn't rewound). */
+  readonly restores: Array<{ databaseId: string; bookmark: string }> = [];
+  /** Apps `cf build` can build, by app root. */
+  readonly apps = new Map<string, EveryAppCliManifest>();
+  /**
+   * An app's own cloudflare.config.ts (and Vite plugin's auxiliaryWorkers),
+   * by app root, for `cf build` to run instead of the plain everyAppWorker()
+   * build: what a port with extra bindings, crons or secrets builds.
+   */
+  readonly appConfigs = new Map<string, FakeAppConfig>();
+  /** The next `cf deploy` fails with this stderr box message. */
+  failNextDeploy: string | null = null;
+  /**
+   * The next `cf deploy` aborts in strict mode, as cf does unattended for a
+   * Worker last changed in the dashboard or through the API.
+   */
+  strictAbortNextDeploy = false;
+  /** The next `cf deploy` uploads nothing and exits 0, as when a person declines its prompt. */
+  declineNextDeploy = false;
+  /** Changes what `cf build` writes, as an app's own cloudflare.config.ts could. */
+  editBuild: ((config: Record<string, any>) => void) | null = null;
+  /**
+   * Runs once a `cf deploy` has its version live, before cf publishes the
+   * Worker's Custom Domains: what it returns is cf's answer instead, and
+   * the domains stay as they were (cf stopped, or skipped them all:
+   * customDomainsSkipped).
+   */
+  afterUpload: ((workerName: string) => FakeCfResponse | undefined) | null = null;
+  readonly zones: FakeZone[] = [
+    { id: "zone-1", name: "example.com", status: "active" },
+  ];
+  /** The zones' records: the operator's, and each Custom Domain's own placeholder (`AAAA 100::`). */
+  readonly dnsRecords: FakeDnsRecord[] = [];
+  /**
+   * Whether the account has registered its workers.dev subdomain. Without
+   * one, cf's deploy puts the version live and publishes its Custom
+   * Domains, then stops asking for the subdomain (seen live 2026-10-24).
+   */
+  workersDevSubdomain = true;
+  /** Email Routing, by zone id; a zone's starts off, its catch-all dropping mail. */
+  readonly emailRouting = new Map<string, FakeEmailRouting>();
+  /**
+   * The account never opened Zero Trust: every Access call answers
+   * `[9999] access.api.error.not_enabled` 403, as a fresh account did live
+   * on 2026-10-24 (whatever `zeroTrust` holds), except `organization
+   * create`, which works and enables Access (seen live the same day on the
+   * loop's test account).
+   */
+  accessNotEnabled = false;
+  /** The account never enabled R2: every bucket call answers `[10042] Please enable R2 ...` 403 (seen live the same day). */
+  r2NotEnabled = false;
+  /** Zero Trust: no organization until one is created (or a test sets one). */
+  readonly zeroTrust: FakeZeroTrust = {
+    organization: null,
+    identityProviders: new Map(),
+    policies: new Map(),
+    applications: new Map(),
+  };
+  /** Hostname → the Worker it is a Custom Domain of. */
+  readonly customDomains = new Map<string, string>();
+  readonly certificatePacks: FakeCertificatePack[] = [];
+  /** Workers for Platforms dispatch namespaces, by name, with their scripts. */
+  readonly dispatchNamespaces = new Map<string, FakeDispatchNamespace>();
+  /** The REST API over this account; `api.fetch` is what a client calls. */
+  readonly api = new FakeCloudflareApi({
+    accountId: ACCOUNT_ID,
+    databases: this.databases,
+    workers: this.workers,
+    dispatchNamespaces: this.dispatchNamespaces,
+    createDatabase: (name) => this.createDatabase(name),
+    nextId: () => (this.counter += 1),
+  });
+  private counter = 0;
+  /** When each Worker's live version went out (`workers deployments list`'s created_on). */
+  readonly deployedAt = new Map<string, string>();
+
+  /** A clock that only moves forward, one second per tick, from mid-October 2026. */
+  clock(): string {
+    return new Date(1_792_000_000_000 + (this.counter += 1) * 1000).toISOString();
+  }
+
+  constructor() {
+    const d1 = sqliteD1Script({});
+    this.cf
+      .on(["auth", "whoami"], {
+        stdout: JSON.stringify({
+          authenticated: true,
+          email: "dev@example.com",
+          accounts: [{ id: ACCOUNT_ID, name: "Acme" }],
+        }),
+      })
+      .on(["zones", "list"], (call) => {
+        const name = flag(call.args, "--name");
+        const page = Number(flag(call.args, "--page") ?? "1");
+        return {
+          stdout: JSON.stringify(
+            name !== undefined
+              ? this.zones.filter((zone) => zone.name === name)
+              : page === 1
+                ? this.zones
+                : [],
+          ),
+        };
+      })
+      .on(["dns", "records", "list"], (call) => ({
+        stdout: JSON.stringify(
+          this.dnsRecords
+            .filter(
+              (record) =>
+                record.zoneId === flag(call.args, "-z") &&
+                record.name === flag(call.args, "--name-exact"),
+            )
+            .map((record) => ({ ...record, id: (record.id ??= `record-${(this.counter += 1)}`) })),
+        ),
+      }))
+      .on(["dns", "records", "delete"], (call) => {
+        const declined = unconfirmed(call, "This permanently deletes the DNS record.");
+        if (declined) return declined;
+        const index = this.dnsRecords.findIndex(
+          (record) => record.id === call.args[3] && record.zoneId === flag(call.args, "-z"),
+        );
+        if (index < 0) return cfError("Record does not exist. [code: 81044]");
+        this.dnsRecords.splice(index, 1);
+        return { stdout: JSON.stringify({ id: call.args[3] }) };
+      })
+      .on(["ssl", "certificate-packs", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? this.certificatePacks
+                .filter((pack) => pack.zoneId === flag(call.args, "-z"))
+                .map(({ id, hosts, type, status }) => ({ id, type: type ?? "advanced", hosts, status: status ?? "active" }))
+                .filter((pack) => pack.status === "active" || flag(call.args, "--status") === "all")
+            : [],
+        ),
+      }))
+      .on(["ssl", "certificate-packs", "delete"], (call) => {
+        const declined = unconfirmed(call, "This permanently deletes the resource.");
+        if (declined) return declined;
+        const index = this.certificatePacks.findIndex(
+          (pack) => pack.id === call.args[3],
+        );
+        if (index < 0) return cfError("Certificate pack not found [code: 1400]");
+        this.certificatePacks.splice(index, 1);
+        return { stdout: "{}" };
+      })
+      .on(["d1", "list"], (call) => ({
+        stdout: JSON.stringify(
+          [...this.databases]
+            .filter(([, entry]) =>
+              entry.name.includes(flag(call.args, "--name") ?? ""),
+            )
+            .map(([uuid, entry]) => ({ uuid, name: entry.name })),
+        ),
+      }))
+      .on(["d1", "create"], (call) => {
+        const name = flag(call.args, "--name")!;
+        const uuid = this.createDatabase(name).uuid;
+        return { stdout: JSON.stringify({ uuid, name }) };
+      })
+      .on(["d1", "delete"], (call) => {
+        const declined = unconfirmed(call, "This permanently deletes the D1 database and all of its data.");
+        if (declined) return declined;
+        this.databases.delete(call.args[2]!);
+        return { stdout: "{}" };
+      })
+      .on(["d1", "time-travel", "get-bookmark"], () => ({
+        stdout: JSON.stringify({ bookmark: `bookmark-${(this.counter += 1)}` }),
+      }))
+      .on(["d1", "time-travel", "restore"], (call) => {
+        const declined = unconfirmed(call, "This reverts the D1 database to a previous point in time.");
+        if (declined) return declined;
+        this.restores.push({ databaseId: call.args[3]!, bookmark: flag(call.args, "--bookmark")! });
+        return { stdout: JSON.stringify({ previous_bookmark: `bookmark-${(this.counter += 1)}` }) };
+      })
+      .on(["d1"], (call) => {
+        const id = call.args[1] === "query" ? call.args[2] : call.args[3];
+        const entry = this.databases.get(id ?? "");
+        return entry
+          ? sqliteD1Script({ [id!]: entry.db })(call)
+          : d1(call);
+      })
+      .on(["kv", "namespaces", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? [...this.namespaces].map(([id, ns]) => ({ id, title: ns.title }))
+            : [],
+        ),
+      }))
+      .on(["kv", "namespaces", "create"], (call) => {
+        const title = flag(call.args, "--title")!;
+        const id = this.createNamespace(title);
+        return { stdout: JSON.stringify({ id, title }) };
+      })
+      .on(["kv", "namespaces", "delete"], (call) => {
+        const declined = unconfirmed(call, "This operation deletes the selected Workers KV namespace and all of its key-value pairs.");
+        if (declined) return declined;
+        this.namespaces.delete(call.args[3]!);
+        return { stdout: "{}" };
+      })
+      // As `/workers/workers` lists them: each with what references it, its Custom Domains among them.
+      .on(["workers", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? [...this.workers.keys()].map((name) => ({
+                id: `worker-${name}`,
+                name,
+                tags: [],
+                created_on: "2026-10-12T00:00:00Z",
+                references: {
+                  workers: this.workersBinding(name).map((worker) => ({ id: `worker-${worker}`, name: worker })),
+                  domains: [...this.customDomains]
+                    .filter(([, worker]) => worker === name)
+                    .map(([hostname]) => {
+                      const zone = this.zoneOf(hostname);
+                      return {
+                        id: `domain-${hostname}`,
+                        hostname,
+                        zone_id: zone?.id ?? null,
+                        zone_name: zone?.name ?? null,
+                      };
+                    }),
+                },
+              }))
+            : [],
+        ),
+      }))
+      .on(["workers", "deployments", "list"], (call) => {
+        const worker = this.workers.get(flag(call.args, "--worker")!);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        return {
+          stdout: JSON.stringify({
+            deployments: [
+              {
+                id: "deployment",
+                created_on: this.deployedAt.get(flag(call.args, "--worker")!) ?? "2026-10-12T00:00:00Z",
+                versions: [{ version_id: worker.versions.at(-1), percentage: 100 }],
+              },
+            ],
+          }),
+        };
+      })
+      .on(["workers", "secrets", "list"], (call) => {
+        const worker = this.workers.get(flag(call.args, "--worker")!);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        return {
+          stdout: JSON.stringify(
+            Object.keys(worker.secrets).map((name) => ({ name, type: "secret_text" })),
+          ),
+        };
+      })
+      // Like the API: one new version of the live one with every change.
+      .on(["workers", "secrets", "bulk"], (call) => {
+        const workerName = flag(call.args, "--worker")!;
+        const worker = this.workers.get(workerName);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        // Like the API: the patch is read as JSON only from `--body @<file>`
+        // (`--file` uploads an octet stream), under `secrets`, each entry
+        // naming itself; anything else is a patch of nothing.
+        const body = flag(call.args, "--body") ?? "";
+        const patch = body.startsWith("@")
+          ? (JSON.parse(call.files[path.basename(body.slice(1))]!) as {
+              secrets?: Record<string, { name: string; type: string; text: string } | null>;
+            })
+          : {};
+        const secrets = { ...worker.secrets };
+        for (const [name, change] of Object.entries(patch.secrets ?? {})) {
+          if (change === null) delete secrets[name];
+          else if (change.name === name && change.type === "secret_text") {
+            secrets[name] = change.text;
+          }
+        }
+        this.workers.set(workerName, {
+          ...worker,
+          versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
+          secrets,
+        });
+        this.deployedAt.set(workerName, this.clock());
+        return { stdout: "{}" };
+      })
+      // Like the API: a new version of the live one, without the secret.
+      .on(["workers", "secrets", "delete"], (call) => {
+        const declined = unconfirmed(call, "This will permanently delete the Worker script secret.");
+        if (declined) return declined;
+        const workerName = flag(call.args, "--worker")!;
+        const worker = this.workers.get(workerName);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        const name = call.args[3]!;
+        if (!(name in worker.secrets)) {
+          return cfError(`Secret ${name} not found. [code: 10056]`);
+        }
+        const { [name]: _deleted, ...secrets } = worker.secrets;
+        this.workers.set(workerName, {
+          ...worker,
+          versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
+          secrets,
+        });
+        this.deployedAt.set(workerName, this.clock());
+        return { stdout: "{}" };
+      })
+      .on(["workers", "delete"], (call) => {
+        const declined = unconfirmed(call, "This will permanently delete the Worker and its associated versions and deployments.");
+        if (declined) return declined;
+        const name = call.args[2]!;
+        if (!this.workers.has(name)) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        // As the API: a Worker that consumes a queue stays, references or not.
+        if (this.consumedBy(name).length > 0) {
+          return apiError(
+            10064,
+            "Cannot delete this Worker as it is a consumer for a Queue. Remove it from the Queue's consumers first, then retry.",
+            "403 Forbidden",
+            `workers/scripts/${name}`,
+          );
+        }
+        // As the API: a Worker another Worker binds (a service binding or
+        // one of its Durable Objects) stays unless `--delete-with-references`.
+        const referencedBy = this.workersBinding(name);
+        if (referencedBy.length > 0 && !call.args.includes("--delete-with-references")) {
+          return cfError(
+            `Worker "${name}" is referenced by ${referencedBy.map((worker) => `"${worker}"`).join(", ")}; pass --delete-with-references to delete it anyway. [code: 10118]`,
+          );
+        }
+        this.workers.delete(name);
+        // Its Custom Domains go with it, and their records (their certificate packs stay).
+        for (const [host, worker] of [...this.customDomains]) {
+          if (worker === name) this.dropCustomDomain(host);
+        }
+        return { stdout: "{}" };
+      })
+      .on(["workflows", "get"], (call) => {
+        const workflow = this.workflows.get(call.args[2]!);
+        if (!workflow) return workflowNotFound(call.args[2]!);
+        const instances: Record<string, number> = {};
+        for (const instance of workflow.instances.values()) {
+          instances[instance.status] = (instances[instance.status] ?? 0) + 1;
+        }
+        return {
+          stdout: JSON.stringify({
+            name: call.args[2],
+            class_name: workflow.className,
+            script_name: workflow.scriptName,
+            instances,
+          }),
+        };
+      })
+      .on(["workflows", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? [...this.workflows]
+                .filter(([name]) => name.includes(flag(call.args, "--search") ?? ""))
+                .map(([name, workflow]) => ({
+                  name,
+                  class_name: workflow.className,
+                  script_name: workflow.scriptName,
+                }))
+            : [],
+        ),
+      }))
+      .on(["workflows", "delete"], (call) => {
+        const declined = unconfirmed(call, "This operation permanently deletes the Workflow.");
+        if (declined) return declined;
+        if (!this.workflows.delete(call.args[2]!)) {
+          return workflowNotFound(call.args[2]!);
+        }
+        return { stdout: JSON.stringify({ status: "ok", success: true }) };
+      })
+      .on(["workflows", "instances"], (call) => this.workflowInstances(call))
+      .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
+      .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["secrets-store"], (call) => this.secretsStoreCommand(call))
+      .on(["queues"], (call) => this.queuesCommand(call))
+      .on(["vectorize"], (call) => this.vectorizeCommand(call))
+      .on(["ai-gateway", "gateways"], (call) => this.aiGatewayCommand(call))
+      .on(["email-routing"], (call) => this.emailRoutingCommand(call))
+      .on(["zero-trust"], (call) => this.zeroTrustCommand(call))
+      .on(["build"], (call) => this.build(call))
+      .on(["deploy"], (call) => this.deploy(call));
+  }
+
+  createDatabase(name: string): { uuid: string; db: SqliteD1 } {
+    const uuid = `${(this.counter += 1).toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`;
+    const db = createSqliteD1();
+    this.databases.set(uuid, { name, db });
+    return { uuid, db };
+  }
+
+  createNamespace(title: string): string {
+    const id = (this.counter += 1).toString(16).padStart(32, "0");
+    this.namespaces.set(id, { title });
+    return id;
+  }
+
+  database(name: string): SqliteD1 {
+    const entry = [...this.databases.values()].find((db) => db.name === name);
+    if (!entry) throw new Error(`no database ${name}`);
+    return entry.db;
+  }
+
+  namespaceId(title: string): string | undefined {
+    return [...this.namespaces].find(([, ns]) => ns.title === title)?.[0];
+  }
+
+  /** The release the live gateway version runs (its EVERYAPP_RELEASE). */
+  gatewayRelease(): { version: string; sha256: string } | null {
+    return (
+      this.workers.get("every-app-gateway")?.config["env"]?.EVERYAPP_RELEASE?.value ??
+      null
+    );
+  }
+
+  /** The hostnames the gateway Worker is published under. */
+  gatewayDomains(): string[] {
+    return [...this.customDomains]
+      .filter(([, worker]) => worker === "every-app-gateway")
+      .map(([host]) => host)
+      .sort();
+  }
+
+  /** The app Workers the live gateway binds (a named Gateway's: pass its Worker). */
+  gatewayBindings(gatewayWorker = "every-app-gateway"): string[] {
+    const env = this.workers.get(gatewayWorker)?.config["env"] ?? {};
+    return Object.keys(env)
+      .filter((name) => name.startsWith(APP_BINDING_PREFIX))
+      .map((name) => name.slice(APP_BINDING_PREFIX.length))
+      .sort();
+  }
+
+  /** A Hyperdrive config, by name. */
+  hyperdriveConfig(name: string): (FakeHyperdrive & { id: string }) | undefined {
+    const entry = [...this.hyperdrive].find(([, config]) => config.name === name);
+    return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /** Make a Secrets Store, as a person does once in the dashboard; returns its id. */
+  addSecretsStore(name = "default_secrets_store"): string {
+    const id = (this.counter += 1).toString(16).padStart(32, "0");
+    this.secretsStores.set(id, { name, secrets: new Map() });
+    return id;
+  }
+
+  /** A Secrets Store secret by name, in any store, with its store's id and its own. */
+  storeSecret(name: string): (FakeStoreSecret & { id: string; storeId: string }) | undefined {
+    for (const [storeId, store] of this.secretsStores) {
+      for (const [id, secret] of store.secrets) {
+        if (secret.name === name) return { id, storeId, ...secret };
+      }
+    }
+    return undefined;
+  }
+
+  /** A zone's Email Routing, as the API has it before anyone changes it. */
+  emailRoutingOf(zoneId: string): FakeEmailRouting {
+    let routing = this.emailRouting.get(zoneId);
+    if (!routing) {
+      routing = {
+        enabled: false,
+        rules: new Map(),
+        catchAll: {
+          id: `catch-all-${zoneId}`,
+          name: "",
+          enabled: true,
+          matchers: [{ type: "all" }],
+          actions: [{ type: "drop" }],
+        },
+      };
+      this.emailRouting.set(zoneId, routing);
+    }
+    return routing;
+  }
+
+  /** The rules in a zone that take `address`, in the order they were made. */
+  emailRulesFor(zoneId: string, address: string): FakeEmailRule[] {
+    return [...this.emailRoutingOf(zoneId).rules.values()].filter((rule) =>
+      rule.matchers.some((matcher) => matcher.value === address),
+    );
+  }
+
+  /**
+   * `cf email-routing settings get|enable` and `rules
+   * create|get|update|delete|list-account|catch-all get|update`, zone by
+   * zone (`-z <zone id>`). Enabling a domain adds Email Routing's MX
+   * records there (the apex turns the zone's routing on); a rule's Worker
+   * must exist, and two rules can't take one address.
+   */
+  /**
+   * Cloudflare Access as the API behaves: one organization per account (a
+   * GET without one is a 404), identity providers, reusable policies, and
+   * applications validated as Cloudflare validates them (policies and
+   * providers must exist; a destination takes at most 25 overrides, each a
+   * path with at most one `*` per segment), each with an AUD tag.
+   */
+  private zeroTrustCommand(call: RecordedCfCall): FakeCfResponse {
+    const [, group, second, third, fourth] = call.args;
+    if (this.accessNotEnabled) {
+      if (group === "organization" && second === "create") {
+        this.accessNotEnabled = false;
+      } else {
+        const path = group === "organization" ? "organizations" : group === "identity-providers" ? "identity_providers" : (second ?? "apps");
+        return accessApiError(9999, "access.api.error.not_enabled", "403 Forbidden", path);
+      }
+    }
+    const zt = this.zeroTrust;
+    const body = (): Record<string, any> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!);
+    };
+    const page = () => Number(flag(call.args, "--page") ?? "1");
+    const list = (items: unknown[]) => ({ stdout: JSON.stringify(page() === 1 ? items : []) });
+    const now = () => this.clock();
+
+    if (group === "organization") {
+      if (second === "get") {
+        return zt.organization
+          ? { stdout: JSON.stringify(zt.organization) }
+          : accessApiError(12130, "access.api.error.not_found", "404 Not Found", "organizations");
+      }
+      if (second === "create") {
+        if (zt.organization) {
+          return accessApiError(12001, "access.api.error.organization_exists", "409 Conflict", "organizations");
+        }
+        const given = body() ?? {
+          name: flag(call.args, "--name"),
+          auth_domain: flag(call.args, "--auth-domain"),
+          ...(flag(call.args, "--session-duration") ? { session_duration: flag(call.args, "--session-duration") } : {}),
+        };
+        if (typeof given["auth_domain"] !== "string") {
+          return accessApiError(12062, "access.api.error.invalid_org_config", "400 Bad Request", "organizations");
+        }
+        zt.organization = {
+          name: given["name"] ?? given["auth_domain"],
+          allow_authenticate_via_warp: false,
+          deny_unmatched_requests: false,
+          deny_unmatched_requests_exempted_zone_names: [],
+          warp_auth_non_browser_401: false,
+          is_ui_read_only: false,
+          login_design: {},
+          strict_service_token_auth: true,
+          created_at: now(),
+          ...given,
+          updated_at: now(),
+        };
+        return { stdout: JSON.stringify(zt.organization) };
+      }
+      if (second === "update") {
+        if (!zt.organization) {
+          return accessApiError(12130, "access.api.error.not_found", "404 Not Found", "organizations");
+        }
+        const given = body() ?? {};
+        if (Object.keys(given).some((key) => ORGANIZATION_READ_ONLY.has(key))) {
+          return accessApiError(12062, "access.api.error.invalid_org_config", "400 Bad Request", "organizations");
+        }
+        zt.organization = { ...zt.organization, ...given, updated_at: now() };
+        return { stdout: JSON.stringify(zt.organization) };
+      }
+    }
+
+    if (group === "identity-providers") {
+      if (second === "list") return list([...zt.identityProviders.values()]);
+      if (second === "create") {
+        const given = body() ?? {};
+        const id = `idp-${(this.counter += 1)}`;
+        const provider = { id, uid: id, config: {}, ...given };
+        zt.identityProviders.set(id, provider);
+        return { stdout: JSON.stringify(provider) };
+      }
+    }
+
+    if (group === "access" && second === "policies") {
+      if (third === "list") {
+        return list(
+          [...zt.policies.values()].map((policy) => ({
+            ...policy,
+            app_count: [...zt.applications.values()].filter((application) =>
+              (application["policies"] as string[]).includes(policy["id"] as string),
+            ).length,
+          })),
+        );
+      }
+      if (third === "create") {
+        const given = body() ?? {};
+        const id = `policy-${(this.counter += 1)}`;
+        const policy = { id, uid: id, exclude: [], require: [], reusable: true, created_at: now(), ...given, updated_at: now() };
+        zt.policies.set(id, policy);
+        return { stdout: JSON.stringify(policy) };
+      }
+      if (third === "update") {
+        const policy = zt.policies.get(fourth ?? "");
+        if (!policy) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `policies/${fourth}`);
+        // PUT replaces the policy: what the body leaves out is gone, as at Cloudflare.
+        const updated = {
+          id: policy["id"],
+          uid: policy["uid"],
+          created_at: policy["created_at"],
+          reusable: policy["reusable"],
+          ...(body() ?? {}),
+          updated_at: now(),
+        };
+        zt.policies.set(policy["id"] as string, updated);
+        return { stdout: JSON.stringify(updated) };
+      }
+      if (third === "delete") {
+        const declined = unconfirmed(call, "This permanently deletes the Access policy.");
+        if (declined) return declined;
+        const policy = zt.policies.get(fourth ?? "");
+        if (!policy) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `policies/${fourth}`);
+        // Like the API: a reusable policy an application still uses can't go.
+        const users = [...zt.applications.values()].filter((application) =>
+          (application["policies"] as string[]).includes(policy["id"] as string),
+        );
+        if (users.length > 0) {
+          return accessApiError(12060, "access.api.error.policy_in_use", "400 Bad Request", `policies/${fourth}`);
+        }
+        zt.policies.delete(policy["id"] as string);
+        return { stdout: JSON.stringify({ id: fourth }) };
+      }
+    }
+
+    if (group === "access" && second === "applications") {
+      const expand = (application: Record<string, unknown>) => ({
+        ...application,
+        policies: (application["policies"] as string[]).map((id, index) => ({
+          ...zt.policies.get(id),
+          precedence: index + 1,
+        })),
+      });
+      const invalid = (given: Record<string, any>): FakeCfResponse | null => {
+        for (const id of (given["policies"] ?? []) as string[]) {
+          if (!zt.policies.has(id)) {
+            return accessApiError(12130, `access.api.error.policy_not_found: ${id}`, "404 Not Found", "apps");
+          }
+        }
+        for (const id of (given["allowed_idps"] ?? []) as string[]) {
+          if (!zt.identityProviders.has(id)) {
+            return accessApiError(12130, `access.api.error.idp_not_found: ${id}`, "404 Not Found", "apps");
+          }
+        }
+        for (const destination of (given["destinations"] ?? []) as Array<Record<string, any>>) {
+          const overrides = (destination["overrides"] ?? []) as Array<Record<string, string>>;
+          if (overrides.length > 25) {
+            return accessApiError(12060, "access.api.error.invalid_request: a destination takes at most 25 overrides", "400 Bad Request", "apps");
+          }
+          for (const override of overrides) {
+            const pattern = override["path_pattern"] ?? "";
+            const oneWildcardPerSegment = pattern
+              .split("/")
+              .every((segment) => (segment.match(/\*/g) ?? []).length <= 1);
+            if (!pattern.startsWith("/") || pattern.length > 512 || !oneWildcardPerSegment || override["behavior"] !== "public") {
+              return accessApiError(12060, `access.api.error.invalid_request: invalid override ${pattern}`, "400 Bad Request", "apps");
+            }
+          }
+        }
+        return null;
+      };
+      if (third === "list") return list([...zt.applications.values()].map(expand));
+      if (third === "get") {
+        const application = zt.applications.get(fourth ?? "");
+        return application
+          ? { stdout: JSON.stringify(expand(application)) }
+          : accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+      }
+      if (third === "create") {
+        const given = body() ?? {};
+        const refused = invalid(given);
+        if (refused) return refused;
+        const id = `app-${(this.counter += 1)}`;
+        const application = {
+          id,
+          uid: id,
+          aud: (this.counter += 1).toString(16).padStart(64, "a"),
+          app_launcher_visible: true,
+          allowed_idps: [],
+          auto_redirect_to_identity: false,
+          session_duration: "24h",
+          enable_binding_cookie: false,
+          http_only_cookie_attribute: true,
+          options_preflight_bypass: false,
+          eager_redirect_cookie_setting: true,
+          tags: [],
+          policies: [],
+          created_at: now(),
+          ...given,
+          updated_at: now(),
+        };
+        zt.applications.set(id, application);
+        return { stdout: JSON.stringify(expand(application)) };
+      }
+      if (third === "update") {
+        const application = zt.applications.get(fourth ?? "");
+        if (!application) return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+        const given = body() ?? {};
+        const refused = invalid(given);
+        if (refused) return refused;
+        // Like the API: PUT replaces the application; its identity stays.
+        const updated = {
+          ...given,
+          id: application["id"],
+          uid: application["uid"],
+          aud: application["aud"],
+          created_at: application["created_at"],
+          updated_at: now(),
+        };
+        zt.applications.set(application["id"] as string, updated);
+        return { stdout: JSON.stringify(expand(updated)) };
+      }
+      if (third === "delete") {
+        const declined = unconfirmed(call, "This permanently deletes the Access application.");
+        if (declined) return declined;
+        if (!zt.applications.delete(fourth ?? "")) {
+          return accessApiError(12130, "access.api.error.not_found", "404 Not Found", `apps/${fourth}`);
+        }
+        return { stdout: JSON.stringify({ id: fourth }) };
+      }
+    }
+    return cfError(`Unknown zero-trust command: ${call.args.slice(1).join(" ")}`);
+  }
+
+  private emailRoutingCommand(call: RecordedCfCall): FakeCfResponse {
+    const zoneId = flag(call.args, "-z");
+    const zone = this.zones.find((candidate) => candidate.id === zoneId);
+    if (!zone) return cfError(`Could not route to /zones/${zoneId}, perhaps your object identifier is invalid? [code: 7003]`);
+    const routing = this.emailRoutingOf(zone.id);
+    const settings = () => ({
+      id: `settings-${zone.id}`,
+      name: zone.name,
+      enabled: routing.enabled,
+      status: routing.enabled ? "ready" : "unconfigured",
+    });
+    const body = (): Omit<FakeEmailRule, "id"> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!);
+    };
+    const checkWorker = (rule: Omit<FakeEmailRule, "id">): FakeCfResponse | null => {
+      for (const action of rule.actions) {
+        const worker = action.type === "worker" ? action.value?.[0] : undefined;
+        if (worker !== undefined && !this.workers.has(worker)) {
+          return cfError(`Worker ${worker} does not exist on this account [code: 2020]`);
+        }
+      }
+      return null;
+    };
+    const [, group, action] = call.args;
+    if (group === "settings" && action === "get") {
+      return { stdout: JSON.stringify(settings()) };
+    }
+    if (group === "enable") {
+      const domain = flag(call.args, "--name") ?? zone.name;
+      if (domain !== zone.name && !domain.endsWith(`.${zone.name}`)) {
+        return cfError(`${domain} is not in the zone ${zone.name} [code: 2007]`);
+      }
+      if (domain === zone.name) routing.enabled = true;
+      for (const content of EMAIL_ROUTING_MX) {
+        if (
+          !this.dnsRecords.some(
+            (record) =>
+              record.zoneId === zone.id &&
+              record.name === domain &&
+              record.type === "MX" &&
+              record.content === content,
+          )
+        ) {
+          this.dnsRecords.push({ zoneId: zone.id, name: domain, type: "MX", content });
+        }
+      }
+      return { stdout: JSON.stringify(settings()) };
+    }
+    if (group === "disable") {
+      const declined = unconfirmed(call, "This disables Email Routing for the zone.");
+      if (declined) return declined;
+      routing.enabled = false;
+      // Cloudflare removes the MX records it added for the apex.
+      for (let index = this.dnsRecords.length - 1; index >= 0; index -= 1) {
+        const record = this.dnsRecords[index]!;
+        if (
+          record.zoneId === zone.id &&
+          record.name === zone.name &&
+          record.type === "MX" &&
+          EMAIL_ROUTING_MX.includes(record.content)
+        ) {
+          this.dnsRecords.splice(index, 1);
+        }
+      }
+      return { stdout: JSON.stringify(settings()) };
+    }
+    if (group !== "rules") return cfError(`unknown command email-routing ${group}`);
+    if (action === "catch-all") {
+      if (call.args[3] === "get") return { stdout: JSON.stringify(routing.catchAll) };
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      routing.catchAll = { ...routing.catchAll, ...request };
+      return { stdout: JSON.stringify(routing.catchAll) };
+    }
+    if (action === "list-account") {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...routing.rules.values()].slice((page - 1) * perPage, page * perPage),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      const address = request.matchers.find((matcher) => matcher.value)?.value;
+      if (address && this.emailRulesFor(zone.id, address).length > 0) {
+        return cfError(`A rule for ${address} already exists [code: 2032]`);
+      }
+      const id = (this.counter += 1).toString(16).padStart(32, "0");
+      const rule = { id, ...request };
+      routing.rules.set(id, rule);
+      return { stdout: JSON.stringify(rule) };
+    }
+    const id = call.args[3]!;
+    const rule = routing.rules.get(id);
+    if (!rule) return cfError(`Rule not found [code: 2020]`);
+    if (action === "get") return { stdout: JSON.stringify(rule) };
+    if (action === "update") {
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      routing.rules.set(id, { ...request, id });
+      return { stdout: JSON.stringify(routing.rules.get(id)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This operation permanently deletes an Email Routing rule.");
+      if (declined) return declined;
+      routing.rules.delete(id);
+      return { stdout: JSON.stringify(rule) };
+    }
+    return cfError(`unknown command email-routing rules ${action}`);
+  }
+
+  /** The other Workers whose live config binds `name` (a service binding or a Durable Object of its). */
+  private workersBinding(name: string): string[] {
+    return [...this.workers]
+      .filter(
+        ([other, worker]) =>
+          other !== name &&
+          Object.values(worker.config["env"] ?? {}).some(
+            (binding: any) => ["worker", "durable-object"].includes(binding?.type) && binding.worker === name,
+          ),
+      )
+      .map(([other]) => other)
+      .sort();
+  }
+
+  /** The zone that holds `host`, the longest match, as Cloudflare resolves a Custom Domain. */
+  private zoneOf(host: string): FakeZone | undefined {
+    return [...this.zones]
+      .sort((a, b) => b.name.length - a.name.length)
+      .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
+  }
+
+  /**
+   * `cf r2 buckets list|create|delete`, as cf 1.0.0-beta.14 prints them: a
+   * list is `{ buckets: [{ name, creation_date }] }` (filtered by
+   * `--name-contains`), a create (`--name`) refuses a name that is taken
+   * (`[code: 10004]`), and a delete refuses a bucket with objects in it.
+   */
+  private r2Command(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2];
+    if (this.r2NotEnabled) {
+      return apiError(10042, "Please enable R2 through the Cloudflare Dashboard.", "403 Forbidden", "r2/buckets");
+    }
+    if (action === "list") {
+      const contains = flag(call.args, "--name-contains") ?? "";
+      return {
+        stdout: JSON.stringify({
+          buckets: [...this.buckets.keys()]
+            .filter((name) => name.includes(contains))
+            .sort()
+            .map((name) => ({ name, creation_date: "2026-10-12T00:00:00.000Z" })),
+        }),
+      };
+    }
+    if (action === "create") {
+      const name = flag(call.args, "--name") ?? "";
+      if (!name) return cfError("Missing required argument: name");
+      if (this.buckets.has(name)) {
+        return cfError("The bucket you tried to create already exists, and you own it. [code: 10004]");
+      }
+      this.buckets.set(name, { objects: 0 });
+      return { stdout: JSON.stringify({ name, creation_date: "2026-10-24T00:00:00.000Z" }) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the R2 bucket.");
+      if (declined) return declined;
+      const name = call.args[3]!;
+      const bucket = this.buckets.get(name);
+      if (!bucket) return cfError("The specified bucket does not exist. [code: 10006]");
+      if (bucket.objects > 0) {
+        return cfError("The bucket you tried to delete is not empty. [code: 10008]");
+      }
+      this.buckets.delete(name);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command r2 buckets ${action}`);
+  }
+
+  /** The queue named `name`, with its id. */
+  queue(name: string): (FakeQueue & { id: string }) | undefined {
+    const entry = [...this.queues].find(([, queue]) => queue.name === name);
+    return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /** Create a queue, as `cf queues create` (or cf's own provisioning) does. */
+  createQueue(name: string): string {
+    const id = `queue-${(this.counter += 1).toString(16).padStart(8, "0")}`;
+    this.queues.set(id, { name, consumers: new Map() });
+    return id;
+  }
+
+  /** The queues whose consumer is this Worker. */
+  private consumedBy(workerName: string): string[] {
+    return [...this.queues.values()]
+      .filter((queue) => [...queue.consumers.values()].some((consumer) => consumer.script === workerName))
+      .map((queue) => queue.name);
+  }
+
+  /** The Workers whose live version binds the queue `name`. */
+  private queueProducers(name: string): string[] {
+    return [...this.workers]
+      .filter(([, worker]) =>
+        Object.values(worker.config["env"] ?? {}).some(
+          (binding: any) => binding.type === "queue" && binding.name === name,
+        ),
+      )
+      .map(([workerName]) => workerName);
+  }
+
+  /**
+   * `cf queues list|create|get|delete` and `cf queues consumers
+   * list|delete`, in the shapes cf 1.0.0-beta.14 printed on loop-1.
+   */
+  /** Messages `cf queues messages push` sent, by queue name, with the body file's JSON. */
+  readonly pushedMessages: Array<{ queue: string; body: unknown }> = [];
+
+  private queuesCommand(call: RecordedCfCall): FakeCfResponse {
+    const listed = (id: string, queue: FakeQueue) => ({
+      queue_id: id,
+      queue_name: queue.name,
+      settings: { delivery_delay: 0, message_retention_period: 345600 },
+      created_on: "2026-10-24T00:00:00.000Z",
+      modified_on: "2026-10-24T00:00:00.000Z",
+      producers_total_count: this.queueProducers(queue.name).length,
+      producers: this.queueProducers(queue.name).map((script) => ({ script, type: "worker" })),
+      consumers_total_count: queue.consumers.size,
+      consumers: [...queue.consumers].map(([consumerId, consumer]) => ({
+        script: consumer.script,
+        settings: consumer.settings,
+        consumer_id: consumerId,
+        type: "worker",
+      })),
+    });
+    const notFound = (id: string) =>
+      apiError(11000, `Queue '${id}' not found.`, "404 Not Found", `queues/${id}`);
+    if (call.args[1] === "consumers") {
+      const action = call.args[2];
+      const queueId = flag(call.args, "--queue-id") ?? "";
+      const queue = this.queues.get(queueId);
+      if (!queue) return notFound(queueId);
+      if (action === "list") {
+        return {
+          stdout: JSON.stringify(
+            [...queue.consumers].map(([consumerId, consumer]) => ({
+              script: consumer.script,
+              ...(consumer.deadLetterQueue ? { dead_letter_queue: consumer.deadLetterQueue } : {}),
+              settings: consumer.settings,
+              type: "worker",
+              queue_name: queue.name,
+              queue_id: queueId,
+              consumer_id: consumerId,
+              created_on: "2026-10-24T00:00:00.000Z",
+            })),
+          ),
+        };
+      }
+      if (action === "delete") {
+        const declined = unconfirmed(call, "This deletes the consumer.");
+        if (declined) return declined;
+        if (!queue.consumers.delete(call.args[3]!)) {
+          return apiError(11000, `Consumer '${call.args[3]}' not found.`, "404 Not Found", `queues/${queueId}/consumers`);
+        }
+        return { stdout: "{}" };
+      }
+      return cfError(`unknown command queues consumers ${action}`);
+    }
+    const action = call.args[1];
+    if (action === "messages" && call.args[2] === "push") {
+      const pushedTo = this.queues.get(call.args[3]!);
+      if (!pushedTo) return notFound(call.args[3]!);
+      this.pushedMessages.push({ queue: pushedTo.name, body: JSON.parse(call.files["body.json"] ?? "null") });
+      return { stdout: "{}" };
+    }
+    if (action === "list") {
+      return { stdout: JSON.stringify([...this.queues].map(([id, queue]) => listed(id, queue))) };
+    }
+    if (action === "create") {
+      const name = flag(call.args, "--queue-name") ?? "";
+      if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) {
+        return apiError(11003, `Queue name '${name}' is invalid: invalid queue name`, "400 Bad Request", "queues");
+      }
+      if (this.queue(name)) {
+        return apiError(
+          11009,
+          `Queue name '${name}' is already taken. Please use a different name and try again.`,
+          "409 Conflict",
+          "queues",
+        );
+      }
+      const id = this.createQueue(name);
+      const { producers: _p, producers_total_count: _pc, consumers: _c, consumers_total_count: _cc, ...created } =
+        listed(id, this.queues.get(id)!);
+      return { stdout: JSON.stringify(created) };
+    }
+    const id = call.args[2]!;
+    const queue = this.queues.get(id);
+    if (!queue) return notFound(id);
+    if (action === "get") return { stdout: JSON.stringify(listed(id, queue)) };
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the queue and its messages.");
+      if (declined) return declined;
+      if (this.queueProducers(queue.name).length > 0) {
+        return apiError(
+          11005,
+          `Cannot delete queue '${queue.name}' that is still referenced by a binding in a Worker.`,
+          "400 Bad Request",
+          `queues/${id}`,
+        );
+      }
+      this.queues.delete(id);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command queues ${action}`);
+  }
+
+  /**
+   * `cf vectorize get|list|create|delete`, by index name: a create reads its
+   * body from the `--body @<file>` cf is handed (`{ name, config }`, with
+   * dimensions and metric or a preset), and refuses a name that is taken;
+   * a get or delete of a missing index answers 404. The texts and codes are
+   * cf 1.0.0-beta.14's, seen live on 2026-10-24 (a deleted index answers
+   * `[3005] vectorize.index.deleted` 410 for a while there, which tests
+   * script with `cf.override`).
+   */
+  private vectorizeCommand(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[1];
+    const shown = (name: string, index: FakeVectorizeIndex) => ({
+      created_on: index.created_on,
+      modified_on: index.created_on,
+      name,
+      description: "",
+      config: index.config,
+    });
+    const indexPath = (name: string) => `vectorize/v2/indexes/${name}`;
+    const notFound = (name: string) =>
+      apiError(3000, `vectorize.index.not_found - Index name "${name}"`, "404 Not Found", indexPath(name));
+    if (action === "list") {
+      return {
+        stdout: JSON.stringify(
+          [...this.vectorizeIndexes].sort(([a], [b]) => a.localeCompare(b)).map(([name, index]) => shown(name, index)),
+        ),
+      };
+    }
+    if (action === "create") {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return cfError("A body is required");
+      const request = JSON.parse(call.files[path.basename(file.slice(1))]!) as {
+        name?: string;
+        config?: { dimensions?: number; metric?: string; preset?: string };
+      };
+      const name = request.name ?? "";
+      if (!/^[a-z][a-z0-9-]{0,63}$/.test(name)) {
+        return apiError(3001, `vectorize.index.invalid_name - Index name "${name}"`, "400 Bad Request", "vectorize/v2/indexes");
+      }
+      if (this.vectorizeIndexes.has(name)) {
+        return apiError(3002, `vectorize.index.duplicate_name - Index name "${name}"`, "409 Conflict", "vectorize/v2/indexes");
+      }
+      const preset = request.config?.preset;
+      const shape = preset
+        ? VECTORIZE_PRESET_SHAPES[preset]
+        : { dimensions: request.config?.dimensions ?? 0, metric: request.config?.metric ?? "" };
+      if (!shape || shape.dimensions < 32 || shape.dimensions > 1536) {
+        return apiError(3003, "vectorize.index.invalid_config - Dimensions must be in range: [32, 1536]", "400 Bad Request", "vectorize/v2/indexes");
+      }
+      const index: FakeVectorizeIndex = {
+        config: { ...shape, ...(preset ? { preset } : {}) },
+        created_on: this.clock(),
+      };
+      this.vectorizeIndexes.set(name, index);
+      return { stdout: JSON.stringify(shown(name, index)) };
+    }
+    const name = call.args[2]!;
+    const index = this.vectorizeIndexes.get(name);
+    if (action === "get") {
+      return index ? { stdout: JSON.stringify(shown(name, index)) } : notFound(name);
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the Vectorize index.");
+      if (declined) return declined;
+      if (!index) return notFound(name);
+      this.vectorizeIndexes.delete(name);
+      return { stdout: "" };
+    }
+    return cfError(`unknown command vectorize ${action}`);
+  }
+
+  /**
+   * `cf ai-gateway gateways get|list|create|update|delete`. A create or
+   * update takes its settings from the `--body @<file>` cf is handed, with
+   * the fields Cloudflare requires; an update is a PUT, so a setting it
+   * leaves out goes back to its default. Ids are Cloudflare's: lowercase
+   * letters and digits joined by single hyphens, at most 64.
+   */
+  private aiGatewayCommand(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2];
+    const at = (id?: string) => `ai-gateway/gateways${id ? `/${id}` : ""}`;
+    const body = (): Record<string, unknown> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!) as Record<string, unknown>;
+    };
+    const required = [
+      "cache_invalidate_on_update",
+      "cache_ttl",
+      "collect_logs",
+      "rate_limiting_interval",
+      "rate_limiting_limit",
+    ];
+    const settings = (request: Record<string, unknown>) => ({
+      ...AI_GATEWAY_DEFAULTS,
+      ...Object.fromEntries(
+        Object.entries(request).filter(([key]) => !AI_GATEWAY_READ_ONLY.has(key)),
+      ),
+    });
+    if (action === "list") {
+      const search = flag(call.args, "--search") ?? "";
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...this.aiGateways.values()]
+            .filter((gateway) => String(gateway["id"]).includes(search))
+            .slice((page - 1) * perPage, page * perPage),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request) {
+        return cfError("--cache-invalidate-on-update is required (or pass --body with this field set).");
+      }
+      const id = String(request["id"] ?? "");
+      if (id.length > 64) {
+        return apiError(7001, "String must contain at most 64 character(s)", "400 Bad Request", at());
+      }
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+        return apiError(7001, "not valid ID format", "400 Bad Request", at());
+      }
+      const missing = required.find((field) => request[field] === undefined);
+      if (missing) return apiError(7001, `${missing}: Required`, "400 Bad Request", at());
+      if (this.aiGateways.has(id)) {
+        return apiError(7001, "An object with this id already exists", "400 Bad Request", at());
+      }
+      const now = this.clock();
+      this.aiGateways.set(id, { id, created_at: now, modified_at: now, ...settings(request) });
+      return { stdout: JSON.stringify(this.aiGateways.get(id)) };
+    }
+    const id = call.args[3]!;
+    const gateway = this.aiGateways.get(id);
+    if (!gateway) return apiError(7002, "Not Found", "404 Not Found", at(id));
+    if (action === "get") return { stdout: JSON.stringify(gateway) };
+    if (action === "update") {
+      const request = body() ?? {};
+      const missing = required.find((field) => request[field] === undefined);
+      if (missing) return apiError(7001, `${missing}: Required`, "400 Bad Request", at(id));
+      this.aiGateways.set(id, {
+        id,
+        created_at: gateway["created_at"],
+        modified_at: this.clock(),
+        ...settings(request),
+      });
+      return { stdout: JSON.stringify(this.aiGateways.get(id)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(
+        call,
+        "This permanently deletes the gateway, its configuration, and its stored logs. Requests sent to this gateway will fail. This action cannot be undone.",
+      );
+      if (declined) return declined;
+      this.aiGateways.delete(id);
+      return { stdout: JSON.stringify(gateway) };
+    }
+    return cfError(`unknown command ai-gateway gateways ${action}`);
+  }
+
+  /**
+   * `cf secrets-store stores list` and `cf secrets-store secrets
+   * list|create|get|delete`, as Cloudflare's API answers them: a list
+   * filters by `--search` across name and comment, a create reads its list
+   * of secrets from the `--body @<file>` cf is handed (the value never on
+   * the command line) and refuses a name the store has, and nothing listed
+   * ever carries a value.
+   */
+  private secretsStoreCommand(call: RecordedCfCall): FakeCfResponse {
+    const [, group, action] = call.args;
+    const page = <T>(items: T[]): T[] => {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const at = Number(flag(call.args, "--page") ?? "1");
+      return items.slice((at - 1) * perPage, at * perPage);
+    };
+    const shown = (storeId: string, id: string, secret: FakeStoreSecret) => ({
+      id,
+      name: secret.name,
+      store_id: storeId,
+      scopes: secret.scopes,
+      status: "active",
+      comment: "",
+      created: "2026-10-24T00:00:00.000Z",
+      modified: "2026-10-24T00:00:00.000Z",
+    });
+    if (group === "stores" && action === "list") {
+      return {
+        stdout: JSON.stringify(
+          page([...this.secretsStores].map(([id, store]) => ({ id, name: store.name }))),
+        ),
+      };
+    }
+    if (group !== "secrets") return cfError(`unknown command secrets-store ${group} ${action}`);
+    const storeId = action === "create" ? call.args[3]! : (flag(call.args, "--store-id") ?? "");
+    const store = this.secretsStores.get(storeId);
+    if (!store) {
+      return apiError(1001, "secrets_store.store_not_found", "404 Not Found", `secrets_store/stores/${storeId}`);
+    }
+    if (action === "list") {
+      const search = flag(call.args, "--search") ?? "";
+      return {
+        stdout: JSON.stringify(
+          page(
+            [...store.secrets]
+              .filter(([, secret]) => secret.name.includes(search))
+              .map(([id, secret]) => shown(storeId, id, secret)),
+          ),
+        ),
+      };
+    }
+    if (action === "create") {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return cfError("A body is required");
+      const request = JSON.parse(call.files[path.basename(file.slice(1))]!) as Array<{
+        name: string;
+        value: string;
+        scopes?: string[];
+      }>;
+      const created: Array<ReturnType<typeof shown>> = [];
+      for (const entry of request) {
+        if ([...store.secrets.values()].some((secret) => secret.name === entry.name)) {
+          return cfError(`A secret named ${entry.name} already exists in this store`);
+        }
+        const id = (this.counter += 1).toString(16).padStart(32, "0");
+        const secret = { name: entry.name, value: entry.value, scopes: entry.scopes ?? [] };
+        store.secrets.set(id, secret);
+        created.push(shown(storeId, id, secret));
+      }
+      return { stdout: JSON.stringify(created) };
+    }
+    const id = call.args[3]!;
+    const secret = store.secrets.get(id);
+    if (!secret) {
+      return apiError(1002, "secrets_store.secret_not_found", "404 Not Found", `secrets_store/stores/${storeId}/secrets/${id}`);
+    }
+    if (action === "get") return { stdout: JSON.stringify(shown(storeId, id, secret)) };
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the secret.");
+      if (declined) return declined;
+      store.secrets.delete(id);
+      return { stdout: "null" };
+    }
+    return cfError(`unknown command secrets-store secrets ${action}`);
+  }
+
+  /**
+   * `cf hyperdrive list|create|update|delete`: a create or update reads its
+   * body from the `--body @<file>` cf is handed, which holds the password.
+   */
+  private hyperdriveCommand(call: RecordedCfCall): FakeCfResponse {
+    const listed = (id: string, config: FakeHyperdrive) => ({
+      id,
+      name: config.name,
+      origin: config.origin,
+      caching: { disabled: config.caching?.disabled ?? false },
+    });
+    const body = () => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!) as {
+        name?: string;
+        origin?: FakeHyperdrive["origin"] & { password: string };
+        caching?: FakeHyperdrive["caching"];
+      };
+    };
+    const action = call.args[1];
+    if (action === "list") {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...this.hyperdrive]
+            .slice((page - 1) * perPage, page * perPage)
+            .map(([id, config]) => listed(id, config)),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request?.name || !request.origin) return cfError("A body is required");
+      if (this.hyperdriveConfig(request.name)) {
+        return cfError(`A Hyperdrive config named ${request.name} already exists [code: 2017]`);
+      }
+      const { password, ...origin } = request.origin;
+      const id = (this.counter += 1).toString(16).padStart(32, "0");
+      this.hyperdrive.set(id, {
+        name: request.name,
+        origin,
+        password,
+        ...(request.caching ? { caching: request.caching } : {}),
+      });
+      return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
+    }
+    const id = call.args[2]!;
+    const config = this.hyperdrive.get(id);
+    if (!config) return cfError(`Hyperdrive config ${id} not found [code: 2005]`);
+    // A PATCH: what the body leaves out stays as it was.
+    if (action === "update") {
+      const request = body();
+      const { password, ...origin } = request?.origin ?? {
+        ...config.origin,
+        password: config.password,
+      };
+      this.hyperdrive.set(id, {
+        ...config,
+        origin,
+        password,
+        ...(request?.caching ? { caching: request.caching } : {}),
+      });
+      return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the Hyperdrive config.");
+      if (declined) return declined;
+      this.hyperdrive.delete(id);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command hyperdrive ${action}`);
+  }
+
+  /**
+   * The gateway's DISPATCHER binding over one of this account's dispatch
+   * namespaces, as Workers for Platforms answers `get(name, args, options)`:
+   * "Worker not found" for a script the namespace doesn't hold, else a
+   * fetcher that `respond` answers with the script as its latest upload
+   * left it. Each call is recorded with its options (limits, outbound).
+   */
+  dispatcher(
+    namespace: string,
+    respond: (
+      request: Request,
+      script: { name: string; bindings: Record<string, any>[]; tags: string[] },
+    ) => Response | Promise<Response> = () => new Response("dispatched app"),
+  ) {
+    const calls: Array<{ name: string; options: Record<string, any> | undefined }> = [];
+    return {
+      calls,
+      get: (name: string, _args?: unknown, options?: Record<string, any>) => {
+        calls.push({ name, options });
+        const script = this.dispatchNamespaces.get(namespace)?.scripts.get(name);
+        if (!script) throw new Error(`Worker not found: ${name}`);
+        return {
+          fetch: async (request: Request) =>
+            respond(request, {
+              name,
+              bindings: script.bindings,
+              tags: script.tags,
+            }),
+        };
+      },
+    };
+  }
+
+  /** `cf workflows instances create|list|get|<status change>`. */
+  private workflowInstances(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2]!;
+    const name =
+      action === "create" ? call.args[3]! : flag(call.args, "--workflow-name")!;
+    const workflow = this.workflows.get(name);
+    if (!workflow) return workflowNotFound(name);
+    if (action === "create") {
+      const id = flag(call.args, "--instance-id") ?? `instance-${(this.counter += 1)}`;
+      const params = flag(call.args, "--params");
+      workflow.instances.set(id, {
+        status: "queued",
+        ...(params ? { params: JSON.parse(params) } : {}),
+      });
+      return { stdout: JSON.stringify({ id, status: "queued" }) };
+    }
+    if (action === "list") {
+      const status = flag(call.args, "--status");
+      return {
+        stdout: JSON.stringify(
+          [...workflow.instances]
+            .filter(([, instance]) => !status || instance.status === status)
+            .slice(0, Number(flag(call.args, "--per-page") ?? "25"))
+            .map(([id, instance]) => ({ id, status: instance.status })),
+        ),
+      };
+    }
+    const instance = workflow.instances.get(call.args[3]!);
+    if (!instance) return cfError(`Instance ${call.args[3]} not found`);
+    if (action === "get") return { stdout: JSON.stringify(instance) };
+    if (action === "terminate") {
+      const declined = unconfirmed(call, "This operation terminates the running Workflow instance.");
+      if (declined) return declined;
+    }
+    instance.status = INSTANCE_STATUS[flag(call.args, "--status")!]!;
+    return { stdout: JSON.stringify({ status: instance.status }) };
+  }
+
+  /**
+   * `cf build`: the app's Worker (and helper Workers) as its
+   * cloudflare.config.ts defines them for production (`appConfigs`, or
+   * everyAppWorker() and everyAppAuxiliaryWorker() as they are), from the
+   * manifest registered for its directory, or its own everyapp.config.ts,
+   * with the build's environment (EVERYAPP_BUILD) as the config sees it.
+   */
+  private async build(call: RecordedCfCall): Promise<FakeCfResponse> {
+    const cwd = call.cwd!;
+    const manifest =
+      this.apps.get(cwd) ?? (await loadEveryAppManifest(cwd).catch(() => null));
+    if (!manifest) return cfError(`no app to build in ${cwd}`);
+    let worker;
+    // Helper Workers, as the Vite plugin builds auxiliary Workers: each in
+    // its own directory, named after the Worker.
+    const helpers: Record<string, any>[] = [];
+    const buildEnv = process.env["EVERYAPP_BUILD"];
+    try {
+      if (call.env["EVERYAPP_BUILD"] === undefined) delete process.env["EVERYAPP_BUILD"];
+      else process.env["EVERYAPP_BUILD"] = call.env["EVERYAPP_BUILD"];
+      const built = (this.appConfigs.get(cwd) ?? plainAppConfig)({ manifest, root: cwd });
+      const { entrypoint: _entrypoint, ...definition } = built.worker;
+      worker = structuredClone(definition) as Record<string, any>;
+      this.editBuild?.(worker);
+      for (const helper of built.auxiliaryWorkers ?? []) {
+        const { entrypoint: _helperEntry, ...helperDefinition } = helper;
+        helpers.push(structuredClone(helperDefinition) as Record<string, any>);
+      }
+    } catch (error) {
+      return cfError((error as Error).message);
+    } finally {
+      if (buildEnv === undefined) delete process.env["EVERYAPP_BUILD"];
+      else process.env["EVERYAPP_BUILD"] = buildEnv;
+    }
+    const out = path.join(cwd, ".cloudflare/output/v0");
+    fs.rmSync(out, { recursive: true, force: true });
+    fs.mkdirSync(path.join(out, "workers/default/bundle/assets"), { recursive: true });
+    fs.writeFileSync(
+      path.join(out, "config.json"),
+      JSON.stringify({ buildContext: { isPreview: false, mode: "production" } }),
+    );
+    fs.writeFileSync(
+      path.join(cwd, WORKER_CONFIG),
+      JSON.stringify({
+        ...worker,
+        manifest: { type: "partial", mainModule: "index.js", modules: {} },
+      }),
+    );
+    fs.writeFileSync(path.join(out, "workers/default/bundle/index.js"), "export {}");
+    fs.writeFileSync(path.join(out, "workers/default/bundle/assets/x.js.map"), "{}");
+    for (const helper of helpers) {
+      const dir = path.join(out, "workers", String(helper["name"]));
+      fs.mkdirSync(path.join(dir, "bundle"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "worker.config.json"),
+        JSON.stringify({
+          ...helper,
+          manifest: { type: "partial", mainModule: "index.js", modules: {} },
+        }),
+      );
+      fs.writeFileSync(path.join(dir, "bundle/index.js"), "export {}");
+    }
+    return { stdout: "◆  Build complete" };
+  }
+
+  /** `cf deploy --prebuilt`: validate and record what would be uploaded. */
+  private deploy(call: RecordedCfCall): FakeCfResponse {
+    if (this.failNextDeploy) {
+      const message = this.failNextDeploy;
+      this.failNextDeploy = null;
+      return cfError(message);
+    }
+    if (this.strictAbortNextDeploy) {
+      this.strictAbortNextDeploy = false;
+      return STRICT_ABORT;
+    }
+    if (this.declineNextDeploy) {
+      this.declineNextDeploy = false;
+      return { stdout: "" };
+    }
+    // `--worker` picks a Worker by its name, as cf does, not by its directory.
+    const selected = flag(call.args, "--worker");
+    const config = selected
+      ? fs
+          .readdirSync(path.join(call.cwd!, WORKERS_OUTPUT))
+          .map(
+            (dir) =>
+              JSON.parse(
+                fs.readFileSync(path.join(call.cwd!, WORKERS_OUTPUT, dir, "worker.config.json"), "utf8"),
+              ) as Record<string, any>,
+          )
+          .find((worker) => worker["name"] === selected)
+      : (JSON.parse(fs.readFileSync(path.join(call.cwd!, WORKER_CONFIG), "utf8")) as Record<string, any>);
+    if (!config) return cfError(`The Build Output has no Worker named "${selected}".`);
+    const parsed = OutputWorkerSchema.safeParse(config);
+    if (!parsed.success) return cfError(`Invalid Build Output: ${parsed.error.message}`);
+    const secrets = call.files["secrets.json"]
+      ? (JSON.parse(call.files["secrets.json"]) as Record<string, string>)
+      : null;
+    const workerName = String(config["name"]);
+    const unresolved = Object.entries(config["env"] ?? {})
+      .filter(([, binding]) => (binding as { type: string }).type === "worker")
+      .map(([name, binding]) => [name, (binding as { worker: string }).worker])
+      .filter(([, worker]) => worker !== workerName && !this.workers.has(worker!));
+    if (unresolved.length > 0 && !call.args.includes("--dry-run")) {
+      const [name, worker] = unresolved[0]!;
+      return cfError(
+        `Could not resolve service binding '${name}'. Target script '${worker}' not found. [code: 10143]`,
+      );
+    }
+    // A class another Worker defines must be there, exported, first.
+    const unexported = Object.entries(config["env"] ?? {})
+      .filter(([, binding]) => (binding as { type: string }).type === "durable-object")
+      .map(([name, binding]) => [name, binding as { worker: string; exportName: string }] as const)
+      .filter(
+        ([, binding]) =>
+          binding.worker !== workerName &&
+          !this.workers.get(binding.worker)?.config["exports"]?.[binding.exportName],
+      );
+    if (unexported.length > 0 && !call.args.includes("--dry-run")) {
+      const [name, binding] = unexported[0]!;
+      return cfError(
+        `Durable Object binding '${name}' refers to class '${binding.exportName}' of script '${binding.worker}', which doesn't export it. [code: 10061]`,
+      );
+    }
+    // cf's deploy makes no Vectorize index: binding a missing one is refused, nothing uploaded.
+    const missingIndex = Object.entries(config["env"] ?? {}).find(
+      ([, binding]) =>
+        (binding as { type: string }).type === "vectorize" &&
+        !this.vectorizeIndexes.has((binding as { name: string }).name),
+    );
+    if (missingIndex && !call.args.includes("--dry-run")) {
+      const [name, binding] = missingIndex as [string, { name: string }];
+      return cfError(
+        `[10159] Vectorize binding '${name}' references index '${binding.name}' which was not found. Verify the index exists in your account and that the index_name in your configuration is correct. [code: 10159]`,
+      );
+    }
+    if (call.args.includes("--dry-run")) {
+      return { stdout: `Dry run: ${workerName} with ${Object.keys(config["env"] ?? {}).join(", ")}` };
+    }
+    const existing = this.workers.get(workerName);
+    const missingSecrets = Object.entries(config["env"] ?? {})
+      .filter(([, binding]) => (binding as { type: string }).type === "secret")
+      .map(([name]) => name)
+      .filter((name) => !existing?.secrets[name] && !secrets?.[name]);
+    if (missingSecrets.length > 0) {
+      return cfError(`Missing required secrets: ${missingSecrets.join(", ")}`);
+    }
+    // cf provisions a missing queue a producer binds, unless told not to;
+    // a consumer of a missing queue is refused either way.
+    const provision = !call.args.includes("--no-provision");
+    const queueNames = [
+      ...Object.values(config["env"] ?? {})
+        .filter((binding: any) => binding.type === "queue")
+        .map((binding: any) => ({ name: String(binding.name), consumer: false })),
+      ...((config["triggers"] ?? []) as Array<Record<string, any>>)
+        .filter((trigger) => trigger["type"] === "queue")
+        .map((trigger) => ({ name: String(trigger["name"]), consumer: true })),
+    ];
+    for (const { name, consumer } of queueNames) {
+      if (this.queue(name)) continue;
+      if (provision && !consumer) {
+        this.createQueue(name);
+        continue;
+      }
+      return cfError(`Queue "${name}" does not exist. To create it, run: wrangler queues create ${name}`);
+    }
+    const versionId = `${workerName}-version-${(this.counter += 1)}`;
+    this.workers.set(workerName, {
+      versions: [...(existing?.versions ?? []), versionId],
+      config,
+      secrets: { ...existing?.secrets, ...secrets },
+    });
+    this.deployedAt.set(workerName, this.clock());
+    this.deploys.push({ workerName, config, secrets, args: call.args, mode: call.mode });
+    // cf deploys the version first, then publishes its triggers.
+    const answer = this.afterUpload?.(workerName);
+    if (answer) return answer;
+    this.publishDomains(workerName, config["domains"]);
+    this.putWorkflows(workerName, config);
+    const unpublished = this.publishQueueConsumers(workerName, config);
+    if (unpublished) return unpublished;
+    // Last, the workers.dev route: an account without a subdomain stops
+    // here, its version and Custom Domains live.
+    if (!this.workersDevSubdomain) return workersDevSubdomainMissing();
+    return { stdout: `Current Version ID: ${versionId}` };
+  }
+
+  /** A Custom Domain leaves a Worker: its placeholder record goes with it. */
+  private dropCustomDomain(host: string): void {
+    this.customDomains.delete(host);
+    for (let i = this.dnsRecords.length - 1; i >= 0; i -= 1) {
+      const record = this.dnsRecords[i]!;
+      if (record.name === host && isPlaceholderRecord(record)) this.dnsRecords.splice(i, 1);
+    }
+  }
+
+  /**
+   * Publish the Worker's queue consumers from its `queue` triggers, as cf
+   * does after the version is live: one consumer per queue and Worker,
+   * updated in place on a redeploy, its dead-letter queue created when
+   * missing (Cloudflare does, even with `--no-provision`). A Worker with
+   * no `queue()` handler (`queueHandlerMissing`) stops it, its version live.
+   */
+  private publishQueueConsumers(workerName: string, config: Record<string, any>): FakeCfResponse | null {
+    const triggers = ((config["triggers"] ?? []) as Array<Record<string, any>>).filter(
+      (trigger) => trigger["type"] === "queue",
+    );
+    if (triggers.length === 0) return null;
+    if (this.queueHandlerMissing.has(workerName)) {
+      const queue = this.queue(String(triggers[0]!["name"]))!;
+      return cfError(
+        [
+          `Trigger configuration for "${workerName}" was only partially updated:`,
+          "",
+          "  Queue consumers:",
+          `    - A request to the Cloudflare API (/accounts/${ACCOUNT_ID}/queues/${queue.id}/consumers) failed. - Queue handler is missing. [code: 11001]`,
+          "",
+          "Successful trigger changes were not rolled back.",
+        ].join("\n"),
+      );
+    }
+    for (const trigger of triggers) {
+      const queue = this.queue(String(trigger["name"]))!;
+      const deadLetterQueue = trigger["deadLetterQueue"] as string | undefined;
+      if (deadLetterQueue && !this.queue(deadLetterQueue)) this.createQueue(deadLetterQueue);
+      const settings: Record<string, number | null> = {
+        batch_size: trigger["maxBatchSize"] ?? 10,
+        max_retries: trigger["maxRetries"] ?? 3,
+        max_wait_time_ms: (trigger["maxBatchTimeout"] ?? 5) * 1000,
+        ...(trigger["retryDelay"] !== undefined ? { retry_delay: trigger["retryDelay"] } : {}),
+        ...(trigger["maxConcurrency"] !== undefined ? { max_concurrency: trigger["maxConcurrency"] } : {}),
+      };
+      const existing = [...queue.consumers].find(([, consumer]) => consumer.script === workerName)?.[0];
+      queue.consumers.set(existing ?? `consumer-${(this.counter += 1)}`, {
+        script: workerName,
+        settings,
+        ...(deadLetterQueue ? { deadLetterQueue } : {}),
+      });
+    }
+    return null;
+  }
+
+  /**
+   * Create or update the Workflows the Worker defines, as cf does: a PUT
+   * per name, which takes a Workflow over from another Worker.
+   */
+  private putWorkflows(workerName: string, config: Record<string, any>): void {
+    const defined = [
+      ...Object.entries(config["exports"] ?? {})
+        .filter(([, entry]) => (entry as { type: string }).type === "workflow")
+        .map(([className, entry]) => [(entry as { name: string }).name, className]),
+      ...Object.values(config["env"] ?? {})
+        .filter(
+          (binding: any) => binding.type === "workflow" && binding.worker === workerName,
+        )
+        .map((binding: any) => [binding.name, binding.exportName]),
+    ] as Array<[string, string]>;
+    for (const [name, className] of defined) {
+      this.workflows.set(name, {
+        scriptName: workerName,
+        className,
+        instances: this.workflows.get(name)?.instances ?? new Map(),
+      });
+    }
+  }
+
+  /**
+   * Publish a Worker's Custom Domains as Cloudflare does: only when the
+   * config declares some, as the whole list (its others are removed), one
+   * taken from another Worker when unattended, each with its placeholder
+   * DNS record (`AAAA 100::`, proxied; it goes with the domain), and a
+   * certificate pack per new hostname that stays when the domain goes:
+   * [apex, host, *.host], or [apex, *.apex] for the apex itself.
+   */
+  private publishDomains(workerName: string, domains: unknown): void {
+    if (!Array.isArray(domains) || domains.length === 0) return;
+    for (const [host, worker] of [...this.customDomains]) {
+      if (worker === workerName && !domains.includes(host)) {
+        this.dropCustomDomain(host);
+      }
+    }
+    for (const host of domains as string[]) {
+      if (this.customDomains.get(host) === workerName) continue;
+      this.customDomains.set(host, workerName);
+      const zone = [...this.zones]
+        .sort((a, b) => b.name.length - a.name.length)
+        .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
+      if (!zone) continue;
+      if (!this.dnsRecords.some((record) => record.name === host && isPlaceholderRecord(record))) {
+        this.dnsRecords.push({ zoneId: zone.id, name: host, ...PLACEHOLDER_RECORD });
+      }
+      const hosts =
+        host === zone.name ? [host, `*.${host}`] : [zone.name, host, `*.${host}`];
+      if (!this.certificatePacks.some((pack) => pack.hosts.join() === hosts.join())) {
+        this.certificatePacks.push({
+          id: `pack-${(this.counter += 1)}`,
+          zoneId: zone.id,
+          hosts,
+        });
+      }
+    }
+  }
+}

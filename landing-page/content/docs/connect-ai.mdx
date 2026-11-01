@@ -1,0 +1,62 @@
+---
+title: Use your apps from Claude or ChatGPT
+description: Connect Claude, ChatGPT, Claude Code, Codex or Cursor to your Gateway once, and they can use every app you can open.
+---
+
+Connect your assistant once and it can use every app you can open: read and change things the way you can, but never delete. It uses one address:
+
+```text
+https://apps.yourcompany.com/mcp
+```
+
+In the Gateway, open **Connect your agent** in the sidebar. It shows your address and the steps for each assistant.
+
+## Claude and ChatGPT
+
+Add a custom connector and paste the address.
+
+## Claude Code
+
+```bash
+claude mcp add --transport http everyapp https://apps.yourcompany.com/mcp
+```
+
+Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**.
+
+## Codex
+
+```bash
+codex mcp add everyapp --url https://apps.yourcompany.com/mcp
+codex mcp login everyapp
+```
+
+## Cursor
+
+Add this to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project). Cursor then asks you to sign in.
+
+```json
+{ "mcpServers": { "everyapp": { "url": "https://apps.yourcompany.com/mcp" } } }
+```
+
+## What happens next
+
+A sign-in page opens. Choose the apps, choose read & write or read only, and allow it.
+
+Tools that can't sign in take a personal access token as an `Authorization: Bearer` header. An owner or admin makes one in **Manage workspace** → **Tokens**.
+
+## Add tools from elsewhere
+
+Your Gateway can also offer tools from another MCP server, as an MCP app. Its key stays on the Gateway, never in your assistant.
+
+```bash
+everyapp mcp on dataforseo
+everyapp mcp add https://mcp.example.com/mcp
+```
+
+Or, in the Gateway: **Manage workspace** → **Apps** → **Add app** → **Add an MCP server**.
+
+## Disconnect
+
+Open the account menu at the bottom of the sidebar, then **AI connections**, and revoke a connection.
+
+This works behind [Cloudflare Access](/docs/access) too. For the full reference, see [MCP](/docs/agent/mcp).

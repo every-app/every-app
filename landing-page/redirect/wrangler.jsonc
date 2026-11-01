@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "every-app-domain-redirect",
+  "main": "index.ts",
+  "compatibility_date": "2026-02-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "everyapp.dev", "custom_domain": true },
+    { "pattern": "www.everyapp.com", "custom_domain": true },
+  ],
+}

@@ -1,0 +1,262 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
+  "retryOf": null,
+  "startedAt": "2026-10-24T19:30:02.175Z",
+  "durationS": 314,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "opencode",
+    "version": "2.1.3",
+    "model": {
+      "requested": "openai/gpt-5.3-codex",
+      "resolved": "openai/gpt-5.3-codex"
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "truncated",
+    "exitCodes": true,
+    "cost": "harness",
+    "resume": "native"
+  },
+  "cliCommit": "931ff03991e1",
+  "checkoutCommit": "931ff03991e1",
+  "promptVariant": "checkout-present",
+  "promptSha": "217d257562ca",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-24T19:31:00.967Z",
+      "durationS": 0
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T19:31:06.614Z",
+      "durationS": 67
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T19:31:09.863Z",
+      "durationS": 56
+    },
+    {
+      "name": "setup.owner",
+      "startedAt": "2026-10-24T19:32:07.723Z",
+      "durationS": 6
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T19:32:16.411Z",
+      "durationS": 11
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T19:32:29.427Z",
+      "durationS": 79
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T19:30:11.192Z",
+      "durationS": 24
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T19:30:39.372Z",
+      "durationS": 191
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T19:33:54.866Z",
+      "durationS": 27
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T19:34:24.131Z",
+      "durationS": 52
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 67140,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 11276,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 79259,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 1,
+      "linkSurfacedToPerson": false
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "domain_question",
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "create_app": "not a question: the harness ran create"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "domain_question",
+      "expected": true
+    }
+  ],
+  "interventions": [],
+  "interventionNeeded": false,
+  "hesitations": [
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "read output cut at 50146 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "`pnpm install` is done in `/work/every-app`. Which base domain should I use for setup? I’ll run: ```bash pnpm everyapp setup --domain apps.<your-domain> --json ``` Example: if your domain is `example.",
+      "triage": "prompt"
+    },
+    {
+      "kind": "asked_user",
+      "excerpt": "Which base domain should I use for setup?",
+      "triage": "prompt"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass",
+    "reasonCode": null,
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": 0.0931,
+    "source": "harness",
+    "tokens": {
+      "input": 37679,
+      "output": 447,
+      "cacheRead": 63488,
+      "cacheWrite": 0
+    },
+    "model": "openai/gpt-5.3-codex"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 4,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

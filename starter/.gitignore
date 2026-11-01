@@ -1,0 +1,20 @@
+node_modules
+.DS_Store
+
+# cf build output, generated types and local dev state
+.cloudflare/
+.wrangler/
+.output/
+.tanstack/
+
+# everyapp's local state: the dev registry and the app's secrets file
+.everyapp/
+
+# local secrets, never committed
+.dev.vars*
+.env
+.env.local
+.env.production
+
+# `everyapp release`'s tarball
+everyapp-release.tar.gz

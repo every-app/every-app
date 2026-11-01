@@ -1,0 +1,50 @@
+{
+  "name": "@every-app/perimeter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./manifest": {
+      "types": "./src/manifest/index.ts",
+      "default": "./src/manifest/index.ts"
+    },
+    "./registry": {
+      "types": "./src/registry/index.ts",
+      "default": "./src/registry/index.ts"
+    },
+    "./dev": {
+      "types": "./src/dev/index.ts",
+      "default": "./src/dev/index.ts"
+    },
+    "./install": {
+      "types": "./src/install/index.ts",
+      "default": "./src/install/index.ts"
+    }
+  },
+  "scripts": {
+    "types:check": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write",
+    "test": "vitest run --silent",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@cloudflare/config": "0.24.1",
+    "@every-app/sdk": "workspace:*",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "@types/node": "^22.18.13",
+    "jose": "^6.2.12",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.6"
+  }
+}

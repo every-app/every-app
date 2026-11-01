@@ -1,0 +1,58 @@
+---
+title: What is EveryApp?
+description: Your web apps online, in your own Cloudflare account, each with an address, a database and a sign-in.
+---
+
+EveryApp puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in.
+
+Made for a solo founder or a team of three or four who build their own tools with Claude Code, Codex or Cursor. EveryApp is open source and free. You pay Cloudflare.
+
+## The two parts
+
+**The Gateway** is your home base, at an address like `apps.yourcompany.com`. You and the people you invite sign in there and open your apps.
+
+**Apps** are what you build, usually with a coding agent. Each one has its own address under the Gateway, like `todo.apps.yourcompany.com`.
+
+## What you can count on
+
+- **Private by default.** Nobody opens an app until they've signed in and you've given them access. An app can open specific routes to the public, like a webhook, and the deploy lists them.
+- **One sign-in for every app.** You never build a login page.
+- **An app only gets what you allow.** It learns who is signed in, never their password. Shared keys, like your AI key, stay on the Gateway.
+- **Each app keeps its own data.** Removing one app never touches another.
+- **Updates keep your data.** A deploy saves a restore point before it changes an app's database. [Undo a database change](/docs/update#undo-a-database-change)
+- **Safe to run again.** If setup or a deploy stops halfway, run it again.
+
+Before you invite anyone, turn on Cloudflare Access with `everyapp access on`. It adds a second sign-in in front of everything, free for up to 50 people. [Sign in through Cloudflare Access](/docs/access)
+
+EveryApp is in early development, so expect some rough edges. To update, run `npm install -g everyapp@latest`, then `everyapp update`. [Update your Gateway](/docs/update#update-your-gateway), [For early adopters](/docs/early-adopters)
+
+## Apps on day one
+
+Each is open source and runs behind your Gateway. Run one as it is, or fork it as the starting recipe for your own. Each has a page with what it does, what it needs and how to install it: [Apps](/docs/apps).
+
+- **[OpenSEO](/docs/apps/openseo)**: SEO research you pay for by use, not by the month.
+- **[OpenCRM](/docs/apps/crm)**: A CRM that fills itself in.
+- **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
+- **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
+
+`everyapp install https://github.com/every-app/<repo>` installs one and asks for the keys it needs. Every key an app can ask for, and where to get it, is in [Providers](/docs/providers).
+
+## What it costs
+
+| What                            | Cost                                                 |
+| ------------------------------- | ---------------------------------------------------- |
+| Cloudflare's Workers Paid plan  | $5 a month, then usage                               |
+| A `.com` domain                 | About $10 a year                                     |
+| A `.dev` or `.app` domain       | $1 for the first year                                |
+| An AI key, for apps that use AI | Billed by use by OpenAI or OpenRouter, or Workers AI |
+| A DataForSEO key, for OpenSEO   | Pay as you go, billed by DataForSEO                  |
+| EveryApp                        | Free and open source                                 |
+
+The $5 covers 10 million requests a month, far more than a few apps for a small team use. Past that, Cloudflare bills by use ([pricing](https://developers.cloudflare.com/workers/platform/pricing/)). The Gateway counts what your apps spend on AI and other keys, and can stop at a cap you set. [Usage and caps](/docs/usage)
+
+## What you need
+
+1. A Cloudflare account on Workers Paid. [Set up Cloudflare](/docs/cloudflare)
+2. A domain on Cloudflare. [Get a domain](/docs/domain)
+3. Node.js, pnpm and git. [Install the tools](/docs/gateway#install-the-tools), or [let your coding agent do it](/docs/gateway#or-let-your-coding-agent-do-it)
+4. About 30 minutes. Setting up the Gateway itself is about 15 of them.

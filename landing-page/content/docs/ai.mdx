@@ -1,0 +1,48 @@
+---
+title: AI models
+description: Set one key so every app that needs a chat model works, and choose the provider and model.
+---
+
+Apps like OpenMail and OpenCRM need a chat model but don't care whose. Set one provider's key and every such app uses it.
+
+## Set one key
+
+```bash
+everyapp secret set OPENROUTER_API_KEY
+```
+
+Or run `everyapp configure <app>` for an app that shows **Needs setup**. It asks for the key that app needs.
+
+If you don't choose, the Gateway uses the first provider whose key is set, in this order: [OpenRouter](/docs/providers/openrouter), [Workers AI](/docs/providers/workers-ai), [OpenAI](/docs/providers/openai), [Anthropic](/docs/providers/anthropic), [Groq](/docs/providers/groq), [Mistral](/docs/providers/mistral), [Gemini](/docs/providers/gemini). Each link shows where to get the key.
+
+OpenRouter is one key for many models, and the Usage page can show what each call cost. Workers AI needs only your Cloudflare account, but its models are weaker.
+
+## Choose a provider or model
+
+```bash
+everyapp ai default openrouter/anthropic/claude-sonnet-5.5
+everyapp ai default groq
+everyapp ai default off
+```
+
+The part before the first slash is the provider; the rest is the model. `off` goes back to the order above. You can also choose in **Manage workspace** → **Usage** → **AI default**.
+
+To see what is in use and why:
+
+```bash
+everyapp ai show
+```
+
+## Cloudflare AI Gateway
+
+[AI Gateway](/docs/providers/ai-gateway) adds Cloudflare's logs, caching and limits to every model call. It has no models of its own, so it still needs a provider's key.
+
+```bash
+everyapp ai gateway on
+```
+
+`everyapp ai gateway off` takes it out. No app or key changes.
+
+An app that needs one particular provider asks for that provider's key and ignores the default.
+
+For the full reference, see [AI](/docs/agent/ai).

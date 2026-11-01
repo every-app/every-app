@@ -1,0 +1,29 @@
+---
+title: Apps
+description: Open source apps that run behind your Gateway, and how to install them.
+metaTitle: "Open source apps for your Gateway"
+---
+
+Each app is open source and runs behind your Gateway, in your own Cloudflare account. Run one as it is, or fork it as the start of your own.
+
+- **[OpenSEO](/docs/apps/openseo)**: SEO research you pay for by use, not by the month.
+- **[OpenCRM](/docs/apps/crm)**: A CRM that fills itself in.
+- **[OpenAnalytics](/docs/apps/analytics)**: Web analytics on your own Cloudflare account. No cookies.
+- **[OpenMail](/docs/apps/openmail)**: An inbox where an AI agent drafts your replies and you hit send.
+- **[RepoLens](/docs/apps/repolens)**: Keep the GitHub traffic history GitHub drops after 14 days.
+
+## Install one
+
+```bash
+everyapp install https://github.com/every-app/open-crm
+```
+
+It puts the app at `<app>.<your gateway domain>`, then asks for the keys it needs. Until the required ones are set, the app shows **Needs setup** and won't open. Skipped that step, or changing a key later? `everyapp configure crm` asks again. Run the install command again to update; your data stays.
+
+Keys several apps use, like `OPENROUTER_API_KEY`, are set once on the Gateway and shared.
+
+OpenSEO, OpenCRM and OpenMail need R2. Enable it once in your Cloudflare dashboard (R2 Object Storage, then Get started), or the install stops with `R2_NOT_ENABLED`.
+
+Every member of your workspace can open these apps once installed, except RepoLens, which starts with owners and admins. [Invite people](/docs/people)
+
+Each app's page lists what it asks for. The full settings for agents are in [the apps reference](/docs/agent/apps).

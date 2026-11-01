@@ -1,0 +1,45 @@
+---
+title: OpenAnalytics
+description: Web analytics on your own Cloudflare account. No cookies.
+metaTitle: "OpenAnalytics: cookieless Google Analytics alternative"
+metaDescription: "Open source web analytics on your own Cloudflare account: pages, referrers, campaigns, funnels and goals from a 3 KB tag. No cookies, no stored IPs."
+---
+
+> **Web analytics on your own Cloudflare account. No cookies.**
+>
+> Add a 3 KB tag to a site and see its pages, referrers, campaigns, funnels and goals, with a live view. It stores no IP addresses; Cloudflare resolves location at the edge.
+
+You get dashboards for pages, referrers, campaigns, sessions, funnels, goals, retention and devices, plus a live view, read-only share links, and scheduled or threshold email reports. Bots are filtered out.
+
+## Install
+
+```bash
+everyapp install https://github.com/every-app/open-analytics
+```
+
+Then it asks for one key:
+
+- `MAIN_SECRET` (required): 32 or more random characters, for example from `openssl rand -base64 32`. Don't change it later, or visitor counts split.
+
+Email reports also need the Gateway's email sender ([Email](/docs/agent/email)). Without it, reports stay in the app.
+
+Run the install command again to update. `everyapp configure analytics` changes a key later.
+
+## Add it to your site
+
+Open `https://analytics.<your gateway domain>`, create a site, and paste its snippet into your website:
+
+```html
+<script
+  defer
+  src="https://analytics.example.com/script.js?siteId=YOUR_SITE_ID"
+></script>
+```
+
+The tracker, the collector and share links work without sign-in. Everything else needs a member of your workspace, and every member can open the dashboards.
+
+## Use it from your agent
+
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "Which referrers grew this week?" or "Add a site for example.com."
+
+Code: [github.com/every-app/open-analytics](https://github.com/every-app/open-analytics)

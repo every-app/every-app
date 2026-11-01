@@ -1,0 +1,16 @@
+{
+  // Compiler options every in-repo project shares (the gateway, the CLI, the
+  // SDK, the perimeter, the toolbus). Each project keeps its own include,
+  // paths, lib, target and types. The starter stays standalone: `everyapp
+  // create` copies it out of the checkout.
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true
+  }
+}

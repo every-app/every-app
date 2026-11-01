@@ -1,0 +1,36 @@
+---
+title: Commands
+description: The everyapp commands you'll run most.
+metaDescription: "The everyapp commands you'll run most: set up and update your Gateway, install and configure apps, and create, deploy and release your own."
+---
+
+Add `--help` to any command to see its options. Every command and flag is in the [CLI reference](/docs/agent/cli).
+
+## Your Gateway
+
+| Command                         | What it does                                                          |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `everyapp setup`                | Installs your Gateway. Run it again to resume or repair.              |
+| `everyapp update`               | Updates your Gateway to the release for your everyapp version.        |
+| `everyapp status`               | Shows your Gateway and apps, and what to run. [More](/docs/status)    |
+| `everyapp install <GitHub URL>` | Installs an app someone published on GitHub.                          |
+| `everyapp configure my-app`     | Asks for each key an app needs.                                       |
+| `everyapp delete my-app`        | Takes an app off your Gateway. `--purge` deletes its data.            |
+| `everyapp access on`            | Puts Cloudflare Access in front of your Gateway. [More](/docs/access) |
+| `everyapp provider add <id>`    | Adds a key or OAuth client apps can use. [More](/docs/providers)      |
+| `everyapp workspace`            | Manages people, groups, apps and caps from the terminal.              |
+
+## Your apps
+
+| Command                  | What it does                                               |
+| ------------------------ | ---------------------------------------------------------- |
+| `everyapp create my-app` | Makes a new app from the starter, as its own repository.   |
+| `pnpm dev`               | Runs the app on your computer.                             |
+| `pnpm run deploy`        | Puts the app online, or updates it.                        |
+| `pnpm run db:generate`   | Writes a migration after what the app stores changes.      |
+| `everyapp db restore`    | Puts the app's database back to before its last migration. |
+| `everyapp release`       | Packs the app as a release others can install.             |
+
+Run the last five in the app's folder.
+
+Your coding agent has its own docs: give it `https://everyapp.com/llms.txt`. [Docs for coding agents](/docs/agent)

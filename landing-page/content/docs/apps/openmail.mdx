@@ -1,0 +1,43 @@
+---
+title: OpenMail
+description: An inbox where an AI agent drafts your replies and you hit send.
+metaTitle: "OpenMail: open source AI email assistant"
+metaDescription: "An open source inbox on your own domain. An AI agent drafts each reply, and nothing goes out until you hit send. Runs on Cloudflare Email Routing."
+---
+
+> **An inbox where an AI agent drafts your replies and you hit send.**
+>
+> Mail on your own domain arrives through Cloudflare Email Routing. The agent reads each new message and drafts a reply; nothing goes out until you confirm.
+
+You get a full inbox on your own domain: threads, folders, search and attachments. An agent in the side panel reads, searches and drafts. Each mailbox can have its own instructions for the agent.
+
+## Install
+
+You need a domain on Cloudflare with Email Sending turned on. Enable R2 in your Cloudflare dashboard first (R2 Object Storage, then Get started).
+
+```bash
+everyapp install https://github.com/every-app/open-mail
+```
+
+Then it asks for:
+
+- A model key (required). `OPENROUTER_API_KEY` is the one to pick.
+- The Gateway's email sender, `EMAIL_FROM` and `EMAIL_FROM_NAME` (required).
+
+Then tell the Gateway which addresses OpenMail sends and receives for, with your domain in place of `example.com`. It offers to turn on Email Routing:
+
+```bash
+everyapp email set --sender '*@example.com' --inbound '*@example.com'
+```
+
+A catch-all like `*@example.com` works only on the domain itself; for a subdomain, list each address. Mail to an address with no mailbox is dropped.
+
+Open `https://openmail.<your gateway domain>` as an owner or admin and create a mailbox. Every member of your workspace can open it.
+
+Run the install command again to update. `everyapp configure openmail` changes a key later.
+
+## Use it from your agent
+
+[Connect your agent](/docs/connect-ai) to your Gateway, then ask things like "Summarize what came in to support@ today."
+
+Code: [github.com/every-app/open-mail](https://github.com/every-app/open-mail)

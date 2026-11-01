@@ -1,0 +1,94 @@
+---
+title: Troubleshooting
+description: What the most common messages mean and how to fix them.
+metaDescription: "What the most common everyapp, Gateway and app messages mean, and how to fix each one."
+---
+
+Two things fix most problems:
+
+- **Run the same command again.** Setup and deploys pick up where they stopped.
+- **Run `everyapp status`.** It shows what's wrong and what to run. [Check your setup with everyapp status](/docs/status)
+
+## Subscribe this account to Workers Paid
+
+Your Cloudflare account is on the free plan. [Turn on Workers Paid](/docs/cloudflare#turn-on-workers-paid), then run the command again.
+
+**Couldn't confirm this account is on Workers Paid** is a warning: setup carries on. Check that you've subscribed.
+
+## Add a domain to this Cloudflare account
+
+[Get a domain](/docs/domain), then run the command again. With several Cloudflare accounts, check you approved the login for the right one.
+
+## Finish activating your domain on Cloudflare
+
+Finish [the nameserver step](/docs/domain#use-a-domain-you-already-own), wait for Cloudflare's email saying the domain is active, then run the command again.
+
+## Choose a workers.dev subdomain for this Cloudflare account
+
+Open the link the terminal shows, pick any name, and run the command again. Your apps never use it.
+
+## Your address already points somewhere else
+
+Delete that record in Cloudflare (your domain, then **DNS**), or choose another address.
+
+## Open the setup link above to create the owner account
+
+Setup stopped waiting after 15 minutes, but the link works for about 24 hours. Open it. Lost it? Run `everyapp setup` again for a new one.
+
+## Use the newer setup link, or get a new one
+
+Setup ran again and made a newer link, or this one expired. Use the newer link, or run `everyapp setup` again.
+
+## A new address doesn't load yet
+
+Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
+
+## An app says Needs deploy, Needs setup, Deploying, Deploy stalled, Disabled or Paused
+
+- **Needs deploy:** run `pnpm run deploy` in the app's folder.
+- **Needs setup:** run `everyapp configure my-app`. It asks for the missing keys.
+- **Deploying:** refresh in a minute.
+- **Deploy stalled:** run `pnpm run deploy` in the app's folder again.
+- **Disabled:** an admin turned the app off.
+- **Paused:** the app hit its monthly cap. An owner or admin can raise it. [Usage and caps](/docs/usage)
+
+## The schema has changes no migration covers
+
+In the app's folder, run `pnpm run db:generate`, then deploy again.
+
+## The Gateway from … is older than the live one
+
+Someone updated your Gateway with a newer everyapp. Run `npm install -g everyapp@latest`, then try again.
+
+## everyapp needs Node.js 22.18.0 or newer
+
+Install the latest LTS from [nodejs.org](https://nodejs.org), open a new terminal, and try again.
+
+## Command "everyapp" not found
+
+Run `npm install -g everyapp`, open a new terminal, and try again.
+
+## No everyapp.config.ts in this directory
+
+This command runs in an app's folder. `cd my-app` and try again.
+
+## ELIFECYCLE Command failed with exit code 2 or 130
+
+That line is pnpm's, not an error. Read the lines above it.
+
+- **exit code 2:** everyapp stopped for you to do something. The lines above say what.
+- **exit code 130:** you pressed Ctrl+C.
+
+## ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
+
+Run `pnpm install` without `--frozen-lockfile` (a `CI` variable in your shell turns it on). Still failing? Run `npm install -g pnpm`, open a new terminal, and try again.
+
+## A command doesn't exist, or works differently
+
+Your everyapp is older than these docs. Run `npm install -g everyapp@latest`. `everyapp --version` shows what you have.
+
+## Still stuck
+
+Run the command again with `--verbose` at the end. Bring the output to our [Discord](https://discord.gg/c9uGs3cFXr) or email [support@everyapp.dev](mailto:support@everyapp.dev). If every app is down at once, check [Cloudflare's status](https://www.cloudflarestatus.com) first.
+
+Every error code, with its fix: [Error codes](/docs/agent/errors).

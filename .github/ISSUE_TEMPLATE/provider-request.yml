@@ -1,0 +1,49 @@
+name: Provider request
+description: Ask for docs (or built-in support) for a provider, or a fuller guide for one that's listed.
+title: "Provider request: "
+labels: ["provider-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every provider EveryApp supports is listed at https://everyapp.com/docs/providers. You can already add any provider yourself: https://everyapp.com/docs/providers/custom. Tell us which one you want a page for and we'll write it.
+
+        Never paste a key, token or client secret here.
+  - type: input
+    id: provider
+    attributes:
+      label: Provider name
+      placeholder: Resend, Attio, Jira…
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: Link to its API docs
+      description: Where its API reference, or the page that explains its keys, lives.
+      placeholder: https://…
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: How it authenticates
+      options:
+        - An API key or token
+        - OAuth (people connect their own accounts)
+        - Sign in with it
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: What do you want to do with it?
+      description: The app you're building or running, and what it should read or do there.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: A custom spec you've tried, an error you hit, or steps that confused you on an existing page.

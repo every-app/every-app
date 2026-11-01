@@ -1,0 +1,39 @@
+{
+  "entry": [
+    // Worker config (cf dev, cf build) and the production Worker entry point
+    "cloudflare.config.ts",
+    "src/server.ts",
+    // Detect Tanstack Start Routes
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+    // Better auth cli entrypoint
+    "src/auth/index.ts",
+    "scripts/*.{js,mjs,ts}",
+    // shadcn components are copied in whole; pages use only some exports
+    "src/client/components/ui/**",
+    // The Cloudflare REST client (packages/cf-rest until 2026-10-24): the
+    // deployer uses part of its surface, the CLI's fake-Cloudflare test
+    // imports the rest by path.
+    "src/server/deploy/cf-rest/index.ts",
+    // The OAuth providers service (docs/design/2026-10-oauth-providers.md):
+    // the contract Admin → Providers, Settings → Connected accounts and the
+    // provider tools call; a sibling lane's PR takes each export up.
+    "src/server/oauth/service.ts",
+  ],
+  "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
+  "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],
+  "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime module that Knip reads as the
+    // (unused) `cloudflare` npm package.
+    "cloudflare",
+    // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/perimeter",
+    "@every-app/sdk",
+    "@every-app/toolbus",
+    // Used by vite during bundling
+    "tailwindcss",
+    // Imported by app.css; shadcn is also the component CLI
+    "tw-animate-css",
+    "shadcn",
+  ],
+}

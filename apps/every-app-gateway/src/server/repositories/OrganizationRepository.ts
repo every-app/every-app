@@ -1,0 +1,184 @@
+import { db } from "@/db";
+import { apps, members, organizations, users } from "@/db/schema";
+import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
+import { liveUser } from "@/server/repositories/OrganizationMembersRepository";
+import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
+import { and, asc, eq, exists, ne, notExists } from "drizzle-orm";
+
+/** An organization's display fields (no members, no invitations). */
+async function findSummaryById(organizationId: string) {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+/** Active workspaces this user can administer; no members or invitations. */
+async function findAdminSummariesForUser(userId: string) {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      role: members.role,
+    })
+    .from(organizations)
+    .innerJoin(members, eq(members.organizationId, organizations.id))
+    .where(and(eq(members.userId, userId), eq(organizations.status, "active")))
+    .orderBy(asc(organizations.name), asc(organizations.id));
+  return rows.flatMap(({ role, ...workspace }) => {
+    const primary = resolvePrimaryOrganizationRole(role);
+    return primary === "owner" || primary === "admin" ? [workspace] : [];
+  });
+}
+
+/**
+ * The organization apps were deployed to before the gateway had an owner:
+ * the oldest one with live apps and no members. The setup claim makes its
+ * first owner the owner of this one instead of creating another. Null when
+ * there is none.
+ */
+async function findAwaitingOwner(): Promise<string | null> {
+  const rows = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        notExists(
+          db
+            .select({ id: members.id })
+            .from(members)
+            .where(eq(members.organizationId, organizations.id)),
+        ),
+        exists(
+          db
+            .select({ id: apps.id })
+            .from(apps)
+            .where(
+              and(
+                eq(apps.organizationId, organizations.id),
+                ne(apps.status, DELETED_APP_STATUS),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(asc(organizations.createdAt), asc(organizations.id))
+    .limit(1);
+
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * The install organization: the oldest with an owner, which is where the
+ * CLI registers bare-id apps and provider apps (`installOrganization` in
+ * `packages/cli/src/lib/gateway/registry.ts`; the deploy API's
+ * `isInstallOrganization` reads the same rows). Null before the setup
+ * claim.
+ */
+async function findInstallOrganizationId(): Promise<string | null> {
+  const rows = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      exists(
+        db
+          .select({ id: members.id })
+          .from(members)
+          .where(
+            and(
+              eq(members.organizationId, organizations.id),
+              eq(members.role, "owner"),
+            ),
+          ),
+      ),
+    )
+    .orderBy(asc(organizations.createdAt), asc(organizations.id))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * Make `userId` the owner of an organization that has none, and give it the
+ * name the claim would have given a new one.
+ */
+async function adoptForOwner(
+  organizationId: string,
+  { userId, name }: { userId: string; name: string },
+): Promise<void> {
+  await db.batch([
+    db
+      .update(organizations)
+      .set({ name })
+      .where(eq(organizations.id, organizationId)),
+    db.insert(members).values({
+      id: crypto.randomUUID(),
+      organizationId,
+      userId,
+      role: "owner",
+      createdAt: new Date(),
+    }),
+  ]);
+}
+
+/** Give the organization a new name; its slug and everything else stay. */
+async function rename(organizationId: string, name: string): Promise<void> {
+  await db
+    .update(organizations)
+    .set({ name })
+    .where(eq(organizations.id, organizationId));
+}
+
+/**
+ * Whether work no person started may be attributed to the organization (a
+ * shared app's `x-everyapp-org`): it exists, is active, and has at least
+ * one member who isn't deactivated (banned with no expiry, or one still to
+ * come, as isUserBanned reads it).
+ */
+async function isAttributable(
+  organizationId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.id, organizationId),
+        eq(organizations.status, "active"),
+        exists(
+          db
+            .select({ id: members.id })
+            .from(members)
+            .innerJoin(users, eq(users.id, members.userId))
+            .where(
+              and(eq(members.organizationId, organizations.id), liveUser(now)),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Delete an organization; memberships, invitations and apps cascade. */
+async function deleteById(organizationId: string): Promise<void> {
+  await db.delete(organizations).where(eq(organizations.id, organizationId));
+}
+
+export const OrganizationRepository = {
+  findSummaryById,
+  findAdminSummariesForUser,
+  findAwaitingOwner,
+  findInstallOrganizationId,
+  adoptForOwner,
+  rename,
+  isAttributable,
+  deleteById,
+} as const;

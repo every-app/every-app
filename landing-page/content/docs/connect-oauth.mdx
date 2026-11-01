@@ -1,0 +1,41 @@
+---
+title: Connect GitHub (or any OAuth provider)
+description: Let your apps use people's GitHub, Google, Notion or other accounts. You add the provider once; each person connects their own account.
+---
+
+Your apps can work with a person's GitHub repositories, Google Search Console or Notion pages. You add the provider once. Each person connects their own account once, and every app that needs it uses that connection. Apps never see the tokens.
+
+## Add a provider
+
+An owner or admin does this once per provider.
+
+1. Open **Manage workspace** → **Providers** → **Add OAuth provider**.
+2. Pick the provider, or **Custom** for one that isn't listed.
+3. Copy the **redirect URI** the dialog shows, like `https://apps.yourcompany.com/connect/github-oauth/callback`.
+4. At the provider, create an OAuth app with that redirect URI. For GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App** (an OAuth App, not a GitHub App).
+5. Paste the client id and client secret into the dialog and select **Add**.
+
+Or from a terminal. It prints the redirect URI, then asks for the client id and secret:
+
+```bash
+everyapp provider add github-oauth
+```
+
+Steps for each provider's console: [GitHub](/docs/providers/github#connect-accounts), [Google](/docs/providers/google#connect-accounts), [Microsoft 365](/docs/providers/microsoft#connect-accounts), [Slack](/docs/providers/slack#connect-accounts), and [the rest](/docs/providers).
+
+To change the secret later, select the provider's **⋯** → **Replace client**.
+
+## Connect your account
+
+1. Open the account menu at the bottom of the sidebar, then **Connected accounts**.
+2. Select **Connect GitHub** (or the provider's name) and allow it.
+
+An app's "Connect GitHub" button opens the same page and brings you back. If a connection expires, the page shows **Reconnect**.
+
+For work no person started, like a nightly sync, an owner or admin can select **Connect for the organization** beside the provider in **Manage workspace** → **Providers**.
+
+## Disconnect
+
+Under **Connected accounts**, select **Disconnect**. Apps stop using it at once. An owner or admin can disconnect anyone's connection in **Manage workspace** → **Providers**. Removing a provider disconnects everyone from it.
+
+For the full reference, see [OAuth providers](/docs/agent/providers#oauth-providers-upload-a-client-the-gateway-runs-the-flow).

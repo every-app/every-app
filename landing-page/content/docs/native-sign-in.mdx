@@ -1,0 +1,25 @@
+---
+title: Sign in from a desktop or phone app
+description: Some apps have a Mac or phone app. You sign it in with your Gateway account, in your browser, and it can use that one app as you.
+---
+
+Some apps come with a desktop or phone app, like a Mac recorder for a notes app. You sign it in with your Gateway account. It never sees your password.
+
+## Sign in
+
+1. In the desktop app, type the app's address, the one you open in your browser, like `https://notes.apps.yourcompany.com`.
+2. Your browser opens your Gateway. Sign in if it asks.
+3. Check the page. It says which desktop app wants to use which app, with the app's address and your workspace, like "OpenZen for Mac wants to use OpenZen". If the desktop app isn't the one you're signing in, select **Don't allow**. Otherwise select **Allow**.
+4. Go back to the desktop app. You're signed in.
+
+If the page says **Can't sign in**, you can't open that app yet. Ask an owner or admin for access.
+
+It can use that one app, as you, and nothing else. If you lose access to the app, it does too.
+
+## Sign out
+
+Sign out in the desktop app. Or, in the Gateway, open the account menu at the bottom of the sidebar, then **AI connections**. Under **Apps on your devices**, select **Sign out** and confirm. It stops at once.
+
+## If you run the Gateway behind Cloudflare Access
+
+The app has to list the paths its desktop app uses. If the desktop app shows a login page instead of working, ask whoever builds the app to add them, then redeploy it.

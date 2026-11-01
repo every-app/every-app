@@ -1,0 +1,258 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T10:40-claude-opus55-022ccf",
+  "retryOf": null,
+  "startedAt": "2026-10-24T10:40:44.313Z",
+  "durationS": 272,
+  "terminal_reason": "completed",
+  "harness": {
+    "name": "claude",
+    "version": "2.1.309",
+    "model": {
+      "requested": "claude-opus-5-5",
+      "resolved": "claude-opus-5-5"
+    },
+    "mode": "defaults",
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "truncated",
+    "exitCodes": true,
+    "cost": "harness",
+    "resume": "native"
+  },
+  "cliCommit": "f2a1000de452",
+  "checkoutCommit": "f2a1000de452",
+  "promptVariant": "checkout-present",
+  "promptSha": "e4216a2423a5",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate",
+    "claude_consent_seeded"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T10:56:09.276Z",
+      "durationS": 50
+    },
+    {
+      "name": "setup.gateway",
+      "startedAt": "2026-10-24T10:56:11.717Z",
+      "durationS": 40
+    },
+    {
+      "name": "setup.owner",
+      "startedAt": "2026-10-24T10:56:53.142Z",
+      "durationS": 6
+    },
+    {
+      "name": "create",
+      "startedAt": "2026-10-24T10:57:07.721Z",
+      "durationS": 9
+    },
+    {
+      "name": "deploy",
+      "startedAt": "2026-10-24T10:57:18.834Z",
+      "durationS": 78
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-24T10:40:44.315Z",
+      "durationS": 881
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T10:55:29.242Z",
+      "durationS": 21
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T10:55:54.302Z",
+      "durationS": 166
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T10:58:44.780Z",
+      "durationS": 23
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T10:59:09.805Z",
+      "durationS": 47
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 49786,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [
+        "claim_owner"
+      ],
+      "errors": []
+    },
+    {
+      "argv": [
+        "create",
+        "hello",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 9129,
+      "warnings": [],
+      "actions": [],
+      "errors": []
+    },
+    {
+      "argv": [
+        "deploy",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 0,
+      "ms": 77955,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        "ACCESS_NOT_CHECKED"
+      ],
+      "actions": [],
+      "errors": []
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "done",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "event-log",
+      "latencyS": 0,
+      "linkSurfacedToPerson": false
+    },
+    "app": {
+      "by": "harness",
+      "id": "hello"
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "domain_question",
+      "claim_owner"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "create_app": "not reached"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "domain_question",
+      "expected": true
+    }
+  ],
+  "interventions": [],
+  "interventionNeeded": false,
+  "hesitations": [
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "Install done. Which domain should I use? (Setup will run at `apps.<your domain>`.)",
+      "triage": "prompt"
+    },
+    {
+      "kind": "asked_user",
+      "excerpt": "Which domain should I use?",
+      "triage": "prompt"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "app-live",
+    "rows": {
+      "G1": "pass",
+      "G2": "pass",
+      "G3": "pass",
+      "O1": "pass",
+      "A1": "pass",
+      "A2": "pass",
+      "A3": "pass",
+      "S1": "pass",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": false
+  },
+  "verdict": {
+    "value": "pass",
+    "reasonCode": null,
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": true
+  },
+  "cost": {
+    "usd": 0.2047,
+    "source": "harness",
+    "tokens": {
+      "input": 16,
+      "output": 1547,
+      "cacheRead": 161960,
+      "cacheWrite": 17692
+    },
+    "model": "claude-opus-5-5"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 8,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "entry": [
+    "everyapp.config.ts",
+    "cloudflare.config.ts",
+    "src/entry.worker.ts",
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+  ],
+  "project": ["**/*.{ts,tsx}", "!src/routeTree.gen.ts"],
+  "ignoreDependencies": [
+    // Imported as @every-app/sdk/server, a subpath knip doesn't resolve in a linked package.
+    "@every-app/sdk",
+    // `cloudflare:workers` is the runtime's module, not the `cloudflare` package.
+    "cloudflare",
+    // The SDK's required peer dependency.
+    "jose",
+    // Loaded by @tailwindcss/vite from src/styles/app.css.
+    "tailwindcss",
+  ],
+}

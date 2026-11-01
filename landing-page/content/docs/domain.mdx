@@ -1,0 +1,41 @@
+---
+title: Get a domain
+description: EveryApp needs a domain on Cloudflare. Buy one there, or bring one you already own.
+---
+
+Your Gateway and apps live under one address on your domain, like `apps.yourcompany.com`. If you'd rather leave your main domain alone, buy a new one just for your apps.
+
+## Buy a new domain
+
+The quickest way. It's ready in under a minute.
+
+1. Open [Register domains](https://dash.cloudflare.com/?to=/:account/registrar/register) in the Cloudflare dashboard.
+2. Search for a name and select **Purchase** next to the one you want.
+3. Fill in your contact and payment details, then select **Complete purchase**.
+
+A `.dev` or `.app` domain costs $1 for the first year, then $12.20 (`.dev`) or $14.20 (`.app`) a year.
+
+## Use a domain you already own
+
+If you bought it elsewhere, like GoDaddy or Namecheap, keep it there and point it at Cloudflare.
+
+1. In the Cloudflare dashboard, open [Domains](https://dash.cloudflare.com/?to=/:account/domains/overview) and select **Onboard a domain**.
+2. Enter your domain without `www` (for example `yourcompany.com`) and continue.
+3. Choose the **Free** plan.
+4. Cloudflare copies your existing DNS records. Check that your website and email records are in the list, then continue.
+5. Cloudflare shows you two nameservers. Where you bought the domain, replace its nameservers with Cloudflare's two.
+6. Wait for Cloudflare's email saying your domain is active. Usually under an hour, at most a day.
+
+<Callout type="warn">
+  If you use email on this domain (Google Workspace, Microsoft 365 or similar),
+  make sure its records were copied in step 4 before you change the nameservers.
+  Otherwise your email stops arriving.
+</Callout>
+
+## Choosing your address
+
+Setup suggests `apps.yourcompany.com`, but any name under your domain works. Apps go one level below it, like `todo.apps.yourcompany.com`. EveryApp creates the DNS records and certificates itself. If something already uses the address, setup stops rather than replace it.
+
+Pick carefully: the Gateway can't move later. To start again at another address, [remove everything](/docs/update#remove-everything) first.
+
+Next: [Set up your Gateway](/docs/gateway).

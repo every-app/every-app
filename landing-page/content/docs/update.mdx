@@ -1,0 +1,52 @@
+---
+title: Update an app
+description: Ship changes to an app, update your Gateway, remove an app, or remove everything.
+---
+
+## Ship a change
+
+In the app's folder, deploy again. The app's data stays.
+
+```bash
+everyapp deploy
+```
+
+If the change adds to what the app stores, like a new field, it needs a database migration. Your coding agent usually writes it; if not, run `pnpm run db:generate`. Without one, the deploy stops with **The schema has changes no migration covers** before changing anything.
+
+## Undo a database change
+
+A deploy saves a restore point before it changes an app's database. To go back to it, run this in the app's folder:
+
+```bash
+everyapp db restore
+```
+
+It asks first. Anything saved since that deploy is lost.
+
+## Update your Gateway
+
+```bash
+npm install -g everyapp@latest
+everyapp update
+```
+
+Your people, apps and data stay, and Cloudflare Access is updated to match. Deploying an app never updates the Gateway; only `everyapp update` does. `everyapp status` shows which release is running.
+
+## Remove an app
+
+```bash
+everyapp delete my-app
+```
+
+The app leaves your Gateway and its data is kept. Add `--purge` to delete its data too. That can't be undone, so it asks you to type the app's name.
+
+## Remove everything
+
+There's no single command yet. To take EveryApp out of your Cloudflare account, or start over at another address:
+
+1. Remove each app: `everyapp delete my-app --purge`.
+2. If Cloudflare Access is on, run `everyapp access off`.
+3. In the Cloudflare dashboard, delete the Worker `every-app-gateway` (under **Workers & Pages**), then the D1 database `every-app-gateway` and the KV namespace `every-app-gateway-OAUTH_KV` (under **Storage & Databases**).
+4. To stop the $5 a month, switch [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) to Free.
+
+Then `everyapp setup` installs a fresh Gateway. You create your owner account, invite people and deploy each app again.

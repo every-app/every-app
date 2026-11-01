@@ -1,0 +1,119 @@
+---
+title: Set up your Gateway
+description: Install the Gateway in your Cloudflare account and create your owner account. About 15 minutes.
+---
+
+<Callout type="warn">
+  EveryApp is in early development, so expect some rough edges. [For early
+  adopters](/docs/early-adopters) has more details about giving feedback. Still
+  want to get set up, or would you rather wait a few weeks?
+</Callout>
+
+The Gateway is where you and the people you invite sign in and open your apps. Before you start, you need a [Cloudflare account on Workers Paid](/docs/cloudflare) and a [domain on Cloudflare](/docs/domain).
+
+Using Claude Code, Codex or Cursor? [Let your coding agent do it](#or-let-your-coding-agent-do-it).
+
+## Install the tools
+
+1. **Node.js.** Download the LTS version (22.18 or newer) from [nodejs.org](https://nodejs.org) and run the installer.
+2. **A terminal.** On a Mac, open **Terminal**. On Windows, open **Windows Terminal**.
+3. **pnpm.** Run `npm install -g pnpm`.
+4. **Git.** On a Mac, run `git --version` and accept the offer to install it. On Windows, install it from [git-scm.com](https://git-scm.com). If you've never used git on this computer, tell it who you are:
+
+   ```bash
+   git config --global user.name "Your Name"
+   git config --global user.email you@example.com
+   ```
+
+5. **EveryApp.** Run:
+
+   ```bash
+   npm install -g everyapp
+   ```
+
+## Set it up
+
+<Steps>
+<Step>
+
+### Start setup
+
+```bash
+everyapp setup
+```
+
+</Step>
+<Step>
+
+### Log in to Cloudflare
+
+A Cloudflare page opens in your browser. Approve it, and type the code the terminal shows if asked. If you have more than one Cloudflare account, the terminal asks which one to use.
+
+Rather not grant a broad login? Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before the command. [The permissions it needs](/docs/agent/setup)
+
+</Step>
+<Step>
+
+### Choose your address
+
+Press Enter to use the suggested `apps.yourcompany.com`, or type another name under your domain. [Choosing your address](/docs/domain#choosing-your-address)
+
+</Step>
+<Step>
+
+### Wait a few minutes
+
+Setup puts the Gateway online. This usually takes 5 to 10 minutes.
+
+</Step>
+<Step>
+
+### Create your owner account
+
+Your browser opens **Set up your gateway**. Enter your name, email and a password, then select **Create owner account**.
+
+Back in the terminal, setup asks one question:
+
+- **Put Cloudflare Access in front of your Gateway?** Press Enter for Yes. People then sign in at Cloudflare before they reach your Gateway. Free for up to 50 people. To leave it off, answer No or run setup with `--no-access`; `everyapp access off` turns it off later. [Sign in through Cloudflare Access](/docs/access)
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+  The owner link works once and expires after about 24 hours. Whoever opens it
+  first becomes the owner, so don't share it. Lost it? Run `everyapp setup`
+  again for a new one.
+</Callout>
+
+## Or let your coding agent do it
+
+Paste this into Claude Code, Codex or Cursor and it runs the steps above for you:
+
+<include lang="text">./setup-prompt.txt</include>
+
+It stops when it needs you: to approve the Cloudflare login, pick an account, and create your owner account. It turns Cloudflare Access on too, and asks you for a team name if your Cloudflare account has none yet. Access stays off only if you tell it so. Then it creates and deploys a first app.
+
+## When it's done
+
+The terminal ends with your Gateway's address and what to do next:
+
+```text
+Gateway  https://apps.yourcompany.com
+Admin    https://apps.yourcompany.com/admin  invite people, choose who opens which app
+Access   on  everyone signs in through Cloudflare Access first
+
+Next:
+  everyapp create ../my-app                       start your first app
+  everyapp secret set OPENAI_API_KEY              AI for apps (or OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN)
+  everyapp secret set EMAIL_FROM EMAIL_FROM_NAME  email invites and password resets; needs Cloudflare Email Sending
+```
+
+Open the address and you're signed in. AI and email are optional: [Apps that use AI](/docs/create-an-app#apps-that-use-ai), [Send email](/docs/people#send-email).
+
+If setup stops, run `everyapp setup` again. It picks up where it left off. [Troubleshooting](/docs/troubleshooting)
+
+To check on things later, run `everyapp status`. [Check your setup](/docs/status)
+
+## Add it to your phone
+
+Open `https://apps.yourcompany.com/pwa` and follow the steps, or scan its code with your phone. Your apps then open from your home screen.

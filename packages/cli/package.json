@@ -1,0 +1,72 @@
+{
+  "name": "everyapp",
+  "private": true,
+  "author": "",
+  "description": "EveryApp CLI - Deploy and manage apps.",
+  "license": "MIT",
+  "type": "module",
+  "version": "0.3.0",
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "starter"
+  ],
+  "bin": {
+    "everyapp": "./bin/everyapp.js"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "types:check": "tsc --noEmit",
+    "prebuild": "tsc",
+    "build": "node scripts/bundle-starter.mjs && tsup --silent",
+    "dev": "tsup --watch",
+    "install:global": "pnpm run build && npm link --ignore-scripts",
+    "knip": "knip",
+    "test": "vitest run --silent --project unit",
+    "test:integration": "vitest run --silent --project integration",
+    "test:built": "EVERYAPP_BUILT_CLI=1 vitest run src/bin/builtCli.test.ts",
+    "docs:update": "pnpm -C ../sdk run catalog:update && UPDATE_DOCS=1 vitest run src/docs --silent"
+  },
+  "tsup": {
+    "entry": {
+      "index": "src/bin/cli.ts"
+    },
+    "format": [
+      "esm"
+    ],
+    "tsconfig": "tsconfig.json",
+    "clean": true,
+    "splitting": true,
+    "minify": true,
+    "noExternal": [
+      "@every-app/perimeter",
+      "@every-app/sdk",
+      "@every-app/toolbus"
+    ]
+  },
+  "dependencies": {
+    "@cloudflare/config": "0.24.1",
+    "@inquirer/prompts": "^8.7.5",
+    "@stricli/core": "^1.3.0",
+    "cf": "1.0.0-beta.14",
+    "chalk": "^5.6.2",
+    "cli-cursor": "^5.0.0",
+    "execa": "^9.6.0",
+    "jiti": "^2.6.1",
+    "undici": "^7.30.1",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@every-app/perimeter": "workspace:*",
+    "@every-app/sdk": "workspace:*",
+    "@every-app/toolbus": "workspace:*",
+    "@types/node": "^22.18.13",
+    "knip": "^5.66.4",
+    "tsup": "^6.7.0",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

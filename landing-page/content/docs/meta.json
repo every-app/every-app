@@ -1,0 +1,32 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Get started---",
+    "index",
+    "cloudflare",
+    "domain",
+    "gateway",
+    "---Apps---",
+    "apps",
+    "create-an-app",
+    "resources",
+    "update",
+    "people",
+    "usage",
+    "access",
+    "sign-in",
+    "connect-ai",
+    "native-sign-in",
+    "connect-oauth",
+    "events",
+    "ai",
+    "providers",
+    "---Help---",
+    "how-it-works",
+    "status",
+    "troubleshooting",
+    "early-adopters",
+    "commands",
+    "external:[Docs for your coding agent](/docs/agent)"
+  ]
+}

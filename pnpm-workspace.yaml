@@ -1,0 +1,89 @@
+packages:
+  - 'apps/*'
+  - 'landing-page'
+  - 'packages/*'
+  - 'starter'
+allowBuilds:
+  "@prisma/client": false
+  better-sqlite3: false
+  esbuild: true
+  sharp: true
+  workerd: true
+# The @inquirer release of 2026-10-27, taken before the 7-day release age
+# (checked: same trusted publisher with provenance, no dependency or script
+# changes): @inquirer/password 5.2.5 keeps the space after a secret prompt's
+# question while nothing is typed yet. Only these versions skip the wait.
+minimumReleaseAgeExclude:
+  - "@inquirer/prompts@8.7.5"
+  - "@inquirer/ansi@2.0.10"
+  - "@inquirer/checkbox@5.2.8"
+  - "@inquirer/confirm@6.3.5"
+  - "@inquirer/core@12.0.6"
+  - "@inquirer/editor@5.3.6"
+  - "@inquirer/expand@5.1.8"
+  - "@inquirer/external-editor@3.0.7"
+  - "@inquirer/figures@2.0.10"
+  - "@inquirer/input@5.1.9"
+  - "@inquirer/number@4.2.6"
+  - "@inquirer/password@5.2.5"
+  - "@inquirer/rawlist@5.3.8"
+  - "@inquirer/search@4.3.6"
+  - "@inquirer/select@5.2.8"
+  - "@inquirer/type@4.2.1"
+# Security floors for transitive dependencies, applied to the shared
+# lockfile: jose 6.2.5 fixes JWT claim validation, and seroval 1.6.7 clears the
+# deserialization advisories (CVE-2026-59940, CVE-2026-23736) that TanStack
+# Start's server-function handler is exposed to. tinypool 2.1.2 clears the
+# critical prototype-pollution advisories (GHSA-5gmw-xhrv-c9v3,
+# GHSA-85c8-ppgw-ccpr) in vitest 3's worker pool; vitest 3 only asks for
+# tinypool 1.x, which has no fixed release. Standalone clones of the apps
+# don't see these and rely on their own package.json floors.
+overrides:
+  jose: ^6.2.5
+  seroval: ^1.6.7
+  tinypool: ^2.1.2
+  # One @types/react (and so one csstype) across the workspace: @base-ui/react resolves
+  # csstype through hoisting, and with two @types/react versions in one lockfile the
+  # hoisted copy varied between installs, failing the gateway's type-check on CI only.
+  "@types/react": ^19.2.14
+  "@types/react-dom": ^19.2.3
+  csstype: ^3.2.3
+  # One zod across the workspace: every package and every bundle validates with
+  # the zod its schemas were written and tested against (the built CLI once ran
+  # the perimeter's zod 3 manifest schema under zod 4, #543). The one exception is
+  # the shadcn component CLI's registry client, which asks for zod 3; it is a
+  # gateway devDependency run by hand and never reaches a bundle.
+  zod: ^4.6.7
+  "@shadcn/registry>zod": ^3.25.76
+  # Dependabot floors (2026-10-26): the first patched release of each advisory,
+  # kept inside the major its dependents ask for. undici is the one exception to
+  # "what dependents ask for": miniflare pins 7.29.1 exactly, and 7.30.1 is the
+  # patch release that fixes it.
+  "@babel/core": ^7.29.7
+  "@babel/plugin-transform-modules-systemjs": ^7.29.4
+  baseline-browser-mapping: ^2.11.0
+  body-parser: ^2.4.0
+  "brace-expansion@2": ^2.1.7
+  "brace-expansion@5": ^5.0.12
+  browserslist: ^4.28.7
+  defu: ^6.1.5
+  fast-uri: ^3.1.9
+  "glob@10": ^10.5.0
+  js-yaml: ^4.3.2
+  lodash: ^4.18.0
+  "minimatch@9": ^9.0.7
+  "minimatch@10": ^10.2.3
+  nanoid: ^3.3.18
+  "picomatch@2": ^2.3.2
+  "picomatch@4": ^4.0.4
+  postcss: ^8.5.23
+  "rollup@3": ^3.30.0
+  "rollup@4": ^4.59.0
+  smol-toml: ^1.9.0
+  source-map-js: ^1.2.2
+  undici: ^7.30.1
+  "ws@8": ^8.21.0
+  "yaml@1": ^1.10.3
+  # workbox-build 7.4.1 moves to @rollup/plugin-terser 1, which clears the
+  # serialize-javascript advisories (6.x has no patched release).
+  workbox-build: ^7.4.1

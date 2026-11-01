@@ -1,0 +1,20 @@
+{
+  // Node only: the loop drives docker, the CLI and fetch from Ben's Mac. No path aliases.
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022"],
+    "skipLibCheck": true,
+    "strict": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}
