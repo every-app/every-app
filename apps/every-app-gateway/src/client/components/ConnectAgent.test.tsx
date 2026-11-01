@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * "Connect your agent", rendered for real (React in a DOM): the gateway's
- * own /mcp address, a tab per client whose command carries that address, a
- * tokens line that fits the reader's role (members cannot open /admin), and
- * the dialog's way to the connections list and the docs.
+ * "Connect your agent", rendered for real (React in a DOM): a tab per client
+ * with its own numbered steps, each command carrying the gateway's own /mcp
+ * address, a tokens line under Other that fits the reader's role (members
+ * cannot open /admin), and the dialog's way to the connections list and the
+ * docs.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -96,16 +97,37 @@ describe("ConnectAgentSteps", () => {
     expect(panelText()).toContain(`"url": "${address()}"`);
   });
 
-  it("sends owners and admins to Tokens and tells members to ask", () => {
-    let host = render(<ConnectAgentSteps role="admin" />);
-    expect(host.querySelector('a[href="/admin/tokens"]')).not.toBeNull();
+  it("numbers each client's own steps under its tab", () => {
+    render(<ConnectAgentSteps role="member" />);
+    for (const client of CONNECT_AGENT_COPY.clients) {
+      act(() => tab(client.label).click());
+      const panel = document.getElementById(
+        tab(client.label).getAttribute("aria-controls") ?? "",
+      );
+      const steps = [...(panel?.querySelectorAll("ol > li") ?? [])];
+      expect(steps.map((step) => step.querySelector("p")?.textContent)).toEqual(
+        client.steps.map((step) => step.text),
+      );
+      expect(steps.map((step) => step.firstElementChild?.textContent)).toEqual(
+        client.steps.map((_, index) => String(index + 1)),
+      );
+    }
+  });
 
-    host = render(<ConnectAgentSteps role="member" />);
-    expect(host.querySelector('a[href="/admin/tokens"]')).toBeNull();
-    expect(host.textContent).toContain(CONNECT_AGENT_COPY.token.member);
+  it("under Other, sends owners and admins to Tokens and tells members to ask", () => {
+    render(<ConnectAgentSteps role="admin" />);
+    expect(document.querySelector('a[href="/admin/tokens"]')).toBeNull();
+    act(() => tab("Other").click());
+    expect(document.querySelector('a[href="/admin/tokens"]')).not.toBeNull();
 
-    host = render(<ConnectAgentSteps role={undefined} />);
-    expect(host.textContent).not.toContain("personal access token");
+    render(<ConnectAgentSteps role="member" />);
+    act(() => tab("Other").click());
+    expect(document.querySelector('a[href="/admin/tokens"]')).toBeNull();
+    expect(panelText()).toContain(CONNECT_AGENT_COPY.token.member);
+
+    render(<ConnectAgentSteps role={undefined} />);
+    act(() => tab("Other").click());
+    expect(document.body.textContent).not.toContain("personal access token");
   });
 });
 

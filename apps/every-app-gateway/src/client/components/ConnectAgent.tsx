@@ -34,10 +34,8 @@ function useMcpAddress(): string {
 }
 
 /**
- * How to connect an AI client to this Gateway: the address to copy, a tab
- * per client with its exact step, what the sign-in page asks, and where a
- * token comes from for the reader's role (members cannot open /admin, so
- * they are told to ask; while the role is unknown the line stays out).
+ * How to connect an AI client to this Gateway: a tab per client, then that
+ * client's numbered steps, each command carrying this Gateway's address.
  */
 export function ConnectAgentSteps({
   role,
@@ -48,66 +46,83 @@ export function ConnectAgentSteps({
   onNavigate?: () => void;
 }) {
   const address = useMcpAddress();
-  const canManageTokens = role === "owner" || role === "admin";
   return (
-    <div className="flex min-w-0 flex-col gap-4 text-sm">
-      <div className="flex flex-col gap-2">
-        <p className="text-muted-foreground">{COPY.intro}</p>
-        {address ? (
-          <CodeBlock code={address} successMessage={COPY.addressCopied} />
-        ) : null}
+    <Tabs defaultValue={COPY.clients[0].id} className="min-w-0 gap-4 text-sm">
+      {/* The tabs scroll sideways on a phone instead of being cut off. */}
+      <div className="scrollbar-hidden overflow-x-auto border-b border-border">
+        <TabsList variant="line" className="h-9 gap-4" aria-label="AI app">
+          {COPY.clients.map((client) => (
+            <TabsTrigger
+              key={client.id}
+              value={client.id}
+              className="flex-none px-0.5 pb-2"
+            >
+              {client.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
       </div>
-      <Tabs defaultValue={COPY.clients[0].id} className="min-w-0">
-        {/* The tabs scroll sideways on a phone instead of being cut off. */}
-        <div className="scrollbar-hidden overflow-x-auto border-b border-border">
-          <TabsList variant="line" className="h-9 gap-4" aria-label="AI app">
-            {COPY.clients.map((client) => (
-              <TabsTrigger
-                key={client.id}
-                value={client.id}
-                className="flex-none px-0.5 pb-2"
+      {COPY.clients.map((client) => (
+        <TabsContent
+          key={client.id}
+          value={client.id}
+          className="flex flex-col gap-4"
+        >
+          <ol className="flex flex-col gap-4">
+            {client.steps.map((step, index) => (
+              <li
+                key={step.text}
+                className="relative grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 gap-y-2 not-last:before:absolute not-last:before:top-6 not-last:before:-bottom-3 not-last:before:left-[9.5px] not-last:before:w-px not-last:before:bg-border"
               >
-                {client.label}
-              </TabsTrigger>
+                <span
+                  aria-hidden
+                  className="flex size-5 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background"
+                >
+                  {index + 1}
+                </span>
+                <p className="leading-5 font-medium">{step.text}</p>
+                {step.code && address ? (
+                  <div className="col-start-2">
+                    <CodeBlock code={step.code(address)} />
+                  </div>
+                ) : null}
+              </li>
             ))}
-          </TabsList>
-        </div>
-        {COPY.clients.map((client) => (
-          <TabsContent
-            key={client.id}
-            value={client.id}
-            className="flex flex-col gap-2 pt-1"
-          >
-            <p>{client.before}</p>
-            {client.code && address ? (
-              <CodeBlock code={client.code(address)} />
-            ) : null}
-            {client.after ? (
-              <p className="text-muted-foreground">{client.after}</p>
-            ) : null}
-          </TabsContent>
-        ))}
-      </Tabs>
-      <p className="text-muted-foreground">{COPY.next}</p>
-      {role ? (
-        <p className="text-xs text-muted-foreground">
-          {canManageTokens ? (
-            <>
-              {COPY.token.manager}{" "}
-              <Link
-                to="/admin/tokens"
-                onClick={onNavigate}
-                className="underline underline-offset-4 hover:text-foreground"
-              >
-                {COPY.token.managerLink}
-              </Link>
-            </>
-          ) : (
-            COPY.token.member
-          )}
-        </p>
-      ) : null}
-    </div>
+          </ol>
+          {client.id === "other" && role ? (
+            <TokenNote role={role} onNavigate={onNavigate} />
+          ) : null}
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
+/**
+ * Where a token comes from, for tools that can't sign in: owners and admins
+ * go to Tokens; members cannot open /admin, so they are told to ask.
+ */
+function TokenNote({
+  role,
+  onNavigate,
+}: {
+  role: string;
+  onNavigate?: () => void;
+}) {
+  if (role !== "owner" && role !== "admin") {
+    return <p className="text-xs text-muted-foreground">{COPY.token.member}</p>;
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      {COPY.token.manager}{" "}
+      <Link
+        to="/admin/tokens"
+        onClick={onNavigate}
+        className="underline underline-offset-4 hover:text-foreground"
+      >
+        {COPY.token.managerLink}
+      </Link>
+    </p>
   );
 }
 

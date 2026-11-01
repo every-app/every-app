@@ -8,63 +8,87 @@
 
 type ConnectClientId = "claude" | "claude-code" | "codex" | "cursor" | "other";
 
+interface ConnectStep {
+  /** What to do. */
+  text: string;
+  /** The command, file or address to paste, from this Gateway's /mcp address. */
+  code?: (address: string) => string;
+}
+
 interface ConnectClient {
   id: ConnectClientId;
   /** The tab's label. */
   label: string;
-  /** What to do, before the code block. */
-  before: string;
-  /** The command or file to paste, from this Gateway's /mcp address. */
-  code?: (address: string) => string;
-  /** What to do after pasting it. */
-  after?: string;
+  /** Numbered under the tab, as many as the client needs. */
+  steps: readonly ConnectStep[];
 }
+
+/** The last step everywhere: the Gateway's sign-in page asks which apps. */
+const SIGN_IN = "Sign in and choose which apps it can use";
 
 export const CONNECT_AGENT_COPY = {
   /** The sidebar item and the dialog's title. */
   title: "Connect your agent",
-  intro:
-    "One address for every app you can open. Copy it into Claude, ChatGPT, Claude Code, Codex or Cursor:",
-  addressCopied: "Address copied",
   clients: [
     {
       id: "claude",
       label: "Claude & ChatGPT",
-      before:
-        "In Claude (web or desktop) or ChatGPT, add a custom connector and paste the address above.",
+      steps: [
+        { text: "Copy this URL", code: (address) => address },
+        { text: "In Claude or ChatGPT, add a custom connector and paste it" },
+        { text: SIGN_IN },
+      ],
     },
     {
       id: "claude-code",
       label: "Claude Code",
-      before: "In a terminal, run:",
-      code: (address) => `claude mcp add --transport http everyapp ${address}`,
-      after: "Then type /mcp in Claude Code, choose everyapp and Authenticate.",
+      steps: [
+        {
+          text: "Run this in a terminal",
+          code: (address) =>
+            `claude mcp add --transport http everyapp ${address}`,
+        },
+        { text: "Type /mcp, choose everyapp, then Authenticate" },
+        { text: SIGN_IN },
+      ],
     },
     {
       id: "codex",
       label: "Codex",
-      before: "In a terminal, run:",
-      code: (address) =>
-        `codex mcp add everyapp --url ${address}\ncodex mcp login everyapp`,
+      steps: [
+        {
+          text: "Add EveryApp",
+          code: (address) => `codex mcp add everyapp --url ${address}`,
+        },
+        { text: SIGN_IN, code: () => "codex mcp login everyapp" },
+      ],
     },
     {
       id: "cursor",
       label: "Cursor",
-      before:
-        "Add this to ~/.cursor/mcp.json (or .cursor/mcp.json in a project):",
-      code: (address) =>
-        JSON.stringify({ mcpServers: { everyapp: { url: address } } }, null, 2),
-      after: "Cursor then asks you to sign in.",
+      steps: [
+        {
+          text: "Add this to ~/.cursor/mcp.json",
+          code: (address) =>
+            JSON.stringify(
+              { mcpServers: { everyapp: { url: address } } },
+              null,
+              2,
+            ),
+        },
+        { text: "Sign in when Cursor asks" },
+      ],
     },
     {
       id: "other",
       label: "Other",
-      before: "Add an MCP server with the address above.",
+      steps: [
+        { text: "Add an MCP server with this URL", code: (address) => address },
+        { text: SIGN_IN },
+      ],
     },
   ] satisfies readonly ConnectClient[],
-  /** Under the tabs: what the sign-in page asks. */
-  next: "A sign-in page opens: choose the apps, read & write or read only, and allow it. An agent can't delete anything.",
-  /** For tools that can't sign in, by the reader's role. */
+  /** Under the Other tab, for tools that can't sign in, by the reader's role. */
   token: {
     manager:
       "Tools that can't sign in take a personal access token as an Authorization: Bearer header:",
@@ -73,5 +97,5 @@ export const CONNECT_AGENT_COPY = {
       "Tools that can't sign in need a personal access token: ask an owner or admin for one.",
   },
   connectionsLink: "See or revoke connections",
-  docsLink: "Connect an agent, in the docs",
+  docsLink: "Docs",
 } as const;
