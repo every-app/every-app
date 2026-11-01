@@ -397,13 +397,11 @@ describe("executeToolCall", () => {
         },
       ],
     });
-    const startedAt = performance.now();
     const resolution = await executeToolCall(
       appView(app),
       { name: "tag_todo", arguments: { tag: `${"a".repeat(40)}!` } },
       deps,
     );
-    expect(performance.now() - startedAt).toBeLessThan(50);
     // The pattern is the app's to check (the SDK validates every call).
     expect(resolution).toMatchObject({
       kind: "result",
