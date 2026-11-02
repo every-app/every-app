@@ -4,10 +4,13 @@ import {
   organizationMemberMiddleware,
 } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
-import { GatewayError } from "@/server/errors";
+import { GatewayError, PublicError } from "@/server/errors";
 import type { EventActor } from "@/server/events/catalogue";
 import * as oauth from "@/server/oauth/service";
-import { disconnectConnectionSchema } from "@/schemas/oauth-provider";
+import {
+  disconnectConnectionSchema,
+  revokeBackgroundGrantSchema,
+} from "@/schemas/oauth-provider";
 
 // Connected accounts (docs/design/2026-10-oauth-providers.md section 5):
 // the OAuth accounts a person connected through the Gateway, and the
@@ -86,5 +89,61 @@ export const disconnectConnection = createServerFn({ method: "POST" })
         ? { userId: data.userId ?? context.user.id }
         : {}),
     });
+    return { ok: true as const };
+  });
+
+/**
+ * The apps the caller let use their connections in the background
+ * (docs/design/2026-11-birds-decisions/888-background-oauth.md), in the
+ * active organization.
+ */
+export const listMyBackgroundGrants = createServerFn()
+  .middleware([publicErrorMiddleware, organizationMemberMiddleware])
+  .handler(async ({ context }) => ({
+    grants: await (
+      await import("@/server/oauth/background")
+    ).listBackgroundGrants({
+      organizationId: context.org.orgId,
+      userId: context.user.id,
+    }),
+  }));
+
+/** Every live background grant in the organization (owners and admins). */
+export const listAllBackgroundGrants = createServerFn()
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .handler(async ({ context }) => ({
+    grants: await (
+      await import("@/server/oauth/background")
+    ).listBackgroundGrants({
+      organizationId: context.org.orgId,
+      userId: "all",
+    }),
+  }));
+
+/**
+ * Revoke an app's background use: the caller's own grant (any member),
+ * or any grant in the organization for an owner or admin (audit-logged
+ * as theirs).
+ */
+export const revokeBackgroundGrant = createServerFn({ method: "POST" })
+  .middleware([publicErrorMiddleware, organizationMemberMiddleware])
+  .validator((data: unknown) => revokeBackgroundGrantSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    const admin = context.org.role === "owner" || context.org.role === "admin";
+    const { revokeBackgroundGrant: revokeGrant } = await import(
+      "@/server/oauth/background"
+    );
+    const revoked = await revokeGrant({
+      grantId: data.grantId,
+      organizationId: context.org.orgId,
+      actorUserId: context.user.id,
+      asAdmin: admin,
+    });
+    if (!revoked) {
+      throw new PublicError(
+        "CONNECTION_NOT_FOUND",
+        "No such background use, or it already ended.",
+      );
+    }
     return { ok: true as const };
   });

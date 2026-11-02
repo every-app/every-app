@@ -1,4 +1,9 @@
-import { IDENTITY_HEADER, ORG_HEADER, SHARED_ENV } from "../internal/index.js";
+import {
+  IDENTITY_HEADER,
+  ORG_HEADER,
+  SHARED_ENV,
+  USER_HEADER,
+} from "../internal/index.js";
 import { attributionFromContext } from "./context.js";
 
 /**
@@ -15,10 +20,17 @@ import { attributionFromContext } from "./context.js";
  *    checks is active and has a live member. An organization's own app may
  *    leave it out (the gateway knows its organization) and may only name
  *    its own.
+ *  - `{ background: true, organizationId, userId }`: background work on
+ *    one member's own OAuth connection (`integrationFetch` to a provider's
+ *    API), which works only after that member allowed it on the Gateway's
+ *    page (`connectUrl({ background: true })`), for the sets the entry
+ *    marks `background`. The call is still the app's, on the member's
+ *    behalf; no identity for the member reaches the app. Other gateway
+ *    calls ignore `userId`.
  */
 export type GatewayCallFor =
   | Request
-  | { background: true; organizationId?: string };
+  | { background: true; organizationId?: string; userId?: string };
 
 /**
  * A gateway call that doesn't say whom it is for where it must: from a
@@ -60,6 +72,11 @@ function checkAttribution(
         `${what}: \`for\` is the inbound Request or { background: true, organizationId }.`,
       );
     }
+    if (target.userId !== undefined && !nonEmpty(target.userId)) {
+      throw new AttributionError(
+        `${what}: { background: true, userId } needs a non-empty user id.`,
+      );
+    }
     if (
       target.organizationId !== undefined &&
       !nonEmpty(target.organizationId)
@@ -87,6 +104,7 @@ export function applyAttribution(
 ): void {
   headers.delete(IDENTITY_HEADER);
   headers.delete(ORG_HEADER);
+  headers.delete(USER_HEADER);
   if (target === undefined) return;
   if (isRequest(target)) {
     const identity = target.headers.get(IDENTITY_HEADER);
@@ -94,6 +112,7 @@ export function applyAttribution(
     return;
   }
   if (target.organizationId) headers.set(ORG_HEADER, target.organizationId);
+  if (target.userId) headers.set(USER_HEADER, target.userId.trim());
 }
 
 function isSharedWorker(env: object): boolean {

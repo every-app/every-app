@@ -1081,6 +1081,19 @@ export async function disconnect(
     }
   }
   const removed = await ProviderConnectionRepository.remove(connection.id);
+  // Apps' background use of the connection ends with it.
+  if (connection.userId) {
+    const { endGrantsForConnection } = await import("./background");
+    await endGrantsForConnection(connection.id, org.userId).catch(
+      (error: unknown) => {
+        logEvent(
+          "oauth.background_end_failed",
+          { error: error instanceof Error ? error.name : "unknown" },
+          "warn",
+        );
+      },
+    );
+  }
   logEvent("provider.disconnected", {
     provider: input.providerId,
     org: org.orgId,

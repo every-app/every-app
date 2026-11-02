@@ -520,6 +520,17 @@ const CapabilityEntryBaseSchema = z.object({
    * registers on the client. The catalog names none: each app says its own.
    */
   redirectPaths: z.array(z.string()).optional().catch(undefined),
+  /**
+   * For an OAuth provider the Gateway runs the flow for: the scope sets
+   * (a subset of `scopes`) the app may use on a member's own connection
+   * with nobody present, once that member allows it on the Gateway's
+   * page, and why (docs/design/2026-11-birds-decisions/888-background-oauth.md).
+   * A malformed stored value reads as none, so background calls are refused.
+   */
+  background: z
+    .object({ scopes: z.array(z.string()), why: z.string() })
+    .optional()
+    .catch(undefined),
   /** What the app does with it; each capability says which levels it offers. */
   access: z.enum(["read", "write"]),
   ...SettingNeedFieldsSchema,
@@ -624,6 +635,7 @@ export function capabilityEntrySchema(
       access,
       scopes,
       redirectPaths,
+      background: noBackground(capability.label),
     }).strict();
   }
   // Own keys only: `constructor` is not a set.
@@ -657,7 +669,57 @@ export function capabilityEntrySchema(
     access,
     scopes,
     redirectPaths,
-  }).strict();
+    background:
+      capability.mode === "oauth_client" && capability.flow
+        ? backgroundSchema(name).optional()
+        : noBackground(capability.label),
+  })
+    .strict()
+    .superRefine(backgroundWithinScopes);
+}
+
+/** A capability that can't be used on a member's connection in the background. */
+function noBackground(label: string) {
+  return z
+    .undefined({
+      error: `${label} takes no background; only an OAuth provider the Gateway connects people to does`,
+    })
+    .optional();
+}
+
+/**
+ * `background: { scopes, why }`: the sets (by `name`'s rule) the app may
+ * use on a member's own connection with nobody present, once that member
+ * allows it, and why, which the Gateway's consent page shows.
+ */
+function backgroundSchema(name: z.ZodType<string>) {
+  const needs =
+    "background.scopes lists one or more of this entry's scopes, each once";
+  return z
+    .object({
+      scopes: z
+        .array(name, { error: needs })
+        .min(1, needs)
+        .refine((list) => new Set(list).size === list.length, needs),
+      why: z.string().trim().min(1).max(200),
+    })
+    .strict();
+}
+
+/** Every background set is one of the entry's own `scopes`. */
+function backgroundWithinScopes(
+  entry: { scopes?: readonly string[]; background?: { scopes: string[] } },
+  ctx: z.RefinementCtx,
+): void {
+  const declared = entry.scopes ?? [];
+  entry.background?.scopes.forEach((set, index) => {
+    if (declared.includes(set)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["background", "scopes", index],
+      message: `${set} isn't in this entry's scopes; background.scopes is a subset of them`,
+    });
+  });
 }
 
 /** One authored capability entry, whichever capability it is for. */
@@ -698,7 +760,10 @@ const UnknownCapabilityEntrySchema = CapabilityEntryBaseSchema.extend({
     )
     .optional(),
   redirectPaths: RedirectPathsSchema.optional(),
-}).strict();
+  background: backgroundSchema(z.string().regex(SCOPE_SET_NAME)).optional(),
+})
+  .strict()
+  .superRefine(backgroundWithinScopes);
 
 /** What the strict validator does with a capability id its lookup doesn't have. */
 export type UnknownCapabilities = "refuse" | "accept";

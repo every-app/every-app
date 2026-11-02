@@ -31,6 +31,9 @@ vi.mock("@/serverFunctions/connections", () => ({
   listMyConnections: mocks.listMyConnections,
   listConnectableProviders: mocks.listConnectableProviders,
   disconnectConnection: mocks.disconnectConnection,
+  listMyBackgroundGrants: async () => ({ grants: [] }),
+  listAllBackgroundGrants: async () => ({ grants: [] }),
+  revokeBackgroundGrant: async () => ({ ok: true }),
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 

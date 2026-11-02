@@ -46,6 +46,7 @@ import {
 import {
   applyAttribution,
   attributionFor,
+  isRequest,
   type GatewayCallFor,
 } from "./attribution.js";
 import type { SetupInfo } from "./refusal.js";
@@ -233,6 +234,10 @@ export function integrationFetch({
           upstream,
           headers,
           values,
+          background:
+            target !== undefined &&
+            !isRequest(target) &&
+            Boolean(target.userId),
         });
       }
       return oauthClientCall({
@@ -306,6 +311,7 @@ async function devHeldTokenCall({
   upstream,
   headers,
   values,
+  background = false,
 }: {
   provider: string;
   capability: OAuthClientCapability;
@@ -313,6 +319,8 @@ async function devHeldTokenCall({
   upstream: URL;
   headers: Headers;
   values: Record<string, unknown>;
+  /** `for: { background: true, userId }`: the entry's background sets alone, as the gateway. */
+  background?: boolean;
 }): Promise<Response> {
   const token = stringValue(values[devAccessTokenName(provider)]);
   if (!token) {
@@ -337,12 +345,28 @@ async function devHeldTokenCall({
     capability.access.includes("write") &&
     oauthWriteMethods(capability).includes(method) &&
     devDeclaredAccess(provider, values) === "write";
-  if (policy && grant) {
+  // In the background on a member's connection: the sets the entry marks
+  // `background` alone (the developer's token stands for the member's
+  // connection and their opt-in).
+  const sets =
+    background && grant
+      ? grant.sets.filter((name) =>
+          devBackgroundSets(provider, values).includes(name),
+        )
+      : grant?.sets;
+  if (background && (!policy || !sets || sets.length === 0)) {
+    return devRefusal(
+      403,
+      "integration_scope_not_allowed",
+      `This app's entry for ${capability.label} marks no scope sets for background use (background: { scopes: [...], why } in everyapp.config.ts).`,
+    );
+  }
+  if (policy && grant && sets) {
     const allowed = heldTokenCallAllowed({
       policy,
-      declaredSets: grant.sets,
+      declaredSets: sets,
       // The developer's token stands for a connection granted every set.
-      connectionSets: grant.sets,
+      connectionSets: sets,
       hosts: capability.api,
       method,
       upstream,
@@ -402,6 +426,27 @@ function devDeclaredAccess(
     return typeof entry?.["access"] === "string" ? entry["access"] : null;
   } catch {
     return null;
+  }
+}
+
+/** The sets the dev manifest entry for `provider` marks `background` (EVERYAPP_DEV_CAPABILITIES). */
+function devBackgroundSets(
+  provider: string,
+  values: Record<string, unknown>,
+): string[] {
+  const raw = values["EVERYAPP_DEV_CAPABILITIES"];
+  try {
+    const capabilities =
+      typeof raw === "string" ? jsonRecord(JSON.parse(raw)) : undefined;
+    const background = jsonRecord(
+      jsonRecord(capabilities?.[provider])?.["background"],
+    );
+    const scopes = background?.["scopes"];
+    return Array.isArray(scopes)
+      ? scopes.filter((name): name is string => typeof name === "string")
+      : [];
+  } catch {
+    return [];
   }
 }
 
@@ -874,6 +919,18 @@ export interface OAuthClientIntegrationStatus extends IntegrationStatus {
     scopeSets: readonly string[];
     ready: boolean;
     reconnect?: boolean;
+    /**
+     * For an entry that marks `background` sets, asked with a person
+     * behind the request: whether they let this app use the connection
+     * while they're away (`for: { background: true, userId }`), for which
+     * sets, and the Gateway page where they allow it (`connectUrl({
+     * background: true })`).
+     */
+    background?: {
+      allowed: boolean;
+      sets: readonly string[];
+      connectPath: string;
+    };
   } | null;
 }
 

@@ -1098,6 +1098,83 @@ export const catalogue = {
     });
   },
 
+  /**
+   * A member let an app use their connection with nobody present, for
+   * the background sets named (docs/design/2026-11-birds-decisions/888-background-oauth.md).
+   */
+  providerBackgroundGranted(input: {
+    provider: EventProvider;
+    app: EventApp;
+    user: EventUser;
+    grantId: string;
+    scopeSets: readonly string[];
+  }): BuiltEvent {
+    return built("provider.background_granted", {
+      provider: provider(input.provider),
+      app: app(input.app),
+      user: user(input.user),
+      grantId: input.grantId,
+      scopeSets: [...input.scopeSets],
+    });
+  },
+
+  /** The member, or an owner or admin (the event's actor), ended an app's background use. */
+  providerBackgroundRevoked(input: {
+    provider: EventProvider;
+    app: EventApp;
+    user: EventUser;
+    grantId: string;
+    by: "member" | "admin";
+  }): BuiltEvent {
+    return built("provider.background_revoked", {
+      provider: provider(input.provider),
+      app: app(input.app),
+      user: user(input.user),
+      grantId: input.grantId,
+      by: input.by,
+    });
+  },
+
+  /** An app's background use ended on its own; `reason` says why. */
+  providerBackgroundLapsed(input: {
+    provider: EventProvider;
+    app: EventApp;
+    user: EventUser;
+    grantId: string;
+    reason: string;
+  }): BuiltEvent {
+    return built("provider.background_lapsed", {
+      provider: provider(input.provider),
+      app: app(input.app),
+      user: user(input.user),
+      grantId: input.grantId,
+      reason: input.reason,
+    });
+  },
+
+  /**
+   * An app's first background call of a UTC day on a member's
+   * connection: `connection.used` with `kind: "background"`, the linked
+   * dev precedent's once a day (the per-call log line has the rest).
+   */
+  backgroundUsed(input: {
+    grantId: string;
+    provider: EventProvider;
+    app: EventApp;
+    user: EventUser;
+  }): BuiltEvent {
+    return built("connection.used", {
+      connection: {
+        id: input.grantId,
+        clientName: input.provider.name,
+        kind: "background",
+      },
+      provider: provider(input.provider),
+      app: app(input.app),
+      user: user(input.user),
+    });
+  },
+
   /** The provider refused a refresh; once per connection until it is connected again. */
   providerConnectionExpired(input: {
     provider: EventProvider;
@@ -1397,6 +1474,9 @@ export function summarize(
     }
     case "connection.used": {
       const connection = obj(d.connection);
+      if (connection.kind === "background") {
+        return `${appLabel(d.app)} used ${userLabel(d.user)}'s ${str(connection.clientName) ?? "provider"} connection in the background`;
+      }
       return `${actorLabel(actor)} used ${appLabel(d.app)}'s providers from ${str(connection.clientName) ?? "everyapp dev"} (linked dev)`;
     }
     case "connection.created": {
@@ -1478,6 +1558,12 @@ export function summarize(
       return `${accountLabel(d.account, actor)} connected ${str(obj(d.provider).name) ?? "a provider"}`;
     case "provider.disconnected":
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} account was disconnected`;
+    case "provider.background_granted":
+      return `${userLabel(d.user)} let ${appLabel(d.app)} use their ${str(obj(d.provider).name) ?? "provider"} connection in the background`;
+    case "provider.background_revoked":
+      return `${actorLabel(actor)} revoked ${appLabel(d.app)}'s background use of ${userLabel(d.user)}'s ${str(obj(d.provider).name) ?? "provider"} connection`;
+    case "provider.background_lapsed":
+      return `${appLabel(d.app)}'s background use of ${userLabel(d.user)}'s ${str(obj(d.provider).name) ?? "provider"} connection ended (${str(d.reason) ?? "lapsed"})`;
     case "provider.connection_expired":
       return `${accountLabel(d.account, actor)}'s ${str(obj(d.provider).name) ?? "provider"} connection expired and needs reconnecting`;
     case "ai.default_changed": {

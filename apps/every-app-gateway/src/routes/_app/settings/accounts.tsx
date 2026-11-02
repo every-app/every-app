@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { BackgroundGrants } from "@/client/components/BackgroundGrants";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { Page, PageHeader } from "@/client/components/PageHeader";
@@ -177,6 +178,8 @@ function AccountsPage() {
           })}
         </ul>
       )}
+
+      <BackgroundGrants />
 
       {disconnecting ? (
         <ConfirmDialog

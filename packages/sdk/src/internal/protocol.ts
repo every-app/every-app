@@ -49,6 +49,15 @@ export const ORG_HEADER = "x-everyapp-org";
  * branch and ignores it elsewhere.
  */
 export const ACCOUNT_HEADER = "x-everyapp-account";
+/**
+ * On background work's call to an OAuth provider's API: the member whose
+ * own connection the call uses, which only that member's opt-in on the
+ * Gateway's page allows (docs/design/2026-11-birds-decisions/888-background-oauth.md).
+ * Set by `for: { background: true, userId }`; the gateway reads it on the
+ * held-token branch only, never with a person's identity on the call, and
+ * the perimeter strips it, with every `x-everyapp-*`, from browsers.
+ */
+export const USER_HEADER = "x-everyapp-user";
 /** The values {@link ACCOUNT_HEADER} may carry. */
 export type ConnectionAccount = "user" | "organization";
 /** 120-second lifetime — caps revocation staleness while surviving clock skew. */

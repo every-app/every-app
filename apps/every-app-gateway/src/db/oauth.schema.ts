@@ -106,3 +106,54 @@ export const oauthStates = sqliteTable("oauth_states", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/**
+ * One member's opt-in to let one app use their connection with nobody
+ * present (docs/design/2026-11-birds-decisions/888-background-oauth.md):
+ * granted on the Gateway's own page (`/connect/<id>/background`), for the
+ * background sets the app's manifest entry declared at the time. One row
+ * per (connection, app); a grant made again after a revocation or lapse
+ * reuses the row. Rows are kept after they end, for Connected accounts and
+ * the admin list, and are never read as live once `ended_at` is set.
+ */
+export const providerBackgroundGrants = sqliteTable(
+  "provider_background_grants",
+  {
+    // `bgg_<uuid>`.
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    // The member's own connection (provider_connections.id). A reconnect
+    // after a disconnect is a new row there, so it needs a new grant.
+    connectionId: text("connection_id").notNull(),
+    // apps.id of the first-party organization app the grant is for.
+    appRowId: text("app_row_id").notNull(),
+    userId: text("user_id").notNull(),
+    // The background scope set names consented to, JSON array.
+    scopeSets: text("scope_sets").notNull(),
+    grantedAt: integer("granted_at", { mode: "timestamp_ms" }).notNull(),
+    // The member last opened the app (the perimeter touches it, at most
+    // once a day): the 90-day idle lapse counts from here.
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
+    // The app last used the grant (at most once a day).
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    // When the grant ended (revoked or lapsed); null while it is live.
+    endedAt: integer("ended_at", { mode: "timestamp_ms" }),
+    // Why it ended: "revoked" | "admin_revoked" | "idle" | "no_access" |
+    // "member_inactive" | "app_removed" | "disconnected".
+    endedReason: text("ended_reason"),
+    // The user id of whoever revoked it; null for a lapse.
+    endedBy: text("ended_by"),
+  },
+  (table) => [
+    uniqueIndex("provider_background_grants_pair_idx").on(
+      table.connectionId,
+      table.appRowId,
+    ),
+    index("provider_background_grants_user_idx").on(
+      table.userId,
+      table.appRowId,
+    ),
+    index("provider_background_grants_org_idx").on(table.organizationId),
+  ],
+);

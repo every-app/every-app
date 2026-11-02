@@ -6,6 +6,8 @@
  *     → 302 to the provider's authorize URL (PKCE S256, a one-use state)
  *   GET /connect/<id>/callback?code&state      ← the redirect URI registered
  *     → the code exchanged, the connection stored sealed, 302 to `return`
+ *   GET|POST /connect/<id>/background?app=…     ← a member's background opt-in
+ *     (./backgroundPage.ts)
  *
  * A provider's `error`, a bad state or a refused scope ends on a Gateway
  * page, never a redirect. Logs name the provider, the organization, the
@@ -69,10 +71,10 @@ function settings(): ConnectEnv {
 /** Which route a path is: the start, the callback, or neither. */
 function parseConnectPath(
   pathname: string,
-): { id: string; kind: "start" | "callback" } | null {
+): { id: string; kind: "start" | "callback" | "background" } | null {
   if (!pathname.startsWith(CONNECT_PREFIX)) return null;
   const rest = pathname.slice(CONNECT_PREFIX.length);
-  const match = /^([^/]+)(\/callback)?\/?$/.exec(rest);
+  const match = /^([^/]+)(\/callback|\/background)?\/?$/.exec(rest);
   if (!match) return null;
   let id: string;
   try {
@@ -81,7 +83,15 @@ function parseConnectPath(
     return null;
   }
   if (!PROVIDER_ID.test(id)) return null;
-  return { id, kind: match[2] ? "callback" : "start" };
+  return {
+    id,
+    kind:
+      match[2] === "/callback"
+        ? "callback"
+        : match[2] === "/background"
+          ? "background"
+          : "start",
+  };
 }
 
 function redirect(location: string): Response {
@@ -690,8 +700,9 @@ async function serveCallback(
 }
 
 /**
- * Serve `/connect/<id>` and `/connect/<id>/callback`, or null for a path
- * that is neither (the control plane's). GET only.
+ * Serve `/connect/<id>`, `/connect/<id>/callback` and
+ * `/connect/<id>/background`, or null for a path that is none of them
+ * (the control plane's). GET only, but the background page's own POST.
  */
 export async function serveConnectRoute(
   request: Request,
@@ -699,10 +710,22 @@ export async function serveConnectRoute(
 ): Promise<Response | null> {
   const parsed = parseConnectPath(new URL(request.url).pathname);
   if (!parsed) return null;
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, { status: 405, headers: { allow: "GET" } });
+  const method = request.method.toUpperCase();
+  const reads = method === "GET" || method === "HEAD";
+  if (!reads && !(parsed.kind === "background" && method === "POST")) {
+    return new Response(null, {
+      status: 405,
+      headers: { allow: parsed.kind === "background" ? "GET, POST" : "GET" },
+    });
   }
   try {
+    if (parsed.kind === "background") {
+      const page = await import("./backgroundPage");
+      const pageDeps = { signedIn, safeReturnTo };
+      return reads
+        ? await page.serveBackgroundStart(request, parsed.id, pageDeps)
+        : await page.serveBackgroundDecision(request, parsed.id, pageDeps);
+    }
     return parsed.kind === "start"
       ? await serveStart(request, parsed.id, deps)
       : await serveCallback(request, parsed.id, deps);

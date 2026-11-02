@@ -4,7 +4,11 @@
  */
 import { afterEach, describe, expect, vi } from "vitest";
 import { it } from "../../test/inOrganization";
-import { ACCOUNT_HEADER, OAUTH_PRESETS } from "../internal/index.js";
+import {
+  ACCOUNT_HEADER,
+  OAUTH_PRESETS,
+  USER_HEADER,
+} from "../internal/index.js";
 import { connectPath, connectUrl } from "./connectUrl.js";
 import {
   devAccessTokenName,
@@ -33,6 +37,30 @@ describe("connectUrl", () => {
     ).toBe(
       "https://apps.example.com/connect/github-oauth?return=https%3A%2F%2Fseo.apps.example.com%2Fsettings%3Ftab%3Dgoogle&account=organization&sets=identity%2Crepo.read",
     );
+  });
+
+  it("builds the background consent URL for this app (#888)", () => {
+    expect(
+      connectUrl({
+        env: {
+          GATEWAY_URL: "https://apps.example.com",
+          EVERYAPP_APP_ID: "agent",
+        },
+        provider: "github-oauth",
+        background: true,
+        returnTo: "https://agent.apps.example.com/settings",
+        sets: ["repo.write"],
+      }),
+    ).toBe(
+      "https://apps.example.com/connect/github-oauth/background?app=agent&return=https%3A%2F%2Fagent.apps.example.com%2Fsettings",
+    );
+    expect(() =>
+      connectUrl({
+        env: { GATEWAY_URL: "https://apps.example.com" },
+        provider: "github-oauth",
+        background: true,
+      }),
+    ).toThrow(/EVERYAPP_APP_ID/);
   });
 
   it("needs GATEWAY_URL", () => {
@@ -165,5 +193,95 @@ describe("the held-token twin in local dev", () => {
         ready: true,
       },
     });
+  });
+});
+
+describe("background work on a member's connection (#888)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const files = [
+    {
+      file: ".everyapp/providers/github-oauth.json",
+      spec: OAUTH_PRESETS["github-oauth"],
+    },
+  ];
+
+  it("sends x-everyapp-user over the binding for for: { background: true, userId }, and never one the app set", async () => {
+    const seen: Request[] = [];
+    const env = {
+      EVERY_APP_GATEWAY: {
+        fetch: async (request: Request) => {
+          seen.push(request);
+          return Response.json({});
+        },
+      },
+    };
+    const asMember = integrationFetch({
+      env,
+      provider: "github-oauth",
+      for: { background: true, userId: "user_1" },
+    });
+    await asMember("https://api.github.com/user/repos", {
+      headers: { [USER_HEADER]: "someone-else" },
+    });
+    expect(seen[0]!.headers.get(USER_HEADER)).toBe("user_1");
+    const asOrg = integrationFetch({
+      env,
+      provider: "github-oauth",
+      for: { background: true },
+    });
+    await asOrg("https://api.github.com/user/repos", {
+      headers: { [USER_HEADER]: "someone-else" },
+    });
+    expect(seen[1]!.headers.get(USER_HEADER)).toBeNull();
+    expect(() =>
+      integrationFetch({
+        env,
+        provider: "github-oauth",
+        for: { background: true, userId: " " },
+      }),
+    ).toThrow(/non-empty user id/);
+  });
+
+  it("holds a dev background call to the entry's background sets", async () => {
+    const sent = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      Response.json({}),
+    );
+    vi.stubGlobal("fetch", sent);
+    const env = (entry: Record<string, unknown>) => ({
+      EVERYAPP_DEV: "1",
+      EVERYAPP_DEV_PROVIDERS: JSON.stringify(files),
+      EVERYAPP_DEV_CAPABILITIES: JSON.stringify({ "github-oauth": entry }),
+      GITHUB_OAUTH_ACCESS_TOKEN: "gho_dev",
+    });
+    const marked = integrationFetch({
+      env: env({
+        access: "write",
+        scopes: ["repo.read", "repo.write"],
+        background: { scopes: ["repo.read"], why: "Sync." },
+      }),
+      provider: "github-oauth",
+      for: { background: true, userId: "user_1" },
+    });
+    expect((await marked("https://api.github.com/user/repos")).status).toBe(
+      200,
+    );
+    await expect(
+      gatewayRefusal(
+        await marked("https://api.github.com/repos/a/b/issues", {
+          method: "POST",
+          body: "{}",
+        }),
+      ),
+    ).resolves.toMatchObject({ code: "integration_scope_not_allowed" });
+    const unmarked = integrationFetch({
+      env: env({ access: "read", scopes: ["repo.read"] }),
+      provider: "github-oauth",
+      for: { background: true, userId: "user_1" },
+    });
+    await expect(
+      gatewayRefusal(await unmarked("https://api.github.com/user/repos")),
+    ).resolves.toMatchObject({ code: "integration_scope_not_allowed" });
+    expect(sent).toHaveBeenCalledTimes(1);
   });
 });

@@ -40,7 +40,11 @@ import {
   membersCapabilityStatus,
   type ListAppMembers,
 } from "./capabilities/members";
-import { handleHeldTokenCall } from "./capabilities/heldToken";
+import {
+  backgroundSetsOf,
+  handleHeldTokenCall,
+  type BackgroundGrantPort,
+} from "./capabilities/heldToken";
 import {
   handleOAuthClientCall,
   oauthClientStatus,
@@ -144,6 +148,11 @@ interface HandleIntegrationProxyRequestOptions {
 export interface OAuthProxyDeps {
   resolveClient: OAuthClientResolver;
   connections: HeldTokenPort;
+  /**
+   * The calling app's background grants (oauth/background.ts): what lets
+   * background work name a member (`x-everyapp-user`). Absent: refused.
+   */
+  background?: BackgroundGrantPort;
   /**
    * Whom a status request is for, without admitting a call: the
    * organization and the person (null for background work), or null when
@@ -287,6 +296,7 @@ export async function handleIntegrationProxyRequest({
         fetchUpstream,
         resolveClient: oauth.resolveClient,
         connections: oauth.connections,
+        ...(oauth.background ? { background: oauth.background } : {}),
         ...(onCall ? { onCall } : {}),
       });
     }
@@ -713,12 +723,29 @@ async function heldConnectionStatus(
     (policy && declaredScopeSets(policy, { scopes: entry["scopes"] })) ?? [];
   const covers = declared.every((name) => connection.scopeSets.includes(name));
   const reconnect = connection.status === "expired" || !covers;
+  const backgroundSets = backgroundSetsOf(entry, declared);
+  let background: HeldConnectionStatus["background"];
+  if (who.user && backgroundSets && oauth.background) {
+    const granted = await oauth.background.authorize({
+      organizationId: who.organizationId,
+      userId: who.user.id,
+      providerId: id,
+      connectionId: connection.id,
+      sets: backgroundSets,
+    });
+    background = {
+      allowed: granted.ok,
+      sets: backgroundSets,
+      connectPath: oauth.background.consentPath(id),
+    };
+  }
   return {
     account,
     label: connection.label,
     scopeSets: connection.scopeSets,
     ready: !reconnect,
     ...(reconnect ? { reconnect: true } : {}),
+    ...(background ? { background } : {}),
   };
 }
 

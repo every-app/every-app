@@ -97,6 +97,12 @@ export function manifestFields(): ManifestFields {
   // A capability's entry is validated per capability inside the record's
   // refinement, not as its value type: walk one to get `access` and `why`.
   walk(capabilityEntrySchema("email") as unknown as ZodNode, "capabilities.<id>", out);
+  // `background` is refused there; an OAuth provider the Gateway connects
+  // people to takes it (#888): walk Google's for its fields.
+  const oauthEntry = capabilityEntrySchema("google-workspace") as unknown as {
+    shape: Record<string, ZodNode>;
+  };
+  walk(oauthEntry.shape["background"]!, "capabilities.<id>.background", out);
   return {
     paths: [...new Set(out.paths)],
     values: [...new Set(out.values)],

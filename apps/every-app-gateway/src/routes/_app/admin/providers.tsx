@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AddOAuthProviderDialog } from "@/client/components/admin/AddOAuthProviderDialog";
 import { ReplaceOAuthClientDialog } from "@/client/components/admin/ReplaceOAuthClientDialog";
 import { ScopeSetsDialog } from "@/client/components/admin/ScopeSetsDialog";
+import { BackgroundGrants } from "@/client/components/BackgroundGrants";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -920,6 +921,8 @@ function ProvidersPage() {
           }}
         />
       </section>
+
+      <BackgroundGrants admin />
 
       {adding ? (
         <AddOAuthProviderDialog

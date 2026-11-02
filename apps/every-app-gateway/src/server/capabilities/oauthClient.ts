@@ -192,6 +192,12 @@ export interface HeldConnectionStatus {
   scopeSets: readonly string[];
   ready: boolean;
   reconnect?: boolean;
+  /**
+   * For an entry that marks background sets, with a person behind the
+   * status request: whether they allowed this app's background use of
+   * the connection, and where to allow it.
+   */
+  background?: { allowed: boolean; sets: string[]; connectPath: string };
 }
 
 /**

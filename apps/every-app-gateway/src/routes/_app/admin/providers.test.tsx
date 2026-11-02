@@ -47,6 +47,9 @@ vi.mock("@/serverFunctions/providers", () => ({
 vi.mock("@/serverFunctions/connections", () => ({
   listAllConnections: mocks.listAllConnections,
   disconnectConnection: mocks.disconnectConnection,
+  listMyBackgroundGrants: async () => ({ grants: [] }),
+  listAllBackgroundGrants: async () => ({ grants: [] }),
+  revokeBackgroundGrant: async () => ({ ok: true }),
 }));
 vi.mock("@/serverFunctions/ai", () => ({
   getAiDefault: mocks.getAiDefault,

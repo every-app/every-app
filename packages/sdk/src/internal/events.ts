@@ -117,7 +117,7 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
   entry(
     "connection",
     "connection.used",
-    "Linked dev used the Gateway's services (first call of the day)",
+    "Linked dev used the Gateway's services, or an app used a member's connection in the background (first call of the day)",
   ),
   entry("token", "token.created", "A personal access token was created"),
   entry("token", "token.revoked", "A personal access token was revoked"),
@@ -167,6 +167,21 @@ export const EVENT_TYPES: readonly EventTypeInfo[] = [
     "provider",
     "provider.connection_expired",
     "An OAuth provider refused to refresh a connection; it needs reconnecting",
+  ),
+  entry(
+    "provider",
+    "provider.background_granted",
+    "A member let an app use their OAuth connection in the background",
+  ),
+  entry(
+    "provider",
+    "provider.background_revoked",
+    "A member, or an owner or admin, revoked an app's background use of a connection",
+  ),
+  entry(
+    "provider",
+    "provider.background_lapsed",
+    "An app's background use of a member's connection ended on its own (idle, access lost, disconnected)",
   ),
   entry(
     "subscription",

@@ -128,7 +128,7 @@ interface HandleAppGatewayRequestOptions {
    */
   oauth?: (
     fetchUpstream: (request: Request) => Promise<Response>,
-  ) => Promise<Omit<OAuthProxyDeps, "identify"> | null>;
+  ) => Promise<OAuthProxyDepsLoaded | null>;
   /**
    * The organization's stored default model provider and models
    * (`org_settings.ai_default` and `ai_models`, ai-default.ts in the
@@ -194,17 +194,33 @@ let oauthDepsUnavailableLogged = false;
  * in the unit tests of the proxy) serves the token-endpoint branch alone,
  * logged once per isolate.
  */
+/**
+ * The OAuth side of the proxy as loaded, before it knows the calling app:
+ * `backgroundFor` binds the background grants to it.
+ */
+type OAuthProxyDepsLoaded = Omit<OAuthProxyDeps, "identify" | "background"> & {
+  backgroundFor?: (
+    app: RegisteredApp,
+  ) => NonNullable<OAuthProxyDeps["background"]>;
+};
+
 async function loadOAuthProxyDeps(
   fetchUpstream: (request: Request) => Promise<Response>,
-): Promise<Omit<OAuthProxyDeps, "identify"> | null> {
+): Promise<OAuthProxyDepsLoaded | null> {
   try {
-    const [{ resolveOAuthClient }, { gatewayHeldTokens }] = await Promise.all([
+    const [
+      { resolveOAuthClient },
+      { gatewayHeldTokens },
+      { gatewayBackgroundGrants },
+    ] = await Promise.all([
       import("./oauth/client"),
       import("./oauth/heldTokens"),
+      import("./oauth/background"),
     ]);
     return {
       resolveClient: resolveOAuthClient,
       connections: gatewayHeldTokens({ fetchUpstream }),
+      backgroundFor: gatewayBackgroundGrants,
     };
   } catch (error) {
     if (!oauthDepsUnavailableLogged) {
@@ -424,7 +440,11 @@ export async function handleAppGatewayRequest({
         ...(oauthDeps
           ? {
               oauth: {
-                ...oauthDeps,
+                resolveClient: oauthDeps.resolveClient,
+                connections: oauthDeps.connections,
+                ...(oauthDeps.backgroundFor && !trusted
+                  ? { background: oauthDeps.backgroundFor(app) }
+                  : {}),
                 identify: async () => {
                   try {
                     const { organizationId, user } = await attributeCall(

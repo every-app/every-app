@@ -60,6 +60,11 @@ export const disconnectConnectionSchema = z.object({
   userId: z.string().min(1).max(128).optional(),
 });
 
+/** Revoke an app's background use of a connection: by the grant's id. */
+export const revokeBackgroundGrantSchema = z.object({
+  grantId: z.string().regex(/^bgg_[0-9a-f-]{36}$/),
+});
+
 export type AddOAuthProviderInput = z.infer<typeof addOAuthProviderSchema>;
 
 const scopeSetName = z

@@ -7,7 +7,7 @@
  * the browser back to `returnTo`, which must be a path on the Gateway or
  * an https URL on one of its app hosts (in local dev also localhost).
  */
-import { ConfigurationError } from "../internal/index.js";
+import { APP_ID_ENV, ConfigurationError } from "../internal/index.js";
 import type { ConnectionAccount } from "../internal/index.js";
 
 export interface ConnectUrlOptions {
@@ -24,6 +24,13 @@ export interface ConnectUrlOptions {
   account?: ConnectionAccount;
   /** Scope sets to ask for; absent: the union every active app that lists the provider declares. */
   sets?: readonly string[];
+  /**
+   * `true`: the Gateway's page where the person lets this app use their
+   * own connection in the background (`/connect/<id>/background?app=<this
+   * app>`), for the sets its entry marks `background`; it connects them
+   * first when needed. `account` and `sets` don't apply.
+   */
+  background?: boolean;
 }
 
 /** The path of the connect page for `provider` on the Gateway. */
@@ -38,6 +45,7 @@ export function connectUrl({
   returnTo,
   account,
   sets,
+  background,
 }: ConnectUrlOptions): string {
   const values = env as Record<string, unknown>;
   const gateway = values["GATEWAY_URL"];
@@ -51,6 +59,18 @@ export function connectUrl({
     base = new URL(gateway.trim());
   } catch {
     throw new ConfigurationError(`GATEWAY_URL isn't a URL: ${gateway}`);
+  }
+  if (background) {
+    const app = values[APP_ID_ENV];
+    if (typeof app !== "string" || !app.trim()) {
+      throw new ConfigurationError(
+        `connectUrl({ background: true }) needs ${APP_ID_ENV} in the Worker env: the deploy and everyapp dev set it.`,
+      );
+    }
+    const url = new URL(`${connectPath(provider)}/background`, base.origin);
+    url.searchParams.set("app", app.trim());
+    if (returnTo) url.searchParams.set("return", returnTo);
+    return url.toString();
   }
   const url = new URL(connectPath(provider), base.origin);
   if (returnTo) url.searchParams.set("return", returnTo);

@@ -121,6 +121,17 @@ export interface EveryAppCapabilityEntry extends EveryAppSettingNeed {
   readonly access: "read" | "write";
   /** An OAuth client's scope sets, by name (`["gmail.read"]`). */
   readonly scopes?: readonly string[];
+  /**
+   * For an OAuth provider the Gateway connects people to: the sets (a
+   * subset of `scopes`) the app may use on a member's own connection with
+   * nobody present, once that member allows it on the Gateway's page
+   * (`connectUrl({ background: true })`), and why, which that page shows.
+   * Calls name the member with `for: { background: true, userId }`.
+   */
+  readonly background?: {
+    readonly scopes: readonly string[];
+    readonly why: string;
+  };
 }
 
 /**

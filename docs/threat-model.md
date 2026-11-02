@@ -673,7 +673,19 @@ now a live boundary. The code is
 `oauth.tokens-sealed-at-rest`, `oauth.held-token-never-to-app`,
 `oauth.held-token-scope-routes-live`, `oauth.pkce-on-connect`,
 `oauth.state-single-use`, `oauth.return-to-own-hosts` and
-`oauth.google-never-revoked` rows of the register.
+`oauth.google-never-revoked` rows of the register. Since #888 background
+work may also name a member (`x-everyapp-user`) and use that member's own
+connection, which crosses this boundary only through the member's opt-in
+on the Gateway's page (`/connect/<id>/background`), for the sets the
+app's entry marks `background`, re-checked on every call and lapsing
+after 90 days without the member opening the app
+(`apps/every-app-gateway/src/server/oauth/{background.ts,backgroundPage.ts}`,
+the held-token branch's 5a and 5b; the rows
+`oauth.background-needs-member-opt-in`,
+`oauth.background-consent-on-gateway-page`, `oauth.background-revocable`
+and `oauth.background-lapses`). The residual risk is the design's: a
+compromised app Worker can act as every member who opted in to it, within
+its background sets, until they revoke it or it lapses.
 
 **What it stops.** An app learning a provider key, a client secret, or
 whether a key exists for a capability it didn't request. An app reaching a

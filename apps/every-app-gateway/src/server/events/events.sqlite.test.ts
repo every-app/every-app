@@ -1435,6 +1435,27 @@ describe("the event bus (SQLite)", () => {
         account: { kind: "user", user: { id: "u2", email: "jo@acme.example" } },
         connectionId: "conn_1",
       }),
+      "provider.background_granted": catalogue.providerBackgroundGranted({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
+        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
+        grantId: "bgg_1",
+        scopeSets: ["repo.read"],
+      }),
+      "provider.background_revoked": catalogue.providerBackgroundRevoked({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
+        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
+        grantId: "bgg_1",
+        by: "admin",
+      }),
+      "provider.background_lapsed": catalogue.providerBackgroundLapsed({
+        provider: { id: "github", name: "GitHub", kind: "oauth" },
+        app: { id: "agent", rowId: "app-row-2", name: "Agent" },
+        user: { id: "u2", email: "jo@acme.example", name: "Jo" },
+        grantId: "bgg_1",
+        reason: "idle",
+      }),
       "ai.default_changed": catalogue.aiDefaultChanged({
         aiDefault: {
           provider: "openrouter",

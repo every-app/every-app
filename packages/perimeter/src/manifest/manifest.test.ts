@@ -547,6 +547,22 @@ describe("capabilities manifest field", () => {
     ).toEqual(capabilities);
   });
 
+  it("accepts background sets within an OAuth provider's scopes, with why (#888)", () => {
+    const capabilities = {
+      "google-workspace": {
+        access: "read",
+        scopes: ["identity", "gmail.read"],
+        background: {
+          scopes: ["gmail.read"],
+          why: "Syncs your mail as it arrives.",
+        },
+      },
+    };
+    expect(
+      validateManifestStrict({ id: "mail", capabilities }).capabilities,
+    ).toEqual(capabilities);
+  });
+
   it.each([
     [
       "an unknown capability",
@@ -571,7 +587,40 @@ describe("capabilities manifest field", () => {
     [
       "the retired `background` key",
       { dataforseo: { access: "read", background: true } },
-      /Unrecognized key: "background"/,
+      /capabilities\.dataforseo\.background: DataForSEO takes no background/,
+    ],
+    [
+      "background sets outside the entry's scopes",
+      {
+        "google-workspace": {
+          access: "read",
+          scopes: ["identity", "gmail.read"],
+          background: { scopes: ["calendar.read"], why: "Syncs mail." },
+        },
+      },
+      /capabilities\.google-workspace\.background\.scopes\.0: calendar\.read isn't in this entry's scopes/,
+    ],
+    [
+      "background without why",
+      {
+        "google-workspace": {
+          access: "read",
+          scopes: ["gmail.read"],
+          background: { scopes: ["gmail.read"] },
+        },
+      },
+      /capabilities\.google-workspace\.background\.why/,
+    ],
+    [
+      "background with no sets",
+      {
+        "google-workspace": {
+          access: "read",
+          scopes: ["gmail.read"],
+          background: { scopes: [], why: "Syncs mail." },
+        },
+      },
+      /capabilities\.google-workspace\.background\.scopes: background\.scopes lists one or more/,
     ],
     ["an empty why", { dataforseo: { access: "read", why: "" } }, /why/],
     [

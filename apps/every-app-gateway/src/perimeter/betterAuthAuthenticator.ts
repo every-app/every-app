@@ -348,6 +348,11 @@ export function createProdAuthenticator(
             app.organizationId,
           ),
         ]);
+        // The member opened the app in a browser: their background grants
+        // for it stay alive (once a day; a token's use doesn't count).
+        if (active && installed && !session.credential && app.rowId) {
+          noteMemberSeenLater(session.sub, app.rowId);
+        }
         return active && installed;
       }
       // Another organization's app. A token acts in its own organization
@@ -368,6 +373,7 @@ export function createProdAuthenticator(
         ),
       ]);
       if (!membership || !active || !installed) return false;
+      if (app.rowId) noteMemberSeenLater(session.sub, app.rowId);
       return {
         ...session,
         orgId: membership.orgId,
@@ -376,4 +382,15 @@ export function createProdAuthenticator(
       };
     },
   };
+}
+
+/**
+ * The member opened the app: keep their background grants for it alive
+ * (server/oauth/backgroundSeen.ts, loaded on first use so the
+ * authenticator doesn't load the grants' repository). Never throws.
+ */
+function noteMemberSeenLater(userId: string, appRowId: string): void {
+  void import("@/server/oauth/backgroundSeen")
+    .then(({ noteMemberSeen }) => noteMemberSeen(userId, appRowId))
+    .catch(() => undefined);
 }
