@@ -56,6 +56,8 @@ export function InstallAppForm({
   } = useAppInstallContext(sessionChecked);
   const checking = contextPending || !sessionChecked;
   const available = context?.available;
+  // The Gateway answered no: nothing on this page can install.
+  const unavailable = !checking && !availabilityError && !available;
   const workspaces = context?.workspaces ?? [];
   const review = useMutation({ mutationFn: reviewAppInstall });
   const [values, setValues] = useState<Record<string, string>>({});
@@ -329,21 +331,38 @@ export function InstallAppForm({
               <p role="alert" className="text-sm text-destructive">
                 {availabilityError.message}
               </p>
+            ) : workspaces.length === 0 ? (
+              <p role="alert" className="text-sm text-destructive">
+                Only workspace owners and admins can install apps.
+              </p>
             ) : !available ? (
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  This Gateway doesn't have a deployment token configured. It
-                  can be added with:
-                </p>
+                {/* A link's `source` is anyone's text and this is a copy button
+                    for a shell: only a URL the install accepts (those patterns
+                    allow no shell syntax) goes in the command. */}
+                {isAppInstallUrl(sourceUrl) ? (
+                  <>
+                    <p>
+                      This Gateway doesn't have a deployment token configured.
+                      You can install from a terminal instead:
+                    </p>
+                    <CodeBlock
+                      code={`everyapp install ${sourceUrl}`}
+                      successMessage="Command copied"
+                    />
+                    <p>Or add a token to install from this page:</p>
+                  </>
+                ) : (
+                  <p>
+                    This Gateway doesn't have a deployment token configured. It
+                    can be added with:
+                  </p>
+                )}
                 <CodeBlock
                   code="everyapp deploy-token add"
                   successMessage="Command copied"
                 />
               </div>
-            ) : workspaces.length === 0 ? (
-              <p role="alert" className="text-sm text-destructive">
-                Only workspace owners and admins can install apps.
-              </p>
             ) : install.error ? (
               <Refusal error={install.error} />
             ) : review.error ? (
@@ -406,41 +425,43 @@ export function InstallAppForm({
             </>
           ) : (
             <>
-              <form.Subscribe
-                selector={(state) =>
-                  [state.isSubmitting, state.values.organizationId] as const
-                }
-              >
-                {([isSubmitting, organizationId]) => (
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={
-                      isSubmitting ||
-                      busy ||
-                      signInRequired ||
-                      checking ||
-                      review.isPending ||
-                      Boolean(
-                        review.data?.providers.length &&
-                          !authorizedChanges.REGISTER_PROVIDERS,
-                      ) ||
-                      !available ||
-                      !workspaces.some(
-                        (workspace) => workspace.id === organizationId,
-                      ) ||
-                      Boolean(availabilityError)
-                    }
-                    aria-busy={isSubmitting}
-                  >
-                    {review.data
-                      ? review.data.installed
-                        ? "Update"
-                        : "Install"
-                      : "Review release"}
-                  </Button>
-                )}
-              </form.Subscribe>
+              {!unavailable && (
+                <form.Subscribe
+                  selector={(state) =>
+                    [state.isSubmitting, state.values.organizationId] as const
+                  }
+                >
+                  {([isSubmitting, organizationId]) => (
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={
+                        isSubmitting ||
+                        busy ||
+                        signInRequired ||
+                        checking ||
+                        review.isPending ||
+                        Boolean(
+                          review.data?.providers.length &&
+                            !authorizedChanges.REGISTER_PROVIDERS,
+                        ) ||
+                        !available ||
+                        !workspaces.some(
+                          (workspace) => workspace.id === organizationId,
+                        ) ||
+                        Boolean(availabilityError)
+                      }
+                      aria-busy={isSubmitting}
+                    >
+                      {review.data
+                        ? review.data.installed
+                          ? "Update"
+                          : "Install"
+                        : "Review release"}
+                    </Button>
+                  )}
+                </form.Subscribe>
+              )}
               <Button variant="ghost" className="w-full" onClick={onBack}>
                 Back to apps
               </Button>

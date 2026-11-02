@@ -14,6 +14,8 @@ The workspace appears above the source. One eligible workspace is shown read-onl
 
 Gateway app installs are off until the operator turns them on: the deploy token is account-wide, so spending it from a browser is a choice, never a side effect of having stored the token. On a self-hosted Gateway only the install organization's owners and admins install, and only from a session signed in within the last 10 minutes (an older one gets `APP_INSTALL_REAUTH_REQUIRED`: sign in again, then install; polling a running job has no such rule). Interactive `pnpm everyapp setup` offers **Let your Gateway install apps?** (Yes/No, default No), explaining: "Your Gateway gets its own Cloudflare token and installs an app when an owner or admin approves it, for example from a Deploy to EveryApp button. Later: everyapp deploy-token add (or remove)." Enter accepts No and continues setup without changing credentials. Yes runs the same steps as `pnpm everyapp deploy-token add`. Existing tokens and hosted Gateways are left alone; unattended setup does not prompt, and neither does `--yes`, which answers No.
 
+While installs are off, **Install app** is hidden and a link's install page offers the same install from a terminal, as a command to copy: `everyapp install <source>`, beside `everyapp deploy-token add`. The command appears only for a source the install accepts, because it goes on a copy button for a shell; without one the page offers only `everyapp deploy-token add`.
+
 Later, or for a Gateway set up without it, run at a terminal:
 
 ```sh
