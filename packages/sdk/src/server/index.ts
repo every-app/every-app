@@ -82,6 +82,14 @@ export {
 } from "./emailBinding.js";
 export { listMembers, type ListMembersOptions } from "./listMembers.js";
 export { emit, type EmitOptions } from "./emit.js";
+export {
+  WEBHOOK_MAX_BYTES_DEFAULT,
+  verifyWebhook,
+  type VerifyWebhookOptions,
+  type WebhookProvider,
+  type WebhookRefusalReason,
+  type WebhookVerification,
+} from "./webhooks.js";
 export type {
   ApiKeyCapabilityId,
   CapabilityId,
