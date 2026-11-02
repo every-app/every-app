@@ -27,6 +27,9 @@
  */
 import { randomBytes } from "node:crypto";
 import {
+  APP_SINK_PATTERNS_MAX,
+  appSinkPatternProblem,
+  appSinkTypeAllowed,
   checkEventData,
   EVENT_DATA_MAX_BYTES,
   EVENT_RETENTION_DAYS,
@@ -162,11 +165,13 @@ export async function queueEventFromCli(db: D1Database, input: CliEventInput): P
   const id = eventId(now);
   const [rows = []] = await db.run([
     {
-      sql: "SELECT id, events FROM event_subscriptions WHERE organization_id = ? AND enabled = 1",
+      sql: "SELECT id, events, sink FROM event_subscriptions WHERE organization_id = ? AND enabled = 1",
       params: [input.organizationId],
     },
   ]);
   const matching = rows
+    // An app's subscription takes only the families an app may read, as the Gateway's bus decides.
+    .filter((row) => row["sink"] !== "app" || appSinkTypeAllowed(input.type))
     .filter((row) => eventSubscribed(patternsOf(row["events"]), input.type))
     .map((row) => String(row["id"]));
   const condition = input.onlyIf ? ` AND (${input.onlyIf.sql})` : "";
@@ -251,6 +256,125 @@ RETURNING id`,
       `operator:${input.deployer.actor}`,
     ],
   };
+}
+
+// The `app` sink: an app's own subscription, kept in step with its manifest.
+
+const subscriptionColumns = new WeakMap<D1Database, Promise<Set<string>>>();
+
+/**
+ * Whether `event_subscriptions` has the `app` sink's `app_row_id` column
+ * (migration 0023), asked of each database once.
+ */
+async function hasAppSinkColumn(db: D1Database): Promise<boolean> {
+  let known = subscriptionColumns.get(db);
+  if (!known) {
+    known = db
+      .run([{ sql: "PRAGMA table_info(event_subscriptions)" }])
+      .then(([rows = []]) => new Set(rows.map((row) => String(row["name"]))));
+    subscriptionColumns.set(db, known);
+  }
+  return (await known).has("app_row_id");
+}
+
+/** What a manifest's `events` asks for, or null when it declares none. */
+function declaredAppEvents(manifest: unknown): { subscribe: string[]; why: string } | null {
+  if (!manifest || typeof manifest !== "object") return null;
+  const events = (manifest as { events?: unknown }).events;
+  if (!events || typeof events !== "object") return null;
+  const { subscribe, why } = events as { subscribe?: unknown; why?: unknown };
+  if (!Array.isArray(subscribe)) return null;
+  return {
+    subscribe: [...new Set(subscribe.map((pattern) => String(pattern).trim()).filter(Boolean))],
+    why: typeof why === "string" ? why : "",
+  };
+}
+
+/**
+ * The statements that keep an app's `app` subscription in step with its
+ * manifest's `events`, for the deploy's own batch (markDeployed): made
+ * when the manifest first subscribes, its patterns and why replaced on each
+ * deploy (paused stays paused), removed when the manifest no longer
+ * subscribes. Always the app's own organization's. The patterns are
+ * checked against the allowlist again, whatever validated the manifest.
+ * A Gateway from before the sink refuses a manifest that subscribes
+ * (GATEWAY_OUTDATED) and is left alone otherwise.
+ */
+export async function appSubscriptionStatements(
+  db: D1Database,
+  app: { id: string; organizationId: string; name: string },
+  manifest: unknown,
+  input: { actor: string; now: number },
+): Promise<D1Statement[]> {
+  const declared = declaredAppEvents(manifest);
+  const ready = (await hasEventsTables(db)) && (await hasAppSinkColumn(db));
+  if (!ready) {
+    if (!declared) return [];
+    throw new EveryAppError(
+      "GATEWAY_OUTDATED",
+      "The Gateway predates app event subscriptions\nThis app's everyapp.config.ts declares events, which the Gateway can deliver once it is updated.",
+      { rerun: `${CLI} update`, rerunNote: "then deploy again" },
+    );
+  }
+  const scope = [app.id, app.organizationId];
+  if (!declared) {
+    return [
+      {
+        sql: "DELETE FROM event_subscriptions WHERE sink = 'app' AND app_row_id = ? AND organization_id = ?",
+        params: scope,
+      },
+    ];
+  }
+  if (declared.subscribe.length === 0 || declared.subscribe.length > APP_SINK_PATTERNS_MAX) {
+    throw new EveryAppError(
+      "INVALID_MANIFEST",
+      `events.subscribe lists 1 to ${APP_SINK_PATTERNS_MAX} event types or patterns`,
+    );
+  }
+  for (const pattern of declared.subscribe) {
+    const problem = appSinkPatternProblem(pattern);
+    if (problem) throw new EveryAppError("INVALID_MANIFEST", `events.subscribe: ${problem}`);
+  }
+  const events = JSON.stringify(declared.subscribe);
+  const name = app.name.slice(0, EVENT_SUBSCRIPTION_NAME_MAX);
+  const description = declared.why.slice(0, 200) || null;
+  return [
+    {
+      sql: `UPDATE event_subscriptions SET events = ?1, name = ?2, description = ?3, updated_at = ?4
+WHERE sink = 'app' AND app_row_id = ?5 AND organization_id = ?6`,
+      params: [events, name, description, input.now, ...scope],
+    },
+    {
+      sql: `INSERT INTO event_subscriptions (id, organization_id, name, sink, url, secret, recipients, events, enabled,
+  builtin, description, created_at, updated_at, created_by, consecutive_failures, app_row_id)
+SELECT ?1, ?2, ?3, 'app', NULL, NULL, NULL, ?4, 1, NULL, ?5, ?6, ?6, ?7, 0, ?8
+WHERE NOT EXISTS (SELECT 1 FROM event_subscriptions WHERE sink = 'app' AND app_row_id = ?8 AND organization_id = ?2)`,
+      params: [
+        subscriptionId(),
+        app.organizationId,
+        name,
+        events,
+        description,
+        input.now,
+        `operator:${input.actor}`,
+        app.id,
+      ],
+    },
+  ];
+}
+
+/** The statement that drops a deleted app's `app` subscription; none on a Gateway without the column. */
+export async function removeAppSubscription(
+  db: D1Database,
+  app: { id: string; organizationId: string },
+): Promise<D1Statement[]> {
+  if (!(await hasEventsTables(db)) || !(await hasAppSinkColumn(db))) return [];
+  return [
+    {
+      sql: "DELETE FROM event_subscriptions WHERE sink = 'app' AND app_row_id = ? AND organization_id = ?",
+      params: [app.id, app.organizationId],
+    },
+  ];
 }
 
 /** A subscription's `events` column: its JSON list, or everything when it doesn't read as one. */

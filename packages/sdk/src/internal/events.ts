@@ -335,11 +335,95 @@ export function isPrivateEventTargetName(host: string): boolean {
 }
 
 /** The sinks a subscription delivers to. */
-export const EVENT_SINKS = ["webhook", "email"] as const;
+export const EVENT_SINKS = ["webhook", "email", "app"] as const;
 export type EventSink = (typeof EVENT_SINKS)[number];
 /** Whom the email sink mails: the organization's owners, or owners and admins. */
 export const EVENT_EMAIL_RECIPIENTS = ["owners", "admins"] as const;
 export type EventEmailRecipients = (typeof EVENT_EMAIL_RECIPIENTS)[number];
+
+/**
+ * The `app` sink (docs/design/2026-11-birds-decisions/app-event-sink.md):
+ * an app declares `events: { subscribe, why }` in its manifest, the deploy
+ * makes the subscription for the app's own organization, and the Gateway
+ * delivers over the app's service binding to {@link APP_EVENTS_PATH} with a
+ * system token of purpose `events.deliver`.
+ *
+ * Which events may reach an app is an **allowlist** of families, not a
+ * deny-list: a family added to the catalogue later reaches no app until it
+ * is added here on purpose. `token.*`, `subscription.*`, `provider.*`,
+ * `signin_provider.*`, `cap.*`, `ai.*`, `access.*` and `organization.*` are
+ * not on it, and `member.password_reset` is left out of `member.*`.
+ */
+export const APP_EVENTS_PATH = "/__everyapp/events";
+export const APP_SINK_EVENT_FAMILIES: readonly EventGroup[] = [
+  "member",
+  "group",
+  "app",
+  "mcp_app",
+  "connection",
+  "tool",
+];
+/** Types of an allowed family that still never reach an app. */
+export const APP_SINK_EXCLUDED_TYPES: readonly string[] = [
+  "member.password_reset",
+];
+/** The most patterns one app's `events.subscribe` may list. */
+export const APP_SINK_PATTERNS_MAX = 25;
+
+/** The family a type or pattern belongs to: its first segment. */
+function familyOf(typeOrPattern: string): string {
+  const dot = typeOrPattern.indexOf(".");
+  return dot === -1 ? typeOrPattern : typeOrPattern.slice(0, dot);
+}
+
+/**
+ * Whether an event of this type may be delivered to an app at all: its
+ * family is on the allowlist and the type isn't excluded. Checked when the
+ * bus queues a delivery and again before each attempt, whatever the
+ * subscription's stored patterns say.
+ */
+export function appSinkTypeAllowed(type: string): boolean {
+  if (APP_SINK_EXCLUDED_TYPES.includes(type)) return false;
+  return (APP_SINK_EVENT_FAMILIES as readonly string[]).includes(
+    familyOf(type),
+  );
+}
+
+/**
+ * What is wrong with a pattern an app's manifest subscribes to, or null: a
+ * well-formed pattern ({@link eventPatternProblem}) inside an allowed
+ * family. `*` and any pattern outside the families are refused at deploy.
+ */
+export function appSinkPatternProblem(pattern: string): string | null {
+  const problem = eventPatternProblem(pattern);
+  if (problem) return problem;
+  if (APP_SINK_EXCLUDED_TYPES.includes(pattern)) {
+    return `"${pattern}" never reaches an app`;
+  }
+  if (
+    pattern === "*" ||
+    !(APP_SINK_EVENT_FAMILIES as readonly string[]).includes(familyOf(pattern))
+  ) {
+    return `"${pattern}" can't reach an app: an app subscribes to ${APP_SINK_EVENT_FAMILIES.map((family) => `${family}.*`).join(", ")} (member.password_reset excepted)`;
+  }
+  return null;
+}
+
+/**
+ * What the Gateway POSTs to {@link APP_EVENTS_PATH}: the same envelope a
+ * webhook receives.
+ */
+export interface AppEventEnvelope {
+  id: string;
+  type: string;
+  version: number;
+  summary: string;
+  time: string;
+  gateway: string;
+  organization: { id: string; slug: string; name: string };
+  actor: unknown;
+  data: Record<string, unknown>;
+}
 
 /**
  * A subscription pattern: `*` (everything but ping), an exact type, or a

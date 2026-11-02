@@ -92,6 +92,11 @@ export {
   type WebhookVerification,
 } from "./webhooks.js";
 export type {
+  AppEvent,
+  AppEventHandler,
+  AppEventsOptions,
+} from "./eventsEndpoint.js";
+export type {
   ApiKeyCapabilityId,
   CapabilityId,
   OAuthClientCapabilityId,

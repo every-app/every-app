@@ -48,7 +48,13 @@ import { storedMcp, storedPublicRoutes, type McpSummary, type PublicRouteSummary
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
-import { operatorActor, queueEventFromCli, type EventApp } from "./events";
+import {
+  appSubscriptionStatements,
+  operatorActor,
+  queueEventFromCli,
+  removeAppSubscription,
+  type EventApp,
+} from "./events";
 
 type D1Row = Record<string, unknown>;
 
@@ -715,6 +721,11 @@ export function markDeployed(
       }
       const update = markDeployedUpdate(app, deployed);
       const events = await deployedEvents(db, app, deployed, update.deployedAt);
+      // The app's own event subscription, as its manifest declares it now.
+      const subscription = await appSubscriptionStatements(db, app, deployed.manifest, {
+        actor: deployed.actor,
+        now: update.deployedAt,
+      });
       // Only over the status it was read with: an admin switching the app
       // off meanwhile keeps it off. A null for the names keeps the column.
       const [changed = []] = await db.run([
@@ -735,6 +746,7 @@ WHERE id = ? AND status = ? RETURNING status`,
           ],
         },
         ...events,
+        ...subscription,
       ]);
       if (changed.length > 0) return update.status;
       if (attempt >= MARK_DEPLOYED_ATTEMPTS) {
@@ -1102,6 +1114,7 @@ export async function deleteApp(
         params: [update.status, update.isDefault ? 1 : 0, now, app.id],
       },
       ...withoutAppData(app, now, { secretNames: await hasSecretNamesColumn(db) }),
+      ...(await removeAppSubscription(db, app)),
       ...(await queueEventFromCli(db, {
         organizationId: app.organizationId,
         type: "app.removed",

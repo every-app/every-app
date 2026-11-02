@@ -22,7 +22,8 @@ import { organizations } from "./auth.schema";
  * One row per subscription. `secret` is the webhook's signing secret as
  * written (the CLI writes D1 directly and has no key to wrap it with; the
  * operator's D1 is root, ADR-0003); null for the email sink, which takes
- * no address: `recipients` names a role.
+ * no address: `recipients` names a role, and for the `app` sink, which
+ * delivers over the app's service binding: `app_row_id` names the app.
  */
 export const eventSubscriptions = sqliteTable(
   "event_subscriptions",
@@ -33,8 +34,11 @@ export const eventSubscriptions = sqliteTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    // "webhook" | "email"
+    // "webhook" | "email" | "app"
     sink: text("sink").notNull(),
+    // The `app` sink: the app (apps.id) whose manifest declares `events`,
+    // which the deploy keeps this row in step with. Null for the others.
+    appRowId: text("app_row_id"),
     url: text("url"),
     secret: text("secret"),
     // "owners" | "admins" (owners and admins) for the email sink.
@@ -57,6 +61,7 @@ export const eventSubscriptions = sqliteTable(
   },
   (table) => [
     index("event_subscriptions_organization_id_idx").on(table.organizationId),
+    index("event_subscriptions_app_row_id_idx").on(table.appRowId),
   ],
 );
 

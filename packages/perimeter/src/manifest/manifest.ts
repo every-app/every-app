@@ -34,6 +34,8 @@ import {
   settingValueProblem,
   type CapabilityLookup,
   type SettingNeedFields,
+  APP_SINK_PATTERNS_MAX,
+  appSinkPatternProblem,
 } from "@every-app/sdk/internal";
 import {
   isMcpPath,
@@ -927,6 +929,54 @@ export const McpSchema = z
   .passthrough();
 export type McpPolicy = z.infer<typeof McpSchema>;
 
+const EVENTS_SHAPE =
+  'events is { subscribe: ["member.removed", "app.*", ...], why: "..." }: the Gateway events this app receives at everyApp(handler, { events: { on } })';
+
+/**
+ * The Gateway events the app receives (the `app` event sink): the deploy
+ * makes one subscription for the app's own organization, delivered over the
+ * service binding. The shape only: the strict schema (the deploy's) checks
+ * the patterns against the families an app may read.
+ */
+export const EventsSchema = z
+  .object({ subscribe: z.array(z.string()), why: z.string() })
+  .passthrough();
+export type EventsPolicy = z.infer<typeof EventsSchema>;
+
+/**
+ * {@link EventsSchema} as the deploy checks it: only the families an app
+ * may read are accepted (`appSinkPatternProblem`), anything else (`*`,
+ * `token.*`, `cap.reached`, `member.password_reset`) is refused.
+ */
+const EventsSchemaStrict = z
+  .object(
+    {
+      subscribe: z
+        .array(
+          z.string().superRefine((pattern, ctx) => {
+            const problem = appSinkPatternProblem(pattern);
+            if (problem) ctx.addIssue({ code: "custom", message: problem });
+          }),
+        )
+        .min(1, "events.subscribe lists at least one event type or pattern")
+        .max(
+          APP_SINK_PATTERNS_MAX,
+          `events.subscribe lists at most ${APP_SINK_PATTERNS_MAX} patterns`,
+        ),
+      /** Why the app needs these events; shown by the CLI. */
+      why: z
+        .string()
+        .min(1, "say why the app needs these events")
+        .max(200)
+        .regex(PLAIN_TEXT, "why is plain text: no control characters"),
+    },
+    {
+      error: (issue) =>
+        issue.code === "invalid_type" ? EVENTS_SHAPE : undefined,
+    },
+  )
+  .strict();
+
 export const ManifestSchema = z
   .object({
     /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
@@ -1073,6 +1123,11 @@ export const ManifestSchema = z
      * the Gateway's `/mcp` is the one connector.
      */
     mcp: McpSchema.optional(),
+    /**
+     * The Gateway events the app receives: see {@link EventsSchema}. Left
+     * out (the default), none.
+     */
+    events: EventsSchema.optional(),
   })
   .passthrough();
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -1506,6 +1561,7 @@ function manifestSchemaStrict(options: StrictManifestOptions = {}) {
     limits: WorkerLimitsSchema.strict().optional(),
     mcp: McpSchema.strict().optional(),
     bearerRoutes: BearerRoutesSchema.strict().optional(),
+    events: EventsSchemaStrict.optional(),
   }).strict();
 }
 

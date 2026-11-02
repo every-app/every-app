@@ -39,6 +39,7 @@ import {
 } from "./session";
 import {
   isProtectedResourceMetadataPath,
+  isReservedEventsPath,
   isReservedToolsPath,
   isReservedWellKnownPath,
   matchBearerRoute,
@@ -481,8 +482,9 @@ export async function handleGatewayRequest(
     if (refused) return refused;
   }
   // The tools contract is for the ToolBus over the service binding only (and
-  // the SDK demands gateway-minted tokens anyway). Refuse it from outside.
-  if (isReservedToolsPath(url.pathname)) {
+  // the SDK demands gateway-minted tokens anyway). Refuse it from outside,
+  // and the event sink's delivery path with it.
+  if (isReservedToolsPath(url.pathname) || isReservedEventsPath(url.pathname)) {
     return json(404, { error: "not_found" });
   }
   // OAuth discovery documents stay reserved on app hosts and answer 404,

@@ -2130,6 +2130,49 @@ describe("internal tools contract", () => {
   });
 });
 
+describe("the event sink's delivery path", () => {
+  it("404s /__everyapp/events from outside, signed in or not, under any spelling", async () => {
+    const fetcher = vi.fn();
+    const spellings = [
+      "/__everyapp/events",
+      "/__everyapp/events/",
+      "/__everyapp/events/x",
+      "/__EVERYAPP/Events",
+      "/__everyapp//events",
+      "/x/../__everyapp/events",
+      "/x/%2e%2e/__everyapp/events",
+      "/__everyapp%2fevents",
+      "/__everyapp%252fevents",
+      "/%5f%5feveryapp/events",
+    ];
+    for (const session of [SESSION, PAT_SESSION, null]) {
+      for (const path of spellings) {
+        const res = await handleGatewayRequest(
+          req(path, {
+            method: "POST",
+            headers: {
+              "sec-fetch-site": "same-origin",
+              ...(session?.credential
+                ? { authorization: "Bearer epat_x" }
+                : {}),
+            },
+          }),
+          deps({
+            authenticator: {
+              sessionCookieNames: [],
+              authenticate: async () => session,
+              hasAppAccess: async () => true,
+            },
+            fetcherFor: () => ({ fetch: fetcher }),
+          }),
+        );
+        expect(res.status, path).toBe(404);
+      }
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
 describe("ToolBus /mcp interception", () => {
   const MCP_POST = {
     method: "POST",

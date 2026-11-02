@@ -161,7 +161,7 @@ function group(subject: EventGroup): EventGroup {
 interface EventSubscriptionSubject {
   id: string;
   name: string;
-  sink: "webhook" | "email";
+  sink: "webhook" | "email" | "app";
 }
 
 function subscription(

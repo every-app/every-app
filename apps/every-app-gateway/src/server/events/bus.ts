@@ -18,9 +18,11 @@
  */
 import { waitUntil } from "cloudflare:workers";
 import {
+  appSinkTypeAllowed,
   checkEventData,
   eventSubscribed,
   EVENT_DATA_MAX_BYTES,
+  isAppOwnEventType,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import { EventRepository } from "@/server/repositories/EventRepository";
@@ -61,8 +63,29 @@ export function subscriptionPatterns(
   return ["*"];
 }
 
+/**
+ * What an `app` sink may queue, whatever its patterns say: a type on the
+ * allowlist (`member.*` matches no `member.password_reset`, and no family
+ * added later reaches an app until it is listed), and never the app's own
+ * events back to itself, which would loop.
+ */
+function appSinkMayReceive(
+  subscription: ListedSubscription,
+  input: EmitInput,
+): boolean {
+  if (!appSinkTypeAllowed(input.type)) return false;
+  return !(
+    isAppOwnEventType(input.type) &&
+    input.appRowId != null &&
+    input.appRowId === subscription.appRowId
+  );
+}
+
 function matches(subscription: ListedSubscription, input: EmitInput): boolean {
   if (input.only !== undefined) return subscription.id === input.only;
+  if (subscription.sink === "app" && !appSinkMayReceive(subscription, input)) {
+    return false;
+  }
   return (
     subscription.enabled &&
     eventSubscribed(subscriptionPatterns(subscription), input.type)

@@ -16,7 +16,7 @@ Who does what:
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Owners and admins         | Add, change, pause, test and remove subscriptions; read deliveries; redeliver. In the Gateway (**Manage workspace** → **Events**, `/admin/events`, which the Events tab PR adds), with the CLI, or, once the twins PR lands, through the MCP tools. |
 | The operator (CLI)        | The same with `pnpm everyapp events …` but changing a subscription's events or name (remove it and add it again), written straight into the Gateway's D1 under the Cloudflare login, like every `everyapp` command.                                 |
-| An app                    | Emits its own events with `emit()`; declares nothing.                                                                                                                                                                                               |
+| An app                    | Emits its own events with `emit()`, which it declares nothing for; receives the Gateway's events it subscribes to in its manifest (`events: { subscribe, why }`, [the app sink](#the-app-sink)).                                                    |
 | Members, read-only agents | Nothing: the bus is admin-only.                                                                                                                                                                                                                     |
 
 The person's page is [/docs/events](/docs/events): adding a webhook, the Slack recipes, email alerts, the three verification snippets and the event list, short.
@@ -368,6 +368,32 @@ Event mail is its own kind, `notice`, with daily budgets of its own: 50 per reci
 
 When an owner or admin sets a monthly cap on an app, or a default cap for every app (Manage workspace → Usage, the `everyapp_workspace_app_cap` and `everyapp_workspace_cap_default` tools, or `everyapp workspace app cap` and `everyapp workspace cap default` from the terminal), the Gateway or the CLI creates one built-in subscription if the organization doesn't have it yet: name "Cap alerts", sink `email`, recipients `admins`, events `cap.warning` and `cap.reached`, `builtin` `cap_alerts`. So owners and admins get an email at 80% of a cap and at the cap, by default. Turning it off is disabling it (the Events tab's switch, or `events disable <id>`). Removing it disables it instead of deleting it, so it is never recreated behind the person's back. The CLI writes the cap straight into D1 and makes the same row, and queues `cap.raised`, in the cap's own batch. For Slack as well, add a webhook for `cap.*`.
 
+## The app sink
+
+A subscription with sink `app` delivers to an app's own Worker. Nobody adds one by hand: the app's manifest declares `events: { subscribe, why }` ([Manifest](/docs/agent/manifest#events)), and `everyapp deploy` makes the subscription for the app's own organization in the same D1 batch that records the upload (`appSubscriptionStatements` in `packages/cli/src/lib/gateway/events.ts`), replaces its patterns and description on every later deploy (a paused one stays paused), and removes it when the manifest drops `events` or the app is deleted. The row has no URL and no secret; `app_row_id` names the app (migration `0023_app_event_sink.sql`). It is named after the app.
+
+**What may reach an app** is an allowlist of families (`APP_SINK_EVENT_FAMILIES`, `appSinkTypeAllowed` in `packages/sdk/src/internal/events.ts`): `member.*` except `member.password_reset`, `group.*`, `app.*` (the Gateway's and every app's own), `mcp_app.*`, `connection.*` and `tool.*`. Everything else is refused at deploy (`token.*`, `subscription.*`, `provider.*`, `signin_provider.*`, `cap.*`, `ai.*`, `access.*`, `organization.*`, `*`), and a family added to the catalogue later reaches no app until it is listed. The bus checks the allowlist again when it queues a delivery (so `member.*` never queues `member.password_reset`, and a row widened by hand gets nothing more) and again before each attempt (`type_not_allowed`, dead). An app never receives its own `app.<id>.*` events back, which would loop.
+
+**Delivery** is the webhook's envelope as a `POST /__everyapp/events` over the app's service binding (or dispatch namespace), never the public internet (`apps/every-app-gateway/src/server/events/app-sink.ts`). Instead of a signature it carries `x-everyapp-system`: a system token of purpose `events.deliver`, 60 seconds, `aud` the app's Worker name, with a `bh` claim, the SHA-256 (base64url) of the body, so the token opens that one delivery and nothing else ([Identity](/docs/agent/identity)). The other headers are the webhook's (`X-EveryApp-Event`, `X-EveryApp-Event-Id`, `X-EveryApp-Delivery`, `X-EveryApp-Attempt`). The perimeter refuses `/__everyapp/events` from outside under any spelling (404, as for the tools paths; `isReservedEventsPath` in `packages/perimeter/src/publicRoutes.ts`), so only the Gateway reaches it. The app is looked up under the subscription's organization and must be live: one that isn't (`binding`, `disabled`) is a failed attempt, `app_not_live`, retried; a removed one is `app_gone`, dead. Retries, the dead state, the 30-day log, **Redeliver** and the test ping are the webhook's. A 2xx is delivered, a 410 is dead at once, anything else is retried.
+
+**In the app**, `everyApp()` answers the path itself, before the app's handler (`packages/sdk/src/server/eventsEndpoint.ts`):
+
+```ts
+export default everyApp(handler, {
+  events: {
+    on: {
+      "member.removed": async (event, env) => {
+        await stopAgentsOf(env, event.data.user.id);
+      },
+    },
+  },
+});
+```
+
+`on` is one function for every event, or one per exact type; an event with no handler is acknowledged (200). It receives the envelope plus `delivery: { id, attempt }`, and runs under `withOrganization(<the event's organization>)`, so each Gateway call it makes is that organization's background work. The SDK answers 401 `unauthenticated` without a valid `events.deliver` token for this Worker and this body (a `tools.list` token, a user identity, another Worker's token or another body's are all refused), 403 `forbidden` for an event of another organization than `EVERY_APP_ORG_ID`, 404 `no_handler` when the Worker passes no `events` (retried, so the deliveries arrive once it does), and 500 `handler_failed` when `on` throws (retried). A handler should be idempotent: a retry or a redelivery sends the same event `id` again.
+
+Owners and admins see the subscription in **Manage workspace** → **Events** like any other. They can pause, rename, test and redeliver; changing its events is refused (`This subscription belongs to an app: …`), and removing it pauses it, since the next deploy would make it again.
+
 ## The catalogue
 
 Every type the Gateway emits, its version and its `data`. The list is `EVENT_TYPES` in `@every-app/sdk/internal`; the `data` builders and the summary line are `apps/every-app-gateway/src/server/events/catalogue.ts` (`catalogue`, `summarize`), and the summaries below are examples of the one line each type carries. Ids are never alone where a name exists. `everyapp events types` prints the same list. A field marked `?` is left out when it has no value (never `null`, except where a type says so).
@@ -696,6 +722,7 @@ Deliveries are not provider calls: not counted in Admin → Usage, not capped.
 - **Organization-scoped and admin-only.** Subscriptions, events and deliveries are read and written under the acting organization only: an admin of one can't list, test or redeliver another's, and the CLI's statements carry the organization id. Members and read-only agent connections get nothing.
 - **The email sink mails members only**: the organization's live owners and admins, each once per delivery, from the Gateway's sender, within the `notice` budgets. It takes no address, and logs name a recipient by an HMAC of the address.
 - **Logs.** The Gateway logs delivery outcomes by id and code, never a body, a secret or an address.
+- **The app sink reaches the app's own Worker only**, over its binding, for its own organization's events, inside the allowlist (checked at deploy, at queue time and at each attempt), with an `events.deliver` token bound to the body; the perimeter refuses `/__everyapp/events` from outside.
 
 The invariants (`events.no-secrets-no-tool-io`, `events.signed-with-timestamp`, `events.target-rules`, `events.no-redirect-pinned-url`, `events.org-scoped`, `events.admin-only`, `events.app-emit-attributed-and-bounded`, `events.email-sink-members-only`, `events.retention`, `events.secret-shown-once`) are the threat model's boundary B9, with `events.emit-route-attributed-like-a-capability` in B4, once the threat-model PR (#647) lands ([/docs/agent/repo/threat-model](/docs/agent/repo/threat-model)).
 
@@ -726,6 +753,9 @@ From `docs/design/2026-10-events-out.md`, "Defaults for Ben", taken without him 
 `apps/every-app-gateway/src/server/events/target.ts`
 `apps/every-app-gateway/src/server/events/subscriptions.ts`
 `apps/every-app-gateway/src/server/events/email-sink.ts`
+`apps/every-app-gateway/src/server/events/app-sink.ts`
+`packages/sdk/src/server/eventsEndpoint.ts`
+`docs/design/2026-11-birds-decisions/app-event-sink.md`
 `apps/every-app-gateway/src/server/events/app-emit.ts`
 `apps/every-app-gateway/src/serverFunctions/events.ts`
 `packages/sdk/src/server/emit.ts`

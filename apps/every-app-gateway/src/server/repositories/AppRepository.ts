@@ -3,6 +3,7 @@ import {
   apps,
   appToolCatalogs,
   appTools,
+  eventSubscriptions,
   groupAppAccess,
   mcpConnectionApps,
   mcpConnections,
@@ -377,6 +378,17 @@ async function tombstone(
           .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
       ),
     ),
+    // Its `app` event sink: the deploy that brings it back makes it again
+    // from the manifest, if the manifest still subscribes.
+    db
+      .delete(eventSubscriptions)
+      .where(
+        and(
+          eq(eventSubscriptions.sink, "app"),
+          eq(eventSubscriptions.appRowId, id),
+          eq(eventSubscriptions.organizationId, organizationId),
+        ),
+      ),
     // And every organization's settings on it (a shared app is capped per
     // organization): a cap on an app nobody can call could not be cleared,
     // and must not bind a later deploy under the same slug.

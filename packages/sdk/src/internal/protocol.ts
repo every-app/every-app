@@ -118,7 +118,7 @@ export const TOOL_CALL_CHANNELS: readonly IdentityChannel[] = ["mcp", "agent"];
 export const AGENT_ACTOR_PREFIX = "agent:";
 export type IdentityTokenType = "user" | "public" | "system";
 /** What a system token may open. One purpose per token. */
-export type SystemTokenPurpose = "tools.list";
+export type SystemTokenPurpose = "tools.list" | "events.deliver";
 
 /** The actor on whose behalf the request is made (user, MCP client, agent). */
 export interface IdentityActor {
@@ -219,6 +219,11 @@ export interface SystemClaims extends JWTPayload {
   typ: "system";
   purpose: SystemTokenPurpose;
   jti: string;
+  /**
+   * `events.deliver` only: the SHA-256 (base64url) of the request body the
+   * token was minted for, so it opens that one delivery and nothing else.
+   */
+  bh?: string;
 }
 
 export interface PublicMarkerClaims extends JWTPayload {
@@ -356,6 +361,14 @@ export function assertSystemClaims(
       `system token must expire within ${SYSTEM_TOKEN_TTL_SECONDS}s of issue`,
     );
   }
+  if (
+    purpose === "events.deliver" &&
+    (typeof payload.bh !== "string" || payload.bh.length === 0)
+  ) {
+    throw new ProtocolClaimsError(
+      "an events.deliver token must name the body it was minted for",
+    );
+  }
   return payload as SystemClaims;
 }
 
@@ -470,6 +483,21 @@ export interface MintSystemTokenOptions {
   now?: number;
   /** Header kid. Defaults to the production kid; dev mints with the dev kid. */
   keyId?: string;
+  /** `events.deliver`: the body's SHA-256, base64url ({@link bodyHash}). */
+  bodyHash?: string;
+}
+
+/** SHA-256 of a request body, base64url: what an `events.deliver` token's `bh` names. */
+export async function bodyHash(body: string): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
+  );
+  let binary = "";
+  for (const byte of digest) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 /**
@@ -489,10 +517,14 @@ export async function mintSystemJwt(
   }
   const key = await loadPrivateKey(privateKeyPem);
   const nowSec = Math.floor((opts.now ?? Date.now()) / 1000);
+  if (opts.purpose === "events.deliver" && !opts.bodyHash) {
+    throw new RangeError("an events.deliver token needs the body's hash");
+  }
   const claims: SystemClaims = {
     typ: "system",
     purpose: opts.purpose,
     jti: crypto.randomUUID(),
+    ...(opts.bodyHash ? { bh: opts.bodyHash } : {}),
   };
 
   return new SignJWT(claims)

@@ -34,6 +34,7 @@ export const EVERYTHING = "*";
 export function subscriptionTarget(
   subscription: Pick<EventSubscription, "sink" | "url" | "recipients">,
 ): string {
+  if (subscription.sink === "app") return "App → its own Worker";
   if (subscription.sink === "email") {
     return subscription.recipients === "owners"
       ? "Email → owners"

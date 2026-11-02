@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   APP_EVENT_DATA_MAX_BYTES,
+  APP_SINK_EVENT_FAMILIES,
   EVENT_DATA_MAX_DEPTH,
   EVENT_TYPES,
   appEventNameProblem,
   appEventType,
+  appSinkPatternProblem,
+  appSinkTypeAllowed,
   checkEventData,
   eventPatternMatches,
   eventPatternProblem,
@@ -230,5 +233,59 @@ describe("isPrivateEventTargetName", () => {
     ]) {
       expect(isPrivateEventTargetName(host), host).toBe(false);
     }
+  });
+});
+
+describe("the app sink's allowlist", () => {
+  it("lets an app subscribe to member, group, app, mcp_app, connection and tool events", () => {
+    for (const pattern of [
+      "member.*",
+      "member.removed",
+      "group.*",
+      "app.*",
+      "app.tools_changed",
+      "app.crm.*",
+      "app.crm.invoice.paid",
+      "mcp_app.*",
+      "connection.revoked",
+      "tool.blocked",
+    ]) {
+      expect(appSinkPatternProblem(pattern), pattern).toBeNull();
+    }
+  });
+
+  it("refuses everything else, member.password_reset and * included", () => {
+    for (const pattern of [
+      "*",
+      "token.*",
+      "token.created",
+      "subscription.*",
+      "provider.*",
+      "provider.connected",
+      "signin_provider.*",
+      "cap.*",
+      "cap.reached",
+      "ai.*",
+      "access.*",
+      "access.changed",
+      "organization.*",
+      "organization.renamed",
+      "ping",
+      "member.password_reset",
+    ]) {
+      expect(appSinkPatternProblem(pattern), pattern).not.toBeNull();
+    }
+  });
+
+  it("is an allowlist: every catalogue family outside it is refused at delivery too", () => {
+    for (const info of EVENT_TYPES) {
+      const allowed =
+        (APP_SINK_EVENT_FAMILIES as readonly string[]).includes(info.group) &&
+        info.type !== "member.password_reset";
+      expect(appSinkTypeAllowed(info.type), info.type).toBe(allowed);
+    }
+    // A family the catalogue gains later reaches no app until it is listed.
+    expect(appSinkTypeAllowed("billing.invoice_paid")).toBe(false);
+    expect(appSinkTypeAllowed("app.crm.invoice.paid")).toBe(true);
   });
 });

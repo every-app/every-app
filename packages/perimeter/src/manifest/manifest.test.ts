@@ -2721,3 +2721,74 @@ describe("bearerRoutes manifest field", () => {
     }
   });
 });
+
+describe("events (the app event sink)", () => {
+  const why = "Stops a leaver's Agents at once.";
+
+  it("accepts the families an app may read", () => {
+    const manifest = validateManifestStrict({
+      id: "birds",
+      events: {
+        subscribe: [
+          "member.removed",
+          "member.*",
+          "group.*",
+          "app.tools_changed",
+          "app.crm.*",
+          "mcp_app.*",
+          "connection.revoked",
+          "tool.*",
+        ],
+        why,
+      },
+    });
+    expect(manifest.events?.subscribe).toHaveLength(8);
+  });
+
+  it("refuses at deploy every family outside the allowlist", () => {
+    for (const pattern of [
+      "*",
+      "token.*",
+      "token.created",
+      "subscription.*",
+      "provider.*",
+      "signin_provider.added",
+      "cap.reached",
+      "ai.*",
+      "access.changed",
+      "organization.*",
+      "member.password_reset",
+      "nope.*",
+    ]) {
+      expect(
+        () =>
+          validateManifestStrict({
+            id: "birds",
+            events: { subscribe: [pattern], why },
+          }),
+        pattern,
+      ).toThrow(/events/);
+    }
+  });
+
+  it("needs a why and at least one pattern, and takes no other keys", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "birds",
+        events: { subscribe: ["member.*"] },
+      }),
+    ).toThrow(/events/);
+    expect(() =>
+      validateManifestStrict({ id: "birds", events: { subscribe: [], why } }),
+    ).toThrow(/at least one/);
+    expect(() =>
+      validateManifestStrict({
+        id: "birds",
+        events: { subscribe: ["member.*"], why, url: "https://x.example" },
+      }),
+    ).toThrow(/events/);
+    expect(() =>
+      validateManifestStrict({ id: "birds", events: ["member.*"] }),
+    ).toThrow(/events is \{ subscribe/);
+  });
+});

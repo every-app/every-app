@@ -236,6 +236,16 @@ export interface EveryAppManifest {
   };
   /** Who answers `/mcp` on the app's own host, and why it needs to. */
   readonly mcp?: { readonly by: "gateway" | "app"; readonly why: string };
+  /**
+   * The Gateway events the app receives at `everyApp(handler, { events: {
+   * on } })`: types or patterns from `member.*` (but `member.password_reset`),
+   * `group.*`, `app.*`, `mcp_app.*`, `connection.*` and `tool.*`, for the
+   * app's own organization. Anything else is refused at deploy.
+   */
+  readonly events?: {
+    readonly subscribe: readonly string[];
+    readonly why: string;
+  };
 }
 
 /**

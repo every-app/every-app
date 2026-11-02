@@ -84,11 +84,18 @@ function iso(date: Date | null): string | null {
   return date ? date.toISOString() : null;
 }
 
+function sinkOf(
+  row: Pick<ListedSubscription, "sink">,
+): EventSubscription["sink"] {
+  return row.sink === "email" || row.sink === "app" ? row.sink : "webhook";
+}
+
 function view(row: ListedSubscription): EventSubscription {
   return {
     id: row.id,
     name: row.name,
-    sink: row.sink === "email" ? "email" : "webhook",
+    sink: sinkOf(row),
+    appRowId: row.sink === "app" ? row.appRowId : null,
     url: row.url,
     recipients:
       row.recipients === "owners" || row.recipients === "admins"
@@ -377,6 +384,14 @@ async function update(
     changed.push("enabled");
   }
   if (input.events !== undefined) {
+    // An app's subscription is its manifest's: only a deploy changes what
+    // it receives (and the allowlist it was checked against).
+    if (existing.sink === "app") {
+      throw new PublicError(
+        "INVALID_INPUT",
+        "This subscription belongs to an app: change events.subscribe in its everyapp.config.ts and deploy it. You can pause it here.",
+      );
+    }
     patch.events = JSON.stringify(checkPatterns(input.events));
     if (patch.events !== existing.events) changed.push("events");
   }
@@ -398,7 +413,7 @@ async function update(
         subscription: {
           id,
           name: subscription.name,
-          sink: existing.sink === "email" ? "email" : "webhook",
+          sink: sinkOf(existing),
         },
         changed,
         enabled: changed.includes("enabled") ? patch.enabled : undefined,
@@ -418,14 +433,16 @@ async function remove(
   const subject = {
     id,
     name: existing.name,
-    sink: existing.sink === "email" ? ("email" as const) : ("webhook" as const),
+    sink: sinkOf(existing),
   };
-  if (existing.builtin) {
+  // An app's subscription is paused, not removed: its next deploy would
+  // make it again from the manifest.
+  if (existing.builtin || existing.sink === "app") {
     await EventSubscriptionRepository.update(id, ctx.orgId, { enabled: false });
     logEvent("events.subscription_disabled", {
       subscription: id,
       org: ctx.orgId,
-      builtin: existing.builtin,
+      builtin: existing.builtin ?? `app:${existing.appRowId ?? ""}`,
     });
     await emit(async () => ({
       organizationId: ctx.orgId,

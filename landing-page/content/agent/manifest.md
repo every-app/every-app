@@ -110,6 +110,7 @@ Every top-level field. Nothing is required but `id`.
 | `migrations`        | object                                                                                           | drizzle, first D1 binding, `drizzle` dir | How the app's database is migrated; `engine` is required once the object is given.                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `bearerRoutes`      | `{ paths, why }`                                                                                 | none                                     | Routes a bearer client (a native app signed in with Every App, a script with a personal token) reaches with its token only: the Gateway answers 401 to its session cookie there, and `everyapp access on` lets the paths through Cloudflare Access.                                                                                                                                                                                                                                   |
 | `mcp`               | `{ by, why }`                                                                                    | none                                     | Whether the app's own host answers `/mcp`, and who does. Left out, it doesn't: the Gateway's `/mcp` is the one connector.                                                                                                                                                                                                                                                                                                                                                             |
+| `events`            | `{ subscribe, why }`                                                                             | none                                     | The Gateway events the app receives at `everyApp(handler, { events: { on } })`, for its own organization, over its service binding. Only `member.*` (but `member.password_reset`), `group.*`, `app.*`, `mcp_app.*`, `connection.*` and `tool.*`.                                                                                                                                                                                                                                      |
 
 ## id
 
@@ -898,6 +899,22 @@ bearerRoutes: { paths: ["/api/**"], why: "The Mac app calls the API with its tok
 ````
 
 Behind Access, `deploy` and `access on` bypass these paths on the app's host with `/.well-known/oauth-protected-resource`, Managed OAuth or not; `status` and `access show` report a host whose application differs. They count toward the 25 paths a host's Access destination holds, with `public`, `publicAssets` and `/mcp`. The app reads a native caller like any other: `getEveryAppUser()` with `channel: "api"` and actor `oauth:<connection id>` ([Identity](/docs/agent/identity)); the client's side is [Native apps](/docs/agent/native). The invariant behind this section is `native.bearer-routes-no-cookie` in `docs/threat-model.md`.
+
+## events
+
+`events` is an object, `{ subscribe, why }`, and is left out by default. It names the Gateway events the app receives (the `app` event sink, [Events](/docs/agent/events#the-app-sink)): the deploy makes one subscription for the app's own organization, kept in step with this field on every deploy, and the Gateway delivers each matching event to the app's Worker over its service binding, where `everyApp(handler, { events: { on } })` answers it.
+
+- `events.subscribe` is a list of 1 to 25 event types or patterns (`member.removed`, `member.*`, `app.tools_changed`, `app.crm.*`), checked against the catalogue as a subscription's patterns are, and only inside the families an app may read: `member.*` (but `member.password_reset`), `group.*`, `app.*`, `mcp_app.*`, `connection.*` and `tool.*`. Anything else is refused at deploy (`events.subscribe: "token.*" can't reach an app: …`), `*` included: `token.*`, `subscription.*`, `provider.*`, `signin_provider.*`, `cap.*`, `ai.*`, `access.*` and `organization.*` never reach an app. It is an allowlist: a family the catalogue gains later reaches no app until it is added to `APP_SINK_EVENT_FAMILIES` (`packages/sdk/src/internal/events.ts`).
+- `events.why` is a non-empty string of at most 200 characters, plain text, why the app needs these events; it is the subscription's description.
+
+```ts
+events: {
+  subscribe: ["member.removed", "member.deactivated", "app.tools_changed"],
+  why: "Stops a leaver's Agents at once; refreshes Agent tool policies.",
+},
+```
+
+Dropping the field removes the subscription on the next deploy; deleting the app removes it too. A Gateway from before migration `0023_app_event_sink.sql` refuses a manifest that declares `events` with [`GATEWAY_OUTDATED`](/docs/agent/errors#gateway_outdated).
 
 ## remote
 

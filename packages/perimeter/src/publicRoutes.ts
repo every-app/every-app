@@ -11,7 +11,7 @@
  * normalization, so tricks like `/p/%2e%2e/__everyapp/tools/call` cannot smuggle
  * a request onto an internal route via a public glob.
  */
-import { TOOLS_PATH_PREFIX } from "@every-app/sdk/internal";
+import { APP_EVENTS_PATH, TOOLS_PATH_PREFIX } from "@every-app/sdk/internal";
 import {
   EVERYAPP_INTERNAL_PREFIX,
   type PublicRoute,
@@ -132,6 +132,24 @@ export function isReservedToolsPath(rawPathname: string): boolean {
     // Ambiguous encodings normalize to "/"; look through them as well.
     isToolsNamespace(looselyCanonical(rawPathname))
   );
+}
+
+/**
+ * True when a raw request path reaches the event sink's delivery path
+ * (`/__everyapp/events`, and anything under it) under any spelling, as
+ * {@link isReservedToolsPath} reads it. Only the gateway's event bus calls
+ * it, over the service binding, so external requests are refused.
+ */
+export function isReservedEventsPath(rawPathname: string): boolean {
+  return (
+    isEventsNamespace(normalizePath(rawPathname).canonical) ||
+    isEventsNamespace(looselyCanonical(rawPathname))
+  );
+}
+
+function isEventsNamespace(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower === APP_EVENTS_PATH || lower.startsWith(`${APP_EVENTS_PATH}/`);
 }
 
 function isToolsNamespace(path: string): boolean {

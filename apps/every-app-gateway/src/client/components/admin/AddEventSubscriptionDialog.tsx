@@ -369,7 +369,11 @@ function SubscriptionForm({
           {editing ? (
             <div className="space-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2">
               <p className="text-xs text-muted-foreground">
-                {subscription.sink === "email" ? "Email" : "Webhook"}
+                {subscription.sink === "email"
+                  ? "Email"
+                  : subscription.sink === "app"
+                    ? "App"
+                    : "Webhook"}
               </p>
               <p className="text-sm break-all">
                 {subscriptionTarget(subscription)}

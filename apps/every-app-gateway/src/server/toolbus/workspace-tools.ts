@@ -429,7 +429,9 @@ function shownTarget(url: string): string {
 function listedSubscription(subscription: EventSubscription) {
   const email = subscription.sink === "email";
   let target: string;
-  if (email) {
+  if (subscription.sink === "app") {
+    target = "the app's own Worker, over its service binding";
+  } else if (email) {
     target =
       subscription.recipients === "owners"
         ? "email to the owners"

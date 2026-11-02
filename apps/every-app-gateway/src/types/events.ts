@@ -26,8 +26,11 @@ export type EventLastDeliveryStatus = "delivered" | "failed" | "dead";
 export type EventSubscription = {
   id: string;
   name: string;
-  sink: "webhook" | "email";
-  /** The webhook's URL as stored; null for the email sink. */
+  /** `app`: an app's own subscription, made by its deploy from `events` in its manifest. */
+  sink: "webhook" | "email" | "app";
+  /** The `app` sink's app (its registry row id); null for the others. */
+  appRowId?: string | null;
+  /** The webhook's URL as stored; null for the email and app sinks. */
   url: string | null;
   /** Whom the email sink mails; null for a webhook. */
   recipients: EventEmailRecipients | null;

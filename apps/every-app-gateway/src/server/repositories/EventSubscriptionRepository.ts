@@ -19,6 +19,7 @@ const listedColumns = {
   organizationId: eventSubscriptions.organizationId,
   name: eventSubscriptions.name,
   sink: eventSubscriptions.sink,
+  appRowId: eventSubscriptions.appRowId,
   url: eventSubscriptions.url,
   recipients: eventSubscriptions.recipients,
   events: eventSubscriptions.events,

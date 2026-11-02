@@ -3,6 +3,7 @@ import {
   normalizePath,
   isInternalPath,
   isProtectedResourceMetadataPath,
+  isReservedEventsPath,
   isReservedToolsPath,
   isReservedWellKnownPath,
   matchBearerRoute,
@@ -327,6 +328,40 @@ describe("isProtectedResourceMetadataPath", () => {
       "/.well-known/%256fauth-protected-resource",
     ]) {
       expect(isProtectedResourceMetadataPath(path), path).toBe(false);
+    }
+  });
+});
+
+describe("isReservedEventsPath", () => {
+  it("finds the event sink's delivery path under any spelling", () => {
+    for (const raw of [
+      "/__everyapp/events",
+      "/__everyapp/events/",
+      "/__everyapp/events/anything",
+      "/__EVERYAPP/EVENTS",
+      "/__everyapp//events",
+      "/./__everyapp/./events",
+      "/x/../__everyapp/events",
+      "/x/%2e%2e/__everyapp/events",
+      "/x/..%2F__everyapp%2Fevents",
+      "/..%5c__everyapp%5cevents",
+      "/__everyapp%2fevents",
+      "/__everyapp%252fevents",
+      "/%5f%5feveryapp/events",
+      "/__everyapp/events/%zz",
+    ]) {
+      expect(isReservedEventsPath(raw), raw).toBe(true);
+    }
+  });
+
+  it("leaves look-alikes alone", () => {
+    for (const raw of [
+      "/__everyapp/eventsx",
+      "/events",
+      "/api/__everyapp/events",
+      "/__everyapp/tools/list",
+    ]) {
+      expect(isReservedEventsPath(raw), raw).toBe(false);
     }
   });
 });

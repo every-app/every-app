@@ -13,7 +13,8 @@
  * `everyapp.config.ts` (the Cloudflare Vite plugin hides every file
  * `cloudflare.config.ts` imports from the Worker in dev).
  * It also answers the gateway's internal tools contract
- * (`/__everyapp/tools/*`) for the app's `defineTools()` catalog.
+ * (`/__everyapp/tools/*`) for the app's `defineTools()` catalog, and the
+ * event sink's deliveries (`/__everyapp/events`) for `events: { on }`.
  *
  * Around the handler and around each tool call it opens the request
  * context (context.ts): `currentUser()` reads the user anywhere below, and
@@ -46,6 +47,10 @@ import {
 import { currentUser, serveRequest } from "./context.js";
 import type { ToolSet } from "./tools.js";
 import { handleToolsRequest } from "./toolsEndpoint.js";
+import {
+  handleEventsRequest,
+  type AppEventsOptions,
+} from "./eventsEndpoint.js";
 
 export { ConfigurationError, IdentityError, isAdmin, isAgentCall };
 export type { EveryAppUser, IdentityResult, OrgRole };
@@ -63,7 +68,7 @@ export interface EveryAppManifestLike {
   [key: string]: unknown;
 }
 
-export interface EveryAppOptions {
+export interface EveryAppOptions<TEnv = Record<string, unknown>> {
   /** Optional expected issuer (gateway URL). Defaults to env.EVERYAPP_IDENTITY_ISSUER when set. */
   issuer?: string;
   /** Env var holding the public key set. Defaults to EVERYAPP_IDENTITY_PUBLIC_KEYS. */
@@ -80,6 +85,13 @@ export interface EveryAppOptions {
    * and serves them to MCP clients; see `defineTools`.
    */
   tools?: ToolSet;
+  /**
+   * The Gateway's events this app subscribes to (`events.subscribe` in its
+   * manifest), delivered to `on` over the service binding: one function, or
+   * one per type. The SDK verifies the Gateway's `events.deliver` token
+   * before `on` runs.
+   */
+  events?: AppEventsOptions<TEnv>;
   /** Override for tests. */
   now?: number;
 }
@@ -122,7 +134,7 @@ function envValue(env: unknown, key: string): string | undefined {
 
 function configFrom(
   manifest: EveryAppManifestLike | undefined,
-  options: EveryAppOptions = {},
+  options: EveryAppOptions<never> = {},
 ): VerificationConfig {
   return {
     manifestAppId: manifest?.id,
@@ -371,7 +383,7 @@ export function everyApp<
   TCtx extends ExecutionContextLike = ExecutionContext,
 >(
   handler: EveryAppHandler<TEnv, TCtx>,
-  options?: EveryAppOptions,
+  options?: EveryAppOptions<TEnv>,
 ): EveryAppExport<TEnv, TCtx>;
 /**
  * @deprecated Drop the manifest: the app id now comes from
@@ -384,15 +396,15 @@ export function everyApp<
 >(
   handler: EveryAppHandler<TEnv, TCtx>,
   manifest: EveryAppManifestLike | undefined,
-  options?: EveryAppOptions,
+  options?: EveryAppOptions<TEnv>,
 ): EveryAppExport<TEnv, TCtx>;
 export function everyApp<
   TEnv = Record<string, unknown>,
   TCtx extends ExecutionContextLike = ExecutionContext,
 >(
   handler: EveryAppHandler<TEnv, TCtx>,
-  manifestOrOptions?: EveryAppManifestLike | EveryAppOptions,
-  legacyOptions: EveryAppOptions = {},
+  manifestOrOptions?: EveryAppManifestLike | EveryAppOptions<TEnv>,
+  legacyOptions: EveryAppOptions<TEnv> = {},
 ): EveryAppExport<TEnv, TCtx> {
   const manifest = isManifest(manifestOrOptions)
     ? manifestOrOptions
@@ -400,8 +412,8 @@ export function everyApp<
   const options =
     manifest || manifestOrOptions === undefined
       ? legacyOptions
-      : (manifestOrOptions as EveryAppOptions);
-  const config = configFrom(manifest, options);
+      : (manifestOrOptions as EveryAppOptions<TEnv>);
+  const config = configFrom(manifest, options as EveryAppOptions<never>);
 
   return {
     async fetch(request: Request, env: TEnv, ctx: TCtx) {
@@ -426,6 +438,12 @@ export function everyApp<
         identity: identityOptions(env, config, audience),
       });
       if (toolsResponse) return toolsResponse;
+      // So does the event sink's delivery path (`/__everyapp/events`).
+      const eventsResponse = await handleEventsRequest(request, env, ctx, {
+        events: options.events as AppEventsOptions<never> | undefined,
+        identity: identityOptions(env, config, audience),
+      });
+      if (eventsResponse) return eventsResponse;
 
       let identity: IdentityResult;
       try {

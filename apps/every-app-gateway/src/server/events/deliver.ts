@@ -4,7 +4,8 @@
  * UPDATE, so no other isolate sends the same attempt), load the event and
  * the subscription, build the envelope, send it through the webhook sink
  * (a signed POST that follows no redirect, times out at ten seconds and
- * reads at most a kilobyte of the answer) or the email sink, then settle
+ * reads at most a kilobyte of the answer), the email sink or the app sink
+ * (app-sink.ts: the same POST over the app's service binding), then settle
  * the row: delivered, pending again with the next backoff, or dead after
  * the seventh failure, a 410, or a refusal no retry can fix. `sweep` is
  * what the per-minute cron runs: up to 50 due rows, six at a time, within
@@ -16,7 +17,6 @@ import {
   EVENT_DELIVERY_MAX_ATTEMPTS,
   EVENT_DELIVERY_TIMEOUT_MS,
   EVENT_HEADERS,
-  EVENT_RESPONSE_KEEP_CHARS,
   EVENT_RESPONSE_READ_MAX_BYTES,
   EVENT_RETRY_DELAYS_MS,
 } from "@every-app/sdk/internal";
@@ -31,10 +31,11 @@ import {
   EventSubscriptionRepository,
   type SubscriptionRow,
 } from "@/server/repositories/EventSubscriptionRepository";
+import { defaultAppSinkDeps, sendToApp, type AppSinkDeps } from "./app-sink";
 import { summarize } from "./catalogue";
 import { sendEventEmail, type EventMailer } from "./email-sink";
 import { eventSignatureHeader } from "./signing";
-import type { SinkResult } from "./sink-result";
+import { describeAnswer, readHead, type SinkResult } from "./sink-result";
 import { organizationSubject } from "./subjects";
 import { checkTarget, targetRulesFromEnv, type TargetRules } from "./target";
 
@@ -52,6 +53,8 @@ export interface DeliveryDeps {
   gatewayUrl: () => string;
   userAgent: () => string;
   targetRules: () => TargetRules;
+  /** The `app` sink's binding and signing key; the Worker's own when unset. */
+  appSink?: () => AppSinkDeps;
 }
 
 interface DeliveryEnv {
@@ -112,42 +115,6 @@ function parseJson(text: string): unknown {
   } catch {
     return null;
   }
-}
-
-/** Up to `maxBytes` of a response body, as text; cancels the rest. */
-async function readHead(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  try {
-    while (bytes < maxBytes) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      bytes += value.byteLength;
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-  const joined = new Uint8Array(Math.min(bytes, maxBytes));
-  let offset = 0;
-  for (const chunk of chunks) {
-    const room = joined.length - offset;
-    if (room <= 0) break;
-    joined.set(chunk.subarray(0, room), offset);
-    offset += Math.min(chunk.byteLength, room);
-  }
-  return new TextDecoder().decode(joined);
-}
-
-/** `<code>: <the start of the answer>`, on one line, bounded. */
-function describeAnswer(code: string, answer: string): string {
-  const excerpt = answer
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, EVENT_RESPONSE_KEEP_CHARS);
-  return excerpt ? `${code}: ${excerpt}` : code;
 }
 
 async function sendWebhook(
@@ -359,22 +326,27 @@ export async function deliverOnce(
   try {
     const envelope = await buildEnvelope(event, deps);
     result =
-      subscription.sink === "email"
-        ? await sendEventEmail(
-            {
-              organizationId: event.organizationId,
-              organizationName: envelope.organization.name,
-              recipients:
-                subscription.recipients === "owners" ? "owners" : "admins",
-              type: event.type,
-              summary: envelope.summary,
-              data: envelope.data,
-              gatewayUrl: deps.gatewayUrl(),
-              deliveryId: claimed.id,
-            },
-            await deps.mailer(),
-          )
-        : await sendWebhook(subscription, envelope, claimed, deps);
+      subscription.sink === "app"
+        ? await sendToApp(subscription, envelope, claimed, {
+            userAgent: deps.userAgent,
+            appSink: deps.appSink?.() ?? defaultAppSinkDeps(),
+          })
+        : subscription.sink === "email"
+          ? await sendEventEmail(
+              {
+                organizationId: event.organizationId,
+                organizationName: envelope.organization.name,
+                recipients:
+                  subscription.recipients === "owners" ? "owners" : "admins",
+                type: event.type,
+                summary: envelope.summary,
+                data: envelope.data,
+                gatewayUrl: deps.gatewayUrl(),
+                deliveryId: claimed.id,
+              },
+              await deps.mailer(),
+            )
+          : await sendWebhook(subscription, envelope, claimed, deps);
   } catch (error) {
     result = {
       ok: false,

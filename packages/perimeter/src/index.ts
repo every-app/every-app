@@ -61,6 +61,7 @@ export {
 } from "./headers";
 export {
   isInternalPath,
+  isReservedEventsPath,
   isReservedToolsPath,
   isProtectedResourceMetadataPath,
   isReservedWellKnownPath,
