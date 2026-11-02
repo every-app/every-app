@@ -39,8 +39,8 @@ Grep, Glob: no commands, no edits, no MCP servers, and the branch's own
 `.claude` settings and hooks ignored), over the diff since the branch left
 the base plus whatever is edited and not yet committed, untracked files
 included. A file whose name only ever holds credentials (`.env`, `*.pem`,
-`providers.env`, `accounts.json`, the public copy's list in
-`scripts/public-copy/policy.mjs`) is never sent; stderr names what was sent
+`providers.env`, `accounts.json`, the list in `scripts/security-review.mjs`)
+is never sent; stderr names what was sent
 and what was kept back. When the diff is too long for one prompt it runs
 again with the file list and no diff, and the model reads the files. It
 needs `claude` on PATH and signed in (https://docs.claude.com/en/docs/claude-code).

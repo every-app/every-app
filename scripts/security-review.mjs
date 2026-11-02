@@ -32,12 +32,26 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { policy } from "./public-copy/policy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROMPT_DIR = path.join(HERE, "security-review");
 const CLAUDE_CODE = "https://docs.claude.com/en/docs/claude-code";
 /** Prose and the lockfile: nothing there runs, and the false-positive rules exclude it anyway. */
+// File names that only ever hold credentials: an untracked one is never sent.
+const CREDENTIAL_FILES = [
+  { pattern: /^1k(\..*)?$/, why: "the Cloudflare token file committed in #488" },
+  { pattern: /^accounts(\..*)?\.json(\..*)?$/, why: "the onboarding loop's test accounts and their tokens" },
+  { pattern: /^providers\.env(\..*)?$/, why: "the onboarding loop's provider keys" },
+  { pattern: /^\.dev\.vars(\..*)?$/, allow: /\.example$/, why: "local dev secrets" },
+  { pattern: /^\.env(\..*)?$/, allow: /\.example$/, why: "an environment file" },
+  { pattern: /\.(pem|key|p12|pfx|jks|keystore|ppk)$/, why: "key material" },
+  { pattern: /^id_(rsa|dsa|ecdsa|ed25519)$/, why: "an SSH private key" },
+  { pattern: /^secrets\.env$/, why: "the Gateway's secrets file" },
+  { pattern: /^\.npmrc$/, why: "may carry a registry token" },
+  { pattern: /^\.netrc$/, why: "credentials" },
+  { pattern: /^(credentials|service-account[^/]*)\.json$/, why: "credentials" },
+];
+
 const NOT_REVIEWED = ["docs", "prompts", "landing-page/content", "*.md", "pnpm-lock.yaml"];
 /** Two copies of the skill, for the two places agents look; they must stay the same. */
 const SKILL_COPIES = [".claude/skills/security-review/SKILL.md", ".agents/skills/security-review/SKILL.md"];
@@ -123,8 +137,8 @@ const exclude = NOT_REVIEWED.map((p) => `:(exclude)${p}`);
 let diff = git(["diff", ...staged, mergeBase, "--", ".", ...exclude]);
 if (!flags.staged) {
   // Untracked files are new to the branch too; git diff alone never shows
-  // them. A file whose name only ever holds credentials (the public copy's
-  // list: accounts.json, providers.env, .env, *.pem and the rest) stays out
+  // them. A file whose name only ever holds credentials (CREDENTIAL_FILES:
+  // accounts.json, providers.env, .env, *.pem and the rest) stays out
   // whatever it holds, since .gitignore does not cover them all; so does
   // anything that is not a regular file (a nested repository, a link).
   const untracked = git(["ls-files", "--others", "--exclude-standard", "-z", "--", ".", ...exclude]).split("\0").filter(Boolean);
@@ -132,7 +146,7 @@ if (!flags.staged) {
   const kept = [];
   for (const file of untracked) {
     const name = path.basename(file);
-    const rule = policy.denyNames.find((r) => r.pattern.test(name) && !r.allow?.test(name));
+    const rule = CREDENTIAL_FILES.find((r) => r.pattern.test(name) && !r.allow?.test(name));
     if (rule) {
       kept.push(`${file} (${rule.why})`);
       continue;

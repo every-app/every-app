@@ -10,7 +10,6 @@
     "test:built-cli": "pnpm -C packages/sdk build && pnpm -C packages/cli build && pnpm -C packages/cli test:built",
     "knip": "pnpm -r --no-bail --parallel run knip",
     "loop": "pnpm -C packages/onboarding-loop loop",
-    "public-copy": "node scripts/public-copy.mjs",
     "pack-for-app": "node scripts/pack-for-app.mjs",
     "security-review": "node scripts/security-review.mjs",
     "publish:rc": "node scripts/publish-rc.mjs"

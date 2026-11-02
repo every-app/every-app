@@ -134,6 +134,10 @@ merge, or make `every-app/every-app` the origin). Never push side branches,
 
 ## Option B: the one-commit copy
 
+> Retired 2026-11-02: Ben chose A. `pnpm public-copy`, its runbook and its CI
+> dry run are deleted, after its `--push` force-replaced the public `main` by
+> mistake on 2026-11-01. Publishing is a fast-forward `git push` of `main`.
+
 As built: `pnpm public-copy --push git@github.com:every-app/every-app.git`
 ([runbook](../runbooks/public-copy.md)), which force-replaces `main` with one
 scrubbed commit; then the same tag deletion, flip, reporting and approval steps.

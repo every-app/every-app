@@ -56,7 +56,7 @@ is the fast one, six jobs of under two minutes on the
 repository's 2-core runners that build nothing but the SDK: Type Check in
 two halves (the gateway and the landing page; the rest) with the gateway's
 `auth:check` and the SDK's `check:esm-relative-imports`, Lint
-(`pnpm audit --audit-level critical`, the public-copy dry run,
+(`pnpm audit --audit-level critical`,
 `pnpm format:check`, `pnpm knip`) and Unit Tests in three parts (the
 gateway; the CLI; the rest), each package's `unit` vitest project with
 `--maxWorkers=100%`. The root scripts fan out with `pnpm -r --parallel`, not
