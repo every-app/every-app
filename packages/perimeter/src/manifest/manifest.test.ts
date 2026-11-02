@@ -11,6 +11,9 @@ import {
   resourceNameFor,
   bucketNameFor,
   analyticsDatasetFor,
+  artifactsNamespaceFor,
+  isArtifactsNamespace,
+  MAX_ARTIFACTS_NAMESPACE_LENGTH,
   storeSecretNameFor,
   queueNameFor,
   isValidQueueName,
@@ -2520,6 +2523,91 @@ describe("Analytics Engine (resources.analyticsEngine)", () => {
     expect(manifestTierProblems(shop, "service_binding")).toEqual([]);
     expect(
       manifestTierProblems({ resources: { analyticsEngine: [] } }, "dispatch"),
+    ).toEqual([]);
+  });
+});
+
+describe("Artifacts (resources.artifacts)", () => {
+  const birds = {
+    id: "birds",
+    resources: {
+      d1: ["DB"],
+      artifacts: [{ name: "MEMORY" }, { name: "AGENT_FILES" }],
+    },
+  };
+
+  it("accepts namespaces by binding in both schemas", () => {
+    expect(validateManifestStrict(birds)).toEqual(birds);
+    expect(validateManifest(birds)).toEqual(birds);
+  });
+
+  it("names a namespace after the Worker, with the binding lowercased and _ as -", () => {
+    expect(artifactsNamespaceFor("every-acme-birds", "MEMORY")).toBe(
+      "every-acme-birds--memory",
+    );
+    expect(artifactsNamespaceFor("every-acme-birds", "AGENT_FILES")).toBe(
+      "every-acme-birds--agent-files",
+    );
+    // A named Gateway's app Worker already holds the separator.
+    expect(artifactsNamespaceFor("every-demo--acme-birds", "MEMORY")).toBe(
+      "every-demo--acme-birds--memory",
+    );
+  });
+
+  it("takes only the namespace names Cloudflare's upload API takes", () => {
+    expect(MAX_ARTIFACTS_NAMESPACE_LENGTH).toBe(63);
+    expect(isArtifactsNamespace("every-acme-birds--memory")).toBe(true);
+    expect(isArtifactsNamespace("a".repeat(63))).toBe(true);
+    expect(isArtifactsNamespace("a".repeat(64))).toBe(false);
+    expect(isArtifactsNamespace("a")).toBe(false);
+    expect(isArtifactsNamespace("every-acme-birds--memory-")).toBe(false);
+    expect(isArtifactsNamespace("-every")).toBe(false);
+    expect(isArtifactsNamespace("every acme")).toBe(false);
+  });
+
+  it.each([
+    [
+      "a binding that isn't an identifier",
+      { resources: { artifacts: [{ name: "agent-files" }] } },
+      /resources\.artifacts\.0\.name/,
+    ],
+    [
+      "a binding that ends with _ (the namespace would end with a hyphen)",
+      { resources: { artifacts: [{ name: "MEMORY_" }] } },
+      /an Artifacts binding can't end with _/,
+    ],
+    [
+      "an unknown key",
+      { resources: { artifacts: [{ name: "MEMORY", namespace: "shared" }] } },
+      /Unrecognized key/,
+    ],
+    [
+      "a binding named like a D1 database",
+      { resources: { d1: ["MEMORY"], artifacts: [{ name: "MEMORY" }] } },
+      /the binding MEMORY is declared twice/,
+    ],
+    [
+      "a secret named like the binding",
+      { resources: { artifacts: [{ name: "MEMORY" }] }, secrets: ["MEMORY"] },
+      /secrets: MEMORY is one of the app's bindings/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...birds, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("is one of the app's binding names", () => {
+    expect(bindingNamesOf(birds)).toContain("AGENT_FILES");
+  });
+
+  it("is refused on the dispatch tier, not yet available there", () => {
+    expect(manifestTierProblems(birds, "dispatch")).toEqual([
+      "resources.artifacts: Artifacts isn't available to apps in a dispatch namespace yet (its repos would live in, and bill, the platform's account)",
+    ]);
+    expect(manifestTierProblems(birds, "service_binding")).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { artifacts: [] } }, "dispatch"),
     ).toEqual([]);
   });
 });

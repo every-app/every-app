@@ -10,6 +10,7 @@ import {
   RESOURCE_LABELS,
 } from "@/lib/app/ownership";
 import { deleteAiGateway } from "@/lib/cf/aiGateway";
+import { purgeArtifactsNamespace } from "@/lib/cf/artifacts";
 import type { D1Database } from "@/lib/cf/d1";
 import { isCfError } from "@/lib/cf/errors";
 import {
@@ -263,6 +264,7 @@ const KINDS = [
   "Vectorize index",
   "AI Gateway",
   "Secrets Store secret",
+  "Artifacts namespace",
   "mail route",
 ] as const;
 type Kind = (typeof KINDS)[number];
@@ -285,6 +287,7 @@ const PLACES = {
   queue: "Compute (Workers) → Queues",
   r2: "Storage & Databases → R2 Object Storage",
   vectorize: "AI → Vectorize",
+  artifacts: "Storage & Databases → Artifacts",
 } as const;
 
 async function purgeApp(
@@ -318,6 +321,7 @@ async function purgeApp(
   const workflowsKept: Kept[] = [];
   const queuesKept: Kept[] = [];
   const bucketsKept: Kept[] = [];
+  const namespacesKept: Kept[] = [];
   // The app's Worker and its helper Workers (`<worker>--<name>`), as recorded.
   const ownWorkers = new Set(
     owned.flatMap((resource) =>
@@ -390,6 +394,20 @@ async function purgeApp(
           });
           continue;
         }
+      } else if (resource.kind === "artifacts") {
+        // Its repos, then the namespace. Cloudflare refuses a namespace
+        // that still lists a repo (one made since the list): kept, and said.
+        try {
+          await purgeArtifactsNamespace(cf, resource.resourceId);
+        } catch (error) {
+          if (isCfError(error, "not_found")) throw error;
+          namespacesKept.push({
+            described: `${describeResource(resource)} (Artifacts refused to delete it or one of its repos)`,
+            shown: `the Artifacts namespace ${resource.name}, which Artifacts refused to delete (delete its repos first)`,
+            place: PLACES.artifacts,
+          });
+          continue;
+        }
       } else if (resource.kind === "vectorize") {
         await deleteVectorizeIndex(cf, resource.resourceId);
       } else if (resource.kind === "ai-gateway") {
@@ -425,6 +443,7 @@ async function purgeApp(
     ...workflowsKept,
     ...queuesKept,
     ...bucketsKept,
+    ...namespacesKept,
   ];
   const kinds = KINDS.flatMap((kind) => {
     const n = counts.get(kind) ?? 0;

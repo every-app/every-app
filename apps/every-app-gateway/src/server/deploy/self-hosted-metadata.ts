@@ -126,6 +126,13 @@ export function selfHostedMetadata(
           dataset: String(binding.name),
         });
         break;
+      case "artifacts":
+        bindings.push({
+          type: "artifacts",
+          name,
+          namespace: String(binding.namespace),
+        });
+        break;
       case "secrets-store-secret":
         bindings.push({
           type: "secrets_store_secret",

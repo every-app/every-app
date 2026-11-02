@@ -27,6 +27,7 @@ export {
   workflowNameFor,
   type AiBinding,
   type AnalyticsEngineDatasetBinding,
+  type ArtifactsBinding,
   type BrowserBinding,
   type AiGatewayBinding,
   type D1Binding,

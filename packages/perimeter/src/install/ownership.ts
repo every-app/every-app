@@ -6,7 +6,7 @@
  *
  * A resource's name proves nothing: anyone with the account can create a
  * D1 database, Hyperdrive config, queue, Vectorize index, AI Gateway,
- * Secrets Store secret or Worker named like an app's, and a failed first deploy
+ * Secrets Store secret, Artifacts namespace or Worker named like an app's, and a failed first deploy
  * leaves the app registered without having created anything. So an app
  * deploy uses an existing Worker, database or namespace only when it is
  * recorded here as the app's, and `app delete --purge` deletes only what is
@@ -49,6 +49,7 @@ type ResourceKind =
   | "ai-gateway"
   | "secrets-store-secret"
   | "r2"
+  | "artifacts"
   | "email-route";
 
 /** Each kind of app resource as a person reads it. */
@@ -62,6 +63,7 @@ export const RESOURCE_LABELS: Readonly<Record<ResourceKind, string>> = {
   "ai-gateway": "AI Gateway",
   "secrets-store-secret": "Secrets Store secret",
   r2: "R2 bucket",
+  artifacts: "Artifacts namespace",
   "email-route": "Email Routing route for",
 };
 
@@ -73,11 +75,12 @@ export interface OwnedResource {
    * route, its address in the app's inbound list (`apps.email_inbound`).
    */
   binding: string;
-  /** D1 name, KV title, Hyperdrive config, queue, Vectorize index, AI Gateway or Secrets Store secret name, Worker name or the route's address. */
+  /** D1 name, KV title, Hyperdrive config, queue, Vectorize index, AI Gateway, Secrets Store secret or Artifacts namespace name, Worker name or the route's address. */
   name: string;
   /**
    * D1 uuid, KV id, Hyperdrive config id, queue id (`queue_id`), Vectorize
-   * index name (an index has no other id), AI Gateway id or Worker name; for
+   * index name (an index has no other id), AI Gateway id, Artifacts
+   * namespace name (it has no other id) or Worker name; for
    * a Secrets Store secret, `<store id>/<secret id>`; for a route, its
    * rule as `<zone id>/<rule id>`, or `catch_all:<zone id>` for a zone's
    * catch-all (lib/app/emailRoutes.ts). Null while a create is in flight: the

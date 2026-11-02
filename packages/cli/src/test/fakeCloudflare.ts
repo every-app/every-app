@@ -390,6 +390,14 @@ export class FakeCloudflare {
   /** R2 buckets by name, each with how many objects it holds. */
   readonly buckets = new Map<string, { objects: number }>();
   /**
+   * Artifacts namespaces by name, each with its repos' names. Artifacts
+   * makes a namespace with its first repo: a test adds repos with
+   * {@link addArtifactsRepo}, as an app's Worker would.
+   */
+  readonly artifacts = new Map<string, Set<string>>();
+  /** Repos `repos list` leaves out of its answer, as a list that lags would. */
+  readonly artifactsListLag = new Set<string>();
+  /**
    * Secrets Store stores by id, each with its secrets by id. None to begin
    * with, as on an account whose dashboard never opened Secrets Store
    * (cf can't make one): {@link addSecretsStore}.
@@ -785,6 +793,7 @@ export class FakeCloudflare {
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["r2", "buckets"], (call) => this.r2Command(call))
+      .on(["artifacts", "namespaces"], (call) => this.artifactsCommand(call))
       .on(["secrets-store"], (call) => this.secretsStoreCommand(call))
       .on(["queues"], (call) => this.queuesCommand(call))
       .on(["vectorize"], (call) => this.vectorizeCommand(call))
@@ -1320,6 +1329,65 @@ export class FakeCloudflare {
       return { stdout: "{}" };
     }
     return cfError(`unknown command r2 buckets ${action}`);
+  }
+
+  /** A repo in a namespace, made as an app's Worker would (`env.MEMORY.create()`). */
+  addArtifactsRepo(namespace: string, repo: string): void {
+    const repos = this.artifacts.get(namespace) ?? new Set<string>();
+    repos.add(repo);
+    this.artifacts.set(namespace, repos);
+  }
+
+  /**
+   * `cf artifacts namespaces repos list|delete` and `cf artifacts
+   * namespaces delete`, as Cloudflare's OpenAPI spec describes them: a
+   * namespace no repo was ever made in doesn't exist (404), and one that
+   * still holds a repo can't be deleted.
+   */
+  private artifactsCommand(call: RecordedCfCall): FakeCfResponse {
+    const notFound = (namespace: string) =>
+      apiError(404, `Namespace ${namespace} not found`, "404 Not Found", `artifacts/namespaces/${namespace}`);
+    if (call.args[2] === "repos") {
+      const action = call.args[3];
+      const namespace = flag(call.args, "--namespace") ?? "";
+      const repos = this.artifacts.get(namespace);
+      if (!repos) return notFound(namespace);
+      if (action === "list") {
+        const limit = Number(flag(call.args, "--limit") ?? "50");
+        const names = [...repos].filter((name) => !this.artifactsListLag.has(name)).sort().slice(0, limit);
+        return {
+          stdout: JSON.stringify(
+            names.map((name) => ({ id: `repo-${name}`, name, default_branch: "main", read_only: false })),
+          ),
+        };
+      }
+      if (action === "delete") {
+        const declined = unconfirmed(call, "This permanently deletes the repository.");
+        if (declined) return declined;
+        const name = call.args[4]!;
+        if (!repos.delete(name)) return apiError(404, `Repository ${name} not found`, "404 Not Found", "artifacts/repos");
+        return { stdout: "{}" };
+      }
+      return cfError(`unknown command artifacts namespaces repos ${action}`);
+    }
+    if (call.args[2] === "get") {
+      const namespace = call.args[3]!;
+      if (!this.artifacts.has(namespace)) return notFound(namespace);
+      return { stdout: JSON.stringify({ name: namespace, created_at: "2026-11-01T00:00:00.000Z" }) };
+    }
+    if (call.args[2] === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the namespace.");
+      if (declined) return declined;
+      const namespace = call.args[3]!;
+      const repos = this.artifacts.get(namespace);
+      if (!repos) return notFound(namespace);
+      if (repos.size > 0) {
+        return apiError(409, `Namespace ${namespace} is not empty`, "409 Conflict", `artifacts/namespaces/${namespace}`);
+      }
+      this.artifacts.delete(namespace);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command artifacts namespaces ${call.args[2]}`);
   }
 
   /** The queue named `name`, with its id. */

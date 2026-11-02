@@ -2,6 +2,7 @@ import { createAiGateway, findAiGateway, updateAiGateway } from "@/lib/cf/aiGate
 import { isCfError } from "@/lib/cf/errors";
 import { createHyperdrive, findHyperdrive, updateHyperdrive } from "@/lib/cf/hyperdrive";
 import { createQueue, getQueue, listQueues } from "@/lib/cf/queues";
+import { findArtifactsNamespace } from "@/lib/cf/artifacts";
 import { createR2Bucket, findR2Bucket } from "@/lib/cf/r2";
 import {
   createD1,
@@ -25,6 +26,7 @@ const installer = createResourceProvisioner<CfRunner>({
   findKv,
   createKv,
   findR2Bucket,
+  findArtifactsNamespace,
   createR2Bucket,
   getWorkerDeployment,
   findHyperdrive,

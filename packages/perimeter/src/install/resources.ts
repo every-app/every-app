@@ -1,9 +1,12 @@
 import {
   aiGatewayIdFor,
+  artifactsNamespaceFor,
+  isArtifactsNamespace,
   isAiGatewayId,
   isReservedName,
   isValidQueueName,
   MAX_AI_GATEWAY_ID_LENGTH,
+  MAX_ARTIFACTS_NAMESPACE_LENGTH,
   MAX_QUEUE_NAME_LENGTH,
   MAX_VECTORIZE_NAME_LENGTH,
   queueNameFor,
@@ -67,6 +70,7 @@ export function createResourceProvisioner<CfRunner>(
     createKv,
     findR2Bucket,
     createR2Bucket,
+    findArtifactsNamespace,
     getWorkerDeployment,
     findHyperdrive,
     createHyperdrive,
@@ -153,12 +157,14 @@ export function createResourceProvisioner<CfRunner>(
     },
   ): Promise<InstallTarget["resources"]> {
     const { cf, registration, manifest } = options;
-    // Every queue's name is checked before anything is created.
+    // Every queue's and namespace's name is checked before anything is created.
     assertQueueNames(registration.workerName, manifest);
+    const namespaces = artifactsNamespaces(registration.workerName, manifest);
     const owned = await readOwnedResources(
       options.gatewayDb,
       registration.workerName,
     );
+    await recordArtifactsNamespaces(options, owned, namespaces);
     // First: a missing store or value stops the deploy before anything is created.
     const secretsStore = await provisionSecretsStore({ ...options, owned });
     /** The app's AI Gateways, provisioned after everything else. */
@@ -450,6 +456,72 @@ Creating ${missing.length === 1 ? "the secret" : "each secret"} in the store "${
    * it: only a deploy knows the Worker's name, so the manifest's own check
    * can't say.
    */
+  /**
+   * The app's Artifacts namespaces, by binding, each `<worker>--<binding>`;
+   * a name Cloudflare would refuse stops the deploy (APP_POLICY).
+   */
+  function artifactsNamespaces(
+    workerName: string,
+    manifest: EveryAppCliManifest,
+  ): Array<{ binding: string; namespace: string }> {
+    return (manifest.resources?.artifacts ?? []).map(({ name: binding }) => {
+      const namespace = artifactsNamespaceFor(workerName, binding);
+      if (!isArtifactsNamespace(namespace)) {
+        throw new EveryAppError(
+          "APP_POLICY",
+          `resources.artifacts: ${binding} would be the Artifacts namespace "${namespace}", which Cloudflare refuses (at most ${MAX_ARTIFACTS_NAMESPACE_LENGTH} characters)`,
+          { fix: "shorten the binding name in everyapp.config.ts" },
+        );
+      }
+      return { binding, namespace };
+    });
+  }
+
+  /**
+   * Record each Artifacts namespace as the app's, so `delete --purge`
+   * deletes its repos. Nothing is created: Artifacts makes a namespace
+   * with its first repo, and the binding needs none to exist. So a
+   * namespace that exists before the app recorded it was made by someone
+   * else (by hand, another tool, a deploy of another Gateway), and is
+   * refused (RESOURCE_NAME_TAKEN) rather than adopted, since a purge would
+   * delete its repos; one another app recorded is refused too
+   * (RESOURCE_OWNED). One the app recorded is bound as it is, with or
+   * without repos yet.
+   */
+  async function recordArtifactsNamespaces(
+    { cf, gatewayDb, registration }: ProvisionOptions,
+    owned: readonly OwnedResource[],
+    namespaces: ReadonlyArray<{ binding: string; namespace: string }>,
+  ): Promise<void> {
+    for (const { binding, namespace } of namespaces) {
+      if (
+        owned.some(
+          (entry) =>
+            entry.kind === "artifacts" &&
+            entry.binding === binding &&
+            entry.name === namespace,
+        )
+      )
+        continue;
+      if (await findArtifactsNamespace(cf, namespace)) {
+        throw new EveryAppError(
+          "RESOURCE_NAME_TAKEN",
+          `An Artifacts namespace named "${namespace}" already exists in this Cloudflare account\nNo deploy of this app recorded it; it may belong to another Gateway, app or project, and delete --purge would delete its repos.`,
+          {
+            fix: "delete its repos, or rename the binding in everyapp.config.ts",
+            rerun: thisCommand(),
+          },
+        );
+      }
+      await recordOwnedResource(gatewayDb, registration.workerName, {
+        kind: "artifacts",
+        binding,
+        name: namespace,
+        resourceId: namespace,
+      });
+    }
+  }
+
   function assertQueueNames(
     workerName: string,
     manifest: EveryAppCliManifest,

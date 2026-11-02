@@ -68,6 +68,8 @@ export interface ResourceOperations<C> {
   createKv(cf: C, name: string): Promise<string>;
   findR2Bucket(cf: C, name: string): Promise<boolean>;
   createR2Bucket(cf: C, name: string): Promise<void>;
+  /** Whether an Artifacts namespace of this name exists (it does once a repo was made in it). */
+  findArtifactsNamespace(cf: C, name: string): Promise<boolean>;
   getWorkerDeployment(cf: C, name: string): Promise<unknown | null>;
   findHyperdrive(cf: C, name: string): Promise<HyperdriveConfig | null>;
   createHyperdrive(

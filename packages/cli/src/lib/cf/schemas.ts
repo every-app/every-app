@@ -128,6 +128,12 @@ export const R2BucketListOutput = z
   })
   .transform((value) => value.buckets ?? []);
 
+/**
+ * `cf artifacts namespaces repos list`: the API's `result`, an array of
+ * repos (Cloudflare's OpenAPI spec, 2026-11-01; not yet seen live).
+ */
+export const ArtifactsRepoListOutput = z.array(z.looseObject({ name: z.string() }));
+
 /** `cf workers secrets list`: names (and types), never values. */
 export const WorkerSecretListOutput = z
   .union([

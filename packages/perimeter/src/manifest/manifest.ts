@@ -237,6 +237,12 @@ const AnalyticsEngineResourceSchema = z.object({
   dataset: z.string().optional(),
 });
 
+/**
+ * A Cloudflare Artifacts binding (git-compatible repos), by binding: the
+ * namespace is named after the app's Worker ({@link artifactsNamespaceFor}).
+ */
+const ArtifactsResourceSchema = z.object({ name: z.string() });
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -295,6 +301,13 @@ export const ResourcesSchema = z
      * days).
      */
     analyticsEngine: z.array(AnalyticsEngineResourceSchema).optional(),
+    /**
+     * Cloudflare Artifacts, by binding (`[{ name: "MEMORY" }]`), which every
+     * one of the app's Workers binds: git repos in the namespace
+     * `<worker>--<binding>`, nothing to create (Artifacts makes the
+     * namespace with its first repo). `delete --purge` deletes its repos.
+     */
+    artifacts: z.array(ArtifactsResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -1395,6 +1408,16 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
       }).strict(),
     )
     .optional(),
+  artifacts: z
+    .array(
+      ArtifactsResourceSchema.extend({
+        name: BindingNameSchema.refine(
+          (name) => !name.endsWith("_"),
+          "an Artifacts binding can't end with _ (its namespace's name would end with a hyphen, which Cloudflare refuses)",
+        ),
+      }).strict(),
+    )
+    .optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -1856,6 +1879,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
     ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
     ...(manifest.resources?.analyticsEngine ?? []).map((a) => a.name),
+    ...(manifest.resources?.artifacts ?? []).map((a) => a.name),
   ]) {
     if (names.has(name)) {
       throw new ManifestError(
@@ -1890,6 +1914,7 @@ export function bindingNamesOf(
     ...(manifest.resources?.sendEmail ?? []).map((s) => s.name),
     ...(manifest.resources?.secretsStore ?? []).map((s) => s.name),
     ...(manifest.resources?.analyticsEngine ?? []).map((a) => a.name),
+    ...(manifest.resources?.artifacts ?? []).map((a) => a.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
@@ -1910,6 +1935,7 @@ export function bindingNamesOf(
  * the platform's account, past the Gateway's budgets and sender list. Nor
  * Secrets Store secrets: the store is the platform account's. Nor Analytics
  * Engine: a dataset's name is account-wide, and its writes bill the account.
+ * Nor Artifacts yet: its repos would live in, and bill, the platform's account.
  * Nor inbound mail: the platform's zones aren't an organization's to route.
  * Nor secrets or settings of its own: a third-party Worker gets GATEWAY_URL and
  * EVERY_APP_ORG_ID only, and nothing sets another.
@@ -1974,6 +2000,11 @@ export function manifestTierProblems(
   if (manifest.resources?.analyticsEngine?.length) {
     problems.push(
       "resources.analyticsEngine: Analytics Engine datasets aren't available to apps in a dispatch namespace (their names are account-wide and their writes bill the platform's account)",
+    );
+  }
+  if (manifest.resources?.artifacts?.length) {
+    problems.push(
+      "resources.artifacts: Artifacts isn't available to apps in a dispatch namespace yet (its repos would live in, and bill, the platform's account)",
     );
   }
   if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
@@ -2206,6 +2237,34 @@ export function analyticsDatasetFor(
   binding: string,
 ): string {
   return suffixedName(workerName, binding);
+}
+
+/** Cloudflare's limit on an Artifacts namespace's name. */
+export const MAX_ARTIFACTS_NAMESPACE_LENGTH = 63;
+
+/** Cloudflare's rule for an Artifacts namespace's name (its upload API's pattern). */
+const ARTIFACTS_NAMESPACE = /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9._])?$/;
+
+/**
+ * The Artifacts namespace an app Worker's binding uses: the binding after
+ * {@link RESOURCE_SEPARATOR}, as every other account-wide name
+ * (`every-acme-birds--memory`). A namespace is an account-wide name, so
+ * the policy refuses any other.
+ */
+export function artifactsNamespaceFor(
+  workerName: string,
+  binding: string,
+): string {
+  return suffixedName(workerName, binding);
+}
+
+/** Whether Cloudflare takes `namespace` as an Artifacts namespace's name. */
+export function isArtifactsNamespace(namespace: string): boolean {
+  return (
+    namespace.length >= 2 &&
+    namespace.length <= MAX_ARTIFACTS_NAMESPACE_LENGTH &&
+    ARTIFACTS_NAMESPACE.test(namespace)
+  );
 }
 
 function suffixedName(workerName: string, binding: string): string {

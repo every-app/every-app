@@ -21,6 +21,7 @@ import {
   sentinelDeployTarget,
   type AiBinding,
   type AnalyticsEngineDatasetBinding,
+  type ArtifactsBinding,
   type BrowserBinding,
   type ImagesBinding,
   type D1Binding,
@@ -2670,6 +2671,85 @@ describe("Analytics Engine (resources.analyticsEngine)", () => {
         (binding) => binding.type === "analytics-engine-dataset",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("Artifacts (resources.artifacts)", () => {
+  const birds = {
+    id: "birds",
+    resources: {
+      d1: ["DB"],
+      artifacts: [{ name: "MEMORY" }, { name: "AGENT_FILES" }],
+    },
+    workers: [{ name: "hub", binding: "HUB" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: birds,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _hub, ...hub } = everyAppAuxiliaryWorker({
+      manifest: birds,
+      worker: "hub",
+      entrypoint: "/app/src/hub.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, hub };
+  };
+
+  it("binds each namespace on the app's Worker and every helper, named after the build's placeholder Worker", () => {
+    const { app, hub } = build("production");
+    for (const env of [app.env, hub.env] as Record<string, unknown>[]) {
+      expect(env["MEMORY"]).toEqual({
+        type: "artifacts",
+        namespace: `${BUILD_SENTINEL.workerName}--memory`,
+      });
+      expect(env["AGENT_FILES"]).toEqual({
+        type: "artifacts",
+        namespace: `${BUILD_SENTINEL.workerName}--agent-files`,
+      });
+    }
+    // Nothing to provision: the install rewrites the Worker name in it.
+    expect(sentinelDeployTarget(birds).resources).not.toHaveProperty(
+      "artifacts",
+    );
+  });
+
+  it("reaches the dev Worker's namespace remotely in development: Cloudflare has no local Artifacts", () => {
+    const { app, hub } = build("development");
+    for (const env of [app.env, hub.env] as Record<string, unknown>[]) {
+      expect(env["MEMORY"]).toEqual({
+        type: "artifacts",
+        namespace: "every-birds--memory",
+        dev: { remote: true },
+      });
+    }
+  });
+
+  it("types each binding as Artifacts, which cf turns into the runtime's Artifacts", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.MEMORY).toEqualTypeOf<ArtifactsBinding>();
+    expectTypeOf(app.env.AGENT_FILES).toEqualTypeOf<ArtifactsBinding>();
+  });
+
+  it("refuses a name another binding of the Worker has", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          id: "birds",
+          resources: { kv: ["MEMORY"], artifacts: [{ name: "MEMORY" }] },
+        },
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }),
+    ).toThrow(
+      "artifacts: MEMORY reuses a binding name the Worker already has.",
+    );
   });
 });
 

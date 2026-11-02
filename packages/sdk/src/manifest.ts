@@ -113,6 +113,7 @@ export interface EveryAppResources {
     readonly name: string;
     readonly dataset?: string;
   }[];
+  readonly artifacts?: readonly { readonly name: string }[];
 }
 
 /** One capability the Gateway serves the app with keys it holds. */

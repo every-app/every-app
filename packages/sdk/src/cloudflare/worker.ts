@@ -170,6 +170,15 @@ export interface EveryAppWorkerManifest {
      * Nothing to create; `writeDataPoint()` does nothing in development.
      */
     analyticsEngine?: readonly AnalyticsEngineResource[];
+    /**
+     * Cloudflare Artifacts, by binding (`[{ name: "MEMORY" }]`), which every
+     * one of the app's Workers binds: git repos in the namespace
+     * `<app worker>--<binding>`, nothing to create. Cloudflare has no local
+     * Artifacts: in development each binding reaches the account's
+     * namespace of the dev Worker's name (`dev.remote`), once the Vite
+     * plugin's `remoteBindings` is on and `cf auth login` ran.
+     */
+    artifacts?: readonly { readonly name: string }[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
@@ -401,6 +410,18 @@ export interface AnalyticsEngineDatasetBinding {
   name: string;
 }
 /**
+ * Cloudflare Artifacts (`await env.MEMORY.create("notes")`,
+ * `env.MEMORY.get("notes")`), which cf types as `Artifacts`: git repos in
+ * the namespace `<app worker>--<binding>`. The app mints each repo's git
+ * tokens itself, and owns their scope and TTL. `dev.remote` sends
+ * development calls to the account: Cloudflare has no local Artifacts.
+ */
+export interface ArtifactsBinding {
+  type: "artifacts";
+  namespace: string;
+  dev?: { remote?: boolean };
+}
+/**
  * The app's own Worker, as the bindings of the Durable Objects it defines
  * name it when its entrypoint is a `cf-worker` module import. cf reads each
  * class from that module, so the `Env` it generates types the namespace
@@ -471,6 +492,7 @@ export type EveryAppBinding =
   | SendEmailBinding
   | SecretsStoreSecretBinding
   | AnalyticsEngineDatasetBinding
+  | ArtifactsBinding
   | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
@@ -525,6 +547,13 @@ type AiGatewayNames<M> = M extends {
   : never;
 type AnalyticsEngineNames<M> = M extends {
   resources: { analyticsEngine: readonly (infer A)[] };
+}
+  ? A extends { name: infer N extends string }
+    ? N
+    : never
+  : never;
+type ArtifactsNames<M> = M extends {
+  resources: { artifacts: readonly (infer A)[] };
 }
   ? A extends { name: infer N extends string }
     ? N
@@ -636,6 +665,8 @@ type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in SecretsStoreNames<M>]: SecretsStoreSecretBinding;
 } & {
   [B in AnalyticsEngineNames<M>]: AnalyticsEngineDatasetBinding;
+} & {
+  [B in ArtifactsNames<M>]: ArtifactsBinding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -1071,6 +1102,7 @@ export function everyAppWorker<
   addSendEmailBindings(env, manifest);
   addSecretsStoreBindings(env, manifest, name, deploy);
   addAnalyticsEngineBindings(env, manifest, name);
+  addArtifactsBindings(env, manifest, name, deploy);
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
@@ -1228,6 +1260,7 @@ export function everyAppAuxiliaryWorker<
   addAiGatewayBindings(env, manifest, appWorker, deploy);
   addSecretsStoreBindings(env, manifest, appWorker, deploy);
   addAnalyticsEngineBindings(env, manifest, appWorker);
+  addArtifactsBindings(env, manifest, appWorker, deploy);
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
@@ -1674,6 +1707,33 @@ function addAnalyticsEngineBindings(
       type: "analytics-engine-dataset",
       name: entry.dataset ?? suffixedName(appWorker, entry.name),
     };
+  }
+}
+
+/**
+ * The manifest's Artifacts namespaces, which every one of the app's Workers
+ * binds: `<app worker>--<binding>`. Deployed, the app's Worker name is the
+ * build's placeholder, which the install rewrites like every other; in
+ * development the account's namespace of the dev Worker's name, reached
+ * remotely: Cloudflare has no local Artifacts, so calls throw until the
+ * Vite plugin's remoteBindings is on.
+ */
+function addArtifactsBindings(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  deploy: EveryAppDeployTarget | undefined,
+): void {
+  for (const { name: binding } of manifest.resources?.artifacts ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `artifacts: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    const namespace = suffixedName(appWorker, binding);
+    env[binding] = deploy
+      ? { type: "artifacts", namespace }
+      : { type: "artifacts", namespace, dev: { remote: true } };
   }
 }
 

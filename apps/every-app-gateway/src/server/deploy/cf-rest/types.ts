@@ -63,6 +63,8 @@ export type WorkerBinding =
   | { type: "queue"; name: string; queue_name: string }
   | { type: "vectorize"; name: string; index_name: string }
   | { type: "analytics_engine"; name: string; dataset: string }
+  /** The upload API's `artifacts` binding (verified against its OpenAPI spec, 2026-11-01). */
+  | { type: "artifacts"; name: string; namespace: string }
   | {
       type: "secrets_store_secret";
       name: string;

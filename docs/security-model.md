@@ -432,6 +432,50 @@ in the gateway's Cloudflare account **is** operator authority.
   third-party apps ("Hosted Deploy API", below). A self-hosted gateway
   never serves it.
 
+## Artifacts
+
+An app that declares `resources.artifacts` binds a Cloudflare Artifacts
+namespace: git repos in the app's own account, reached through the binding,
+like D1 and R2. The binding is the credential. No provider key or Gateway
+credential is involved, and the perimeter never sees git traffic.
+
+- **Whose namespace.** A namespace's name is account-wide, so the deploy's
+  policy (`packages/perimeter/src/install/policy.ts`) lets an `artifacts`
+  binding through only under a binding name the manifest declares, and only
+  to `<worker>--<binding>` (`artifactsNamespaceFor()`), which no other
+  app's Worker name can produce. The deploy records the namespace in the
+  resource ledger, so a namespace another app recorded is refused
+  (`RESOURCE_OWNED`), and `delete --purge` deletes its repos and then the
+  namespace. Nothing is created: Artifacts makes a namespace with its first
+  repo. So before the first record the deploy looks the namespace up, and
+  one that already exists is refused (`RESOURCE_NAME_TAKEN`), never
+  adopted: a purge would delete repos the app never made. A repo made in
+  the instant between that lookup and the record is still adopted; anyone
+  who can make one holds the account, which is operator authority
+  (ADR-0003). The Gateway's `teardown` doesn't delete namespaces yet.
+- **Repo tokens are the app's to scope.** The app mints git tokens for its
+  repos (`repo.createToken(scope, ttl)`, and the first token `create()`
+  returns), and hands them to clients that clone and push straight to the
+  repo's git remote, never through the Gateway. That is the app handing out
+  access to its own data, as a signed R2 URL would. The Gateway can't see,
+  limit or revoke these tokens, and they outlive a member's removal until
+  they expire. The app is responsible for:
+  - **scope**: a token reaches one repo. Give a client a token only for
+    the repo it may use, and a `read` token unless it must push. The
+    default is `write`.
+  - **TTL**: as short as the use allows. The default is a day, and the
+    maximum a year.
+  - **revocation**: revoke a token (`repo.revokeToken()`) once its holder
+    shouldn't have it any more, for example when a member leaves or an agent stops.
+  - **where it goes**: never log a token, and never put one in a URL a
+    browser keeps.
+- **Imports leave the perimeter.** `import()` has Cloudflare fetch an
+  HTTPS git remote the app names. That request is Cloudflare's, outside
+  the Gateway's egress allowlist and the dispatch outbound Worker.
+- **Dispatch tier.** Refused for now (`manifestTierProblems`): the repos
+  would live in, and bill, the platform's account, and the hosted deployer
+  doesn't scope namespaces to an organization.
+
 ## Perimeter Contract
 
 - Routes are private unless the app manifest explicitly declares them public.

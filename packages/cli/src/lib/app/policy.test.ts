@@ -986,3 +986,105 @@ describe("with resources.analyticsEngine", () => {
     ]);
   });
 });
+
+describe("with resources.artifacts", () => {
+  const DECLARED = [{ name: "MEMORY" }, { name: "AGENT_FILES" }];
+  const WITH_ARTIFACTS: InstallTarget = {
+    ...INPUTS,
+    declared: { artifacts: DECLARED },
+  };
+
+  it("accepts the namespaces everyAppWorker() builds once installed, on the app and its helpers", () => {
+    const manifest = {
+      ...MANIFEST,
+      resources: { ...MANIFEST.resources, artifacts: DECLARED },
+      workers: [{ name: "api", binding: "API" }],
+    } as const;
+    const build = (config: Record<string, any>) => {
+      const { entrypoint: _entrypoint, ...worker } = config;
+      return installWorkerConfig(structuredClone(worker), WITH_ARTIFACTS);
+    };
+    const app = build(
+      everyAppWorker({
+        manifest,
+        entrypoint: "./src/entry.worker.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    const helper = build(
+      everyAppAuxiliaryWorker({
+        manifest,
+        worker: "api",
+        entrypoint: "./src/api.ts",
+        ctx: { mode: "production" },
+        root: appDir,
+      }),
+    );
+    for (const config of [app, helper]) {
+      // The install rewrote the placeholder Worker name in each namespace.
+      expect(config["env"]["MEMORY"]).toEqual({ type: "artifacts", namespace: "every-acme-todo--memory" });
+      expect(config["env"]["AGENT_FILES"]).toEqual({
+        type: "artifacts",
+        namespace: "every-acme-todo--agent-files",
+      });
+    }
+    const inputs = { ...WITH_ARTIFACTS, helperWorkers: ["every-acme-todo--api"] };
+    expect(appPolicyProblems(app, inputs)).toEqual([]);
+    expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    expect(appPolicyProblems(app, { ...inputs, declared: undefined })).toEqual([
+      "MEMORY is an Artifacts binding, which everyapp.config.ts doesn't declare; list it in resources.artifacts",
+      "AGENT_FILES is an Artifacts binding, which everyapp.config.ts doesn't declare; list it in resources.artifacts",
+    ]);
+  });
+
+  it("refuses a binding the manifest doesn't declare, or one under a name it doesn't list", async () => {
+    const config = await builtConfig();
+    config["env"].EXTRA = { type: "artifacts", namespace: "every-acme-todo--extra" };
+    expect(appPolicyProblems(config, INPUTS)).toEqual([
+      "EXTRA is an Artifacts binding, which everyapp.config.ts doesn't declare; list it in resources.artifacts",
+    ]);
+    expect(appPolicyProblems(config, WITH_ARTIFACTS)).toEqual([
+      "EXTRA is an Artifacts binding, which isn't one of the app's in resources.artifacts (MEMORY, AGENT_FILES)",
+    ]);
+  });
+
+  it("pins a declared binding to the namespace named after the Worker", async () => {
+    const config = await builtConfig();
+    for (const namespace of [
+      // Another app's namespace, by its Worker's name.
+      "every-other-shop--memory",
+      // The app's own prefix, but another binding's namespace.
+      "every-acme-todo--agent-files",
+      // Named after the Worker with no binding, or nothing at all.
+      "every-acme-todo",
+      "",
+    ]) {
+      config["env"].MEMORY = { type: "artifacts", namespace };
+      expect(appPolicyProblems(config, WITH_ARTIFACTS)).toEqual([
+        `MEMORY is Artifacts namespace "${namespace}"; an app's namespace is named after its Worker (every-acme-todo--memory)`,
+      ]);
+    }
+    config["env"].MEMORY = { type: "artifacts" };
+    expect(appPolicyProblems(config, WITH_ARTIFACTS)).toEqual([
+      `MEMORY is Artifacts namespace ""; an app's namespace is named after its Worker (every-acme-todo--memory)`,
+    ]);
+  });
+
+  it("checks the release build's namespaces against the placeholder Worker name", async () => {
+    const config = await builtConfig();
+    const { entrypoint: _entrypoint, ...sentinelBuild } = everyAppWorker({
+      manifest: { id: "todo", resources: { artifacts: [{ name: "MEMORY" }] } },
+      entrypoint: "./src/entry.worker.ts",
+      ctx: { mode: "production" },
+      root: appDir,
+    });
+    config["env"].MEMORY = (sentinelBuild["env"] as Record<string, unknown>)["MEMORY"];
+    expect(
+      appPolicyProblems(
+        { ...config, name: "every-hosted--sentinel" },
+        { ...INPUTS, workerName: "every-hosted--sentinel", declared: { artifacts: [{ name: "MEMORY" }] } },
+      ).filter((problem) => problem.includes("MEMORY")),
+    ).toEqual([]);
+  });
+});

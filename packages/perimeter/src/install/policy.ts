@@ -1,6 +1,7 @@
 /** The self-hosted Worker policy, shared by CLI and Gateway app installs. */
 import {
   analyticsDatasetFor,
+  artifactsNamespaceFor,
   GATEWAY_WORKER_NAME,
   RESOURCE_SEPARATOR,
   type Resources,
@@ -33,7 +34,10 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * that binding's name. An Analytics Engine dataset only under a binding
  * `resources.analyticsEngine` declares, and only the dataset it declares
  * (named after the Worker unless it names one, and never one named like
- * another app's): a dataset's name is account-wide.
+ * another app's): a dataset's name is account-wide. An Artifacts binding
+ * only under a binding `resources.artifacts` declares, and only to the
+ * namespace named after the Worker (`<worker>--<binding>`): a namespace's
+ * name is account-wide, and its repos are whichever app binds it.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -56,6 +60,7 @@ const ALLOWED_BINDINGS = new Set([
   "send-email",
   "secrets-store-secret",
   "analytics-engine-dataset",
+  "artifacts",
 ]);
 
 /**
@@ -339,6 +344,8 @@ function bindingProblems(
   const storeSecrets = resources.secretsStore ?? {};
   // Analytics Engine only as resources.analyticsEngine declares it.
   const datasets = declared?.analyticsEngine ?? [];
+  // Artifacts only as resources.artifacts declares it, in its own namespace.
+  const artifacts = (declared?.artifacts ?? []).map((entry) => entry.name);
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -461,6 +468,25 @@ function bindingProblems(
           // take another app's.
           problems.push(
             `${name} writes to dataset "${dataset}", which is named like another app's; a dataset resources.analyticsEngine names starts with "every-" only as ${workerName}${RESOURCE_SEPARATOR}<name>`,
+          );
+        }
+        break;
+      }
+      // A namespace holds the repos of whoever binds it: only the app's own.
+      case "artifacts": {
+        if (!artifacts.includes(name)) {
+          problems.push(
+            artifacts.length > 0
+              ? `${name} is an Artifacts binding, which isn't one of the app's in resources.artifacts (${artifacts.join(", ")})`
+              : `${name} is an Artifacts binding, which everyapp.config.ts doesn't declare; list it in resources.artifacts`,
+          );
+          break;
+        }
+        const expected = artifactsNamespaceFor(workerName, name);
+        const namespace = String(binding["namespace"] ?? "");
+        if (namespace !== expected) {
+          problems.push(
+            `${name} is Artifacts namespace "${namespace}"; an app's namespace is named after its Worker (${expected})`,
           );
         }
         break;

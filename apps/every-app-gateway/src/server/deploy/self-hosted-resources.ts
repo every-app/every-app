@@ -120,6 +120,10 @@ const operations: ResourceOperations<CloudflareTransport> = {
     ).id,
   findR2Bucket: async (cf, name) =>
     !!(await optional(() => accountRequest(cf, ["r2", "buckets", name]))),
+  findArtifactsNamespace: async (cf, name) =>
+    !!(await optional(() =>
+      accountRequest(cf, ["artifacts", "namespaces", name]),
+    )),
   createR2Bucket: async (cf, name) => {
     await accountRequest(cf, ["r2", "buckets"], "POST", { name });
   },
