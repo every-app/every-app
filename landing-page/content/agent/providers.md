@@ -515,7 +515,7 @@ Generated from `CAPABILITIES` by `pnpm -C packages/cli docs:update`; a test fail
 <!-- prettier-ignore-start -->
 <!-- providers-catalog:begin (generated from packages/sdk/src/internal/capabilities.ts by packages/cli/src/docs/providersCatalog.ts; pnpm -C packages/cli docs:update) -->
 
-The built-in catalog has 60 providers: 48 API-key, 9 AI, 3 OAuth clients.
+The built-in catalog has 61 providers: 49 API-key, 9 AI, 3 OAuth clients.
 
 | Id | Name | Kind | Settings | Hosts | How the key is sent | Where the key comes from | Smoke request | Verified |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -552,6 +552,7 @@ The built-in catalog has 60 providers: 48 API-key, 9 AI, 3 OAuth clients.
 | `pinecone` | Pinecone | `api_key` | `PINECONE_API_KEY`, `PINECONE_HOST` | `api.pinecone.io`, the host `<PINECONE_HOST>` names (a bare host or an https origin) | `Api-Key: <PINECONE_API_KEY>` | https://app.pinecone.io/organizations/-/projects/-/keys; API reference https://docs.pinecone.io/reference/api/introduction | `GET https://api.pinecone.io/indexes`, expecting 200; free. Lists the project's indexes; the app sends X-Pinecone-Api-Version itself. | 2026-10-25, docs |
 | `mapbox` | Mapbox | `api_key` | `MAPBOX_ACCESS_TOKEN` | `api.mapbox.com` | `?access_token=<MAPBOX_ACCESS_TOKEN>` on the URL, in place of any the app sent | https://console.mapbox.com/account/access-tokens/; API reference https://docs.mapbox.com/api/overview/ | none recorded | 2026-10-25, docs |
 | `openweather` | OpenWeather | `api_key` | `OPENWEATHER_API_KEY` | `api.openweathermap.org`, `pro.openweathermap.org`, `history.openweathermap.org`, `tile.openweathermap.org`, `maps.openweathermap.org` | `?appid=<OPENWEATHER_API_KEY>` on the URL, in place of any the app sent | https://home.openweathermap.org/api_keys; API reference https://openweathermap.org/api | `GET https://api.openweathermap.org/data/2.5/weather?lat=51.51&lon=-0.13`, expecting 200; free. Counts one call against the plan's quota; free within it. A bad or not yet active key answers 401. | 2026-10-25, docs |
+| `daytona` | Daytona | `api_key` | `DAYTONA_API_KEY` | `app.daytona.io` | `Authorization: Bearer <DAYTONA_API_KEY>` | https://www.daytona.io/docs/en/api-keys/; API reference https://www.daytona.io/docs/en/tools/api/ | `GET https://app.daytona.io/api/sandbox`, expecting 200; free. Lists the organization's sandboxes; any key may read them. | 2026-11-01, docs |
 | `voyage` | Voyage AI | `api_key` | `VOYAGE_API_KEY` | `api.voyageai.com` | `Authorization: Bearer <VOYAGE_API_KEY>` | https://dashboard.voyageai.com/organization/api-keys; API reference https://docs.voyageai.com/reference/embeddings-api | `GET https://api.voyageai.com/v1/batches`, expecting 200; free. Lists the organization's batches, so the Gateway refuses it for apps; run it from the person's terminal. | 2026-10-25, docs |
 | `perplexity` | Perplexity | `api_key` | `PERPLEXITY_API_KEY` | `api.perplexity.ai` | `Authorization: Bearer <PERPLEXITY_API_KEY>` | https://console.perplexity.ai/project/keys; API reference https://docs.perplexity.ai/api-reference/agent-post | `GET https://api.perplexity.ai/orchestrator/v1/models`, expecting 200; free | 2026-10-25, docs |
 | `jina` | Jina AI | `api_key` | `JINA_API_KEY` | `api.jina.ai`, `r.jina.ai`, `s.jina.ai` | `Authorization: Bearer <JINA_API_KEY>` | https://jina.ai/api-dashboard/key-manager; API reference https://docs.jina.ai/ | `GET https://api.jina.ai/v1/batches`, expecting 200; free. Lists the account's batch jobs, so the Gateway refuses it for apps; run it from the person's terminal. | 2026-10-25, docs |
@@ -631,6 +632,7 @@ Each company the Gateway supports has a page in the user docs, under [/docs/prov
 | [pinecone](/docs/providers/pinecone) | `pinecone` | `PINECONE_API_KEY`, `PINECONE_HOST` | `secret set PINECONE_API_KEY PINECONE_HOST` | https://app.pinecone.io/organizations/-/projects/-/keys |
 | [mapbox](/docs/providers/mapbox) | `mapbox` | `MAPBOX_ACCESS_TOKEN` | `secret set MAPBOX_ACCESS_TOKEN` | https://console.mapbox.com/account/access-tokens/ |
 | [openweather](/docs/providers/openweather) | `openweather` | `OPENWEATHER_API_KEY` | `secret set OPENWEATHER_API_KEY` | https://home.openweathermap.org/api_keys |
+| [daytona](/docs/providers/daytona) | `daytona` | `DAYTONA_API_KEY` | `secret set DAYTONA_API_KEY` | https://www.daytona.io/docs/en/api-keys/ |
 | [anthropic](/docs/providers/anthropic) | `anthropic` | `ANTHROPIC_API_KEY` | `secret set ANTHROPIC_API_KEY` | https://platform.claude.com/settings/keys |
 | [gemini](/docs/providers/gemini) | `gemini` | `GEMINI_API_KEY` | `secret set GEMINI_API_KEY` | https://aistudio.google.com/apikey |
 | [mistral](/docs/providers/mistral) | `mistral` | `MISTRAL_API_KEY` | `secret set MISTRAL_API_KEY` | https://console.mistral.ai |

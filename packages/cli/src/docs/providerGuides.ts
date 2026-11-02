@@ -67,6 +67,7 @@ export const CATEGORY_OF: Readonly<Record<string, ProviderCategory>> = {
   posthog: "dev",
   mixpanel: "dev",
   segment: "dev",
+  daytona: "dev",
   linear: "work",
   notion: "work",
   atlassian: "work",
@@ -270,6 +271,15 @@ export const GUIDES: Readonly<Record<string, CompanyGuide>> = {
       "Enter a name, your Gateway's address as the homepage, and the redirect URI above as the **Authorization callback URL**.",
       "Select **Register application**, then **Generate a new client secret**.",
       "Copy the **Client ID** and the client secret. The secret is shown once.",
+    ],
+  },
+  daytona: {
+    blurb:
+      "Sandboxes for agents and code runs, controlled from an app: create, start, stop and delete them. A sandbox's preview URLs and its toolbox stay outside the Gateway. Self-hosted Gateways only, since one key is the whole Daytona organization's.",
+    key: [
+      "Sign in at [app.daytona.io](https://app.daytona.io), in a Daytona organization kept for this Gateway: any key reaches every running sandbox in its organization.",
+      "Open **Keys** and select **Create Key**. Give it a name and an expiry, and pick only the permissions the apps need: `write:sandboxes` and `delete:sandboxes` to create and remove sandboxes, and the snapshot or volume ones if an app manages those. Reading sandboxes, snapshots and regions is always allowed. Leave `manage:api_keys`, `manage:secrets`, `manage:billing` and the region and runner permissions off.",
+      "Copy the key and keep it somewhere safe: Daytona shows only a masked value afterwards.",
     ],
   },
   granola: {

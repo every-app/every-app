@@ -1033,3 +1033,63 @@ describe("OAuth client paths", () => {
     ).toMatchObject({ inject: "form", methods: ["POST"] });
   });
 });
+
+describe("the Daytona entry", () => {
+  const daytona = CAPABILITIES.daytona;
+
+  it("is an account-wide bearer key on Daytona's API host, read and write", () => {
+    expect(daytona.mode).toBe("api_key");
+    expect(daytona.auth).toEqual({ kind: "bearer", secret: "DAYTONA_API_KEY" });
+    expect(daytona.hosts).toEqual(["app.daytona.io"]);
+    // Served on a self-hosted Gateway only.
+    expect(daytona.data).toBe("account");
+    expect(daytona.access).toEqual(["read", "write"]);
+    expect(
+      authorizationFor(daytona, { DAYTONA_API_KEY: "k" })?.headers[
+        "authorization"
+      ],
+    ).toBe("Bearer k");
+  });
+
+  const accountWide = (path: string) =>
+    isAccountWidePath(
+      daytona,
+      new URL(`https://app.daytona.io${path}`).pathname,
+    );
+
+  it.each([
+    "/api/organizations",
+    "/api/organizations/org-1/users",
+    "/api/sandbox/sbx-1/organization",
+    "/api/billing",
+    "/api/api-keys/current",
+    "/api/users/me",
+    "/api/audit/organizations/org-1",
+    "/api/webhooks/organizations/org-1/app-portal-access",
+    "/api/secret/s-1",
+    "/api/docker-registry",
+    "/api/object-storage/push-access",
+    "/api/regions/r-1/regenerate-ssh-gateway-api-key",
+    "/api/runners/me",
+    "/api/sandbox/for-runner",
+    "/api/jobs",
+    "/api/warm-pools/w-1",
+    "/api/preview/sbx-1/access",
+    "/api/sandbox/ssh-access/validate",
+  ])("refuses %s", (path) => {
+    expect(accountWide(path)).toBe(true);
+  });
+
+  it.each([
+    "/api/sandbox",
+    "/api/sandbox/sbx-1/stop",
+    "/api/sandbox/sbx-1/secrets",
+    "/api/sandbox/sbx-1/ssh-access",
+    "/api/sandbox/sbx-1/ports/3000/signed-preview-url",
+    "/api/snapshots/s-1/activate",
+    "/api/volumes",
+    "/api/shared-regions",
+  ])("serves %s", (path) => {
+    expect(accountWide(path)).toBe(false);
+  });
+});

@@ -4,7 +4,7 @@
 
 For a coding agent setting up a provider the Gateway's built-in catalog has. Each provider is a section under its id, so `setup/providers.md#<id>` points at it. Where the provider has a file of its own in this folder (its **Guide**), follow that file and read this section as its summary. Read [README.md](README.md) first: its rules hold here too, above all that a key never goes through the chat.
 
-A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 60 providers: 48 API-key, 9 AI, 3 OAuth clients.
+A provider registered on one Gateway (`pnpm everyapp provider add`) is not in this file: `pnpm everyapp provider show <id>` prints its whole spec (its hint, settings, hosts, where the key comes from and its smoke request). The catalog has 61 providers: 49 API-key, 9 AI, 3 OAuth clients.
 
 The smoke request needs the key, so it runs where the key is: the person's terminal, with the variable they read in hidden, or through the app that uses it. It is one call that costs nothing (unless marked charged).
 
@@ -53,6 +53,7 @@ The three ways of [README.md](README.md), one line each (the rules, and the code
 | [`pinecone`](#pinecone) | Pinecone | API key | `PINECONE_API_KEY`, `PINECONE_HOST` |  |
 | [`mapbox`](#mapbox) | Mapbox | API key | `MAPBOX_ACCESS_TOKEN` |  |
 | [`openweather`](#openweather) | OpenWeather | API key | `OPENWEATHER_API_KEY` |  |
+| [`daytona`](#daytona) | Daytona | API key | `DAYTONA_API_KEY` |  |
 | [`voyage`](#voyage) | Voyage AI | API key | `VOYAGE_API_KEY` |  |
 | [`perplexity`](#perplexity) | Perplexity | API key | `PERPLEXITY_API_KEY` |  |
 | [`jina`](#jina) | Jina AI | API key | `JINA_API_KEY` |  |
@@ -643,6 +644,23 @@ Gateway services have no key of this kind: `email`, `members` (sending mail is [
 - **Rate:** 60 a minute. The Free plan answers 429 past 60 calls a minute.
 - **Verified:** 2026-10-25, docs
 - **Set it:** `pnpm everyapp secret set OPENWEATHER_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
+- **Guide:** none beyond this section
+
+### daytona
+
+**Daytona** (`api_key`): Sandboxes for running code: create, start, stop, archive and delete sandboxes, and manage their snapshots and volumes.
+
+- **Settings:** `DAYTONA_API_KEY`
+- **What the key is:** An API key from the Daytona dashboard's Keys page, with only the permissions the apps need; the Gateway sends it as a bearer token to app.daytona.io. Any key of an organization reaches every running sandbox in it, so give the Gateway a Daytona organization of its own. An API key from the Daytona dashboard's Keys page: write:sandboxes and delete:sandboxes (and the snapshot or volume ones) only if an app needs them, and never manage:api_keys, manage:secrets, manage:billing or the region and runner permissions.
+- **Where the key comes from:** https://www.daytona.io/docs/en/api-keys/
+- **API reference:** https://www.daytona.io/docs/en/tools/api/
+- **How it is sent:** `Authorization: Bearer <DAYTONA_API_KEY>`, to `app.daytona.io` only, over https
+- **What apps may do:** access `read`, `write`; GET, HEAD on any grant, and POST, PUT, PATCH, DELETE for an entry with `access: "write"`; account-wide paths refused: `organizations`, `organization`, `billing`, `api-keys`, `users`, `audit`, `webhooks`, `secret`, `docker-registry`, `object-storage`, `regions`, `runners`, `for-runner`, `jobs`, `warm-pools`, `preview`, `ssh-access/validate`; data `account` (served on a self-hosted Gateway only)
+- **Smoke request:** `GET https://app.daytona.io/api/sandbox`, expecting 200; free. Lists the organization's sandboxes; any key may read them.
+- **Cost:** not recorded
+- **Rate:** not recorded
+- **Verified:** 2026-11-01, docs
+- **Set it:** `pnpm everyapp secret set DAYTONA_API_KEY`, or `pnpm everyapp configure <app id>` for everything an app needs
 - **Guide:** none beyond this section
 
 ### voyage

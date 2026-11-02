@@ -513,3 +513,113 @@ describe("AppGateway refusals", () => {
     );
   });
 });
+
+describe("Daytona through the proxy", () => {
+  const DAYTONA = {
+    capabilities: {
+      daytona: { access: "write", why: "Run Agents in sandboxes" },
+    },
+  };
+  const KEY = { DAYTONA_API_KEY: "dtn_test" };
+  const base = "/api/integrations/daytona/app.daytona.io";
+
+  it("serves the sandbox control calls with the key as a bearer token", async () => {
+    const fetchUpstream = vi.fn(async (_request: Request) =>
+      Response.json({ ok: true }),
+    );
+    const listed = await call({
+      manifest: DAYTONA,
+      path: `${base}/api/sandbox?labels=%7B%7D`,
+      method: "GET",
+      env: KEY,
+      fetchUpstream,
+    });
+    expect(listed.status).toBe(200);
+    const started = await call({
+      manifest: DAYTONA,
+      path: `${base}/api/sandbox/sbx-1/start`,
+      method: "POST",
+      env: KEY,
+      fetchUpstream,
+    });
+    expect(started.status).toBe(200);
+    const [first, second] = fetchUpstream.mock.calls.map(
+      ([request]) => request,
+    );
+    expect(first?.url).toBe("https://app.daytona.io/api/sandbox?labels=%7B%7D");
+    expect(first?.headers.get("authorization")).toBe("Bearer dtn_test");
+    expect(second?.url).toBe("https://app.daytona.io/api/sandbox/sbx-1/start");
+  });
+
+  it("is refused on a hosted gateway, where one key would be every organization's", async () => {
+    const fetchUpstream = vi.fn();
+    await expectRefusal(
+      call({
+        manifest: DAYTONA,
+        path: `${base}/api/sandbox`,
+        method: "GET",
+        env: { ...KEY, GATEWAY_DEPLOYMENT_MODE: "hosted" },
+        fetchUpstream,
+      }),
+      503,
+      "integration_not_available_hosted",
+    );
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["GET", "/api/organizations"],
+    ["GET", "/api/organizations/org-1/usage"],
+    ["POST", "/api/organizations/org-1/invitations"],
+    ["GET", "/api/sandbox/sbx-1/organization"],
+    ["GET", "/api/billing/spend"],
+    ["GET", "/api/api-keys/current"],
+    ["POST", "/api/api-keys"],
+    ["DELETE", "/api/API-KEYS/ci"],
+    ["GET", "/api/users/me"],
+    ["GET", "/api/audit/organizations/org-1"],
+    ["POST", "/api/webhooks/organizations/org-1/initialize"],
+    ["GET", "/api/secret"],
+    ["GET", "/api/docker-registry/registry-push-access"],
+    ["GET", "/api/object-storage/push-access"],
+    ["POST", "/api/regions/r-1/regenerate-proxy-api-key"],
+    ["GET", "/api/runners"],
+    ["GET", "/api/sandbox/for-runner"],
+    ["GET", "/api/jobs/poll"],
+    ["POST", "/api/warm-pools"],
+    ["GET", "/api/preview/sbx-1/validate/token"],
+    ["GET", "/api/sandbox/ssh-access/validate"],
+    ["GET", "/api/%61pi-keys"],
+    ["GET", "/api/sandbox/..%2Fapi-keys"],
+  ])("refuses Daytona's account-wide %s %s", async (method, path) => {
+    const fetchUpstream = vi.fn();
+    await expectRefusal(
+      call({
+        manifest: DAYTONA,
+        path: `${base}${path}`,
+        method,
+        env: KEY,
+        fetchUpstream,
+      }),
+      403,
+      "integration_path_not_allowed",
+    );
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "/api/sandbox/sbx-1",
+    "/api/sandbox/sbx-1/ports/3000/preview-url",
+    "/api/snapshots",
+    "/api/volumes/by-name/memory",
+    "/api/shared-regions",
+  ])("serves %s", async (path) => {
+    const response = await call({
+      manifest: DAYTONA,
+      path: `${base}${path}`,
+      method: "GET",
+      env: KEY,
+    });
+    expect(response.status).toBe(200);
+  });
+});

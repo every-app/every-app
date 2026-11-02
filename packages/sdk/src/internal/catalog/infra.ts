@@ -563,4 +563,71 @@ export const INFRA = {
     },
     tags: ["weather", "forecast"],
   },
+  // Added 2026-11-01 from Daytona's OpenAPI spec (daytona.io/docs/openapi.json)
+  // and its API-key docs, for Birds' sandboxes (docs/design/
+  // 2026-11-birds-forcing-function.md, section 1.12). The control plane only:
+  // preview URLs (<port>-<id>.proxy.daytona.works, per-sandbox tokens) and
+  // the toolbox stay outside the proxy.
+  daytona: {
+    mode: "api_key",
+    label: "Daytona",
+    description:
+      "Sandboxes for running code: create, start, stop, archive and delete sandboxes, and manage their snapshots and volumes.",
+    auth: { kind: "bearer", secret: "DAYTONA_API_KEY" },
+    docs: "https://www.daytona.io/docs/en/api-keys/",
+    api: "https://www.daytona.io/docs/en/tools/api/",
+    hosts: ["app.daytona.io"],
+    data: "account",
+    access: ["read", "write"],
+    readMethods: ["GET", "HEAD"],
+    writeMethods: ["POST", "PUT", "PATCH", "DELETE"],
+    // One key is the whole Daytona organization's. Refused: the
+    // organization itself (members, roles, invitations, SSO, usage and
+    // spend, its settings), billing, API keys, the signed-in user, the audit
+    // log, webhooks (which would send every sandbox event to a URL of the
+    // app's choosing), and what hands out the organization's credentials or
+    // runs its infrastructure: the organization's secrets, registry and
+    // object-storage push access, regions (which regenerate proxy and SSH
+    // keys), runners, jobs, warm pools, and the preview proxy's own checks.
+    accountWidePaths: [
+      ["organizations"],
+      ["organization"],
+      ["billing"],
+      ["api-keys"],
+      ["users"],
+      ["audit"],
+      ["webhooks"],
+      ["secret"],
+      ["docker-registry"],
+      ["object-storage"],
+      ["regions"],
+      ["runners"],
+      ["for-runner"],
+      ["jobs"],
+      ["warm-pools"],
+      ["preview"],
+      ["ssh-access", "validate"],
+    ],
+    hint: "An API key from the Daytona dashboard's Keys page, with only the permissions the apps need; the Gateway sends it as a bearer token to app.daytona.io. Any key of an organization reaches every running sandbox in it, so give the Gateway a Daytona organization of its own.",
+    secrets: [
+      {
+        name: "DAYTONA_API_KEY",
+        hint: "An API key from the Daytona dashboard's Keys page: write:sandboxes and delete:sandboxes (and the snapshot or volume ones) only if an app needs them, and never manage:api_keys, manage:secrets, manage:billing or the region and runner permissions.",
+      },
+    ],
+    smoke: {
+      method: "GET",
+      path: "/api/sandbox",
+      expect: [200],
+      free: true,
+      note: "Lists the organization's sandboxes; any key may read them.",
+    },
+    example:
+      "start a sandbox from my snapshot and stop it when the run is done",
+    verified: {
+      on: "2026-11-01",
+      how: "docs",
+    },
+    tags: ["sandbox", "compute", "hosting"],
+  },
 } as const satisfies Record<string, ApiKeyCapability>;

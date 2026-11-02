@@ -178,6 +178,7 @@ own (`pnpm everyapp provider list`):
 | `pinecone` | Pinecone | `PINECONE_API_KEY`, `PINECONE_HOST` | `api.pinecone.io`, the host `<PINECONE_HOST>` names | `Api-Key: <PINECONE_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PATCH, DELETE |
 | `mapbox` | Mapbox | `MAPBOX_ACCESS_TOKEN` | `api.mapbox.com` | `?access_token=<MAPBOX_ACCESS_TOKEN>` on the URL, in place of the app's own | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
 | `openweather` | OpenWeather | `OPENWEATHER_API_KEY` | `api.openweathermap.org`, `pro.openweathermap.org`, `history.openweathermap.org`, `tile.openweathermap.org`, `maps.openweathermap.org` | `?appid=<OPENWEATHER_API_KEY>` on the URL, in place of the app's own | `read` | GET, HEAD |
+| `daytona` | Daytona | `DAYTONA_API_KEY` | `app.daytona.io` | `Authorization: Bearer <DAYTONA_API_KEY>` | `read`, `write` | GET, HEAD; with `access: "write"` also POST, PUT, PATCH, DELETE |
 | `voyage` | Voyage AI | `VOYAGE_API_KEY` | `api.voyageai.com` | `Authorization: Bearer <VOYAGE_API_KEY>` | `read` | POST |
 | `perplexity` | Perplexity | `PERPLEXITY_API_KEY` | `api.perplexity.ai` | `Authorization: Bearer <PERPLEXITY_API_KEY>` | `read` | GET, POST |
 | `jina` | Jina AI | `JINA_API_KEY` | `api.jina.ai`, `r.jina.ai`, `s.jina.ai` | `Authorization: Bearer <JINA_API_KEY>` | `read` | GET, POST |
