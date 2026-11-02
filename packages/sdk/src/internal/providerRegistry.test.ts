@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { aiDefaultCandidates, resolveAiDefault } from "./aiDefault";
+import {
+  aiDefaultCandidates,
+  aiRequiredSettings,
+  resolveAiDefault,
+} from "./aiDefault";
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
+  authorizationFor,
   capabilitySettings,
+  type AiProviderCapability,
 } from "./capabilities";
 import {
   BUILTIN_PROVIDERS,
@@ -398,6 +404,107 @@ describe("an ai row in the registry", () => {
       provider: "vendor-ai",
       model: "v-chat",
       configured: true,
+    });
+  });
+});
+
+describe("an ai row with a Basic username held as a setting", () => {
+  const basic = (id: string, user: string) => ({
+    id,
+    mode: "ai",
+    name: "Basic AI",
+    docs: "https://basic.example/keys",
+    baseUrl: "https://api.basic.example/v1",
+    auth: {
+      kind: "basic",
+      secret: `${providerSettingPrefix(id)}API_KEY`,
+      as: "password",
+      user: { secret: user },
+    },
+    models: ["b-chat"],
+    defaultModel: "b-chat",
+  });
+
+  it("checks the username setting like the key: install-owned, outside the prefix or another provider's is refused", () => {
+    for (const [id, user] of [
+      ["vendor-ai", "JWT_PRIVATE_KEY"],
+      ["vendor-ai", "BETTER_AUTH_SECRET"],
+      ["vendor-ai", "OPENAI_API_KEY"],
+      ["vendor-ai", "NORTHWIND_API_KEY"],
+      // Inside the row's prefix, and still the Gateway's own.
+      ["better-auth", "BETTER_AUTH_SECRET"],
+    ] as const) {
+      const registry = providerRegistry([
+        northwind,
+        { id, spec: basic(id, user) },
+      ]);
+      expect(registry.get(id), `${id} ${user}`).toBeUndefined();
+      expect(registry.rejected.map((r) => r.id)).toEqual([id]);
+    }
+    // Inside the prefix, but another row's.
+    const extra = {
+      id: "vendor-ai-extra",
+      spec: {
+        ...basic("vendor-ai-extra", "VENDOR_AI_EXTRA_USER"),
+        auth: { kind: "bearer", secret: "VENDOR_AI_EXTRA_API_KEY" },
+      },
+    };
+    const taken = providerRegistry([
+      extra,
+      { id: "vendor-ai", spec: basic("vendor-ai", "VENDOR_AI_EXTRA_API_KEY") },
+    ]);
+    expect(taken.rejected).toMatchObject([
+      { id: "vendor-ai", code: "PROVIDER_SECRET_TAKEN" },
+    ]);
+  });
+
+  it("lists, requires and binds the username setting with the key", () => {
+    const registry = providerRegistry([
+      { id: "vendor-ai", spec: basic("vendor-ai", "VENDOR_AI_USER") },
+    ]);
+    const capability = registry.get("vendor-ai")!;
+    expect(capabilitySettings(capability)).toEqual([
+      "VENDOR_AI_API_KEY",
+      "VENDOR_AI_USER",
+    ]);
+    expect(registry.unboundSettings().has("VENDOR_AI_USER")).toBe(true);
+    expect(aiRequiredSettings(capability as AiProviderCapability)).toEqual([
+      "VENDOR_AI_API_KEY",
+      "VENDOR_AI_USER",
+    ]);
+  });
+
+  it("authorizationFor reads no setting the entry doesn't declare", () => {
+    const registry = providerRegistry([
+      { id: "vendor-ai", spec: basic("vendor-ai", "VENDOR_AI_USER") },
+    ]);
+    const env = {
+      VENDOR_AI_API_KEY: "key",
+      VENDOR_AI_USER: "user",
+      JWT_PRIVATE_KEY: "protected",
+    };
+    for (const id of registry.ids()) {
+      const capability = registry.get(id)!;
+      if (capability.mode !== "ai" && capability.mode !== "api_key") continue;
+      const read: string[] = [];
+      const recording = new Proxy(env as Record<string, unknown>, {
+        get: (target, name) => {
+          if (typeof name === "string") read.push(name);
+          return Reflect.get(target, name);
+        },
+      });
+      authorizationFor(capability, recording);
+      const declared = capabilitySettings(capability);
+      expect(
+        read.filter((name) => !declared.includes(name)),
+        id,
+      ).toEqual([]);
+    }
+    expect(
+      authorizationFor(registry.get("vendor-ai") as AiProviderCapability, env),
+    ).toEqual({
+      headers: { authorization: `Basic ${btoa("user:key")}` },
+      query: {},
     });
   });
 });

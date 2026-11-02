@@ -10,6 +10,7 @@
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
+  authSettingNames,
   type AiProviderCapability,
   type AiProviderId,
   type AiRoute,
@@ -96,7 +97,7 @@ export function devAiProvider(
 
 /** Every setting a provider needs, its key first: the names `.dev.vars` and the gateway use. */
 export function aiProviderSettings(spec: DevAiProviderSpec): string[] {
-  return [spec.keyEnv, ...(spec.alsoNeeds ?? [])];
+  return [...authSettingNames(spec.auth), ...(spec.alsoNeeds ?? [])];
 }
 
 /**

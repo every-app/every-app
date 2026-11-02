@@ -8,6 +8,7 @@ import {
   IDENTITY_HEADER,
   aiBaseUrl,
   aiGatewayConfigured,
+  authSettingNames,
   authorizationFor,
   joinProviderUrl,
   normalizeWorkersAiResponse,
@@ -75,8 +76,8 @@ interface AiProvider {
    * unset.
    */
   upstreamBaseUrl: (env: AiProxyEnv) => string | null;
-  /** The gateway secret holding the provider key. */
-  keyEnv: string;
+  /** The gateway settings the entry's `auth` names: the key, and a Basic username held as a setting. */
+  keySettings: string[];
   /** The key on the request as the entry's `auth` puts it; null while unset. */
   authorization: (env: AiProxyEnv) => Authorization | null;
   /** Gateway settings the provider needs besides its key. */
@@ -115,7 +116,7 @@ interface AiProvider {
 function aiProviderOf(capability: AiProviderCapability): AiProvider {
   return {
     upstreamBaseUrl: (env) => aiBaseUrl(capability, env),
-    keyEnv: capability.auth.secret,
+    keySettings: authSettingNames(capability.auth),
     authorization: (env) => authorizationFor(capability, env),
     alsoNeeds: capability.alsoNeeds ?? [],
     inferenceRoutes: new Set(capability.inferenceRoutes),
@@ -331,7 +332,7 @@ export async function handleAuthenticatedAiProxyRequest({
   // A registered row's key is read only while it was set for the base URL
   // and auth the row has now (`providers.value-bound-to-hosts`).
   if (lookup.bound && !lookup.bound(resolved)) {
-    const settings = [aiProvider.keyEnv, ...aiProvider.alsoNeeds];
+    const settings = [...aiProvider.keySettings, ...aiProvider.alsoNeeds];
     return aiRefusal(
       "ai_provider_not_configured",
       503,
@@ -352,7 +353,7 @@ export async function handleAuthenticatedAiProxyRequest({
       "ai_provider_not_configured",
       setupInfo({
         label: lookup.get(resolved)?.label ?? resolved,
-        settings: [aiProvider.keyEnv, ...aiProvider.alsoNeeds],
+        settings: [...aiProvider.keySettings, ...aiProvider.alsoNeeds],
         command: setupCommand,
       }),
     );
@@ -878,7 +879,7 @@ export function aiStatusResponse({
     null,
     setupInfo({
       label: lookup.get(provider)?.label ?? provider,
-      settings: [aiProvider.keyEnv, ...aiProvider.alsoNeeds],
+      settings: [...aiProvider.keySettings, ...aiProvider.alsoNeeds],
       command: setupCommand,
     }),
   );

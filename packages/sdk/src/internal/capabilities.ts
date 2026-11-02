@@ -1368,7 +1368,12 @@ export function capabilitySettings(capability: Capability): readonly string[] {
         ...(capability.hostSetting ? [capability.hostSetting] : []),
       ];
     case "ai":
-      return [capability.auth.secret, ...(capability.alsoNeeds ?? [])];
+      // Every setting `auth` names, as for an API-key provider: a Basic
+      // username held as a setting is checked, bound and listed like the key.
+      return [
+        ...authSettingNames(capability.auth),
+        ...(capability.alsoNeeds ?? []),
+      ];
     case "service":
       return [...capability.settings, ...capability.optionalSettings];
     case "oauth_client":
@@ -1428,7 +1433,13 @@ export function authorizationFor(
   capability: ApiKeyCapability | AiProviderCapability,
   settings: CapabilitySettings,
 ): Authorization | null {
-  return authorizationOf(capability.auth, settings);
+  // Only the settings the entry declares are visible: whatever `auth` reads
+  // beyond them (a setting no row check saw) is unset, and the call fails closed.
+  const declared: Record<string, unknown> = {};
+  for (const name of capabilitySettings(capability)) {
+    declared[name] = settings[name];
+  }
+  return authorizationOf(capability.auth, declared);
 }
 
 /** What {@link authorizationFor} puts on a request. */

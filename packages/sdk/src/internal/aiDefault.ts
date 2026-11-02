@@ -25,6 +25,7 @@
  */
 import {
   CATALOG,
+  authSettingNames,
   type AiProviderCapability,
   type AiRoute,
   type Capability,
@@ -236,13 +237,14 @@ export function canBeAiDefault(
 }
 
 /**
- * The Gateway settings an `ai` entry needs before it serves: its key
- * (unless the entry works without one, `authOptional`) and what its URL
- * needs besides (`alsoNeeds`).
+ * The Gateway settings an `ai` entry needs before it serves: every setting
+ * its `auth` names, the key and a Basic username held as a setting (unless
+ * the entry works without them, `authOptional`), and what its URL needs
+ * besides (`alsoNeeds`).
  */
 export function aiRequiredSettings(capability: AiProviderCapability): string[] {
   return [
-    ...(capability.authOptional ? [] : [capability.auth.secret]),
+    ...(capability.authOptional ? [] : authSettingNames(capability.auth)),
     ...(capability.alsoNeeds ?? []),
   ];
 }
