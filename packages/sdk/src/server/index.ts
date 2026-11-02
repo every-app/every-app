@@ -10,6 +10,7 @@ export {
   getEveryAppUser,
   hasScope,
   isAdmin,
+  isAgentCall,
   requireCurrentUser,
   requireEveryAppUser,
   type EveryAppOptions,

@@ -37,6 +37,7 @@ import {
   PUBLIC_KEYS_ENV,
   getIdentityFromRequest,
   isAdmin,
+  isAgentCall,
   type EveryAppUser,
   type IdentityResult,
   type OrgRole,
@@ -46,7 +47,7 @@ import { currentUser, serveRequest } from "./context.js";
 import type { ToolSet } from "./tools.js";
 import { handleToolsRequest } from "./toolsEndpoint.js";
 
-export { ConfigurationError, IdentityError, isAdmin };
+export { ConfigurationError, IdentityError, isAdmin, isAgentCall };
 export type { EveryAppUser, IdentityResult, OrgRole };
 
 /**
