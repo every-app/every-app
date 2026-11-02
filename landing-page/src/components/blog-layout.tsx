@@ -31,7 +31,7 @@ export function DraftBadge() {
   );
 }
 
-/** The home page's colors and header, around a post or the blog index. */
+/** The home page's colors, header and footer links, around a post or the blog index. */
 export function BlogLayout({ children }: { children: ReactNode }) {
   return (
     <div className="dark min-h-screen bg-[#0a0f0d] text-stone-100">
@@ -73,6 +73,45 @@ export function BlogLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main>{children}</main>
+      <footer className="border-t border-white/[0.08] px-6 py-10">
+        <div className="mx-auto flex max-w-5xl flex-wrap gap-6 text-sm">
+          <Link
+            to="/blogs"
+            className="text-stone-500 transition-colors hover:text-stone-300"
+          >
+            Blog
+          </Link>
+          <Link
+            to="/docs/$"
+            params={{ _splat: "" }}
+            className="text-stone-500 transition-colors hover:text-stone-300"
+          >
+            Docs
+          </Link>
+          <a
+            href="https://discord.gg/c9uGs3cFXr"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-stone-500 transition-colors hover:text-stone-300"
+          >
+            Discord
+          </a>
+          <a
+            href="https://github.com/every-app/every-app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-stone-500 transition-colors hover:text-stone-300"
+          >
+            GitHub
+          </a>
+          <Link
+            to="/privacy"
+            className="text-stone-500 transition-colors hover:text-stone-300"
+          >
+            Privacy
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }

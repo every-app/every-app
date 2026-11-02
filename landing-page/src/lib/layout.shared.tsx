@@ -8,7 +8,7 @@ function DiscordIcon() {
   );
 }
 
-/** The docs layouts' options: Discord and GitHub as icons beside the theme switch. */
+/** The docs layouts' options: a Blog link, and Discord and GitHub as icons beside the theme switch. */
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
@@ -27,6 +27,7 @@ export function baseOptions(): BaseLayoutProps {
     },
     githubUrl: "https://github.com/every-app/every-app",
     links: [
+      { text: "Blog", url: "/blogs" },
       {
         type: "icon",
         label: "Discord",

@@ -295,6 +295,12 @@ function Home() {
               className="flex items-center gap-6 text-sm"
             >
               <Link
+                to="/blogs"
+                className="text-stone-400 transition-colors hover:text-white"
+              >
+                Blog
+              </Link>
+              <Link
                 to="/docs/$"
                 params={{ _splat: "" }}
                 className="text-stone-400 transition-colors hover:text-white"
@@ -518,6 +524,12 @@ function Home() {
                 >
                   GitHub
                 </a>
+                <Link
+                  to="/blogs"
+                  className="text-stone-500 transition-colors hover:text-stone-300"
+                >
+                  Blog
+                </Link>
                 <Link
                   to="/privacy"
                   className="text-stone-500 transition-colors hover:text-stone-300"
